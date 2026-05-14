@@ -126,8 +126,7 @@ export default function Landing() {
                   </div>
 
                   <div className="preview-row" data-row="linkedin">
-                    <span className="av" style={{ background: "#DC2626" }}>
-                      L
+                    <span className="av">
                       <img
                         src="https://www.google.com/s2/favicons?domain=linkedin.com&sz=64"
                         alt=""
@@ -167,8 +166,7 @@ export default function Landing() {
                     data-row="groupon"
                     style={{ background: "rgba(245,158,11,.04)" }}
                   >
-                    <span className="av" style={{ background: "#B45309" }}>
-                      G
+                    <span className="av">
                       <img
                         src="https://www.google.com/s2/favicons?domain=groupon.com&sz=64"
                         alt=""
@@ -196,8 +194,7 @@ export default function Landing() {
                   </div>
 
                   <div className="preview-row" data-row="substack">
-                    <span className="av" style={{ background: "#FF6719" }}>
-                      S
+                    <span className="av">
                       <img
                         src="https://www.google.com/s2/favicons?domain=substack.com&sz=64"
                         alt=""
@@ -479,7 +476,7 @@ export default function Landing() {
                 <p
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontSize: 16,
+                    fontSize: 15,
                     lineHeight: 1.6,
                     color: "rgba(240,238,233,.78)",
                     margin: "0 0 18px",

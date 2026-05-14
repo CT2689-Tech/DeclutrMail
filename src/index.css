@@ -1467,7 +1467,7 @@
       "WONK" 0;
   }
   .section .sub {
-    font-size: 15.5px;
+    font-size: 15px;
     color: hsl(var(--ink-sub));
     max-width: 60ch;
     margin: 0 0 28px;
@@ -1602,7 +1602,7 @@
   }
   .steps3 .step p {
     margin: 0;
-    font-size: 14px;
+    font-size: 15px;
     color: hsl(var(--ink-sub));
     line-height: 1.55;
   }
@@ -1662,26 +1662,18 @@
     width: 28px;
     height: 28px;
     border-radius: 7px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 700;
-    font-size: 11px;
     flex-shrink: 0;
     overflow: hidden;
-    /* Background color is the letter-fallback layer. The <img> favicon
-       sits on top with object-fit: cover. If the img fails (network /
-       privacy blocker / no favicon), the bg + letter behind it shows. */
-    position: relative;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
   }
   .preview-row .av img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: inherit;
-    /* Hide alt text if img fails — the bg + letter underneath is the
-       real fallback, no need to also show broken-image alt text. */
+    display: block;
+    /* If img fails, the empty card-colored box stays. No broken-image
+       icon (alt is empty string), no fallback letter. */
     color: transparent;
   }
   .preview-row .who .n {
