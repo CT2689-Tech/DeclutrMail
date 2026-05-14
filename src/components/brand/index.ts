@@ -1,25 +1,28 @@
 /**
  * Brand atom barrel.
  *
- * Editorial typography + brand vocabulary used by marketing surfaces (Landing,
- * Pricing, Compare, FAQ, Legal, Contact, Blog, Guides). Per CLAUDE.md design
- * gotcha "Editorial typography is marketing-only" — these MUST NOT be used
- * on product surfaces (Dashboard, Settings, Review, Auto-Clean, etc.).
+ * Two React components that wrap canonical CSS patterns where the React
+ * shape adds genuine value:
  *
- * Each component cites its provenance in the canonical design bundle at
- * `/tmp/declutr-design-bd3l/declutrmail-design-system/project/`.
+ *   <BrandAtom/> — the logo with sized variants and `role="img"` a11y.
+ *   <PageMast/>  — wires React Router <Link> into the .masthead pattern.
+ *
+ * Other editorial atoms (eyebrow, display heading, pill) are written
+ * directly as `className=""` in the marketing page JSX, matching the
+ * canonical design source 1:1. Use:
+ *
+ *   <div className="eyebrow primary">Pricing</div>
+ *   <h1 className="display"><em>Calm</em> pricing.</h1>
+ *   <span className="pill emerald">Free</span>
+ *
+ * The CSS patterns live in src/index.css (ported from the canonical
+ * v2-marketing.css). Hover IntelliSense over the class for the rule.
+ *
+ * Per CLAUDE.md design gotcha "Editorial typography is marketing-only" —
+ * these MUST NOT be used on product surfaces (Dashboard, Settings, etc.).
  */
 export { BrandAtom } from "./BrandAtom";
 export type { BrandAtomProps } from "./BrandAtom";
 
-export { Display } from "./Display";
-export type { DisplayProps } from "./Display";
-
-export { Eyebrow } from "./Eyebrow";
-export type { EyebrowProps, EyebrowTone } from "./Eyebrow";
-
 export { PageMast } from "./PageMast";
 export type { PageMastProps, PageMastNavLink } from "./PageMast";
-
-export { Pill } from "./Pill";
-export type { PillProps, PillTone } from "./Pill";
