@@ -256,6 +256,8 @@ Inspect via `mcp__Claude_Preview__preview_eval` at viewport 1920×1100:
 10. Inline styles in JSX when a CSS class exists (use the class)
 11. Speculative dark-mode tokens that aren't reached
 12. New marketing classes — first check `src/index.css` and `v2-marketing.css` for canonical patterns
+13. **Roman-numeral section markers** (II. III. etc.) — the canonical uses them on some pages and not others, which reads as inconsistent. Skip them entirely. Section h2s stand on their own without numbering.
+14. **Redundant trust strips** — the canonical sometimes has a top `.strap` AND a bottom mono-caps "all plans" strip that repeat similar messaging. Pick one or drop both — the hero + conv banner already cover trust messaging. Two trust bars on one page is one too many.
 
 ## Lessons learned during Landing port (for context)
 

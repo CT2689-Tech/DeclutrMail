@@ -6,19 +6,17 @@ import { PageMast } from "@/components/brand";
  * Pricing — DeclutrMail's tier comparison page.
  *
  * Source: /tmp/declutr-design-bd3l/.../marketing/pricing.html (230 lines
- * of canonical HTML). Translated 1:1 with the same class names and DOM
- * structure. No inline <style> block in the canonical, so no co-located
- * .css file is needed — all classes resolve to src/index.css.
+ * canonical) plus billing.jsx (defines Pro Pass: $12 / 7-day one-time
+ * full-Pro pass — the canonical dropped Pro Pass from the tier menu,
+ * we keep it because users asked for the trial-pass option).
  *
  * Built against docs/marketing-pages.md:
- *   - Hero h1: uses .display class (Fraunces) — no oversized clamp
+ *   - Hero h1: .display class (Fraunces); single italic differentiator
  *   - Body text: 17px hero deck (LEAD) + 15px everywhere else (BODY)
- *   - Italic accents: 4 total (hero "Easy to undo", note "on the price",
- *     conv banner "your inbox stays private", footer "calm cleanup")
- *   - All italic uses WONK 0 + SOFT 100 (via .display em / .section-head h2 em)
- *   - PageMast wraps the masthead pattern (sticky, brand + nav + CTA)
- *   - No inline CSS specificity bugs (CTA uses .nav .links a.cta pattern
- *     internally; PageMast renders .masthead not .nav so n/a here)
+ *   - Italic accents: 4 (hero, section-head, conv banner, footer tagline)
+ *   - All italic uses WONK 0 + SOFT 100
+ *   - PageMast for sticky masthead
+ *   - No Roman numerals — match Landing's no-numbered-sections rhythm
  */
 export default function Pricing() {
   return (
@@ -27,7 +25,7 @@ export default function Pricing() {
         <title>Pricing — DeclutrMail</title>
         <meta
           name="description"
-          content="Free to start. Pro adds nightly automatic cleanups and unlimited senders. Teams get exportable activity logs and admin controls."
+          content="Free to start. Pro Pass for a one-time 7-day cleanup. Pro for ongoing automatic cleanups. Teams ship Q3 2026."
         />
       </Helmet>
 
@@ -48,12 +46,6 @@ export default function Pricing() {
         ctaHref="/sign-in"
       />
 
-      <div className="container strap">
-        <span>— Pricing —</span>
-        <span>Free to start. Honest tiers. Undoable.</span>
-        <span>No trial credit card</span>
-      </div>
-
       <main id="main">
         <section className="hero">
           <div className="container">
@@ -62,9 +54,10 @@ export default function Pricing() {
               Free to start. <em>Easy to undo.</em>
             </h1>
             <p className="deck">
-              No credit card to try. Pro adds nightly automatic cleanups and unlimited senders.
-              Teams get exportable activity logs and admin controls. Cancel any time — your activity
-              log stays in your account for two years either way.
+              No credit card to try. Pro Pass clears a one-time mess for $12. Pro adds nightly
+              automatic cleanups for $9/month. Teams get exportable activity logs and admin
+              controls. Cancel any time — your activity log stays in your account for two years
+              either way.
             </p>
           </div>
         </section>
@@ -102,6 +95,40 @@ export default function Pricing() {
                     style={{ width: "100%", justifyContent: "center" }}
                   >
                     Start free →
+                  </Link>
+                </div>
+              </div>
+
+              {/* Pro Pass — one-time 7-day pass */}
+              <div className="tier">
+                <h3>Pro Pass</h3>
+                <div className="price">
+                  $12
+                  <small>One-time · 7 days, all Pro features</small>
+                </div>
+                <p className="desc">
+                  For the one-shot cleanup. Buy once, clear the years of clutter, drop back to Free.
+                </p>
+                <ul>
+                  <li>One Gmail account</li>
+                  <li>
+                    <strong>Unlimited cleanup actions for 7 days</strong>
+                  </li>
+                  <li>All four actions · Archive, Mute, Unsubscribe, Keep</li>
+                  <li>7-day undo on every action</li>
+                  <li>Nightly automatic cleanups (while pass is active)</li>
+                  <li>Full activity log · export anytime</li>
+                  <li>No auto-renew · drops to Free on day 8</li>
+                  <li className="off">Recurring nightly cleanups after day 7</li>
+                  <li className="off">Priority email support</li>
+                </ul>
+                <div className="footer">
+                  <Link
+                    to="/sign-in?plan=pass"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "center" }}
+                  >
+                    Get the pass →
                   </Link>
                 </div>
               </div>
@@ -189,34 +216,24 @@ export default function Pricing() {
                 </div>
               </div>
             </div>
-
-            <p
-              style={{
-                textAlign: "center",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "hsl(var(--muted-foreground))",
-                margin: "36px 0 0",
-              }}
-            >
-              All plans · sender-only · 7-day undo · activity log · we never read your messages ·
-              your inbox is never used to train AI
-            </p>
           </div>
         </section>
 
         {/* Honest pricing notes */}
         <section className="section alt">
           <div className="container">
-            <div className="section-head">
-              <span className="roman">II.</span>
-              <h2>
-                A few notes <em>on the price.</em>
-              </h2>
-              <span className="hr" />
-            </div>
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 600,
+                fontSize: "clamp(26px, 2.8vw, 36px)",
+                lineHeight: 1.15,
+                letterSpacing: "-0.018em",
+                margin: "0 0 22px",
+              }}
+            >
+              A few notes <em>on the price.</em>
+            </h2>
 
             <div className="twoup">
               <div>
@@ -249,21 +266,38 @@ export default function Pricing() {
         {/* Pricing FAQ */}
         <section className="section">
           <div className="container">
-            <div className="section-head">
-              <span className="roman">III.</span>
-              <h2>Pricing FAQ</h2>
-              <span className="hr" />
-            </div>
+            <h2
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 600,
+                fontSize: "clamp(26px, 2.8vw, 36px)",
+                lineHeight: 1.15,
+                letterSpacing: "-0.018em",
+                margin: "0 0 22px",
+              }}
+            >
+              Pricing FAQ
+            </h2>
 
             <div className="qa">
               <details>
                 <summary>Is there a free trial of Pro?</summary>
                 <p className="a">
-                  No, because Free isn’t a trial — it’s a permanent tier with a generous starter
-                  allowance. 10 sender-level cleanup actions is usually enough to clear most of a
-                  first-time mess (one action archives every message from one sender). For ongoing
-                  cleanup, Pro is $9/month. We’d rather price clearly than dangle a 14-day
-                  countdown.
+                  Free isn’t a trial — it’s a permanent tier with a generous starter allowance. 10
+                  sender-level cleanup actions is usually enough to clear most of a first-time mess
+                  (one action archives every message from one sender). For a one-shot bigger
+                  cleanup, Pro Pass is $12 for 7 days of unlimited Pro. For ongoing cleanup, Pro is
+                  $9/month. We’d rather price clearly than dangle a 14-day countdown.
+                </p>
+              </details>
+              <details>
+                <summary>What’s the difference between Pro Pass and Pro?</summary>
+                <p className="a">
+                  Pro Pass is a one-time $12 charge that gives you all Pro features for 7 days, then
+                  drops back to Free automatically. No auto-renew, no surprise charge. It’s for the
+                  user who has a one-shot mess to clear (years of LinkedIn / Substack / Groupon) and
+                  doesn’t want a recurring subscription. Pro is the recurring option for people who
+                  want nightly automatic cleanups and unlimited actions forever.
                 </p>
               </details>
               <details>
@@ -296,10 +330,10 @@ export default function Pricing() {
               <details>
                 <summary>What if I have 250,000 emails?</summary>
                 <p className="a">
-                  Pro handles it. The first scan runs server-side, takes about ten minutes for that
-                  volume, and tells you what it found. You close the tab and we email you when it’s
-                  done. The post-scan view shows you the four shortcuts that clear the most inbox
-                  per click.
+                  Pro and Pro Pass both handle it. The first scan runs server-side, takes about ten
+                  minutes for that volume, and tells you what it found. You close the tab and we
+                  email you when it’s done. The post-scan view shows you the four shortcuts that
+                  clear the most inbox per click.
                 </p>
               </details>
               <details>

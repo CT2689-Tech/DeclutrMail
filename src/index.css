@@ -664,11 +664,13 @@
     font-weight: 600;
   }
 
-  /* ── Tiers — pricing cards (3-up, middle featured) ──
-     Source: v2-marketing.css §625-701 */
+  /* ── Tiers — pricing cards (auto-fit columns, featured highlighted) ──
+     Originally 3-up per v2-marketing.css §625-701; relaxed to support
+     4 columns when a Pro Pass tier is shown. Below 1100px collapses
+     to 2-up; below 720px to 1-up. */
   .tiers {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 0;
     border: 1px solid hsl(var(--border));
     border-radius: 12px;
@@ -676,13 +678,25 @@
     overflow: hidden;
     box-shadow: var(--shadow-md);
   }
-  @media (max-width: 880px) {
+  .tiers.tiers-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  @media (max-width: 1100px) {
     .tiers {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .tiers.tiers-3 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 720px) {
+    .tiers,
+    .tiers.tiers-3 {
       grid-template-columns: 1fr;
     }
   }
   .tiers .tier {
-    padding: 28px 28px 24px;
+    padding: 24px 22px 22px;
     border-right: 1px solid hsl(var(--border));
     display: flex;
     flex-direction: column;
@@ -691,7 +705,15 @@
   .tiers .tier:last-child {
     border-right: none;
   }
-  @media (max-width: 880px) {
+  @media (max-width: 1100px) {
+    .tiers .tier:nth-child(2n) {
+      border-right: none;
+    }
+    .tiers .tier:nth-child(-n + 2) {
+      border-bottom: 1px solid hsl(var(--border));
+    }
+  }
+  @media (max-width: 720px) {
     .tiers .tier {
       border-right: none;
       border-bottom: 1px solid hsl(var(--border));
