@@ -1,0 +1,1333 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Scrollbar-hide utility ─────────────────────────────── */
+/* Used on horizontally-scrollable navs / pill strips on mobile */
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide,
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* ── Editorial typography utilities ──────────────────────
+     Used by marketing pages for the Fraunces serif H1 system,
+     Source Serif 4 for editorial body prose (long-form
+     reading: pull-quotes, MDX articles), and JetBrains Mono
+     editorial markers. Inter remains the default for UI body
+     (forms, buttons, navigation, dashboard, etc.).
+
+     Type scale — marketing pages pick one; never set pixel sizes inline.
+     Fluid via clamp() so they scale smoothly between 320px and 1280px viewports.
+       text-display-xl  44 → 128px   Hero (Landing only)
+       text-display-lg  40 →  64px   Section H2 / oversized page H1
+       text-display-md  32 →  56px   Standard page H1
+       text-display-sm  24 →  36px   Sub-section H3
+   */
+  /* Fraunces opsz axis (9–144) controls poster-grade hairlines vs.
+     heading-grade strokes. We use `font-optical-sizing: auto` so the browser
+     picks the right opsz for the rendered size — `font-display` at 24px gets
+     heading weight, at 96px gets poster weight. Hardcoding `"opsz" 144` here
+     made small headings (article H2/H3, accordion questions) look wispy and
+     hard to read because they inherited 144pt-poster hairlines at body sizes. */
+  .font-display {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-feature-settings: "ss01", "ss02";
+    font-optical-sizing: auto;
+    font-variation-settings:
+      "SOFT" 0,
+      "WONK" 0;
+    letter-spacing: -0.02em;
+    line-height: 0.96;
+  }
+  .font-display-italic {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-style: italic;
+    font-optical-sizing: auto;
+    font-variation-settings:
+      "SOFT" 100,
+      "WONK" 1;
+    letter-spacing: -0.018em;
+  }
+  .font-serif-body {
+    /* Source Serif 4 — body-optimized editorial serif. Used for long-form
+       prose (article bodies, pull-quotes, lead paragraphs). Pairs with
+       Fraunces for display headlines. Variable opsz axis (8-60) keeps
+       strokes correctly weighted across 14-32px body sizes. */
+    font-family: "Source Serif 4", "Times New Roman", serif;
+    font-variation-settings: "opsz" 16;
+    letter-spacing: 0;
+  }
+  .font-mono-edit {
+    /* Single source of truth for editorial micro-labels. 0.16em chosen because
+       it preserves legibility at 11–12px (the size we use these at). Do NOT
+       override letter-spacing inline. */
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+  .text-display-xl {
+    font-size: clamp(2.75rem, 7.5vw + 0.5rem, 8rem);
+    line-height: 0.96;
+  }
+  .text-display-lg {
+    font-size: clamp(2.5rem, 3.5vw + 1rem, 4rem);
+    line-height: 1;
+  }
+  .text-display-md {
+    font-size: clamp(2rem, 2.2vw + 1.2rem, 3.5rem);
+    line-height: 1.04;
+  }
+  .text-display-sm {
+    font-size: clamp(1.5rem, 1.2vw + 1rem, 2.25rem);
+    line-height: 1.1;
+  }
+  .editorial-dropcap::first-letter {
+    font-family: "Fraunces", serif;
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 80,
+      "WONK" 1;
+    font-weight: 600;
+    float: left;
+    font-size: 5.4em;
+    line-height: 0.84;
+    padding-right: 0.12em;
+    padding-top: 0.06em;
+    color: hsl(var(--primary));
+  }
+
+  /* ── Editorial prose ───────────────────────────────────
+     Layered on top of `prose` from @tailwindcss/typography. Switches body
+     paragraphs/lists/blockquotes to Source Serif 4 (body-optimized editorial
+     serif) and pins headings to Fraunces display. Keeps code/pre as monospace
+     via prose's defaults. Apply alongside `prose` on article wrappers
+     (MdxLayout). */
+  .prose-editorial :where(p, li, blockquote):not(:where([class~="not-prose"] *)) {
+    font-family: "Source Serif 4", "Times New Roman", serif;
+    font-variation-settings: "opsz" 18;
+    letter-spacing: 0;
+  }
+  .prose-editorial :where(h1, h2, h3, h4):not(:where([class~="not-prose"] *)) {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-feature-settings: "ss01", "ss02";
+    font-optical-sizing: auto;
+    font-variation-settings:
+      "SOFT" 0,
+      "WONK" 0;
+    /* -0.01em (vs. -0.02em on display class) eases tracking at the smaller
+       in-article H2/H3/H4 sizes (24–32px) where tighter letter-spacing reads
+       cramped once strokes are at heading weight. */
+    letter-spacing: -0.01em;
+  }
+
+  /* ── Marketing surface ─────────────────────────────────
+     Wraps marketing page content (not Navbar/Footer — those need to
+     work over both surfaces). Provides editorial-tuned hairlines and
+     a softer body color so prose feels like newsprint, not interface. */
+  .marketing-surface {
+    --hairline: hsl(var(--foreground) / 0.12);
+    --hairline-strong: hsl(var(--foreground) / 0.22);
+  }
+  .marketing-surface .marketing-prose {
+    color: hsl(var(--foreground) / 0.85);
+    line-height: 1.6;
+  }
+  .marketing-surface .editorial-rule {
+    border: 0;
+    border-top: 1px solid var(--hairline);
+    margin: 0;
+  }
+  .marketing-surface .editorial-rule-strong {
+    border: 0;
+    border-top: 1px solid var(--hairline-strong);
+    margin: 0;
+  }
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Declutr.ai Brand Colors */
+    --background: 210 20% 98%;
+    --foreground: 0 0% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 12%;
+
+    --primary: 174 100% 24%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 174 69% 69%;
+    --secondary-foreground: 0 0% 12%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 174 69% 69%;
+    --accent-foreground: 0 0% 12%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 174 100% 24%;
+
+    --radius: 1rem;
+
+    /* Chart colors for data visualization */
+    --chart-1: 174 100% 24%;
+    --chart-2: 174 69% 69%;
+    --chart-3: 220 70% 60%;
+    --chart-4: 280 70% 60%;
+    --chart-5: 40 90% 55%;
+
+    /* Gradient tokens
+     * Second stop darkened from 69% → 37% lightness so gradient-text on white
+     * bg passes WCAG AA Large (3:1). Teals are perceptually bright — 50% still
+     * fails (1.81:1) because the green channel dominates relative luminance.
+     *   Original  hsl(174 69% 69%) = #79E6DC → 1.48:1 (fails)
+     *   Current   hsl(174 69% 37%) = #1D9F92 → 3.27:1 (passes AA Large ✓)
+     * AA Large applies to the H1 (60px bold); normal-text AA (4.5:1) would require
+     * ~30% lightness which flattens the gradient. 37% preserves visible teal→mint.
+     */
+    --gradient-primary: linear-gradient(135deg, hsl(174 100% 24%), hsl(174 69% 37%));
+    --gradient-hero: linear-gradient(135deg, hsl(174 100% 20%), hsl(174 69% 37%));
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.1);
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 12%;
+    --sidebar-primary: 174 100% 24%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 20% 96%;
+    --sidebar-accent-foreground: 0 0% 12%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 174 100% 24%;
+
+    /* ── Semantic + editorial vocabulary tokens (v2 design system, May 2026)
+     * --success / --warning are the two semantic-status hues alongside primary.
+     * Per the "3 semantic hues" gotcha: don't reach for purple / orange / pink.
+     * The -strong variants are deeper shades used by editorial vocabulary
+     * (.cmp .yes, .tiers .price em, etc.) where the brighter base reads thin.
+     * --danger is the editorial deep-red distinct from --destructive (which is
+     * a lighter red used for shadcn destructive buttons).
+     * --ink-sub and --rule-soft fill gaps the editorial vocabulary needs
+     * (darker body copy than --muted-foreground; lighter rule than --border).
+     */
+    --success: 152 60% 36%; /* emerald-600 */
+    --warning: 38 92% 50%; /* amber-500 */
+    --success-strong: 152 90% 24%; /* emerald-700 — editorial deeper green */
+    --warning-strong: 25 76% 31%; /* amber-700 — editorial deeper amber */
+    --danger: 0 73% 41%; /* red-700 — editorial deep red */
+    --ink-sub: 220 9% 30%; /* editorial body sub-text (darker than --muted-foreground) */
+    --rule-soft: 220 13% 94%; /* editorial soft hairline (lighter than --border) */
+  }
+
+  .dark {
+    --background: 220 13% 8%;
+    --foreground: 0 0% 98%;
+
+    --card: 220 13% 11%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 220 13% 11%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 174 69% 69%;
+    --primary-foreground: 0 0% 12%;
+
+    --secondary: 220 13% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 220 13% 18%;
+    --muted-foreground: 220 9% 65%;
+
+    --accent: 174 100% 37.5%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 220 13% 18%;
+    --input: 220 13% 18%;
+    --ring: 174 69% 69%;
+
+    /* Chart colors for data visualization */
+    --chart-1: 174 69% 69%;
+    --chart-2: 174 100% 50%;
+    --chart-3: 220 70% 65%;
+    --chart-4: 280 70% 65%;
+    --chart-5: 40 90% 60%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(174 69% 69%), hsl(174 100% 37.5%));
+    --gradient-hero: linear-gradient(135deg, hsl(174 69% 69%), hsl(174 100% 50%));
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.5);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.5);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.5);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.5);
+
+    --sidebar-background: 220 13% 11%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 174 69% 69%;
+    --sidebar-primary-foreground: 0 0% 12%;
+    --sidebar-accent: 220 13% 18%;
+    --sidebar-accent-foreground: 0 0% 98%;
+    --sidebar-border: 220 13% 18%;
+    --sidebar-ring: 174 69% 69%;
+
+    /* Dark-mode semantic hues — same hue family, lifted lightness for contrast on dark bg.
+     * Editorial-only tokens (-strong, danger, ink-sub, rule-soft) intentionally
+     * unset here: marketing pages are light-mode-first per design intent.
+     * If marketing surfaces ever support dark mode, override per-class. */
+    --success: 152 65% 55%; /* emerald-400 on dark */
+    --warning: 38 95% 60%; /* amber-400 on dark */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Custom animations */
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  /* Subtle glint traveling across a progress bar's filled portion */
+  @keyframes progress-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(200%);
+    }
+  }
+
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.6s ease-out;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.4s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.3s ease-out;
+  }
+
+  /* Spin-slow animation for sync spinners (CSS fallback for Tailwind config) */
+  @keyframes spin-slow {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .animate-spin-slow {
+    animation: spin-slow 2.5s linear infinite;
+  }
+
+  /* Shimmer animation for skeletons */
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Skeleton shimmer effect */
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--muted));
+  }
+
+  .skeleton-shimmer::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--background) / 0.6) 50%,
+      transparent 100%
+    );
+    animation: shimmer 2s infinite;
+  }
+
+  /* Content loaded fade-in (applied when data arrives) */
+  @keyframes content-loaded {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-content-loaded {
+    animation: content-loaded 0.2s ease-out forwards;
+  }
+
+  /* Gradient background utilities */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  /* Focus visible styles for accessibility */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Screen reader only utility */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .focus\:not-sr-only:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: inherit;
+    margin: inherit;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  /* Enhanced keyboard navigation */
+  a:focus-visible,
+  button:focus-visible,
+  [role="button"]:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Ensure proper tab order for interactive elements */
+  [tabindex="-1"]:focus {
+    outline: none;
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Hover effects with accessibility */
+  .hover-scale {
+    @apply transition-transform duration-200;
+  }
+
+  .hover-scale:hover {
+    @apply scale-105;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hover-scale:hover {
+      @apply scale-100;
+    }
+  }
+
+  /* ── Marketing page visual system ─────────────────────────── */
+
+  /* Dot grid background for hero sections */
+  .bg-dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.07) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .dark .bg-dot-grid {
+    background-image: radial-gradient(circle, hsl(var(--primary) / 0.12) 1px, transparent 1px);
+  }
+
+  /* Subtle radial glow behind hero content */
+  .hero-glow {
+    position: relative;
+  }
+
+  .hero-glow::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 800px;
+    height: 600px;
+    transform: translate(-50%, -55%);
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--primary) / 0.06) 0%,
+      hsl(var(--primary) / 0.02) 40%,
+      transparent 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .dark .hero-glow::before {
+    background: radial-gradient(
+      ellipse at center,
+      hsl(var(--primary) / 0.12) 0%,
+      hsl(var(--primary) / 0.04) 40%,
+      transparent 70%
+    );
+  }
+
+  .hero-glow > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Section divider: subtle gradient fade */
+  .section-fade-top {
+    background: linear-gradient(to bottom, hsl(var(--primary) / 0.03) 0%, transparent 100%);
+  }
+
+  .section-fade-bottom {
+    background: linear-gradient(to top, hsl(var(--primary) / 0.03) 0%, transparent 100%);
+  }
+
+  /* Glassmorphism card for premium feel */
+  .glass-card {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .dark .glass-card {
+    background: hsl(var(--card) / 0.5);
+    border: 1px solid hsl(var(--border) / 0.3);
+  }
+
+  /* Animated gradient border for highlighted cards */
+  @keyframes gradient-rotate {
+    0% {
+      --gradient-angle: 0deg;
+    }
+    100% {
+      --gradient-angle: 360deg;
+    }
+  }
+
+  @property --gradient-angle {
+    syntax: "<angle>";
+    initial-value: 0deg;
+    inherits: false;
+  }
+
+  .gradient-border {
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    position: relative;
+  }
+
+  .gradient-border::before {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    background: conic-gradient(
+      from var(--gradient-angle, 0deg),
+      hsl(var(--primary)),
+      hsl(var(--secondary)),
+      hsl(var(--primary))
+    );
+    z-index: -1;
+    animation: gradient-rotate 6s linear infinite;
+    opacity: 0.5;
+  }
+
+  /* Text gradient utility */
+  .text-gradient-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Stagger animation for lists */
+  .stagger-children > * {
+    opacity: 0;
+    animation: fade-in-up 0.5s ease-out forwards;
+  }
+
+  .stagger-children > *:nth-child(1) {
+    animation-delay: 0s;
+  }
+  .stagger-children > *:nth-child(2) {
+    animation-delay: 0.1s;
+  }
+  .stagger-children > *:nth-child(3) {
+    animation-delay: 0.2s;
+  }
+  .stagger-children > *:nth-child(4) {
+    animation-delay: 0.3s;
+  }
+  .stagger-children > *:nth-child(5) {
+    animation-delay: 0.4s;
+  }
+
+  /* WOW-factor enhancements */
+
+  /* Card hover lift effect */
+  .card-hover-lift {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .card-hover-lift:hover {
+    transform: translateY(-4px) !important;
+    box-shadow:
+      0 12px 24px -6px hsl(var(--primary) / 0.2),
+      0 6px 12px -3px hsl(var(--primary) / 0.15) !important;
+  }
+
+  .card-hover-lift:active {
+    transform: translateY(-2px) !important;
+    box-shadow:
+      0 8px 16px -4px hsl(var(--primary) / 0.15),
+      0 4px 8px -2px hsl(var(--primary) / 0.1) !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card-hover-lift:hover,
+    .card-hover-lift:active {
+      transform: translateY(0) !important;
+      box-shadow: none !important;
+    }
+  }
+
+  /* Gradient card backgrounds */
+  .card-gradient-emerald {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--primary) / 0.03) 100%);
+  }
+
+  .card-gradient-blue {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(220 70% 60% / 0.03) 100%);
+  }
+
+  .card-gradient-amber {
+    background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(40 90% 55% / 0.03) 100%);
+  }
+
+  /* Progress bar fill animation */
+  @keyframes fillProgress {
+    from {
+      transform: scaleX(0);
+      transform-origin: left;
+    }
+    to {
+      transform: scaleX(1);
+      transform-origin: left;
+    }
+  }
+
+  .animate-fill-progress {
+    animation: fillProgress 1s ease-out forwards;
+  }
+
+  /* Number counter animation */
+  @keyframes countUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-count-up {
+    animation: countUp 0.6s ease-out;
+  }
+
+  /* Slide up animation for chart bars */
+  @keyframes slideUp {
+    from {
+      transform: scaleY(0);
+      transform-origin: bottom;
+    }
+    to {
+      transform: scaleY(1);
+      transform-origin: bottom;
+    }
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s ease-out backwards;
+  }
+
+  /* Pulse glow effect for updates */
+  @keyframes pulseGlow {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
+    }
+    50% {
+      box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+    }
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 2s ease-out;
+  }
+
+  /* Empty state animation */
+  .empty-state {
+    animation: fade-in-up 0.5s ease-out;
+  }
+
+  /* Route transition — subtle fade + lift on page navigation */
+  /* Route-level fade-in.
+     This animation is on a wrapper that is an ancestor of every page's
+     AppShell (RouteTransition wraps Routes in App.tsx). Per CSS spec, ANY
+     non-`none` transform on an ancestor of a `position: fixed` element
+     creates a containing block — making the fixed element scoped to the
+     ancestor instead of the viewport, which scrolls it with page content.
+     A previous version animated `transform: translateY(6px) → translateY(0)`,
+     which Chrome retained as `matrix(1,0,0,1,0,0)` after `fill-mode: both`
+     completed. That identity matrix is still non-`none` and broke the
+     AppShell sidebar's fixed positioning across the app — scrolling caused
+     the sidebar's menu items to scroll out of view, leaving only the bottom
+     SidebarFooter visible. Opacity-only animation has no such side effect.
+     See systematic debugging session 2026-05-08. */
+  @keyframes route-enter {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .animate-route-enter {
+    animation: route-enter 0.25s ease-out both;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   v2 Editorial vocabulary
+   ─────────────────────────────────────────────────────────────
+   Class patterns ported from
+     /tmp/declutr-design/.../ui_kits/product/v2/marketing/v2-marketing.css
+   for use on marketing surfaces (Landing / Pricing / Compare / FAQ / Legal /
+   Contact / Blog / Guides). 8 named classes per v2 handoff:
+     .masthead .strap .twoup .tiers .qa .cmp .pullquote .code
+   Token references rewritten from the design's `--ink/--sub/--rule/...`
+   vocabulary onto this file's existing token set (--foreground / --muted /
+   --border / etc.) plus the new tokens added in the :root block above
+   (--ink-sub / --rule-soft / --success / --warning / --success-strong /
+   --warning-strong / --danger).
+   Product surfaces (Dashboard / Settings / etc.) MUST NOT consume these
+   classes — editorial typography is marketing-only per the design gotcha.
+   ───────────────────────────────────────────────────────────── */
+@layer components {
+  /* ── Masthead — sticky marketing header (brand + nav + cta) ── */
+  .masthead {
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .masthead .inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  @media (max-width: 720px) {
+    .masthead .inner {
+      padding: 14px 18px;
+    }
+  }
+  .masthead .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    color: hsl(var(--foreground));
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .masthead .brand .mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 5px;
+    background: hsl(var(--primary));
+    color: #fff;
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 14px;
+    font-variation-settings: "opsz" 144;
+    align-self: center;
+  }
+  .masthead .brand .mark em {
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.55);
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 1;
+    margin-left: 1px;
+    font-weight: 600;
+  }
+  .masthead .brand .word {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.008em;
+    line-height: 1;
+  }
+  .masthead .brand .word em {
+    font-style: italic;
+    color: hsl(var(--primary));
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 1;
+  }
+  .masthead nav {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+  .masthead nav a {
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: hsl(var(--ink-sub));
+    padding: 6px 0;
+    white-space: nowrap;
+  }
+  .masthead nav a:hover {
+    color: hsl(var(--foreground));
+  }
+  .masthead nav a.active,
+  .masthead nav a[aria-current="page"] {
+    color: hsl(var(--primary));
+    font-weight: 600;
+  }
+  .masthead .cta {
+    padding: 8px 14px;
+    background: hsl(var(--foreground));
+    color: #fff;
+    border-radius: 6px;
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+  .masthead .cta:hover {
+    background: hsl(var(--primary));
+  }
+  @media (max-width: 760px) {
+    .masthead nav a:not(.cta) {
+      display: none;
+    }
+  }
+
+  /* ── Strap — sub-bar with three short bits (date · authors · meta) ── */
+  .strap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    padding: 10px 0;
+    border-bottom: 1px solid hsl(var(--border));
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+  .strap > * {
+    white-space: nowrap;
+  }
+  .strap em {
+    font-style: italic;
+    color: hsl(var(--foreground));
+  }
+  @media (max-width: 760px) {
+    .strap {
+      flex-wrap: wrap;
+      gap: 6px 18px;
+    }
+    .strap > * {
+      white-space: normal;
+    }
+  }
+
+  /* ── Twoup — two-column editorial body ── */
+  .twoup {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+  }
+  @media (max-width: 880px) {
+    .twoup {
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+  }
+  .twoup > div p {
+    margin: 0 0 14px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: hsl(var(--ink-sub));
+  }
+  .twoup > div p:last-child {
+    margin-bottom: 0;
+  }
+  .twoup > div p strong {
+    color: hsl(var(--foreground));
+    font-weight: 600;
+  }
+
+  /* ── Tiers — pricing cards (3-up, middle featured) ── */
+  .tiers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    background: hsl(var(--card));
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+  @media (max-width: 880px) {
+    .tiers {
+      grid-template-columns: 1fr;
+    }
+  }
+  .tiers .tier {
+    padding: 28px 28px 24px;
+    border-right: 1px solid hsl(var(--border));
+    display: flex;
+    flex-direction: column;
+    background: hsl(var(--card));
+  }
+  .tiers .tier:last-child {
+    border-right: none;
+  }
+  @media (max-width: 880px) {
+    .tiers .tier {
+      border-right: none;
+      border-bottom: 1px solid hsl(var(--border));
+    }
+    .tiers .tier:last-child {
+      border-bottom: none;
+    }
+  }
+  .tiers .tier.featured {
+    background: hsl(var(--primary) / 0.08);
+    position: relative;
+  }
+  .tiers .tier.featured::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border: 1px solid hsl(var(--primary) / 0.35);
+  }
+  .tiers .tier h3 {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 26px;
+    letter-spacing: -0.012em;
+    line-height: 1.1;
+    margin: 0 0 4px;
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 0,
+      "WONK" 0;
+  }
+  .tiers .tier .price {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 600;
+    font-size: 38px;
+    letter-spacing: -0.018em;
+    line-height: 1;
+    margin: 14px 0 4px;
+    font-variation-settings: "opsz" 144;
+  }
+  .tiers .tier .price em {
+    font-style: italic;
+    color: hsl(var(--primary));
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 1;
+  }
+  .tiers .tier .price small {
+    display: block;
+    margin-top: 6px;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    font-weight: 500;
+  }
+  .tiers .tier .desc {
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 14px;
+    color: hsl(var(--ink-sub));
+    line-height: 1.55;
+    margin: 0 0 18px;
+    max-width: 32ch;
+  }
+  .tiers .tier ul {
+    list-style: none;
+    margin: 0 0 20px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tiers .tier ul li {
+    font-size: 13.5px;
+    line-height: 1.5;
+    padding-left: 22px;
+    position: relative;
+    color: hsl(var(--foreground));
+  }
+  .tiers .tier ul li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    top: 0;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 700;
+    color: hsl(var(--primary));
+    font-size: 12.5px;
+  }
+  .tiers .tier ul li strong {
+    font-weight: 600;
+  }
+  .tiers .tier ul li em {
+    font-style: italic;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.92em;
+  }
+  .tiers .tier ul li.off {
+    color: hsl(var(--muted-foreground));
+  }
+  .tiers .tier ul li.off::before {
+    content: "—";
+    color: hsl(var(--muted-foreground));
+    font-weight: 500;
+  }
+  .tiers .tier .footer {
+    margin-top: auto;
+    padding-top: 4px;
+  }
+
+  /* ── Qa — FAQ accordion using <details>/<summary> ── */
+  .qa {
+    border-top: 1px solid hsl(var(--border));
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .qa details {
+    border-bottom: 1px solid hsl(var(--border));
+    padding: 0;
+  }
+  .qa details:last-child {
+    border-bottom: none;
+  }
+  .qa summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 18px 4px;
+    font-family: "Inter", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    color: hsl(var(--foreground));
+    line-height: 1.4;
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    align-items: baseline;
+    transition: color 0.12s;
+  }
+  .qa summary:hover {
+    color: hsl(var(--primary));
+  }
+  .qa summary::-webkit-details-marker {
+    display: none;
+  }
+  .qa summary::after {
+    content: "+";
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 18px;
+    font-weight: 500;
+    color: hsl(var(--primary));
+    line-height: 1;
+    flex-shrink: 0;
+    transition: transform 0.2s;
+  }
+  .qa details[open] summary {
+    color: hsl(var(--primary));
+  }
+  .qa details[open] summary::after {
+    transform: rotate(45deg);
+  }
+  .qa .a {
+    margin: 0 0 18px;
+    padding: 0 4px;
+    font-size: 14.5px;
+    line-height: 1.65;
+    color: hsl(var(--ink-sub));
+    max-width: 68ch;
+  }
+  .qa .a strong {
+    color: hsl(var(--foreground));
+    font-weight: 600;
+  }
+  .qa .a a {
+    color: hsl(var(--primary));
+    border-bottom: 1px solid hsl(var(--primary) / 0.35);
+    padding-bottom: 1px;
+  }
+  .qa .a a:hover {
+    border-bottom-color: hsl(var(--primary));
+  }
+
+  /* ── Cmp — feature comparison table ── */
+  .cmp {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: "Inter", system-ui, sans-serif;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .cmp th,
+  .cmp td {
+    padding: 14px 16px;
+    border-bottom: 1px solid hsl(var(--border));
+    vertical-align: top;
+    text-align: left;
+    font-size: 13.5px;
+    line-height: 1.5;
+  }
+  .cmp tr:last-child td {
+    border-bottom: none;
+  }
+  .cmp thead th {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    font-weight: 600;
+    background: hsl(var(--muted));
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .cmp .us {
+    background: hsl(var(--primary) / 0.08);
+  }
+  .cmp thead .us {
+    color: hsl(var(--primary));
+  }
+  .cmp .row-label {
+    font-family: "Inter", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    color: hsl(var(--foreground));
+    width: 25%;
+  }
+  .cmp .yes {
+    color: hsl(var(--success-strong));
+    font-weight: 600;
+  }
+  .cmp .no {
+    color: hsl(var(--muted-foreground));
+  }
+  .cmp .pill-yes,
+  .cmp .pill-no,
+  .cmp .pill-maybe {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .cmp .pill-yes {
+    background: hsl(var(--success) / 0.08);
+    color: hsl(var(--success-strong));
+    border: 1px solid hsl(var(--success) / 0.25);
+  }
+  .cmp .pill-no {
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+    border: 1px solid hsl(var(--border));
+  }
+  .cmp .pill-maybe {
+    background: hsl(var(--warning) / 0.1);
+    color: hsl(var(--warning-strong));
+    border: 1px solid hsl(var(--warning) / 0.3);
+  }
+
+  /* ── Pullquote — editorial pull-quote (centered, top+bottom rules) ── */
+  .pullquote {
+    margin: 36px auto;
+    max-width: 56ch;
+    padding: 28px 0;
+    border-top: 1px solid hsl(var(--border));
+    border-bottom: 1px solid hsl(var(--border));
+    text-align: center;
+  }
+  .pullquote q {
+    font-family: "Fraunces", "Times New Roman", serif;
+    font-weight: 500;
+    font-size: clamp(22px, 2.4vw, 30px);
+    line-height: 1.32;
+    letter-spacing: -0.012em;
+    quotes: "" "";
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 0,
+      "WONK" 0;
+  }
+  .pullquote q em {
+    font-style: italic;
+    color: hsl(var(--primary));
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 1;
+  }
+  .pullquote .attr {
+    display: block;
+    margin-top: 14px;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* ── Code — editorial inline code block (used on how-it-works) ── */
+  .code {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    padding: 18px 22px;
+    margin: 18px 0;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: hsl(var(--foreground));
+    white-space: pre-wrap;
+    box-shadow: var(--shadow-sm);
+  }
+  .code .kw {
+    color: hsl(var(--primary));
+    font-weight: 600;
+  }
+  .code .lit {
+    color: hsl(var(--warning-strong));
+  }
+}
