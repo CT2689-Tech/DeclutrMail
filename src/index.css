@@ -1202,7 +1202,10 @@
     color: hsl(var(--primary));
     font-weight: 600;
   }
-  .nav .cta {
+  /* .cta is nested inside .links, so .nav .links a (specificity 21)
+     would beat plain .nav .cta (20) and strip the button's padding +
+     white text. Match the descendant selector to win specificity. */
+  .nav .links a.cta {
     padding: 8px 14px;
     background: hsl(var(--foreground));
     color: #fff;
@@ -1211,8 +1214,9 @@
     font-size: 13px;
     font-weight: 600;
   }
-  .nav .cta:hover {
+  .nav .links a.cta:hover {
     background: hsl(var(--primary));
+    color: #fff;
   }
   @media (max-width: 760px) {
     .nav .links a:not(.cta) {

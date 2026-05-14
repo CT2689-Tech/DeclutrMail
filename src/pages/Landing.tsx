@@ -56,12 +56,7 @@ export default function Landing() {
                 ↓
               </span>
             </a>
-            <Link to="/how-it-works">
-              <span style={{ fontFamily: "var(--font-mono)" }} aria-hidden="true">
-                {"</>"}
-              </span>{" "}
-              Architecture
-            </Link>
+            <Link to="/how-it-works">Architecture</Link>
           </div>
         </div>
       </div>
@@ -244,10 +239,8 @@ export default function Landing() {
               <div className="l">To change your mind</div>
             </div>
             <div className="cell">
-              <div className="n">
-                <em>Never</em>
-              </div>
-              <div className="l">Do we read your messages</div>
+              <div className="n">0 bytes</div>
+              <div className="l">Of your messages, ever read</div>
             </div>
             <div className="cell">
               <div className="n">Free</div>
@@ -812,7 +805,7 @@ const FAQ_ITEMS: FaqItemData[] = [
         Privacy — <em>really?</em>
       </>
     ),
-    tags: [{ label: "Privacy", tone: "primary" }, { label: "Checked automatically" }],
+    tags: [{ label: "Privacy", tone: "primary" }, { label: "Verifiable" }],
     body: (
       <>
         Really. We see who sent each email, the subject line, and the short preview Gmail already
