@@ -664,6 +664,83 @@
     font-weight: 600;
   }
 
+  /* ── Billing-period toggle — Monthly / Yearly switch above the tiers.
+     Used to push the recurring Pro tier toward annual (default).
+     Editorial styling: pill-shaped, mono-caps labels, primary-soft for
+     the selected state, "save 45%" italic teal accent on the yearly
+     side. Calm-operator voice: no exclamation point, no urgency timer,
+     savings visible but not shouted. ── */
+  .billing-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 4px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 9999px;
+    box-shadow: var(--shadow-sm);
+  }
+  .billing-toggle button {
+    appearance: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 8px 18px;
+    border-radius: 9999px;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    color: hsl(var(--ink-sub));
+    letter-spacing: normal;
+    transition:
+      background 0.15s,
+      color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .billing-toggle button:hover {
+    color: hsl(var(--foreground));
+  }
+  .billing-toggle button[aria-pressed="true"] {
+    background: hsl(var(--primary));
+    color: #fff;
+  }
+  .billing-toggle button[aria-pressed="true"] .badge {
+    color: hsl(174 70% 80%);
+  }
+  .billing-toggle .badge {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 12px;
+    font-weight: 500;
+    color: hsl(var(--primary));
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 0;
+  }
+  .billing-toggle-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 0 0 32px;
+  }
+
+  /* ── Savings accent on Pro tier ── */
+  .tiers .tier .savings {
+    display: block;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 17px;
+    color: hsl(var(--primary));
+    margin: 8px 0 0;
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 0;
+    letter-spacing: -0.005em;
+  }
+
   /* ── Tiers — pricing cards (auto-fit columns, featured highlighted) ──
      Originally 3-up per v2-marketing.css §625-701; relaxed to support
      4 columns when a Pro Pass tier is shown. Below 1100px collapses

@@ -1,31 +1,50 @@
 import { Helmet } from "react-helmet-async";
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { PageMast } from "@/components/brand";
 
 /**
  * Pricing — DeclutrMail's tier comparison page.
  *
  * Source: /tmp/declutr-design-bd3l/.../marketing/pricing.html (230 lines
- * canonical) plus billing.jsx (defines Pro Pass: $12 / 7-day one-time
- * full-Pro pass — the canonical dropped Pro Pass from the tier menu,
- * we keep it because users asked for the trial-pass option).
+ * canonical) plus billing.jsx (Pro Pass: $12 / 7-day one-time pass).
+ *
+ * Creative annual-push design (calm-operator voice, not shouty):
+ *   - Monthly/Yearly toggle above the tiers, defaulting to Yearly
+ *   - Pro tier dynamically shows yearly ($59/yr) or monthly ($9/mo)
+ *   - Yearly state shows italic Fraunces savings accent: "Five months
+ *     on us" + "Don't think about it again until 2027" framing —
+ *     emphasizes the calm-operator/set-and-forget brand value
+ *   - Monthly state shows a subtle one-line "Or save $49 with annual →"
+ *     hint, no aggressive nag
+ *   - Free, Pro Pass, Team are billing-period-independent (no change)
  *
  * Built against docs/marketing-pages.md:
- *   - Hero h1: .display class (Fraunces); single italic differentiator
- *   - Body text: 17px hero deck (LEAD) + 15px everywhere else (BODY)
- *   - Italic accents: 4 (hero, section-head, conv banner, footer tagline)
+ *   - 4 italic accents total (hero, conv banner, footer tagline, Pro
+ *     savings accent when Yearly selected)
  *   - All italic uses WONK 0 + SOFT 100
- *   - PageMast for sticky masthead
- *   - No Roman numerals — match Landing's no-numbered-sections rhythm
+ *   - Body sizes: 17 LEAD / 15 BODY / 13.5 SMALL
+ *   - Tier descs describe audience; lists describe features (no overlap)
+ *   - Tier inheritance reads left-to-right (Free → Pro → Pro Pass → Team)
  */
+
+type BillingPeriod = "monthly" | "yearly";
+
+const PRO_MONTHLY = 9;
+const PRO_YEARLY = 59;
+// $9 × 12 = $108/yr at monthly billing → $108 − $59 = $49 saved on annual.
+
 export default function Pricing() {
+  const [period, setPeriod] = useState<BillingPeriod>("yearly");
+  const isYearly = period === "yearly";
+
   return (
     <>
       <Helmet>
         <title>Pricing — DeclutrMail</title>
         <meta
           name="description"
-          content="Free to start. Pro Pass for a one-time 7-day cleanup. Pro for ongoing automatic cleanups. Teams ship Q3 2026."
+          content="Free to start. Pro Pass for a one-time 7-day cleanup. Pro for ongoing automatic cleanups — pay yearly and save $49. Teams ship Q3 2026."
         />
       </Helmet>
 
@@ -55,9 +74,8 @@ export default function Pricing() {
             </h1>
             <p className="deck">
               No credit card to try. Pro Pass clears a one-time mess for $12. Pro adds nightly
-              automatic cleanups for $9/month. Teams get exportable activity logs and admin
-              controls. Cancel any time — your activity log stays in your account for two years
-              either way.
+              automatic cleanups — pay yearly and save $49. Cancel any time; your activity log stays
+              in your account for two years either way.
             </p>
           </div>
         </section>
@@ -65,6 +83,19 @@ export default function Pricing() {
         {/* Tiers */}
         <section className="section">
           <div className="container">
+            {/* Billing-period toggle */}
+            <div className="billing-toggle-wrap">
+              <div className="billing-toggle" role="group" aria-label="Pro billing period">
+                <button type="button" aria-pressed={!isYearly} onClick={() => setPeriod("monthly")}>
+                  Monthly
+                </button>
+                <button type="button" aria-pressed={isYearly} onClick={() => setPeriod("yearly")}>
+                  Yearly
+                  <span className="badge">save $49</span>
+                </button>
+              </div>
+            </div>
+
             <div className="tiers">
               {/* Free — baseline */}
               <div className="tier">
@@ -96,7 +127,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              {/* Pro — featured, recurring */}
+              {/* Pro — featured, period-aware */}
               <div className="tier featured">
                 <span
                   className="eyebrow eyebrow-primary"
@@ -105,11 +136,40 @@ export default function Pricing() {
                   — Most popular —
                 </span>
                 <h3>Pro</h3>
-                <div className="price">
-                  $9
-                  <small>per month · or $59/year (save $49)</small>
-                </div>
-                <p className="desc">
+                {isYearly ? (
+                  <>
+                    <div className="price">
+                      ${PRO_YEARLY}
+                      <small>Per year · don’t think about it again until 2027</small>
+                    </div>
+                    <em className="savings">Five months on us.</em>
+                  </>
+                ) : (
+                  <>
+                    <div className="price">
+                      ${PRO_MONTHLY}
+                      <small>Per month · pause anytime</small>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPeriod("yearly")}
+                      className="btn-link"
+                      style={{
+                        display: "inline-block",
+                        marginTop: 8,
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        cursor: "pointer",
+                        font: "inherit",
+                        fontSize: 13,
+                      }}
+                    >
+                      Or save $49 with annual →
+                    </button>
+                  </>
+                )}
+                <p className="desc" style={{ marginTop: 16 }}>
                   For the user with eight years of inbox and zero patience for it.
                 </p>
                 <ul>
@@ -129,11 +189,11 @@ export default function Pricing() {
                 </ul>
                 <div className="footer">
                   <Link
-                    to="/sign-in?plan=pro"
+                    to={`/sign-in?plan=pro&period=${period}`}
                     className="btn btn-primary"
                     style={{ width: "100%", justifyContent: "center" }}
                   >
-                    Start Pro →
+                    Start Pro {isYearly ? "· annual" : "· monthly"} →
                   </Link>
                 </div>
               </div>
@@ -238,19 +298,20 @@ export default function Pricing() {
                   messages.
                 </p>
                 <p>
-                  That’s why our price looks like a cleanup tool ($9/mo) instead of like an AI
-                  coworker ($20–40/mo). You’re paying for the cleanup, not the AI calls.
+                  That’s why our price looks like a cleanup tool ($9/mo or $59/yr) instead of like
+                  an AI coworker ($20–40/mo). You’re paying for the cleanup, not the AI calls.
                 </p>
               </div>
               <div>
                 <p>
-                  If you cancel, your account stays read-only for two years. The activity log
-                  doesn’t go away. Rules stop firing, but you can come back, verify what we did
-                  while you were paying, and export everything.
+                  Annual saves you $49 because we save on the payment processor’s monthly cut and
+                  pass it through. No teaser pricing, no countdown — the math is the math, and you
+                  can switch billing at any time from Settings.
                 </p>
                 <p>
-                  Refunds within 30 days, no questions. Monthly or annual. If you switch from Free
-                  to Pro mid-month, we prorate the next bill.
+                  Cancel and your account stays read-only for two years. The activity log doesn’t go
+                  away. Refunds within 30 days, no questions. If you switch from Free to Pro
+                  mid-cycle, we prorate the next bill.
                 </p>
               </div>
             </div>
@@ -281,7 +342,15 @@ export default function Pricing() {
                   sender-level cleanup actions is usually enough to clear most of a first-time mess
                   (one action archives every message from one sender). For a one-shot bigger
                   cleanup, Pro Pass is $12 for 7 days of unlimited Pro. For ongoing cleanup, Pro is
-                  $9/month. We’d rather price clearly than dangle a 14-day countdown.
+                  $9/month or $59/year. We’d rather price clearly than dangle a 14-day countdown.
+                </p>
+              </details>
+              <details>
+                <summary>Can I switch between monthly and yearly later?</summary>
+                <p className="a">
+                  Yes, any time from Settings → Billing. If you switch from monthly to annual
+                  mid-cycle, we prorate. If you switch annual to monthly, the annual rate stays in
+                  effect until your renewal date.
                 </p>
               </details>
               <details>
