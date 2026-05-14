@@ -96,38 +96,6 @@ export default function Pricing() {
                 </div>
               </div>
 
-              {/* Pro Pass — all of Pro, time-boxed to 7 days */}
-              <div className="tier">
-                <h3>Pro Pass</h3>
-                <div className="price">
-                  $12
-                  <small>One-time · 7 days</small>
-                </div>
-                <p className="desc">
-                  All of Pro, for 7 days. One payment, no auto-renew. Drops back to Free on day 8.
-                </p>
-                <ul>
-                  <li>
-                    <strong>Everything in Pro</strong>, for 7 days
-                  </li>
-                  <li>One Gmail account</li>
-                  <li>Unlimited cleanup actions during the pass</li>
-                  <li>Nightly automatic cleanups while active</li>
-                  <li>Full activity log · export anytime</li>
-                  <li>No subscription · no auto-renew</li>
-                  <li>Drops back to Free on day 8 automatically</li>
-                </ul>
-                <div className="footer">
-                  <Link
-                    to="/sign-in?plan=pass"
-                    className="btn btn-ghost"
-                    style={{ width: "100%", justifyContent: "center" }}
-                  >
-                    Get the pass →
-                  </Link>
-                </div>
-              </div>
-
               {/* Pro — featured, recurring */}
               <div className="tier featured">
                 <span
@@ -166,6 +134,38 @@ export default function Pricing() {
                     style={{ width: "100%", justifyContent: "center" }}
                   >
                     Start Pro →
+                  </Link>
+                </div>
+              </div>
+
+              {/* Pro Pass — all of Pro, time-boxed to 7 days */}
+              <div className="tier">
+                <h3>Pro Pass</h3>
+                <div className="price">
+                  $12
+                  <small>One-time · 7 days</small>
+                </div>
+                <p className="desc">
+                  All of Pro, for 7 days. One payment, no auto-renew. Drops back to Free on day 8.
+                </p>
+                <ul>
+                  <li>
+                    <strong>Everything in Pro</strong>, for 7 days
+                  </li>
+                  <li>One Gmail account</li>
+                  <li>Unlimited cleanup actions during the pass</li>
+                  <li>Nightly automatic cleanups while active</li>
+                  <li>Full activity log · export anytime</li>
+                  <li>No subscription · no auto-renew</li>
+                  <li>Drops back to Free on day 8 automatically</li>
+                </ul>
+                <div className="footer">
+                  <Link
+                    to="/sign-in?plan=pass"
+                    className="btn btn-ghost"
+                    style={{ width: "100%", justifyContent: "center" }}
+                  >
+                    Get the pass →
                   </Link>
                 </div>
               </div>
