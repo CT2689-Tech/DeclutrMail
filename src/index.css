@@ -67,7 +67,7 @@
     font-optical-sizing: auto;
     font-variation-settings:
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
     letter-spacing: -0.018em;
   }
   .font-serif-body {
@@ -107,7 +107,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 80,
-      "WONK" 1;
+      "WONK" 0;
     font-weight: 600;
     float: left;
     font-size: 5.4em;
@@ -542,7 +542,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
     margin-left: 1px;
     font-weight: 600;
   }
@@ -559,7 +559,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .masthead nav {
     display: flex;
@@ -738,7 +738,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .tiers .tier .price small {
     display: block;
@@ -985,7 +985,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .pullquote .attr {
     display: block;
@@ -1164,7 +1164,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
     margin-left: 1px;
     font-weight: 600;
   }
@@ -1181,7 +1181,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .nav .links {
     display: flex;
@@ -1333,7 +1333,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
     color: hsl(var(--primary));
   }
   .hero .deck {
@@ -1464,7 +1464,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .section .sub {
     font-size: 15.5px;
@@ -1554,7 +1554,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .stat-strip .l {
     font-family: var(--font-mono);
@@ -1669,6 +1669,20 @@
     font-weight: 700;
     font-size: 11px;
     flex-shrink: 0;
+    overflow: hidden;
+    /* Background color is the letter-fallback layer. The <img> favicon
+       sits on top with object-fit: cover. If the img fails (network /
+       privacy blocker / no favicon), the bg + letter behind it shows. */
+    position: relative;
+  }
+  .preview-row .av img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+    /* Hide alt text if img fails — the bg + letter underneath is the
+       real fallback, no need to also show broken-image alt text. */
+    color: transparent;
   }
   .preview-row .who .n {
     font-size: 13px;
@@ -1762,7 +1776,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .conv p {
     color: hsl(220 13% 75%);
@@ -1809,7 +1823,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .site-footer h5 {
     font-family: var(--font-mono);
@@ -1874,7 +1888,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .section-head .idx {
     font-family: var(--font-mono);
@@ -1913,7 +1927,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .it,
   em.it {
@@ -1922,7 +1936,7 @@
     font-variation-settings:
       "opsz" 144,
       "SOFT" 100,
-      "WONK" 1;
+      "WONK" 0;
   }
   .serif-italic {
     font-style: italic;

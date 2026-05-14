@@ -128,6 +128,12 @@ export default function Landing() {
                   <div className="preview-row" data-row="linkedin">
                     <span className="av" style={{ background: "#DC2626" }}>
                       L
+                      <img
+                        src="https://www.google.com/s2/favicons?domain=linkedin.com&sz=64"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
                     </span>
                     <div className="who">
                       <div className="n">LinkedIn</div>
@@ -163,6 +169,12 @@ export default function Landing() {
                   >
                     <span className="av" style={{ background: "#B45309" }}>
                       G
+                      <img
+                        src="https://www.google.com/s2/favicons?domain=groupon.com&sz=64"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
                     </span>
                     <div className="who">
                       <div className="n">Groupon</div>
@@ -184,8 +196,14 @@ export default function Landing() {
                   </div>
 
                   <div className="preview-row" data-row="substack">
-                    <span className="av" style={{ background: "#7C3AED" }}>
-                      L
+                    <span className="av" style={{ background: "#FF6719" }}>
+                      S
+                      <img
+                        src="https://www.google.com/s2/favicons?domain=substack.com&sz=64"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
                     </span>
                     <div className="who">
                       <div className="n">Letters of Note · Substack</div>
@@ -451,7 +469,7 @@ export default function Landing() {
                   <em
                     style={{
                       fontStyle: "italic",
-                      fontVariationSettings: '"opsz" 144,"SOFT" 100,"WONK" 1',
+                      fontVariationSettings: '"opsz" 144,"SOFT" 100,"WONK" 0',
                       color: "#79E6DC",
                     }}
                   >
