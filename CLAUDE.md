@@ -1,201 +1,474 @@
-# CLAUDE.md — DeclutrMail v2
+# CLAUDE.md — DeclutrMail
 
-## Project Overview
+This document is the contract every PR — human or agent — ships against. It encodes what production-ready means for this codebase, the bars each change meets, and how subagents take features end-to-end without quality drift. Agents read it at the start of every session.
 
-DeclutrMail is an email cleanup SaaS product. This repository is the **v2 ground-up rebuild** — a fresh React SPA that connects to a Supabase backend with Edge Functions. The build philosophy is **one feature at a time**, end-to-end (UI route + edge function + DB migration + tests + design pixel-match), each feature shippable on its own.
+## 1. What this is
 
-v1 (the legacy implementation) lives at a separate repo and is used only as **read-only behavioral reference**.
+DeclutrMail is a Gmail cleanup SaaS. Promise to users: we never read email bodies, every action is undoable for 7 days, the voice is a calm operator.
 
-## Tech Stack (seed)
+Build model: **one feature at a time, end-to-end.** A feature is a vertical slice (route + data + tests + design match) that ships independently. Foundation grows as features pull it in, not before.
 
-The seed scaffold ships the minimum to render a real React app with the v2 editorial design system. Dependencies are added per-feature, not speculatively.
+## 2. Tech stack
 
-- **Framework**: React 18 + TypeScript 5.8
-- **Build Tool**: Vite 7 (ESM)
-- **Styling**: Tailwind CSS 3 (with the v2 editorial vocabulary + semantic tokens)
-- **Routing**: React Router v6 (BrowserRouter)
-- **SEO meta**: react-helmet-async
-- **Testing**: Vitest + React Testing Library + jest-dom matchers
-- **Linting**: ESLint 9 flat config + jsx-a11y + react-hooks + testing-library + jest-dom
-- **Formatting**: Prettier
-- **Pre-commit**: Husky 9 + lint-staged
+Today, in this repo:
 
-Deferred (each lands with the feature that needs it):
+- React 18 + TypeScript 5.8 + Vite 7
+- Tailwind 3 + `@tailwindcss/typography` + `tailwindcss-animate`
+- React Router 6 (BrowserRouter)
+- `react-helmet-async`
+- Vitest 3 + Testing Library + jest-dom + jsdom
+- ESLint 9 flat config (typescript-eslint + react-hooks + jsx-a11y + testing-library + jest-dom)
+- Prettier 3 + Husky 9 + lint-staged
 
-- **Backend client**: `@supabase/supabase-js` — first feature with persisted state
-- **Data fetching**: `@tanstack/react-query` — first feature with server data
-- **Form handling**: `react-hook-form` + `zod` — first feature with forms
-- **Animations**: `framer-motion` — first feature that demands them
-- **Component primitives**: `@radix-ui/*` (shadcn-style) — first feature that needs accessible interactive primitives
-- **Monitoring**: `@sentry/react`, `@vercel/analytics`, web-vitals — Phase 5 polish
-- **Marketing SEO**: `@prerenderer/rollup-plugin`, `puppeteer`, `@sparticuz/chromium` — when marketing routes ship
-- **MDX content**: `@mdx-js/*` — when blog/guides land
-- **Payments**: Paddle / Razorpay SDKs — billing feature
-- **E2E**: `@playwright/test`, `@axe-core/playwright` — first end-to-end happy-path
+Added per-feature, not pre-staged:
 
-## Commands
+| Dep                                                | Lands with                                              |
+| -------------------------------------------------- | ------------------------------------------------------- |
+| `@supabase/supabase-js`                            | First backend-touching feature                          |
+| `@tanstack/react-query`                            | First server-state feature                              |
+| `@radix-ui/*` (shadcn primitives)                  | First feature needing accessible interactive primitives |
+| `react-hook-form` + `zod`                          | First form                                              |
+| `framer-motion`                                    | First motion beyond CSS keyframes                       |
+| `@sentry/react`, `@vercel/analytics`, `web-vitals` | First production deploy with monitoring                 |
+| `@prerenderer/rollup-plugin` + `puppeteer`         | First marketing route                                   |
+| Paddle / Razorpay SDKs                             | Billing                                                 |
+| `@playwright/test` + `@axe-core/playwright`        | First e2e                                               |
+| `@mdx-js/*`                                        | First MDX content (blog / guides)                       |
 
-```bash
-npm run dev            # Start dev server (port 5173)
-npm run build          # Production build
-npm run preview        # Preview production build
+Don't pre-add. Don't pre-config.
+
+## 3. Commands
+
+```
+npm run dev            # vite dev server (5173)
+npm run build          # production build
+npm run preview        # preview build
 npm run typecheck      # tsc --noEmit
 npm run lint           # ESLint
 npm run format         # Prettier write
 npm run test           # Vitest (single run)
 npm run test:watch     # Vitest watch
-npm run test:coverage  # Vitest with v8 coverage
+npm run test:coverage  # v8 coverage
 ```
 
-### Pre-commit hook
+DB / deploy / e2e scripts land with the features that need them.
 
-`npm run prepare` (auto-run on `npm install`) registers Husky. The `.husky/pre-commit` hook runs `lint-staged` which applies `eslint --fix` then `prettier --write` to staged `.ts`/`.tsx`/`.js`/`.mjs`/`.cjs` files, and `prettier --write` to staged `.json`/`.css`/`.md`. **Never use `--no-verify`.** If a hook fails, fix the underlying issue and create a NEW commit (do not amend — pre-commit failure means the commit didn't happen, so `--amend` would target the wrong commit).
+## 4. Path aliases
 
-## Path Aliases
+`@/*` → `./src/*`. No other aliases until a real cross-package need exists.
 
-- `@/*` → `./src/*` (configured in `tsconfig.json`, `tsconfig.app.json`, and `vite.config.ts`)
+## 5. Repository conventions
 
-## v1 Reference Path
+Folder structure (grows organically; this is the shape it grows _into_):
 
-The legacy v1 implementation lives at:
-
-- **Local path**: `/Users/chintant/projects/declutr-front-zen`
-- **GitHub**: `CT2689-Tech/declutr-front-zen`
-
-It is **read-only behavioral reference**. Never write to it from this project.
-
-When porting a feature:
-
-1. Read the equivalent v1 implementation to extract edge cases (the "Bug:" protocol lessons, the React Query gotchas, the "Design Gotchas" v1's CLAUDE.md spelled out — they were paid for in real bugs).
-2. Read the v2 design source at `/tmp/declutr-design/declutrmail-design-system/project/` — specifically `ui_kits/product/v2/screens/<screen>.jsx` and `ui_kits/product/v2/lib/api-catalog.jsx` for the relevant entry.
-3. Implement clean here. **Do not carry over v1 quirks** unless they were genuine edge-case fixes for real bugs (calendar invites in travel, sync-status race conditions, placeholderData traps).
-
-Inspecting v1 from this project:
-
-```bash
-# Read a v1 file
-Read /Users/chintant/projects/declutr-front-zen/src/pages/<File>.tsx
-
-# Inspect v1 git history
-git -C /Users/chintant/projects/declutr-front-zen log --oneline -10
-git -C /Users/chintant/projects/declutr-front-zen show <sha>
-
-# Grep across v1
-grep -rn "<pattern>" /Users/chintant/projects/declutr-front-zen/src
+```
+src/
+├── App.tsx               Routes only. Logic lives in feature folders.
+├── main.tsx              Entry; provider stack.
+├── index.css             Tailwind + design tokens + editorial vocabulary.
+├── components/
+│   ├── brand/            Editorial atoms. Marketing surfaces only.
+│   ├── ui/               Shadcn primitives, when first interactive feature needs them.
+│   └── <feature>/        Feature-scoped components.
+├── lib/
+│   ├── utils.ts          Tiny pure helpers (cn, etc.).
+│   ├── queryKeys.ts      Centralized React Query keys (when added).
+│   └── <domain>/         Domain modules: api/, auth/, etc.
+├── pages/
+│   └── <route>/          Page components, lazy-loaded.
+└── test/
+    └── setup.ts          Vitest globals.
 ```
 
-## Design Source
+Naming:
 
-The Claude Design handoff bundle is at:
+- Components: `PascalCase.tsx`, `export function ComponentName()`
+- Hooks: `use-kebab-case.ts`, `export function useCamelCase()`
+- Utility files: `kebab-case.ts`
+- Types: `PascalCase`, prefer `type` over `interface` unless declaration merging / extending externals is needed
 
-- **Local**: `/tmp/declutr-design/declutrmail-design-system/`
-- **Original URL**: `https://api.anthropic.com/v1/design/h/6WR5Q3o0DFEIe-b3iENBXw`
-
-Key reference docs in the bundle:
-
-- `project/Hand off to Claude Code.html` — master index
-- `project/Next session handoff.html` — five-phase rollout plan, design ↔ existing-code mapping, first 10 PRs (for v1; ignore for v2 fresh build, useful for scope)
-- `project/Performance and unified checkout notes.html` — perf targets, unified Razorpay/Paddle schema
-- `project/Product punch list.html` — six audit passes, 33/33 items closed
-- `project/colors_and_type.css` — design tokens (already ported to `src/index.css`)
-- `project/ui_kits/product/v2/screens/*.jsx` — 13 product screens (canonical layouts)
-- `project/ui_kits/product/v2/lib/api-catalog.jsx` — per-screen backend contract (queries, mutations, realtime events, schema changes, LLM use)
-- `project/ui_kits/product/v2/lib/brief-prompt.md` — exact prompt + token budget for the daily-brief Edge Function
-- `project/ui_kits/product/v2/lib/primitives.jsx` — React component primitives (DV\* atoms; partially ported into `src/components/brand/`)
-- `project/ui_kits/product/v2/marketing/v2-marketing.css` — marketing-page editorial vocabulary (the `.tiers`, `.qa`, `.cmp`, `.masthead` classes ported to `src/index.css`)
-
-Per the design's own README in the bundle, `_archive/` should be ignored.
-
-## Architecture Patterns (current seed)
-
-### Provider Hierarchy (current — minimal)
+Provider stack — strictly additive as features land. Today:
 
 ```
 HelmetProvider → BrowserRouter → Routes
 ```
 
-Each feature that lands adds providers as needed (Auth, QueryClient, Theme, etc.) — none added speculatively.
+Each new provider arrives with the first feature that requires it. Never pre-add.
 
-### Component Conventions
+## 6. The definition of done
 
-- Feature components grouped by domain under `src/components/<feature>/`
-- Brand atoms in `src/components/brand/` (editorial vocabulary; marketing-only — see Design Gotchas)
-- Page components in `src/pages/<route>/` once they exist (none yet — first feature creates the first route)
+A feature ships when ALL apply. Subagents that "feel done" without hitting this list are not done.
 
-## Working Discipline
+**UI**
 
-Three rules that apply to every task, not just bugs:
+- [ ] Route exists, reachable, lazy-loaded
+- [ ] Pixel-matches the design source
+- [ ] Keyboard accessible: axe-clean, focus rings visible, tab order correct
+- [ ] Responsive at ≤375 / 768 / ≥1280 px
+- [ ] Loading, empty, and error states all implemented (not just happy path)
+- [ ] `prefers-reduced-motion` respected for every animation
 
-1. **State assumptions before coding.** If the ask is ambiguous, name the ambiguity and pick one interpretation _explicitly_ — don't silently choose. If a simpler approach exists, say so before implementing the harder one.
-2. **Every changed line must trace to the request.** Don't "improve" adjacent code, reformat untouched files, or refactor things that aren't broken. If you notice unrelated dead code or smells, mention them — don't delete them. Clean up only orphans YOUR changes created (unused imports, now-dead variables).
-3. **Convert the ask into a verifiable goal before starting.** "Add X" → "X is wired up and clicking the button shows Y". "Fix bug" → follow the Bug: protocol. "Refactor Z" → "tests pass before and after, no behavior change". Weak success criteria ("make it work") produce wandering diffs.
+**Data**
 
-### Implementation discipline
+- [ ] Edge function deployed, exercisable via curl
+- [ ] Migration applied; no table without RLS
+- [ ] Query keys centralized; no inline string keys
+- [ ] Optimistic UI + rollback for any mutation > 200 ms server round-trip
 
-- **Delete legacy when your changes orphan it.** When renaming a route/page/component, the old file is deleted in the same PR. Imports, query keys, route entries, sidebar items — all swept together. Aliases live as 301 redirects on the _route_, not as preserved files in `src/`. Pre-existing dead code unrelated to your change: mention it, don't delete it (that's a separate cleanup PR).
-- **Length discipline.** If your change is 200 lines where 50 would do, rewrite. If a ported design screen comes out >2× the source `.jsx`'s line count, the port is over-engineered — rewrite.
-- **Match existing style, even if you'd do it differently.** Local style consistency beats global style preferences. If a directory uses `function Foo()` exports, your new component uses `function Foo()` exports, not `const Foo = () => {}`.
-- **No band-aid on data bugs (restated for surface work).** Already in Bug Fix Quality Standards; restated here so it applies to feature/refactor PRs too. UI guards (`?.`, `if (!data) return null`) are defense-in-depth only — the data source must be correct first.
-- **One feature at a time.** This is the v2 build philosophy. A feature is end-to-end (UI route + edge function + DB migration + tests + design pixel-match). Don't pre-build foundation that no feature uses; don't bundle two features into one PR.
+**Quality**
 
-## Bug Fix Quality Standards
+- [ ] TypeScript: 0 errors. No `any` without an `// @explained: …` comment
+- [ ] ESLint: 0 errors on touched files. Warnings only with PR explanation
+- [ ] Tests: happy path + ≥ 1 edge case + ≥ 1 error case
+- [ ] New-file coverage ≥ 70%
+- [ ] Bundle delta ≤ +25 KB gzipped (justify if higher)
+- [ ] Lighthouse on the affected route ≥ 90 across P/A/BP/SEO
 
-- **Root cause first**: NEVER propose fixes without tracing the full data flow. Symptom fixes create new bugs.
-- **No band-aids on data bugs**: When a UI value is wrong/null/missing, trace the full data pipeline (API → edge function → DB write → DB read → frontend) to find where the data breaks. Hiding/guarding the UI component is not a fix — it masks the root cause. Fix the data source, then add the UI guard as defense-in-depth.
-- **No hacky solutions**: If you don't fully understand the root cause, say so. Don't guess-and-check.
-- **End-to-end edge cases**: When fixing filter/pill/pagination behavior, verify ALL transitions (filtered→unfiltered, cached→uncached, placeholder→real data, empty→populated, back-to-back rapid switches).
-- **Run typecheck + tests before AND after**: `npm run typecheck && npm run test` — confirm no regressions.
-- **One fix, one concern**: Don't bundle unrelated changes. Each fix should address one root cause.
-- **Search for similar patterns**: After fixing any issue, search the entire codebase for the same anti-pattern. Present findings, plan, summary for user approval before implementing additional fixes.
+**Production safety**
 
-### Verification Evidence Protocol
+- [ ] Error boundary around the route
+- [ ] No loading state locks UI > 5 s without explanation copy
+- [ ] Error messages name what failed and what the user can do (no "Something went wrong")
+- [ ] Privacy oath upheld (see § 8)
+- [ ] No `console.log` in committed code; `warn`/`error` only with structured context
 
-After any change (fix, feature, refactor, polish), end the response with a "Verification" section that lists the exact commands run and their results. Not "tests pass" — the actual counts and the actual command. This turns completion claims into auditable evidence.
+**Docs**
+
+- [ ] PR description: what, why, verification commands run
+- [ ] `.env.local.example` updated if env vars added
+- [ ] CLAUDE.md updated if a quality bar or pattern changed
+
+## 7. Quality bars
+
+These are the numbers. They are the bar, not the aspiration.
+
+**Performance (production)**
+
+- LCP < 2.5 s on 4G throttled mid-tier mobile
+- INP < 200 ms
+- CLS < 0.1
+- Edge function p95: < 200 ms for read paths, < 500 ms for write paths that touch Gmail (with fast-ack)
+- Cold start budget: < 500 ms
+
+**Bundle**
+
+- New feature: ≤ +25 KB gzipped JS
+- Landing route post-prerender: ≤ 80 KB gzipped initial JS
+
+**Testing**
+
+- New-file coverage ≥ 70%
+- Repo-wide thresholds raise as coverage grows; never lower a threshold to make a test green
+- Every mutation has an optimistic-rollback test
+
+**Accessibility**
+
+- Lighthouse Accessibility ≥ 95
+- 0 axe-core violations on authenticated screens
+- WCAG 2.1 AA color contrast on primary text + interactive elements
+- Focus rings visible and meet 3:1 contrast
+- Reduced-motion alternative for every animated state
+
+**SEO (marketing routes)**
+
+- Lighthouse SEO ≥ 95
+- JSON-LD per route
+- Real HTML at first byte (prerender)
+- OG image present
+
+## 8. Privacy oath
+
+DeclutrMail's promise — every code path enforces it, every UI restates it:
+
+1. **Never reads email bodies.** Gmail metadata scope only. Headers + the same one-line ~160-char preview Gmail shows in list view is the maximum. Models that generate the daily Brief see only sender metadata.
+2. **Bodies-read counter.** Settings displays "Bodies read: 0 bytes." The number is verifiably zero. The day it isn't is a P0 incident.
+3. **7-day undo on every irreversible action.** Archive, mute, unsub, snooze, brief-archive, autopilot run — all reversible from the activity log for 7 days.
+4. **No third-party data egress beyond declared processors.** When an LLM is used, it's named (Anthropic Claude). No analytics provider ever sees email content. No "anonymous data product."
+5. **Hard delete on account removal.** All user-derived rows scrubbed from prod within 30 days of account deletion.
+6. **Open scopes manifest.** OAuth scopes listed in Settings → Privacy with plain-English explanation and raw scope strings behind a disclosure.
+
+Any feature that pressures these invariants is rejected. Any copy that softens the language ("we don't read bodies for ads" — implies we read for other reasons) is reverted.
+
+## 9. Working discipline
+
+Before writing code:
+
+1. **State assumptions explicitly.** If the ask is ambiguous, name the ambiguity and pick one interpretation. Don't silently choose. If a simpler approach exists, say so first.
+2. **Convert tasks into verifiable goals.** "Add X" → "X is wired up; clicking Y triggers Z; the happy-path test passes." Weak success criteria produce wandering diffs.
+3. **Match existing style.** Local style consistency over global preferences. If a directory uses `function Foo()` exports, your new file uses `function Foo()` exports.
+
+While writing:
+
+4. **Simplest code that solves the problem.** No speculative features. No abstractions for single-use code. No "flexibility" that wasn't asked for. If 200 lines could be 50, rewrite it.
+5. **Every changed line traces to the request.** Don't reformat untouched files. Don't refactor what isn't broken. Clean up only the orphans your changes created.
+6. **No band-aids.** Trace the full pipeline before patching at the UI. UI guards (`?.`, `if (!data) return null`) are defense-in-depth — the data source must be correct first.
+
+After writing:
+
+7. **Verify with command output, not vibes.** Every "done" claim ends with the commands run and the actual results. Not "tests pass" — the count. Not "looks good" — the screenshot. Not "the build worked" — the bundle delta.
+8. **Delete what you orphan.** Renaming a route → delete the old file in the same PR. Sweep imports, query keys, route entries together. Aliases live as 301 redirects on the route, not as preserved files in `src/`.
+
+## 10. Verification evidence
+
+Every "done" claim ends with:
 
 ```
 ### Verification
 - `npm run typecheck` → exit 0
 - `npm run test` → N passed / M skipped / 0 failed
-- `npx eslint <touched files>` → 0 errors, X warnings
+- `npm run lint` → 0 errors / X warnings (none in touched files)
+- `npm run build` → success; bundle delta +Y KB gzipped
+- [feature-specific] curl <endpoint> → 200 with expected shape
+- [UI features] screenshot attached vs design source
 ```
 
-Scale up as needed: add `npm run build` for build-affecting changes, a browser screenshot for visible UI changes, etc. Scale down only when the change genuinely doesn't touch code (pure docs) — state that explicitly: "No code changed, no verification commands run."
+Stale results don't count. If you edited after the last run, run again before claiming.
+Pure-docs PRs (no `.ts`/`.tsx`/`.css` touched) state explicitly: "No code changed, no verification commands run."
 
-### "Bug:" Prefix Protocol
+## 11. Subagent playbook
 
-When a message starts with **"Bug:"** or **"Bug -"**, follow strictly:
+**When to spawn:**
 
-1. **Trace the full data pipeline** before writing any code. Map: DB → RPC/query → edge function → API response → frontend hook → component. Identify where the contract breaks.
-2. **Fix at the source**, not the symptom. If the backend returns wrong data, fix the backend. If the DB query is wrong, fix the query. Don't patch the frontend to hide bad data.
-3. **Backend-first**: If a behavior can be driven/enforced by the backend, do it there. Frontend checks are defense-in-depth, never the primary fix.
-4. **Never ship a band-aid**. No `if (!data) return null` to hide a bug. No frontend filtering to compensate for a broken query. No `?.` chains to swallow nulls that shouldn't be null.
-5. **Verify the fix eliminates the root cause**, not just the visible symptom. Ask: "If I remove the frontend guard, does the bug still happen?" If yes, the fix is incomplete.
+- Scope is self-contained — the brief fits in one prompt without external memory
+- No mutable state shared with concurrent work
+- Verification is mechanical (tests, lint, build, screenshot diff)
+- Foreground work would otherwise serialize for ≥ 10 turns
 
-## Design Gotchas (carried forward from v1; verified against v2 design source)
+**When not to spawn:**
 
-- **Editorial typography is marketing-only.** The Fraunces broadsheet vocabulary (`font-display`, `font-display-italic`, `font-mono-edit`, `editorial-dropcap`, `.tiers`, `.qa`, `.cmp`, `.masthead`, `.strap`, `.twoup`, `.pullquote`, `.code`, and the `<BrandAtom/>`, `<Display/>`, `<Eyebrow/>`, `<PageMast/>`, `<Decision/>`, `<Pill/>` React components when used in their italic-display modes) belongs on public marketing pages — Landing, Pricing, FAQ, Compare, Blog, Guides, Legal, Contact. Product/app surfaces (auth, dashboard, review, undo, settings, billing, errors) use standard product UI patterns (Card/Dialog shells, sans-serif headings, familiar form chrome). On transactional surfaces "common" reads as "trustworthy" and "editorial" reads as "wrong product."
-- **`--radius` scale is decoupled from utility primitives.** `--radius: 1rem` for bigger cards/panels (`rounded-lg`). `rounded-md` (6px) and `rounded-sm` (4px) are **pinned** so small primitives (Checkbox, Button, Input) stay visually crisp. **Don't change `sm`/`md` to a `calc()` of `--radius`** — a 20px checkbox with 12px corner radius reads as a circle (radio button). v1 hit this bug; v2 doesn't repeat.
-- **Palette discipline: 3 semantic hues.** Primary (brand/active), `--success` emerald (confirmed selection / success), `--warning` amber (caution / pending / streaks). Plus `--destructive` for shadcn primitives and `--danger` for editorial deep-red. **Don't reach for orange, indigo, purple, or pink** — every time someone has, it's gotten removed on the next design pass.
-- **One italic accent per marketing page, on the actual differentiator.** Hero `<Display italic>` accents the phrase that names what makes the product different — not generic procedural language. If the italic phrase could appear unchanged on a competitor's page, it's not earning its weight.
-- **Single-word eyebrows on top-level marketing routes.** Use the page's own name (`Pricing`, `FAQ`, `Compare`). No articles, no descriptors, no taglines. Em-dashed eyebrows are reserved for in-page section eyebrows below the hero.
-- **Hover motion should be pure color, not transform.** On lists of cards, avoid `hover:scale-*` and `hover:-translate-*`. Cursor-driven transforms on a grid create a "disco" effect. Use `hover:border-*` or `hover:bg-muted/*` instead.
+- Requires conversation context to interpret correctly
+- Needs follow-up questions back to the user
+- Shares mutable state with concurrent work (race risk)
+- Verification is subjective (visual taste, copy nuance) — keep foreground
 
-## Voice
+**Brief template — every subagent gets these 5 sections:**
 
-> 1Password-reassuring + Notion-warm. Calm operator.
+1. **Goal** — one sentence, verifiable outcome
+2. **Inputs** — file paths, design source paths, dependencies
+3. **Constraints** — what NOT to touch, patterns to match, anti-patterns to avoid
+4. **Acceptance** — exact commands the subagent runs to prove done
+5. **Reporting** — what to include in the response
 
-Addresses inbox shame. Uses contractions. Never breathless. No exclamation points, no emoji, no urgency timers, no "we miss you" emails. The product's restraint is its differentiation against Sanebox / Clean Email / Unroll.me — every UI decision should make the calmness more visible, not less.
+Example bad brief: "Build the senders page."
+Example good brief: "Implement `src/pages/Senders.tsx` against `/tmp/declutr-design/.../screens/senders.jsx`. Use the existing sender-aggregation query from §X (don't rewrite). Add 4 tests covering happy / empty / filtered / zero-read pill. Acceptance: `npm run typecheck` → 0 errors, `npm run test` → all new tests pass, `npm run build` → bundle delta < +15 KB gzipped. Report: file paths created, test counts, bundle delta."
 
-## What's NOT in this repo yet
+**Verifying subagent output — trust nothing:**
 
-So future agents don't get confused looking for these:
+- Re-run the acceptance commands. Subagents sometimes claim pass when they ran a stale build.
+- Diff the files they claim changed. "Intended to" leaks into reports.
+- Read test bodies. Names sometimes don't match what's asserted.
+- For UI: capture preview, compare against the design source.
 
-- No Supabase client (`src/lib/supabaseClient.ts`) — lands with first backend-touching feature
+**Parallelism is earned:**
+
+- Default to sequential. Each step's output gates the next.
+- Parallel only when 2–4 truly independent investigations are needed and the brief inputs don't share state.
+- A parallel spawn that creates a merge headache later is a net loss.
+
+## 12. Anti-patterns
+
+Universal NEVER:
+
+- `useEffect` for derived state (compute during render or use `useMemo`)
+- Setting state in `useEffect` based on props (lift state or `useMemo`)
+- Untyped React refs — write `useRef<HTMLDivElement>(null)`, not `useRef(null)`
+- Service-role keys touched from the frontend (server-only via edge functions)
+- Raw SQL strings concatenated with user input (parameterize via supabase-js / RPC)
+- `console.log` in committed code (use `console.warn` / `console.error` with structured context)
+- Silent `catch {}` blocks (catch with logging or rethrow)
+- Timeout-based race avoidance (`setTimeout(…, 100)` to "let state settle")
+- Prop drilling > 2 levels (lift state, extract context, or pass via slot/render-prop)
+- Inline component definitions inside render (creates a fresh identity each render)
+- `useState(expensiveInit)` — use the lazy form `useState(() => expensiveInit())`
+- Mutating React state in place (`obj.x = 1; setState(obj)` — same reference, won't re-render)
+- Pushing directly to `main` (`main` auto-deploys; every change is PR-only)
+- `--no-verify` on commits (Husky hooks earn their keep; fix the underlying issue)
+
+Product NEVER:
+
+- Read email bodies in any code path
+- Show or log message bodies (headers + 160-char snippet is the maximum)
+- Mix marketing editorial typography into product UI surfaces
+- Use purple, orange, indigo, or pink in palette decisions
+- Add an exclamation point to product copy
+- Ship a feature that breaks the privacy oath (§ 8)
+
+## 13. Security baselines
+
+**Database**
+
+- Every table has RLS enabled at creation. Migration adding a table without RLS is rejected.
+- Default policies scope by `user_id`. Cross-user access goes through service-role functions, never direct queries.
+- Service role key only in edge functions (Deno runtime). Never bundled into the frontend.
+
+**Secrets**
+
+- Frontend env vars are `VITE_*` prefix only. Anything sensitive is _not_ `VITE_*`.
+- `.env.local` is git-ignored. `.env.local.example` documents required keys without values.
+- Supabase service role + Anthropic API + Paddle/Razorpay secrets live in Supabase Edge Function secrets — never in code.
+
+**OAuth**
+
+- Gmail metadata scope only by default. Any additional scope arrives in a PR that explains why.
+- Redirect URIs configured in the Google Cloud client by hand. No env-driven redirect manipulation.
+
+**CSP**
+
+- Default-deny. Allowlist additions go through `vercel.json` with a per-line comment explaining why.
+- No `unsafe-inline` in `script-src`. `unsafe-inline` in `style-src` is permitted (Tailwind runtime requires it).
+- `frame-ancestors 'none'`. `form-action 'self'`.
+
+**Logs**
+
+- Never log message bodies, snippets, or sender domains paired with body content.
+- Email addresses: domain-only in telemetry (`@gmail.com`); never full addresses.
+- Sentry breadcrumbs are structured. Redact known-sensitive fields before send.
+
+## 14. Voice
+
+**1Password-reassuring + Notion-warm. Calm operator.**
+
+- Address inbox shame without naming it as shame.
+- Use contractions. Be conversational.
+- No exclamation points. No emoji in product copy. No urgency timers. No "we miss you" emails.
+- Tell users what we do, not how we feel about it.
+
+Examples:
+
+- ✓ "Snoozed Sarah until tomorrow 9 AM. Undo from History anytime."
+- ✗ "Don't worry, we've got Sarah's email safely tucked away! 💤"
+
+Restraint is the differentiation. Every UI decision makes the calmness more visible, not less.
+
+## 15. Design system principles
+
+**Editorial typography is marketing-only.**
+Marketing routes (Landing, Pricing, Compare, FAQ, Legal, Contact, Blog, Guides) use the Fraunces + Source Serif 4 + JetBrains Mono editorial vocabulary in `src/index.css`. Product app surfaces (Dashboard, Settings, Billing, etc.) use Inter sans + standard Card/Dialog patterns. On transactional surfaces, "common" reads as "trustworthy"; "editorial" reads as "wrong product."
+
+**Three semantic hues plus brand.**
+`--primary` (brand teal), `--success` (emerald), `--warning` (amber), `--destructive`/`--danger` (reds). Stay inside this palette. Purple, orange, indigo, pink are outside the system.
+
+**The italic accent earns its place.**
+Marketing heroes use one italic Fraunces accent per page, applied to the phrase that names what makes the product different. If the italic phrase could appear unchanged on a competitor's page, it isn't earning the accent.
+
+**Single-word eyebrows on top-level marketing routes.**
+`Pricing`, `FAQ`, `Compare`, `Contact`. No articles, no descriptors, no taglines. Em-dashed eyebrows (`— Featured —`) are for in-page section eyebrows below the hero.
+
+**Radius scale is fixed for primitives.**
+`rounded-md` (6 px) and `rounded-sm` (4 px) are pinned in `tailwind.config.ts`. They don't compute from `--radius`. Large cards/panels use `rounded-lg` (1 rem). Small primitives stay crisp.
+
+**Motion is color, not transform.**
+On card lists, prefer `hover:border-*` / `hover:bg-muted/*` over `hover:scale-*` / `hover:-translate-*`. Cursor-driven transforms across a grid create visual noise.
+
+## 16. PR & commit conventions
+
+**Branch naming**
+
+- Features: `feat/<short-name>`
+- Refactors: `refactor/<short-name>`
+- Bug fixes: `fix/<short-name>`
+- Docs: `docs/<short-name>`
+- Chores: `chore/<short-name>`
+
+**Commit messages** — conventional commits, present-tense imperative:
+
+```
+feat(auth): wire Google OAuth callback
+fix(triage): debounce keyboard handler to avoid double-decide
+chore(deps): bump vite to 7.2
+refactor(senders): extract row component
+docs(claude-md): tighten subagent playbook
+```
+
+Co-authored commits include:
+
+```
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+**PR description template**
+
+```
+## Summary
+[1-3 bullets: what + why]
+
+## Verification
+- npm run typecheck → [result]
+- npm run test → [counts]
+- npm run lint → [errors / warnings]
+- npm run build → [bundle delta]
+- [screenshots or curl per § 6]
+
+## Reviewer notes
+[Anything to focus on, or NA]
+```
+
+**Size**
+
+- A PR is the smallest unit that meets the feature contract (§ 6).
+- If a PR exceeds 600 lines diff (excluding lockfile + design-copied CSS), split.
+- Stacked PRs are fine if each layer is independently reviewable.
+
+**`main` is protected**
+
+- Vercel auto-deploys `main` to production. Never push directly.
+- Pre-commit hooks (Husky + lint-staged) auto-fix lint + format. Never use `--no-verify`.
+
+## 17. v1 reference
+
+A prior implementation lives at `/Users/chintant/projects/declutr-front-zen` (GitHub: `CT2689-Tech/declutr-front-zen`). **Read-only, not authoritative.**
+
+Consult only when:
+
+- A subagent's brief explicitly asks you to check it for a specific behavioral question.
+- An edge case the design source doesn't specify needs a sanity-check answer.
+
+Do not:
+
+- Port v1 patterns "because v1 did it that way."
+- Carry v1 file names into v2 unless the design source asks for them.
+- Treat v1's CLAUDE.md as a source of truth for v2.
+
+```
+# Read v1
+Read /Users/chintant/projects/declutr-front-zen/src/pages/<File>.tsx
+
+# Inspect v1 git history
+git -C /Users/chintant/projects/declutr-front-zen log --oneline -10
+
+# Grep v1
+grep -rn "<pattern>" /Users/chintant/projects/declutr-front-zen/src
+```
+
+Never write to v1 from this project.
+
+## 18. Design source
+
+Claude Design handoff bundle: `/tmp/declutr-design/declutrmail-design-system/`. Original URL: `https://api.anthropic.com/v1/design/h/6WR5Q3o0DFEIe-b3iENBXw` (re-fetch if `/tmp` clears).
+
+Per-feature consumption:
+
+- `project/ui_kits/product/v2/screens/<name>.jsx` — canonical layout for screen `<name>`
+- `project/ui_kits/product/v2/lib/api-catalog.jsx` — backend contract per screen (queries, mutations, realtime events, schema changes, LLM use)
+- `project/ui_kits/product/v2/lib/brief-prompt.md` — Brief feature LLM prompt + token budget
+- `project/colors_and_type.css` — design tokens (ported into `src/index.css`)
+- `project/ui_kits/product/v2/marketing/*.html` — marketing surface designs
+
+The bundle's `_archive/` is ignored per its own README. The bundle's punch-list / handoff docs are authoritative on v2 design decisions; sections about v1 migration are historical context only.
+
+## 19. What's NOT in this repo yet
+
+So agents don't look for things that haven't shipped:
+
+- No Supabase client — lands with first backend feature
 - No Auth provider — lands with auth feature
-- No TanStack Query setup — lands with first data-fetching feature
-- No shadcn `src/components/ui/` primitives — lands when first interactive component (Button/Checkbox/Dialog) needs them; regenerate via shadcn CLI, never manual-edit
-- No `supabase/` directory (migrations, functions, config) — lands when first backend feature is built; new Supabase project provisioned out-of-band by the founder
-- No `workers/` directory — lands when Gmail sync / auto-cleanup workers are needed (post first-feature)
-- No Sentry/Umami/Vercel Analytics wiring — Phase 5 polish
-- No prerendering — lands when marketing routes ship (Phase 2 equivalent in v1's plan)
-- No e2e tests — Playwright + axe land with first end-to-end happy-path
+- No TanStack Query setup — lands with first data feature
+- No shadcn `src/components/ui/` primitives — lands with first interactive component
+- No `supabase/` directory (migrations, edge functions, config) — lands with first backend feature; new Supabase project provisioned out-of-band
+- No `workers/` directory — lands when first background worker is needed
+- No Sentry / Umami / Vercel Analytics — Phase 5 polish
+- No prerendering — lands with first marketing route
+- No e2e tests — lands with first end-to-end happy path
+- No SEO scripts (sitemap, RSS, OG image generation) — lands with marketing surfaces
+
+Each addition arrives with a PR that updates this list.
