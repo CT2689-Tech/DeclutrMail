@@ -181,6 +181,26 @@ Stat-strip value + label must read naturally as a sentence:
 
 Values should be quantitative when possible. Avoid pseudo-quantitative words like "Never" or "Always" when a real number works.
 
+### Pricing tier rules (`.tiers .tier`)
+
+When a pricing page shows tiers using the "Everything in X, plus..." additive inheritance pattern, four rules apply:
+
+1. **Left-to-right inheritance.** Each tier's referenced parent (the X in "Everything in X") MUST be the tier immediately to its left, OR an earlier tier in the layout. A tier referencing a tier to its right breaks the reading flow. For 4 tiers, the typical chain is Free → Pro → variants of Pro (where variants reference Pro, which is now to their left).
+
+2. **No duplication below the inheritance phrase.** If a tier's first item says "Everything in Pro, for 7 days", DO NOT list "One Gmail account" or "Unlimited cleanup actions" below it — those are already implied by "Everything in Pro." Only items that DIFFER from the parent tier belong in the list. Audit each child tier: each item should be genuinely new vs the referenced parent.
+
+3. **Tier `.desc` describes the audience, not the features.** The desc paragraph says WHO the tier is for; the list says WHAT it includes. Examples that work:
+   - ✓ "For anyone who wants to see what a clean inbox looks like." (Free)
+   - ✓ "For the user with eight years of inbox and zero patience for it." (Pro)
+   - ✓ "For the one-shot cleanup. Buy once, clear the years of clutter, drop back to Free." (Pro Pass)
+   - ✗ "All of Pro, for 7 days. One payment, no auto-renew. Drops back to Free on day 8." (this previews the list — wrong)
+
+4. **Drop `.off` grayed-out items.** With the additive pattern, what each tier _lacks_ is implied by what the parent tier _adds_. Listing missing features with strikethrough creates visual noise and contradicts the additive logic.
+
+### Pricing meta-rule
+
+If the pricing page needs an FAQ entry to explain the relationship between two tiers, the tiers aren't doing their job. Fix the tier copy (use the inheritance pattern, sharpen the desc); don't add an FAQ band-aid. The cards should self-explain.
+
 ## Voice / copy rules (restated from CLAUDE.md)
 
 - No exclamation points
@@ -258,6 +278,9 @@ Inspect via `mcp__Claude_Preview__preview_eval` at viewport 1920×1100:
 12. New marketing classes — first check `src/index.css` and `v2-marketing.css` for canonical patterns
 13. **Roman-numeral section markers** (II. III. etc.) — the canonical uses them on some pages and not others, which reads as inconsistent. Skip them entirely. Section h2s stand on their own without numbering.
 14. **Redundant trust strips** — the canonical sometimes has a top `.strap` AND a bottom mono-caps "all plans" strip that repeat similar messaging. Pick one or drop both — the hero + conv banner already cover trust messaging. Two trust bars on one page is one too many.
+15. **Pricing tier desc that previews the list.** The desc should describe the audience (who the tier is for). The list does the features. See "Pricing tier rules" above.
+16. **Pricing tier items that duplicate the parent tier.** If you say "Everything in X, plus..." then list items already in X, the inheritance phrase is doing no work. Audit each child tier for duplicates before shipping.
+17. **FAQ entries that explain tier differences.** That's a sign the tier copy isn't clear. Fix the tiers, not the FAQ.
 
 ## Lessons learned during Landing port (for context)
 
