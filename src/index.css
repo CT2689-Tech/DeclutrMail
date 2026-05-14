@@ -752,7 +752,7 @@
   }
   .tiers .tier .desc {
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: 15px;
     color: hsl(var(--ink-sub));
     line-height: 1.55;
     margin: 0 0 18px;
@@ -857,7 +857,7 @@
   .qa .a {
     margin: 0 0 18px;
     padding: 0 4px;
-    font-size: 14.5px;
+    font-size: 15px;
     line-height: 1.65;
     color: hsl(var(--ink-sub));
     max-width: 68ch;
@@ -1944,5 +1944,65 @@
     height: 1px;
     background: hsl(var(--border));
     margin: 28px 0;
+  }
+
+  /* ── Section-head — alternative pattern with .roman + h2 + .hr ──
+     Used by Pricing / Compare / How-it-works pages. The .roman span
+     is a mono numeral (II. III.), the h2 is direct-child Fraunces,
+     the .hr trailing span is purely decorative and display:none. */
+  .section-head .roman {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+    padding-bottom: 6px;
+    align-self: end;
+  }
+  .section-head .hr {
+    display: none;
+  }
+  .section-head h2 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(26px, 2.8vw, 36px);
+    line-height: 1.15;
+    letter-spacing: -0.018em;
+    margin: 0;
+    padding-bottom: 0.04em;
+    flex: 1;
+    min-width: 0;
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 0,
+      "WONK" 0;
+  }
+  .section-head h2 em {
+    font-style: italic;
+    color: hsl(var(--primary));
+    font-variation-settings:
+      "opsz" 144,
+      "SOFT" 100,
+      "WONK" 0;
+  }
+
+  /* ── Eyebrow-primary alias — some pages use this older class name
+     alongside or instead of .eyebrow.primary. */
+  .eyebrow-primary,
+  .eyebrow.eyebrow-primary,
+  .eyebrow.kicker {
+    color: hsl(var(--primary));
+  }
+
+  /* ── Asterism break — typographic page break (✷ ✷ ✷). Used between
+     sections on editorial pages to mark a soft transition. */
+  .asterism {
+    text-align: center;
+    padding: 24px 0;
+    font-family: var(--font-display);
+    color: hsl(var(--muted-foreground));
+    font-size: 20px;
+    letter-spacing: 0.4em;
   }
 }
