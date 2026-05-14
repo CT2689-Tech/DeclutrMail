@@ -126,6 +126,7 @@ Per-feature consumption:
 - [docs/feature-checklist.md](docs/feature-checklist.md) — definition of done, quality bars, verification protocol, deferred dependencies, subagent playbook, what's NOT in the repo yet
 - [docs/security-and-privacy.md](docs/security-and-privacy.md) — full privacy oath, security baselines (DB / secrets / OAuth / CSP / logs)
 - [docs/design-and-voice.md](docs/design-and-voice.md) — design system principles, voice guide with examples, repository conventions (file layout, naming)
+- [docs/marketing-pages.md](docs/marketing-pages.md) — **read this before building any marketing page.** Concrete rules + pre-flight checklist derived from real Landing-page bugs (typography scale, italic budget, CSS specificity gotchas, favicon presentation, stat-strip phrasing, viewport testing).
 - [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) — PR description format, verification checklist, branch + commit conventions
 
 These are reference docs — read them when starting work that touches their domain. Subagent briefs should link to the relevant doc rather than repeating its contents.
