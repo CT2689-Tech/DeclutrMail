@@ -152,11 +152,8 @@ export default function Pricing() {
                   <li>
                     <strong>Everything in Pro</strong>, for 7 days
                   </li>
-                  <li>One Gmail account</li>
-                  <li>Unlimited cleanup actions during the pass</li>
-                  <li>Nightly automatic cleanups while active</li>
-                  <li>Full activity log · export anytime</li>
-                  <li>No subscription · no auto-renew</li>
+                  <li>One-time $12 — no subscription</li>
+                  <li>No auto-renew · ever</li>
                   <li>Drops back to Free on day 8 automatically</li>
                 </ul>
                 <div className="footer">
