@@ -146,7 +146,7 @@ export default function Pricing() {
                   <small>One-time · 7 days</small>
                 </div>
                 <p className="desc">
-                  All of Pro, for 7 days. One payment, no auto-renew. Drops back to Free on day 8.
+                  For the one-shot cleanup. Buy once, clear the years of clutter, drop back to Free.
                 </p>
                 <ul>
                   <li>
