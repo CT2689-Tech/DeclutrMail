@@ -93,134 +93,139 @@ export default function Landing() {
       </div>
 
       <main id="main">
-        {/* Hero */}
+        {/* Hero — 2-column grid: editorial copy left, tilted preview right.
+            Mobile collapses to stacked via .hero-grid breakpoint. */}
         <section className="hero">
           <div className="container">
-            <div className="eyebrow">— For inboxes you’ve stopped opening —</div>
-            <h1>
-              Tens of thousands unread? <em>It’s okay. We can help.</em>
-            </h1>
-            <p className="deck">
-              You know that little number next to Gmail you’ve been avoiding? Connect us, and in
-              five minutes we’ll show you the handful of senders responsible for most of it. You
-              decide who stays. Anything you regret, you’ve got a week to undo.
-            </p>
+            <div className="hero-grid">
+              <div className="hero-copy">
+                <div className="eyebrow">— For inboxes you’ve stopped opening —</div>
+                <h1>
+                  Tens of thousands unread? <em>It’s okay. We can help.</em>
+                </h1>
+                <p className="deck">
+                  You know that little number next to Gmail you’ve been avoiding? Connect us, and in
+                  five minutes we’ll show you the handful of senders responsible for most of it. You
+                  decide who stays. Anything you regret, you’ve got a week to undo.
+                </p>
 
-            <div className="actions">
-              <Link to="/sign-in" className="btn btn-primary">
-                Help me clean it up →
-              </Link>
-              <a href="#how" className="btn-link">
-                See how it works
-              </a>
-            </div>
-
-            {/* Animated product preview */}
-            <div style={{ marginTop: 36 }}>
-              <div className="preview-card" ref={previewRef}>
-                <div className="preview-bar">
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span>12 senders · 119 messages this week</span>
-                  <span className="label">DeclutrMail · Cleanup view</span>
+                <div className="actions">
+                  <Link to="/sign-in" className="btn btn-primary">
+                    Help me clean it up →
+                  </Link>
+                  <a href="#how" className="btn-link">
+                    See how it works
+                  </a>
                 </div>
+              </div>
 
-                <div className="preview-row" data-row="linkedin">
-                  <span className="av" style={{ background: "#DC2626" }}>
-                    L
-                  </span>
-                  <div className="who">
-                    <div className="n">LinkedIn</div>
-                    <div className="meta">
-                      <span className="dom">linkedin.com</span>
-                      <span className="pill red">You’ve opened 0</span>
-                      <span>Daily</span>
+              {/* Animated product preview — tilted, off-grid bleed on desktop */}
+              <div className="hero-preview-wrap">
+                <div className="preview-card" ref={previewRef}>
+                  <div className="preview-bar">
+                    <span className="dot" />
+                    <span className="dot" />
+                    <span className="dot" />
+                    <span>12 senders · 119 messages this week</span>
+                    <span className="label">DeclutrMail · Cleanup view</span>
+                  </div>
+
+                  <div className="preview-row" data-row="linkedin">
+                    <span className="av" style={{ background: "#DC2626" }}>
+                      L
+                    </span>
+                    <div className="who">
+                      <div className="n">LinkedIn</div>
+                      <div className="meta">
+                        <span className="dom">linkedin.com</span>
+                        <span className="pill red">You’ve opened 0</span>
+                        <span>Daily</span>
+                      </div>
+                    </div>
+                    <div className="cnt">
+                      47/wk · <b>1,847 total</b>
+                    </div>
+                    <div className="verbs">
+                      <span className="v archive" title="Archive">
+                        A
+                      </span>
+                      <span className="v mute" title="Mute">
+                        M
+                      </span>
+                      <span className="v unsub" title="Unsubscribe">
+                        U
+                      </span>
+                      <span className="v keep" title="Keep">
+                        K
+                      </span>
                     </div>
                   </div>
-                  <div className="cnt">
-                    47/wk · <b>1,847 total</b>
-                  </div>
-                  <div className="verbs">
-                    <span className="v archive" title="Archive">
-                      A
-                    </span>
-                    <span className="v mute" title="Mute">
-                      M
-                    </span>
-                    <span className="v unsub" title="Unsubscribe">
-                      U
-                    </span>
-                    <span className="v keep" title="Keep">
-                      K
-                    </span>
-                  </div>
-                </div>
 
-                <div
-                  className="preview-row spike"
-                  data-row="groupon"
-                  style={{ background: "rgba(245,158,11,.04)" }}
-                >
-                  <span className="av" style={{ background: "#B45309" }}>
-                    G
-                  </span>
-                  <div className="who">
-                    <div className="n">Groupon</div>
-                    <div className="meta">
-                      <span className="dom">groupon.com</span>
-                      <span className="pill amber">Sending 3× more lately</span>
-                      <span>Daily</span>
+                  <div
+                    className="preview-row spike"
+                    data-row="groupon"
+                    style={{ background: "rgba(245,158,11,.04)" }}
+                  >
+                    <span className="av" style={{ background: "#B45309" }}>
+                      G
+                    </span>
+                    <div className="who">
+                      <div className="n">Groupon</div>
+                      <div className="meta">
+                        <span className="dom">groupon.com</span>
+                        <span className="pill amber">Sending 3× more lately</span>
+                        <span>Daily</span>
+                      </div>
+                    </div>
+                    <div className="cnt">
+                      12/wk · <b>422 total</b>
+                    </div>
+                    <div className="verbs">
+                      <span className="v archive">A</span>
+                      <span className="v mute">M</span>
+                      <span className="v unsub">U</span>
+                      <span className="v keep">K</span>
                     </div>
                   </div>
-                  <div className="cnt">
-                    12/wk · <b>422 total</b>
-                  </div>
-                  <div className="verbs">
-                    <span className="v archive">A</span>
-                    <span className="v mute">M</span>
-                    <span className="v unsub">U</span>
-                    <span className="v keep">K</span>
-                  </div>
-                </div>
 
-                <div className="preview-row" data-row="substack">
-                  <span className="av" style={{ background: "#7C3AED" }}>
-                    L
-                  </span>
-                  <div className="who">
-                    <div className="n">Letters of Note · Substack</div>
-                    <div className="meta">
-                      <span className="dom">substack.com</span>
-                      <span className="pill emerald">You open 86% of these</span>
-                      <span>Weekly</span>
+                  <div className="preview-row" data-row="substack">
+                    <span className="av" style={{ background: "#7C3AED" }}>
+                      L
+                    </span>
+                    <div className="who">
+                      <div className="n">Letters of Note · Substack</div>
+                      <div className="meta">
+                        <span className="dom">substack.com</span>
+                        <span className="pill emerald">You open 86% of these</span>
+                        <span>Weekly</span>
+                      </div>
+                    </div>
+                    <div className="cnt">
+                      7/wk · <b>142 total</b>
+                    </div>
+                    <div className="verbs">
+                      <span className="v archive">A</span>
+                      <span className="v mute">M</span>
+                      <span className="v unsub">U</span>
+                      <span
+                        className="v keep"
+                        style={{
+                          background: "hsl(var(--success-strong))",
+                          color: "#fff",
+                          borderColor: "hsl(var(--success-strong))",
+                        }}
+                      >
+                        K
+                      </span>
                     </div>
                   </div>
-                  <div className="cnt">
-                    7/wk · <b>142 total</b>
-                  </div>
-                  <div className="verbs">
-                    <span className="v archive">A</span>
-                    <span className="v mute">M</span>
-                    <span className="v unsub">U</span>
-                    <span
-                      className="v keep"
-                      style={{
-                        background: "hsl(var(--success-strong))",
-                        color: "#fff",
-                        borderColor: "hsl(var(--success-strong))",
-                      }}
-                    >
-                      K
-                    </span>
-                  </div>
-                </div>
 
-                <div className="preview-undo-toast" id="preview-undo-toast" aria-hidden="true">
-                  <span className="label">
-                    Archived <b>422 messages from Groupon</b>
-                  </span>
-                  <span className="undo">Undo · Z</span>
+                  <div className="preview-undo-toast" id="preview-undo-toast" aria-hidden="true">
+                    <span className="label">
+                      Archived <b>422 messages from Groupon</b>
+                    </span>
+                    <span className="undo">Undo · Z</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -303,7 +308,7 @@ export default function Landing() {
 
             <div className="twoup">
               <div>
-                <p>
+                <p className="editorial-dropcap">
                   Most of your senders, we already recognize. A million inboxes before yours have
                   helped us identify LinkedIn, Substack, that airline you flew once.
                 </p>
@@ -387,6 +392,21 @@ export default function Landing() {
                 </p>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* Pull quote — editorial breathing-point between sections.
+            One italic accent on the actual differentiator (architecture
+            vs. promise). Earns its weight per the design gotcha. */}
+        <section style={{ padding: "16px 0 16px" }}>
+          <div className="container">
+            <blockquote className="pullquote">
+              <q>
+                The architecture forbids reading your email.{" "}
+                <em>The promise is just architecture you can verify.</em>
+              </q>
+              <span className="attr">— Our oath, since day one</span>
+            </blockquote>
           </div>
         </section>
 
