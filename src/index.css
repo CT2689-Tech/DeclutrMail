@@ -1312,11 +1312,16 @@
       "SOFT" 0,
       "WONK" 0;
     font-weight: 600;
-    font-size: clamp(48px, 7vw, 104px);
-    line-height: 0.96;
-    letter-spacing: -0.03em;
+    /* Canonical scale (was bumped to 80-104px in earlier iteration —
+       that read as poster, not editorial, and the italic differentiator
+       wrapped mid-phrase). The visual upgrade comes from layout
+       (asymmetric grid + tilted preview), atmosphere (paper bg + grain),
+       and editorial details (drop cap + pull quote) — not type size. */
+    font-size: clamp(40px, 4.8vw, 64px);
+    line-height: 1.12;
+    letter-spacing: -0.022em;
     margin: 0 0 28px;
-    max-width: 16ch;
+    max-width: 18ch;
     text-wrap: balance;
   }
   .hero h1 em {
