@@ -66,7 +66,7 @@ export default function Pricing() {
         <section className="section">
           <div className="container">
             <div className="tiers">
-              {/* Free */}
+              {/* Free — baseline */}
               <div className="tier">
                 <h3>Free</h3>
                 <div className="price">
@@ -84,9 +84,6 @@ export default function Pricing() {
                   <li>7-day undo on every action</li>
                   <li>Plain-English reasons on every classification</li>
                   <li>Activity log · last 30 days</li>
-                  <li className="off">Nightly automatic cleanups</li>
-                  <li className="off">Unlimited cleanup actions</li>
-                  <li className="off">Team accounts</li>
                 </ul>
                 <div className="footer">
                   <Link
@@ -99,28 +96,26 @@ export default function Pricing() {
                 </div>
               </div>
 
-              {/* Pro Pass — one-time 7-day pass */}
+              {/* Pro Pass — all of Pro, time-boxed to 7 days */}
               <div className="tier">
                 <h3>Pro Pass</h3>
                 <div className="price">
                   $12
-                  <small>One-time · 7 days, all Pro features</small>
+                  <small>One-time · 7 days</small>
                 </div>
                 <p className="desc">
-                  For the one-shot cleanup. Buy once, clear the years of clutter, drop back to Free.
+                  All of Pro, for 7 days. One payment, no auto-renew. Drops back to Free on day 8.
                 </p>
                 <ul>
-                  <li>One Gmail account</li>
                   <li>
-                    <strong>Unlimited cleanup actions for 7 days</strong>
+                    <strong>Everything in Pro</strong>, for 7 days
                   </li>
-                  <li>All four actions · Archive, Mute, Unsubscribe, Keep</li>
-                  <li>7-day undo on every action</li>
-                  <li>Nightly automatic cleanups (while pass is active)</li>
+                  <li>One Gmail account</li>
+                  <li>Unlimited cleanup actions during the pass</li>
+                  <li>Nightly automatic cleanups while active</li>
                   <li>Full activity log · export anytime</li>
-                  <li>No auto-renew · drops to Free on day 8</li>
-                  <li className="off">Recurring nightly cleanups after day 7</li>
-                  <li className="off">Priority email support</li>
+                  <li>No subscription · no auto-renew</li>
+                  <li>Drops back to Free on day 8 automatically</li>
                 </ul>
                 <div className="footer">
                   <Link
@@ -133,7 +128,7 @@ export default function Pricing() {
                 </div>
               </div>
 
-              {/* Pro — featured */}
+              {/* Pro — featured, recurring */}
               <div className="tier featured">
                 <span
                   className="eyebrow eyebrow-primary"
@@ -150,16 +145,16 @@ export default function Pricing() {
                   For the user with eight years of inbox and zero patience for it.
                 </p>
                 <ul>
-                  <li>One Gmail account</li>
+                  <li>
+                    <strong>Everything in Free</strong>, plus:
+                  </li>
                   <li>
                     <strong>Unlimited cleanup actions</strong>
                   </li>
-                  <li>All four actions · Archive, Mute, Unsubscribe, Keep</li>
-                  <li>7-day undo on every action</li>
-                  <li>Plain-English and detailed views on every classification</li>
                   <li>
                     <strong>Nightly automatic cleanups</strong> (per-sender &amp; per-category)
                   </li>
+                  <li>Plain-English and detailed views on every classification</li>
                   <li>Natural-language rule creator (⌘K)</li>
                   <li>Full activity log · export anytime</li>
                   <li>Priority email support · within 24 hours</li>
@@ -197,7 +192,9 @@ export default function Pricing() {
                 </div>
                 <p className="desc">For ops, sales, support — teams that share an inbox problem.</p>
                 <ul>
-                  <li>Everything in Pro</li>
+                  <li>
+                    <strong>Everything in Pro</strong>, plus:
+                  </li>
                   <li>Multiple Gmail accounts per workspace</li>
                   <li>Admin console · per-seat activity logs</li>
                   <li>Workspace-level rules · applied per role</li>
@@ -288,16 +285,6 @@ export default function Pricing() {
                   (one action archives every message from one sender). For a one-shot bigger
                   cleanup, Pro Pass is $12 for 7 days of unlimited Pro. For ongoing cleanup, Pro is
                   $9/month. We’d rather price clearly than dangle a 14-day countdown.
-                </p>
-              </details>
-              <details>
-                <summary>What’s the difference between Pro Pass and Pro?</summary>
-                <p className="a">
-                  Pro Pass is a one-time $12 charge that gives you all Pro features for 7 days, then
-                  drops back to Free automatically. No auto-renew, no surprise charge. It’s for the
-                  user who has a one-shot mess to clear (years of LinkedIn / Substack / Groupon) and
-                  doesn’t want a recurring subscription. Pro is the recurring option for people who
-                  want nightly automatic cleanups and unlimited actions forever.
                 </p>
               </details>
               <details>
