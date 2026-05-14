@@ -2,14 +2,16 @@ import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 /**
- * Display — Fraunces display heading with responsive clamp() sizing.
+ * Display — Fraunces display heading sized via fluid clamp().
  *
- * Marketing-only per the design gotcha (CLAUDE.md "Design Gotchas":
- * editorial typography is marketing-only). Don't use on product surfaces;
- * use standard h1/h2 from Tailwind there.
+ * Marketing-only per CLAUDE.md design gotcha "Editorial typography is
+ * marketing-only." Product surfaces use standard h1/h2 from Tailwind.
  *
- * Composes the `.font-display`/`.font-display-italic` + `.text-display-*`
- * utility classes from src/index.css (ported in PR #1).
+ * Source: marketing CSS at v2-marketing.css §434-443 (`.display`,
+ * `.display em`, `.display .italic`); composes the
+ * `.font-display`/`.font-display-italic` + `.text-display-*` utility classes
+ * from src/index.css (which mirror canonical colors_and_type.css §96-100,
+ * 154-182).
  */
 export type DisplayProps = {
   /** Underlying tag — defaults to h1. */
@@ -22,7 +24,7 @@ export type DisplayProps = {
   children: ReactNode;
 };
 
-const SIZE_CLASS: Record<"xl" | "lg" | "md" | "sm", string> = {
+const SIZE_CLASS: Record<NonNullable<DisplayProps["size"]>, string> = {
   xl: "text-display-xl",
   lg: "text-display-lg",
   md: "text-display-md",

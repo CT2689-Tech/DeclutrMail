@@ -3,12 +3,16 @@ import { cn } from "@/lib/utils";
 /**
  * BrandAtom — canonical "D·  Declutr*Mail*" logo mark.
  *
- * Single source of truth for the wordmark across marketing + product.
- * The square teal mark + italic "Mail" accent are the brand. Don't recreate
+ * Single source of truth for the wordmark across marketing + product. The
+ * square teal mark + italic "Mail" accent are the brand. Don't recreate
  * inline; always use this component. Wrap in a `<Link>` for clickable usage.
  *
- * Source: /tmp/declutr-design/.../ui_kits/product/v2/marketing/v2-marketing.css
- *         (`.masthead .brand .mark` + `.masthead .brand .word` patterns)
+ * Source: marketing CSS at v2-marketing.css §80-106 (`.nav .brand .mark`,
+ * `.nav .brand .word`, italic accent rules) and §449-487 (the same pattern
+ * inside `.masthead`). Mark dimensions, mark `border-radius: 5px`, italic
+ * accent color (`rgba(255,255,255,.55)` on the mark, `var(--primary)` on
+ * "Mail"), and the variable-axis `font-variation-settings: "opsz" 144` are
+ * all pinned by the canonical CSS.
  */
 export type BrandAtomProps = {
   /** `sm` = compact (footer / dense headers), `md` = default, `lg` = hero. */
@@ -16,7 +20,7 @@ export type BrandAtomProps = {
   className?: string;
 };
 
-const SIZES: Record<"sm" | "md" | "lg", { mark: string; word: string }> = {
+const SIZES: Record<NonNullable<BrandAtomProps["size"]>, { mark: string; word: string }> = {
   sm: { mark: "h-5 w-5 text-[11px]", word: "text-[14px]" },
   md: { mark: "h-[26px] w-[26px] text-[14px]", word: "text-[18px]" },
   lg: { mark: "h-9 w-9 text-[18px]", word: "text-[22px]" },
@@ -25,7 +29,11 @@ const SIZES: Record<"sm" | "md" | "lg", { mark: string; word: string }> = {
 export function BrandAtom({ size = "md", className }: BrandAtomProps) {
   const s = SIZES[size];
   return (
-    <span className={cn("inline-flex items-baseline gap-[10px] text-foreground", className)}>
+    <span
+      role="img"
+      aria-label="DeclutrMail"
+      className={cn("inline-flex items-baseline gap-[10px] text-foreground", className)}
+    >
       <span
         className={cn(
           s.mark,
@@ -37,6 +45,7 @@ export function BrandAtom({ size = "md", className }: BrandAtomProps) {
         D<em className="ml-px font-display-italic text-white/55">·</em>
       </span>
       <span
+        aria-hidden="true"
         className={cn("font-display font-bold leading-none", s.word)}
         style={{ letterSpacing: "-0.008em" }}
       >

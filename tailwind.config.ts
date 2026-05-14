@@ -88,27 +88,14 @@ export default {
         // `lg` scales with --radius (1rem = 16px) for cards/panels.
         // `md` and `sm` are PINNED so future shadcn primitives (Checkbox,
         // Button, Input) render with their expected small-radius baseline.
-        // Without this, `rounded-sm` on a 20px checkbox resolved to 12px in
-        // v1 and looked like a radio button — see v1 CLAUDE.md "Design
-        // gotchas" for the war story we don't want to repeat.
+        // Without this, `rounded-sm` on a 20px checkbox resolved to 12px
+        // and looked like a radio button (a real bug we don't want to
+        // repeat).
         lg: "var(--radius)",
-        md: "6px",
-        sm: "4px",
+        md: "var(--radius-md)",
+        sm: "var(--radius-sm)",
       },
-      keyframes: {
-        "fade-in-up": {
-          from: { opacity: "0", transform: "translateY(20px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-        "scale-in": {
-          from: { opacity: "0", transform: "scale(0.95)" },
-          to: { opacity: "1", transform: "scale(1)" },
-        },
-      },
-      animation: {
-        "fade-in-up": "fade-in-up 0.6s ease-out",
-        "scale-in": "scale-in 0.3s ease-out",
-      },
+      // fade-in-up / scale-in keyframes live in src/index.css.
     },
   },
   plugins: [tailwindcssAnimate, typography],

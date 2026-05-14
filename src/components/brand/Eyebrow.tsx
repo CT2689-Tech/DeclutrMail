@@ -4,24 +4,27 @@ import type { ReactNode } from "react";
 /**
  * Eyebrow — mono uppercase label that sits above section / hero headings.
  *
- * Marketing surfaces use a single-word eyebrow per CLAUDE.md design gotcha
- * (e.g. `Pricing`, `FAQ`, `Compare`). Em-dashed eyebrows (`— Featured —`)
- * are reserved for in-page section eyebrows below the hero.
+ * Three tones: default (muted), primary (brand teal), amber.
  *
- * Composes `.font-mono-edit` (Inter mono with 0.16em tracking + uppercase)
- * from src/index.css (PR #1).
+ * Source: marketing CSS at v2-marketing.css §169-175 (`.eyebrow`,
+ * `.eyebrow.primary`, `.eyebrow.amber`); product primitive at
+ * lib/tokens.jsx `DVEyebrow` lines 37-47.
+ *
+ * Single-word eyebrows on top-level marketing routes (Pricing, FAQ, Compare).
+ * Em-dashed eyebrows are reserved for in-page section eyebrows below the hero.
  */
-export type EyebrowProps = {
-  /** Color tone — primary = brand teal, amber = warning hue, default = muted. */
-  tone?: "default" | "primary" | "amber";
-  className?: string;
-  children: ReactNode;
-};
+export type EyebrowTone = "default" | "primary" | "amber";
 
-const TONE_CLASS: Record<"default" | "primary" | "amber", string> = {
+const TONE_CLASS: Record<EyebrowTone, string> = {
   default: "text-muted-foreground",
   primary: "text-primary",
   amber: "text-warning-strong",
+};
+
+export type EyebrowProps = {
+  tone?: EyebrowTone;
+  className?: string;
+  children: ReactNode;
 };
 
 export function Eyebrow({ tone = "default", className, children }: EyebrowProps) {

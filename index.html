@@ -35,18 +35,6 @@
     />
   </head>
   <body>
-    <!-- Pre-hydration theme script: prevents flash of wrong theme before React loads. -->
-    <script>
-      (function () {
-        var storageKey = "declutrmail-ui-theme";
-        var theme = localStorage.getItem(storageKey) || "light";
-        var resolved = theme;
-        if (theme === "system") {
-          resolved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        }
-        document.documentElement.classList.add(resolved);
-      })();
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

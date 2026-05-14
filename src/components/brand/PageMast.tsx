@@ -7,12 +7,15 @@ import { BrandAtom } from "./BrandAtom";
  * PageMast — sticky marketing masthead (brand + nav + optional CTA).
  *
  * Use on marketing surfaces (Landing / Pricing / Compare / FAQ / Legal /
- * Contact / Blog / Guides). Product app shell has its own chrome — don't
- * use PageMast inside the authenticated app.
+ * Contact / Blog / Guides). The authenticated app shell has its own chrome —
+ * don't use PageMast inside the product.
  *
- * Composes the `.masthead` CSS class from src/index.css (PR #1) which
- * handles the sticky positioning, brand/nav alignment, mobile collapse,
- * and CTA hover styling.
+ * Source: marketing CSS at v2-marketing.css §449-511 (`.masthead`,
+ * `.masthead .inner`, `.masthead nav`, `.masthead nav a.active`,
+ * `.masthead nav a[aria-current="page"]`, `.masthead .cta`). The CSS class
+ * handles sticky positioning, container width, mobile collapse, and active /
+ * focus styling — this component just wires up React Router links and the
+ * brand atom slot.
  */
 export type PageMastNavLink = {
   label: string;

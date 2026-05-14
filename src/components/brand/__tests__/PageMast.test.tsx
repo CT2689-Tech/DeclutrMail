@@ -1,17 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 import { PageMast } from "@/components/brand/PageMast";
 
-function renderInRouter(ui: React.ReactElement) {
+function renderInRouter(ui: ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
 
 describe("PageMast", () => {
   it("renders the brand link to the configured brandHref", () => {
     renderInRouter(<PageMast brandHref="/pricing" />);
-    const brandLink = screen.getByRole("link", { name: /DeclutrMail home/i });
-    expect(brandLink).toHaveAttribute("href", "/pricing");
+    expect(screen.getByRole("link", { name: /DeclutrMail home/i })).toHaveAttribute(
+      "href",
+      "/pricing",
+    );
   });
 
   it("renders provided nav links and marks the active one with aria-current", () => {
@@ -34,7 +37,6 @@ describe("PageMast", () => {
     const { rerender } = renderInRouter(<PageMast ctaLabel="Try free" ctaHref="/auth" />);
     expect(screen.getByRole("link", { name: "Try free" })).toBeInTheDocument();
 
-    // Re-render with no CTA — render in a fresh tree so the prior link unmounts.
     rerender(
       <MemoryRouter>
         <PageMast />
@@ -43,10 +45,9 @@ describe("PageMast", () => {
     expect(screen.queryByRole("link", { name: "Try free" })).not.toBeInTheDocument();
   });
 
-  it("uses a semantic <header> + <nav> structure with the .masthead class hook", () => {
-    const { container } = renderInRouter(<PageMast />);
-    const header = container.querySelector("header.masthead");
-    expect(header).toBeInTheDocument();
+  it("uses semantic <header> + <nav role='navigation'> structure", () => {
+    renderInRouter(<PageMast />);
+    expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
   });
 });

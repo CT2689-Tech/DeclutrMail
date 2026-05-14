@@ -56,10 +56,6 @@ export default tseslint.config(
     rules: {
       ...testingLibraryRules,
       ...jestDomRules,
-      "testing-library/prefer-screen-queries": "off",
-      "testing-library/no-node-access": "off",
-      "testing-library/no-container": "off",
-      "jest-dom/prefer-in-document": "off",
     },
   },
 );

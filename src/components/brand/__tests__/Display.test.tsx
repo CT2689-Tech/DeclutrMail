@@ -14,20 +14,24 @@ describe("Display", () => {
   });
 
   it("applies font-display by default and font-display-italic when italic", () => {
-    const { rerender, container } = render(<Display>Plain</Display>);
-    expect(container.firstChild).toHaveClass("font-display");
-    expect(container.firstChild).not.toHaveClass("font-display-italic");
+    const { rerender } = render(<Display>Plain</Display>);
+    const plain = screen.getByRole("heading", { name: "Plain" });
+    expect(plain).toHaveClass("font-display");
+    expect(plain).not.toHaveClass("font-display-italic");
 
     rerender(<Display italic>Italic</Display>);
-    expect(container.firstChild).toHaveClass("font-display-italic");
-    expect(container.firstChild).not.toHaveClass("font-display");
+    const italic = screen.getByRole("heading", { name: "Italic" });
+    expect(italic).toHaveClass("font-display-italic");
+    expect(italic).not.toHaveClass("font-display");
   });
 
   it("applies the responsive size class for each `size` prop value", () => {
     const sizes = ["xl", "lg", "md", "sm"] as const;
     sizes.forEach((size) => {
-      const { container, unmount } = render(<Display size={size}>x</Display>);
-      expect(container.firstChild).toHaveClass(`text-display-${size}`);
+      const { unmount } = render(<Display size={size}>{`Size-${size}`}</Display>);
+      expect(screen.getByRole("heading", { name: `Size-${size}` })).toHaveClass(
+        `text-display-${size}`,
+      );
       unmount();
     });
   });

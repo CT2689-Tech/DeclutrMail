@@ -2,45 +2,16 @@ import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
 /**
- * Pill — small rounded label with semantic + planning tones.
+ * Pill — small rounded label with the v2 semantic palette.
  *
- * Two ways to specify color:
- *   <Pill tone="primary">Pro</Pill>          // explicit color tone
- *   <Pill variant="now">In progress</Pill>   // semantic alias maps to a tone
+ * Six tones: default + the four canonical marketing tones
+ * (primary/amber/emerald/red) + dark for product surfaces.
  *
- * The `variant` prop covers planning vocabulary used in design docs and
- * status surfaces; `tone` covers the underlying palette. Use `tone` for
- * product UI (Brief / Activity / Snoozed), `variant` for planning surfaces
- * (Punch list / handoff docs).
+ * Source: marketing CSS at v2-marketing.css §169-187 (`.pill`, `.pill.primary`,
+ * `.pill.amber`, `.pill.emerald`, `.pill.red`); product primitive at
+ * lib/tokens.jsx `DVPill` lines 50-71 (adds `dark`).
  */
 export type PillTone = "default" | "primary" | "amber" | "emerald" | "red" | "dark";
-
-export type PillVariant =
-  | "now"
-  | "next"
-  | "later"
-  | "skip"
-  | "exists"
-  | "refresh"
-  | "new"
-  | "diverge"
-  | "keep"
-  | "done";
-
-// Planning-vocabulary → underlying color tone. Mirrors the design's
-// .pill.now / .pill.next / .pill.later / etc. mapping in reference docs.
-const VARIANT_TO_TONE: Record<PillVariant, PillTone> = {
-  now: "red",
-  diverge: "red",
-  next: "amber",
-  refresh: "amber",
-  later: "primary",
-  new: "primary",
-  skip: "default",
-  exists: "emerald",
-  keep: "emerald",
-  done: "emerald",
-};
 
 const TONE_CLASS: Record<PillTone, string> = {
   default: "bg-muted text-foreground border-border",
@@ -52,22 +23,18 @@ const TONE_CLASS: Record<PillTone, string> = {
 };
 
 export type PillProps = {
-  /** Explicit color tone — ignored if `variant` is also set. */
   tone?: PillTone;
-  /** Semantic planning variant — wins over `tone` when both are set. */
-  variant?: PillVariant;
   className?: string;
   children: ReactNode;
 };
 
-export function Pill({ tone, variant, className, children }: PillProps) {
-  const effectiveTone: PillTone = variant ? VARIANT_TO_TONE[variant] : (tone ?? "default");
+export function Pill({ tone = "default", className, children }: PillProps) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-[5px] rounded-full border px-2 py-[2px]",
         "font-sans text-[11px] font-medium",
-        TONE_CLASS[effectiveTone],
+        TONE_CLASS[tone],
         className,
       )}
     >
