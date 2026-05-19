@@ -469,18 +469,19 @@ into its own ticket and exclude it from this PR's scope.
 
 ## 11. Continuous improvement loop
 
-Three artifacts, each with a specific role. Do not conflate them.
+Four artifacts, each with a specific role. Do not conflate them.
 
 | File | Lifecycle | Curated by |
 |---|---|---|
 | `LEARNINGS.md` | Append-only | Agents + founder |
 | `MISTAKES.md` | Append-only | Agents (on gate fire) + founder |
+| `FOUNDER-FOLLOWUPS.md` | Append-only; items move Open → Done | Agents + founder |
 | `CLAUDE.md` (this file) | Curated; updated via PR | Founder only |
 
 **Critical rule.** Agents do NOT write directly to CLAUDE.md. Agents
-append to `LEARNINGS.md` or `MISTAKES.md`. The founder periodically
-distills patterns from those logs into CLAUDE.md via a `chore/distill-*`
-PR.
+append to `LEARNINGS.md`, `MISTAKES.md`, or `FOUNDER-FOLLOWUPS.md`. The
+founder periodically distills patterns from those logs into CLAUDE.md
+via a `chore/distill-*` PR.
 
 ### LEARNINGS.md — what worked, what surprised us
 
@@ -524,6 +525,28 @@ Entry format:
 ```
 
 Lives at repo root: `MISTAKES.md` (created in PR 1).
+
+### FOUNDER-FOLLOWUPS.md — things only the founder can do
+
+Append when an agent or a session identifies an action that the founder
+must take outside the code — repo settings toggles, secrets, third-party
+account setup, domain decisions outside the D-plan.
+
+Entry format:
+
+```markdown
+### YYYY-MM-DD — Short title
+**Source:** <PR #N | session | review finding | external ask>
+**Why:** what this unblocks or fixes
+**How:** the literal steps the founder takes (URL when applicable)
+**Verifies by:** how we know it's done (signal that returns to green / log line / config visible)
+**Status:** Open | Done <YYYY-MM-DD> | Skipped <YYYY-MM-DD> + reason
+```
+
+Items physically move from the **Open** section to the **Done** section
+when complete; entries are not deleted (the trail matters).
+
+Lives at repo root: `FOUNDER-FOLLOWUPS.md`.
 
 ### Distillation — pattern-based, not calendar-based
 
@@ -596,6 +619,7 @@ ADR template lives at `docs/adr/0000-template.md` (created in PR 1).
 - **Implementation log:** `./IMPLEMENTATION-LOG.md`
 - **Learnings log:** `./LEARNINGS.md`
 - **Mistakes log:** `./MISTAKES.md`
+- **Founder follow-ups:** `./FOUNDER-FOLLOWUPS.md`
 - **ADRs:** `./docs/adr/`
 - **Agent definitions:** `./.claude/agents/`
 - **Hooks:** `./.claude/hooks/`

@@ -10,10 +10,11 @@ pnpm-lock.yaml
 docs/execution/Implementation-Plan.md
 
 # Curated policy / log documents — founder-edited, not auto-formatted.
-# See CLAUDE.md §11 (LEARNINGS / MISTAKES / IMPLEMENTATION-LOG lifecycle).
+# See CLAUDE.md §11 (LEARNINGS / MISTAKES / FOUNDER-FOLLOWUPS / IMPLEMENTATION-LOG lifecycle).
 CLAUDE.md
 LEARNINGS.md
 MISTAKES.md
+FOUNDER-FOLLOWUPS.md
 IMPLEMENTATION-LOG.md
 README.md
 .github/pull_request_template.md

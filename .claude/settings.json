@@ -89,6 +89,34 @@
           {
             "type": "command",
             "command": ".claude/hooks/verify-no-body-storage.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-microcopy.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-category-prediction.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-no-gmail-hot-path.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-idempotency.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-activity-for-actions.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-preview-before-mutation.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-tests-after-edit.sh"
           }
         ]
       }

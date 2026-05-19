@@ -1,0 +1,85 @@
+name: Log summary
+
+on:
+  push:
+    branches: [main]
+    paths: ['IMPLEMENTATION-LOG.md']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recompute-summary:
+    name: Recompute summary counts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Recompute summary block
+        run: |
+          set -euo pipefail
+          if [ ! -f IMPLEMENTATION-LOG.md ]; then
+            echo "IMPLEMENTATION-LOG.md not found — skipping."
+            exit 0
+          fi
+          if ! grep -q "AUTO:SUMMARY:START" IMPLEMENTATION-LOG.md; then
+            echo "No AUTO:SUMMARY markers — skipping."
+            exit 0
+          fi
+          # Avoid bash→python heredoc interpolation: do everything in python.
+          python3 <<'PY'
+          import pathlib, re
+
+          log = pathlib.Path('IMPLEMENTATION-LOG.md')
+          src = log.read_text()
+
+          # Extract the AUTO:DECISIONS block, count statuses within it.
+          m = re.search(
+              r'<!-- AUTO:DECISIONS:START -->(.*?)<!-- AUTO:DECISIONS:END -->',
+              src, re.DOTALL,
+          )
+          decisions = m.group(1) if m else ''
+
+          def count(symbol: str) -> int:
+              return decisions.count(f'| {symbol} |')
+
+          counts = {
+              'Not started': ('⬜', count('⬜')),
+              'In progress': ('🟡', count('🟡')),
+              'Shipped':     ('🔵', count('🔵')),
+              'Verified':    ('🟢', count('🟢')),
+              'Blocked':     ('🔴', count('🔴')),
+              'Deferred':    ('⏸️', count('⏸️')),
+          }
+          total = sum(v[1] for v in counts.values())
+
+          lines = ['<!-- AUTO:SUMMARY:START -->', '']
+          for label, (symbol, n) in counts.items():
+              lines.append(f'- {symbol} {label}: {n}')
+          lines.append(f'- **Total: {total} D-decisions**')
+          lines.append('')
+          lines.append('<!-- AUTO:SUMMARY:END -->')
+          summary = '\n'.join(lines)
+
+          new = re.sub(
+              r'<!-- AUTO:SUMMARY:START -->.*?<!-- AUTO:SUMMARY:END -->',
+              summary, src, count=1, flags=re.DOTALL,
+          )
+          log.write_text(new)
+          PY
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet IMPLEMENTATION-LOG.md; then
+            echo "Summary unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add IMPLEMENTATION-LOG.md
+          git commit -m "chore(log): recompute IMPLEMENTATION-LOG summary"
+          git push origin main
