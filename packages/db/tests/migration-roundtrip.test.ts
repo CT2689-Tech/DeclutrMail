@@ -23,7 +23,7 @@ const MIGRATIONS_DIR = join(import.meta.dirname, '..', 'migrations');
 
 function listForwardMigrations(): string[] {
   return readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql') && !f.endsWith('.rollback.sql'))
+    .filter((f) => f.endsWith('.sql'))
     .sort();
 }
 
@@ -55,9 +55,9 @@ async function listSchemaObjects(db: PGlite): Promise<string[]> {
 describe('migration round-trip', () => {
   it('every forward migration has a companion rollback file', () => {
     const forwards = listForwardMigrations();
-    const rollbacks = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.rollback.sql'));
+    const rollbacks = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.rollback'));
     for (const fwd of forwards) {
-      const expected = fwd.replace(/\.sql$/, '.rollback.sql');
+      const expected = fwd.replace(/\.sql$/, '.rollback');
       expect(rollbacks).toContain(expected);
     }
   });
@@ -72,7 +72,7 @@ describe('migration round-trip', () => {
     const afterFirstApply = await listSchemaObjects(db);
 
     for (const fwd of [...forwards].reverse()) {
-      const rollback = fwd.replace(/\.sql$/, '.rollback.sql');
+      const rollback = fwd.replace(/\.sql$/, '.rollback');
       await applyMigration(db, readSql(rollback));
     }
     const afterRollback = await listSchemaObjects(db);

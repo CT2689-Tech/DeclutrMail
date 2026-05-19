@@ -34,7 +34,9 @@ The team needs:
 - **Migration tooling hybrid (D152):** Drizzle Kit generates; Atlas
   lints in CI for dangerous changes (`destructive`, `data_depend`,
   `incompatible`, `concurrent_index`). Each migration ships with a
-  companion `*.rollback.sql` file.
+  companion `*.rollback` file (no `.sql` extension — Atlas reads every
+  `*.sql` in the dir and would otherwise apply the rollback before the
+  forward, since alphabetical sort places `.rollback.sql` before `.sql`).
 - **Round-trip test:** PGlite-backed Vitest suite applies every
   migration, rolls back, re-applies, and asserts schema equality.
   Runs in CI on every PR touching `packages/db/**`.

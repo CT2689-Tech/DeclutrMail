@@ -59,19 +59,24 @@ jobs:
             --latest 1
 
       - name: Verify rollback companion exists for every migration
+        # Rollback files use the `.rollback` (no `.sql`) extension so Atlas
+        # doesn't pick them up as additional migrations during `migrate lint`
+        # — Atlas reads every `*.sql` in the dir and would otherwise apply
+        # the rollback before the forward (alphabetical: `.rollback.sql`
+        # sorted before `.sql`), failing on `DROP ... ON <table>` against an
+        # empty DB.
         run: |
           set -euo pipefail
           missing=0
           for fwd in packages/db/migrations/*.sql; do
-            case "$fwd" in *.rollback.sql) continue ;; esac
-            rb="${fwd%.sql}.rollback.sql"
+            rb="${fwd%.sql}.rollback"
             if [ ! -f "$rb" ]; then
               echo "::error file=$fwd::Missing rollback companion at $rb (D152)"
               missing=$((missing + 1))
             fi
           done
           if [ "$missing" -gt 0 ]; then
-            echo "Per D152, every forward migration ships with a *.rollback.sql companion."
+            echo "Per D152, every forward migration ships with a *.rollback companion."
             exit 1
           fi
           echo "✓ All forward migrations have rollback companions."
