@@ -54,10 +54,7 @@
       "Bash(atlas migrate apply:*)",
       "Bash(supabase db push:*)",
       "Bash(vercel --prod:*)",
-      "Bash(vercel deploy --prod:*)",
-      "Bash(gcloud run deploy:*--project=*prod*)",
-      "Bash(*--no-verify*)",
-      "Bash(*--no-gpg-sign*)"
+      "Bash(vercel deploy --prod:*)"
     ]
   },
   "hooks": {
@@ -74,6 +71,10 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-bypass-flags.sh"
+          },
           {
             "type": "command",
             "command": ".claude/hooks/require-pr-template.sh"
@@ -97,7 +98,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(stat -f \"%Sm\" -t \"%Y-%m-%d\" CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Check IMPLEMENTATION-LOG.md for current state'; echo '  - Review MISTAKES.md headers if anything was added since last session'"
+            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(git log -1 --format='%cd' --date=short -- CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Check IMPLEMENTATION-LOG.md for current state'; echo '  - Review MISTAKES.md headers if anything was added since last session'"
           }
         ]
       }

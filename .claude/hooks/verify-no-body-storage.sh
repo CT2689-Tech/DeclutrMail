@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # verify-no-body-storage.sh — PostToolUse hook for Edit/Write/MultiEdit
-# Fast regex scan for D7/D228 privacy violations.
-# This is a tripwire, not the full audit — privacy-auditor subagent
-# runs the semantic data-flow review.
-# Exit 0 unless a hard match is found.
+#
+# Fast regex tripwire for D7/D228 privacy violations. The full
+# semantic data-flow review is privacy-auditor (subagent). This hook
+# catches obvious cases at edit-time; subtle ones require semantic
+# review.
+#
+# Exit 0 unless a hard match is found (banned trust copy).
 
 set -euo pipefail
 
@@ -14,17 +17,19 @@ if [ -z "$file_path" ]; then
   exit 0
 fi
 
-# Only scan code files where body storage could happen
+# Only scan file types where body storage could happen.
+# JSON included to catch test fixtures and DB seeds that might embed
+# message data.
 case "$file_path" in
-  *.ts|*.tsx|*.js|*.jsx|*.sql|*.md|*.mdx)
+  *.ts|*.tsx|*.js|*.jsx|*.sql|*.json|*.md|*.mdx)
     ;;
   *)
     exit 0
     ;;
 esac
 
-# Skip the agent definitions / hooks / CLAUDE.md themselves (they
-# discuss banned patterns in metadata, not in code)
+# Skip files that legitimately discuss banned patterns in documentation
+# (not in code paths). Without this, the hook recursively flags itself.
 case "$file_path" in
   */.claude/agents/*|*/.claude/hooks/*|*/CLAUDE.md|*/LEARNINGS.md|*/MISTAKES.md|*/IMPLEMENTATION-LOG.md|*/docs/execution/*)
     exit 0
@@ -37,43 +42,45 @@ fi
 
 findings=0
 
-# Pattern 1: Direct body access on Gmail message objects
-if grep -nE "(msg|message|email|gmsg|m)\.(payload|body|raw|html|textBody)\b" "$file_path" >/dev/null 2>&1; then
-  echo "⚠️  verify-no-body-storage: direct body access pattern found in $file_path" >&2
-  grep -nE "(msg|message|email|gmsg|m)\.(payload|body|raw|html|textBody)\b" "$file_path" | sed 's/^/   /' >&2
+# Pattern 1: direct body access on Gmail message-shaped variables.
+# Word boundary \b before the alternation is critical — without it,
+# `system.body`, `program.body` would match because `m.body` is a
+# substring.
+if grep -nE "\b(msg|message|email|gmsg)\.(payload|body|raw|html|textBody)\b" "$file_path" >/dev/null 2>&1; then
+  echo "⚠️  verify-no-body-storage: direct body access pattern in $file_path" >&2
+  grep -nE "\b(msg|message|email|gmsg)\.(payload|body|raw|html|textBody)\b" "$file_path" | sed 's/^/   /' >&2
   findings=$((findings + 1))
 fi
 
-# Pattern 2: Gmail API called with format='full' or 'raw'
+# Pattern 2: Gmail API called with format='full' or format='raw'.
+# Only these formats return body content.
 if grep -nE "format:\s*['\"](full|raw)['\"]" "$file_path" >/dev/null 2>&1; then
   echo "⚠️  verify-no-body-storage: Gmail API format=full/raw in $file_path" >&2
   grep -nE "format:\s*['\"](full|raw)['\"]" "$file_path" | sed 's/^/   /' >&2
   findings=$((findings + 1))
 fi
 
-# Pattern 3: Banned trust copy
+# Pattern 3: Banned trust copy (D228). This is the only HARD block —
+# trust copy violations are easy to grep and severe to ship.
 if grep -niE "bod(y|ies)\s+read.*0" "$file_path" >/dev/null 2>&1; then
   echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (D228)" >&2
   grep -niE "bod(y|ies)\s+read.*0" "$file_path" | sed 's/^/   /' >&2
   exit 1
 fi
 
-# Pattern 4: Storing Message-ID header (D231 forbids this)
-if grep -nE "(message[_-]?id|messageId)\s*[:=]" "$file_path" >/dev/null 2>&1; then
-  # Allow internal Pub/Sub messageId references (different concept)
-  if ! grep -nE "pubsub|webhook|dedup" "$file_path" >/dev/null 2>&1; then
-    echo "⚠️  verify-no-body-storage: possible Message-ID storage in $file_path (D231)" >&2
-    grep -nE "(message[_-]?id|messageId)\s*[:=]" "$file_path" | sed 's/^/   /' >&2
-    findings=$((findings + 1))
-  fi
-fi
+# Note on Message-ID detection (D231): a regex check produced too many
+# false positives because `messageId` is a generic identifier in many
+# contexts (Pub/Sub message IDs, internal UUIDs, queue IDs). Detection
+# of RFC822 Message-ID header storage requires semantic context, which
+# privacy-auditor (subagent) handles. Do NOT re-add a Message-ID regex
+# here without a more specific anchor.
 
 if [ "$findings" -gt 0 ]; then
   echo "" >&2
-  echo "   These are heuristic findings — privacy-auditor subagent runs the full review." >&2
+  echo "   Heuristic findings — privacy-auditor subagent runs the full review." >&2
   echo "   If false positive, document why in PR body or LEARNINGS.md." >&2
 fi
 
-# PostToolUse: warnings don't block (edit already happened). Exit 0
-# unless a hard violation (banned trust copy above already exited 1).
+# PostToolUse: warnings don't block (the edit already happened).
+# The hard violation (banned trust copy above) already exited 1.
 exit 0

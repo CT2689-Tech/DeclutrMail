@@ -1,5 +1,14 @@
 # Implementation Log — DeclutrMail
 
+> ⚠️ **THIS FILE IS A STUB.** Decision rows are not yet generated.
+> The schema and lifecycle below are authoritative, but the per-D status
+> table at the bottom is empty until PR 1 lands. Until then, *all 235
+> D-decisions are effectively ⬜ Not started* — do not rely on this file
+> for status checks.
+>
+> Row generation script (`scripts/generate-impl-log.ts`) and the
+> auto-update GitHub Action (`pr-merged.yml`) both land in PR 1.
+
 Source of truth for the status of each D-decision in the plan. See
 CLAUDE.md §8 for the lifecycle and how this auto-updates from PRs.
 

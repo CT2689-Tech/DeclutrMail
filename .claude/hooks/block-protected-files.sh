@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # block-protected-files.sh — PreToolUse hook for Edit/Write/MultiEdit
+#
 # Blocks edits to secrets, lock files, build artifacts, git internals.
-# Exit 0 to allow; exit non-zero to block.
+# Exit 0 to allow; non-zero to block.
+#
+# NOTE on CLAUDE.md: Edits to CLAUDE.md are NOT blocked here, by design.
+# CLAUDE.md §11 declares a "founder-only via PR" CONVENTION for CLAUDE.md
+# edits — enforced by review, not by hook. Hook-blocking CLAUDE.md would
+# also block legitimate distillation PRs and bootstrap edits. If the
+# convention is violated, code review catches it.
 
 set -euo pipefail
 
@@ -9,12 +16,21 @@ input=$(cat)
 file_path=$(echo "$input" | jq -r '.tool_input.file_path // .tool_input.path // empty')
 
 if [ -z "$file_path" ]; then
-  # No file path in tool input (e.g., MultiEdit without explicit path). Allow.
+  # No file path in tool input (e.g., MultiEdit batches without explicit path). Allow.
   exit 0
 fi
 
-# Strip project root prefix for matching
-rel_path="${file_path#$PWD/}"
+# Normalize to a path relative to the repo root using git rev-parse — this
+# is robust against being invoked from a subdirectory or worktree. Falls
+# back to PWD-strip if git is unavailable.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -n "$repo_root" ]; then
+  # Resolve symlinks and produce an absolute path
+  abs_path=$(cd "$(dirname "$file_path")" 2>/dev/null && pwd -P)/$(basename "$file_path") 2>/dev/null || abs_path="$file_path"
+  rel_path="${abs_path#$repo_root/}"
+else
+  rel_path="${file_path#$PWD/}"
+fi
 
 # Patterns that are HARD-blocked
 blocked_patterns=(
@@ -28,7 +44,7 @@ blocked_patterns=(
   'credentials\.json$'
   'secrets\.json$'
   'service-account.*\.json$'
-  # Lock files (must be regenerated via package manager, not edited)
+  # Lock files (regenerate via package manager, not edit)
   '^pnpm-lock\.yaml$'
   '^package-lock\.json$'
   '^yarn\.lock$'

@@ -1,7 +1,25 @@
 #!/usr/bin/env bash
 # require-pr-template.sh — PreToolUse hook for Bash
-# When the agent runs `gh pr create`, verify the PR body contains
-# `Closes D###` OR the branch is a bootstrap branch (chore/bootstrap-*).
+#
+# Local fail-fast layer for PR creation conventions. Enforces ONLY the
+# branch name pattern from CLAUDE.md §6 — the PR body / template check
+# happens authoritatively in the GitHub Action (lands in PR 1).
+#
+# Why no local body check:
+#   gh pr create --body "$(cat <<'EOF'...EOF)" is the standard pattern,
+#   but the body content is a HEREDOC expanded by the shell BEFORE the
+#   tool_input.command string reaches this hook — so the literal string
+#   we see has the body fully interpolated, often spanning many lines
+#   with embedded quotes that a regex can't reliably extract. Rather
+#   than ship a body check that silently fails on every common usage,
+#   we leave body validation to the GH Action which sees the actual
+#   PR body via API.
+#
+# Coverage gaps (intentional — GH Action catches these):
+#   - gh pr edit --body  (creates a body change after PR exists)
+#   - gh api repos/.../pulls (direct API)
+#   - PRs created via web UI
+#
 # Exit 0 to allow; non-zero to block.
 
 set -euo pipefail
@@ -17,39 +35,25 @@ fi
 # Get the current branch
 branch=$(git branch --show-current 2>/dev/null || echo "")
 
-# Bootstrap branches are exempt (per CLAUDE.md §6)
+if [ -z "$branch" ]; then
+  echo "❌ require-pr-template: could not determine current branch." >&2
+  exit 1
+fi
+
+# Bootstrap branches are exempt (CLAUDE.md §6)
 if echo "$branch" | grep -qE "^chore/bootstrap-"; then
   exit 0
 fi
 
-# Branch name convention check
+# Branch name convention — KEEP THIS LIST IN SYNC with CLAUDE.md §6.
+# If you add a type here, update the table in §6 too.
+# Pattern: <type>/d<NNN>-<kebab-description> OR chore/bootstrap-<topic>
 if ! echo "$branch" | grep -qE "^(feat|fix|chore|docs|refactor|test|perf|security)/(d[0-9]{3}-|bootstrap-)"; then
   echo "❌ require-pr-template: branch '$branch' does not match naming convention." >&2
-  echo "   Expected: <type>/d<NNN>-<description> or chore/bootstrap-<topic>" >&2
-  echo "   See CLAUDE.md §6 for full pattern." >&2
+  echo "   Expected: <type>/d<NNN>-<kebab-description> or chore/bootstrap-<topic>" >&2
+  echo "   Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
+  echo "   See CLAUDE.md §6 for the full pattern." >&2
   exit 1
 fi
 
-# Extract --body or --body-file from the command
-body=""
-if echo "$command" | grep -qE -- "--body-file"; then
-  body_file=$(echo "$command" | grep -oE -- "--body-file\s+[^\s]+" | awk '{print $2}')
-  if [ -f "$body_file" ]; then
-    body=$(cat "$body_file")
-  fi
-elif echo "$command" | grep -qE -- "--body"; then
-  # Try to extract --body "..." or --body $(cat <<EOF... EOF)
-  body=$(echo "$command" | grep -oE -- "--body\s+['\"][^'\"]*['\"]" || true)
-fi
-
-# Check for `Closes D###` pattern in the body
-if [ -n "$body" ] && ! echo "$body" | grep -qE "Closes\s+D[0-9]+"; then
-  echo "❌ require-pr-template: PR body must contain 'Closes D###' for one or more D-decisions." >&2
-  echo "   See .github/pull_request_template.md for the template." >&2
-  echo "   Bootstrap PRs (branch 'chore/bootstrap-*') are exempt." >&2
-  exit 1
-fi
-
-# If we got here without a body, the PR will use the template — let it through.
-# The GH Action 'require-pr-template' is the authoritative check.
 exit 0
