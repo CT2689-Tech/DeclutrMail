@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { users } from './users';
 import { workspaces } from './workspaces';
@@ -56,6 +65,8 @@ export const mailboxAccounts = pgTable(
       table.provider,
       table.providerAccountId,
     ),
+    workspaceIdx: index('mailbox_accounts_workspace_id_idx').on(table.workspaceId),
+    userIdx: index('mailbox_accounts_user_id_idx').on(table.userId),
   }),
 );
 

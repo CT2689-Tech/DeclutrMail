@@ -1,10 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
+import { citext } from './_custom-types';
 import { workspaces } from './workspaces';
 
 /**
  * Users — auth principals, each scoped to a workspace.
+ *
+ * `email` uses citext for case-insensitive uniqueness — `Foo@bar.com`
+ * and `foo@bar.com` are the same identity at the DB level, no app-side
+ * normalization required.
  *
  * `preferences` is the user-toggleable settings bag (D110 profile_preset,
  * brief_enabled, screener_enabled, etc.).
@@ -16,6 +21,10 @@ import { workspaces } from './workspaces';
  * membership is the foreign key; if a user joins a second workspace
  * post-launch (Teams), that requires a join table — deferred.
  *
+ * `updated_at` is auto-bumped by the `set_updated_at` trigger declared
+ * in migration 0000 — every UPDATE refreshes the timestamp without
+ * app-side coordination.
+ *
  * No body data; no privacy concerns.
  */
 
@@ -26,7 +35,7 @@ export const users = pgTable(
     workspaceId: uuid('workspace_id')
       .notNull()
       .references(() => workspaces.id, { onDelete: 'cascade' }),
-    email: text('email').notNull(),
+    email: citext('email').notNull(),
     preferences: jsonb('preferences')
       .notNull()
       .default(sql`'{}'::jsonb`),
@@ -42,6 +51,7 @@ export const users = pgTable(
   },
   (table) => ({
     emailIdx: uniqueIndex('users_email_uniq').on(table.email),
+    workspaceIdx: index('users_workspace_id_idx').on(table.workspaceId),
   }),
 );
 

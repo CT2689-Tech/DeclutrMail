@@ -1,5 +1,5 @@
 {
-  "id": "469ec32f-9333-44a4-9d0c-251edd5ad062",
+  "id": "27438079-6d88-4ab6-b7b5-cad62f960f57",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -91,6 +91,36 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "mailbox_accounts_workspace_id_idx": {
+          "name": "mailbox_accounts_workspace_id_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mailbox_accounts_user_id_idx": {
+          "name": "mailbox_accounts_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -146,7 +176,7 @@
         },
         "email": {
           "name": "email",
-          "type": "text",
+          "type": "citext",
           "primaryKey": false,
           "notNull": true
         },
@@ -191,6 +221,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_workspace_id_idx": {
+          "name": "users_workspace_id_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -16,6 +16,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
+import { citext } from '@electric-sql/pglite/contrib/citext';
 import { describe, expect, it } from 'vitest';
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '..', 'migrations');
@@ -62,7 +63,7 @@ describe('migration round-trip', () => {
   });
 
   it('apply → rollback → apply produces the same schema', async () => {
-    const db = new PGlite();
+    const db = new PGlite({ extensions: { citext } });
     const forwards = listForwardMigrations();
 
     for (const fwd of forwards) {
@@ -87,7 +88,7 @@ describe('migration round-trip', () => {
   });
 
   it('foundation tables exist with expected shape', async () => {
-    const db = new PGlite();
+    const db = new PGlite({ extensions: { citext } });
     for (const fwd of listForwardMigrations()) {
       await applyMigration(db, readSql(fwd));
     }
