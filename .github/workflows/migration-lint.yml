@@ -36,7 +36,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Atlas
+        # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a
+        # paid (or login-required) Atlas Pro plan. v0.37.0 is the last
+        # release where the community CLI runs lint unauthenticated.
+        # See https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
+        # If we later add `ATLAS_CLOUD_TOKEN` (see FOUNDER-FOLLOWUPS.md),
+        # bump this back to `v0` and add `atlas login` before `lint`.
         uses: ariga/setup-atlas@v0
+        with:
+          version: v0.37.0
 
       - name: Run atlas migrate lint
         # Postgres 16 runs as a service container above (more reliable than

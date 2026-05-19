@@ -26,19 +26,24 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN for Atlas Cloud reporting
+### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
-**Why:** Atlas Cloud provides a dashboard of migration history, lint reports, and
-drift detection across environments. Not required for CI linting (local Docker
-dev-url works without it), but enables the cloud reporting UI at atlas.ariga.io.
+**Why:** Atlas v0.38 (April 2026) gated `atlas migrate lint` behind a paid /
+login-required Pro plan. We pinned `setup-atlas` to **v0.37.0** to keep the
+community lint working without a token. Adding `ATLAS_CLOUD_TOKEN` lets us
+upgrade to the latest Atlas (security patches + newer rules) AND get the
+Atlas Cloud dashboard with migration history + drift detection.
 **How:** Create a free account at https://auth.atlasgo.cloud/login, generate a
 token under Settings → API Tokens, and add `ATLAS_CLOUD_TOKEN` to
 https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions.
-Then add `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` back to the
-`ariga/setup-atlas@v0` step in `.github/workflows/migration-lint.yml`.
-**Verifies by:** `atlas migrate lint` check in PR #5 or later shows a link to
-the Atlas Cloud lint report in addition to the CLI output.
+Then edit `.github/workflows/migration-lint.yml`:
+  1. Remove the `version: v0.37.0` pin from the `setup-atlas` step
+  2. Add an `atlas login` step using the token before `atlas migrate lint`
+  3. Or pass `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` to setup-atlas
+**Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
+release; lint reports appear at atlas.ariga.io.
 **Status:** Open
+**Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
 
 ### 2026-05-19 — Decide on project-scoped MCP servers
 **Source:** PR #4 — `.mcp.json` shipped as empty scaffold.
