@@ -26,35 +26,18 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-19 — Enable Code Security in repo settings
-**Source:** PR #3 CodeQL upload failure (https://github.com/CT2689-Tech/DeclutrMail/actions/runs/26113120364/job/76795270201)
-**Why:** CodeQL's analysis step succeeds, but the SARIF upload fails with
-"Code Security must be enabled for this repository to use code scanning."
-Until this is on, every PR shows a red CodeQL check that's actually a
-config warning, not a code issue. Adds noise + risks ignoring real
-findings later.
-**How:** Open https://github.com/CT2689-Tech/DeclutrMail/settings/security_analysis
-and enable **Code scanning** (Default / CodeQL setup). For private repos
-this requires GitHub Advanced Security; for public repos it's free.
-**Verifies by:** Next PR's CodeQL check ends ✅ instead of ❌, and
-findings (if any) show up under the Security tab.
-**Status:** Open
-
-### 2026-05-19 — Configure ANTHROPIC_API_KEY in repo secrets
-**Source:** PR #4 — `.github/workflows/subagent-gate.yml` documents this
-as the wiring point for real Claude API invocation.
-**Why:** The 8-agent gate network (CLAUDE.md §7) is defined as files but
-the GH Action currently only reports which agents WOULD run on a given
-PR's changed paths. Real semantic review by privacy-auditor /
-architecture-guardian / schema-migration-reviewer / design-system-agent /
-webhook-security-auditor needs the Claude API key to be available to
-the workflow.
-**How:** Open https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions
-and add `ANTHROPIC_API_KEY`. Then update `subagent-gate.yml` to invoke
-the agents (a follow-up PR — current workflow has the wiring point
-marked).
-**Verifies by:** A PR touching `apps/api/gmail/**` (for example) shows
-privacy-auditor's actual findings in CI, not just a "would-run" report.
+### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN for Atlas Cloud reporting
+**Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
+**Why:** Atlas Cloud provides a dashboard of migration history, lint reports, and
+drift detection across environments. Not required for CI linting (local Docker
+dev-url works without it), but enables the cloud reporting UI at atlas.ariga.io.
+**How:** Create a free account at https://auth.atlasgo.cloud/login, generate a
+token under Settings → API Tokens, and add `ATLAS_CLOUD_TOKEN` to
+https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions.
+Then add `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` back to the
+`ariga/setup-atlas@v0` step in `.github/workflows/migration-lint.yml`.
+**Verifies by:** `atlas migrate lint` check in PR #5 or later shows a link to
+the Atlas Cloud lint report in addition to the CLI output.
 **Status:** Open
 
 ### 2026-05-19 — Decide on project-scoped MCP servers
@@ -75,4 +58,33 @@ cloud sessions auto-discover them on startup.
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
 
-_None yet._
+### 2026-05-19 — Configure ANTHROPIC_API_KEY in repo secrets
+**Source:** PR #4 — `.github/workflows/subagent-gate.yml` documents this
+as the wiring point for real Claude API invocation.
+**Why:** The 8-agent gate network (CLAUDE.md §7) is defined as files but
+the GH Action currently only reports which agents WOULD run on a given
+PR's changed paths. Real semantic review by privacy-auditor /
+architecture-guardian / schema-migration-reviewer / design-system-agent /
+webhook-security-auditor needs the Claude API key to be available to
+the workflow.
+**How:** Open https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions
+and add `ANTHROPIC_API_KEY`. Then update `subagent-gate.yml` to invoke
+the agents (a follow-up PR — current workflow has the wiring point
+marked).
+**Verifies by:** A PR touching `apps/api/gmail/**` (for example) shows
+privacy-auditor's actual findings in CI, not just a "would-run" report.
+**Status:** Done 2026-05-19
+
+### 2026-05-19 — Enable Code Security in repo settings
+**Source:** PR #3 CodeQL upload failure (https://github.com/CT2689-Tech/DeclutrMail/actions/runs/26113120364/job/76795270201)
+**Why:** CodeQL's analysis step succeeds, but the SARIF upload fails with
+"Code Security must be enabled for this repository to use code scanning."
+Until this is on, every PR shows a red CodeQL check that's actually a
+config warning, not a code issue. Adds noise + risks ignoring real
+findings later.
+**How:** Open https://github.com/CT2689-Tech/DeclutrMail/settings/security_analysis
+and enable **Code scanning** (Default / CodeQL setup). For private repos
+this requires GitHub Advanced Security; for public repos it's free.
+**Verifies by:** Next PR's CodeQL check ends ✅ instead of ❌, and
+findings (if any) show up under the Security tab.
+**Status:** Skipped 2026-05-19 — private repo; GitHub Advanced Security is paid. CodeQL workflow removed in PR #7 to eliminate the noise. Revisit if repo goes public or Advanced Security is purchased.
