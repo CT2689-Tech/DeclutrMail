@@ -1,0 +1,78 @@
+name: PR merged — flip IMPLEMENTATION-LOG
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  flip-d-rows:
+    name: Flip D-rows ⬜ → 🔵
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Extract D-numbers from PR body
+        id: extract
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Look for `Closes D###` lines in the PR body. Multiple D-refs allowed.
+          mapfile -t d_numbers < <(printf '%s\n' "$PR_BODY" | grep -oE 'Closes\s+D[0-9]{1,3}' | grep -oE 'D[0-9]{1,3}' | sort -u)
+          if [ ${#d_numbers[@]} -eq 0 ]; then
+            echo "no_d_refs=true" >> "$GITHUB_OUTPUT"
+            echo "No 'Closes D###' references in PR body — nothing to flip."
+            exit 0
+          fi
+          printf '%s\n' "${d_numbers[@]}" > /tmp/d_numbers.txt
+          echo "no_d_refs=false" >> "$GITHUB_OUTPUT"
+          echo "D-numbers to flip:"
+          cat /tmp/d_numbers.txt
+
+      - name: Update IMPLEMENTATION-LOG.md
+        if: steps.extract.outputs.no_d_refs == 'false'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          log=IMPLEMENTATION-LOG.md
+          if [ ! -f "$log" ]; then
+            echo "IMPLEMENTATION-LOG.md not found — skipping."
+            exit 0
+          fi
+          while read -r d; do
+            # Match the row for this D-number and flip ⬜ → 🔵 + record PR.
+            # Row shape: `| Dxx | <title> | <status> | <pr> | <verified> | <notes> |`
+            num="${d#D}"
+            # Use sed to flip status and inject PR link. Avoid touching already-flipped rows.
+            sed -i.bak -E "s|^(\| D${num} \| [^|]+ \|) ⬜ \|  \|(.*)$|\1 🔵 | #${PR_NUMBER} |\2|" "$log"
+          done < /tmp/d_numbers.txt
+          rm -f "${log}.bak"
+          echo "--- Diff ---"
+          git diff "$log" | head -40 || true
+
+      - name: Commit + push
+        if: steps.extract.outputs.no_d_refs == 'false'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if git diff --quiet IMPLEMENTATION-LOG.md; then
+            echo "No changes to commit (D-rows may already be flipped)."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add IMPLEMENTATION-LOG.md
+          git commit -m "chore(log): flip D-rows for PR #${PR_NUMBER}"
+          git push origin main

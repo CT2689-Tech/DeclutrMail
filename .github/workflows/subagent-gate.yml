@@ -1,0 +1,79 @@
+name: Subagent gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: subagent-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # Detect which scoped paths changed; each path maps to one or more gate
+  # agents per CLAUDE.md §7. The actual agent invocation requires
+  # ANTHROPIC_API_KEY in repo secrets — see the `invoke-agents` job below
+  # for the wiring once that's configured.
+  scope:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      privacy: ${{ steps.filter.outputs.privacy }}
+      architecture: ${{ steps.filter.outputs.architecture }}
+      schema: ${{ steps.filter.outputs.schema }}
+      design: ${{ steps.filter.outputs.design }}
+      webhooks: ${{ steps.filter.outputs.webhooks }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            privacy:
+              - 'apps/api/gmail/**'
+              - 'apps/api/messages/**'
+              - 'apps/api/senders/**'
+              - 'packages/db/schema/messages.ts'
+              - 'packages/db/schema/senders.ts'
+            architecture:
+              - 'apps/api/**'
+              - 'packages/db/**'
+              - 'packages/workers/**'
+              - 'packages/events/**'
+            schema:
+              - 'packages/db/migrations/**'
+              - 'packages/db/schema/**'
+            design:
+              - 'apps/web/components/**'
+              - 'apps/web/features/**'
+              - 'apps/web/app/**'
+              - '**/*.stories.tsx'
+            webhooks:
+              - 'apps/api/webhooks/**'
+              - 'apps/api/**/*-webhook.controller.ts'
+
+  # Placeholder gate that documents which agents WOULD run for this PR.
+  # Replaced with real Claude API invocations once ANTHROPIC_API_KEY is
+  # configured in repo secrets and a runner action is selected.
+  report:
+    name: Gate scope report
+    needs: scope
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize gates that would run
+        run: |
+          echo "::group::Gate scope for this PR"
+          [ "${{ needs.scope.outputs.privacy }}"      = "true" ] && echo "🔒 privacy-auditor"           || true
+          [ "${{ needs.scope.outputs.architecture }}" = "true" ] && echo "🏛  architecture-guardian"    || true
+          [ "${{ needs.scope.outputs.schema }}"       = "true" ] && echo "🗄  schema-migration-reviewer" || true
+          [ "${{ needs.scope.outputs.design }}"       = "true" ] && echo "🎨 design-system-agent"        || true
+          [ "${{ needs.scope.outputs.webhooks }}"     = "true" ] && echo "🪝 webhook-security-auditor"   || true
+          echo "::endgroup::"
+          echo ""
+          echo "NOTE: Agent invocation is currently advisory only. Real Claude"
+          echo "API runs land when ANTHROPIC_API_KEY is configured in repo secrets."
+          echo "See CLAUDE.md §7 for the gate definitions."
