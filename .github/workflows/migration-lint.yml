@@ -22,8 +22,6 @@ jobs:
 
       - name: Set up Atlas
         uses: ariga/setup-atlas@v0
-        with:
-          cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}
 
       - name: Run atlas migrate lint
         # Atlas spins up a transient Postgres 16 via Docker for the
