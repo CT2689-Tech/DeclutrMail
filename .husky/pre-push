@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+# Local fail-fast for branch naming. Authoritative check is the GH Action
+# `branch-name.yml` (lands in PR 1b). See CLAUDE.md §6 for the full pattern.
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+
+# Allowed:
+#   <type>/d<NNN>-<kebab>      e.g. feat/d011-drizzle-orm-setup
+#   chore/bootstrap-<topic>    e.g. chore/bootstrap-pr1a
+#   main
+if ! echo "$branch" | grep -qE '^(main|(feat|fix|chore|docs|refactor|test|perf|security)/(d[0-9]{3}-|bootstrap-))'; then
+  echo "✗ pre-push: branch '$branch' does not match CLAUDE.md §6 naming convention." >&2
+  echo "  Expected: <type>/d<NNN>-<kebab> or chore/bootstrap-<topic>" >&2
+  echo "  Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
+  exit 1
+fi
