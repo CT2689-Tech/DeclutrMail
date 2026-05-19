@@ -1,0 +1,11 @@
+{
+  "name": "@declutrmail/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo 'no tests yet'",
+    "build": "echo 'no build yet'"
+  }
+}

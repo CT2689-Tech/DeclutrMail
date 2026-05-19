@@ -1,0 +1,20 @@
+node_modules
+dist
+build
+.next
+.turbo
+coverage
+pnpm-lock.yaml
+*.min.js
+*.min.css
+docs/execution/Implementation-Plan.md
+
+# Curated policy / log documents — founder-edited, not auto-formatted.
+# See CLAUDE.md §11 (LEARNINGS / MISTAKES / IMPLEMENTATION-LOG lifecycle).
+CLAUDE.md
+LEARNINGS.md
+MISTAKES.md
+IMPLEMENTATION-LOG.md
+README.md
+.github/pull_request_template.md
+.claude/agents/**/*.md
