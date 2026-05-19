@@ -1,0 +1,82 @@
+name: Migration lint (Atlas)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/db/migrations/**'
+      - 'packages/db/src/schema/**'
+      - 'packages/db/drizzle.config.ts'
+      - 'packages/db/atlas.hcl'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    name: atlas migrate lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Atlas
+        # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a
+        # paid (or login-required) Atlas Pro plan. v0.37.0 is the last
+        # release where the community CLI runs lint unauthenticated.
+        # See https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
+        # If we later add `ATLAS_CLOUD_TOKEN` (see FOUNDER-FOLLOWUPS.md),
+        # bump this back to `v0` and add `atlas login` before `lint`.
+        uses: ariga/setup-atlas@v0
+        with:
+          version: v0.37.0
+
+      - name: Run atlas migrate lint
+        # Postgres 16 runs as a service container above (more reliable than
+        # Atlas's `docker://` driver, which spawns its own container per run).
+        # Atlas applies each migration against the empty `dev` DB and flags
+        # any dangerous operation per atlas.hcl's lint config:
+        #   destructive / data_depend / incompatible / concurrent_index
+        run: |
+          atlas migrate lint \
+            --dir 'file://packages/db/migrations' \
+            --dev-url 'postgres://atlas:atlas@localhost:5432/dev?sslmode=disable' \
+            --latest 1
+
+      - name: Verify rollback companion exists for every migration
+        # Rollback files use the `.rollback` (no `.sql`) extension so Atlas
+        # doesn't pick them up as additional migrations during `migrate lint`
+        # — Atlas reads every `*.sql` in the dir and would otherwise apply
+        # the rollback before the forward (alphabetical: `.rollback.sql`
+        # sorted before `.sql`), failing on `DROP ... ON <table>` against an
+        # empty DB.
+        run: |
+          set -euo pipefail
+          missing=0
+          for fwd in packages/db/migrations/*.sql; do
+            rb="${fwd%.sql}.rollback"
+            if [ ! -f "$rb" ]; then
+              echo "::error file=$fwd::Missing rollback companion at $rb (D152)"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "Per D152, every forward migration ships with a *.rollback companion."
+            exit 1
+          fi
+          echo "✓ All forward migrations have rollback companions."
