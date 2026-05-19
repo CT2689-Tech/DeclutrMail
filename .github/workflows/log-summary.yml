@@ -22,52 +22,55 @@ jobs:
       - name: Recompute summary block
         run: |
           set -euo pipefail
-          log=IMPLEMENTATION-LOG.md
-
-          # Counts by status symbol within AUTO:DECISIONS table.
-          not_started=$(awk '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| ⬜ |' || true)
-          in_progress=$(awk '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| 🟡 |' || true)
-          shipped=$(awk     '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| 🔵 |' || true)
-          verified=$(awk    '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| 🟢 |' || true)
-          blocked=$(awk     '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| 🔴 |' || true)
-          deferred=$(awk    '/AUTO:DECISIONS:START/,/AUTO:DECISIONS:END/' "$log" | grep -c '| ⏸️ |' || true)
-          total=$((not_started + in_progress + shipped + verified + blocked + deferred))
-
-          summary=$(cat <<EOF
-          <!-- AUTO:SUMMARY:START -->
-
-          - ⬜ Not started: ${not_started}
-          - 🟡 In progress: ${in_progress}
-          - 🔵 Shipped: ${shipped}
-          - 🟢 Verified: ${verified}
-          - 🔴 Blocked: ${blocked}
-          - ⏸️ Deferred: ${deferred}
-          - **Total: ${total} D-decisions**
-
-          <!-- AUTO:SUMMARY:END -->
-          EOF
-          )
-
-          # Replace the AUTO:SUMMARY block in place. If markers are absent,
-          # leave the file alone (the founder-curated stub still owns the
-          # summary placeholder until the row-generator + this workflow have
-          # both run at least once).
-          if grep -q "AUTO:SUMMARY:START" "$log"; then
-            python3 - <<PYEOF
-          import re, pathlib
-          p = pathlib.Path("$log")
-          src = p.read_text()
-          new = re.sub(
-              r'<!-- AUTO:SUMMARY:START -->.*?<!-- AUTO:SUMMARY:END -->',
-              '''$summary''',
-              src, count=1, flags=re.DOTALL,
-          )
-          p.write_text(new)
-          PYEOF
-          else
-            echo "No AUTO:SUMMARY markers in $log — skipping update."
+          if [ ! -f IMPLEMENTATION-LOG.md ]; then
+            echo "IMPLEMENTATION-LOG.md not found — skipping."
             exit 0
           fi
+          if ! grep -q "AUTO:SUMMARY:START" IMPLEMENTATION-LOG.md; then
+            echo "No AUTO:SUMMARY markers — skipping."
+            exit 0
+          fi
+          # Avoid bash→python heredoc interpolation: do everything in python.
+          python3 <<'PY'
+          import pathlib, re
+
+          log = pathlib.Path('IMPLEMENTATION-LOG.md')
+          src = log.read_text()
+
+          # Extract the AUTO:DECISIONS block, count statuses within it.
+          m = re.search(
+              r'<!-- AUTO:DECISIONS:START -->(.*?)<!-- AUTO:DECISIONS:END -->',
+              src, re.DOTALL,
+          )
+          decisions = m.group(1) if m else ''
+
+          def count(symbol: str) -> int:
+              return decisions.count(f'| {symbol} |')
+
+          counts = {
+              'Not started': ('⬜', count('⬜')),
+              'In progress': ('🟡', count('🟡')),
+              'Shipped':     ('🔵', count('🔵')),
+              'Verified':    ('🟢', count('🟢')),
+              'Blocked':     ('🔴', count('🔴')),
+              'Deferred':    ('⏸️', count('⏸️')),
+          }
+          total = sum(v[1] for v in counts.values())
+
+          lines = ['<!-- AUTO:SUMMARY:START -->', '']
+          for label, (symbol, n) in counts.items():
+              lines.append(f'- {symbol} {label}: {n}')
+          lines.append(f'- **Total: {total} D-decisions**')
+          lines.append('')
+          lines.append('<!-- AUTO:SUMMARY:END -->')
+          summary = '\n'.join(lines)
+
+          new = re.sub(
+              r'<!-- AUTO:SUMMARY:START -->.*?<!-- AUTO:SUMMARY:END -->',
+              summary, src, count=1, flags=re.DOTALL,
+          )
+          log.write_text(new)
+          PY
 
       - name: Commit if changed
         run: |

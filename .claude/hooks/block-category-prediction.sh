@@ -51,13 +51,12 @@ if grep -nEi "(email|message|mail)[a-z_]*categor[a-z]*(classifier|predictor|mode
   violations=$((violations + 1))
 fi
 
-# Explicit category enum (newsletter/transactional/personal/promotional)
-# WITH ML scaffolding nearby. Flag if both terms present in the same file.
-if grep -nEi "(newsletter|transactional|personal|promotional|social|update)" "$file_path" >/dev/null 2>&1 \
-   && grep -nEi "(\.predict\(|\.classify\(|\.infer\(|model\.run|ml\.predict|haiku|sonnet|opus)" "$file_path" >/dev/null 2>&1; then
-  echo "⚠️  block-category-prediction: email category vocabulary + ML inference in same file (D222 — verify intent)" >&2
-  violations=$((violations + 1))
-fi
+# NOTE: a third heuristic — co-occurrence of category vocabulary
+# (newsletter / transactional / etc.) AND any LLM call in the same file
+# — was removed after early review: it false-positived on legitimate
+# brief generation (D62 uses Haiku) and on per-category UI surfaces.
+# The semantic D222 check belongs in an agent (architecture-guardian),
+# not a hook.
 
 if [ "$violations" -gt 0 ]; then
   echo "" >&2

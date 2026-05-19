@@ -62,23 +62,30 @@ function main(): void {
   const lines = log.split('\n');
 
   // Row shape: `| D<num> | <title> | <status> | <pr> | <verified-by> | <notes> |`
-  const rowPrefix = `| D${num} |`;
-  const rowIdx = lines.findIndex((line) => line.startsWith(rowPrefix));
+  // Anchored regex parse instead of split('|') so a future title containing
+  // an escaped `\|` doesn't break the column extraction.
+  const rowRegex = new RegExp(
+    `^\\| D${num} \\| (.+?) \\| (\\S+|) \\| ([^|]*?) \\| ([^|]*?) \\| ([^|]*?) \\|\\s*$`,
+  );
+  const rowIdx = lines.findIndex((line) => rowRegex.test(line));
   if (rowIdx === -1) {
-    console.error(`✗ Row for ${d} not found in ${LOG_PATH}.`);
+    console.error(`✗ Row for ${d} not found (or malformed) in ${LOG_PATH}.`);
     console.error(`  Run \`pnpm generate-impl-log\` first if rows are missing.`);
     process.exit(2);
   }
 
   const row = lines[rowIdx];
-  const cells = row.split('|').map((c) => c.trim());
-  // cells: ['', 'D<num>', '<title>', '<status>', '<pr>', '<verified-by>', '<notes>', '']
-  if (cells.length < 7) {
+  const match = rowRegex.exec(row);
+  if (!match) {
     console.error(`✗ Row for ${d} is malformed: ${row}`);
     process.exit(4);
   }
 
-  const currentStatus = cells[3];
+  const title = match[1];
+  const currentStatus = match[2];
+  const pr = match[3];
+  const notes = match[5];
+
   if (currentStatus === '🟢') {
     console.log(`✓ ${d} is already 🟢 Verified (no-op).`);
     process.exit(0);
@@ -89,10 +96,7 @@ function main(): void {
     process.exit(3);
   }
 
-  cells[3] = '🟢';
-  cells[5] = source;
-  const nextRow = '| ' + cells.slice(1, -1).join(' | ') + ' |';
-  lines[rowIdx] = nextRow;
+  lines[rowIdx] = `| D${num} | ${title} | 🟢 | ${pr} | ${source} | ${notes} |`;
 
   writeFileSync(LOG_PATH, lines.join('\n'));
   console.log(`✓ ${d}: 🔵 Shipped → 🟢 Verified (source: ${source})`);

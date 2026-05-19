@@ -46,21 +46,41 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          log=IMPLEMENTATION-LOG.md
-          if [ ! -f "$log" ]; then
+          if [ ! -f IMPLEMENTATION-LOG.md ]; then
             echo "IMPLEMENTATION-LOG.md not found — skipping."
             exit 0
           fi
-          while read -r d; do
-            # Match the row for this D-number and flip ⬜ → 🔵 + record PR.
-            # Row shape: `| Dxx | <title> | <status> | <pr> | <verified> | <notes> |`
-            num="${d#D}"
-            # Use sed to flip status and inject PR link. Avoid touching already-flipped rows.
-            sed -i.bak -E "s|^(\| D${num} \| [^|]+ \|) ⬜ \|  \|(.*)$|\1 🔵 | #${PR_NUMBER} |\2|" "$log"
-          done < /tmp/d_numbers.txt
-          rm -f "${log}.bak"
+          # Python avoids the sed-delimiter footgun (rows contain '|' literals).
+          python3 <<'PY'
+          import os, pathlib, re
+
+          pr = os.environ['PR_NUMBER']
+          log = pathlib.Path('IMPLEMENTATION-LOG.md')
+          d_numbers = [
+              line.strip()
+              for line in pathlib.Path('/tmp/d_numbers.txt').read_text().splitlines()
+              if line.strip()
+          ]
+
+          src = log.read_text()
+          for d in d_numbers:
+              num = d[1:]  # strip 'D'
+              # Only flip rows currently in ⬜ Not-started state with empty PR cell.
+              # Row shape: `| D<num> | <title> | ⬜ |  | <verified> | <notes> |`
+              pattern = re.compile(
+                  rf'^\| D{re.escape(num)} \| ([^|]+) \| ⬜ \|  \|(.*)$',
+                  re.MULTILINE,
+              )
+              src, n = pattern.subn(
+                  rf'| D{num} | \1 | 🔵 | #{pr} |\2',
+                  src,
+              )
+              print(f'{d}: {n} row(s) flipped')
+
+          log.write_text(src)
+          PY
           echo "--- Diff ---"
-          git diff "$log" | head -40 || true
+          git diff IMPLEMENTATION-LOG.md | head -40 || true
 
       - name: Commit + push
         if: steps.extract.outputs.no_d_refs == 'false'
