@@ -9,6 +9,12 @@ pnpm-lock.yaml
 *.min.css
 docs/execution/Implementation-Plan.md
 
+# Drizzle-generated migration metadata + SQL.
+# meta/*.json must be byte-identical to drizzle-kit's output (used as the
+# round-trip snapshot). The SQL files are also drizzle-emitted and should
+# remain in the exact shape drizzle re-emits on next generate.
+packages/db/migrations/**
+
 # Curated policy / log documents — founder-edited, not auto-formatted.
 # See CLAUDE.md §11 (LEARNINGS / MISTAKES / FOUNDER-FOLLOWUPS / IMPLEMENTATION-LOG lifecycle).
 CLAUDE.md
