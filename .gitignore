@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+.next/
+.turbo/
+
+# Coverage
+coverage/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/settings.json
+*.swp
+
+# Claude — user-local only
+.claude/settings.local.json
+
+# Test artifacts
+playwright-report/
+test-results/

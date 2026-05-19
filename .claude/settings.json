@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(pnpm:*)",
+      "Bash(npx:*)",
+      "Bash(tsc:*)",
+      "Bash(vitest:*)",
+      "Bash(playwright:*)",
+      "Bash(storybook:*)",
+      "Bash(drizzle-kit generate:*)",
+      "Bash(drizzle-kit check:*)",
+      "Bash(drizzle-kit drop:*)",
+      "Bash(atlas migrate diff:*)",
+      "Bash(atlas migrate lint:*)",
+      "Bash(atlas migrate status:*)",
+      "Bash(atlas migrate hash:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git fetch:*)",
+      "Bash(git stash:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh api:*)",
+      "Bash(rg:*)",
+      "Bash(fd:*)",
+      "Bash(jq:*)",
+      "Bash(cat package.json)",
+      "Bash(cat tsconfig*.json)",
+      "Bash(cat .eslintrc*)",
+      "Bash(cat .prettierrc*)",
+      "Bash(cat turbo.json)",
+      "Bash(cat pnpm-workspace.yaml)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(env)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -fr:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git branch -D:*)",
+      "Bash(atlas migrate apply:*)",
+      "Bash(supabase db push:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(vercel deploy --prod:*)",
+      "Bash(gcloud run deploy:*--project=*prod*)",
+      "Bash(*--no-verify*)",
+      "Bash(*--no-gpg-sign*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-protected-files.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/require-pr-template.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/verify-no-body-storage.sh"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(stat -f \"%Sm\" -t \"%Y-%m-%d\" CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Check IMPLEMENTATION-LOG.md for current state'; echo '  - Review MISTAKES.md headers if anything was added since last session'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Before closing session:'; echo '  - Update IMPLEMENTATION-LOG.md if PR shipped'; echo '  - Append to LEARNINGS.md if anything surprised you'; echo '  - Append to MISTAKES.md if a gate fired or bug was caught'"
+          }
+        ]
+      }
+    ]
+  }
+}
