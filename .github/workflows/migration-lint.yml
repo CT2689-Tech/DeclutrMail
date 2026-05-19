@@ -5,7 +5,8 @@ on:
     branches: [main]
     paths:
       - 'packages/db/migrations/**'
-      - 'packages/db/schema/**'
+      - 'packages/db/src/schema/**'
+      - 'packages/db/drizzle.config.ts'
       - 'packages/db/atlas.hcl'
 
 permissions:

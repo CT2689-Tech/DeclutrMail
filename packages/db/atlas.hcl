@@ -1,15 +1,15 @@
 // Atlas config (D152) — Drizzle Kit generates migrations; Atlas lints them.
 //
-// Run locally: `atlas migrate lint --dir file://packages/db/migrations --dev-url 'docker://postgres/16/dev'`
-// Run in CI:   .github/workflows/migration-lint.yml
+// Run locally: `atlas migrate lint --env local --dev-url 'docker://postgres/16/dev'`
+// Run in CI:   .github/workflows/migration-lint.yml — passes its own
+//              `--dev-url postgres://...` pointing at a service container.
 //
-// The `dev-url` is a transient Postgres that Atlas uses to evaluate each
-// migration's effect (locking, online-safety, destructive changes).
-// No production credentials are referenced here.
+// `dev-url` is intentionally NOT hard-coded here. CI uses a service-container
+// Postgres; local dev typically uses `docker://postgres/16/dev`. Pass it on
+// the command line so the lint rules below stay shared across environments.
 
 env "local" {
   src = "file://packages/db/migrations"
-  dev = "docker://postgres/16/dev"
 
   migration {
     dir = "file://packages/db/migrations"
