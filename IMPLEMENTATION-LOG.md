@@ -60,7 +60,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | ⬜ |  |  |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
-| D11 | Backend ORM: **Drizzle | ⬜ |  |  |  |
+| D11 | Backend ORM: **Drizzle | 🔵 | #5 |  |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | ⬜ |  |  |  |
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | ⬜ |  |  |  |
@@ -201,7 +201,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
 | D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | ⬜ |  |  |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |
-| D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | ⬜ |  |  |  |
+| D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🔵 | #5 |  |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
@@ -209,7 +209,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D157 | Queue: **BullMQ on Redis (Upstash) | ⬜ |  |  |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
 | D159 | Observability stack: **Sentry + PostHog | ⬜ |  |  |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | ⬜ |  |  |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🔵 | #7 |  |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | ⬜ |  |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
