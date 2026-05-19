@@ -1,0 +1,55 @@
+name: Migration lint (Atlas)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/db/migrations/**'
+      - 'packages/db/schema/**'
+      - 'packages/db/atlas.hcl'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    name: atlas migrate lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Atlas
+        uses: ariga/setup-atlas@v0
+        with:
+          cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}
+
+      - name: Run atlas migrate lint
+        # Atlas spins up a transient Postgres 16 via Docker for the
+        # dev-url, applies each migration, and flags any dangerous
+        # operation per atlas.hcl's lint config:
+        #   destructive / data_depend / incompatible / concurrent_index
+        run: |
+          atlas migrate lint \
+            --dir 'file://packages/db/migrations' \
+            --dev-url 'docker://postgres/16/dev' \
+            --latest 1
+
+      - name: Verify rollback companion exists for every migration
+        run: |
+          set -euo pipefail
+          missing=0
+          for fwd in packages/db/migrations/*.sql; do
+            case "$fwd" in *.rollback.sql) continue ;; esac
+            rb="${fwd%.sql}.rollback.sql"
+            if [ ! -f "$rb" ]; then
+              echo "::error file=$fwd::Missing rollback companion at $rb (D152)"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "Per D152, every forward migration ships with a *.rollback.sql companion."
+            exit 1
+          fi
+          echo "✓ All forward migrations have rollback companions."
