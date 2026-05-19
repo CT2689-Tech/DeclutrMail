@@ -26,6 +26,28 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
+**Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
+`IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
+`conclusion: failure` for both runs. D11, D152, and D160 had to be
+flipped via a manual PR.
+**Why:** The bot's `git push origin main` step almost certainly hits
+branch protection (review-required rules apply even to GitHub Actions).
+Until this is fixed, every merge needs a follow-up manual flip — error-prone.
+**How:** Pick one:
+  1. Open
+     https://github.com/CT2689-Tech/DeclutrMail/settings/branches → main
+     rule → "Allow specified actors to bypass required pull requests" →
+     add `github-actions[bot]`. Cheapest fix.
+  2. OR rewrite `pr-merged.yml` to open a new PR (`gh pr create`) with
+     the log diff instead of pushing directly. Adds one click per merge
+     but works under any branch-protection regime.
+  3. OR generate a fine-grained PAT with bypass rights for the bot account,
+     store it as `LOG_FLIP_PAT`, and use it instead of `GITHUB_TOKEN`.
+**Verifies by:** Next merge after the fix flips its D-rows automatically;
+the `Flip D-rows` check goes ✅.
+**Status:** Open
+
 ### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
 **Why:** Atlas v0.38 (April 2026) gated `atlas migrate lint` behind a paid /
