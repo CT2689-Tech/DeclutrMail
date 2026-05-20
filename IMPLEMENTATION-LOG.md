@@ -62,7 +62,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | ⬜ |  |  |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
-| D11 | Backend ORM: **Drizzle | 🔵 | #5 |  |  |
+| D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | ⬜ |  |  |  |
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | ⬜ |  |  |  |
