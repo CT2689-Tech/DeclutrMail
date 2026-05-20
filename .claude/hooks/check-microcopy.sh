@@ -35,7 +35,7 @@ case "$file_path" in
 esac
 
 # Scope: apps/web/** + any *.stories.* anywhere (Storybook stories live in
-# packages/ui and apps/web both)
+# packages/shared and apps/web both)
 case "$file_path" in
   */apps/web/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
     ;;

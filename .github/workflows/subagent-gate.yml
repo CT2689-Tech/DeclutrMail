@@ -48,9 +48,10 @@ jobs:
               - 'packages/db/migrations/**'
               - 'packages/db/schema/**'
             design:
-              - 'apps/web/components/**'
-              - 'apps/web/features/**'
-              - 'apps/web/app/**'
+              - 'apps/web/src/components/**'
+              - 'apps/web/src/features/**'
+              - 'apps/web/src/app/**'
+              - 'packages/shared/**'
               - '**/*.stories.tsx'
             webhooks:
               - 'apps/api/webhooks/**'

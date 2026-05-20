@@ -1,6 +1,6 @@
 ---
 name: design-system-agent
-description: Frontend structural correctness reviewer for DeclutrMail. Verifies Storybook coverage (D210), component naming/promotion rules (D199/D220), canonical verbs in semantic context (D227), action lifecycle order (D208/D226), TanStack/Zustand state boundaries (D200), headless-hook vs feature-render split (D198), and edge-state coverage (D211/D212). Use on PRs touching apps/web/** or packages/ui/**. Reports findings; never refactors.
+description: Frontend structural correctness reviewer for DeclutrMail. Verifies Storybook coverage (D210), component naming/promotion rules (D199/D220), canonical verbs in semantic context (D227), action lifecycle order (D208/D226), TanStack/Zustand state boundaries (D200), headless-hook vs feature-render split (D198), and edge-state coverage (D211/D212). Use on PRs touching apps/web/** or packages/shared/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -27,7 +27,7 @@ You report findings only.
 - `apps/web/components/**`
 - `apps/web/features/**`
 - `apps/web/app/**`
-- `packages/ui/**` (the promoted shared components)
+- `packages/shared/**` (the promoted shared components)
 - Any `*.stories.tsx` file
 - Any `*.tsx` file in the web app
 
@@ -108,25 +108,25 @@ confirmation gate.
 
 #### Check C — Component placement (D198, D199, D220)
 
-The promotion rule (D199 + D220): a component lives in `packages/ui/`
+The promotion rule (D199 + D220): a component lives in `packages/shared/`
 (promoted shared) ONLY if it has ≥2 actual consumers OR an explicit spec
 override.
 
 For each new component file:
 
 - Is it in `apps/web/features/<feature>/components/` (feature-owned)
-  or `packages/ui/` (promoted shared)?
+  or `packages/shared/` (promoted shared)?
 - If promoted: does it have ≥2 consumers across the codebase?
   ```bash
   rg -l 'import.*<ComponentName>' apps/web/ packages/
   ```
 - If feature-owned: does it avoid being imported by any other feature?
 
-Check the D220 promoted-component allowlist (the 9 at launch):
+Check the D220 promoted-component allowlist (the 10 at launch):
 
 ```
-ActionPreview, AppShell, EmptyState, GateBadge, KeyboardHint,
-Microcopy, PreviewSheet, RowAction, ShortcutCheatsheet
+PageShell, PageHeader, EmptyState, UndoBanner, MetricCard,
+ActionPill, InsightBadge, TrustBadge, DangerZoneCard, DataStorageCard
 ```
 
 (Or current list per the plan — verify against the latest D220 status.)
@@ -134,7 +134,7 @@ Microcopy, PreviewSheet, RowAction, ShortcutCheatsheet
 **Anti-patterns:**
 - **[BLOCKING]** promoted component with only 1 consumer (lazy-promotion violation)
 - **[BLOCKING]** feature-owned component imported by another feature (boundary violation)
-- **[WARNING]** new component added to `packages/ui/` not in the allowlist
+- **[WARNING]** new component added to `packages/shared/` not in the allowlist
 
 #### Check D — Headless hooks vs render components (D198)
 
@@ -237,7 +237,7 @@ If no findings: `## Design System Agent — PR #<NN>: no findings.`
 
 Stop and surface to founder if the PR:
 
-- Adds or removes a promoted shared component from `packages/ui/`
+- Adds or removes a promoted shared component from `packages/shared/`
 - Introduces a new state management library
 - Modifies the canonical verb list or shortcut bindings
 - Changes the `<ActionPreview>` component contract

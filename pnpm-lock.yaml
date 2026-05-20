@@ -75,7 +75,7 @@ importers:
 
   packages/events: {}
 
-  packages/ui: {}
+  packages/shared: {}
 
   packages/workers: {}
 

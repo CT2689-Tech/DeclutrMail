@@ -26,6 +26,39 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-20 — design-system-agent.md Scope section still omits `src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep
+**Why:** The `packages/ui` → `packages/shared` rename (D173) is otherwise fully
+applied — agent path refs, the Check C allowlist (now D220's 10), CLAUDE.md §7,
+and the `subagent-gate.yml` `design` filter are all fixed in this PR. One
+residual: `.claude/agents/design-system-agent.md` Scope section (lines ~27-29)
+lists `apps/web/{components,features,app}/**` without `src/`, but the repo uses
+`apps/web/src/`. Editing `.claude/agents/**` is harness-blocked
+(self-modification), so the agent could not apply it.
+**How:** Manually edit lines ~27-29 of `.claude/agents/design-system-agent.md`
+to insert `src/`: `apps/web/src/components/**`, `apps/web/src/features/**`,
+`apps/web/src/app/**`. (Scope-doc accuracy only — the gate's actual routing is
+`subagent-gate.yml`, already fixed.)
+**Verifies by:** `grep -n "apps/web/" .claude/agents/design-system-agent.md`
+shows `apps/web/src/` on the Scope lines.
+**Status:** Open
+
+### 2026-05-20 — subagent-gate.yml `privacy` filter will miss `apps/api/src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
+**Why:** `.github/workflows/subagent-gate.yml`'s `privacy` filter matches
+`apps/api/gmail/**`, `apps/api/messages/**`, `apps/api/senders/**`. If `apps/api`
+is scaffolded under `apps/api/src/` (matching `apps/web/src/`), these literal
+globs won't match and the privacy-auditor gate silently won't trigger — the
+most important gate, off. The `architecture` filter (`apps/api/**`) and `schema`
+filter (`packages/db/**`) are recursive, so unaffected.
+**How:** When `apps/api` is scaffolded (PR 4+), confirm its layout; if it uses
+`src/`, update the `privacy` filter globs to
+`apps/api/src/{gmail,messages,senders}/**` and the matching CLAUDE.md §7
+`privacy-auditor` row.
+**Verifies by:** A PR touching an `apps/api` Gmail path shows `privacy-auditor`
+in the subagent-gate scope report.
+**Status:** Open
+
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
 `IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
