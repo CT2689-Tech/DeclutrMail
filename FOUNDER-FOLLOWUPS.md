@@ -26,6 +26,29 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-20 — Apply design-system-agent.md + CLAUDE.md §7 edits for the packages/shared rename
+**Source:** session — `chore/d173-rename-ui-to-shared` (commit acf1038), PR 3 prep
+**Why:** This PR renamed `packages/ui` → `packages/shared` (D173). Two
+harness-protected config files still reference the old path: agents cannot
+edit `.claude/agents/**` (self-modification block) or `CLAUDE.md`
+(founder-only, §11). Until fixed, the `design-system-agent` gate scopes to a
+non-existent `packages/ui` path and carries a stale D220 component allowlist
+(9 names — should be 10).
+**How:**
+  1. `.claude/agents/design-system-agent.md` — replace the 6 path refs:
+     `sed -i '' 's#packages/ui#packages/shared#g' .claude/agents/design-system-agent.md`
+     Then fix Check C manually: line ~125 `(the 9 at launch)` → `(the 10 at
+     launch)`; replace the 9-name list (lines ~128-129) with D220's 10 —
+     `PageShell, PageHeader, EmptyState, UndoBanner, MetricCard, ActionPill,
+     InsightBadge, TrustBadge, DangerZoneCard, DataStorageCard`.
+  2. `CLAUDE.md` §7 gate table — add `packages/shared/**` to the
+     `design-system-agent` row's "Must pass for PRs touching" cell.
+  3. (Optional) both files write `apps/web/{components,features,app}` without
+     `src/`; the repo uses `apps/web/src/`. Correct if desired.
+**Verifies by:** `grep -rn "packages/ui" .claude/ CLAUDE.md` returns nothing;
+`design-system-agent` Check C lists the 10 D220 components.
+**Status:** Open
+
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
 `IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
