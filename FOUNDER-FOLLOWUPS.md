@@ -26,27 +26,37 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-20 — Apply design-system-agent.md + CLAUDE.md §7 edits for the packages/shared rename
-**Source:** session — `chore/d173-rename-ui-to-shared` (commit acf1038), PR 3 prep
-**Why:** This PR renamed `packages/ui` → `packages/shared` (D173). Two
-harness-protected config files still reference the old path: agents cannot
-edit `.claude/agents/**` (self-modification block) or `CLAUDE.md`
-(founder-only, §11). Until fixed, the `design-system-agent` gate scopes to a
-non-existent `packages/ui` path and carries a stale D220 component allowlist
-(9 names — should be 10).
-**How:**
-  1. `.claude/agents/design-system-agent.md` — replace the 6 path refs:
-     `sed -i '' 's#packages/ui#packages/shared#g' .claude/agents/design-system-agent.md`
-     Then fix Check C manually: line ~125 `(the 9 at launch)` → `(the 10 at
-     launch)`; replace the 9-name list (lines ~128-129) with D220's 10 —
-     `PageShell, PageHeader, EmptyState, UndoBanner, MetricCard, ActionPill,
-     InsightBadge, TrustBadge, DangerZoneCard, DataStorageCard`.
-  2. `CLAUDE.md` §7 gate table — add `packages/shared/**` to the
-     `design-system-agent` row's "Must pass for PRs touching" cell.
-  3. (Optional) both files write `apps/web/{components,features,app}` without
-     `src/`; the repo uses `apps/web/src/`. Correct if desired.
-**Verifies by:** `grep -rn "packages/ui" .claude/ CLAUDE.md` returns nothing;
-`design-system-agent` Check C lists the 10 D220 components.
+### 2026-05-20 — design-system-agent.md Scope section still omits `src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep
+**Why:** The `packages/ui` → `packages/shared` rename (D173) is otherwise fully
+applied — agent path refs, the Check C allowlist (now D220's 10), CLAUDE.md §7,
+and the `subagent-gate.yml` `design` filter are all fixed in this PR. One
+residual: `.claude/agents/design-system-agent.md` Scope section (lines ~27-29)
+lists `apps/web/{components,features,app}/**` without `src/`, but the repo uses
+`apps/web/src/`. Editing `.claude/agents/**` is harness-blocked
+(self-modification), so the agent could not apply it.
+**How:** Manually edit lines ~27-29 of `.claude/agents/design-system-agent.md`
+to insert `src/`: `apps/web/src/components/**`, `apps/web/src/features/**`,
+`apps/web/src/app/**`. (Scope-doc accuracy only — the gate's actual routing is
+`subagent-gate.yml`, already fixed.)
+**Verifies by:** `grep -n "apps/web/" .claude/agents/design-system-agent.md`
+shows `apps/web/src/` on the Scope lines.
+**Status:** Open
+
+### 2026-05-20 — subagent-gate.yml `privacy` filter will miss `apps/api/src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
+**Why:** `.github/workflows/subagent-gate.yml`'s `privacy` filter matches
+`apps/api/gmail/**`, `apps/api/messages/**`, `apps/api/senders/**`. If `apps/api`
+is scaffolded under `apps/api/src/` (matching `apps/web/src/`), these literal
+globs won't match and the privacy-auditor gate silently won't trigger — the
+most important gate, off. The `architecture` filter (`apps/api/**`) and `schema`
+filter (`packages/db/**`) are recursive, so unaffected.
+**How:** When `apps/api` is scaffolded (PR 4+), confirm its layout; if it uses
+`src/`, update the `privacy` filter globs to
+`apps/api/src/{gmail,messages,senders}/**` and the matching CLAUDE.md §7
+`privacy-auditor` row.
+**Verifies by:** A PR touching an `apps/api` Gmail path shows `privacy-auditor`
+in the subagent-gate scope report.
 **Status:** Open
 
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
