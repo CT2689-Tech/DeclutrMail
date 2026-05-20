@@ -30,7 +30,7 @@ esac
 
 # Only relevant for the web app + UI package
 case "$file_path" in
-  */apps/web/*|*/packages/ui/*)
+  */apps/web/*|*/packages/shared/*)
     ;;
   *)
     exit 0
