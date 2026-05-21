@@ -32,6 +32,16 @@ export default tseslint.config(
     },
   },
   {
+    // Frontend packages run in the browser — expose browser globals
+    // (window, document, localStorage, …) so no-undef does not fire.
+    files: ['apps/web/**/*.{ts,tsx}', 'packages/shared/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+    },
+  },
+  {
     files: ['**/*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
