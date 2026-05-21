@@ -26,47 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-21 — DECISION: token-encryption scheme for Gmail refresh tokens (PR-B blocker)
-**Source:** session — Senders backend plan, PR-B spec (`docs/execution/senders-backend-plan.md` §4)
-**Why:** PR-B stores Gmail OAuth refresh tokens. Token encryption is a
-CLAUDE.md §9 stop-condition — an agent must not pick the scheme. PR-B
-cannot be built until this is decided.
-**How:** Choose one and record it in `docs/execution/senders-backend-plan.md` §4:
-  1. **App-level AES-256-GCM** — 256-bit key in GCP Secret Manager,
-     injected as an env var; a `token_key_version` column supports
-     rotation. Simplest; key sits in app memory. *Recommended for launch.*
-  2. **GCP Cloud KMS envelope encryption** — per-token DEK encrypted by a
-     KMS key; app never holds the master key. More robust, more moving
-     parts.
-**Verifies by:** the decision is recorded in the plan doc §4 and PR-B
-implements it; `architecture-guardian` sees a real encrypt path, not a stub.
-**Status:** Open
-
-### 2026-05-21 — DECISION: attachment metadata — ratify or reject a D7 allowlist extension
-**Source:** session — founder asked for attachment size + a "find larger attachments" feature
-**Why:** The founder asked whether DeclutrMail can fetch attachment size /
-has-attachment and build a "larger attachments" feature. This brushes the
-D7 / §2.1 hard guardrail, so it is the founder's call, not an agent's.
-Findings:
-  - **"Has attachment"** (boolean) — feasible body-free via Gmail's
-    `q=has:attachment` search (returns message IDs, fetches no body).
-  - **Per-attachment byte size** — NOT feasible without
-    `messages.get?format=full`, which fetches the message body. That
-    breaks the "Full bodies fetched: 0" trust artifact (D7/D228).
-    **Cannot ship — rejected regardless of the decision below.**
-  - **Whole-message `sizeEstimate`** — body-free (`format=metadata`); a
-    coarse proxy for "large message," enough for a "largest senders" view.
-  - Both `has_attachment` and `size_estimate` are NEW fields beyond the
-    D7 storage allowlist → adding them is a privacy-posture change, and
-    D4 notes storage changes are CASA-relevant.
-**How:** Decide: (a) reject — keep the D7 allowlist as-is; or (b) ratify a
-new D-decision adding `has_attachment` (and optionally `size_estimate`)
-to the allowlist, accepting the CASA-notice implication. If ratified, it
-slots into PR-C sync as a `q=has:attachment` pass.
-**Verifies by:** a new D-decision in the plan + a CLAUDE.md §2.1 allowlist
-update (if ratified), or this entry moved to Done/Skipped (if rejected).
-**Status:** Open
-
 ### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
 **Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
 **Why:** The D-plan's draft timeseries schema names the read column
@@ -79,7 +38,9 @@ silently encode a metric that cannot be populated honestly.
 No code change needed — PR-A already ships `read_count`.
 **Verifies by:** the plan's timeseries-table definition reads `read_count`;
 a future session finds no `opens`/`read_count` mismatch.
-**Status:** Open
+**Status:** Open — **founder ratified the rename 2026-05-21.** PR-A already
+ships `read_count`. Remaining: the plan-file edit (`opens` → `read_count`),
+which rides with the 2026-05-20 reconciliation-pass plan edit below.
 
 ### 2026-05-21 — SETUP: provision Gmail sync infrastructure (PR-B/C/D blockers)
 **Source:** session — Senders backend plan (`docs/execution/senders-backend-plan.md` §9)
@@ -87,19 +48,17 @@ a future session finds no `opens`/`read_count` mismatch.
 webhook) need external infrastructure that does not exist yet. Code can
 be written against `.env.example` placeholders but cannot run without
 these.
-**How:**
-  1. **GCP OAuth client (D4)** — confirm the V1 Google Cloud project +
-     OAuth client are reused for V2. If V2 uses a *new* GCP project, the
-     CASA / verification approval does not carry over. Reusing V1 is
-     recommended. Record the GCP project ID in an ADR.
-  2. **Upstash Redis (BullMQ)** — create a Redis instance at
-     https://upstash.com, then add `REDIS_URL` to GitHub Actions secrets
-     and local `.env`. Backs the sync worker queue (D157).
-  3. **Pub/Sub (D229)** — in the GCP console: create a topic (e.g.
-     `gmail-push`), grant `gmail-api-push@system.gserviceaccount.com` the
-     Publisher role on it, create a **push** subscription pointing at
-     `POST /api/webhooks/gmail`, and create a service account whose OIDC
-     token the webhook will verify. Record the topic name + audience.
+**How:** Follow the step-by-step runbook at
+**`docs/ops/sync-infra-setup.md`** — it covers, in order:
+  1. **GCP project + OAuth client (D4)** — confirm V1 reuse; collect
+     `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `GOOGLE_CLOUD_PROJECT_ID`.
+  2. **`TOKEN_ENCRYPTION_KEY`** — generate a 256-bit AES key
+     (`openssl rand -base64 32`); store in GCP Secret Manager.
+  3. **Upstash Redis** — create the instance; collect `REDIS_URL`.
+  4. **Pub/Sub** — topic `gmail-push` + push subscription + OIDC service
+     account; collect `GMAIL_PUBSUB_TOPIC` / `PUBSUB_OIDC_AUDIENCE`.
+  5. Place all values in GitHub Actions secrets + GCP Secret Manager;
+     never commit (CLAUDE.md §10).
 **Verifies by:** PR-B/C/D run end-to-end in staging — a connected mailbox
 backfills, and a new message triggers the webhook.
 **Status:** Open
@@ -234,6 +193,35 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-21 — DECISION: token-encryption scheme for Gmail refresh tokens
+**Source:** session — Senders backend plan, PR-B spec (`docs/execution/senders-backend-plan.md` §4)
+**Why:** PR-B stores Gmail OAuth refresh tokens. Token encryption is a
+CLAUDE.md §9 stop-condition — an agent must not pick the scheme.
+**How:** Founder chose **app-level AES-256-GCM** — a 256-bit key in GCP
+Secret Manager, injected as `TOKEN_ENCRYPTION_KEY`; a `token_key_version`
+column on `mailbox_accounts` supports rotation. (KMS envelope encryption
+rejected as over-built for launch.) Recorded in
+`docs/execution/senders-backend-plan.md` §4; PR-B implements it.
+**Verifies by:** PR-B ships a real AES-256-GCM `TokenCryptoService` with a
+round-trip unit test; `architecture-guardian` sees a real encrypt path.
+**Status:** Done 2026-05-21 — AES-256-GCM chosen.
+
+### 2026-05-21 — DECISION: attachment metadata — ratify or reject a D7 allowlist extension
+**Source:** session — founder asked for attachment size + a "find larger attachments" feature
+**Why:** The founder asked whether DeclutrMail can fetch attachment size /
+has-attachment. `has_attachment` is feasible body-free (`q=has:attachment`);
+per-attachment byte size is NOT (needs `format=full` = body fetch = breaks
+"Full bodies fetched: 0", D7/D228). Both `has_attachment` and
+`size_estimate` would be new fields beyond the D7 allowlist — a
+privacy-posture change.
+**How:** Founder decided to **skip it** — keep the D7 allowlist as-is. If
+users later demand a "large attachments" feature, revisit then: ship
+`has_attachment` (body-free) as a ratified allowlist extension; the
+per-attachment byte-size feature stays permanently rejected (cannot be
+done body-free).
+**Verifies by:** PR-A's `mail_messages` ships no attachment columns (true).
+**Status:** Skipped 2026-05-21 — deferred until user demand; D7 allowlist unchanged.
 
 ### 2026-05-19 — Configure ANTHROPIC_API_KEY in repo secrets
 **Source:** PR #4 — `.github/workflows/subagent-gate.yml` documents this

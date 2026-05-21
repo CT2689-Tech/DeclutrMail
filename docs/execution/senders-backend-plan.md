@@ -89,21 +89,20 @@ NestJS module layout per D201 here.
 - `packages/db` migration `0002` — `mailbox_accounts` gains
   `encrypted_refresh_token bytea`, `token_key_version int`, `connected_at`.
 
-**⚠️ OPEN DECISION — token encryption (founder sign-off required, §9 stop-condition).**
-Pick the encryption scheme before PR-B is built:
+**✅ RESOLVED — token encryption (founder decision, 2026-05-21).**
+**App-level AES-256-GCM.** A 256-bit key lives in GCP Secret Manager,
+injected as `TOKEN_ENCRYPTION_KEY`; a `token_key_version` int column on
+`mailbox_accounts` supports key rotation. `TokenCryptoService` encrypts
+the refresh token before insert and decrypts on read — per-record random
+12-byte IV, GCM auth tag stored alongside the ciphertext. KMS envelope
+encryption was considered and rejected as over-built for launch.
 
-- **Option 1 — app-level AES-256-GCM.** 256-bit key in GCP Secret
-  Manager, injected as env var; `token_key_version` supports rotation.
-  Simplest; key is in app memory.
-- **Option 2 — GCP Cloud KMS envelope encryption.** A per-token DEK
-  encrypted by a KMS key; app never holds the master key. More robust,
-  more moving parts, one more GCP API.
-- Recommendation: **Option 1** for launch (rotation-ready), revisit KMS
-  if a threat review calls for it. **Founder must confirm.**
+`TokenCryptoService` gets a round-trip unit test with a test key (no GCP
+dependency) — the encrypt path is fully verifiable in CI.
 
 **Gate:** architecture-guardian (D201 module structure).
 **Stop-conditions touched:** OAuth scopes (settled by D4), token
-encryption (decision above).
+encryption (settled — see above). No open stop-condition remains for PR-B.
 
 ---
 
@@ -254,11 +253,12 @@ storage allowlist.** Adding to what DeclutrMail stores is a privacy-posture
 change — a §9 stop-condition, and D4 notes storage changes are
 CASA-relevant. It is **not** an agent's call.
 
-**Decision:** not built. PR-A's `mail_messages` ships the D7 allowlist
-only — no attachment columns. Filed as a D-candidate in
-`FOUNDER-FOLLOWUPS.md` (2026-05-21) for the founder to ratify or reject.
-If ratified, it slots into PR-C's sync as a `q=has:attachment` pass plus
-new allowlisted columns.
+**Decision (founder, 2026-05-21): skip it.** The D7 allowlist stays as-is;
+`mail_messages` ships no attachment columns. Revisit only if users demand
+a "large attachments" feature — at which point `has_attachment` (body-free
+via `q=has:attachment`) can be ratified as an allowlist extension. The
+per-attachment byte-size feature stays permanently rejected — it cannot be
+done body-free.
 
 ---
 
