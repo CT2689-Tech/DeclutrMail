@@ -85,24 +85,32 @@ NestJS module layout per D201 here.
 - `apps/api/src/auth/google-oauth.module.ts` / `.controller.ts` / `.service.ts`
   — `GET /api/auth/google/start` → consent URL; `GET /api/auth/google/callback`
   → exchange code, persist account.
-- `apps/api/src/auth/token-crypto.service.ts` — refresh-token encrypt/decrypt.
+- `apps/api/src/auth/token-crypto.service.ts` — KMS envelope
+  encrypt/decrypt for OAuth tokens.
 - `packages/db` migration `0002` — `mailbox_accounts` gains
-  `encrypted_refresh_token bytea`, `token_key_version int`, `connected_at`.
+  `encrypted_refresh_token bytea`, `dek_encrypted bytea`,
+  `key_version int`, `connected_at`.
 
 **✅ RESOLVED — token encryption (founder decision, 2026-05-21).**
-**App-level AES-256-GCM.** A 256-bit key lives in GCP Secret Manager,
-injected as `TOKEN_ENCRYPTION_KEY`; a `token_key_version` int column on
-`mailbox_accounts` supports key rotation. `TokenCryptoService` encrypts
-the refresh token before insert and decrypts on read — per-record random
-12-byte IV, GCM auth tag stored alongside the ciphertext. KMS envelope
-encryption was considered and rejected as over-built for launch.
+**Google Cloud KMS envelope encryption — D14, the locked decision,
+stands.** An earlier "app-level AES-256-GCM" suggestion was withdrawn: it
+contradicted D14 (which explicitly rejects an env-var-class key — no
+clean rotation, DB-dump-leak compromise, CASA-renewal finding risk).
 
-`TokenCryptoService` gets a round-trip unit test with a test key (no GCP
-dependency) — the encrypt path is fully verifiable in CI.
+Design (D14): the KEK lives in Cloud KMS and never leaves it. Per OAuth
+token, `TokenCryptoService` generates a random 256-bit DEK, encrypts the
+token with the DEK (AES-256-GCM), asks KMS to wrap the DEK with the KEK,
+and stores `encrypted_refresh_token` + `dek_encrypted` in `mailbox_accounts`.
+Decrypt reverses it. Local dev has no KMS — `TokenCryptoService` falls
+back to `ENCRYPTION_LOCAL_KEY` when `KMS_KEY_RESOURCE` is unset (D14).
+
+`TokenCryptoService` gets a round-trip unit test using the local-key
+fallback (no GCP dependency) — the encrypt path is verifiable in CI.
 
 **Gate:** architecture-guardian (D201 module structure).
 **Stop-conditions touched:** OAuth scopes (settled by D4), token
-encryption (settled — see above). No open stop-condition remains for PR-B.
+encryption (settled — D14 KMS envelope). No open stop-condition remains
+for PR-B.
 
 ---
 

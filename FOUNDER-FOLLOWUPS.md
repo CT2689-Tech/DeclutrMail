@@ -197,15 +197,20 @@ cloud sessions auto-discover them on startup.
 ### 2026-05-21 — DECISION: token-encryption scheme for Gmail refresh tokens
 **Source:** session — Senders backend plan, PR-B spec (`docs/execution/senders-backend-plan.md` §4)
 **Why:** PR-B stores Gmail OAuth refresh tokens. Token encryption is a
-CLAUDE.md §9 stop-condition — an agent must not pick the scheme.
-**How:** Founder chose **app-level AES-256-GCM** — a 256-bit key in GCP
-Secret Manager, injected as `TOKEN_ENCRYPTION_KEY`; a `token_key_version`
-column on `mailbox_accounts` supports rotation. (KMS envelope encryption
-rejected as over-built for launch.) Recorded in
-`docs/execution/senders-backend-plan.md` §4; PR-B implements it.
-**Verifies by:** PR-B ships a real AES-256-GCM `TokenCryptoService` with a
-round-trip unit test; `architecture-guardian` sees a real encrypt path.
-**Status:** Done 2026-05-21 — AES-256-GCM chosen.
+CLAUDE.md §9 stop-condition.
+**How:** An "app-level AES-256-GCM" option was floated to the founder and
+initially OK'd — but a plan check then found **D14 already decided this:
+Google Cloud KMS envelope encryption**, and D14 explicitly rejects an
+env-var-class key. The conflict was surfaced (CLAUDE.md §3 plan-drift);
+the founder confirmed **D14 stands — Cloud KMS envelope.** KEK in Cloud
+KMS, per-token DEK, `dek_encrypted bytea` column; local dev uses an
+`ENCRYPTION_LOCAL_KEY` fallback (D14-sanctioned). Recorded in
+`docs/execution/senders-backend-plan.md` §4; provisioning in
+`docs/ops/sync-infra-setup.md` Step 2. PR-B implements it.
+**Verifies by:** PR-B ships a real KMS-envelope `TokenCryptoService` with
+a round-trip unit test (local-key fallback); `architecture-guardian`
+sees a real encrypt path.
+**Status:** Done 2026-05-21 — D14 Cloud KMS envelope confirmed (no plan amendment needed).
 
 ### 2026-05-21 — DECISION: attachment metadata — ratify or reject a D7 allowlist extension
 **Source:** session — founder asked for attachment size + a "find larger attachments" feature

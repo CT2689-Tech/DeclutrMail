@@ -21,6 +21,32 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-21 — Presented a "new" token-encryption decision that D14 already made
+**PR:** #14 (`docs/d039-senders-backend-plan`) — caught before merge
+**Caught by:** self — a plan grep for `D14` while finalizing the config file,
+after the founder had already OK'd the wrong option.
+**What happened:** PR-B needs OAuth-token encryption. I framed it to the
+founder as an open choice — "app-level AES-256-GCM vs Cloud KMS" — and
+recommended AES-256-GCM. The founder OK'd it. But **D14 is a locked
+decision** that already mandates Google Cloud KMS envelope encryption,
+and D14 explicitly argues against an env-var-class key. I had written
+the choice into `senders-backend-plan.md` §4 and `FOUNDER-FOLLOWUPS.md`
+as "RESOLVED — AES-256-GCM" before checking the plan. No code shipped;
+caught while writing `.env.example`. Surfaced as plan-drift; founder
+confirmed D14 stands; all docs corrected.
+**Correct approach:** Before presenting ANY decision as open, grep the
+plan for an existing D-decision on that topic. CLAUDE.md §1.1 says
+"First, check the plan" — a token-encryption decision is exactly the
+kind of thing the plan already settles. Had I grepped `D14` first, there
+would have been no decision to present.
+**Rule:** Before offering the founder a choice, `rg "encrypt|<topic>"`
+the plan — if a D-decision covers it, follow it; only surface a *conflict*
+if the codebase reality diverges. Never present a settled topic as open.
+**Enforcement update:** none code-level — this is a §1.1 discipline miss.
+Promote to CLAUDE.md §9 ("What to do if unsure" → step 1 already says
+search the plan; reinforce it covers *decisions I'm about to present*,
+not only blockers) if it recurs.
+
 ## 2026-05-20 — Visual pass shipped a desktop-only layout + a search dead-end
 **PR:** #TBD — `feat/d038-senders-screen` (visual-optimization pass)
 **Caught by:** Codex adversarial review + a browser check at 401 px
