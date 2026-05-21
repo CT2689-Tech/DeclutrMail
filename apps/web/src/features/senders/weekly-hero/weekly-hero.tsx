@@ -93,27 +93,36 @@ export function WeeklyHero({
     <section style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <header style={{ maxWidth: 760 }}>
         <Eyebrow tone="primary">Recommended for you · Week of {weekOfLabel()}</Eyebrow>
-        <h1
+        <h2
           style={{
             margin: '10px 0 0',
-            fontFamily: font.sans,
-            fontSize: 34,
-            fontWeight: 700,
-            letterSpacing: '-0.026em',
-            lineHeight: 1.08,
+            fontFamily: font.display,
+            fontSize: 42,
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.04,
             color: color.fg,
           }}
         >
           Three small calls this week,{' '}
-          <em style={{ fontStyle: 'normal', color: color.primary }}>~{promoHours}h back</em> if you
-          take them.
-        </h1>
+          <em
+            style={{
+              fontFamily: font.display,
+              fontStyle: 'italic',
+              fontWeight: 600,
+              color: color.primary,
+            }}
+          >
+            ~{promoHours}h back
+          </em>{' '}
+          if you take them.
+        </h2>
       </header>
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
           gap: 16,
         }}
       >

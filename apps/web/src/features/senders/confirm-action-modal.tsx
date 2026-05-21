@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { historicCount, type ActionRequest } from './data';
 
 const { color, font } = tokens;
@@ -24,10 +24,14 @@ export function ConfirmActionModal({
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
 }) {
-  const [archiveHistoric, setArchiveHistoric] = useState(true);
+  // Unsubscribe defaults to also clearing the backlog (the common
+  // intent when cutting a sender off). Later defaults OFF — Later is
+  // future-only by definition; archiving history would make it
+  // destructive against the modal's own copy.
+  const [archiveHistoric, setArchiveHistoric] = useState(false);
 
   useEffect(() => {
-    setArchiveHistoric(true);
+    setArchiveHistoric(request?.verb === 'Unsubscribe');
   }, [request]);
 
   useEffect(() => {
@@ -40,19 +44,33 @@ export function ConfirmActionModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [request, archiveHistoric, onCancel, onConfirm]);
 
+  const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
+
   if (!request) return null;
 
   const { verb, senders } = request;
   const historic = senders.reduce((sum, s) => sum + historicCount(s), 0);
-  const isUnsub = verb === 'Unsubscribe';
+  const n = senders.length;
+  const plural = n === 1 ? '' : 's';
+  const subject = n === 1 ? 'this sender' : 'these senders';
+  // Unsubscribe and Later touch only future mail by default, so both
+  // offer the "also clear the historic backlog" toggle. Archive moves
+  // every message by definition. Only Unsubscribe reads as destructive.
+  const showHistoricToggle = verb === 'Unsubscribe' || verb === 'Later';
+  const danger = verb === 'Unsubscribe';
 
   const title =
     verb === 'Archive'
-      ? `Archive all mail from ${senders.length} sender${senders.length === 1 ? '' : 's'}`
-      : `Unsubscribe from ${senders.length} sender${senders.length === 1 ? '' : 's'}`;
-  const lead = isUnsub
-    ? 'Future mail from these senders stops arriving. Nothing already in your inbox moves unless you ask.'
-    : `Every message from ${senders.length === 1 ? 'this sender' : 'these senders'} moves out of the inbox into Gmail's archive. Nothing is deleted.`;
+      ? `Archive all mail from ${n} sender${plural}`
+      : verb === 'Later'
+        ? `Move ${n} sender${plural} to Later`
+        : `Unsubscribe from ${n} sender${plural}`;
+  const lead =
+    verb === 'Archive'
+      ? `Every message from ${subject} moves out of the inbox into Gmail's archive. Nothing is deleted.`
+      : verb === 'Later'
+        ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
+        : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
 
   return (
     <>
@@ -61,15 +79,17 @@ export function ConfirmActionModal({
         style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(20,20,20,0.45)',
+          background: 'rgba(14,20,19,0.45)',
           backdropFilter: 'blur(3px)',
           zIndex: 150,
         }}
       />
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby="dm-confirm-title"
+        aria-describedby="dm-confirm-lead"
         style={{
           position: 'fixed',
           top: '12vh',
@@ -81,19 +101,23 @@ export function ConfirmActionModal({
           background: color.card,
           borderRadius: 14,
           border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
+          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
           zIndex: 151,
           fontFamily: font.sans,
         }}
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={isUnsub ? 'amber' : 'primary'}>Preview · before anything changes</Eyebrow>
+          <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · before anything changes</Eyebrow>
           <h2
+            id="dm-confirm-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
           >
             {title}
           </h2>
-          <p style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}>
+          <p
+            id="dm-confirm-lead"
+            style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
+          >
             {lead}
           </p>
         </div>
@@ -151,9 +175,9 @@ export function ConfirmActionModal({
           >
             <strong
               style={{
-                fontFamily: font.sans,
+                fontFamily: font.display,
                 fontSize: 22,
-                fontWeight: 700,
+                fontWeight: 600,
                 letterSpacing: '-0.02em',
                 color: color.fg,
                 fontVariantNumeric: 'tabular-nums',
@@ -167,7 +191,7 @@ export function ConfirmActionModal({
             </span>
           </div>
 
-          {isUnsub && (
+          {showHistoricToggle && (
             <button
               onClick={() => setArchiveHistoric((v) => !v)}
               style={{
@@ -237,7 +261,7 @@ export function ConfirmActionModal({
               Cancel
             </Button>
             <Button
-              tone={isUnsub ? 'warn' : 'primary'}
+              tone={danger ? 'warn' : 'primary'}
               onClick={() => onConfirm({ archiveHistoric })}
               iconRight={
                 <Kbd

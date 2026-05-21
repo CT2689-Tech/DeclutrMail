@@ -12,6 +12,7 @@ import {
   canUnsubscribe,
   detectCohorts,
   historicCount,
+  VERB_PAST,
   type ActionRequest,
   type ActionVerb,
   type Cohort,
@@ -21,6 +22,7 @@ import {
 } from './data';
 import { CategoryChip } from './category-chip';
 import { CohortRail } from './cohort-rail';
+import { SenderSearch } from './sender-search';
 import { FiltersMenu } from './filters-menu';
 import { SenderGroup } from './table/sender-group';
 import { SelectionBar } from './selection-bar';
@@ -29,20 +31,12 @@ import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { WeeklyHero } from './weekly-hero/weekly-hero';
 import { ReviewSession, type ReviewResult } from './review-session';
 
-const { color, font } = tokens;
+const { font } = tokens;
 
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boolean> = {
   Archive: canArchive,
   Later: canLater,
   Unsubscribe: canUnsubscribe,
-};
-
-const VERB_PAST: Record<ActionVerb, string> = {
-  Keep: 'Kept',
-  Archive: 'Archived',
-  Unsubscribe: 'Unsubscribed from',
-  Later: 'Moved to Later',
-  Protect: 'Protected',
 };
 
 let receiptSeq = 0;
@@ -127,13 +121,22 @@ export function SendersScreen() {
     toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
   };
 
+  // Search is global. Picking a suggestion clears category/facet filters
+  // so the chosen sender is always visible in the table below.
+  const onSearchPick = useCallback((s: Sender) => {
+    setQuery(s.name);
+    setActiveGroup(null);
+    setActiveFacets(new Set());
+  }, []);
+
   // Memoised so the modal/review keydown effects bind against stable
   // handlers — the confirm gate must not depend on render timing.
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
       const historicTotal =
-        verb === 'Archive' || (verb === 'Unsubscribe' && opts?.archiveHistoric)
+        verb === 'Archive' ||
+        ((verb === 'Unsubscribe' || verb === 'Later') && opts?.archiveHistoric)
           ? senders.reduce((a, s) => a + historicCount(s), 0)
           : 0;
       toast(
@@ -155,12 +158,13 @@ export function SendersScreen() {
     [],
   );
 
-  // Archive / Unsubscribe go through the mandatory preview; Later / Keep
-  // / Protect are reversible and fire directly.
+  // Archive / Unsubscribe / Later move mail, so they route through the
+  // mandatory preview. Keep / Protect change nothing about the mail and
+  // fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
-      if (req.verb === 'Archive' || req.verb === 'Unsubscribe') {
+      if (req.verb === 'Archive' || req.verb === 'Unsubscribe' || req.verb === 'Later') {
         setPendingAction(req);
       } else {
         performAction(req.verb, req.senders);
@@ -194,7 +198,9 @@ export function SendersScreen() {
         performAction(
           verb,
           list,
-          verb === 'Unsubscribe' ? { archiveHistoric: result.archiveHistoric } : undefined,
+          verb === 'Unsubscribe' || verb === 'Later'
+            ? { archiveHistoric: result.archiveHistoric }
+            : undefined,
         );
       }
     },
@@ -225,10 +231,10 @@ export function SendersScreen() {
           <Eyebrow>Senders · default mailbox</Eyebrow>
           <h1
             style={{
-              fontFamily: font.sans,
-              fontSize: 22,
+              fontFamily: font.display,
+              fontSize: 26,
               fontWeight: 600,
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.018em',
               margin: '4px 0 0',
             }}
           >
@@ -236,24 +242,7 @@ export function SendersScreen() {
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search senders…"
-            aria-label="Search senders"
-            style={{
-              height: 32,
-              width: 200,
-              padding: '0 10px',
-              background: color.card,
-              color: color.fg,
-              border: `1px solid ${color.border}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 12.5,
-              outline: 'none',
-            }}
-          />
+          <SenderSearch value={query} onChange={setQuery} senders={SENDERS} onPick={onSearchPick} />
           <Button tone="dark" onClick={() => toast('Add-VIP flow opens here', 'info')}>
             + Add VIP
           </Button>
@@ -264,7 +253,7 @@ export function SendersScreen() {
         id="senders"
         title="How Senders works"
         body="Every account, list, and service that mails you, grouped by Gmail's own categories. Decide once per sender — your choice applies to past and future mail."
-        tip="We classify from the sender address and public list-headers only. Message bodies and attachments are never read."
+        tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
       />
 
       <ReceiptStrip

@@ -62,6 +62,7 @@ export function Bloc({
 
   return (
     <div
+      data-dm-lift=""
       style={{
         background: wash,
         border: `1px solid ${borderColor}`,
@@ -70,7 +71,6 @@ export function Bloc({
         display: 'flex',
         flexDirection: 'column',
         minHeight: 320,
-        boxShadow: '0 1px 2px rgba(20,30,50,0.02)',
       }}
     >
       <div
@@ -90,17 +90,19 @@ export function Bloc({
       <h3
         style={{
           margin: '8px 0 0',
-          fontFamily: font.sans,
+          fontFamily: font.display,
           fontSize: 34,
           lineHeight: 1,
-          letterSpacing: '-0.028em',
-          fontWeight: 700,
+          letterSpacing: '-0.02em',
+          fontWeight: 600,
           color: color.fg,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {count}
         <small
           style={{
+            fontFamily: font.sans,
             fontSize: 14,
             fontWeight: 500,
             color: color.fgSoft,

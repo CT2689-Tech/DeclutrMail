@@ -92,6 +92,7 @@ export function SenderRowDetail({
         padding: '20px 24px 22px 68px',
         background: 'rgba(14,20,19,0.022)',
         borderBottom: `1px solid ${color.lineSoft}`,
+        boxShadow: `inset 3px 0 0 ${color.primary}`,
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
@@ -163,9 +164,9 @@ export function SenderRowDetail({
             </div>
             <div
               style={{
-                fontFamily: font.sans,
+                fontFamily: font.display,
                 fontSize: 22,
-                fontWeight: 700,
+                fontWeight: 600,
                 color: stat.valueColor ?? color.fg,
                 letterSpacing: '-0.022em',
                 marginTop: 4,
@@ -177,7 +178,14 @@ export function SenderRowDetail({
             >
               {stat.v}
               {stat.small != null && (
-                <small style={{ fontSize: 11.5, color: color.fgMuted, fontWeight: 400 }}>
+                <small
+                  style={{
+                    fontFamily: font.sans,
+                    fontSize: 11.5,
+                    color: color.fgMuted,
+                    fontWeight: 400,
+                  }}
+                >
                   {stat.small}
                 </small>
               )}

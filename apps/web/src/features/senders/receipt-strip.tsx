@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import type { ActionVerb } from './data';
+import { VERB_PAST, type ActionVerb } from './data';
 
 const { color, font } = tokens;
 
@@ -12,14 +12,6 @@ export interface ActionReceipt {
   historicTotal: number;
   timeLeft: string;
 }
-
-const VERB_PAST: Record<ActionVerb, string> = {
-  Keep: 'Kept',
-  Archive: 'Archived all mail from',
-  Unsubscribe: 'Unsubscribed from',
-  Later: 'Moved to Later',
-  Protect: 'Protected',
-};
 
 /**
  * Persistent reversible-action receipt. Sits at the top of the screen

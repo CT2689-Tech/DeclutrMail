@@ -89,7 +89,7 @@ export function PatternsRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: `repeat(${patterns.length}, minmax(0, 1fr))`,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))',
           gap: 12,
         }}
       >
@@ -98,6 +98,7 @@ export function PatternsRow({
           return (
             <div
               key={p.id}
+              data-dm-lift=""
               style={{
                 display: 'flex',
                 flexDirection: 'column',

@@ -8,6 +8,7 @@ export { useIsAtMost } from './hooks/use-is-at-most';
 export type { Breakpoint } from './hooks/use-is-at-most';
 export { useLabels } from './hooks/use-labels';
 export type { LabelKey, LabelMode, LabelSet } from './hooks/use-labels';
+export { useFocusTrap } from './hooks/use-focus-trap';
 
 export { Kbd } from './components/kbd';
 export { Eyebrow } from './components/eyebrow';

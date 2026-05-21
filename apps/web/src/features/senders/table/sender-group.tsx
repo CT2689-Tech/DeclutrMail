@@ -27,6 +27,7 @@ export function SenderGroup({
 }) {
   const [openMap, setOpenMap] = useLocalState<Record<string, boolean>>('senders.groupOpen', {});
   const open = openMap[group.key] !== false;
+  const toggle = () => setOpenMap((m) => ({ ...m, [group.key]: !open }));
 
   const [visibleCount, setVisibleCount] = useState(INITIAL);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -51,7 +52,17 @@ export function SenderGroup({
       }}
     >
       <div
-        onClick={() => setOpenMap((m) => ({ ...m, [group.key]: !open }))}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={`${group.label} — ${open ? 'collapse' : 'expand'}`}
         style={{
           display: 'grid',
           gridTemplateColumns: '22px 1fr auto',
@@ -108,11 +119,12 @@ export function SenderGroup({
           <span
             style={{
               display: 'block',
-              fontFamily: font.sans,
+              fontFamily: font.display,
               fontSize: 18,
-              fontWeight: 700,
+              fontWeight: 600,
               color: color.fg,
               letterSpacing: '-0.018em',
+              fontVariantNumeric: 'tabular-nums',
             }}
           >
             {items.length}

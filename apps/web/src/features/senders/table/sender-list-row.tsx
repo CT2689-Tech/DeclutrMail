@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent, ReactNode } from 'react';
-import { Avatar, Button, tokens } from '@declutrmail/shared';
+import { Avatar, Button, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   canArchive,
   canLater,
@@ -93,6 +93,9 @@ export function SenderListRow({
 }) {
   const recommended = recommendAction(s); // "Unsubscribe" | "Later" | null
   const readPct = Math.round(s.read * 100);
+  // Below `sm` the why-line and volume columns drop so the row keeps
+  // the name + actions reachable without horizontal clipping.
+  const isMobile = useIsAtMost('sm');
 
   const verbs: ('Archive' | 'Later' | 'Unsubscribe')[] = [];
   if (canArchive(s)) verbs.push('Archive');
@@ -103,15 +106,28 @@ export function SenderListRow({
     <>
       <div
         onClick={onToggleExpand}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            onToggleExpand();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        aria-label={`${s.name} — ${expanded ? 'collapse' : 'expand'} detail`}
         style={{
           display: 'grid',
-          gridTemplateColumns: '20px 32px minmax(0,1.7fr) minmax(0,1.1fr) 116px auto 22px',
-          gap: 14,
+          gridTemplateColumns: isMobile
+            ? '20px 32px minmax(0,1fr) auto 22px'
+            : '20px 32px minmax(0,1.7fr) minmax(0,1.1fr) 116px 156px 22px',
+          gap: isMobile ? 10 : 14,
           alignItems: 'center',
           padding: '12px 16px',
           background: expanded ? 'rgba(14,20,19,0.028)' : 'transparent',
           cursor: 'pointer',
           borderBottom: `1px solid ${color.lineSoft}`,
+          boxShadow: expanded ? `inset 3px 0 0 ${color.primary}` : undefined,
           transition: 'background 0.12s',
         }}
         onMouseEnter={(e) => {
@@ -182,28 +198,32 @@ export function SenderListRow({
           </span>
         </div>
 
-        <span
-          style={{
-            fontSize: 12.5,
-            color: color.fgSoft,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {whyLine(s)}
-        </span>
+        {!isMobile && (
+          <span
+            style={{
+              fontSize: 12.5,
+              color: color.fgSoft,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {whyLine(s)}
+          </span>
+        )}
 
-        <div
-          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, textAlign: 'right' }}
-        >
-          <Stat value={s.monthly.toLocaleString()} label="per month" valueColor={color.fg} />
-          <Stat
-            value={`${readPct}%`}
-            label="read"
-            valueColor={s.read >= 0.5 ? color.primary : s.read >= 0.2 ? color.fg : color.amber}
-          />
-        </div>
+        {!isMobile && (
+          <div
+            style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, textAlign: 'right' }}
+          >
+            <Stat value={s.monthly.toLocaleString()} label="per month" valueColor={color.fg} />
+            <Stat
+              value={`${readPct}%`}
+              label="read"
+              valueColor={s.read >= 0.5 ? color.primary : s.read >= 0.2 ? color.fg : color.amber}
+            />
+          </div>
+        )}
 
         <div
           onClick={(e) => e.stopPropagation()}

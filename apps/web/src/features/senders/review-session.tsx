@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Avatar, Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { Avatar, Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { historicCount, type DecisionId, type ReviewKind, type Sender } from './data';
 
 const { color, font } = tokens;
@@ -32,7 +32,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
   promo: {
     eyebrow: 'Promotional sweep · reversible for 7 days',
     tag: 'warn',
-    headline: 'Drop these marketers?',
+    headline: 'Unsubscribe these marketers?',
     sub: "These senders rarely get opened. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
     defaultAction: 'unsub',
     options: [KEEP, LATER, UNSUB],
@@ -153,6 +153,8 @@ export function ReviewSession({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, apply, onCancel, senders.length]);
 
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
   if (!open) return null;
 
   const setBulk = (next: DecisionId) => {
@@ -169,9 +171,10 @@ export function ReviewSession({
 
   return createPortal(
     <div
+      ref={trapRef}
       role="dialog"
       aria-modal="true"
-      aria-label={`Weekly review · ${KIND_LABEL[kind]}`}
+      aria-labelledby="dm-review-title"
       style={{
         position: 'fixed',
         inset: 0,
@@ -262,6 +265,7 @@ export function ReviewSession({
             {cfg.eyebrow}
           </Eyebrow>
           <h2
+            id="dm-review-title"
             style={{
               margin: '12px 0 8px',
               fontSize: 28,

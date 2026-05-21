@@ -53,9 +53,9 @@ export function StatStrip({ items }: { items: Stat[] }) {
           </span>
           <span
             style={{
-              fontFamily: font.sans,
+              fontFamily: font.display,
               fontSize: 16,
-              fontWeight: 700,
+              fontWeight: 600,
               letterSpacing: '-0.014em',
               color: color.fg,
               fontVariantNumeric: 'tabular-nums',

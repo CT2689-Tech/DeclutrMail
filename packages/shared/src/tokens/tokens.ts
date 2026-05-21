@@ -14,10 +14,10 @@ export const color = {
   /** Ink. */
   fg: '#0E1413',
   fgSoft: '#4B5552',
-  fgMuted: '#8A938F',
+  fgMuted: '#646D69',
 
   /** Lines / borders. */
-  border: '#E4E7EB',
+  border: 'rgba(14,20,19,0.14)',
   line: 'rgba(14,20,19,0.10)',
   lineSoft: 'rgba(14,20,19,0.06)',
   mutedBg: '#EFF2F5',

@@ -2,7 +2,7 @@
 
 import { color } from '../tokens/tokens';
 
-/** Tiny trend sparkline — the "live, watched data" cue on cards and rows. */
+/** Tiny trend sparkline — line plus a faint area fill, the "live, watched" cue. */
 export function Spark({
   values,
   width = 56,
@@ -21,8 +21,9 @@ export function Spark({
   const max = Math.max(...values, 1);
   const step = n > 1 ? width / (n - 1) : 0;
   const y = (v: number) => height - (v / max) * (height - 2) - 1;
-  const points = values.map((v, i) => `${i * step},${y(v)}`).join(' ');
+  const pts = values.map((v, i) => `${i * step},${y(v)}`);
   const last = values[n - 1] ?? 0;
+  const area = `M ${pts.join(' L ')} L ${(n - 1) * step},${height} L 0,${height} Z`;
 
   return (
     <svg
@@ -31,8 +32,9 @@ export function Spark({
       style={{ overflow: 'visible', flexShrink: 0 }}
       aria-hidden="true"
     >
+      <path d={area} fill={line} fillOpacity={0.12} stroke="none" />
       <polyline
-        points={points}
+        points={pts.join(' ')}
         fill="none"
         stroke={line}
         strokeWidth={1.4}

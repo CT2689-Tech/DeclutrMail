@@ -57,7 +57,7 @@ export const GROUPS: GroupMeta[] = [
   {
     key: 'updates',
     label: 'Updates',
-    hint: 'Transactional and recurring service mail. Receipts and statements are auto-protected; newsletter-style updates are fair game.',
+    hint: 'Transactional and recurring service mail. Receipts and statements are auto-protected; newsletter-style updates can be acted on.',
   },
   {
     key: 'forums',
@@ -574,7 +574,8 @@ export function canArchive(s: Sender): boolean {
   return !s.protected;
 }
 
-/** "Later" defers a sender out of the daily queue — safe for anyone unprotected. */
+/** "Later" routes a sender's future mail to a DeclutrMail/Later label
+ * (skips the inbox) — safe for anyone unprotected. */
 export function canLater(s: Sender): boolean {
   return !s.protected;
 }
@@ -616,6 +617,15 @@ export function gmailSearchUrl(domain: string): string {
 // Protect — a distinct VIP/lock operation, not a triage verb.
 
 export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect';
+
+/** Past-tense verb labels for toasts + receipts — single source. */
+export const VERB_PAST: Record<ActionVerb, string> = {
+  Keep: 'Kept',
+  Archive: 'Archived',
+  Unsubscribe: 'Unsubscribed from',
+  Later: 'Moved to Later',
+  Protect: 'Protected',
+};
 
 export interface ActionRequest {
   verb: ActionVerb;
