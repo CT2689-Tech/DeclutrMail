@@ -62,7 +62,10 @@ export const mailMessages = pgTable(
     snippet: varchar('snippet', { length: 300 }).notNull().default(''),
     internalDate: timestamp('internal_date', { withTimezone: true, mode: 'date' }).notNull(),
     /** Gmail label ids (INBOX, CATEGORY_*, UNREAD, …). */
-    labelIds: text('label_ids').array().notNull().default(sql`'{}'::text[]`),
+    labelIds: text('label_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     /** Derived from the presence of the UNREAD label — D7 read state. */
     isUnread: boolean('is_unread').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

@@ -70,9 +70,7 @@ export const providerSyncState = pgTable(
       .default(sql`now()`),
   },
   (table) => ({
-    mailboxUniq: uniqueIndex('provider_sync_state_mailbox_account_uniq').on(
-      table.mailboxAccountId,
-    ),
+    mailboxUniq: uniqueIndex('provider_sync_state_mailbox_account_uniq').on(table.mailboxAccountId),
   }),
 );
 
