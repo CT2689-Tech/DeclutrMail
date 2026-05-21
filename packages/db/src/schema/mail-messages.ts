@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 
 import { mailboxAccounts } from './mailbox-accounts';
 
@@ -44,8 +53,13 @@ export const mailMessages = pgTable(
     /** sha256("v1|" + normalized_email), hex — matches senders.sender_key. */
     senderKey: text('sender_key').notNull(),
     subject: text('subject').notNull().default(''),
-    /** Gmail's own snippet — explicitly allowlisted by D7. */
-    snippet: text('snippet').notNull().default(''),
+    /**
+     * Gmail's own snippet — explicitly allowlisted by D7. Capped at
+     * varchar(300) so the privacy boundary is enforced by the column
+     * type: a body cannot be smuggled in even via a buggy sync worker.
+     * Gmail's API snippet is ~160-200 chars; 300 is generous headroom.
+     */
+    snippet: varchar('snippet', { length: 300 }).notNull().default(''),
     internalDate: timestamp('internal_date', { withTimezone: true, mode: 'date' }).notNull(),
     /** Gmail label ids (INBOX, CATEGORY_*, UNREAD, …). */
     labelIds: text('label_ids').array().notNull().default(sql`'{}'::text[]`),

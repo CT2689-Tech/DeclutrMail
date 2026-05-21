@@ -22,7 +22,7 @@ CREATE TABLE "mail_messages" (
 	"provider_thread_id" text NOT NULL,
 	"sender_key" text NOT NULL,
 	"subject" text DEFAULT '' NOT NULL,
-	"snippet" text DEFAULT '' NOT NULL,
+	"snippet" varchar(300) DEFAULT '' NOT NULL,
 	"internal_date" timestamp with time zone NOT NULL,
 	"label_ids" text[] DEFAULT '{}'::text[] NOT NULL,
 	"is_unread" boolean NOT NULL,

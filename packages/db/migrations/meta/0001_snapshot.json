@@ -1,5 +1,5 @@
 {
-  "id": "3230d297-766b-430c-99f5-c8bb78dd6cc8",
+  "id": "f7d9515c-0de6-4359-a391-fb83c7bf15c3",
   "prevId": "27438079-6d88-4ab6-b7b5-cad62f960f57",
   "version": "7",
   "dialect": "postgresql",
@@ -157,7 +157,7 @@
         },
         "snippet": {
           "name": "snippet",
-          "type": "text",
+          "type": "varchar(300)",
           "primaryKey": false,
           "notNull": true,
           "default": "''"
