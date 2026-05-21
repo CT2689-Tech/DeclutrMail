@@ -94,3 +94,22 @@ principles) or §8 (definition of done) if I default to 🟠-marking
 again on a future PR despite available validation paths. Recurrence
 ≥2 across PRs is a strong enough signal because this is a habits
 problem, not a tooling problem.
+
+## 2026-05-21 — Future `mail_messages` index migrations need `CONCURRENTLY`
+**Context:** PR #13 — the messages/senders schema. `mail_messages` got
+four indexes via plain `CREATE INDEX` in migration `0001`.
+**Finding:** That migration is safe *only because the table is new and
+empty* — `CREATE INDEX` on an empty table takes a negligible lock. But
+`mail_messages` will be the highest-volume table in the product and is
+the one that hits D235's partitioning trigger first (25M rows / 2M per
+mailbox / p95 > 150ms). Any migration adding an index to it *after*
+launch will hold an `ACCESS EXCLUSIVE`-ish lock for the duration of a
+plain `CREATE INDEX` and block writes.
+**Rule (provisional):** Migrations that add an index to an
+already-populated high-volume table (`mail_messages` first, later
+`activity_log`, `sender_timeseries`) must use `CREATE INDEX
+CONCURRENTLY`. The deferred D150 "12-index audit" PR is the first place
+this applies — it adds indexes to `mail_messages` post-PR-A.
+**Distillation trigger:** promote to CLAUDE.md §8 (migration PR
+definition-of-done) if a second migration is caught adding a
+non-concurrent index to a populated table.
