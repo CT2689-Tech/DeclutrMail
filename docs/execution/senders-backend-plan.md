@@ -16,15 +16,15 @@ build against them.
 
 Seven forks were resolved in the planning session. All locked:
 
-| # | Fork | Decision |
-|---|------|----------|
-| 1 | Data layer | Build the **real backend** — not a swappable mock seam. |
-| 2 | Backend depth | **Full** — schema + sync + API + frontend rewire. |
-| 3 | Fill the tables | **Build Gmail sync now** (not a seed script). |
-| 4 | Sync scope | **Full** — initial backfill **and** the incremental Pub/Sub webhook. |
-| 5 | Sync depth | **Full mailbox, metadata-only** backfill (every message, oldest→newest). |
-| 6 | Aggregation | **Materialized** via the `building_sender_index` sync stage (plan-locked, D224). |
-| 7 | PR cadence | **6 fine-grained PRs** (A–F), each independently reviewable. |
+| #   | Fork            | Decision                                                                         |
+| --- | --------------- | -------------------------------------------------------------------------------- |
+| 1   | Data layer      | Build the **real backend** — not a swappable mock seam.                          |
+| 2   | Backend depth   | **Full** — schema + sync + API + frontend rewire.                                |
+| 3   | Fill the tables | **Build Gmail sync now** (not a seed script).                                    |
+| 4   | Sync scope      | **Full** — initial backfill **and** the incremental Pub/Sub webhook.             |
+| 5   | Sync depth      | **Full mailbox, metadata-only** backfill (every message, oldest→newest).         |
+| 6   | Aggregation     | **Materialized** via the `building_sender_index` sync stage (plan-locked, D224). |
+| 7   | PR cadence      | **6 fine-grained PRs** (A–F), each independently reviewable.                     |
 
 Plan-locked, confirmed not re-decided:
 
@@ -36,14 +36,14 @@ Plan-locked, confirmed not re-decided:
 
 ## 2. PR sequence
 
-| PR | Title | Status | Gates | Hard blockers |
-|----|-------|--------|-------|---------------|
-| **A** | messages + senders schema | **Open — [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13)** | privacy-auditor, schema-migration-reviewer | — |
-| **B** | Gmail OAuth connect + token storage | spec'd | architecture-guardian | ⚠️ token-encryption decision (§4); GCP creds |
-| **C** | Initial sync — BullMQ + InitialSyncWorker | spec'd | architecture-guardian | PR-A, PR-B; Upstash Redis |
-| **D** | Incremental sync — watch() + Pub/Sub webhook | spec'd | webhook-security-auditor, architecture-guardian | PR-C; Pub/Sub topic |
-| **E** | Senders module + aggregate API | spec'd | architecture-guardian, privacy-auditor | PR-A, PR-C |
-| **F** | Frontend data layer — kill data.ts | spec'd | design-system-agent | PR-E |
+| PR    | Title                                        | Status                                                               | Gates                                           | Hard blockers                                |
+| ----- | -------------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- | -------------------------------------------- |
+| **A** | messages + senders schema                    | **Open — [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13)** | privacy-auditor, schema-migration-reviewer      | —                                            |
+| **B** | Gmail OAuth connect + token storage          | spec'd                                                               | architecture-guardian                           | ⚠️ token-encryption decision (§4); GCP creds |
+| **C** | Initial sync — BullMQ + InitialSyncWorker    | spec'd                                                               | architecture-guardian                           | PR-A, PR-B; Upstash Redis                    |
+| **D** | Incremental sync — watch() + Pub/Sub webhook | spec'd                                                               | webhook-security-auditor, architecture-guardian | PR-C; Pub/Sub topic                          |
+| **E** | Senders module + aggregate API               | spec'd                                                               | architecture-guardian, privacy-auditor          | PR-A, PR-C                                   |
+| **F** | Frontend data layer — kill data.ts           | spec'd                                                               | design-system-agent                             | PR-E                                         |
 
 Then the **depth layer** (separate, post-F): Sender Detail screen (D39),
 Gmail deep-links (D41/D231), undo journal wiring (D232).
@@ -80,6 +80,7 @@ encrypted OAuth refresh token and links it to a `mailbox_accounts` row.
 NestJS module layout per D201 here.
 
 **Files (new):**
+
 - `apps/api/src/main.ts`, `app.module.ts` — NestJS bootstrap.
 - `apps/api/src/auth/google-oauth.module.ts` / `.controller.ts` / `.service.ts`
   — `GET /api/auth/google/start` → consent URL; `GET /api/auth/google/callback`
@@ -90,6 +91,7 @@ NestJS module layout per D201 here.
 
 **⚠️ OPEN DECISION — token encryption (founder sign-off required, §9 stop-condition).**
 Pick the encryption scheme before PR-B is built:
+
 - **Option 1 — app-level AES-256-GCM.** 256-bit key in GCP Secret
   Manager, injected as env var; `token_key_version` supports rotation.
   Simplest; key is in app memory.
@@ -111,21 +113,23 @@ encryption (decision above).
 `mail_messages` and materialize `senders` + `sender_timeseries`.
 
 **Files (new):**
+
 - `packages/workers` — `BaseDeclutrWorker` (D157/D225), BullMQ setup on
   Upstash Redis.
 - `packages/workers/src/initial-sync.worker.ts` — stages, in D224 order:
   `queued → fetching_metadata → building_sender_index →
-  computing_recommendations → finalizing → ready`. Updates
+computing_recommendations → finalizing → ready`. Updates
   `provider_sync_state.current_stage` + `progress_pct` on each transition.
 - `apps/api/src/gmail/gmail-client.service.ts` — `messages.list` (paged)
-  + `messages.get?format=metadata`. **`format=metadata` only — never
-  `full`/`raw`.** This is the D7 "bodies fetched: 0" guarantee.
+  - `messages.get?format=metadata`. **`format=metadata` only — never
+    `full`/`raw`.** This is the D7 "bodies fetched: 0" guarantee.
 - Sender-key derivation: `sha256("v1|" + lowercased+trimmed email)` (D12).
 - `building_sender_index` stage: GROUP BY `mail_messages` → upsert
   `senders` (first/last seen, dominant `gmail_category`) and
   `sender_timeseries` (per-month volume + read_count).
 
 **Decisions baked in:**
+
 - Full-mailbox backfill (fork #5). Paginate `messages.list`; throttle per
   D5. Mailboxes run 50k–250k messages.
 - `gmail_category` from Gmail's own `CATEGORY_*` labels — never predicted
@@ -141,6 +145,7 @@ encryption (decision above).
 **Goal.** Keep `mail_messages` fresh after the backfill.
 
 **Files (new):**
+
 - `apps/api/src/webhooks/gmail-webhook.controller.ts` — `POST /api/webhooks/gmail`.
   **Full D229 8-step OIDC verification** (JWKS sig → iss → aud → email →
   exp → messageId dedup → historyId monotonic). Never
@@ -172,6 +177,7 @@ account.
 / `.service.ts`, read-only (D204), responses in the D202 envelope.
 
 **Endpoints:**
+
 - `GET /api/senders?mailbox_account_id=` — the list aggregate (per-sender:
   monthly cadence, read rate, 4-week spark, last-seen, unread count,
   category, policy flags). Server-side pagination.
@@ -196,6 +202,7 @@ Gmail-data response path).
 the screen reads PR-E's API.
 
 **Files:**
+
 - `apps/web/src/features/senders/api/` — TanStack Query hooks
   (`useSenders`, `useSenderDetail`, `useSenderTimeseries`) — D200 locks
   TanStack for server state.
@@ -232,10 +239,11 @@ The founder asked: fetch attachment size / has-attachment, and add a
 "find larger attachments" feature.
 
 **Finding — this brushes the D7 / §2.1 hard guardrail:**
-- **"Has attachment"** (boolean) — *feasible body-free.* Gmail's
+
+- **"Has attachment"** (boolean) — _feasible body-free._ Gmail's
   `q=has:attachment` search returns matching message IDs without fetching
   any body.
-- **Per-attachment size** — *not feasible without a violation.* It
+- **Per-attachment size** — _not feasible without a violation._ It
   requires `messages.get?format=full`, which fetches the message body /
   MIME tree. That breaks the "Full bodies fetched: 0" trust artifact.
 - **Whole-message `sizeEstimate`** — body-free (returned with
