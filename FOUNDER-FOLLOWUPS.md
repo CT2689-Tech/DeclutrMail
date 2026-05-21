@@ -43,11 +43,23 @@ to match reality so future sessions don't read the divergence as plan-drift.
      relabelled to "Later"; "Trash" and "Digest" are dropped. Decide whether
      §2.2 formally permits Protect (and any non-triage verbs) on management
      surfaces, and update the guardrail wording accordingly.
+     **Resolved this session — "Later" behavior:** Later routes a sender's
+     _future_ mail to a `DeclutrMail/Later` Gmail label (skips the inbox);
+     existing inbox mail is untouched unless the confirm modal's "also clear
+     historic" toggle is used; the sender then exits the triage queue.
+     Distinct from Keep (mail stays in the inbox). Implemented in the Senders
+     rebuild — Later now routes through the D226 confirm preview. Ratify into
+     D20's verdict definition + D227 + §2.2.
   4. **D187 / §5** — this work defers Storybook and builds the Senders screen
      ahead of the named 5 golden screens. Decide whether to amend D187's PR-3
      definition or log this as an approved detour. Note: the `design-system-agent`
      gate may flag a primitive library shipped without Storybook stories — the
      PR bodies call this out as intentional.
+  5. **D220 / §6** — the rebuilt primitive library renames and extends the
+     locked component inventory (`Kbd`, `Card`, `Eyebrow`, `Spark`, `Avatar`,
+     `Button`, `ScreenIntro`, `Sidebar`, `AppShell`, `Toast`, `SenderSearch`);
+     only `EmptyState` matches the D220 allowlist. Reconcile the D220 inventory
+     with the shipped primitive set.
 **Verifies by:** CLAUDE.md §2.2/§4 + the plan's D1/D2/D187/D227 entries describe
 the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
