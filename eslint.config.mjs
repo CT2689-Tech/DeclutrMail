@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       '**/.next/**',
+      '**/next-env.d.ts',
       '**/coverage/**',
       'pnpm-lock.yaml',
     ],
@@ -29,6 +30,16 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+  {
+    // Frontend packages run in the browser — expose browser globals
+    // (window, document, localStorage, …) so no-undef does not fire.
+    files: ['apps/web/**/*.{ts,tsx}', 'packages/shared/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
     },
   },
   {

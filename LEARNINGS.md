@@ -20,6 +20,27 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-20 — `next dev` timing is not a performance signal
+
+**Context:** Profiling the Senders screen — `next dev` reported
+200–280 ms per `/senders` request, which read as a latency problem
+worth chasing.
+
+**Finding:** `next dev` compiles routes on demand, runs the React dev
+build (unminified, extra checks), and skips the static cache — it
+re-renders every request. A production `next build` + `next start`
+measurement of the same route was ~2–3 ms server time, because
+`/senders` is a static prerender (`○` in the build route table). The
+dev number was tooling overhead, not the app.
+
+**Rule (provisional):** Never quote `next dev` timings as performance.
+Measure `next build` + `next start`, or read the build's route table.
+`next dev` overwrites `.next` with dev artifacts, so rebuild before any
+`next start` measurement.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a dev-mode metric
+is mistaken for a real one again (≥2 recurrences).
+
 ## 2026-05-19 — Default to verifying, not delegating verification
 
 **Context:** PR #4 (`chore/bootstrap-pr1b`) introduced a status legend

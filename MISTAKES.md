@@ -21,6 +21,48 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-20 — Visual pass shipped a desktop-only layout + a search dead-end
+**PR:** #TBD — `feat/d038-senders-screen` (visual-optimization pass)
+**Caught by:** Codex adversarial review + a browser check at 401 px
+**What happened:** Two regressions in the visual-optimization pass.
+(1) `sender-list-row.tsx` replaced an `auto` action column with a hard
+`156px`. Row alignment was fixed, but the row's minimum width now
+exceeds a phone viewport, and the parent scroll area clips overflow, so
+row actions become unreachable. A browser check at 401 px showed the
+whole shell non-responsive — the 220 px sidebar never collapses and
+content is crushed to ~190 px. (2) The new `SenderSearch` typeahead drew
+suggestions from the full sender list while the table stayed filtered by
+category/facet; picking a suggestion for a filtered-out sender produced
+an empty table that claimed "no match".
+**Correct approach:** Build responsive from the start — mobile drawer in
+`AppShell`, fluid grids, a row layout that reflows. Search stays global,
+but picking a suggestion clears active filters so the result is always
+visible.
+**Rule:** Check any new screen/shell at a phone width before calling it
+done. A fixed-width column is a layout regression unless the row can
+still reflow under it.
+**Enforcement update:** none — fixed in the follow-up pass (AppShell
+drawer, auto-fit grids, responsive row, clear-filters-on-pick).
+
+## 2026-05-20 — Review-session apply used if/else-if, dropped decisions
+**PR:** #TBD — `feat/d038-senders-screen` (fixed in commit 215e9a0)
+**Caught by:** gate review — typescript-reviewer + silent-failure-hunter
+**What happened:** `applyReview` in `senders-screen.tsx` branched the
+three verb buckets (Unsubscribe / Later / Protect) with `if … else if
+… else if`. A mixed review session — some senders Unsubscribe, others
+Later — fired only the first non-empty bucket and silently dropped the
+rest. A trailing toast still announced "Also moved N to Later", so the
+UI claimed work that never ran. The loose `string` typing of decision
+values (no union) is what let producer and consumer drift without a
+compile error.
+**Correct approach:** Independent `if`s (or a loop over buckets) so every
+bucket applies; type decision values as a closed union.
+**Rule:** Branches that look mutually exclusive but are independent must
+be independent `if`s, not an `if/else-if` chain. Model closed value sets
+as union types so producer/consumer mismatches fail `tsc`.
+**Enforcement update:** none — fixed in-PR (independent buckets +
+`DecisionId` union). Behavioral; promote to CLAUDE.md §1 if it recurs.
+
 ## 2026-05-20 — Rename recon used an extension-filtered grep, missed config files
 **PR:** #TBD — `chore/d173-rename-ui-to-shared`
 **Caught by:** broad verification grep (later in the same session)

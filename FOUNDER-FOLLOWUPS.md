@@ -26,6 +26,45 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-20 — Reconcile plan vs. the Senders-screen design rebuild (D1/D2/D227/D187)
+**Source:** session — Senders rebuild (PR-A `feat/d001-design-foundation`; PR-B to follow)
+**Why:** The founder approved rebuilding the canonical DeclutrMail-v2 Senders
+screen, which knowingly diverges from four locked decisions. Build proceeded on
+a "build now, reconcile after" basis — CLAUDE.md + the plan must now be updated
+to match reality so future sessions don't read the divergence as plan-drift.
+**How:**
+  1. **D1** — replace "Geist Sans/Mono" with the adopted stack: Inter (UI) +
+     JetBrains Mono (mono) + Fraunces (display). Update CLAUDE.md §4 + the D1
+     body in the plan.
+  2. **D2** — replace "Cool/Vercel palette" with the warm-newsprint palette
+     (`#FAFAF7` paper, `#006B5F` deep-teal accent). Update CLAUDE.md §4 + D2.
+  3. **D227 / §2.2** — the rebuild renders Keep / Archive / Unsubscribe / Later
+     (canon) plus **Protect** as a distinct VIP/lock operation; "Mute" is
+     relabelled to "Later"; "Trash" and "Digest" are dropped. Decide whether
+     §2.2 formally permits Protect (and any non-triage verbs) on management
+     surfaces, and update the guardrail wording accordingly.
+     **Resolved this session — "Later" behavior:** Later routes a sender's
+     _future_ mail to a `DeclutrMail/Later` Gmail label (skips the inbox);
+     existing inbox mail is untouched unless the confirm modal's "also clear
+     historic" toggle is used; the sender then exits the triage queue.
+     Distinct from Keep (mail stays in the inbox). Implemented in the Senders
+     rebuild — Later now routes through the D226 confirm preview. Ratify into
+     D20's verdict definition + D227 + §2.2.
+  4. **D187 / §5** — this work defers Storybook and builds the Senders screen
+     ahead of the named 5 golden screens. Decide whether to amend D187's PR-3
+     definition or log this as an approved detour. Note: the `design-system-agent`
+     gate may flag a primitive library shipped without Storybook stories — the
+     PR bodies call this out as intentional.
+  5. **D220 / §6** — the rebuilt primitive library renames and extends the
+     locked component inventory (`Kbd`, `Card`, `Eyebrow`, `Spark`, `Avatar`,
+     `Button`, `ScreenIntro`, `Sidebar`, `AppShell`, `Toast`, `SenderSearch`);
+     only `EmptyState` matches the D220 allowlist. Reconcile the D220 inventory
+     with the shipped primitive set.
+**Verifies by:** CLAUDE.md §2.2/§4 + the plan's D1/D2/D187/D227 entries describe
+the shipped design; a fresh session reading them finds no contradiction with
+`apps/web`.
+**Status:** Open
+
 ### 2026-05-20 — design-system-agent.md Scope section still omits `src/`
 **Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep
 **Why:** The `packages/ui` → `packages/shared` rename (D173) is otherwise fully
