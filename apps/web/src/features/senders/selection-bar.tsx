@@ -1,0 +1,107 @@
+'use client';
+
+import { tokens } from '@declutrmail/shared';
+import { canArchive, canLater, canUnsubscribe, type ActionVerb, type Sender } from './data';
+
+const { color, font } = tokens;
+
+/** Sticky bulk-action bar — appears while one or more senders are checked. */
+export function SelectionBar({
+  senders,
+  onClear,
+  onAct,
+}: {
+  senders: Sender[];
+  onClear: () => void;
+  onAct: (verb: Extract<ActionVerb, 'Archive' | 'Later' | 'Unsubscribe'>) => void;
+}) {
+  if (senders.length === 0) return null;
+
+  const eligible = {
+    Archive: senders.filter(canArchive).length,
+    Later: senders.filter(canLater).length,
+    Unsubscribe: senders.filter(canUnsubscribe).length,
+  };
+
+  return (
+    <div
+      style={{
+        position: 'sticky',
+        bottom: 14,
+        zIndex: 30,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '10px 12px 10px 18px',
+        background: color.fg,
+        borderRadius: 12,
+        boxShadow: '0 14px 34px -10px rgba(0,0,0,0.45)',
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: '#FFFFFF' }}>
+        <strong
+          style={{
+            fontFamily: font.mono,
+            fontSize: 13,
+            fontWeight: 700,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {senders.length}
+        </strong>
+        <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>
+          sender{senders.length === 1 ? '' : 's'} selected
+        </span>
+        <button
+          onClick={onClear}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'rgba(255,255,255,0.55)',
+            fontFamily: font.mono,
+            fontSize: 10.5,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            cursor: 'pointer',
+          }}
+        >
+          Clear
+        </button>
+      </span>
+
+      <span style={{ flex: 1 }} />
+
+      {(['Archive', 'Later', 'Unsubscribe'] as const).map((verb) => {
+        const n = eligible[verb];
+        const disabled = n === 0;
+        const primary = verb === 'Unsubscribe';
+        return (
+          <button
+            key={verb}
+            onClick={() => !disabled && onAct(verb)}
+            disabled={disabled}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 32,
+              padding: '0 14px',
+              background: primary ? color.amber : 'rgba(255,255,255,0.10)',
+              color: '#FFFFFF',
+              border: `1px solid ${primary ? color.amber : 'rgba(255,255,255,0.18)'}`,
+              borderRadius: 7,
+              fontFamily: font.sans,
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: disabled ? 'not-allowed' : 'pointer',
+              opacity: disabled ? 0.4 : 1,
+            }}
+          >
+            {verb}
+            <span style={{ fontFamily: font.mono, fontSize: 11, opacity: 0.8 }}>{n}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}

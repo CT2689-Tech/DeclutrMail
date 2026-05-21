@@ -1,0 +1,854 @@
+/**
+ * Senders feature — domain model, fixed demo dataset, and the
+ * selectors that drive the weekly hero, cohort rail, and filters.
+ *
+ * The prototype generated senders at "mailbox scale" via a dev
+ * switcher; the rebuild ships one fixed, realistic mailbox instead.
+ */
+
+export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+
+export interface Sender {
+  id: string;
+  name: string;
+  domain: string;
+  /** Emails per month (recent cadence). */
+  monthly: number;
+  group: SenderGroup;
+  /** Read rate, 0–1. */
+  read: number;
+  /** 4-week volume series for the sparkline. */
+  spark: number[];
+  /** Days since the most recent message. */
+  lastDays: number;
+  /** Currently unread in the inbox from this sender. */
+  unread: number;
+  /** Months since first seen — rough relationship age. */
+  firstSeenMo: number;
+  /** Auto-protected (receipts / statements) — never bulk-acted. */
+  protected?: boolean;
+  /** Volume spike multiplier vs. the sender's usual rate. */
+  spike?: number;
+}
+
+export interface GroupMeta {
+  key: SenderGroup;
+  label: string;
+  hint: string;
+}
+
+/** Gmail-native taxonomy. Real people → Primary; receipts → Updates. */
+export const GROUPS: GroupMeta[] = [
+  {
+    key: 'primary',
+    label: 'Primary',
+    hint: 'Conversations and 1-to-1 mail — always come through.',
+  },
+  {
+    key: 'promotions',
+    label: 'Promotions',
+    hint: 'Deals and marketing — the best candidates to unsubscribe.',
+  },
+  {
+    key: 'social',
+    label: 'Social',
+    hint: 'Notifications from social networks and communities.',
+  },
+  {
+    key: 'updates',
+    label: 'Updates',
+    hint: 'Transactional and recurring service mail. Receipts and statements are auto-protected; newsletter-style updates are fair game.',
+  },
+  {
+    key: 'forums',
+    label: 'Forums',
+    hint: 'Mailing lists, group threads, discussion digests.',
+  },
+];
+
+export const GROUP_BY_KEY: Record<SenderGroup, GroupMeta> = Object.fromEntries(
+  GROUPS.map((g) => [g.key, g]),
+) as Record<SenderGroup, GroupMeta>;
+
+/** The fixed demo mailbox — a realistic spread across all five groups. */
+export const SENDERS: Sender[] = [
+  // ── Primary (real people) ───────────────────────────────────
+  {
+    id: 'sarah',
+    name: 'Sarah Chen',
+    domain: 'google.com',
+    monthly: 17,
+    group: 'primary',
+    read: 1,
+    spark: [13, 17, 13, 17],
+    lastDays: 0,
+    unread: 2,
+    firstSeenMo: 18,
+  },
+  {
+    id: 'marcus',
+    name: 'Marcus Kelly',
+    domain: 'company.io',
+    monthly: 9,
+    group: 'primary',
+    read: 1,
+    spark: [4, 9, 9, 9],
+    lastDays: 1,
+    unread: 1,
+    firstSeenMo: 9,
+  },
+  {
+    id: 'alex',
+    name: 'AlexFraser',
+    domain: 'fastmail.com',
+    monthly: 4,
+    group: 'primary',
+    read: 1,
+    spark: [4, 0, 4, 4],
+    lastDays: 6,
+    unread: 0,
+    firstSeenMo: 36,
+  },
+  {
+    id: 'priya',
+    name: 'Priya Raman',
+    domain: 'hey.com',
+    monthly: 6,
+    group: 'primary',
+    read: 0.95,
+    spark: [5, 6, 7, 6],
+    lastDays: 2,
+    unread: 1,
+    firstSeenMo: 14,
+  },
+  {
+    id: 'dan',
+    name: 'Dan Whitfield',
+    domain: 'proton.me',
+    monthly: 3,
+    group: 'primary',
+    read: 1,
+    spark: [2, 3, 3, 3],
+    lastDays: 4,
+    unread: 0,
+    firstSeenMo: 27,
+  },
+
+  // ── Promotions ──────────────────────────────────────────────
+  {
+    id: 'groupon',
+    name: 'Groupon',
+    domain: 'groupon.com',
+    monthly: 52,
+    group: 'promotions',
+    read: 0,
+    spark: [16, 22, 28, 52],
+    spike: 3,
+    lastDays: 0,
+    unread: 41,
+    firstSeenMo: 28,
+  },
+  {
+    id: 'oldnavy',
+    name: 'Old Navy',
+    domain: 'oldnavy.com',
+    monthly: 48,
+    group: 'promotions',
+    read: 0,
+    spark: [12, 14, 18, 48],
+    spike: 3,
+    lastDays: 0,
+    unread: 36,
+    firstSeenMo: 22,
+  },
+  {
+    id: 'medium',
+    name: 'Medium Daily',
+    domain: 'medium.com',
+    monthly: 60,
+    group: 'promotions',
+    read: 0.07,
+    spark: [22, 28, 36, 60],
+    spike: 2.8,
+    lastDays: 0,
+    unread: 52,
+    firstSeenMo: 12,
+  },
+  {
+    id: 'etsy',
+    name: 'Etsy',
+    domain: 'etsy.com',
+    monthly: 41,
+    group: 'promotions',
+    read: 0.04,
+    spark: [12, 14, 22, 41],
+    spike: 2.6,
+    lastDays: 0,
+    unread: 31,
+    firstSeenMo: 52,
+  },
+  {
+    id: 'doordash',
+    name: 'DoorDash',
+    domain: 'doordash.com',
+    monthly: 38,
+    group: 'promotions',
+    read: 0,
+    spark: [26, 30, 34, 38],
+    lastDays: 1,
+    unread: 29,
+    firstSeenMo: 18,
+  },
+  {
+    id: 'uber',
+    name: 'Uber Eats',
+    domain: 'uber.com',
+    monthly: 26,
+    group: 'promotions',
+    read: 0,
+    spark: [24, 26, 24, 26],
+    lastDays: 2,
+    unread: 21,
+    firstSeenMo: 41,
+  },
+  {
+    id: 'wayfair',
+    name: 'Wayfair',
+    domain: 'wayfair.com',
+    monthly: 33,
+    group: 'promotions',
+    read: 0,
+    spark: [14, 18, 24, 33],
+    spike: 2.2,
+    lastDays: 0,
+    unread: 25,
+    firstSeenMo: 30,
+  },
+  {
+    id: 'nike',
+    name: 'Nike',
+    domain: 'nike.com',
+    monthly: 19,
+    group: 'promotions',
+    read: 0.05,
+    spark: [16, 17, 18, 19],
+    lastDays: 1,
+    unread: 12,
+    firstSeenMo: 44,
+  },
+  {
+    id: 'sephora',
+    name: 'Sephora',
+    domain: 'sephora.com',
+    monthly: 22,
+    group: 'promotions',
+    read: 0.11,
+    spark: [18, 20, 21, 22],
+    lastDays: 0,
+    unread: 14,
+    firstSeenMo: 38,
+  },
+  {
+    id: 'booking',
+    name: 'Booking.com',
+    domain: 'booking.com',
+    monthly: 15,
+    group: 'promotions',
+    read: 0.18,
+    spark: [12, 13, 14, 15],
+    lastDays: 3,
+    unread: 7,
+    firstSeenMo: 50,
+  },
+  {
+    id: 'substack',
+    name: 'Letters of Note',
+    domain: 'substack.com',
+    monthly: 8,
+    group: 'promotions',
+    read: 0.85,
+    spark: [8, 8, 7, 8],
+    lastDays: 3,
+    unread: 1,
+    firstSeenMo: 14,
+  },
+  {
+    id: 'spotify',
+    name: 'Spotify',
+    domain: 'spotify.com',
+    monthly: 4,
+    group: 'promotions',
+    read: 0.62,
+    spark: [4, 3, 4, 4],
+    lastDays: 4,
+    unread: 1,
+    firstSeenMo: 56,
+  },
+  {
+    id: 'duolingo',
+    name: 'Duolingo',
+    domain: 'duolingo.com',
+    monthly: 8,
+    group: 'promotions',
+    read: 0.18,
+    spark: [7, 8, 8, 8],
+    lastDays: 5,
+    unread: 3,
+    firstSeenMo: 20,
+  },
+
+  // ── Social ──────────────────────────────────────────────────
+  {
+    id: 'linkedin',
+    name: 'LinkedIn',
+    domain: 'linkedin.com',
+    monthly: 64,
+    group: 'social',
+    read: 0,
+    spark: [44, 52, 58, 64],
+    lastDays: 0,
+    unread: 47,
+    firstSeenMo: 38,
+  },
+  {
+    id: 'twitter',
+    name: 'X (Twitter)',
+    domain: 'x.com',
+    monthly: 34,
+    group: 'social',
+    read: 0,
+    spark: [22, 26, 30, 34],
+    lastDays: 1,
+    unread: 18,
+    firstSeenMo: 64,
+  },
+  {
+    id: 'reddit',
+    name: 'Reddit',
+    domain: 'reddit.com',
+    monthly: 19,
+    group: 'social',
+    read: 0.15,
+    spark: [21, 18, 19, 19],
+    lastDays: 2,
+    unread: 11,
+    firstSeenMo: 30,
+  },
+  {
+    id: 'instagram',
+    name: 'Instagram',
+    domain: 'instagram.com',
+    monthly: 28,
+    group: 'social',
+    read: 0.08,
+    spark: [20, 23, 26, 28],
+    lastDays: 0,
+    unread: 16,
+    firstSeenMo: 48,
+  },
+  {
+    id: 'meetup',
+    name: 'Meetup',
+    domain: 'meetup.com',
+    monthly: 6,
+    group: 'social',
+    read: 0.55,
+    spark: [6, 7, 6, 6],
+    lastDays: 8,
+    unread: 1,
+    firstSeenMo: 44,
+  },
+  {
+    id: 'nextdoor',
+    name: 'Nextdoor',
+    domain: 'nextdoor.com',
+    monthly: 12,
+    group: 'social',
+    read: 0.3,
+    spark: [10, 11, 12, 12],
+    lastDays: 4,
+    unread: 5,
+    firstSeenMo: 22,
+  },
+
+  // ── Updates ─────────────────────────────────────────────────
+  {
+    id: 'github',
+    name: 'GitHub',
+    domain: 'github.com',
+    monthly: 13,
+    group: 'updates',
+    read: 1,
+    spark: [12, 13, 13, 13],
+    lastDays: 0,
+    unread: 0,
+    firstSeenMo: 72,
+  },
+  {
+    id: 'notion',
+    name: 'Notion',
+    domain: 'notion.so',
+    monthly: 17,
+    group: 'updates',
+    read: 0.5,
+    spark: [13, 16, 17, 17],
+    lastDays: 1,
+    unread: 8,
+    firstSeenMo: 32,
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    domain: 'stripe.com',
+    monthly: 13,
+    group: 'updates',
+    read: 0.9,
+    spark: [13, 13, 13, 13],
+    lastDays: 0,
+    unread: 1,
+    firstSeenMo: 48,
+    protected: true,
+  },
+  {
+    id: 'amex',
+    name: 'American Express',
+    domain: 'americanexpress.com',
+    monthly: 9,
+    group: 'updates',
+    read: 0.7,
+    spark: [8, 9, 9, 9],
+    lastDays: 5,
+    unread: 2,
+    firstSeenMo: 96,
+    protected: true,
+  },
+  {
+    id: 'calendly',
+    name: 'Calendly',
+    domain: 'calendly.com',
+    monthly: 17,
+    group: 'updates',
+    read: 0.9,
+    spark: [13, 17, 17, 17],
+    lastDays: 0,
+    unread: 1,
+    firstSeenMo: 24,
+    protected: true,
+  },
+  {
+    id: 'chase',
+    name: 'Chase',
+    domain: 'chase.com',
+    monthly: 7,
+    group: 'updates',
+    read: 0.75,
+    spark: [7, 7, 7, 7],
+    lastDays: 2,
+    unread: 1,
+    firstSeenMo: 84,
+    protected: true,
+  },
+  {
+    id: 'ifttt',
+    name: 'IFTTT',
+    domain: 'ifttt.com',
+    monthly: 22,
+    group: 'updates',
+    read: 0.1,
+    spark: [18, 20, 22, 22],
+    lastDays: 0,
+    unread: 14,
+    firstSeenMo: 60,
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal',
+    domain: 'paypal.com',
+    monthly: 6,
+    group: 'updates',
+    read: 0,
+    spark: [5, 6, 6, 6],
+    lastDays: 11,
+    unread: 4,
+    firstSeenMo: 110,
+    protected: true,
+  },
+  {
+    id: 'grammarly',
+    name: 'Grammarly',
+    domain: 'grammarly.com',
+    monthly: 14,
+    group: 'updates',
+    read: 0.12,
+    spark: [11, 12, 13, 14],
+    lastDays: 1,
+    unread: 9,
+    firstSeenMo: 26,
+  },
+  {
+    id: 'dropbox',
+    name: 'Dropbox',
+    domain: 'dropbox.com',
+    monthly: 5,
+    group: 'updates',
+    read: 0.4,
+    spark: [5, 5, 5, 5],
+    lastDays: 9,
+    unread: 2,
+    firstSeenMo: 70,
+  },
+
+  // ── Forums ──────────────────────────────────────────────────
+  {
+    id: 'stack',
+    name: 'Stack Overflow',
+    domain: 'stackoverflow.email',
+    monthly: 9,
+    group: 'forums',
+    read: 0,
+    spark: [9, 9, 9, 9],
+    lastDays: 2,
+    unread: 9,
+    firstSeenMo: 84,
+  },
+  {
+    id: 'hn',
+    name: 'Hacker Newsletter',
+    domain: 'hackernewsletter.com',
+    monthly: 4,
+    group: 'forums',
+    read: 0.92,
+    spark: [4, 4, 4, 4],
+    lastDays: 3,
+    unread: 0,
+    firstSeenMo: 70,
+  },
+  {
+    id: 'django',
+    name: 'django-users',
+    domain: 'googlegroups.com',
+    monthly: 46,
+    group: 'forums',
+    read: 0.04,
+    spark: [38, 42, 44, 46],
+    spike: 1.6,
+    lastDays: 0,
+    unread: 39,
+    firstSeenMo: 102,
+  },
+  {
+    id: 'indiehackers',
+    name: 'Indie Hackers',
+    domain: 'indiehackers.com',
+    monthly: 11,
+    group: 'forums',
+    read: 0.45,
+    spark: [10, 11, 11, 11],
+    lastDays: 4,
+    unread: 3,
+    firstSeenMo: 19,
+  },
+  {
+    id: 'designweekly',
+    name: 'Design Weekly',
+    domain: 'designweekly.email',
+    monthly: 5,
+    group: 'forums',
+    read: 0.5,
+    spark: [5, 4, 5, 5],
+    lastDays: 6,
+    unread: 1,
+    firstSeenMo: 33,
+  },
+];
+
+// ─── Capability gates ──────────────────────────────────────────
+// Don't show actions the user can't take: no Unsubscribe for real
+// people, nothing destructive for auto-protected senders.
+
+export function canUnsubscribe(s: Sender): boolean {
+  return !s.protected && s.group !== 'primary';
+}
+
+export function canArchive(s: Sender): boolean {
+  return !s.protected;
+}
+
+/** "Later" defers a sender out of the daily queue — safe for anyone unprotected. */
+export function canLater(s: Sender): boolean {
+  return !s.protected;
+}
+
+/** Approximate lifetime email count — synthesised from monthly cadence. */
+export function historicCount(s: Sender): number {
+  return Math.max(0, Math.round(s.monthly * 12));
+}
+
+/** Compact large-number display: 12480 → "12.5k". */
+export function fmtCompact(n: number): string {
+  if (n < 1000) return n.toLocaleString();
+  if (n < 10000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  if (n < 1_000_000) return Math.round(n / 1000) + 'k';
+  return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+}
+
+export function relTime(days: number): string {
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.round(days / 7)}w ago`;
+  if (days < 365) return `${Math.round(days / 30)}mo ago`;
+  return `${Math.round(days / 365)}y ago`;
+}
+
+export function relTimeLabel(days: number): string {
+  const t = relTime(days);
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+/** Gmail #search deep-link — verifies any claim with zero API calls. */
+export function gmailSearchUrl(domain: string): string {
+  return `https://mail.google.com/mail/u/0/#search/from%3A%40${encodeURIComponent(domain)}`;
+}
+
+// ─── Actions ───────────────────────────────────────────────────
+// Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
+// Protect — a distinct VIP/lock operation, not a triage verb.
+
+export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect';
+
+export interface ActionRequest {
+  verb: ActionVerb;
+  senders: Sender[];
+}
+
+/** Recent-subject samples for the expanded row detail. */
+const SUBJECT_POOL: Record<SenderGroup, string[]> = {
+  primary: [
+    'Re: lunch next week?',
+    'Quick question on the deck',
+    'Thanks!',
+    'Calendar invite: sync',
+  ],
+  promotions: [
+    '48 hours only — 40% off',
+    'Your cart misses you',
+    'New arrivals just dropped',
+    'Final hours: free shipping',
+  ],
+  social: [
+    'You have 5 new notifications',
+    '3 people viewed your profile',
+    'Trending in your network',
+    'New connection request',
+  ],
+  updates: [
+    'Your receipt from this week',
+    'Weekly workspace summary',
+    'Statement is ready',
+    "What's new in your account",
+  ],
+  forums: [
+    'Top questions this week',
+    'New replies in your thread',
+    'This week: 12 new posts',
+    'Someone mentioned you',
+  ],
+};
+
+export function sampleSubjects(s: Sender): string[] {
+  const pool = SUBJECT_POOL[s.group];
+  const start = s.id.charCodeAt(0) % pool.length;
+  return [0, 1, 2].map((i) => pool[(start + i) % pool.length] ?? pool[0] ?? '');
+}
+
+// ─── Recommendation engine ─────────────────────────────────────
+// The action we think the user should take. Canonical verbs only
+// (D227): the prototype's "Mute" maps to "Later".
+
+export type RecommendedVerb = 'Unsubscribe' | 'Later' | null;
+
+export function recommendAction(s: Sender): RecommendedVerb {
+  if (s.protected || s.group === 'primary') return null;
+  const read = s.read || 0;
+  const monthly = s.monthly || 0;
+  if (read === 0 && monthly >= 8) return 'Unsubscribe';
+  if (read < 0.2 && s.spike) return 'Unsubscribe';
+  if (read < 0.2 && monthly >= 4) return 'Later';
+  if (read >= 0.2 && read < 0.6 && monthly >= 6) return 'Later';
+  return null;
+}
+
+// ─── Signal facets ─────────────────────────────────────────────
+
+export interface Facet {
+  key: string;
+  label: string;
+  group: 'read' | 'recency' | 'alert';
+  test: (s: Sender) => boolean;
+}
+
+export const FACETS: Facet[] = [
+  { key: 'never', label: 'Never opened', group: 'read', test: (s) => s.read === 0 },
+  {
+    key: 'rare',
+    label: 'Rarely read (<20%)',
+    group: 'read',
+    test: (s) => s.read > 0 && s.read < 0.2,
+  },
+  { key: 'often', label: 'Often read (≥50%)', group: 'read', test: (s) => s.read >= 0.5 },
+  { key: 'recent', label: 'Active this week', group: 'recency', test: (s) => s.lastDays <= 7 },
+  { key: 'stale', label: 'Silent 30 days+', group: 'recency', test: (s) => s.lastDays >= 30 },
+  { key: 'spike', label: 'Volume spiked', group: 'alert', test: (s) => s.spike != null },
+];
+
+// ─── Cohorts ───────────────────────────────────────────────────
+// Standing behavioural clusters surfaced as one-tap smart selections.
+
+export interface Cohort {
+  id: string;
+  label: string;
+  tone: 'warn' | 'default';
+  ids: string[];
+}
+
+export function detectCohorts(senders: Sender[]): Cohort[] {
+  const open = senders.filter((s) => !s.protected);
+  const out: Cohort[] = [];
+
+  const spiked = open.filter((s) => (s.spike ?? 0) >= 2 && s.read <= 0.1);
+  if (spiked.length >= 2) {
+    out.push({
+      id: 'spiked',
+      label: 'Spiked & ignored',
+      tone: 'warn',
+      ids: spiked.map((s) => s.id),
+    });
+  }
+  const dailyDead = open.filter((s) => s.monthly >= 25 && s.read <= 0.05 && (s.spike ?? 0) < 2);
+  if (dailyDead.length >= 2) {
+    out.push({
+      id: 'daily-dead',
+      label: 'Daily, never opened',
+      tone: 'warn',
+      ids: dailyDead.map((s) => s.id),
+    });
+  }
+  const lapsed = open.filter(
+    (s) => s.read >= 0.3 && s.read <= 0.6 && s.monthly >= 3 && s.monthly <= 35,
+  );
+  if (lapsed.length >= 3) {
+    out.push({
+      id: 'lapsed',
+      label: 'Used to read',
+      tone: 'default',
+      ids: lapsed.map((s) => s.id),
+    });
+  }
+  const stale = open.filter((s) => s.lastDays >= 30 && s.monthly >= 1);
+  if (stale.length >= 3) {
+    out.push({
+      id: 'stale',
+      label: 'Silent 30+ days',
+      tone: 'default',
+      ids: stale.map((s) => s.id),
+    });
+  }
+  return out.slice(0, 4);
+}
+
+// ─── Weekly-hero slices ────────────────────────────────────────
+// Three curated decision blocs surfaced before the full list.
+
+export function pickPromoSlice(senders: Sender[]): Sender[] {
+  return senders
+    .filter((s) => !s.protected)
+    .filter((s) => s.group === 'promotions' || s.group === 'social' || s.group === 'updates')
+    .filter((s) => s.read <= 0.2)
+    .sort((a, b) => b.monthly - a.monthly)
+    .slice(0, 12);
+}
+
+export function pickQuietSlice(senders: Sender[]): Sender[] {
+  return senders
+    .filter((s) => !s.protected)
+    .filter((s) => s.monthly > 0 && s.monthly <= 8)
+    .filter((s) => s.read > 0.2 && s.read < 0.7)
+    .sort((a, b) => a.read - b.read)
+    .slice(0, 8);
+}
+
+export function pickProtectSlice(senders: Sender[]): Sender[] {
+  return senders
+    .filter((s) => s.protected === true || s.group === 'primary' || s.read >= 0.7)
+    .sort((a, b) => b.read - a.read)
+    .slice(0, 6);
+}
+
+/** Which curated slice the focused review session is working on. */
+export type ReviewKind = 'promo' | 'quiet' | 'protect';
+
+export interface Pattern {
+  id: string;
+  label: string;
+  matches: number;
+  examples: string[];
+  senderIds: string[];
+  hours: number;
+  tone: 'warn' | 'default';
+}
+
+/** Hours/year reclaimed estimate — 14s/email, 25% honesty discount. */
+function reclaimedHours(items: Sender[]): number {
+  const perMonth = items.reduce((a, s) => a + s.monthly, 0);
+  return Math.max(0.5, Math.round(((perMonth * 12 * 14 * 0.25) / 3600) * 10) / 10);
+}
+
+export function detectPatterns(senders: Sender[]): Pattern[] {
+  const open = senders.filter((s) => !s.protected);
+  const out: Pattern[] = [];
+
+  const spiked = open
+    .filter((s) => (s.spike ?? 0) >= 2 && s.read <= 0.1)
+    .sort((a, b) => (b.spike ?? 0) - (a.spike ?? 0));
+  if (spiked.length >= 2) {
+    out.push({
+      id: 'spiked',
+      label: 'promotions that spiked while you ignored them',
+      matches: spiked.length,
+      examples: spiked.slice(0, 4).map((s) => s.name),
+      senderIds: spiked.map((s) => s.id),
+      hours: reclaimedHours(spiked),
+      tone: 'warn',
+    });
+  }
+  const lapsed = open
+    .filter((s) => s.read >= 0.3 && s.read <= 0.6 && s.monthly >= 3 && s.monthly <= 35)
+    .sort((a, b) => b.read - a.read);
+  if (lapsed.length >= 2) {
+    out.push({
+      id: 'lapsed',
+      label: 'newsletters you used to read',
+      matches: lapsed.length,
+      examples: lapsed.slice(0, 4).map((s) => s.name),
+      senderIds: lapsed.map((s) => s.id),
+      hours: reclaimedHours(lapsed),
+      tone: 'default',
+    });
+  }
+  const daily = open
+    .filter((s) => s.monthly >= 25 && s.read <= 0.05 && (s.spike ?? 0) < 2)
+    .sort((a, b) => b.monthly - a.monthly);
+  if (daily.length >= 2) {
+    out.push({
+      id: 'daily',
+      label: 'daily marketers you never open',
+      matches: daily.length,
+      examples: daily.slice(0, 4).map((s) => s.name),
+      senderIds: daily.map((s) => s.id),
+      hours: reclaimedHours(daily),
+      tone: 'warn',
+    });
+  }
+  return out.sort((a, b) => b.hours - a.hours).slice(0, 3);
+}
