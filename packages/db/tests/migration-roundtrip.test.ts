@@ -87,7 +87,7 @@ describe('migration round-trip', () => {
     await db.close();
   });
 
-  it('foundation tables exist with expected shape', async () => {
+  it('all migrated tables and enums exist with expected shape', async () => {
     const db = new PGlite({ extensions: { citext } });
     for (const fwd of listForwardMigrations()) {
       await applyMigration(db, readSql(fwd));
@@ -95,11 +95,23 @@ describe('migration round-trip', () => {
 
     const objects = await listSchemaObjects(db);
     expect(objects).toEqual([
+      'table:activity_log',
+      'table:mail_messages',
       'table:mailbox_accounts',
+      'table:provider_sync_state',
+      'table:sender_policies',
+      'table:sender_timeseries',
+      'table:senders',
       'table:users',
       'table:workspaces',
+      'enum:activity_action',
+      'enum:activity_source',
+      'enum:gmail_category',
       'enum:mailbox_provider',
       'enum:mailbox_status',
+      'enum:sender_policy_type',
+      'enum:sync_readiness',
+      'enum:sync_stage',
       'enum:workspace_tier',
     ]);
 

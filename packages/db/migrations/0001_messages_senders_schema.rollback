@@ -1,0 +1,72 @@
+-- Rollback for 0001_messages_senders_schema.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Apply this
+-- to fully revert 0001. Order is the reverse of forward: drop triggers,
+-- then foreign-key constraints, then indexes, then tables, then enums.
+--
+-- The shared set_updated_at() function is NOT dropped here — it is owned
+-- by migration 0000 and dropped by 0000's rollback.
+--
+-- NOT idempotent — assumes the schema matches the forward migration's end state.
+
+DROP TRIGGER IF EXISTS "mail_messages_set_updated_at" ON "mail_messages";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "senders_set_updated_at" ON "senders";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "sender_policies_set_updated_at" ON "sender_policies";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "provider_sync_state_set_updated_at" ON "provider_sync_state";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP CONSTRAINT IF EXISTS "activity_log_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP CONSTRAINT IF EXISTS "mail_messages_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+ALTER TABLE "provider_sync_state" DROP CONSTRAINT IF EXISTS "provider_sync_state_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP CONSTRAINT IF EXISTS "sender_policies_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+ALTER TABLE "sender_timeseries" DROP CONSTRAINT IF EXISTS "sender_timeseries_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+ALTER TABLE "senders" DROP CONSTRAINT IF EXISTS "senders_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "activity_log_account_sender_occurred_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "mail_messages_account_provider_message_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "mail_messages_account_sender_date_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "mail_messages_account_date_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "mail_messages_account_sender_unread_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "provider_sync_state_mailbox_account_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "sender_policies_account_sender_key_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "senders_account_sender_key_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "senders_account_category_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "activity_log";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "mail_messages";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "provider_sync_state";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "sender_policies";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "sender_timeseries";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "senders";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."activity_action";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."activity_source";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."sync_readiness";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."sync_stage";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."sender_policy_type";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."gmail_category";
