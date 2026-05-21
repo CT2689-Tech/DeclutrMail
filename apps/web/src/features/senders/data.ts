@@ -670,8 +670,7 @@ export type RecommendedVerb = 'Unsubscribe' | 'Later' | null;
 
 export function recommendAction(s: Sender): RecommendedVerb {
   if (s.protected || s.group === 'primary') return null;
-  const read = s.read || 0;
-  const monthly = s.monthly || 0;
+  const { read, monthly } = s;
   if (read === 0 && monthly >= 8) return 'Unsubscribe';
   if (read < 0.2 && s.spike) return 'Unsubscribe';
   if (read < 0.2 && monthly >= 4) return 'Later';
@@ -787,6 +786,9 @@ export function pickProtectSlice(senders: Sender[]): Sender[] {
 
 /** Which curated slice the focused review session is working on. */
 export type ReviewKind = 'promo' | 'quiet' | 'protect';
+
+/** The closed set of per-row decisions a review session can record. */
+export type DecisionId = 'keep' | 'later' | 'unsub' | 'lock' | 'skip';
 
 export interface Pattern {
   id: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent } from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import {
   GROUPS,
@@ -127,57 +127,79 @@ export function SendersScreen() {
     toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
   };
 
-  const performAction = (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
-    if (senders.length === 0) return;
-    const historicTotal =
-      verb === 'Archive' || (verb === 'Unsubscribe' && opts?.archiveHistoric)
-        ? senders.reduce((a, s) => a + historicCount(s), 0)
-        : 0;
-    toast(
-      `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
-      verb === 'Unsubscribe' ? 'warn' : 'success',
-    );
-    if (verb !== 'Keep') {
-      setReceipt({
-        id: `r${++receiptSeq}`,
-        verb,
-        count: senders.length,
-        historicTotal,
-        timeLeft: '6d 23h',
-      });
-    }
-    setPendingAction(null);
-    setSelected(new Set());
-  };
+  // Memoised so the modal/review keydown effects bind against stable
+  // handlers — the confirm gate must not depend on render timing.
+  const performAction = useCallback(
+    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+      if (senders.length === 0) return;
+      const historicTotal =
+        verb === 'Archive' || (verb === 'Unsubscribe' && opts?.archiveHistoric)
+          ? senders.reduce((a, s) => a + historicCount(s), 0)
+          : 0;
+      toast(
+        `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
+        verb === 'Unsubscribe' ? 'warn' : 'success',
+      );
+      if (verb !== 'Keep') {
+        setReceipt({
+          id: `r${++receiptSeq}`,
+          verb,
+          count: senders.length,
+          historicTotal,
+          timeLeft: '6d 23h',
+        });
+      }
+      setPendingAction(null);
+      setSelected(new Set());
+    },
+    [],
+  );
 
   // Archive / Unsubscribe go through the mandatory preview; Later / Keep
   // / Protect are reversible and fire directly.
-  const requestAction = (req: ActionRequest) => {
-    if (req.senders.length === 0) return;
-    if (req.verb === 'Archive' || req.verb === 'Unsubscribe') {
-      setPendingAction(req);
-    } else {
-      performAction(req.verb, req.senders);
-    }
-  };
+  const requestAction = useCallback(
+    (req: ActionRequest) => {
+      if (req.senders.length === 0) return;
+      if (req.verb === 'Archive' || req.verb === 'Unsubscribe') {
+        setPendingAction(req);
+      } else {
+        performAction(req.verb, req.senders);
+      }
+    },
+    [performAction],
+  );
 
-  const applyReview = (result: ReviewResult) => {
-    const slice = review?.slice ?? [];
-    setReview(null);
-    const unsub = slice.filter((s) => result.decisions[s.id] === 'unsub');
-    const later = slice.filter((s) => result.decisions[s.id] === 'later');
-    const lock = slice.filter((s) => result.decisions[s.id] === 'lock');
-    if (unsub.length > 0) {
-      performAction('Unsubscribe', unsub, { archiveHistoric: result.archiveHistoric });
-    } else if (later.length > 0) {
-      performAction('Later', later);
-    } else if (lock.length > 0) {
-      performAction('Protect', lock);
-    }
-    const extras: string[] = [];
-    if (unsub.length > 0 && later.length > 0) extras.push(`${later.length} to Later`);
-    if (extras.length > 0) toast(`Also moved ${extras.join(', ')}`, 'info');
-  };
+  const closePending = useCallback(() => setPendingAction(null), []);
+  const confirmPending = useCallback(
+    (opts: ConfirmOptions) => {
+      if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
+    },
+    [pendingAction, performAction],
+  );
+
+  const closeReview = useCallback(() => setReview(null), []);
+  const applyReview = useCallback(
+    (result: ReviewResult) => {
+      const slice = review?.slice ?? [];
+      setReview(null);
+      // Each verb bucket fires independently — a mixed review (some
+      // Unsubscribe, some Later) must apply every decision, not just one.
+      const buckets: [ActionVerb, Sender[]][] = [
+        ['Unsubscribe', slice.filter((s) => result.decisions[s.id] === 'unsub')],
+        ['Later', slice.filter((s) => result.decisions[s.id] === 'later')],
+        ['Protect', slice.filter((s) => result.decisions[s.id] === 'lock')],
+      ];
+      for (const [verb, list] of buckets) {
+        if (list.length === 0) continue;
+        performAction(
+          verb,
+          list,
+          verb === 'Unsubscribe' ? { archiveHistoric: result.archiveHistoric } : undefined,
+        );
+      }
+    },
+    [review, performAction],
+  );
 
   return (
     <div
@@ -341,10 +363,8 @@ export function SendersScreen() {
 
       <ConfirmActionModal
         request={pendingAction}
-        onCancel={() => setPendingAction(null)}
-        onConfirm={(opts) => {
-          if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
-        }}
+        onCancel={closePending}
+        onConfirm={confirmPending}
       />
 
       <ReviewSession
@@ -352,7 +372,7 @@ export function SendersScreen() {
         kind={review?.kind ?? 'promo'}
         senders={review?.slice ?? []}
         onApply={applyReview}
-        onCancel={() => setReview(null)}
+        onCancel={closeReview}
       />
     </div>
   );

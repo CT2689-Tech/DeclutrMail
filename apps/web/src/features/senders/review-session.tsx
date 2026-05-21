@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
-import { historicCount, type ReviewKind, type Sender } from './data';
+import { historicCount, type DecisionId, type ReviewKind, type Sender } from './data';
 
 const { color, font } = tokens;
 
 interface Option {
-  id: string;
+  id: DecisionId;
   label: string;
   tone: 'warn' | 'primary' | null;
 }
@@ -18,7 +18,7 @@ interface KindConfig {
   tag: 'warn' | 'ok' | null;
   headline: string;
   sub: string;
-  defaultAction: string;
+  defaultAction: DecisionId;
   options: Option[];
   ctaTone: 'warn' | 'primary';
   historicToggle: string | null;
@@ -72,7 +72,7 @@ const KIND_LABEL: Record<ReviewKind, string> = {
 
 export interface ReviewResult {
   kind: ReviewKind;
-  decisions: Record<string, string>;
+  decisions: Record<string, DecisionId>;
   archiveHistoric: boolean;
 }
 
@@ -96,14 +96,14 @@ export function ReviewSession({
 }) {
   const cfg = KIND_CONFIG[kind];
 
-  const [decisions, setDecisions] = useState<Record<string, string>>({});
+  const [decisions, setDecisions] = useState<Record<string, DecisionId>>({});
   const [bulkDefault, setBulkDefault] = useState(cfg.defaultAction);
   const [archiveHistoric, setArchiveHistoric] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
 
   useEffect(() => {
     if (!open) return;
-    const seeded: Record<string, string> = {};
+    const seeded: Record<string, DecisionId> = {};
     for (const s of senders) seeded[s.id] = cfg.defaultAction;
     setDecisions(seeded);
     setBulkDefault(cfg.defaultAction);
@@ -155,9 +155,9 @@ export function ReviewSession({
 
   if (!open) return null;
 
-  const setBulk = (next: string) => {
+  const setBulk = (next: DecisionId) => {
     setBulkDefault(next);
-    const all: Record<string, string> = {};
+    const all: Record<string, DecisionId> = {};
     for (const s of senders) all[s.id] = next;
     setDecisions(all);
   };
@@ -459,8 +459,8 @@ function Segmented({
   onChange,
 }: {
   options: Option[];
-  value: string;
-  onChange: (id: string) => void;
+  value: DecisionId;
+  onChange: (id: DecisionId) => void;
 }) {
   return (
     <div
@@ -511,8 +511,8 @@ function ReviewRow({
 }: {
   s: Sender;
   options: Option[];
-  value: string;
-  onChange: (id: string) => void;
+  value: DecisionId;
+  onChange: (id: DecisionId) => void;
   focused: boolean;
   onFocus: () => void;
 }) {

@@ -27,6 +27,8 @@ export const color = {
   primaryDeep: '#00463F',
   primarySoft: 'rgba(0,107,95,0.08)',
   primaryBorder: 'rgba(0,107,95,0.35)',
+  /** Pale teal wash — informational banner backgrounds. */
+  primaryWash: 'hsl(174 60% 96%)',
   mint: '#79E6DC',
 
   /** Semantic hues. */

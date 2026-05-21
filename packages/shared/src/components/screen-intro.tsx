@@ -61,7 +61,7 @@ export function ScreenIntro({
         alignItems: 'flex-start',
         gap: 12,
         padding: '12px 14px',
-        background: 'hsl(174 60% 96%)',
+        background: color.primaryWash,
         border: `1px solid ${color.primaryBorder}`,
         borderRadius: radius.md,
         fontFamily: font.sans,
