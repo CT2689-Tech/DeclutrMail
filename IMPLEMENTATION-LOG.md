@@ -52,8 +52,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 | D# | Title | Status | PR | Verified by | Notes |
 |---|---|---|---|---|---|
-| D1 | Typography stack: **Geist Sans + Geist Mono** (Doc 05 canonical) | ⬜ |  |  |  |
-| D2 | Color palette: **Cool/Vercel-style everywhere | ⬜ |  |  |  |
+| D1 | Typography stack: **Geist Sans + Geist Mono** (Doc 05 canonical) | 🔵 | #12 |  |  |
+| D2 | Color palette: **Cool/Vercel-style everywhere | 🔵 | #12 |  |  |
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | ⬜ |  |  |  |
@@ -89,7 +89,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D35 | Undo via persistent action tray (Doc 05 §11) | ⬜ |  |  |  |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | ⬜ |  |  |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
-| D38 | First-time education: **Onboarding-only tour + tooltips on hover | ⬜ |  |  |  |
+| D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #12 |  |  |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | ⬜ |  |  |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | ⬜ |  |  |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | ⬜ |  |  |  |
@@ -261,7 +261,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | ⬜ |  |  |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | ⬜ |  |  |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
-| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | ⬜ |  |  |  |
+| D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
 | D211 | Edge-state screen inventory at launch (extends D166-D171) | ⬜ |  |  |  |
 | D212 | Empty states as first-class | ⬜ |  |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
@@ -271,14 +271,14 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D217 | Privacy & Data settings sub-page at launch | ⬜ |  |  |  |
 | D218 | Public `/changelog` at launch | ⬜ |  |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | ⬜ |  |  |  |
-| D220 | Component naming inventory (locks Codex §6) | ⬜ |  |  |  |
+| D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | ⬜ |  |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | ⬜ |  |  |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
 | D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
-| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | ⬜ |  |  |  |
+| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | ⬜ |  |  |  |
 | D229 | Pub/Sub OIDC verification contract | ⬜ |  |  |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
