@@ -1,4 +1,7 @@
-// @declutrmail/shared — design tokens, primitives, and app shell.
+// @declutrmail/shared — design tokens, primitives, app shell, and
+// external-integration contracts (D201).
+
+export type { KmsProvider } from './contracts/index';
 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';

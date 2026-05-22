@@ -11,6 +11,8 @@ export default tseslint.config(
       '**/.next/**',
       '**/next-env.d.ts',
       '**/coverage/**',
+      '**/storybook-static/**',
+      '.claude/**',
       'pnpm-lock.yaml',
     ],
   },
@@ -40,6 +42,16 @@ export default tseslint.config(
       globals: {
         ...globals.browser,
       },
+    },
+  },
+  {
+    // NestJS DI relies on `emitDecoratorMetadata`: a constructor-injected
+    // provider must be a *value* import so `design:paramtypes` resolves at
+    // runtime. `consistent-type-imports` can't see decorator metadata and
+    // would rewrite those to `import type`, breaking DI — disable it here.
+    files: ['apps/api/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
     },
   },
   {

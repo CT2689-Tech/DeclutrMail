@@ -12,3 +12,15 @@ export const citext = customType<{ data: string; driverData: string }>({
     return 'citext';
   },
 });
+
+/**
+ * bytea — Postgres raw binary type. Used for the envelope-encrypted
+ * OAuth-token columns on `mailbox_accounts` (D14): the encrypted refresh
+ * token and the KMS-wrapped DEK are stored as `Buffer`s, no base64
+ * round-tripping in app code.
+ */
+export const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});

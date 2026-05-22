@@ -4,6 +4,8 @@ build
 .next
 .turbo
 coverage
+storybook-static
+.claude
 pnpm-lock.yaml
 *.min.js
 *.min.css

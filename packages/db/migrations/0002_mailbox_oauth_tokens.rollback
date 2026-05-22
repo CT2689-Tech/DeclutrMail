@@ -1,0 +1,16 @@
+-- Rollback for 0002_mailbox_oauth_tokens.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Apply this
+-- to fully revert 0002 — drops the four OAuth-token columns added to
+-- `mailbox_accounts` (D14 envelope encryption). Order is the reverse of
+-- the forward migration's ADD COLUMNs.
+--
+-- NOT idempotent — assumes the schema matches the forward migration's end state.
+
+ALTER TABLE "mailbox_accounts" DROP COLUMN IF EXISTS "connected_at";
+--> statement-breakpoint
+ALTER TABLE "mailbox_accounts" DROP COLUMN IF EXISTS "key_version";
+--> statement-breakpoint
+ALTER TABLE "mailbox_accounts" DROP COLUMN IF EXISTS "dek_encrypted";
+--> statement-breakpoint
+ALTER TABLE "mailbox_accounts" DROP COLUMN IF EXISTS "encrypted_refresh_token";
