@@ -80,7 +80,14 @@ export class GoogleOAuthService {
       throw new Error('Google did not return an id_token — cannot identify the account.');
     }
 
-    const ticket = await client.verifyIdToken({ idToken: tokens.id_token });
+    const { GOOGLE_CLIENT_ID } = process.env;
+    if (!GOOGLE_CLIENT_ID) {
+      throw new Error('Google OAuth is not configured: set GOOGLE_CLIENT_ID — see .env.example.');
+    }
+    const ticket = await client.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: GOOGLE_CLIENT_ID,
+    });
     const email = ticket.getPayload()?.email;
     if (!email) {
       throw new Error('id_token carried no email claim — cannot identify the account.');
@@ -104,6 +111,16 @@ export class GoogleOAuthService {
         dekEncrypted: encrypted.wrappedDek,
         keyVersion: encrypted.keyVersion,
         connectedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
+        set: {
+          encryptedRefreshToken: encrypted.ciphertext,
+          dekEncrypted: encrypted.wrappedDek,
+          keyVersion: encrypted.keyVersion,
+          connectedAt: new Date(),
+          status: 'active',
+        },
       })
       .returning({ id: mailboxAccounts.id });
 
