@@ -208,6 +208,20 @@ If only the local path exists (pre-PR 1), use it.
 
 When uncertain about a decision, search the plan for the D-number.
 
+### Repo layout
+
+pnpm workspace · Node ≥22 · pnpm ≥10.
+
+| Path | What |
+|---|---|
+| `apps/web` | Next.js frontend (TanStack Query + Zustand, D200) |
+| `apps/api` | NestJS API + workers (D201–D205); code under `apps/api/src/` |
+| `packages/db` | Drizzle schema + Atlas migrations (`src/schema/`, `migrations/`) |
+| `packages/shared` | Shared hooks, components, tokens, copy, Zod types (D173) |
+| `packages/events` | Cross-feature domain events (D204) |
+| `packages/workers` | BullMQ worker policies (D157, D203/D225) |
+| `packages/config` | Shared tooling config |
+
 ---
 
 ## 5. Implementation phase order (D187)
@@ -349,7 +363,7 @@ Pre-merge gates that run on every PR. **5 must-pass + 3 advisory.**
 
 | Agent | Tier | Must pass for PRs touching |
 |---|---|---|
-| `privacy-auditor` | **GATE** | `apps/api/{gmail,messages,senders}/**`, `packages/db/schema/{messages,senders}.ts` |
+| `privacy-auditor` | **GATE** | `apps/api/src/{gmail,messages,senders}/**`, `packages/db/src/schema/{mail-messages,senders}.ts` |
 | `architecture-guardian` | **GATE** | `apps/api/**`, `packages/{db,workers,events}/**` |
 | `schema-migration-reviewer` | **GATE** | `packages/db/migrations/**`, `packages/db/schema/**` |
 | `design-system-agent` | **GATE** | `apps/web/src/{components,features,app}/**`, `packages/shared/**`, `*.stories.tsx` |
@@ -614,6 +628,20 @@ ADR template lives at `docs/adr/0000-template.md` (created in PR 1).
 ---
 
 ## Quick reference
+
+**Commands** (run from repo root):
+
+```bash
+pnpm install              # bootstrap workspace
+pnpm typecheck            # all packages, parallel
+pnpm lint                 # eslint . (lint:fix to autofix)
+pnpm format               # prettier --write (format:check to verify)
+pnpm test                 # all packages, parallel (Vitest)
+pnpm build                # all packages, parallel
+pnpm verify-d <D###>      # flip a D-row 🔵 → 🟢 when verification passes
+pnpm generate-impl-log    # regenerate IMPLEMENTATION-LOG.md
+git wt new <branch>       # create worktree ../wt-<branch>
+```
 
 - **Plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (repo mirror at `docs/execution/Implementation-Plan.md` after PR 1)
 - **Implementation log:** `./IMPLEMENTATION-LOG.md`
