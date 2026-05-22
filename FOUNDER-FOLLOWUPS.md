@@ -102,30 +102,6 @@ the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
 **Status:** Open
 
-### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
-**Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
-`IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
-`conclusion: failure` for both runs. D11, D152, and D160 had to be
-flipped via a manual PR.
-**Why:** The bot's `git push origin main` step almost certainly hits
-branch protection (review-required rules apply even to GitHub Actions).
-Until this is fixed, every merge needs a follow-up manual flip — error-prone.
-**How:** Pick one:
-  1. Open
-     https://github.com/CT2689-Tech/DeclutrMail/settings/branches → main
-     rule → "Allow specified actors to bypass required pull requests" →
-     add `github-actions[bot]`. Cheapest fix.
-  2. OR rewrite `pr-merged.yml` to open a new PR (`gh pr create`) with
-     the log diff instead of pushing directly. Adds one click per merge
-     but works under any branch-protection regime.
-  3. OR generate a fine-grained PAT with bypass rights for the bot account,
-     store it as `LOG_FLIP_PAT`, and use it instead of `GITHUB_TOKEN`.
-**Verifies by:** Next merge after the fix flips its D-rows automatically;
-the `Flip D-rows` check goes ✅.
-**Status:** Open — founder chose **option 1** (allow `github-actions[bot]`
-to bypass required PRs) on 2026-05-22; pending the repo-settings toggle at
-https://github.com/CT2689-Tech/DeclutrMail/settings/branches.
-
 ### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
 **Why:** Atlas v0.38 (April 2026) gated `atlas migrate lint` behind a paid /
@@ -162,6 +138,28 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
+**Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
+`IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
+`conclusion: failure` for both runs. D11, D152, and D160 had to be
+flipped via a manual PR.
+**Why:** The bot's `git push origin main` was rejected — confirmed from the
+run log: `GH013: Repository rule violations found for refs/heads/main`. The
+`main` ruleset ("protect main", not a classic branch-protection rule) carried
+a rule at the time that blocked the `github-actions` bot's push.
+**How:** No code or settings action was needed in the end. The `main` ruleset
+was edited on 2026-05-19 22:36 — 25 min after the last failure (22:11) —
+relaxing it to just `deletion` + `non_fast_forward` rules. Those allow the
+bot's fast-forward push while still blocking force-pushes (CLAUDE.md §10). The
+three "pick one" options originally listed (bypass actor / rewrite to open a
+PR / PAT) were never needed.
+**Verifies by:** `pr-merged.yml` has 6 consecutive successful runs since
+2026-05-19 22:43 — including PR #13 on 2026-05-22 (`D150: 1 row(s) flipped`,
+`70cb2db..2debc50 main -> main` push OK).
+**Status:** Done 2026-05-19 — self-resolved by the ruleset edit; verified
+green through 2026-05-22 via the run logs (this session). The earlier
+"founder chose option 1" note was based on a stale diagnosis — corrected.
 
 ### 2026-05-20 — Gate-agent `.md` scope/description sections omit `src/`
 **Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep; broadened 2026-05-22
