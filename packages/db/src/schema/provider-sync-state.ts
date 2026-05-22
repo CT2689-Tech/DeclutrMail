@@ -10,7 +10,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { mailboxAccounts } from './mailbox-accounts';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Provider sync state — one row per mailbox account tracking sync

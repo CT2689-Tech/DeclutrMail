@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { mailboxAccounts } from './mailbox-accounts';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Activity log — append-only record of decisions taken on senders.

@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-import { citext } from './_custom-types';
-import { mailboxAccounts } from './mailbox-accounts';
+import { citext } from './_custom-types.js';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Senders — one row per distinct sender within a mailbox account.

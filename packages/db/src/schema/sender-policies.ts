@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-import { mailboxAccounts } from './mailbox-accounts';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Sender policies — standing per-sender decisions and modifiers (D42).

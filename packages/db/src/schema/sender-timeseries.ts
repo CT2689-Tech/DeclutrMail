@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { date, integer, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
-import { mailboxAccounts } from './mailbox-accounts';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Sender timeseries — per-sender, per-month message rollup.

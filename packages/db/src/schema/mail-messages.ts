@@ -10,7 +10,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 
-import { mailboxAccounts } from './mailbox-accounts';
+import { mailboxAccounts } from './mailbox-accounts.js';
 
 /**
  * Mail messages — the metadata mirror of a connected Gmail mailbox.
