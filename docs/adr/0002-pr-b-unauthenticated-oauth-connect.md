@@ -14,8 +14,8 @@ D109/D224 territory (D187 PR-4).
 
 With no auth layer, the OAuth callback has no authenticated principal to
 bind a mailbox to. `mailbox_accounts.workspace_id` / `user_id` are
-`NOT NULL` foreign keys, so `handleCallback` find-or-creates a `workspace`
-+ `user` keyed on the connected Gmail address — the "PR-B bootstrap."
+`NOT NULL` foreign keys, so `handleCallback` find-or-creates a workspace
+and user keyed on the connected Gmail address — the "PR-B bootstrap."
 
 Adversarial review (Codex, 4 rounds, 2026-05-22) repeatedly flags this:
 the connect/callback routes are unauthenticated; anyone who completes
