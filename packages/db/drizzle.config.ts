@@ -15,6 +15,10 @@ import type { Config } from 'drizzle-kit';
  *
  * No DATABASE_URL is required at generation time — drizzle-kit reads
  * the schema files directly and emits forward-only SQL.
+ *
+ * `dbCredentials.url` is read from `process.env.DATABASE_URL` when set
+ * — required for `drizzle-kit studio` (the dev DB browser). `generate`
+ * ignores the field, so a blank value does not break SQL emission.
  */
 export default {
   dialect: 'postgresql',
@@ -22,4 +26,5 @@ export default {
   out: './migrations',
   strict: true,
   verbose: true,
+  dbCredentials: { url: process.env.DATABASE_URL ?? '' },
 } satisfies Config;

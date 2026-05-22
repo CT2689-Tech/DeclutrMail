@@ -26,6 +26,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — D-CANDIDATE: periodic full re-derive backstop (after PR-D)
+**Source:** session — founder ack 2026-05-22, deferred per "no users yet"
+**Why:** PR-C/PR #19's initial sync is a complete derive — zero drift.
+Once incremental sync (PR-D) lands, a new message arriving triggers an
+*incremental* patch of that sender's aggregate (D25, trigger-based
+re-score). Incremental patches can drift from truth via bug-class
+issues (race, missed event after watch lapse > 7d). Founder estimate:
+~0.01% case. Backstop = a cron that runs `building_sender_index`
+(already a full re-derive of `senders` + `sender_timeseries` from the
+persisted `mail_messages` table) periodically per mailbox. Cheap to
+add — re-runs an existing function.
+**How:** After PR-D ships, ratify a D for a cron (e.g. weekly per
+mailbox) that re-runs `InitialSyncWorker.buildSenderIndex` on the
+mailbox. No new schema; reuses the existing function. Worker policy:
+`cronPolicy` (D225).
+**Verifies by:** the D is ratified post-PR-D; the cron job exists.
+**Status:** Open — deferred until PR-D
+
+### 2026-05-22 — D-CANDIDATE: streaming aggregation for >1M-message mailboxes
+**Source:** session — Gmail-API architecture review 2026-05-22
+**Why:** `InitialSyncWorker` collects every message id into memory
+(`const ids: string[]`) + loads the FULL `mail_messages` table into
+memory in `buildSenderIndex` to fold per-sender. Fine at 250K
+(~tens of MB); a single 1M+ mailbox could pressure the worker process
+(hundreds of MB of strings + rows). D235 partitioning is deferred
+until 25M rows aggregate; this is a *per-mailbox* memory ceiling
+distinct from that. Rare edge — most mailboxes are well under 1M.
+**How:** Switch the fetch's id-collection + `buildSenderIndex`'s
+mail_messages SELECT to streaming/cursor-based aggregation (process
+chunks, fold incrementally, never materialise the full list). Ratify a
+D when a real 1M+ mailbox arrives or we forecast one.
+**Verifies by:** the D is ratified + the worker can sync a synthetic
+1M-message mailbox without OOM.
+**Status:** Open — deferred until a 1M+ mailbox actually exists
+
 ### 2026-05-22 — D-CANDIDATE: onboarding sync UX — D224 5-stage indicator vs timing reality
 **Source:** PR [#18](https://github.com/CT2689-Tech/DeclutrMail/pull/18) (`feat/d006-sync-timing-logs`) — timing data
 **Why:** D224 locked a 5-stage sync indicator (D109 onboarding gate)
