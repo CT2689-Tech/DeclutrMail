@@ -160,6 +160,17 @@ In the **same GCP project** as Step 1:
    `gmail-api-push@system.gserviceaccount.com` → role **Pub/Sub
    Publisher** → Save. (Google's fixed system account for Gmail push —
    the exact string above.)
+   **If Save fails with "IAM policy update failed — Domain Restricted
+   Sharing":** the project's organization has the
+   `iam.allowedPolicyMemberDomains` org policy enforced (Google applies
+   it by default to new orgs); it blocks adding Google's system service
+   account. Fix: **IAM & Admin → Organization policies** → search
+   **"Domain restricted sharing"** → **Manage policy** → **Override
+   parent's policy** → add a rule **Allow All** → Save → retry the grant.
+   This override applies only to this project. Needs the **Organization
+   Policy Administrator** role (`roles/orgpolicy.policyAdmin`). Optional:
+   re-tighten the policy afterward — org policy is checked only on new
+   IAM writes, so the Gmail binding survives.
 4. **IAM & Admin → Service Accounts → Create service account** → name
    `gmail-webhook-oidc`. No keys, no roles. Copy its email →
    `PUBSUB_OIDC_SERVICE_ACCOUNT` =
