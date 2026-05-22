@@ -26,6 +26,29 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — D-CANDIDATE: onboarding sync UX — D224 5-stage indicator vs timing reality
+**Source:** PR [#18](https://github.com/CT2689-Tech/DeclutrMail/pull/18) (`feat/d006-sync-timing-logs`) — timing data
+**Why:** D224 locked a 5-stage sync indicator (D109 onboarding gate)
+implying roughly comparable stages. Measured reality (327-msg backfill):
+`fetching_metadata` = **99.5%** of wall-clock; `building_sender_index`,
+`computing_recommendations`, `finalizing` are each <15ms. The
+stage-by-stage indicator shown while a user connects their account is
+cosmetic — they watch one stage for ~99% of the wait. This holds at
+scale: the cheap stages (in-memory fold + batched upserts) stay tiny
+regardless of mailbox size; `fetching_metadata` (one `messages.get` per
+message) dominates at every size.
+**How:** Founder decision on the onboarding sync UX —
+(a) keep the stage enum as a backend state machine, but have D109 render
+message-count progress ("Scanning 12k / 50k"); `progress_pct` is already
+count-driven during fetching, so this is a `useSyncStatus`/D109 contract
+tweak; or
+(b) recent-first sync + background backfill of the remainder — opens the
+app fast, but changes D6's strict full-block gate (D191 territory).
+Ratify as a D, or amend D224/D109.
+**Verifies by:** D-decision recorded; the onboarding sync UX reflects
+what the backend actually does (one long stage, not five equal ones).
+**Status:** Open
+
 ### 2026-05-22 — D-CANDIDATE: `sync_runs` per-account sync-timing history table
 **Source:** session — founder ask (2026-05-22)
 **Why:** Sync duration is the product's load-bearing trust signal (D6
