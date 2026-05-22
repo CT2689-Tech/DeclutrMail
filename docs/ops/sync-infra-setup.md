@@ -164,8 +164,11 @@ In the **same GCP project** as Step 1:
    Sharing":** the project's organization has the
    `iam.allowedPolicyMemberDomains` org policy enforced (Google applies
    it by default to new orgs); it blocks adding Google's system service
-   account. Fix: **IAM & Admin → Organization policies** → search
-   **"Domain restricted sharing"** → **Manage policy** → **Override
+   account. Fix: **IAM & Admin → Organization policies** → find the
+   constraint whose **ID is exactly `iam.allowedPolicyMemberDomains`**
+   (title "Domain restricted sharing"). Do **not** pick the similarly
+   named newer managed constraint `iam.managed.allowedPolicyMembers` —
+   that is a different policy. Open it → **Manage policy** → **Override
    parent's policy** → add a rule **Allow All** → Save → retry the grant.
    This override applies only to this project. Needs the **Organization
    Policy Administrator** role (`roles/orgpolicy.policyAdmin`). Optional:
