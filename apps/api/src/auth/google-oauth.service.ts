@@ -1,4 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
 import { eq } from 'drizzle-orm';
 import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
@@ -45,7 +50,7 @@ export class GoogleOAuthService {
   private oauthClient(): OAuth2Client {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !GOOGLE_REDIRECT_URI) {
-      throw new Error(
+      throw new InternalServerErrorException(
         'Google OAuth is not configured: set GOOGLE_CLIENT_ID, ' +
           'GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI — see .env.example.',
       );
@@ -71,18 +76,22 @@ export class GoogleOAuthService {
     const { tokens } = await client.getToken(code);
 
     if (!tokens.refresh_token) {
-      throw new Error(
+      throw new BadRequestException(
         'Google did not return a refresh token — the account may already ' +
           'be connected; re-consent with prompt=consent is required.',
       );
     }
     if (!tokens.id_token) {
-      throw new Error('Google did not return an id_token — cannot identify the account.');
+      throw new BadRequestException(
+        'Google did not return an id_token — cannot identify the account.',
+      );
     }
 
     const { GOOGLE_CLIENT_ID } = process.env;
     if (!GOOGLE_CLIENT_ID) {
-      throw new Error('Google OAuth is not configured: set GOOGLE_CLIENT_ID — see .env.example.');
+      throw new InternalServerErrorException(
+        'Google OAuth is not configured: set GOOGLE_CLIENT_ID — see .env.example.',
+      );
     }
     const ticket = await client.verifyIdToken({
       idToken: tokens.id_token,
@@ -90,7 +99,9 @@ export class GoogleOAuthService {
     });
     const email = ticket.getPayload()?.email;
     if (!email) {
-      throw new Error('id_token carried no email claim — cannot identify the account.');
+      throw new BadRequestException(
+        'id_token carried no email claim — cannot identify the account.',
+      );
     }
 
     const encrypted = await this.tokenCrypto.encrypt(tokens.refresh_token);
@@ -125,7 +136,7 @@ export class GoogleOAuthService {
       .returning({ id: mailboxAccounts.id });
 
     if (!row) {
-      throw new Error('Failed to persist the mailbox account.');
+      throw new InternalServerErrorException('Failed to persist the mailbox account.');
     }
 
     return { mailboxAccountId: row.id, email };
@@ -133,13 +144,9 @@ export class GoogleOAuthService {
 
   /** Find a user by email (citext), or bootstrap a workspace + user. */
   private async findOrCreateUser(email: string): Promise<{ userId: string; workspaceId: string }> {
-    const existing = await this.db
-      .select({ id: users.id, workspaceId: users.workspaceId })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    if (existing[0]) {
-      return { userId: existing[0].id, workspaceId: existing[0].workspaceId };
+    const existing = await this.lookupUser(email);
+    if (existing) {
+      return existing;
     }
 
     const [workspace] = await this.db
@@ -147,16 +154,37 @@ export class GoogleOAuthService {
       .values({ name: `${email}'s workspace` })
       .returning({ id: workspaces.id });
     if (!workspace) {
-      throw new Error('Failed to bootstrap a workspace.');
+      throw new InternalServerErrorException('Failed to bootstrap a workspace.');
     }
 
+    // `users.email` has a unique index (`users_email_uniq`); two
+    // concurrent first-time connects of the same address race here.
+    // onConflictDoNothing makes the loser's insert a no-op — it then
+    // re-selects the winner's row. Full Idempotency-Key handling is
+    // D205's AuthSignupOrchestrator scope, not PR-B.
     const [user] = await this.db
       .insert(users)
       .values({ workspaceId: workspace.id, email })
+      .onConflictDoNothing({ target: users.email })
       .returning({ id: users.id });
-    if (!user) {
-      throw new Error('Failed to bootstrap a user.');
+    if (user) {
+      return { userId: user.id, workspaceId: workspace.id };
     }
-    return { userId: user.id, workspaceId: workspace.id };
+
+    const winner = await this.lookupUser(email);
+    if (!winner) {
+      throw new InternalServerErrorException('Failed to bootstrap a user.');
+    }
+    return winner;
+  }
+
+  /** Select an existing user + its workspace by email, or null. */
+  private async lookupUser(email: string): Promise<{ userId: string; workspaceId: string } | null> {
+    const [row] = await this.db
+      .select({ id: users.id, workspaceId: users.workspaceId })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    return row ? { userId: row.id, workspaceId: row.workspaceId } : null;
   }
 }
