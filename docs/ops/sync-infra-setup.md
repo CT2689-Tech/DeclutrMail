@@ -96,9 +96,14 @@ In the **same GCP project** as Step 1:
    → Save. Scoping the role to this one key (not the whole project) is
    least-privilege — the app can encrypt/decrypt with `oauth-token-kek`
    and nothing else.
-6. Record the full key resource name →
-   `KMS_KEY_RESOURCE` =
+6. Record the full key resource name as `KMS_KEY_RESOURCE`. Get it from
+   **Security → Key Management** → click the `declutrmail` key ring → on
+   the `oauth-token-kek` row, open the **⋮ (three-dot) menu → Copy
+   resource name**. The value looks like:
    `projects/<GOOGLE_CLOUD_PROJECT_ID>/locations/us-central1/keyRings/declutrmail/cryptoKeys/oauth-token-kek`
+   It must end at `cryptoKeys/oauth-token-kek` — **not**
+   `.../cryptoKeyVersions/1`. Envelope encryption targets the key (KMS
+   uses its primary version automatically), not a single version.
 7. **Local dev:** KMS is _not_ used locally — devs don't need KMS access
    or the SA. D14 sanctions a local-dev fallback key. Generate one:
    ```sh
