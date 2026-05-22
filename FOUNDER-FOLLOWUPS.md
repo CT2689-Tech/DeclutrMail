@@ -119,22 +119,6 @@ to insert `src/`: `apps/web/src/components/**`, `apps/web/src/features/**`,
 shows `apps/web/src/` on the Scope lines.
 **Status:** Open
 
-### 2026-05-20 — subagent-gate.yml `privacy` filter will miss `apps/api/src/`
-**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
-**Why:** `.github/workflows/subagent-gate.yml`'s `privacy` filter matches
-`apps/api/gmail/**`, `apps/api/messages/**`, `apps/api/senders/**`. If `apps/api`
-is scaffolded under `apps/api/src/` (matching `apps/web/src/`), these literal
-globs won't match and the privacy-auditor gate silently won't trigger — the
-most important gate, off. The `architecture` filter (`apps/api/**`) and `schema`
-filter (`packages/db/**`) are recursive, so unaffected.
-**How:** When `apps/api` is scaffolded (PR 4+), confirm its layout; if it uses
-`src/`, update the `privacy` filter globs to
-`apps/api/src/{gmail,messages,senders}/**` and the matching CLAUDE.md §7
-`privacy-auditor` row.
-**Verifies by:** A PR touching an `apps/api` Gmail path shows `privacy-auditor`
-in the subagent-gate scope report.
-**Status:** Open
-
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
 `IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
@@ -155,7 +139,9 @@ Until this is fixed, every merge needs a follow-up manual flip — error-prone.
      store it as `LOG_FLIP_PAT`, and use it instead of `GITHUB_TOKEN`.
 **Verifies by:** Next merge after the fix flips its D-rows automatically;
 the `Flip D-rows` check goes ✅.
-**Status:** Open
+**Status:** Open — founder chose **option 1** (allow `github-actions[bot]`
+to bypass required PRs) on 2026-05-22; pending the repo-settings toggle at
+https://github.com/CT2689-Tech/DeclutrMail/settings/branches.
 
 ### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
@@ -193,6 +179,24 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-20 — subagent-gate.yml gate-path filters stale vs the `src/` tree
+**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
+**Why:** `.github/workflows/subagent-gate.yml`'s path filters were written
+against a pre-`src/` layout. The `privacy` filter (`apps/api/gmail/**` etc.,
+`packages/db/schema/*.ts`), the `schema` filter (`packages/db/schema/**`),
+and the `webhooks` filter (`apps/api/webhooks/**`) would all miss the real
+tree once `apps/api/src/` exists — `privacy-auditor`, `schema-migration-reviewer`,
+and `webhook-security-auditor` would silently not trigger. The original entry
+spotted only the `privacy` filter; recon found `schema` and `webhooks` had the
+identical drift.
+**How:** PR #14 corrected all three filters to the `src/` paths
+(`apps/api/src/{gmail,messages,senders}/**`, `packages/db/src/schema/{mail-messages,senders}.ts`,
+`packages/db/src/schema/**`, `apps/api/src/webhooks/**`) and the matching
+CLAUDE.md §7 gate-table rows.
+**Verifies by:** A PR touching `apps/api/src/gmail/**` (PR-B) shows
+`privacy-auditor` in the subagent-gate scope report.
+**Status:** Done 2026-05-22 — filters + CLAUDE.md §7 fixed in PR #14; PR-B confirms the scope report.
 
 ### 2026-05-21 — DECISION: token-encryption scheme for Gmail refresh tokens
 **Source:** session — Senders backend plan, PR-B spec (`docs/execution/senders-backend-plan.md` §4)

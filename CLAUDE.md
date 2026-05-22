@@ -365,9 +365,9 @@ Pre-merge gates that run on every PR. **5 must-pass + 3 advisory.**
 |---|---|---|
 | `privacy-auditor` | **GATE** | `apps/api/src/{gmail,messages,senders}/**`, `packages/db/src/schema/{mail-messages,senders}.ts` |
 | `architecture-guardian` | **GATE** | `apps/api/**`, `packages/{db,workers,events}/**` |
-| `schema-migration-reviewer` | **GATE** | `packages/db/migrations/**`, `packages/db/schema/**` |
+| `schema-migration-reviewer` | **GATE** | `packages/db/migrations/**`, `packages/db/src/schema/**` |
 | `design-system-agent` | **GATE** | `apps/web/src/{components,features,app}/**`, `packages/shared/**`, `*.stories.tsx` |
-| `webhook-security-auditor` | **GATE** | `apps/api/webhooks/**`, `apps/api/**/*-webhook.controller.ts` |
+| `webhook-security-auditor` | **GATE** | `apps/api/src/webhooks/**`, `apps/api/**/*-webhook.controller.ts` |
 | `typescript-reviewer` | advisory | All `.ts` / `.tsx` files |
 | `silent-failure-hunter` | advisory | All TS files |
 | `type-design-analyzer` | advisory | Type-heavy files (action intents, undo tokens, etc.) |
