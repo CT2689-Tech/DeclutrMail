@@ -20,6 +20,53 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-22 — Infra runbook written from API knowledge missed ~10 console realities
+
+**Context:** Walking the founder through `sync-infra-setup.md` (GCP
+project + OAuth, Cloud KMS, Upstash, Pub/Sub). The runbook was written
+from API/D-plan knowledge without driving the actual GCP console. The
+founder hit a gap roughly every other step and had to ask; each answer
+became a runbook correction.
+
+**Finding:** The misses clustered into four kinds — none were code bugs,
+all were "the doc didn't match what the console actually does":
+
+1. **Missing step.** The KMS section never created the API runtime
+   service account (`declutrmail-api`) — it jumped from "create key" to
+   "grant the SA access" with no SA to grant. Founder: "I created key
+   until now" → step 2.4 added.
+2. **Ambiguous "where".** "Record the key resource name" / "place the
+   values" gave no console path. Founder asked "from where exactly to
+   copy?" and "where do I place values?" → added the ⋮-menu → Copy
+   resource name path and the `[local]`-now / `[gh]`+`[gcp]`-later timing.
+3. **Wrong scope/level.** Runbook implied `Pub/Sub Publisher` is granted
+   on a subscription; it is a topic-level role and never appears in a
+   subscription's role list. Founder: "There is no Pub/Sub Publisher."
+4. **Failure modes the doc never anticipated.** The Gmail-publisher grant
+   is blocked by the `iam.allowedPolicyMemberDomains` org policy (default
+   on new orgs); fixing it needs `roles/orgpolicy.policyAdmin`, which
+   Organization **Administrator** does NOT include; and the constraint is
+   easily confused with the newer `iam.managed.allowedPolicyMembers`.
+   None of this was in the doc until the founder hit each wall.
+
+Also corrected: `gmail.metadata` is wrong to add (blocks the `q`
+search — `gmail.modify` alone is correct); staging/prod domains don't
+exist yet (Cloud Run deferred), so those redirect URIs / the push
+subscription are deploy-time, not now.
+
+**Rule (provisional):** A founder-facing infra runbook must be written
+against the live console, not from API/SDK knowledge. For every step
+state (a) the exact console menu path, (b) the precise resource — name,
+scope (resource vs project vs org), and role string, (c) the prerequisite
+that step depends on, and (d) the likely failure (greyed-out button,
+permission denial, default-enforced org policy) with its fix inline.
+If the console can't be driven while writing, mark the step
+"unverified — confirm in console" rather than ship it as fact.
+
+**Distillation trigger:** promote to CLAUDE.md §8 (definition of done —
+add a "founder-facing runbook" clause) if a second infra/setup doc ships
+with console-reality gaps the founder has to catch during execution.
+
 ## 2026-05-20 — `next dev` timing is not a performance signal
 
 **Context:** Profiling the Senders screen — `next dev` reported
