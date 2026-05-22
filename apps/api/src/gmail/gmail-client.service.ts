@@ -3,6 +3,7 @@ import {
   AuthExpiredError,
   InvalidGrantError,
   RateLimitError,
+  type RateLimiter,
   TransientError,
 } from '@declutrmail/workers';
 import type {
@@ -14,14 +15,22 @@ import type {
 /**
  * GmailClientService — the Gmail REST adapter behind the
  * `GmailMetadataClient` port (D201: external integrations sit behind an
- * interface). One instance is bound to one mailbox's `OAuth2Client`.
+ * interface). One instance is bound to one mailbox's `OAuth2Client` and
+ * one `RateLimiter`.
  *
  * PRIVACY — D7 / D228. `getMessageMetadata` calls `messages.get` with
  * `format=metadata` and a `From` + `Subject` header allowlist. It NEVER
  * uses `format=full` or `format=raw`, so message bodies, attachments,
  * inline images, and raw MIME are never fetched — the "Full bodies
- * fetched: 0" guarantee. `messages.list` returns ids only. `enforced by
- * privacy-auditor`.
+ * fetched: 0" guarantee. `messages.list` returns ids only. Enforced by
+ * `privacy-auditor`.
+ *
+ * QUOTA — D5. Gmail meters 15,000 quota units / user / minute;
+ * `messages.list` and `messages.get` each cost 5 units. Every call goes
+ * through `RateLimiter` first so a backfill cannot burst past the
+ * ceiling. A 403 "Quota exceeded" (Gmail's rate-limit signal — it is NOT
+ * always a 429) is classified as `RateLimitError` so the worker treats
+ * it as retryable throttling, not a generic fault.
  */
 
 /** Gmail message-format value — `metadata` ONLY (D7). Never `full`/`raw`. */
@@ -31,6 +40,8 @@ const METADATA_HEADERS = ['From', 'Subject'];
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Quota units for `messages.list` / `messages.get` (D5). */
+const UNITS_PER_CALL = 5;
 
 /** Shape of a `messages.list` response (the fields we read). */
 interface GmailListResponse {
@@ -49,7 +60,10 @@ interface GmailGetResponse {
 }
 
 export class GmailClientService implements GmailMetadataClient {
-  constructor(private readonly oauth: OAuth2Client) {}
+  constructor(
+    private readonly oauth: OAuth2Client,
+    private readonly limiter: RateLimiter,
+  ) {}
 
   /** Page through every message id in the mailbox (ids only — no bodies). */
   async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
@@ -94,11 +108,13 @@ export class GmailClientService implements GmailMetadataClient {
   }
 
   /**
-   * Authenticated GET against the Gmail API. Maps HTTP failures to the
-   * typed worker errors so `BaseDeclutrWorker` classifies retry vs.
-   * dead-letter correctly. `allow404` returns `null` instead of throwing.
+   * Authenticated GET against the Gmail API. Paced by the `RateLimiter`
+   * (D5), then maps HTTP failures to the typed worker errors so
+   * `BaseDeclutrWorker` classifies retry vs. dead-letter correctly.
+   * `allow404` returns `null` instead of throwing.
    */
   private async get<T>(path: string, allow404: boolean): Promise<T | null> {
+    await this.limiter.acquire(UNITS_PER_CALL);
     const token = await this.accessToken();
 
     let res: Response;
@@ -123,6 +139,16 @@ export class GmailClientService implements GmailMetadataClient {
     }
     if (res.status === 429) {
       throw new RateLimitError('Gmail returned 429', retryAfterMs(res));
+    }
+    if (res.status === 403) {
+      // Gmail signals a quota breach as 403 "Quota exceeded" (NOT 429).
+      // Classify it as RateLimitError so the worker backs off rather
+      // than burning retries against a per-minute window (D5).
+      const body = await safeBody(res);
+      if (isQuotaError(body)) {
+        throw new RateLimitError('Gmail 403 — quota exceeded', retryAfterMs(res));
+      }
+      throw new TransientError(`Gmail returned 403: ${body}`);
     }
     if (res.status >= 500) {
       throw new TransientError(`Gmail returned ${res.status}`);
@@ -149,6 +175,17 @@ export class GmailClientService implements GmailMetadataClient {
   }
 }
 
+/** True when a 403 body is a quota / rate-limit breach (not a real 403). */
+function isQuotaError(body: string): boolean {
+  const lower = body.toLowerCase();
+  return (
+    lower.includes('quota exceeded') ||
+    lower.includes('ratelimitexceeded') ||
+    lower.includes('user-rate limit') ||
+    lower.includes('userratelimitexceeded')
+  );
+}
+
 /** Case-insensitive header lookup from a metadata-format response. */
 function findHeader(json: GmailGetResponse, name: string): string | null {
   const target = name.toLowerCase();
@@ -169,7 +206,7 @@ function retryAfterMs(res: Response): number | undefined {
 /** Read a response body without throwing — for error messages only. */
 async function safeBody(res: Response): Promise<string> {
   try {
-    return (await res.text()).slice(0, 200);
+    return (await res.text()).slice(0, 300);
   } catch {
     return '<unreadable>';
   }
