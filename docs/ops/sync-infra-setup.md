@@ -138,9 +138,10 @@ In the **same GCP project** as Step 1:
    `gmail-webhook-oidc`. No keys, no roles. Copy its email →
    `PUBSUB_OIDC_SERVICE_ACCOUNT` =
    `gmail-webhook-oidc@<project>.iam.gserviceaccount.com`
-   Items 1–4 above can be done now. The **push subscription** (next)
-   needs the deployed API URL, so it is completed when `apps/api` first
-   deploys to Cloud Run — see §7.
+
+Items 1–4 above can be done now. The **push subscription** (step 5)
+needs the deployed API URL — complete it when `apps/api` first deploys
+to Cloud Run (§7).
 
 5. _(after `apps/api` is deployed)_ **Pub/Sub → Subscriptions → Create
    subscription**:
