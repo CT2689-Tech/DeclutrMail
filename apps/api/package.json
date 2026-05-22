@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@declutrmail/db": "workspace:*",
+    "@declutrmail/shared": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",

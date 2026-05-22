@@ -1,8 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
-
-import type { KmsProvider } from '../adapters/kms/kms-provider.js';
+import type { KmsProvider } from '@declutrmail/shared/contracts';
 
 /**
  * NestJS DI token for the KmsProvider adapter. An interface cannot be a

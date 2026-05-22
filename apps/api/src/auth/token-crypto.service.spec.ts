@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { LocalKeyKmsProvider } from '../adapters/kms/local-key-kms.provider.js';
+import { LocalKeyKmsProvider } from '../adapters/gcp-kms/local-key-kms.provider.js';
 import { TokenCryptoService } from './token-crypto.service.js';
 
 /**

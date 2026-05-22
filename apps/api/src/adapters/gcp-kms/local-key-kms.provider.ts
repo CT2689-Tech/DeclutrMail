@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
-import type { KmsProvider } from './kms-provider.js';
+import type { KmsProvider } from '@declutrmail/shared/contracts';
 
 /**
  * LocalKeyKmsProvider — the D14-sanctioned local-dev fallback.

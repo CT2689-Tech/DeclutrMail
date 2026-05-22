@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { createKmsProvider } from '../adapters/kms/kms-provider.factory.js';
+import { createKmsProvider } from '../adapters/gcp-kms/kms-provider.factory.js';
 import { GoogleOAuthController } from './google-oauth.controller.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { KMS_PROVIDER, TokenCryptoService } from './token-crypto.service.js';

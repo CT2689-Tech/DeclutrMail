@@ -1,6 +1,5 @@
 import { KeyManagementServiceClient } from '@google-cloud/kms';
-
-import type { KmsProvider } from './kms-provider.js';
+import type { KmsProvider } from '@declutrmail/shared/contracts';
 
 /**
  * GcpKmsProvider — the deployed-environment KMS adapter (D14, D201).

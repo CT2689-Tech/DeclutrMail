@@ -1,5 +1,6 @@
+import type { KmsProvider } from '@declutrmail/shared/contracts';
+
 import { GcpKmsProvider } from './gcp-kms.provider.js';
-import type { KmsProvider } from './kms-provider.js';
 import { LocalKeyKmsProvider } from './local-key-kms.provider.js';
 
 /**
