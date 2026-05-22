@@ -26,6 +26,24 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — GATE: do not deploy the API before the D109/D224 auth layer
+**Source:** PR [#16](https://github.com/CT2689-Tech/DeclutrMail/pull/16) (PR-B) — Codex adversarial review; ADR-0002
+**Why:** PR-B's Gmail OAuth connect flow is unauthenticated — it bootstraps
+a `workspace` + `user` from the connected Gmail address because no app
+auth layer exists yet. Safe **only** because the app is not deployed.
+Exposing it on a network before D109/D224 would allow anonymous tenant
+creation. This is an accepted, documented limitation — see
+`docs/adr/0002-pr-b-unauthenticated-oauth-connect.md`.
+**How:** Do not deploy `apps/api` (Cloud Run) until the D109/D224
+onboarding/auth layer ships and the OAuth connect binds to an
+authenticated principal. The connect routes are off by default
+(`GMAIL_CONNECT_ENABLED` unset → `GoogleOAuthModule` not loaded) — keep
+them off in any shared/deployed environment until then.
+**Verifies by:** D109/D224 ships; the connect flow rejects unauthenticated
+callers and reconnect re-validates mailbox ownership; only then is
+`apps/api` deploy-eligible.
+**Status:** Open
+
 ### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
 **Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
 **Why:** The D-plan's draft timeseries schema names the read column
