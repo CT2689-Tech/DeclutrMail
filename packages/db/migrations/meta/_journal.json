@@ -8,6 +8,13 @@
       "when": 1779225412579,
       "tag": "0000_foundation_workspaces_users_mailboxes",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779351494295,
+      "tag": "0001_messages_senders_schema",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,18 @@
 export * as schema from './schema';
+export { activityAction, activityLog, activitySource } from './schema/activity-log';
+export type { ActivityLogEntry, NewActivityLogEntry } from './schema/activity-log';
+export { mailMessages } from './schema/mail-messages';
+export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
+export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
+export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
+export { senderPolicies, senderPolicyType } from './schema/sender-policies';
+export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
+export { senderTimeseries } from './schema/sender-timeseries';
+export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
+export { gmailCategory, senders } from './schema/senders';
+export type { NewSender, Sender } from './schema/senders';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { workspaces, workspaceTier } from './schema/workspaces';
