@@ -26,5 +26,7 @@ export type {
 } from './ports.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
+export { RateLimiter } from './rate-limiter.js';
+export type { RateLimiterClock } from './rate-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';

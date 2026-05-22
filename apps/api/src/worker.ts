@@ -11,6 +11,7 @@ import {
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
+  RateLimiter,
   ValidationError,
 } from '@declutrmail/workers';
 import type { GmailAccess, InitialSyncJobData, InitialSyncResult } from '@declutrmail/workers';
@@ -30,6 +31,15 @@ import { GmailClientService } from './gmail/gmail-client.service.js';
  *
  * Local dev: `./scripts/dev-worker.sh`.
  */
+
+/**
+ * Gmail quota throttle (D5). Gmail meters 15,000 quota units / user /
+ * minute; we pace to 12,000 (20% headroom) — `messages.get` is 5 units,
+ * so ~2,400 messages/min. One limiter per mailbox (the quota is
+ * per-user).
+ */
+const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
+const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /** Read a required env var or fail loudly at boot. */
 function requireEnv(name: string): string {
@@ -73,7 +83,14 @@ async function bootstrap(): Promise<void> {
       );
       const oauth = new OAuth2Client(clientId, clientSecret);
       oauth.setCredentials({ refresh_token: refreshToken });
-      return new GmailClientService(oauth);
+      // One limiter per sync attempt — it paces calls WITHIN the attempt
+      // under Gmail's per-user quota (D5). Across attempts the guarantee
+      // is resume (a retry skips already-stored messages, so it re-fetches
+      // far fewer) plus the policy's exponential backoff, which clears the
+      // 60s window — so a retry cannot re-burst the way the attempt it
+      // retries did.
+      const limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+      return new GmailClientService(oauth, limiter);
     },
   };
 

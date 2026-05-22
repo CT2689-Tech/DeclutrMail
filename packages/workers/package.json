@@ -17,6 +17,7 @@
     "ioredis": "^5.4.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.15",
     "@types/node": "^22.10.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
