@@ -201,7 +201,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | ⬜ |  |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | ⬜ |  |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
-| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | ⬜ |  |  |  |
+| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🔵 | #13 |  |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |
 | D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🔵 | #5 |  |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
