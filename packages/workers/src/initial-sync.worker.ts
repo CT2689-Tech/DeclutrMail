@@ -45,10 +45,24 @@ export interface InitialSyncDeps {
   gmailAccess: GmailAccess;
 }
 
-/** What one backfill produced. */
+/**
+ * What one backfill produced — counts + timing.
+ *
+ * Sync duration is DeclutrMail's load-bearing trust signal (onboarding
+ * gate, D6). These metric-only fields are logged on `worker.succeeded`
+ * today and are shaped to map 1:1 onto a future `sync_runs` history
+ * table (D-candidate — see FOUNDER-FOLLOWUPS.md) so persisting them
+ * later is just a write, not a re-measurement.
+ */
 export interface InitialSyncResult {
   messagesSynced: number;
   sendersIndexed: number;
+  /** Total Gmail API calls — `messages.list` pages + `messages.get`. */
+  gmailApiCalls: number;
+  /** Wall-clock ms for the whole backfill (stage 1 start → ready). */
+  durationMs: number;
+  /** Per-stage wall-clock ms, keyed by D224 stage name. */
+  stageTimings: Record<string, number>;
 }
 
 /** Per-sender rollup accumulated during the single metadata-fetch pass. */
@@ -110,31 +124,51 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       throw new ValidationError('initial-sync job is missing mailboxAccountId');
     }
 
+    // Time each D224 stage. `lap(stage)` records ms since the last lap.
+    const startedAt = Date.now();
+    const stageTimings: Record<string, number> = {};
+    let lastMark = startedAt;
+    const lap = (stage: string): void => {
+      const now = Date.now();
+      stageTimings[stage] = now - lastMark;
+      lastMark = now;
+    };
+
     // Stage 1 — fetching_metadata.
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
-    const { messagesSynced, accumulators } = await this.fetchAndStoreMetadata(
+    const { messagesSynced, accumulators, gmailApiCalls } = await this.fetchAndStoreMetadata(
       mailboxAccountId,
       client,
     );
+    lap('fetching_metadata');
 
     // Stage 2 — building_sender_index.
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, accumulators);
+    lap('building_sender_index');
 
     // Stage 3 — computing_recommendations. The recommendation engine
     // lands in a later PR; PR-C transitions through this D224 stage as a
     // structural placeholder (the stage value is accurate — the pipeline
     // is at this ordinal — there is simply no work here yet).
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
+    lap('computing_recommendations');
 
     // Stage 4 — finalizing.
     await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing');
+    lap('finalizing');
 
     // Stage 5 — ready.
     await this.markReady(mailboxAccountId);
 
-    return { messagesSynced, sendersIndexed };
+    return {
+      messagesSynced,
+      sendersIndexed,
+      gmailApiCalls,
+      durationMs: Date.now() - startedAt,
+      stageTimings,
+    };
   }
 
   /**
@@ -176,12 +210,21 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-  ): Promise<{ messagesSynced: number; accumulators: Map<string, SenderAccumulator> }> {
+  ): Promise<{
+    messagesSynced: number;
+    accumulators: Map<string, SenderAccumulator>;
+    gmailApiCalls: number;
+  }> {
+    // `gmailApiCalls` counts every Gmail HTTP call — list pages + gets —
+    // so timing can be read against API cost (D5 quota awareness).
+    let gmailApiCalls = 0;
+
     // Collect every id first so total is known → real progress_pct.
     const ids: string[] = [];
     let pageToken: string | undefined;
     do {
       const page = await client.listMessageIds(pageToken);
+      gmailApiCalls += 1;
       ids.push(...page.ids);
       pageToken = page.nextPageToken;
     } while (pageToken);
@@ -197,6 +240,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     for (let i = 0; i < total; i += FETCH_CONCURRENCY) {
       const chunk = ids.slice(i, i + FETCH_CONCURRENCY);
       const metas = await Promise.all(chunk.map((id) => client.getMessageMetadata(id)));
+      gmailApiCalls += chunk.length;
 
       for (const meta of metas) {
         if (!meta) {
@@ -221,7 +265,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       await this.flushMessages(pending);
     }
 
-    return { messagesSynced, accumulators };
+    return { messagesSynced, accumulators, gmailApiCalls };
   }
 
   /**
