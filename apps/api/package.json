@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "node --watch --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register src/main.ts",
+    "start": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register src/main.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -26,9 +26,10 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^10.4.15",
+    "@swc-node/register": "^1.11.1",
+    "@swc/core": "^1.15.33",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }
