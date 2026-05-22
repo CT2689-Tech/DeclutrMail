@@ -2,9 +2,8 @@
 --
 -- Per D152: forward migrations have a companion rollback file. Apply this
 -- to fully revert 0002 — drops the four OAuth-token columns added to
--- `mailbox_accounts` (D14 envelope encryption).
---
--- Order is the reverse of the forward migration's ADD COLUMNs.
+-- `mailbox_accounts` (D14 envelope encryption). Order is the reverse of
+-- the forward migration's ADD COLUMNs.
 --
 -- NOT idempotent — assumes the schema matches the forward migration's end state.
 

@@ -11,9 +11,9 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { bytea } from './_custom-types.js';
-import { users } from './users.js';
-import { workspaces } from './workspaces.js';
+import { bytea } from './_custom-types';
+import { users } from './users';
+import { workspaces } from './workspaces';
 
 /**
  * Mailbox accounts — connected Gmail accounts.

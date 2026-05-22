@@ -1,8 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgTable, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-import { citext } from './_custom-types.js';
-import { workspaces } from './workspaces.js';
+import { citext } from './_custom-types';
+import { workspaces } from './workspaces';
 
 /**
  * Users — auth principals, each scoped to a workspace.

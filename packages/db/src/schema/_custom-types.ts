@@ -15,9 +15,9 @@ export const citext = customType<{ data: string; driverData: string }>({
 
 /**
  * bytea — Postgres raw binary type. Used for the envelope-encrypted
- * OAuth-token ciphertext and the KMS-wrapped DEK on `mailbox_accounts`
- * (D14). The data side is a Node `Buffer` so callers work with binary
- * directly — no base64 round-tripping in app code.
+ * OAuth-token columns on `mailbox_accounts` (D14): the encrypted refresh
+ * token and the KMS-wrapped DEK are stored as `Buffer`s, no base64
+ * round-tripping in app code.
  */
 export const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType() {
