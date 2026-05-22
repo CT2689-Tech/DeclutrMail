@@ -1,9 +1,8 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { BadRequestException, Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { GmailConnectEnabledGuard } from './gmail-connect-enabled.guard.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 
 /** Name of the cookie that binds the OAuth `state` nonce to the caller. */
@@ -19,11 +18,11 @@ const STATE_COOKIE_PATH = '/api/auth/google';
  *   GET /api/auth/google/start    → 302 to the Google consent screen
  *   GET /api/auth/google/callback → exchange code, persist, JSON result
  *
- * The whole controller is env-gated by `GmailConnectEnabledGuard`: the
- * routes are unauthenticated until the D109/D224 auth layer lands, so
- * they 404 unless `GMAIL_CONNECT_ENABLED=true`.
+ * The whole feature module is imported by AppModule only when
+ * `GMAIL_CONNECT_ENABLED=true` — the routes are unauthenticated until
+ * the D109/D224 auth layer lands, so they do not exist unless the flag
+ * is set.
  */
-@UseGuards(GmailConnectEnabledGuard)
 @Controller('auth/google')
 export class GoogleOAuthController {
   constructor(private readonly oauth: GoogleOAuthService) {}
@@ -36,7 +35,7 @@ export class GoogleOAuthController {
     res.cookie(STATE_COOKIE, state, {
       httpOnly: true,
       sameSite: 'lax', // Lax so the cookie rides the top-level GET redirect back from Google.
-      secure: false, // TODO: secure:true behind HTTPS in deployed envs.
+      secure: process.env.NODE_ENV === 'production', // HTTPS-only in prod; off for local http dev.
       path: STATE_COOKIE_PATH,
       maxAge: 600_000, // 10 min — the consent window.
     });
