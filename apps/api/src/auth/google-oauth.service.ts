@@ -33,6 +33,14 @@ export interface ConnectResult {
 }
 
 /**
+ * Thrown inside the bootstrap transaction when a concurrent same-email
+ * connect won the `users.email` unique constraint. Throwing rolls the
+ * transaction back (undoing the orphan workspace insert); the caller
+ * catches it and re-selects the winner's user row.
+ */
+class EmailRaceLostError extends Error {}
+
+/**
  * GoogleOAuthService — drives the Gmail OAuth connect flow (D4).
  *
  * `getConsentUrl` builds the Google consent URL. `handleCallback`
@@ -58,12 +66,17 @@ export class GoogleOAuthService {
     return new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
   }
 
-  /** The Google consent-screen URL the user is redirected to. */
-  getConsentUrl(): string {
+  /**
+   * The Google consent-screen URL the user is redirected to. `state` is
+   * the CSRF nonce the controller also stores in an httpOnly cookie;
+   * Google echoes it back to /callback for verification.
+   */
+  getConsentUrl(state: string): string {
     return this.oauthClient().generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: SCOPES,
+      state,
     });
   }
 
@@ -149,28 +162,40 @@ export class GoogleOAuthService {
       return existing;
     }
 
-    const [workspace] = await this.db
-      .insert(workspaces)
-      .values({ name: `${email}'s workspace` })
-      .returning({ id: workspaces.id });
-    if (!workspace) {
-      throw new InternalServerErrorException('Failed to bootstrap a workspace.');
+    // First-time connect. The workspace + user inserts run in ONE
+    // transaction so a lost same-email race leaves NO orphan workspace:
+    // `users.email` has a unique index (`users_email_uniq`); the loser's
+    // onConflictDoNothing insert returns no row, we throw, the tx rolls
+    // back, and the workspace insert is undone with it. Full
+    // Idempotency-Key handling is D205's AuthSignupOrchestrator scope.
+    try {
+      return await this.db.transaction(async (tx) => {
+        const [workspace] = await tx
+          .insert(workspaces)
+          .values({ name: `${email}'s workspace` })
+          .returning({ id: workspaces.id });
+        if (!workspace) {
+          throw new InternalServerErrorException('Failed to bootstrap a workspace.');
+        }
+
+        const [user] = await tx
+          .insert(users)
+          .values({ workspaceId: workspace.id, email })
+          .onConflictDoNothing({ target: users.email })
+          .returning({ id: users.id });
+        if (!user) {
+          // Lost the race — roll the workspace insert back.
+          throw new EmailRaceLostError();
+        }
+        return { userId: user.id, workspaceId: workspace.id };
+      });
+    } catch (err) {
+      if (!(err instanceof EmailRaceLostError)) {
+        throw err;
+      }
     }
 
-    // `users.email` has a unique index (`users_email_uniq`); two
-    // concurrent first-time connects of the same address race here.
-    // onConflictDoNothing makes the loser's insert a no-op — it then
-    // re-selects the winner's row. Full Idempotency-Key handling is
-    // D205's AuthSignupOrchestrator scope, not PR-B.
-    const [user] = await this.db
-      .insert(users)
-      .values({ workspaceId: workspace.id, email })
-      .onConflictDoNothing({ target: users.email })
-      .returning({ id: users.id });
-    if (user) {
-      return { userId: user.id, workspaceId: workspace.id };
-    }
-
+    // Race lost: the winner's user row now exists — re-select it.
     const winner = await this.lookupUser(email);
     if (!winner) {
       throw new InternalServerErrorException('Failed to bootstrap a user.');
