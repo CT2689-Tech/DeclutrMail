@@ -26,6 +26,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — D-CANDIDATE: `sync_runs` per-account sync-timing history table
+**Source:** session — founder ask (2026-05-22)
+**Why:** Sync duration is the product's load-bearing trust signal (D6
+onboarding gate). PR-C's timing follow-up (`feat/d006-sync-timing-logs`)
+emits per-stage timing on the `worker.succeeded` log line, but logs hold
+no queryable history. To answer "is sync getting slower for this
+account," compare accounts, or find the slow stage over time, a per-run
+history table is needed — `provider_sync_state` is current-state only
+(one row per mailbox) and cannot hold run history.
+**How:** Ratify a new D-decision for a `sync_runs` table — one row per
+sync run: `mailbox_account_id` (FK), `attempt`, `started_at`,
+`finished_at`, `status`, `stage_timings jsonb`, `messages_synced`,
+`senders_indexed`, `gmail_api_calls`, `error_code`. A follow-up PR then
+adds the migration and the worker persists `InitialSyncResult` (already
+shaped 1:1 to these columns). No privacy concern — timings + counts
+only, no Gmail content; D7 unaffected.
+**Verifies by:** the D is ratified + numbered; a follow-up PR ships the
+table + the worker writes a row per run; sync timing is queryable per
+account over time.
+**Status:** Open
+
 ### 2026-05-22 — RATIFY: D203 vs D225 `WORKER_POLICIES` name collision (plan-drift)
 **Source:** PR-C (`feat/d157-initial-sync-worker`) — implementation finding
 **Why:** Two D-decisions define a thing called `WORKER_POLICIES`
