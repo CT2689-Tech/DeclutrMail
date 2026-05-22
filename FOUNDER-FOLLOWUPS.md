@@ -26,6 +26,29 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — RATIFY: D203 vs D225 `WORKER_POLICIES` name collision (plan-drift)
+**Source:** PR-C (`feat/d157-initial-sync-worker`) — implementation finding
+**Why:** Two D-decisions define a thing called `WORKER_POLICIES`
+differently. D203's body lists retry/backoff config objects
+(`standard`, `gmailApi`, `criticalAudit`, `lowPriority`, `nonRetryable`).
+D225 (later — the HC-3 audit pass) says D203's set is
+`{webhookPolicy, perMailboxPolicy, batchPolicy}` and expands it with
+`cronPolicy` + `adminPolicy`. The `architecture-guardian` agent enforces
+D225's 5-name enum. PR-C followed D225 per CLAUDE.md §3 (latest D wins)
+and folded D203's retry/backoff/timeout fields into each named policy.
+The collision should be resolved in the plan text so a future session
+does not re-litigate it.
+**How:** Amend the plan: add an `[AUDIT PATCH on D203]` marker (or edit
+D203's body) stating the policy NAMES are D225's five
+(`webhookPolicy | perMailboxPolicy | batchPolicy | cronPolicy |
+adminPolicy`) and D203's retry/backoff/timeout fields are properties OF
+each named policy — not a separate set. No code change needed; PR-C's
+`packages/workers/src/worker-policies.ts` already implements the merged
+shape.
+**Verifies by:** the plan's D203/D225 text describes one coherent
+5-policy set; a future worker PR finds no naming ambiguity.
+**Status:** Open
+
 ### 2026-05-22 — GATE: do not deploy the API before the D109/D224 auth layer
 **Source:** PR [#16](https://github.com/CT2689-Tech/DeclutrMail/pull/16) (PR-B) — Codex adversarial review; ADR-0002
 **Why:** PR-B's Gmail OAuth connect flow is unauthenticated — it bootstraps

@@ -7,7 +7,18 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "echo 'no tests yet'",
+    "test": "vitest run",
     "build": "echo 'no build yet'"
+  },
+  "dependencies": {
+    "@declutrmail/db": "workspace:*",
+    "bullmq": "^5.34.0",
+    "drizzle-orm": "^0.38.3",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
   }
 }
