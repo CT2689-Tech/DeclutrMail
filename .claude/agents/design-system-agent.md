@@ -24,9 +24,9 @@ You report findings only.
 
 ## Scope — files this agent reviews
 
-- `apps/web/components/**`
-- `apps/web/features/**`
-- `apps/web/app/**`
+- `apps/web/src/components/**`
+- `apps/web/src/features/**`
+- `apps/web/src/app/**`
 - `packages/shared/**` (the promoted shared components)
 - Any `*.stories.tsx` file
 - Any `*.tsx` file in the web app
@@ -114,7 +114,7 @@ override.
 
 For each new component file:
 
-- Is it in `apps/web/features/<feature>/components/` (feature-owned)
+- Is it in `apps/web/src/features/<feature>/components/` (feature-owned)
   or `packages/shared/` (promoted shared)?
 - If promoted: does it have ≥2 consumers across the codebase?
   ```bash

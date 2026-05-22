@@ -20,6 +20,30 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-22 — A "harness-blocked" claim went unverified for two sessions
+
+**Context:** FOUNDER-FOLLOWUPS carried an item to fix a stale path in
+`.claude/agents/design-system-agent.md`, annotated "Editing
+`.claude/agents/**` is harness-blocked (self-modification), so the agent
+could not apply it." This session needed the same fix across four agent
+files.
+
+**Finding:** The claim was wrong. A single test Edit on
+`design-system-agent.md` applied with no error; all four agent files were
+then fixed directly. The "harness-blocked" note had been written once,
+believed, and propagated as a founder action item for two sessions — work
+an agent could have done immediately.
+
+**Rule (provisional):** Treat "can't / blocked / not allowed" claims —
+especially inherited ones — as hypotheses, not facts. Run the cheapest
+one-shot test (one Edit, one command) before routing work to the founder
+or marking it blocked. Same discipline as the 2026-05-19 "verify, don't
+delegate verification" entry — this is the 2nd occurrence.
+
+**Distillation trigger:** promote to CLAUDE.md §9 ("what to do if unsure")
+on a 3rd occurrence — "verify a constraint before escalating past it"
+becomes a standing rule.
+
 ## 2026-05-22 — Infra runbook written from API knowledge missed ~10 console realities
 
 **Context:** Walking the founder through `sync-infra-setup.md` (GCP

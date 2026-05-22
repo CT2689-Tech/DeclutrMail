@@ -102,23 +102,6 @@ the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
 **Status:** Open
 
-### 2026-05-20 — design-system-agent.md Scope section still omits `src/`
-**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep
-**Why:** The `packages/ui` → `packages/shared` rename (D173) is otherwise fully
-applied — agent path refs, the Check C allowlist (now D220's 10), CLAUDE.md §7,
-and the `subagent-gate.yml` `design` filter are all fixed in this PR. One
-residual: `.claude/agents/design-system-agent.md` Scope section (lines ~27-29)
-lists `apps/web/{components,features,app}/**` without `src/`, but the repo uses
-`apps/web/src/`. Editing `.claude/agents/**` is harness-blocked
-(self-modification), so the agent could not apply it.
-**How:** Manually edit lines ~27-29 of `.claude/agents/design-system-agent.md`
-to insert `src/`: `apps/web/src/components/**`, `apps/web/src/features/**`,
-`apps/web/src/app/**`. (Scope-doc accuracy only — the gate's actual routing is
-`subagent-gate.yml`, already fixed.)
-**Verifies by:** `grep -n "apps/web/" .claude/agents/design-system-agent.md`
-shows `apps/web/src/` on the Scope lines.
-**Status:** Open
-
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
 `IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
@@ -179,6 +162,25 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-20 — Gate-agent `.md` scope/description sections omit `src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep; broadened 2026-05-22
+**Why:** The original finding: `design-system-agent.md`'s Scope section
+listed `apps/web/{components,features,app}/**` without `src/`. Recon on
+2026-05-22 found the same drift in three more gate-agent files —
+`privacy-auditor.md`, `schema-migration-reviewer.md`, and
+`webhook-security-auditor.md` — across `description` frontmatter, Scope
+lists, and example `git diff` / `rg` commands (e.g. `git diff
+packages/db/schema/` would diff an empty path). Doc-level only — the
+functional gate router is `subagent-gate.yml` — but the example commands
+an agent runs would silently match nothing.
+**How:** All four files corrected to `src/` paths and the real schema
+filename (`mail-messages.ts`). `architecture-guardian.md` needed no change
+(`apps/api/**` is recursive). The earlier note that `.claude/agents/**`
+edits are harness-blocked proved incorrect — the edits applied normally.
+**Verifies by:** `grep -rnE 'apps/api/[a-z]|packages/db/schema' .claude/agents/`
+returns nothing outside `src/` paths.
+**Status:** Done 2026-05-22 — all four agent files fixed in PR #14.
 
 ### 2026-05-20 — subagent-gate.yml gate-path filters stale vs the `src/` tree
 **Source:** session — `chore/d173-rename-ui-to-shared`, review finding
