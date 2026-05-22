@@ -153,11 +153,13 @@ In the **same GCP project** as Step 1:
 2. **Pub/Sub → Topics → Create topic** → ID `gmail-push`. Leave defaults.
    Full name → `GMAIL_PUBSUB_TOPIC` =
    `projects/<GOOGLE_CLOUD_PROJECT_ID>/topics/gmail-push`
-3. Grant Gmail permission to publish: open the `gmail-push` topic →
-   **Permissions** → **Add principal** →
-   `gmail-api-push@system.gserviceaccount.com` → role
-   **Pub/Sub Publisher** → Save. (Google's fixed system account for Gmail
-   push — the exact string above.)
+3. Grant Gmail permission to publish — **on the topic, not a
+   subscription.** `Pub/Sub Publisher` is a topic-level role; it does
+   **not** appear in the role list of a subscription. Go to **Pub/Sub →
+   Topics → `gmail-push` → Permissions tab → Grant access** → principal
+   `gmail-api-push@system.gserviceaccount.com` → role **Pub/Sub
+   Publisher** → Save. (Google's fixed system account for Gmail push —
+   the exact string above.)
 4. **IAM & Admin → Service Accounts → Create service account** → name
    `gmail-webhook-oidc`. No keys, no roles. Copy its email →
    `PUBSUB_OIDC_SERVICE_ACCOUNT` =
