@@ -26,6 +26,43 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-21 — RATIFY: `sender_timeseries.opens` renamed to `read_count` (D-candidate)
+**Source:** PR [#13](https://github.com/CT2689-Tech/DeclutrMail/pull/13) — schema review finding
+**Why:** The D-plan's draft timeseries schema names the read column
+`opens`. The Gmail API exposes **no message-open events** — the only
+read signal is the `UNREAD` label. PR-A shipped the column as
+`read_count` (count of a month's messages without `UNREAD`) rather than
+silently encode a metric that cannot be populated honestly.
+**How:** Amend the plan's `sender_timeseries` schema definition: rename
+`opens` → `read_count`, noting it is UNREAD-derived, not open-tracking.
+No code change needed — PR-A already ships `read_count`.
+**Verifies by:** the plan's timeseries-table definition reads `read_count`;
+a future session finds no `opens`/`read_count` mismatch.
+**Status:** Open — **founder ratified the rename 2026-05-21.** PR-A already
+ships `read_count`. Remaining: the plan-file edit (`opens` → `read_count`),
+which rides with the 2026-05-20 reconciliation-pass plan edit below.
+
+### 2026-05-21 — SETUP: provision Gmail sync infrastructure (PR-B/C/D blockers)
+**Source:** session — Senders backend plan (`docs/execution/senders-backend-plan.md` §9)
+**Why:** PR-B (OAuth), PR-C (initial sync), and PR-D (incremental
+webhook) need external infrastructure that does not exist yet. Code can
+be written against `.env.example` placeholders but cannot run without
+these.
+**How:** Follow the step-by-step runbook at
+**`docs/ops/sync-infra-setup.md`** — it covers, in order:
+  1. **GCP project + OAuth client (D4)** — confirm V1 reuse; collect
+     `GOOGLE_OAUTH_CLIENT_ID` / `_SECRET` / `GOOGLE_CLOUD_PROJECT_ID`.
+  2. **`TOKEN_ENCRYPTION_KEY`** — generate a 256-bit AES key
+     (`openssl rand -base64 32`); store in GCP Secret Manager.
+  3. **Upstash Redis** — create the instance; collect `REDIS_URL`.
+  4. **Pub/Sub** — topic `gmail-push` + push subscription + OIDC service
+     account; collect `GMAIL_PUBSUB_TOPIC` / `PUBSUB_OIDC_AUDIENCE`.
+  5. Place all values in GitHub Actions secrets + GCP Secret Manager;
+     never commit (CLAUDE.md §10).
+**Verifies by:** PR-B/C/D run end-to-end in staging — a connected mailbox
+backfills, and a new message triggers the webhook.
+**Status:** Open
+
 ### 2026-05-20 — Reconcile plan vs. the Senders-screen design rebuild (D1/D2/D227/D187)
 **Source:** session — Senders rebuild (PR-A `feat/d001-design-foundation`; PR-B to follow)
 **Why:** The founder approved rebuilding the canonical DeclutrMail-v2 Senders
@@ -65,61 +102,6 @@ the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
 **Status:** Open
 
-### 2026-05-20 — design-system-agent.md Scope section still omits `src/`
-**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep
-**Why:** The `packages/ui` → `packages/shared` rename (D173) is otherwise fully
-applied — agent path refs, the Check C allowlist (now D220's 10), CLAUDE.md §7,
-and the `subagent-gate.yml` `design` filter are all fixed in this PR. One
-residual: `.claude/agents/design-system-agent.md` Scope section (lines ~27-29)
-lists `apps/web/{components,features,app}/**` without `src/`, but the repo uses
-`apps/web/src/`. Editing `.claude/agents/**` is harness-blocked
-(self-modification), so the agent could not apply it.
-**How:** Manually edit lines ~27-29 of `.claude/agents/design-system-agent.md`
-to insert `src/`: `apps/web/src/components/**`, `apps/web/src/features/**`,
-`apps/web/src/app/**`. (Scope-doc accuracy only — the gate's actual routing is
-`subagent-gate.yml`, already fixed.)
-**Verifies by:** `grep -n "apps/web/" .claude/agents/design-system-agent.md`
-shows `apps/web/src/` on the Scope lines.
-**Status:** Open
-
-### 2026-05-20 — subagent-gate.yml `privacy` filter will miss `apps/api/src/`
-**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
-**Why:** `.github/workflows/subagent-gate.yml`'s `privacy` filter matches
-`apps/api/gmail/**`, `apps/api/messages/**`, `apps/api/senders/**`. If `apps/api`
-is scaffolded under `apps/api/src/` (matching `apps/web/src/`), these literal
-globs won't match and the privacy-auditor gate silently won't trigger — the
-most important gate, off. The `architecture` filter (`apps/api/**`) and `schema`
-filter (`packages/db/**`) are recursive, so unaffected.
-**How:** When `apps/api` is scaffolded (PR 4+), confirm its layout; if it uses
-`src/`, update the `privacy` filter globs to
-`apps/api/src/{gmail,messages,senders}/**` and the matching CLAUDE.md §7
-`privacy-auditor` row.
-**Verifies by:** A PR touching an `apps/api` Gmail path shows `privacy-auditor`
-in the subagent-gate scope report.
-**Status:** Open
-
-### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
-**Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
-`IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
-`conclusion: failure` for both runs. D11, D152, and D160 had to be
-flipped via a manual PR.
-**Why:** The bot's `git push origin main` step almost certainly hits
-branch protection (review-required rules apply even to GitHub Actions).
-Until this is fixed, every merge needs a follow-up manual flip — error-prone.
-**How:** Pick one:
-  1. Open
-     https://github.com/CT2689-Tech/DeclutrMail/settings/branches → main
-     rule → "Allow specified actors to bypass required pull requests" →
-     add `github-actions[bot]`. Cheapest fix.
-  2. OR rewrite `pr-merged.yml` to open a new PR (`gh pr create`) with
-     the log diff instead of pushing directly. Adds one click per merge
-     but works under any branch-protection regime.
-  3. OR generate a fine-grained PAT with bypass rights for the bot account,
-     store it as `LOG_FLIP_PAT`, and use it instead of `GITHUB_TOKEN`.
-**Verifies by:** Next merge after the fix flips its D-rows automatically;
-the `Flip D-rows` check goes ✅.
-**Status:** Open
-
 ### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
 **Why:** Atlas v0.38 (April 2026) gated `atlas migrate lint` behind a paid /
@@ -156,6 +138,99 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
+**Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
+`IMPLEMENTATION-LOG.md` was never updated. `pr-merged.yml` showed
+`conclusion: failure` for both runs. D11, D152, and D160 had to be
+flipped via a manual PR.
+**Why:** The bot's `git push origin main` was rejected — confirmed from the
+run log: `GH013: Repository rule violations found for refs/heads/main`. The
+`main` ruleset ("protect main", not a classic branch-protection rule) carried
+a rule at the time that blocked the `github-actions` bot's push.
+**How:** No code or settings action was needed in the end. The `main` ruleset
+was edited on 2026-05-19 22:36 — 25 min after the last failure (22:11) —
+relaxing it to just `deletion` + `non_fast_forward` rules. Those allow the
+bot's fast-forward push while still blocking force-pushes (CLAUDE.md §10). The
+three "pick one" options originally listed (bypass actor / rewrite to open a
+PR / PAT) were never needed.
+**Verifies by:** `pr-merged.yml` has 6 consecutive successful runs since
+2026-05-19 22:43 — including PR #13 on 2026-05-22 (`D150: 1 row(s) flipped`,
+`70cb2db..2debc50 main -> main` push OK).
+**Status:** Done 2026-05-19 — self-resolved by the ruleset edit; verified
+green through 2026-05-22 via the run logs (this session). The earlier
+"founder chose option 1" note was based on a stale diagnosis — corrected.
+
+### 2026-05-20 — Gate-agent `.md` scope/description sections omit `src/`
+**Source:** session — `chore/d173-rename-ui-to-shared`, PR 3 prep; broadened 2026-05-22
+**Why:** The original finding: `design-system-agent.md`'s Scope section
+listed `apps/web/{components,features,app}/**` without `src/`. Recon on
+2026-05-22 found the same drift in three more gate-agent files —
+`privacy-auditor.md`, `schema-migration-reviewer.md`, and
+`webhook-security-auditor.md` — across `description` frontmatter, Scope
+lists, and example `git diff` / `rg` commands (e.g. `git diff
+packages/db/schema/` would diff an empty path). Doc-level only — the
+functional gate router is `subagent-gate.yml` — but the example commands
+an agent runs would silently match nothing.
+**How:** All four files corrected to `src/` paths and the real schema
+filename (`mail-messages.ts`). `architecture-guardian.md` needed no change
+(`apps/api/**` is recursive). The earlier note that `.claude/agents/**`
+edits are harness-blocked proved incorrect — the edits applied normally.
+**Verifies by:** `grep -rnE 'apps/api/[a-z]|packages/db/schema' .claude/agents/`
+returns nothing outside `src/` paths.
+**Status:** Done 2026-05-22 — all four agent files fixed in PR #14.
+
+### 2026-05-20 — subagent-gate.yml gate-path filters stale vs the `src/` tree
+**Source:** session — `chore/d173-rename-ui-to-shared`, review finding
+**Why:** `.github/workflows/subagent-gate.yml`'s path filters were written
+against a pre-`src/` layout. The `privacy` filter (`apps/api/gmail/**` etc.,
+`packages/db/schema/*.ts`), the `schema` filter (`packages/db/schema/**`),
+and the `webhooks` filter (`apps/api/webhooks/**`) would all miss the real
+tree once `apps/api/src/` exists — `privacy-auditor`, `schema-migration-reviewer`,
+and `webhook-security-auditor` would silently not trigger. The original entry
+spotted only the `privacy` filter; recon found `schema` and `webhooks` had the
+identical drift.
+**How:** PR #14 corrected all three filters to the `src/` paths
+(`apps/api/src/{gmail,messages,senders}/**`, `packages/db/src/schema/{mail-messages,senders}.ts`,
+`packages/db/src/schema/**`, `apps/api/src/webhooks/**`) and the matching
+CLAUDE.md §7 gate-table rows.
+**Verifies by:** A PR touching `apps/api/src/gmail/**` (PR-B) shows
+`privacy-auditor` in the subagent-gate scope report.
+**Status:** Done 2026-05-22 — filters + CLAUDE.md §7 fixed in PR #14; PR-B confirms the scope report.
+
+### 2026-05-21 — DECISION: token-encryption scheme for Gmail refresh tokens
+**Source:** session — Senders backend plan, PR-B spec (`docs/execution/senders-backend-plan.md` §4)
+**Why:** PR-B stores Gmail OAuth refresh tokens. Token encryption is a
+CLAUDE.md §9 stop-condition.
+**How:** An "app-level AES-256-GCM" option was floated to the founder and
+initially OK'd — but a plan check then found **D14 already decided this:
+Google Cloud KMS envelope encryption**, and D14 explicitly rejects an
+env-var-class key. The conflict was surfaced (CLAUDE.md §3 plan-drift);
+the founder confirmed **D14 stands — Cloud KMS envelope.** KEK in Cloud
+KMS, per-token DEK, `dek_encrypted bytea` column; local dev uses an
+`ENCRYPTION_LOCAL_KEY` fallback (D14-sanctioned). Recorded in
+`docs/execution/senders-backend-plan.md` §4; provisioning in
+`docs/ops/sync-infra-setup.md` Step 2. PR-B implements it.
+**Verifies by:** PR-B ships a real KMS-envelope `TokenCryptoService` with
+a round-trip unit test (local-key fallback); `architecture-guardian`
+sees a real encrypt path.
+**Status:** Done 2026-05-21 — D14 Cloud KMS envelope confirmed (no plan amendment needed).
+
+### 2026-05-21 — DECISION: attachment metadata — ratify or reject a D7 allowlist extension
+**Source:** session — founder asked for attachment size + a "find larger attachments" feature
+**Why:** The founder asked whether DeclutrMail can fetch attachment size /
+has-attachment. `has_attachment` is feasible body-free (`q=has:attachment`);
+per-attachment byte size is NOT (needs `format=full` = body fetch = breaks
+"Full bodies fetched: 0", D7/D228). Both `has_attachment` and
+`size_estimate` would be new fields beyond the D7 allowlist — a
+privacy-posture change.
+**How:** Founder decided to **skip it** — keep the D7 allowlist as-is. If
+users later demand a "large attachments" feature, revisit then: ship
+`has_attachment` (body-free) as a ratified allowlist extension; the
+per-attachment byte-size feature stays permanently rejected (cannot be
+done body-free).
+**Verifies by:** PR-A's `mail_messages` ships no attachment columns (true).
+**Status:** Skipped 2026-05-21 — deferred until user demand; D7 allowlist unchanged.
 
 ### 2026-05-19 — Configure ANTHROPIC_API_KEY in repo secrets
 **Source:** PR #4 — `.github/workflows/subagent-gate.yml` documents this

@@ -1,6 +1,6 @@
 ---
 name: webhook-security-auditor
-description: Webhook authentication + dedup reviewer for DeclutrMail. Verifies Gmail Pub/Sub OIDC verification (D229), Stripe HMAC verification, idempotent messageId dedup, monotonic historyId tracking, and the absence of x-goog-authenticated-user-email anywhere. Use on PRs touching apps/api/webhooks/** or any *-webhook.controller.ts. Reports findings; never refactors.
+description: Webhook authentication + dedup reviewer for DeclutrMail. Verifies Gmail Pub/Sub OIDC verification (D229), Stripe HMAC verification, idempotent messageId dedup, monotonic historyId tracking, and the absence of x-goog-authenticated-user-email anywhere. Use on PRs touching apps/api/src/webhooks/** or any *-webhook.controller.ts. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -26,7 +26,7 @@ You report findings only. You do not write or apply fixes.
 
 ## Scope — files this agent reviews
 
-- `apps/api/webhooks/**`
+- `apps/api/src/webhooks/**`
 - `apps/api/**/*-webhook.controller.ts`
 - `apps/api/**/*-webhook.service.ts`
 - Any handler that receives external HTTP POSTs from Gmail / Pub/Sub / Stripe
@@ -40,7 +40,7 @@ Skip if the PR has none of these.
 ```bash
 git diff --staged
 git diff
-git ls-files apps/api/webhooks/ 2>/dev/null
+git ls-files apps/api/src/webhooks/ 2>/dev/null
 ```
 
 ### Step 2: Hard ban — `x-goog-authenticated-user-email` (D229)
@@ -49,7 +49,7 @@ Grep the diff and the touched files for any reference to the banned header:
 
 ```bash
 git diff | rg -nE 'x-goog-authenticated-user-email' || true
-rg -nE 'x-goog-authenticated-user-email' apps/api/webhooks/ 2>/dev/null || true
+rg -nE 'x-goog-authenticated-user-email' apps/api/src/webhooks/ 2>/dev/null || true
 ```
 
 **[BLOCKING]** Any match. That header is Cloud Run IAM identity, NOT

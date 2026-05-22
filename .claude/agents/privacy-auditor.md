@@ -1,6 +1,6 @@
 ---
 name: privacy-auditor
-description: Data-flow review for DeclutrMail's no-body-storage privacy posture (D7, D228). Use on any PR touching Gmail data — apps/api/{gmail,messages,senders}/**, packages/db/schema/{messages,senders}.ts, anywhere calling Gmail API or Sentry/PostHog with message data. Reports findings; never refactors.
+description: Data-flow review for DeclutrMail's no-body-storage privacy posture (D7, D228). Use on any PR touching Gmail data — apps/api/src/{gmail,messages,senders}/**, packages/db/src/schema/{mail-messages,senders}.ts, anywhere calling Gmail API or Sentry/PostHog with message data. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -39,11 +39,11 @@ Per the trust badge "Full bodies fetched: 0":
 
 Run on any PR touching:
 
-- `apps/api/gmail/**`
-- `apps/api/messages/**`
-- `apps/api/senders/**`
-- `apps/api/workers/**` that touch message data
-- `packages/db/schema/{messages,senders}.ts`
+- `apps/api/src/gmail/**`
+- `apps/api/src/messages/**`
+- `apps/api/src/senders/**`
+- `apps/api/src/workers/**` that touch message data
+- `packages/db/src/schema/{mail-messages,senders}.ts`
 - Any file calling `gmail.users.messages.get` or similar Gmail API
 - Any file calling `Sentry.captureException`, `Sentry.captureMessage`,
   or adding Sentry breadcrumbs/context with message data
@@ -134,7 +134,7 @@ Special attention to: `Message-ID`, `References`, `In-Reply-To`,
 
 ### Step 4: DB schema check
 
-If `packages/db/schema/messages.ts` or `senders.ts` is touched:
+If `packages/db/src/schema/mail-messages.ts` or `senders.ts` is touched:
 
 - Confirm no new column that could hold body content (`body`, `html`,
   `text`, `content`, `mime`, `raw`, `payload`)

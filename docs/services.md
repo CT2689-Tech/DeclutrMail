@@ -163,6 +163,22 @@ _why_, _which tier_, and _where the credential lives_.
 
 ---
 
+### Upstash (Redis)
+
+| Field                | Value                                                                                                                                                                                                                                                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**           | ✅ Active                                                                                                                                                                                                                                                                                                            |
+| **Purpose**          | Serverless Redis — backs the BullMQ queue for the Gmail sync workers (PR-C/D)                                                                                                                                                                                                                                        |
+| **Account**          | **GitHub SSO** — signed up via "Continue with GitHub"; no separate Upstash password. Account recovery is tied to the GitHub account.                                                                                                                                                                                 |
+| **Plan / tier**      | Free (256 MB data, 10 GB/mo bandwidth)                                                                                                                                                                                                                                                                               |
+| **Approximate cost** | $0                                                                                                                                                                                                                                                                                                                   |
+| **Key / secret**     | `REDIS_URL`                                                                                                                                                                                                                                                                                                          |
+| **Key location**     | 1Password → _Upstash — DeclutrMail_ item + GitHub repo secret + GCP Secret Manager                                                                                                                                                                                                                                   |
+| **D-reference**      | D157 (BullMQ on Redis)                                                                                                                                                                                                                                                                                               |
+| **Notes**            | Eviction policy must be `noeviction` — BullMQ requires it or queued jobs can be silently dropped. Free tier is fine for dev + early launch; large initial syncs are command-heavy — watch the Upstash command count and move to Pay-as-You-Go if it caps. Provisioning steps: `docs/ops/sync-infra-setup.md` Step 3. |
+
+---
+
 ## Adding a new service
 
 1. Add a row to this file (PR preferred, or commit directly to `main` for docs-only changes).

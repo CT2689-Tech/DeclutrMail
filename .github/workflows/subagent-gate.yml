@@ -34,11 +34,11 @@ jobs:
         with:
           filters: |
             privacy:
-              - 'apps/api/gmail/**'
-              - 'apps/api/messages/**'
-              - 'apps/api/senders/**'
-              - 'packages/db/schema/messages.ts'
-              - 'packages/db/schema/senders.ts'
+              - 'apps/api/src/gmail/**'
+              - 'apps/api/src/messages/**'
+              - 'apps/api/src/senders/**'
+              - 'packages/db/src/schema/mail-messages.ts'
+              - 'packages/db/src/schema/senders.ts'
             architecture:
               - 'apps/api/**'
               - 'packages/db/**'
@@ -46,7 +46,7 @@ jobs:
               - 'packages/events/**'
             schema:
               - 'packages/db/migrations/**'
-              - 'packages/db/schema/**'
+              - 'packages/db/src/schema/**'
             design:
               - 'apps/web/src/components/**'
               - 'apps/web/src/features/**'
@@ -54,7 +54,7 @@ jobs:
               - 'packages/shared/**'
               - '**/*.stories.tsx'
             webhooks:
-              - 'apps/api/webhooks/**'
+              - 'apps/api/src/webhooks/**'
               - 'apps/api/**/*-webhook.controller.ts'
 
   # Placeholder gate that documents which agents WOULD run for this PR.
