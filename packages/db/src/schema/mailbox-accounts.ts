@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -10,6 +11,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
+import { bytea } from './_custom-types';
 import { users } from './users';
 import { workspaces } from './workspaces';
 
@@ -28,6 +30,16 @@ import { workspaces } from './workspaces';
  * Google account from being re-connected to two workspaces under one
  * billing relationship. Multi-account users land per workspace, not
  * per provider account.
+ *
+ * OAuth-token columns (D14 envelope encryption) — all nullable, written
+ * at OAuth-connect time; rows that predate a connect have none:
+ *   - `encrypted_refresh_token` — the Gmail OAuth refresh token,
+ *     AES-256-GCM-encrypted under a per-record DEK.
+ *   - `dek_encrypted` — that DEK, wrapped by the KMS KEK.
+ *   - `key_version` — KEK version used, so rotation is traceable.
+ *   - `connected_at` — when the OAuth connect completed.
+ * These store OAuth credentials, not Gmail message content — the D7
+ * body-storage allowlist is unaffected.
  *
  * No body data; no Gmail content; storage allowlist per D7 honored
  * (the message + sender data lives in separate tables shipped later).
@@ -53,6 +65,10 @@ export const mailboxAccounts = pgTable(
     quietState: jsonb('quiet_state')
       .notNull()
       .default(sql`'{}'::jsonb`),
+    encryptedRefreshToken: bytea('encrypted_refresh_token'),
+    dekEncrypted: bytea('dek_encrypted'),
+    keyVersion: integer('key_version'),
+    connectedAt: timestamp('connected_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
