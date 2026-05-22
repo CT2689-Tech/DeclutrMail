@@ -79,22 +79,41 @@ In the **same GCP project** as Step 1:
    - Protection level: Software
    - Purpose: **Symmetric encrypt/decrypt**
    - Rotation period: **90 days** (D14 — quarterly).
-4. Grant the app's runtime service account permission to use the key.
-   On the `oauth-token-kek` key → **Permissions** → add the Cloud Run
-   runtime service account (the one the `apps/api` service runs as) →
-   role **Cloud KMS CryptoKey Encrypter/Decrypter**
-   (`roles/cloudkms.cryptoKeyEncrypterDecrypter`).
-5. Record the full key resource name →
+4. Create the API's **runtime service account** — the non-human identity
+   the `apps/api` service will run as. **IAM & Admin → Service Accounts →
+   Create service account**:
+   - Name: `declutrmail-api`
+   - No keys, no project-level roles needed here.
+
+   Copy its email → `declutrmail-api@<project>.iam.gserviceaccount.com`.
+   (This is _not_ the `gmail-webhook-oidc` SA from Step 4 — that one is
+   Pub/Sub's identity; this one is the app's.)
+
+5. Grant that SA permission to use the key. On the `oauth-token-kek` key
+   → **Permissions** → **Grant access** → principal = the
+   `declutrmail-api` SA email → role **Cloud KMS CryptoKey
+   Encrypter/Decrypter** (`roles/cloudkms.cryptoKeyEncrypterDecrypter`)
+   → Save. Scoping the role to this one key (not the whole project) is
+   least-privilege — the app can encrypt/decrypt with `oauth-token-kek`
+   and nothing else.
+6. Record the full key resource name →
    `KMS_KEY_RESOURCE` =
    `projects/<GOOGLE_CLOUD_PROJECT_ID>/locations/us-central1/keyRings/declutrmail/cryptoKeys/oauth-token-kek`
-6. **Local dev:** KMS is _not_ used locally — devs don't need KMS access.
-   D14 sanctions a local-dev fallback key. Generate one:
+7. **Local dev:** KMS is _not_ used locally — devs don't need KMS access
+   or the SA. D14 sanctions a local-dev fallback key. Generate one:
    ```sh
    openssl rand -hex 32
    ```
    That 64-char hex string is `ENCRYPTION_LOCAL_KEY` — set it in
    `.env.local` only. The app uses KMS when `KMS_KEY_RESOURCE` is set and
    falls back to `ENCRYPTION_LOCAL_KEY` when it is not.
+
+> **Deploy-time (§7):** when `apps/api` first deploys to Cloud Run, set
+> the service's **runtime service account** to `declutrmail-api` (Cloud
+> Run → service → Security → Service account). That is how the running
+> app inherits the KMS permission granted in step 5 — Cloud Run gives the
+> container that SA's identity automatically, no key file. Until then the
+> SA simply exists, unused; local dev never touches it.
 
 > Why KMS, not a plain app-held key (D14 rationale): an env-var-class key
 > can't rotate without re-encrypting every row, and a leaked DB dump plus
@@ -208,10 +227,12 @@ Legend — where each value must be set:
 `apps/api` is not built or deployed yet, so these URLs do not exist
 today.
 
-Two items wait on them:
+Three items are completed at deploy time:
 
 - the staging/prod **Authorized redirect URIs** (Step 1.5)
 - the Pub/Sub **push subscription endpoint** (Step 4.5)
+- assigning the **`declutrmail-api` runtime service account** (Step 2.4)
+  to the Cloud Run service, so the app inherits the KMS permission
 
 The domain will be one of:
 
