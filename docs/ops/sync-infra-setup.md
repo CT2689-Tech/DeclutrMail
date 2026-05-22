@@ -170,10 +170,16 @@ In the **same GCP project** as Step 1:
    named newer managed constraint `iam.managed.allowedPolicyMembers` —
    that is a different policy. Open it → **Manage policy** → **Override
    parent's policy** → add a rule **Allow All** → Save → retry the grant.
-   This override applies only to this project. Needs the **Organization
-   Policy Administrator** role (`roles/orgpolicy.policyAdmin`). Optional:
-   re-tighten the policy afterward — org policy is checked only on new
-   IAM writes, so the Gmail binding survives.
+   This override applies only to this project. Optional: re-tighten the
+   policy afterward — org policy is checked only on new IAM writes, so
+   the Gmail binding survives.
+   **If "Manage policy" is greyed out:** you lack the **Organization
+   Policy Administrator** role. Grant `roles/orgpolicy.policyAdmin` to
+   your own account first — **IAM & Admin → IAM** → your user → **Edit
+   principal** → **Add another role** → "Organization Policy
+   Administrator" → Save → wait ~1 min → reload. Org-level grant is
+   cleanest; a project-level grant on `declutrmail-ai-prod` also works
+   for a project override.
 4. **IAM & Admin → Service Accounts → Create service account** → name
    `gmail-webhook-oidc`. No keys, no roles. Copy its email →
    `PUBSUB_OIDC_SERVICE_ACCOUNT` =
