@@ -37,6 +37,18 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `sender_key` is denormalized here (not a FK) because a message may be
  * ingested before its `senders` row is materialized by the
  * `building_sender_index` stage (D224). It carries the same D12 hash.
+ *
+ * D7 ALLOWLIST AMENDMENT (2026-05-22, ADR-0004). Columns added:
+ *   - `is_outbound` — derived from `label_ids.includes('SENT')`. Lets
+ *     `building_sender_index` filter to inbound; outbound messages still
+ *     store full metadata for future reply-attribution (D9 area) so no
+ *     re-sync is needed when that engine lands.
+ *   - `recipient_emails` — To + Cc parsed and combined; populated for
+ *     OUTBOUND only. Reserved for the future Sent-sync / reply-attribution
+ *     engine. The `To`/`Cc` headers are on the amended allowlist.
+ *   - `unsubscribe_url` + `unsubscribe_one_click` — parsed from
+ *     `List-Unsubscribe` + `List-Unsubscribe-Post` (RFC 8058). Powers
+ *     D9 auto-unsubscribe. The two headers are on the amended allowlist.
  */
 
 export const mailMessages = pgTable(
@@ -68,6 +80,32 @@ export const mailMessages = pgTable(
       .default(sql`'{}'::text[]`),
     /** Derived from the presence of the UNREAD label — D7 read state. */
     isUnread: boolean('is_unread').notNull(),
+    /**
+     * Derived from `label_ids.includes('SENT')` at fetch time. Outbound
+     * messages are stored (for future reply attribution) but excluded
+     * from `building_sender_index` — their `From` is the user themself,
+     * not a third-party sender.
+     */
+    isOutbound: boolean('is_outbound').notNull().default(false),
+    /**
+     * To + Cc emails parsed and combined. NULL for inbound; reserved for
+     * the future Sent-sync / reply-attribution engine on outbound
+     * messages (D9 area). Header allowlist amendment per ADR-0004.
+     */
+    recipientEmails: text('recipient_emails').array(),
+    /**
+     * Parsed from `List-Unsubscribe` — the unsubscribe URL (https://...
+     * or mailto:...). NULL when the message has no such header. Header
+     * allowlist amendment per ADR-0004; powers D9 (RFC 8058 auto-
+     * unsubscribe).
+     */
+    unsubscribeUrl: text('unsubscribe_url'),
+    /**
+     * Derived from `List-Unsubscribe-Post: List-Unsubscribe=One-Click`.
+     * True iff the sender supports one-click unsubscribe (D9). Header
+     * allowlist amendment per ADR-0004.
+     */
+    unsubscribeOneClick: boolean('unsubscribe_one_click').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

@@ -26,6 +26,24 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — DISTILL: CLAUDE.md §2.1 storage allowlist amendment (ADR-0004)
+**Source:** ADR-0004 (D7 allowlist amendment — data-capture PR
+`feat/d009-sync-data-capture`)
+**Why:** CLAUDE.md §2.1 enumerates the D7 storage allowlist literally
+(sender / subject / snippet / dates / labels / read state). The
+data-capture PR adds — with founder approval — four fields:
+`To`/`Cc` (outbound only), `List-Unsubscribe` URL,
+`List-Unsubscribe-Post` one-click flag, and the derived `is_outbound`
+column. CLAUDE.md §11 forbids agents from editing CLAUDE.md directly;
+the founder distills via a separate `chore/distill-*` PR.
+**How:** Open a `chore/distill-allowlist-extension` PR; amend §2.1's
+"DeclutrMail stores ONLY" list to include the four new fields, with a
+one-line note that each is tied to a planned feature (D9 unsubscribe;
+future reply attribution); reference ADR-0004. No code change.
+**Verifies by:** `rg "List-Unsubscribe" CLAUDE.md` returns the new
+allowlist entries; ADR-0004 cross-references §2.1's updated wording.
+**Status:** Open
+
 ### 2026-05-22 — D-CANDIDATE: periodic full re-derive backstop (after PR-D)
 **Source:** session — founder ack 2026-05-22, deferred per "no users yet"
 **Why:** PR-C/PR #19's initial sync is a complete derive — zero drift.

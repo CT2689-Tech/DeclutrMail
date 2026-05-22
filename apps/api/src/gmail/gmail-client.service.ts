@@ -35,8 +35,24 @@ import type {
 
 /** Gmail message-format value — `metadata` ONLY (D7). Never `full`/`raw`. */
 const METADATA_FORMAT = 'metadata';
-/** Headers fetched alongside metadata — the D7 allowlist for sync. */
-const METADATA_HEADERS = ['From', 'Subject'];
+/**
+ * Headers fetched alongside metadata — the D7 allowlist for sync.
+ *
+ * Amended 2026-05-22 (ADR-0004) — see the schema docs on `mail_messages`
+ * for the per-field rationale:
+ *   - `To`, `Cc` — recipient capture (used on outbound for the future
+ *     Sent-sync / reply-attribution engine).
+ *   - `List-Unsubscribe`, `List-Unsubscribe-Post` — RFC 8058 unsubscribe
+ *     capability (D9 auto-unsubscribe).
+ */
+const METADATA_HEADERS = [
+  'From',
+  'Subject',
+  'To',
+  'Cc',
+  'List-Unsubscribe',
+  'List-Unsubscribe-Post',
+];
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -57,6 +73,11 @@ interface GmailGetResponse {
   snippet?: string;
   internalDate?: string;
   payload?: { headers?: { name: string; value: string }[] };
+}
+
+/** Shape of a `users.getProfile` response (only the historyId is read). */
+interface GmailProfileResponse {
+  historyId?: string;
 }
 
 export class GmailClientService implements GmailMetadataClient {
@@ -104,7 +125,24 @@ export class GmailClientService implements GmailMetadataClient {
       internalDate: typeof json.internalDate === 'string' ? json.internalDate : '0',
       from: findHeader(json, 'From'),
       subject: findHeader(json, 'Subject'),
+      to: findHeader(json, 'To'),
+      cc: findHeader(json, 'Cc'),
+      listUnsubscribe: findHeader(json, 'List-Unsubscribe'),
+      listUnsubscribePost: findHeader(json, 'List-Unsubscribe-Post'),
     };
+  }
+
+  /**
+   * Snapshot the mailbox's user-level `historyId` from
+   * `users.getProfile` (D5 — incremental-sync starting cursor for PR-D).
+   * Body-free; just the profile resource (email, historyId, totals).
+   */
+  async getProfile(): Promise<{ historyId: string }> {
+    const json = await this.get<GmailProfileResponse>('/profile', false);
+    if (!json?.historyId) {
+      throw new TransientError('Gmail profile response missing historyId');
+    }
+    return { historyId: json.historyId };
   }
 
   /**

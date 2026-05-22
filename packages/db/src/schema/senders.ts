@@ -34,6 +34,21 @@ export const gmailCategory = pgEnum('gmail_category', [
   'forums',
 ]);
 
+/**
+ * Per-sender unsubscribe capability — derived by
+ * `building_sender_index` from `mail_messages.unsubscribe_url` +
+ * `unsubscribe_one_click` across the sender's messages (D9, RFC 8058):
+ *   - `one_click` — at least one message carries the `One-Click` flag.
+ *   - `mailto`    — has a List-Unsubscribe URL but no one-click capability.
+ *   - `none`      — no `List-Unsubscribe` header seen.
+ * Powers the D9 "auto-try RFC 8058 → mailto → fallback" path.
+ */
+export const gmailUnsubscribeMethod = pgEnum('gmail_unsubscribe_method', [
+  'one_click',
+  'mailto',
+  'none',
+]);
+
 export const senders = pgTable(
   'senders',
   {
@@ -52,6 +67,19 @@ export const senders = pgTable(
     gmailCategory: gmailCategory('gmail_category').notNull(),
     firstSeenAt: timestamp('first_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /**
+     * Best unsubscribe method across this sender's messages
+     * (`one_click > mailto > none`). NULL until `building_sender_index`
+     * has run for the sender. Drives the D9 unsubscribe action's UX +
+     * automation path.
+     */
+    unsubscribeMethod: gmailUnsubscribeMethod('unsubscribe_method'),
+    /**
+     * URL to use when the user invokes Unsubscribe — `https://...` for
+     * one-click, `mailto:...` otherwise. NULL when no message has a
+     * `List-Unsubscribe` header.
+     */
+    unsubscribeUrl: text('unsubscribe_url'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
