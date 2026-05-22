@@ -201,6 +201,12 @@ Legend — where each value must be set:
 - **`[gcp]`** — GCP Secret Manager (Cloud Run reads it at runtime) →
   console → Security → Secret Manager.
 
+**Timing — do `[local]` now, defer the rest.** Right now only
+`.env.local` matters: it is what lets PR-B run on your machine. `[gh]`
+is needed when PR-B's CI runs integration tests against real creds;
+`[gcp]` is needed only when `apps/api` first deploys to Cloud Run.
+Neither exists yet — pre-loading them now is harmless but optional.
+
 | Env var                       | Source | local | gh  | gcp |
 | ----------------------------- | ------ | :---: | :-: | :-: |
 | `GOOGLE_CLOUD_PROJECT_ID`     | Step 1 |   ✓   |  ✓  |  —  |
