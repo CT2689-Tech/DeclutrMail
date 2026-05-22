@@ -1,0 +1,24 @@
+-- Rollback for 0003_sync_data_capture.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverts
+-- 0003 — drops the 4 new `mail_messages` columns, the 2 new `senders`
+-- columns, and the `gmail_unsubscribe_method` enum. Reverse order of
+-- the forward.
+--
+-- NOT idempotent — assumes schema matches the forward migration's end
+-- state. The backfill `UPDATE` is not reversed: the column it touched
+-- (`is_outbound`) is dropped, so the data goes with it.
+
+ALTER TABLE "senders" DROP COLUMN IF EXISTS "unsubscribe_url";
+--> statement-breakpoint
+ALTER TABLE "senders" DROP COLUMN IF EXISTS "unsubscribe_method";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP COLUMN IF EXISTS "unsubscribe_one_click";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP COLUMN IF EXISTS "unsubscribe_url";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP COLUMN IF EXISTS "recipient_emails";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP COLUMN IF EXISTS "is_outbound";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."gmail_unsubscribe_method";

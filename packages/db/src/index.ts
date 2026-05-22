@@ -11,7 +11,7 @@ export { senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
 export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
-export { gmailCategory, senders } from './schema/senders';
+export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';
 export type { NewSender, Sender } from './schema/senders';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';

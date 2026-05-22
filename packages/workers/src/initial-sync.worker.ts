@@ -1,9 +1,10 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 import { ValidationError } from './worker-errors.js';
@@ -70,6 +71,9 @@ export interface InitialSyncResult {
   stageTimings: Record<string, number>;
 }
 
+/** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
+type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
+
 /** Per-sender aggregate folded from the persisted `mail_messages` rows. */
 interface SenderAggregate {
   firstSeen: Date;
@@ -77,6 +81,10 @@ interface SenderAggregate {
   categoryCounts: Map<GmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
+  /** Best `List-Unsubscribe` URL across the sender's messages (D9). */
+  unsubscribeUrl: string | null;
+  /** True iff any of the sender's messages support RFC 8058 one-click. */
+  unsubscribeOneClick: boolean;
 }
 
 /**
@@ -139,10 +147,19 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Stage 1 — fetching_metadata (resumable).
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
-    const { messagesSynced, gmailApiCalls } = await this.fetchAndStoreMetadata(
+
+    // Snapshot the user-level historyId BEFORE the fetch (D5 — PR-D
+    // incremental sync starts from here). Snapshotting BEFORE the fetch
+    // means any change during the fetch is replayed by the first
+    // incremental run — upserts are idempotent so re-processing is safe.
+    const profile = await client.getProfile();
+    const snapshotHistoryId = profile.historyId;
+
+    const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
       mailboxAccountId,
       client,
     );
+    const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
     // Stage 2 — building_sender_index (aggregates from mail_messages).
@@ -161,8 +178,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing');
     lap('finalizing');
 
-    // Stage 5 — ready.
-    await this.markReady(mailboxAccountId);
+    // Stage 5 — ready. Persist the historyId snapshot so PR-D's
+    // incremental sync can `history.list?startHistoryId=...` from here.
+    await this.markReady(mailboxAccountId, snapshotHistoryId);
 
     return {
       messagesSynced,
@@ -261,7 +279,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           continue; // unparseable sender — cannot be keyed; skip.
         }
         pendingMessages.push(row.message);
-        if (!pendingSenders.has(row.senderKey)) {
+        // Outbound messages still land in `mail_messages` (for future
+        // reply attribution) but their `From` is the user themself —
+        // never index them as a sender (D9 area; ADR-0004).
+        if (!row.facts.isOutbound && !pendingSenders.has(row.senderKey)) {
           pendingSenders.set(row.senderKey, this.toIdentityRow(mailboxAccountId, row));
         }
         processed += 1;
@@ -296,16 +317,25 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .where(eq(senders.mailboxAccountId, mailboxAccountId));
     const identity = new Map(identityRows.map((r) => [r.senderKey, r]));
 
-    // Fold every stored message into a per-sender aggregate.
+    // Fold every INBOUND stored message into a per-sender aggregate.
+    // Outbound messages are excluded — their `From` is the user, never
+    // a third-party sender (ADR-0004).
     const messageRows = await this.deps.db
       .select({
         senderKey: mailMessages.senderKey,
         internalDate: mailMessages.internalDate,
         labelIds: mailMessages.labelIds,
         isUnread: mailMessages.isUnread,
+        unsubscribeUrl: mailMessages.unsubscribeUrl,
+        unsubscribeOneClick: mailMessages.unsubscribeOneClick,
       })
       .from(mailMessages)
-      .where(eq(mailMessages.mailboxAccountId, mailboxAccountId));
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          eq(mailMessages.isOutbound, false),
+        ),
+      );
 
     const aggregates = new Map<string, SenderAggregate>();
     for (const row of messageRows) {
@@ -334,6 +364,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         gmailCategory: dominantCategory(agg.categoryCounts),
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
+        unsubscribeMethod: deriveUnsubscribeMethod(agg),
+        unsubscribeUrl: agg.unsubscribeUrl,
       });
       for (const [yearMonth, month] of agg.months) {
         timeseriesRows.push({
@@ -356,6 +388,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             gmailCategory: sql`excluded.gmail_category`,
             firstSeenAt: sql`excluded.first_seen_at`,
             lastSeenAt: sql`excluded.last_seen_at`,
+            unsubscribeMethod: sql`excluded.unsubscribe_method`,
+            unsubscribeUrl: sql`excluded.unsubscribe_url`,
             updatedAt: sql`now()`,
           },
         });
@@ -411,6 +445,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         .select({
           providerMessageId: mailMessages.providerMessageId,
           senderKey: mailMessages.senderKey,
+          isOutbound: mailMessages.isOutbound,
         })
         .from(mailMessages)
         .where(eq(mailMessages.mailboxAccountId, mailboxAccountId)),
@@ -420,8 +455,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         .where(eq(senders.mailboxAccountId, mailboxAccountId)),
     ]);
     const withIdentity = new Set(senderRows.map((r) => r.senderKey));
+    // Skip a stored message iff EITHER it is outbound (intentionally
+    // identity-less — ADR-0004) OR its inbound sender has an identity
+    // row (the orphan-heal guard). An inbound message whose sender
+    // lacks identity is NOT skipped — it gets re-fetched + healed.
     return new Set(
-      messageRows.filter((m) => withIdentity.has(m.senderKey)).map((m) => m.providerMessageId),
+      messageRows
+        .filter((m) => m.isOutbound || withIdentity.has(m.senderKey))
+        .map((m) => m.providerMessageId),
     );
   }
 
@@ -441,6 +482,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const email = normalizeEmail(parsed.email);
     const senderKey = deriveSenderKey(email);
     const internalDate = new Date(Number(meta.internalDate));
+    const isOutbound = meta.labelIds.includes('SENT');
+    // Recipients are stored for OUTBOUND only — they power the future
+    // reply-attribution engine. Inbound `recipient_emails` would just be
+    // the connected mailbox itself, of no product value.
+    const recipientEmails = isOutbound
+      ? [...parseRecipients(meta.to), ...parseRecipients(meta.cc)]
+      : null;
+    const { url: unsubscribeUrl, oneClick: unsubscribeOneClick } = parseListUnsubscribe(
+      meta.listUnsubscribe,
+      meta.listUnsubscribePost,
+    );
 
     const message: NewMailMessage = {
       mailboxAccountId,
@@ -452,6 +504,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       internalDate,
       labelIds: meta.labelIds,
       isUnread: meta.labelIds.includes('UNREAD'),
+      isOutbound,
+      recipientEmails: recipientEmails && recipientEmails.length > 0 ? recipientEmails : null,
+      unsubscribeUrl,
+      unsubscribeOneClick,
     };
 
     return {
@@ -463,6 +519,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         domain: emailDomain(email),
         internalDate,
         category: this.toGmailCategory(meta.labelIds),
+        isOutbound,
       },
     };
   }
@@ -492,7 +549,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   /** Fold one stored message into its sender's aggregate. */
   private foldMessage(
     aggregates: Map<string, SenderAggregate>,
-    row: { senderKey: string; internalDate: Date; labelIds: string[]; isUnread: boolean },
+    row: {
+      senderKey: string;
+      internalDate: Date;
+      labelIds: string[];
+      isUnread: boolean;
+      unsubscribeUrl: string | null;
+      unsubscribeOneClick: boolean;
+    },
   ): void {
     let agg = aggregates.get(row.senderKey);
     if (!agg) {
@@ -501,6 +565,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastSeen: row.internalDate,
         categoryCounts: new Map(),
         months: new Map(),
+        unsubscribeUrl: null,
+        unsubscribeOneClick: false,
       };
       aggregates.set(row.senderKey, agg);
     }
@@ -520,6 +586,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       month.readCount += 1;
     }
     agg.months.set(ym, month);
+
+    // Unsubscribe: one-click wins; any URL beats null. Once we've seen
+    // a one-click URL, keep it — don't downgrade to a later mailto.
+    if (row.unsubscribeOneClick && !agg.unsubscribeOneClick) {
+      agg.unsubscribeOneClick = true;
+      agg.unsubscribeUrl = row.unsubscribeUrl;
+    } else if (!agg.unsubscribeOneClick && row.unsubscribeUrl && !agg.unsubscribeUrl) {
+      agg.unsubscribeUrl = row.unsubscribeUrl;
+    }
   }
 
   /**
@@ -555,6 +630,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             internalDate: sql`excluded.internal_date`,
             labelIds: sql`excluded.label_ids`,
             isUnread: sql`excluded.is_unread`,
+            isOutbound: sql`excluded.is_outbound`,
+            recipientEmails: sql`excluded.recipient_emails`,
+            unsubscribeUrl: sql`excluded.unsubscribe_url`,
+            unsubscribeOneClick: sql`excluded.unsubscribe_one_click`,
             updatedAt: sql`now()`,
           },
         });
@@ -612,8 +691,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       });
   }
 
-  /** Final transition — stage `ready`, 100%, sync timestamp set. */
-  private async markReady(mailboxAccountId: string): Promise<void> {
+  /**
+   * Final transition — stage `ready`, 100%, sync timestamp set, AND the
+   * historyId snapshot captured at sync-start persisted to
+   * `last_history_id` so PR-D's incremental sync starts from there.
+   */
+  private async markReady(mailboxAccountId: string, historyId: string): Promise<void> {
+    const lastHistoryId = BigInt(historyId);
     await this.deps.db
       .insert(providerSyncState)
       .values({
@@ -621,6 +705,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         currentStage: 'ready',
         readinessStatus: 'ready',
         progressPct: 100,
+        lastHistoryId,
       })
       .onConflictDoUpdate({
         target: providerSyncState.mailboxAccountId,
@@ -629,11 +714,23 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           readinessStatus: 'ready',
           progressPct: 100,
           errorCode: null,
+          lastHistoryId,
           lastSyncedAt: sql`now()`,
           updatedAt: sql`now()`,
         },
       });
   }
+}
+
+/** Map an aggregate's unsubscribe state to the `gmail_unsubscribe_method` enum. */
+function deriveUnsubscribeMethod(agg: SenderAggregate): UnsubscribeMethod {
+  if (agg.unsubscribeOneClick) {
+    return 'one_click';
+  }
+  if (agg.unsubscribeUrl) {
+    return 'mailto';
+  }
+  return 'none';
 }
 
 /** Facts parsed from one message's `From` header + labels. */
@@ -643,6 +740,8 @@ interface ParsedFacts {
   domain: string;
   internalDate: Date;
   category: GmailCategory;
+  /** True iff `labelIds` includes `SENT` — the user is the From. */
+  isOutbound: boolean;
 }
 
 /** First day of the message's calendar month, `YYYY-MM-01` (UTC). */

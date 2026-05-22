@@ -14,6 +14,10 @@
  * Sourced from `messages.get?format=metadata`. There is deliberately no
  * field for body, MIME, attachments, or `sizeEstimate`: a body cannot be
  * represented by this type, so it cannot leak through this port.
+ *
+ * D7 allowlist amendment (ADR-0004) added `to`, `cc`, `listUnsubscribe`,
+ * and `listUnsubscribePost` — see the schema docs on `mail_messages`
+ * for the per-field rationale.
  */
 export interface GmailMessageMetadata {
   /** Gmail message id. */
@@ -30,6 +34,14 @@ export interface GmailMessageMetadata {
   from: string | null;
   /** Raw `Subject` header value, or `null` if absent. */
   subject: string | null;
+  /** Raw `To` header value, or `null` if absent. Used on outbound (D9 area). */
+  to: string | null;
+  /** Raw `Cc` header value, or `null` if absent. */
+  cc: string | null;
+  /** Raw `List-Unsubscribe` header value, or `null` if absent (D9, RFC 8058). */
+  listUnsubscribe: string | null;
+  /** Raw `List-Unsubscribe-Post` header value, or `null` if absent (RFC 8058). */
+  listUnsubscribePost: string | null;
 }
 
 /** One page of `messages.list`. */
@@ -52,6 +64,13 @@ export interface GmailMetadataClient {
    * `null` when the message no longer exists (deleted between list+get).
    */
   getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null>;
+  /**
+   * Snapshot the mailbox's user-level `historyId` at sync start so the
+   * incremental sync (PR-D) can `history.list?startHistoryId=...` from
+   * that point. Capturing BEFORE the fetch starts means any change
+   * during the fetch is replayed by the first incremental run.
+   */
+  getProfile(): Promise<{ historyId: string }>;
 }
 
 /**

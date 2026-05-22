@@ -107,6 +107,7 @@ describe('migration round-trip', () => {
       'enum:activity_action',
       'enum:activity_source',
       'enum:gmail_category',
+      'enum:gmail_unsubscribe_method',
       'enum:mailbox_provider',
       'enum:mailbox_status',
       'enum:sender_policy_type',
