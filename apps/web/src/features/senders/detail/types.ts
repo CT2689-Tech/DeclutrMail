@@ -24,10 +24,12 @@ export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
 /**
  * Why a sender is protected. Each variant has a different copy in
  * the header tooltip and the recommendation banner.
+ *
+ * VIP is a SEPARATE standing policy (D42, D43) — its own header chip
+ * and its own tooltip — never a protection reason.
  */
 export type ProtectionReason =
   | 'user-marked' // founder toggled Protect on
-  | 'vip' // VIP automatically locks verdict to Keep (D42)
   | 'auto-receipts' // receipts / statements auto-protected (default)
   | 'auto-financial'; // financial-institution sender auto-protected
 

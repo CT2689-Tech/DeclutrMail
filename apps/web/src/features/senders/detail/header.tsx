@@ -32,15 +32,13 @@ export function SenderDetailHeader({
   onToggleProtect: () => void;
 }) {
   const protectTooltip =
-    protectionReason === 'vip'
-      ? 'Auto-protected because this sender is marked VIP.'
-      : protectionReason === 'auto-receipts'
-        ? "Auto-protected — receipts and statements aren't acted on in bulk."
-        : protectionReason === 'auto-financial'
-          ? "Auto-protected — financial-institution sender. Bulk actions won't apply."
-          : isProtected
-            ? 'Protect — never re-suggested. A silent guard against accidental bulk action.'
-            : 'Protect — never re-suggested. A silent guard against accidental bulk action.';
+    protectionReason === 'auto-receipts'
+      ? "Auto-protected — receipts and statements aren't acted on in bulk."
+      : protectionReason === 'auto-financial'
+        ? "Auto-protected — financial-institution sender. Bulk actions won't apply."
+        : isProtected
+          ? 'Protect — never re-suggested. A silent guard against accidental bulk action.'
+          : 'Protect — never re-suggested. A silent guard against accidental bulk action.';
 
   return (
     <header
