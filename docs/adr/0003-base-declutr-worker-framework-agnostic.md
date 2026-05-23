@@ -27,7 +27,7 @@ runtime into a package whose only job is queue-worker logic, and the
 worker runs as its own process (`apps/api/src/worker.ts`), not inside the
 HTTP app.
 
-D203's stated *core principle* is "standardize behavior, do not
+D203's stated _core principle_ is "standardize behavior, do not
 centralize domain knowledge" — realized by an abstract class exposing
 `processJob()` + a named policy + a single failure-capture seam. The
 `extends WorkerHost` detail is an illustration of NestJS integration, not
@@ -63,7 +63,7 @@ preserved in full; only the NestJS coupling is dropped.
 - The worker process is a plain composition root; no NestJS container
   boot, fewer moving parts.
 - Dependency direction stays clean: `apps/api → packages/workers →
-  packages/db`.
+packages/db`.
 
 ### Negative
 
