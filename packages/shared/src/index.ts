@@ -12,6 +12,8 @@ export type { Breakpoint } from './hooks/use-is-at-most';
 export { useLabels } from './hooks/use-labels';
 export type { LabelKey, LabelMode, LabelSet } from './hooks/use-labels';
 export { useFocusTrap } from './hooks/use-focus-trap';
+export { useExpandableRow, nextExpandedRowId } from './hooks/use-expandable-row';
+export type { UseExpandableRowResult } from './hooks/use-expandable-row';
 
 export { Kbd } from './components/kbd';
 export { Eyebrow } from './components/eyebrow';
@@ -32,6 +34,12 @@ export type { ToastTone } from './components/toast';
 
 export { Sidebar } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
+
+// D200 — Zustand client-state scaffold. Server state lives in
+// TanStack Query; client-only ephemeral flags shared across features
+// live here.
+export { useUiStore } from './state/ui-store';
+export type { UiState, UiActions } from './state/ui-store';
 
 // D7 + D228 — privacy copy module. Re-exported so consumers can pull
 // canonical wording without depending on the components subtree.
