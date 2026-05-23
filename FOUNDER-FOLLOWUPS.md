@@ -26,23 +26,158 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-22 — CHORE: resync Drizzle migration journal for 0003
-**Source:** schema-migration-reviewer gate on PR
-`feat/d009-sync-data-capture` (2026-05-22)
-**Why:** `0003_sync_data_capture.sql` + `.rollback` were hand-authored
-(no `drizzle-kit generate` run). `packages/db/migrations/meta/_journal.json`
-+ `meta/0003_snapshot.json` were not updated. `drizzle-kit check`
-still passes against the schema files, but the next contributor who
-runs `drizzle-kit generate` will hit a confusing experience — either a
-duplicate numbering collision or an auto-emitted `0004_*.sql` that
-re-encodes columns this PR already added.
-**How:** Open `chore/db-journal-resync` — run `pnpm --filter
-@declutrmail/db db:generate` with the schema files as they are post-
-PR-#19+#20, compare the emitted SQL against `0003_sync_data_capture.sql`,
-keep my SQL but adopt the auto-generated `meta/0003_snapshot.json` +
-`_journal.json` entry. Run the round-trip test.
-**Verifies by:** `meta/_journal.json` lists `0003`; `meta/0003_snapshot.json`
-exists; round-trip + `drizzle-kit check` both clean.
+### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
+lack `@Throttle()` decorators. Both routes are flag-gated
+(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
+absence is consequential the moment the flag flips on in any public
+environment: an attacker can fan out `/start` (each builds an
+`OAuth2Client` and sets a cookie) or replay `/callback` with random
+codes to harvest error-shape differences.
+**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
+true anywhere. D156 picks the per-feature limit; suggested floor
+`{ limit: 10, ttl: 60_000 }` per IP on both routes.
+**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
+burst test (11 requests/min from one IP) returns 429 on the 11th.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
+single failure-capture point for D159 Sentry wiring. The boot/periodic
+reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
+loop, so its error path (raw `console.error` with
+`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
+`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
+**How:** When the D159 wiring PR lands, either (a) extract a shared
+`captureBackgroundFailure(err, { kind })` helper that both the worker
+base and the reconciler call, or (b) move the periodic reconciler
+inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
+covers it.
+**Verifies by:** A forced reconciler exception (DB unreachable in a
+test env) shows up in Sentry with `kind: reconciler.failed`.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
+**Source:** silent-failure-hunter gate on PR `feat/d009-sync-data-capture`
+**Why:** `apps/api/src/worker.ts` keeps a `limiterByMailbox: Map<id,
+RateLimiter>` for the lifetime of the worker process. The map only
+shrinks on process restart. After D232 ships and mailboxes can be
+deleted, deleted-mailbox limiter entries leak indefinitely. Memory
+creep without an error signal.
+**How:** Wire into the D232 account-deletion job — emit a
+`mailbox.deleted` cross-feature event (D204) the worker subscribes to
+and uses to `limiterByMailbox.delete(id)`. Alternative: LRU cap on
+the map (simpler, but loses sliding-window history when the cap
+forces eviction of a live mailbox).
+**Verifies by:** Delete a mailbox in a test env; the worker's
+process-memory baseline (or a `process.memoryUsage()` exposed metric)
+does not retain its limiter entry.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: DB CHECK constraints for unsubscribe URL scheme invariant
+**Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
+**Why:** `mail_messages.unsubscribe_url` now means "HTTPS URL"
+(post-Codex iter 5 channel split) and `mail_messages.unsubscribe_mailto_url`
+means "mailto URL". The contract is enforced in the worker's parser
+only — a future writer that misses the docstring could insert a
+`mailto:` URL into the HTTPS column. Same risk on
+`senders.unsubscribe_url` (method-aligned scheme).
+**How:** When the next `mail_messages`/`senders` migration ships, add:
+```sql
+ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_url_https
+  CHECK (unsubscribe_url IS NULL OR unsubscribe_url LIKE 'https://%');
+ALTER TABLE mail_messages ADD CONSTRAINT mail_messages_unsubscribe_mailto_scheme
+  CHECK (unsubscribe_mailto_url IS NULL OR unsubscribe_mailto_url LIKE 'mailto:%');
+```
+And on senders: method-vs-url alignment via a multi-column CHECK.
+**Verifies by:** A direct `INSERT mail_messages(...unsubscribe_url='mailto:x')`
+SQL is rejected by the DB; `pnpm db:test` covers the constraint.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: defense-in-depth — inbound `recipient_emails IS NULL` CHECK
+**Source:** privacy-auditor INFO on PR `feat/d009-sync-data-capture`
+**Why:** ADR-0004 commits to `mail_messages.recipient_emails IS NULL`
+when `is_outbound=false` (inbound recipients = the connected mailbox
+itself, no product value, stricter privacy posture). Today the
+invariant lives only in the worker's `toMessageRow()` ternary. A
+future writer that bypasses that path could violate it without
+detection.
+**How:** Next `mail_messages` migration adds
+`CHECK (recipient_emails IS NULL OR is_outbound = true)`. Combine with
+the unsubscribe CHECKs above into one constraints-tightening migration.
+**Verifies by:** `INSERT mail_messages(is_outbound=false,
+recipient_emails=ARRAY['x@y.com'])` is rejected by the DB.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: D150 index inventory audit before launch
+**Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
+**Why:** `mail_messages` now carries 5 indexes — `provider_message_uniq`,
+`account_sender_date_idx`, `account_date_idx`, `account_sender_unread_idx`
+(partial), and the new `account_id_idx` for keyset pagination. Every
+INSERT writes all five plus the PK. D150's launch index budget is
+~12 across the schema; the hottest write table now consumes 5 of
+them. Worth a consolidation pass before partitioning (D235) locks
+the inventory.
+**How:** Pre-launch perf review: `EXPLAIN ANALYZE` the keyset stream
+against `account_date_idx` widened to `(mailbox_account_id,
+internal_date, id)` — if it satisfies both chrono queries AND keyset
+ordering, drop `account_id_idx`. Otherwise keep both, document the
+write-tax trade.
+**Verifies by:** Pre-launch perf review note; index count on
+`mail_messages` either stays at 5 with a rationale doc or drops to 4.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: D235 partition-key decision when triggers fire
+**Source:** schema-migration-reviewer gate on PR `feat/d009-sync-data-capture`
+**Why:** The new `(mailbox_account_id, id)` composite — together with
+the existing `(mailbox_account_id, provider_message_id)` unique
+constraint used for D229 Pub/Sub dedup — entrenches
+`mailbox_account_id` as the partition discriminator. When D235's
+partitioning triggers fire (25M rows OR 2M/mailbox OR p95 > 150ms),
+the partition ADR has to either pick hash-on-`mailbox_account_id` OR
+re-justify the existing indexes against a different key (time-range
+on `internal_date`, for example). The decision is no longer free.
+**How:** Future partitioning ADR explicitly addresses the constraint
+this index inventory imposes. Or shrink the index inventory FIRST
+(see the D150 audit item above) so partition choice is unconstrained.
+**Verifies by:** Partitioning ADR §"alternatives considered"
+explicitly addresses the existing `(mailbox_account_id, …)` index
+family.
+**Status:** Open
+
+### 2026-05-22 — D-CANDIDATE: migrate `GoogleOAuthService.handleCallback` to D205 `AuthSignupOrchestrator`
+**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
+**Why:** `handleCallback` now coordinates four feature concerns inside
+one transaction: token decryption, mailbox upsert, sync-intent write
+(`SyncService.markQueued`), best-effort BullMQ enqueue
+(`SyncService.schedule`). The shape is approaching D205's
+`AuthSignupOrchestrator` scope. Today documented as a deferral
+("Full Idempotency-Key handling is D205's AuthSignupOrchestrator
+scope") with the boundary clean (auth never touches
+`provider_sync_state` directly). When AuthSignupOrchestrator lands,
+this code should migrate.
+**How:** Include the connect-callback migration in the AuthSignupOrchestrator PR
+scope. Move to `apps/api/src/auth/orchestrators/` with an explicit
+`*OrchestratorOptions` type + UnitOfWork wrapper around the existing
+tx.
+**Verifies by:** `GoogleOAuthService.handleCallback` shrinks to ≤20
+lines; the orchestrator owns the four-step sequence.
+**Status:** Open
+
+### 2026-05-22 — CHORE: extract `SyncService.findQueued()` for reconciler
+**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
+**Why:** `reconcileQueuedInitialSyncs` in `apps/api/src/worker.ts`
+reads `provider_sync_state` directly. The worker is a separate
+composition root (no Nest DI) so D204 doesn't formally apply — but
+`SyncModule` claims to own that table, and a future schema change to
+the durable-intent contract could silently drift the reconciler.
+**How:** Extract a tiny `SyncService.findQueued(limit)` helper that
+returns mailbox ids. Both the connect path and the reconciler stay
+on the same query surface.
+**Verifies by:** `grep providerSyncState apps/api/src/worker.ts`
+returns zero hits; reconciler test covers `findQueued`.
 **Status:** Open
 
 ### 2026-05-22 — DISTILL: CLAUDE.md §2.1 storage allowlist amendment (ADR-0004)
