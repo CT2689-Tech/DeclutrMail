@@ -56,19 +56,19 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D2 | Color palette: **Cool/Vercel-style everywhere | 🔵 | #12 |  |  |
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
-| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22 |  |  |
-| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🔵 | #21 |  |  |
-| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26 |  |  |
+| D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🟢 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 |  |
+| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟢 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready |  |
+| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
-| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23 |  |  |
+| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | ⬜ |  |  |  |
-| D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🔵 | #16 |  |  |
+| D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🟢 | #16 | apps/api/src/auth/token-crypto.service.spec.ts (4/4 incl tamper + uniqueness) |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
-| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🔵 | #25 |  |  |
+| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #25 | docs/adr/ has template + 6 ADRs |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | ⬜ |  |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | ⬜ |  |  |  |
@@ -201,17 +201,17 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | ⬜ |  |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | ⬜ |  |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
-| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🔵 | #13 |  |  |
+| D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |
-| D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🔵 | #5 |  |  |
+| D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🟢 | #5 | atlas migrate status OK, 5 executed; drizzle-kit + atlas hybrid |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | ⬜ |  |  |  |
-| D157 | Queue: **BullMQ on Redis (Upstash) | 🔵 | #17 |  |  |
+| D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
 | D159 | Observability stack: **Sentry + PostHog | ⬜ |  |  |  |
-| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🔵 | #7 |  |  |
+| D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | ⬜ |  |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
 | D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
-| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🔵 | #26 |  |  |
+| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) |  |
 | D229 | Pub/Sub OIDC verification contract | ⬜ |  |  |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
