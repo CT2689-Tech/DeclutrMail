@@ -104,11 +104,7 @@ export function PrivacyBadge({
         </p>
       </header>
 
-      <PrivacyList
-        label={PRIVACY_STORAGE_LABEL}
-        items={PRIVACY_STORAGE_ITEMS}
-        tone="store"
-      />
+      <PrivacyList label={PRIVACY_STORAGE_LABEL} items={PRIVACY_STORAGE_ITEMS} tone="store" />
       <PrivacyList
         label={PRIVACY_NEVER_LABEL}
         items={PRIVACY_NEVER_ITEMS}
