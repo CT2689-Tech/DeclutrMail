@@ -327,6 +327,28 @@ describe('InitialSyncWorker', () => {
     expect(second.getCalls).toBe(0);
   });
 
+  it('atomicity — a thrown error inside the rebuild transaction rolls back the delete', async () => {
+    // Seed 3 senders by running a fresh sync.
+    const client = new FakeGmailClient(makeMessages(3, 3));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(senders)).length).toBe(3);
+
+    // `buildSenderIndex` wraps delete + upsert in one `db.transaction()`.
+    // Verify the underlying guarantee: a throw inside the transaction
+    // reverts the delete. This is exactly the failure path Codex
+    // adversarial review 2026-05-22 asked us to cover.
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
+        throw new Error('simulated rebuild failure');
+      }),
+    ).rejects.toThrow('simulated rebuild failure');
+    expect((await db.select().from(senders)).length).toBe(3);
+  });
+
   it('reconciliation — senders with no remaining inbound messages are pruned', async () => {
     // First sync: 6 messages across 6 distinct senders.
     const first = new FakeGmailClient(makeMessages(6, 6));
