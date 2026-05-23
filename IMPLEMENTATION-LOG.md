@@ -90,14 +90,14 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | ⬜ |  |  |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #12 |  |  |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | ⬜ |  |  |  |
-| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | ⬜ |  |  |  |
-| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | ⬜ |  |  |  |
-| D42 | VIP and Protect: **Two distinct standing policies, both visible in header | ⬜ |  |  |  |
-| D43 | VIP and Protect location: **Both as small icons in header, next to sender name | ⬜ |  |  |  |
-| D44 | Stats strip: **5 stats, single reflow row | ⬜ |  |  |  |
-| D45 | Charts: **Volume + open-rate over 12 months, side-by-side | ⬜ |  |  |  |
-| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | ⬜ |  |  |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🔵 | #30 |  |  |
+| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🔵 | #30 |  |  |
+| D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
+| D42 | VIP and Protect: **Two distinct standing policies, both visible in header | 🔵 | #30 |  |  |
+| D43 | VIP and Protect location: **Both as small icons in header, next to sender name | 🔵 | #30 |  |  |
+| D44 | Stats strip: **5 stats, single reflow row | 🔵 | #30 |  |  |
+| D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🔵 | #30 |  |  |
+| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🔵 | #30 |  |  |
 | D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | ⬜ |  |  |  |
 | D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | ⬜ |  |  |  |
 | D49 | Senders default view: **Always grid; table is per-session toggle | ⬜ |  |  |  |
