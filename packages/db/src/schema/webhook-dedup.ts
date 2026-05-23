@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 
 import { mailboxAccounts } from './mailbox-accounts';
 
@@ -41,8 +41,16 @@ import { mailboxAccounts } from './mailbox-accounts';
 export const webhookDedup = pgTable(
   'webhook_dedup',
   {
-    /** Pub/Sub `message.messageId`. PK → atomic dedup via ON CONFLICT. */
-    messageId: text('message_id').primaryKey(),
+    /**
+     * Pub/Sub `message.messageId`. PK → atomic dedup via ON CONFLICT.
+     *
+     * Bounded `varchar(512)` rather than `text` so a pathological
+     * input (corrupted publisher, hostile mirror) can never inflate
+     * the dedup row to multi-KB and bloat the index. Pub/Sub's
+     * documented messageIds are ~16 chars; 512 is a generous ceiling
+     * that still pins the worst case.
+     */
+    messageId: varchar('message_id', { length: 512 }).primaryKey(),
     /** Resolved mailbox (nullable until lookup completes). */
     mailboxAccountId: uuid('mailbox_account_id').references(() => mailboxAccounts.id, {
       onDelete: 'cascade',

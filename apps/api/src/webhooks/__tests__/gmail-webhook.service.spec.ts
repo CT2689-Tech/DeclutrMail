@@ -208,4 +208,19 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(sync[0]!.lastHistoryId).toBe(42n);
     expect(sync[0]!.readinessStatus).toBe('ready');
   });
+
+  it('rejects an oversized messageId at the DB length cap (varchar 512)', async () => {
+    // Pub/Sub messageIds are ~16 chars in practice. The schema caps
+    // the column at varchar(512) so a pathological publisher (or a
+    // hostile mirror) cannot inflate the PK index with multi-KB rows.
+    await seedMailbox(db, 'alice@example.com', 1000n);
+    const oversized = 'x'.repeat(513);
+
+    await expect(
+      service.processVerifiedPush({
+        messageId: oversized,
+        payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+      }),
+    ).rejects.toThrow(/value too long|length|varying\(512\)/i);
+  });
 });

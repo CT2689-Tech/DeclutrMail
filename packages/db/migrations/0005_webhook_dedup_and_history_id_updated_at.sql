@@ -33,7 +33,11 @@
 -- until the next webhook advances the cursor.
 
 CREATE TABLE "webhook_dedup" (
-  "message_id" text PRIMARY KEY,
+  -- varchar(512) (not text): Pub/Sub messageIds are ~16 chars in
+  -- practice; the bounded cap prevents a malformed publisher from
+  -- inflating PK-index rows to multi-KB. 512 is a generous ceiling
+  -- that still pins the worst case.
+  "message_id" varchar(512) PRIMARY KEY,
   "mailbox_account_id" uuid REFERENCES "mailbox_accounts"("id") ON DELETE CASCADE,
   "received_at" timestamp with time zone DEFAULT now() NOT NULL,
   "expires_at" timestamp with time zone NOT NULL
