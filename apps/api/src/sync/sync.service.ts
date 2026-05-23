@@ -54,8 +54,22 @@ export class SyncService {
       }
     }
 
-    // Write the `queued` row so the onboarding gate (D224) has a
-    // state to read before the worker picks the job up.
+    // Add the BullMQ job BEFORE touching `provider_sync_state` (Codex
+    // adversarial review 2026-05-22). If `add()` throws (Redis down /
+    // BullMQ misbehaving), the DB state stays at whatever it was — the
+    // mailbox never advertises `queued` without a runnable job to back
+    // it. If the remove-then-add window crashed between the two Redis
+    // calls, the next reconnect's `getJob` returns null and just adds
+    // cleanly — no permanent stranding.
+    await this.queue.add(
+      INITIAL_SYNC_JOB,
+      { mailboxAccountId },
+      initialSyncJobOptions(mailboxAccountId),
+    );
+
+    // Job is queued. Now write the gate-visible `queued` state. If this
+    // DB write fails, the worker's first stage upserts the state itself
+    // (`upsertSyncState`) — never blocks the sync.
     await this.db
       .insert(providerSyncState)
       .values({
@@ -74,11 +88,5 @@ export class SyncService {
           updatedAt: sql`now()`,
         },
       });
-
-    await this.queue.add(
-      INITIAL_SYNC_JOB,
-      { mailboxAccountId },
-      initialSyncJobOptions(mailboxAccountId),
-    );
   }
 }

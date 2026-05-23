@@ -387,39 +387,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       this.foldMessage(aggregates, row);
     }
 
-    // Reconcile deletions on the derived tables (Codex review
-    // 2026-05-22). When `fetchAndStoreMetadata` removes a stored message,
-    // its sender's aggregate shrinks; once a sender has zero inbound
-    // messages, the senders / sender_timeseries rows must go too — else
-    // the Senders screen would show ghost rows with stale aggregates.
+    // Build the rebuild payload purely in-memory FIRST — no DB writes
+    // yet (Codex adversarial review 2026-05-22 — atomicity). Computing
+    // before opening the transaction keeps the transaction window
+    // small and lets us throw cleanly on a partial state.
     const survivingKeys = [...aggregates.keys()];
-    if (survivingKeys.length === 0) {
-      // No inbound mail at all — clear every sender + timeseries row.
-      await this.deps.db
-        .delete(senders)
-        .where(eq(senders.mailboxAccountId, mailboxAccountId));
-      await this.deps.db
-        .delete(senderTimeseries)
-        .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
-    } else {
-      await this.deps.db
-        .delete(senders)
-        .where(
-          and(
-            eq(senders.mailboxAccountId, mailboxAccountId),
-            notInArray(senders.senderKey, survivingKeys),
-          ),
-        );
-      await this.deps.db
-        .delete(senderTimeseries)
-        .where(
-          and(
-            eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
-            notInArray(senderTimeseries.senderKey, survivingKeys),
-          ),
-        );
-    }
-
     const senderRows: NewSender[] = [];
     const timeseriesRows: NewSenderTimeseries[] = [];
     let orphans = 0;
@@ -456,39 +428,72 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     }
 
-    for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
-      await this.deps.db
-        .insert(senders)
-        .values(senderRows.slice(i, i + UPSERT_BATCH))
-        .onConflictDoUpdate({
-          target: [senders.mailboxAccountId, senders.senderKey],
-          set: {
-            gmailCategory: sql`excluded.gmail_category`,
-            firstSeenAt: sql`excluded.first_seen_at`,
-            lastSeenAt: sql`excluded.last_seen_at`,
-            unsubscribeMethod: sql`excluded.unsubscribe_method`,
-            unsubscribeUrl: sql`excluded.unsubscribe_url`,
-            updatedAt: sql`now()`,
-          },
-        });
-    }
+    // Atomic delete + upsert (Codex review 2026-05-22). PG rolls the
+    // delete back if any upsert throws — a mid-stage failure leaves
+    // the last known-good `senders` / `sender_timeseries` intact rather
+    // than committing a partial teardown.
+    await this.deps.db.transaction(async (tx) => {
+      // Reconcile: drop derived rows for sender_keys with no remaining
+      // inbound messages.
+      if (survivingKeys.length === 0) {
+        await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
+        await tx
+          .delete(senderTimeseries)
+          .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
+      } else {
+        await tx
+          .delete(senders)
+          .where(
+            and(
+              eq(senders.mailboxAccountId, mailboxAccountId),
+              notInArray(senders.senderKey, survivingKeys),
+            ),
+          );
+        await tx
+          .delete(senderTimeseries)
+          .where(
+            and(
+              eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
+              notInArray(senderTimeseries.senderKey, survivingKeys),
+            ),
+          );
+      }
 
-    for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
-      await this.deps.db
-        .insert(senderTimeseries)
-        .values(timeseriesRows.slice(i, i + UPSERT_BATCH))
-        .onConflictDoUpdate({
-          target: [
-            senderTimeseries.mailboxAccountId,
-            senderTimeseries.senderKey,
-            senderTimeseries.yearMonth,
-          ],
-          set: {
-            volume: sql`excluded.volume`,
-            readCount: sql`excluded.read_count`,
-          },
-        });
-    }
+      // Rebuild: upsert the fresh aggregates.
+      for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
+        await tx
+          .insert(senders)
+          .values(senderRows.slice(i, i + UPSERT_BATCH))
+          .onConflictDoUpdate({
+            target: [senders.mailboxAccountId, senders.senderKey],
+            set: {
+              gmailCategory: sql`excluded.gmail_category`,
+              firstSeenAt: sql`excluded.first_seen_at`,
+              lastSeenAt: sql`excluded.last_seen_at`,
+              unsubscribeMethod: sql`excluded.unsubscribe_method`,
+              unsubscribeUrl: sql`excluded.unsubscribe_url`,
+              updatedAt: sql`now()`,
+            },
+          });
+      }
+
+      for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
+        await tx
+          .insert(senderTimeseries)
+          .values(timeseriesRows.slice(i, i + UPSERT_BATCH))
+          .onConflictDoUpdate({
+            target: [
+              senderTimeseries.mailboxAccountId,
+              senderTimeseries.senderKey,
+              senderTimeseries.yearMonth,
+            ],
+            set: {
+              volume: sql`excluded.volume`,
+              readCount: sql`excluded.read_count`,
+            },
+          });
+      }
+    });
 
     if (orphans > 0) {
       // Should be 0 after a complete run — surfaced, never swallowed.
