@@ -74,6 +74,40 @@ silently emptying the tray; a successful revert in one tab updates the
 tray in another via TanStack's stale-time invalidation.
 **Status:** Open
 
+### 2026-05-23 — Resume WT-A Triage screen (D29–D35, D207, D208, D226)
+**Source:** overnight 8-hr autonomous run — background agent hit session limit before commit
+**Why:** PR 5 (per D187) is the Triage feature slice — the critical-path
+feature gating the rest of the product surface. The WT-A agent shipped
+~50% (6 quality files, 1058 LoC) before being killed by the API session
+limit (resets 2:20am PT).
+**State on disk:** worktree `.claude/worktrees/agent-a1b6fdeaf8e452bce`,
+branch `feat/d207-triage-screen` (local-only, not pushed). Files
+present:
+  - `apps/web/src/features/triage/data.ts` (386 LoC — fixtures + types)
+  - `apps/web/src/features/triage/store.ts` (68 LoC — Zustand store: undo tokens + skipSheet pref per D34)
+  - `apps/web/src/features/triage/use-triage-actions.ts` (81 LoC — verdict mutation hook)
+  - `apps/web/src/features/triage/use-triage-queue.ts` (59 LoC — TanStack queue hook, mocked)
+  - `apps/web/src/features/triage/action-sheet.tsx` (242 LoC — D34 modal + remember-pref toggle)
+  - `apps/web/src/features/triage/action-preview.tsx` (222 LoC — D226 MANDATORY preview)
+**Still missing for a complete PR:**
+  1. `apps/web/src/features/triage/triage-page.tsx` orchestrator (~150 LoC) — loading / empty / error / queue states; wires the 6 existing files
+  2. `apps/web/src/features/triage/triage-queue-card.tsx` (~150 LoC) — single sender card; uses `useExpandableRow` from foundation; K/A/U/L toolbar; confidence-emphasis at >0.85 (D31)
+  3. `apps/web/src/features/triage/empty-state.tsx` (~50 LoC) — D33 stats + tomorrow CTA + upgrade nudge
+  4. `apps/web/src/features/triage/undo-tray.tsx` (~80 LoC) — D35 persistent tray with countdown
+  5. `apps/web/src/app/(app)/triage/page.tsx` route (~10 LoC)
+  6. Storybook stories per component (~200 LoC; D210)
+  7. `zustand` package add to `apps/web/package.json` (typecheck currently fails because feature imports zustand directly; foundation only added it to `packages/shared`)
+  8. Mobile reflow proof at 380px (LEARNINGS 2026-05-19)
+**How:** Either (a) re-launch a background agent post-session-reset with
+prompt focused only on the remaining 7 items, or (b) finish manually in
+~30–60 min next session. Base branch for the PR remains
+`feat/d198-d200-frontend-foundation` (PR #29, stacked).
+**Verifies by:** PR opened with title
+`feat(triage): Triage screen + action lifecycle (D29-D37, D207, D208, D226)`,
+all gates green, Storybook story count ≥ 8, `Closes D29` through `D226`
+in body, no "Screen" UI strings, no body-field references.
+**Status:** Open
+
 ### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
 **Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
 **Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
