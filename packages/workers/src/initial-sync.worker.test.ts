@@ -15,13 +15,14 @@ import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
- * InitialSyncWorker integration tests (D5, D157, D224).
+ * InitialSyncWorker integration tests (D5, D157, D224, D9, ADR-0004).
  *
  * Runs the real worker against an in-process PGlite database (the schema
  * applied from `packages/db/migrations`) and a fake Gmail client. Covers
- * the resume + aggregation rework that the sync-hardening PR introduced —
- * the logic whose absence let the >3,000-message bug ship (MISTAKES.md
- * 2026-05-22): "Test workers against data above the per-window limit."
+ * resume + aggregation (the sync-hardening PR) AND outbound exclusion +
+ * unsubscribe capture + historyId snapshot (the data-capture PR per
+ * ADR-0004) — the logic whose earlier absence is recorded in
+ * MISTAKES.md 2026-05-22.
  */
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations');
@@ -78,6 +79,10 @@ function makeMessages(count: number, senderCount: number): GmailMessageMetadata[
     internalDate: String(base + i * 86_400_000),
     from: `Sender ${i % senderCount} <sender${i % senderCount}@example.com>`,
     subject: `Subject ${i}`,
+    to: null,
+    cc: null,
+    listUnsubscribe: null,
+    listUnsubscribePost: null,
   }));
 }
 
@@ -85,9 +90,13 @@ function makeMessages(count: number, senderCount: number): GmailMessageMetadata[
 class FakeGmailClient {
   listCalls = 0;
   getCalls = 0;
+  profileCalls = 0;
   private readonly pageSize = 25;
 
-  constructor(private readonly messages: GmailMessageMetadata[]) {}
+  constructor(
+    private readonly messages: GmailMessageMetadata[],
+    private readonly historyId = '987654',
+  ) {}
 
   async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
     this.listCalls += 1;
@@ -100,6 +109,11 @@ class FakeGmailClient {
   async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
     this.getCalls += 1;
     return this.messages.find((m) => m.id === messageId) ?? null;
+  }
+
+  async getProfile(): Promise<{ historyId: string }> {
+    this.profileCalls += 1;
+    return { historyId: this.historyId };
   }
 }
 
@@ -147,14 +161,12 @@ describe('InitialSyncWorker', () => {
   });
 
   it('resume — a second run re-fetches only the messages not already stored', async () => {
-    // First run stores 30.
     const first = new FakeGmailClient(makeMessages(30, 6));
     await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
       { mailboxAccountId },
       CTX,
     );
 
-    // Second run sees the same 30 plus 15 new ones.
     const second = new FakeGmailClient(makeMessages(45, 6));
     const result = await new InitialSyncWorker({
       db,
@@ -167,8 +179,6 @@ describe('InitialSyncWorker', () => {
   });
 
   it('orphan heal — a stored message lacking sender identity is re-fetched, not dropped', async () => {
-    // Simulate pre-hardening data: a mail_messages row whose sender has
-    // no `senders` identity row (the bug condition).
     const orphanMsg = makeMessages(1, 1)[0]!;
     orphanMsg.id = 'orphan-msg';
     orphanMsg.from = 'Orphan <orphan@example.com>';
@@ -181,7 +191,6 @@ describe('InitialSyncWorker', () => {
       isUnread: false,
     });
 
-    // The mailbox lists the orphan message + 10 fresh ones.
     const fresh = makeMessages(10, 3);
     const client = new FakeGmailClient([orphanMsg, ...fresh]);
     const result = await new InitialSyncWorker({
@@ -189,16 +198,296 @@ describe('InitialSyncWorker', () => {
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId }, CTX);
 
-    // The orphan was re-fetched (not skipped) so its identity is recovered.
     expect(client.getCalls).toBe(11);
     const senderRows = await db.select().from(senders);
     expect(senderRows.some((s) => s.senderKey === deriveSenderKey('orphan@example.com'))).toBe(
       true,
     );
-    // Every stored message's sender now has an identity row — 0 orphans.
     const messageRows = await db.select().from(mailMessages);
     const senderKeys = new Set(senderRows.map((s) => s.senderKey));
     expect(messageRows.every((m) => senderKeys.has(m.senderKey))).toBe(true);
     expect(result.messagesSynced).toBe(11);
+  });
+
+  it('outbound exclusion — SENT messages land in mail_messages but never index a sender', async () => {
+    // 5 inbound messages (3 distinct senders) + 4 outbound (user → 4 recipients).
+    const inbound = makeMessages(5, 3);
+    const outbound: GmailMessageMetadata[] = Array.from({ length: 4 }, (_, i) => ({
+      id: `sent-${i}`,
+      threadId: `thread-sent-${i}`,
+      labelIds: ['SENT', 'INBOX'], // INBOX too — Gmail allows multi-label
+      snippet: `sent snippet ${i}`,
+      internalDate: String(Date.UTC(2026, 1, 1) + i * 86_400_000),
+      from: 'Owner <owner@declutrmail.ai>',
+      subject: `Sent subject ${i}`,
+      to: `Recipient ${i} <recipient${i}@example.com>`,
+      cc: i === 0 ? '"Carbon Copy" <cc@example.com>' : null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    }));
+    const client = new FakeGmailClient([...inbound, ...outbound]);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    // All 9 messages stored.
+    const allMessages = await db.select().from(mailMessages);
+    expect(allMessages.length).toBe(9);
+
+    // Only inbound creates senders (3 inbound senders; the user's own
+    // address is NOT in senders).
+    const senderRows = await db.select().from(senders);
+    expect(senderRows.length).toBe(3);
+    expect(senderRows.some((s) => s.email === 'owner@declutrmail.ai')).toBe(false);
+
+    // Outbound rows tagged + carry recipients.
+    const outboundRows = allMessages.filter((m) => m.isOutbound);
+    expect(outboundRows.length).toBe(4);
+    expect(outboundRows.every((m) => m.recipientEmails && m.recipientEmails.length > 0)).toBe(true);
+    const ccRow = outboundRows.find((m) => m.providerMessageId === 'sent-0');
+    expect(ccRow!.recipientEmails).toEqual(
+      expect.arrayContaining(['recipient0@example.com', 'cc@example.com']),
+    );
+  });
+
+  it('historyId — snapshot is persisted to provider_sync_state.last_history_id', async () => {
+    const client = new FakeGmailClient(makeMessages(5, 2), '424242');
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect(client.profileCalls).toBe(1);
+    const [state] = await db
+      .select()
+      .from(schema.providerSyncState)
+      .where(eq(schema.providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastHistoryId).toBe(424242n);
+  });
+
+  it('unsubscribe — RFC 8058 one-click sets senders.unsubscribe_method = one_click', async () => {
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/unsub>, <mailto:unsub@example.com>';
+    m[0]!.listUnsubscribePost = 'List-Unsubscribe=One-Click';
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('one_click');
+    expect(sender!.unsubscribeUrl).toBe('https://example.com/unsub');
+  });
+
+  it('unsubscribe — mailto-only header sets unsubscribe_method = mailto', async () => {
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<mailto:unsub@example.com>';
+    // No List-Unsubscribe-Post → not one-click capable.
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('mailto');
+    expect(sender!.unsubscribeUrl).toBe('mailto:unsub@example.com');
+  });
+
+  it('unsubscribe — no header at all sets unsubscribe_method = none', async () => {
+    const client = new FakeGmailClient(makeMessages(3, 1));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('none');
+    expect(sender!.unsubscribeUrl).toBeNull();
+  });
+
+  it('unsubscribe — plain HTTPS (no one-click, no mailto) is NOT classified as mailto (Codex iter 5)', async () => {
+    // The iter 5 bug: a `List-Unsubscribe: <https://...>` header
+    // without `List-Unsubscribe-Post: List-Unsubscribe=One-Click` was
+    // previously persisted as `unsubscribe_method='mailto'` with an
+    // `https://` URL — a scheme/method mismatch. Option B: surface no
+    // actionable method until the product supports HTTPS-link
+    // unsubscribe (D230 keeps mailto manual at launch; HTTPS-link
+    // executor is its own PR).
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/unsub>';
+    m[0]!.listUnsubscribePost = null;
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('none');
+    expect(sender!.unsubscribeUrl).toBeNull();
+    // The per-message HTTPS URL is still captured for the future
+    // executor PR — no re-sync needed when it lands. Select msg-0
+    // explicitly (storage order across rows isn't guaranteed).
+    const msgRows = await db.select().from(mailMessages);
+    const msg = msgRows.find((r) => r.providerMessageId === 'msg-0');
+    expect(msg!.unsubscribeUrl).toBe('https://example.com/unsub');
+    expect(msg!.unsubscribeMailtoUrl).toBeNull();
+    expect(msg!.unsubscribeOneClick).toBe(false);
+  });
+
+  it('unsubscribe — HTTPS + mailto without one-click prefers mailto at sender level', async () => {
+    // Both channels present but no RFC 8058 post header → sender's
+    // actionable method is `mailto` (D230 — mailto unsubscribe at
+    // launch). HTTPS still captured per message for the future
+    // executor.
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/unsub>, <mailto:unsub@example.com>';
+    m[0]!.listUnsubscribePost = null;
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('mailto');
+    expect(sender!.unsubscribeUrl).toBe('mailto:unsub@example.com');
+    const msgRows = await db.select().from(mailMessages);
+    const msg = msgRows.find((r) => r.providerMessageId === 'msg-0');
+    expect(msg!.unsubscribeUrl).toBe('https://example.com/unsub');
+    expect(msg!.unsubscribeMailtoUrl).toBe('mailto:unsub@example.com');
+  });
+
+  it('reconciliation — stored messages no longer in Gmail are deleted', async () => {
+    // First sync stores 10 messages from 5 senders.
+    const first = new FakeGmailClient(makeMessages(10, 5));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(mailMessages)).length).toBe(10);
+
+    // Second sync sees only 7 of the 10 (3 deleted from Gmail).
+    const second = new FakeGmailClient(makeMessages(10, 5).slice(0, 7));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    // The 3 deleted-from-Gmail rows are reconciled out of mail_messages.
+    const remaining = await db.select().from(mailMessages);
+    expect(remaining.length).toBe(7);
+    expect(remaining.every((m) => Number(m.providerMessageId.split('-')[1]) < 7)).toBe(true);
+    // No re-fetches of the 7 survivors (resume cursor still works).
+    expect(second.getCalls).toBe(0);
+  });
+
+  it('atomicity — a thrown error inside the rebuild transaction rolls back the delete', async () => {
+    // Seed 3 senders by running a fresh sync.
+    const client = new FakeGmailClient(makeMessages(3, 3));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(senders)).length).toBe(3);
+
+    // `buildSenderIndex` wraps delete + upsert in one `db.transaction()`.
+    // Verify the underlying guarantee: a throw inside the transaction
+    // reverts the delete. This is exactly the failure path Codex
+    // adversarial review 2026-05-22 asked us to cover.
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
+        throw new Error('simulated rebuild failure');
+      }),
+    ).rejects.toThrow('simulated rebuild failure');
+    expect((await db.select().from(senders)).length).toBe(3);
+  });
+
+  it('reconciliation — stale sender_timeseries months are removed for surviving senders', async () => {
+    // Codex iter 3 regression: surviving sender loses a month's worth of
+    // messages → that (senderKey, yearMonth) row must be deleted from
+    // sender_timeseries. Previously the selective NOT-IN delete only
+    // removed rows for non-surviving senders, leaving stale months for
+    // survivors → permanently inflated historical volume/read counts.
+    const month1 = (id: string, day: number): GmailMessageMetadata => ({
+      id,
+      threadId: `t-${id}`,
+      labelIds: ['INBOX'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 0, day)), // January 2026
+      from: 'A <a@example.com>',
+      subject: 's',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+    const month2 = (id: string, day: number): GmailMessageMetadata => ({
+      id,
+      threadId: `t-${id}`,
+      labelIds: ['INBOX'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 1, day)), // February 2026
+      from: 'A <a@example.com>',
+      subject: 's',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+
+    // First sync: 2 messages in Jan + 2 in Feb for the same sender.
+    const first = new FakeGmailClient([
+      month1('jan-1', 5),
+      month1('jan-2', 10),
+      month2('feb-1', 5),
+      month2('feb-2', 10),
+    ]);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const tsBefore = await db.select().from(schema.senderTimeseries);
+    expect(tsBefore.length).toBe(2);
+    expect(tsBefore.map((r) => r.yearMonth).sort()).toEqual(['2026-01-01', '2026-02-01']);
+
+    // Second sync: only Jan survives. The sender survives but loses Feb.
+    // The Feb row must be deleted; otherwise the sender's lifetime volume
+    // would forever count messages Gmail no longer has.
+    const second = new FakeGmailClient([month1('jan-1', 5), month1('jan-2', 10)]);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const tsAfter = await db.select().from(schema.senderTimeseries);
+    expect(tsAfter.length).toBe(1);
+    expect(tsAfter[0]!.yearMonth).toBe('2026-01-01');
+    expect(tsAfter[0]!.volume).toBe(2);
+  });
+
+  it('reconciliation — senders with no remaining inbound messages are pruned', async () => {
+    // First sync: 6 messages across 6 distinct senders.
+    const first = new FakeGmailClient(makeMessages(6, 6));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(senders)).length).toBe(6);
+
+    // Second sync: only the first 4 messages survive in Gmail → senders
+    // 4 and 5 lose their only message → their senders + sender_timeseries
+    // rows must be pruned.
+    const second = new FakeGmailClient(makeMessages(6, 6).slice(0, 4));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const senderRows = await db.select().from(senders);
+    expect(senderRows.length).toBe(4);
+    const survivingEmails = new Set(senderRows.map((s) => s.email));
+    expect(survivingEmails.has('sender4@example.com')).toBe(false);
+    expect(survivingEmails.has('sender5@example.com')).toBe(false);
+
+    const timeseriesRows = await db.select().from(schema.senderTimeseries);
+    expect(timeseriesRows.every((t) => senderRows.some((s) => s.senderKey === t.senderKey))).toBe(
+      true,
+    );
   });
 });

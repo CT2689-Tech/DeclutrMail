@@ -13,6 +13,7 @@ export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
   createRedisConnection,
+  ensureInitialSyncJob,
   INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
   initialSyncJobOptions,
@@ -26,6 +27,7 @@ export type {
 } from './ports.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
+export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';

@@ -2,10 +2,18 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
-import { INITIAL_SYNC_JOB, initialSyncJobOptions } from '@declutrmail/workers';
+import { ensureInitialSyncJob } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+
+/**
+ * The Drizzle executor a `markQueued` call accepts — either the
+ * top-level DB connection or a transaction-bound client. Same insert
+ * surface; using a type alias instead of structural duck-typing keeps
+ * callers honest.
+ */
+type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
 /** NestJS DI token for the initial-sync BullMQ queue (D157). */
 export const INITIAL_SYNC_QUEUE_TOKEN = 'INITIAL_SYNC_QUEUE';
@@ -26,15 +34,22 @@ export class SyncService {
   ) {}
 
   /**
-   * Mark a mailbox `queued` and enqueue its full-mailbox backfill (D157,
-   * D224). Idempotent: the `provider_sync_state` row is upserted and the
-   * job uses `jobId = mailboxAccountId`, so a duplicate connect cannot
-   * start a second concurrent backfill.
+   * Write the durable `queued` sync intent for one mailbox (D157, D224).
+   *
+   * Codex iter 5/6 contract:
+   *
+   *   `provider_sync_state.readiness_status = 'queued'` IS the durable
+   *   sync intent. BullMQ is the execution cache.
+   *
+   * Accepts a `DrizzleExecutor` (top-level db OR a transaction client)
+   * so callers can include this write in the SAME transaction as a
+   * mailbox upsert — connect MUST be atomic across "mailbox persisted"
+   * and "sync intent recorded" (Codex iter 6 high finding). The OAuth
+   * refresh token is single-use; a mailbox row without a durable sync
+   * intent would strand the user (no row for the reconciler to find).
    */
-  async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
-    // Write the `queued` row first so the onboarding gate (D224) has a
-    // state to read before the worker picks the job up.
-    await this.db
+  async markQueued(executor: DrizzleExecutor, mailboxAccountId: string): Promise<void> {
+    await executor
       .insert(providerSyncState)
       .values({
         mailboxAccountId,
@@ -52,11 +67,38 @@ export class SyncService {
           updatedAt: sql`now()`,
         },
       });
+  }
 
-    await this.queue.add(
-      INITIAL_SYNC_JOB,
-      { mailboxAccountId },
-      initialSyncJobOptions(mailboxAccountId),
-    );
+  /**
+   * Best-effort BullMQ enqueue (D157). Delegates to
+   * `ensureInitialSyncJob` — the SINGLE scheduling implementation
+   * shared with the worker's periodic reconciler. Failure here MUST
+   * NOT propagate: the durable intent row is the safety net, and the
+   * reconciler will materialize the missing job on its next tick.
+   */
+  async schedule(mailboxAccountId: string): Promise<void> {
+    try {
+      await ensureInitialSyncJob(this.queue, mailboxAccountId);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sync.enqueue_failed',
+          mailboxAccountId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Composite — non-tx callers that have already committed (or never
+   * needed to combine writes) get the full "mark + schedule" in one
+   * call. The reconciler uses `schedule` directly because it works
+   * from already-committed `queued` rows.
+   */
+  async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
+    await this.markQueued(this.db, mailboxAccountId);
+    await this.schedule(mailboxAccountId);
   }
 }

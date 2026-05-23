@@ -1,9 +1,10 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 import { ValidationError } from './worker-errors.js';
@@ -38,6 +39,13 @@ const CATEGORY_ORDER: readonly GmailCategory[] = [
 const FETCH_CONCURRENCY = 20;
 /** Rows per upsert batch. */
 const UPSERT_BATCH = 500;
+/**
+ * Rows per streaming SELECT page (Codex iter 4 — bounded-memory
+ * pagination for 50k–250k+ mailbox targets). Keyset pagination over
+ * `mail_messages.id` (PG sort + indexed seek) avoids the OFFSET
+ * full-scan penalty.
+ */
+const SCAN_PAGE = 1000;
 
 /** Dependencies the worker needs — injected by the composition root. */
 export interface InitialSyncDeps {
@@ -70,13 +78,31 @@ export interface InitialSyncResult {
   stageTimings: Record<string, number>;
 }
 
-/** Per-sender aggregate folded from the persisted `mail_messages` rows. */
+/** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
+type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
+
+/**
+ * Per-sender aggregate folded from the persisted `mail_messages` rows.
+ *
+ * `httpsUrl` / `mailtoUrl` track the unsubscribe channels SEPARATELY so
+ * the sender's `unsubscribe_method` + `unsubscribe_url` always agree on
+ * scheme (Codex iter 5 fix, 2026-05-22). The prior single-`url` shape
+ * collapsed them and let a plain-HTTPS message be persisted as
+ * `method='mailto'` with an `https://` URL — Option B from the iter 5
+ * fix prompt: never surface that mismatch.
+ */
 interface SenderAggregate {
   firstSeen: Date;
   lastSeen: Date;
   categoryCounts: Map<GmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
+  /** First HTTPS unsubscribe URL seen for this sender, or null. */
+  httpsUrl: string | null;
+  /** First mailto unsubscribe URL seen for this sender, or null. */
+  mailtoUrl: string | null;
+  /** True iff any message supports RFC 8058 one-click (needs HTTPS). */
+  hasOneClick: boolean;
 }
 
 /**
@@ -139,10 +165,19 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Stage 1 — fetching_metadata (resumable).
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
-    const { messagesSynced, gmailApiCalls } = await this.fetchAndStoreMetadata(
+
+    // Snapshot the user-level historyId BEFORE the fetch (D5 — PR-D
+    // incremental sync starts from here). Snapshotting BEFORE the fetch
+    // means any change during the fetch is replayed by the first
+    // incremental run — upserts are idempotent so re-processing is safe.
+    const profile = await client.getProfile();
+    const snapshotHistoryId = profile.historyId;
+
+    const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
       mailboxAccountId,
       client,
     );
+    const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
     // Stage 2 — building_sender_index (aggregates from mail_messages).
@@ -161,8 +196,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     await this.upsertSyncState(mailboxAccountId, 'finalizing', 97, 'syncing');
     lap('finalizing');
 
-    // Stage 5 — ready.
-    await this.markReady(mailboxAccountId);
+    // Stage 5 — ready. Persist the historyId snapshot so PR-D's
+    // incremental sync can `history.list?startHistoryId=...` from here.
+    await this.markReady(mailboxAccountId, snapshotHistoryId);
 
     return {
       messagesSynced,
@@ -207,10 +243,24 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * Stage 1 — list every message id, fetch metadata for the ones not
-   * already stored (`format=metadata`), and upsert `mail_messages` +
-   * `senders` identity. Skipping already-stored ids is the resume
-   * mechanism — a retry never re-fetches.
+   * Stage 1 — list every message id, reconcile deletions, fetch
+   * metadata for ids not already stored (`format=metadata`), and upsert
+   * `mail_messages` + `senders` identity.
+   *
+   * Two correctness properties:
+   *
+   *   1. RESUME — skipping already-stored ids means a retry never
+   *      re-fetches (no re-burning of quota).
+   *   2. RECONCILE (Codex review 2026-05-22) — Gmail's id set is
+   *      authoritative; any stored id NOT in it has been deleted or
+   *      moved to SPAM/TRASH and gets removed from `mail_messages`. Sender
+   *      aggregates would otherwise drift permanently from the mailbox.
+   *
+   * Memory profile (Codex iter 4): the only mailbox-sized structures
+   * held simultaneously are `gmailIdSet` and `skipSet` (string sets,
+   * ~12-25 MB at 250k). The stored-row scan and metadata fetch both
+   * stream in bounded batches — no whole-mailbox row array is
+   * materialised at any point.
    */
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
@@ -218,23 +268,80 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   ): Promise<{ messagesSynced: number; gmailApiCalls: number }> {
     let gmailApiCalls = 0;
 
-    // List every id so `total` is known → real progress_pct.
-    const ids: string[] = [];
+    // 1. List every Gmail id. Keep both an ordered array (for the
+    //    oldest→newest fetch order locked by fork #5) AND a Set (for
+    //    O(1) reconciliation `has` lookups). Two views of the same
+    //    list — at 250k mailboxes this is ~25 MB total, well below
+    //    the heap budget and bounded.
+    const orderedIds: string[] = [];
+    const gmailIdSet = new Set<string>();
     let pageToken: string | undefined;
     do {
       const page = await client.listMessageIds(pageToken);
       gmailApiCalls += 1;
-      ids.push(...page.ids);
+      for (const id of page.ids) {
+        orderedIds.push(id);
+        gmailIdSet.add(id);
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
-    ids.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
-    const total = ids.length;
+    orderedIds.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
+    const total = orderedIds.length;
 
-    // Resume: skip ids already mirrored by an earlier attempt.
-    const stored = await this.loadStoredMessageIds(mailboxAccountId);
-    const toFetch = ids.filter((id) => !stored.has(id));
-    let processed = stored.size; // already-done count drives progress.
+    // 2. Sender identity set (small — thousands).
+    const senderIdentityRows = await this.deps.db
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    const withIdentity = new Set(senderIdentityRows.map((r) => r.senderKey));
 
+    // 3. Stream `mail_messages` in keyset-paginated pages, reconciling
+    //    deletions + building the resume cursor as we go. Bounded
+    //    memory: one page (~1k rows) + a deletion buffer.
+    const skipSet = new Set<string>();
+    let toDeleteBuffer: string[] = [];
+    let lastId: string | null = null;
+    for (;;) {
+      const page = await this.deps.db
+        .select({
+          id: mailMessages.id,
+          providerMessageId: mailMessages.providerMessageId,
+          senderKey: mailMessages.senderKey,
+          isOutbound: mailMessages.isOutbound,
+        })
+        .from(mailMessages)
+        .where(
+          lastId === null
+            ? eq(mailMessages.mailboxAccountId, mailboxAccountId)
+            : and(eq(mailMessages.mailboxAccountId, mailboxAccountId), gt(mailMessages.id, lastId)),
+        )
+        .orderBy(mailMessages.id)
+        .limit(SCAN_PAGE);
+      if (page.length === 0) {
+        break;
+      }
+      for (const m of page) {
+        if (!gmailIdSet.has(m.providerMessageId)) {
+          toDeleteBuffer.push(m.providerMessageId);
+          if (toDeleteBuffer.length >= UPSERT_BATCH) {
+            await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
+            toDeleteBuffer = [];
+          }
+        } else if (m.isOutbound || withIdentity.has(m.senderKey)) {
+          skipSet.add(m.providerMessageId);
+        }
+      }
+      lastId = page[page.length - 1]!.id;
+    }
+    if (toDeleteBuffer.length > 0) {
+      await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
+    }
+
+    // 4. Fetch metadata for ids not in the skip set. Iterate `gmailIdSet`
+    //    directly — never materialise a `toFetch` array. Insertion order
+    //    on a JS Set matches Gmail's list order (newest-first); we
+    //    reverse-process by walking the set in chunks of FETCH_CONCURRENCY.
+    let processed = skipSet.size;
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
 
@@ -247,10 +354,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       pendingSenders = new Map();
     };
 
-    for (let i = 0; i < toFetch.length; i += FETCH_CONCURRENCY) {
-      const chunk = toFetch.slice(i, i + FETCH_CONCURRENCY);
+    let chunk: string[] = [];
+    const processChunk = async (): Promise<void> => {
+      if (chunk.length === 0) {
+        return;
+      }
       const metas = await Promise.all(chunk.map((id) => client.getMessageMetadata(id)));
       gmailApiCalls += chunk.length;
+      chunk = [];
 
       for (const meta of metas) {
         if (!meta) {
@@ -261,7 +372,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           continue; // unparseable sender — cannot be keyed; skip.
         }
         pendingMessages.push(row.message);
-        if (!pendingSenders.has(row.senderKey)) {
+        // Outbound messages still land in `mail_messages` (for future
+        // reply attribution) but their `From` is the user themself —
+        // never index them as a sender (D9 area; ADR-0004).
+        if (!row.facts.isOutbound && !pendingSenders.has(row.senderKey)) {
           pendingSenders.set(row.senderKey, this.toIdentityRow(mailboxAccountId, row));
         }
         processed += 1;
@@ -271,7 +385,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         await flush();
         await this.updateProgress(mailboxAccountId, processed, total);
       }
+    };
+
+    for (const id of orderedIds) {
+      if (skipSet.has(id)) {
+        continue;
+      }
+      chunk.push(id);
+      if (chunk.length === FETCH_CONCURRENCY) {
+        await processChunk();
+      }
     }
+    await processChunk();
     await flush();
 
     return { messagesSynced: total, gmailApiCalls };
@@ -296,22 +421,58 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .where(eq(senders.mailboxAccountId, mailboxAccountId));
     const identity = new Map(identityRows.map((r) => [r.senderKey, r]));
 
-    // Fold every stored message into a per-sender aggregate.
-    const messageRows = await this.deps.db
-      .select({
-        senderKey: mailMessages.senderKey,
-        internalDate: mailMessages.internalDate,
-        labelIds: mailMessages.labelIds,
-        isUnread: mailMessages.isUnread,
-      })
-      .from(mailMessages)
-      .where(eq(mailMessages.mailboxAccountId, mailboxAccountId));
-
+    // Fold every INBOUND stored message into a per-sender aggregate.
+    // Outbound messages are excluded — their `From` is the user, never
+    // a third-party sender (ADR-0004).
+    //
+    // Stream with keyset pagination over `id` (Codex iter 4 — bounded
+    // memory). Loading the full inbound row set at 250k+ mailboxes was
+    // ~100 MB of duplicated state; pages of `SCAN_PAGE` cap the
+    // in-process footprint to a single page at any time. The
+    // `aggregates` map alone scales with distinct senders (~thousands),
+    // not with messages.
     const aggregates = new Map<string, SenderAggregate>();
-    for (const row of messageRows) {
-      this.foldMessage(aggregates, row);
+    let lastId: string | null = null;
+    for (;;) {
+      const page = await this.deps.db
+        .select({
+          id: mailMessages.id,
+          senderKey: mailMessages.senderKey,
+          internalDate: mailMessages.internalDate,
+          labelIds: mailMessages.labelIds,
+          isUnread: mailMessages.isUnread,
+          unsubscribeUrl: mailMessages.unsubscribeUrl,
+          unsubscribeMailtoUrl: mailMessages.unsubscribeMailtoUrl,
+          unsubscribeOneClick: mailMessages.unsubscribeOneClick,
+        })
+        .from(mailMessages)
+        .where(
+          lastId === null
+            ? and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                eq(mailMessages.isOutbound, false),
+              )
+            : and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                eq(mailMessages.isOutbound, false),
+                gt(mailMessages.id, lastId),
+              ),
+        )
+        .orderBy(mailMessages.id)
+        .limit(SCAN_PAGE);
+      if (page.length === 0) {
+        break;
+      }
+      for (const row of page) {
+        this.foldMessage(aggregates, row);
+      }
+      lastId = page[page.length - 1]!.id;
     }
 
+    // Build the rebuild payload purely in-memory FIRST — no DB writes
+    // yet (Codex adversarial review 2026-05-22 — atomicity). Computing
+    // before opening the transaction keeps the transaction window
+    // small and lets us throw cleanly on a partial state.
     const senderRows: NewSender[] = [];
     const timeseriesRows: NewSenderTimeseries[] = [];
     let orphans = 0;
@@ -319,12 +480,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       const who = identity.get(senderKey);
       if (!who) {
         // A stored message whose sender identity is missing. The resume
-        // cursor (`loadStoredMessageIds`) re-fetches such messages, so a
-        // complete run leaves zero orphans — count + surface, never
-        // silently drop (CLAUDE.md §10).
+        // cursor in `fetchAndStoreMetadata` re-fetches such messages,
+        // so a complete run leaves zero orphans — count + surface,
+        // never silently drop (CLAUDE.md §10).
         orphans += 1;
         continue;
       }
+      const { method: unsubscribeMethod, url: unsubscribeUrl } = deriveUnsubscribe(agg);
       senderRows.push({
         mailboxAccountId,
         senderKey,
@@ -334,6 +496,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         gmailCategory: dominantCategory(agg.categoryCounts),
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
+        unsubscribeMethod,
+        unsubscribeUrl,
       });
       for (const [yearMonth, month] of agg.months) {
         timeseriesRows.push({
@@ -346,37 +510,31 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     }
 
-    for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
-      await this.deps.db
-        .insert(senders)
-        .values(senderRows.slice(i, i + UPSERT_BATCH))
-        .onConflictDoUpdate({
-          target: [senders.mailboxAccountId, senders.senderKey],
-          set: {
-            gmailCategory: sql`excluded.gmail_category`,
-            firstSeenAt: sql`excluded.first_seen_at`,
-            lastSeenAt: sql`excluded.last_seen_at`,
-            updatedAt: sql`now()`,
-          },
-        });
-    }
+    // Authoritative atomic rebuild (Codex review 2026-05-22 + iter 3).
+    // Selective `NOT IN (surviving)` deletes left stale
+    // `(senderKey, yearMonth)` rows for survivors who lost a month's
+    // worth of messages — historical volume / read counts then drifted
+    // upward forever. Nuke + reinsert closes the gap: every derived row
+    // for this mailbox is a fresh write from the recomputed aggregate.
+    // PG rolls back if any insert throws → last known-good state
+    // preserved, never a partial teardown.
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .delete(senderTimeseries)
+        .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
+      await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
 
-    for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
-      await this.deps.db
-        .insert(senderTimeseries)
-        .values(timeseriesRows.slice(i, i + UPSERT_BATCH))
-        .onConflictDoUpdate({
-          target: [
-            senderTimeseries.mailboxAccountId,
-            senderTimeseries.senderKey,
-            senderTimeseries.yearMonth,
-          ],
-          set: {
-            volume: sql`excluded.volume`,
-            readCount: sql`excluded.read_count`,
-          },
-        });
-    }
+      if (senderRows.length > 0) {
+        for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
+          await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
+        }
+      }
+      if (timeseriesRows.length > 0) {
+        for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
+          await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
+        }
+      }
+    });
 
     if (orphans > 0) {
       // Should be 0 after a complete run — surfaced, never swallowed.
@@ -394,35 +552,25 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * Provider-message-ids safe to skip on resume — stored messages whose
-   * sender identity is ALSO stored.
-   *
-   * `flushBatch` commits the `senders` identity row and the
-   * `mail_messages` row in one transaction, so in normal operation every
-   * stored message has its identity and this filter is a no-op. The
-   * filter self-heals any message that somehow lacks identity (e.g. data
-   * written by an earlier, pre-hardening code path): it is NOT skipped,
-   * so it gets re-fetched and its identity recovered — rather than
-   * silently dropped by `building_sender_index`.
+   * Drop `mail_messages` rows for ids no longer in Gmail's listing.
+   * Batched to bound the `IN (...)` list size (Codex review 2026-05-22 —
+   * reconciliation prevents permanent sender-aggregate drift).
    */
-  private async loadStoredMessageIds(mailboxAccountId: string): Promise<Set<string>> {
-    const [messageRows, senderRows] = await Promise.all([
-      this.deps.db
-        .select({
-          providerMessageId: mailMessages.providerMessageId,
-          senderKey: mailMessages.senderKey,
-        })
-        .from(mailMessages)
-        .where(eq(mailMessages.mailboxAccountId, mailboxAccountId)),
-      this.deps.db
-        .select({ senderKey: senders.senderKey })
-        .from(senders)
-        .where(eq(senders.mailboxAccountId, mailboxAccountId)),
-    ]);
-    const withIdentity = new Set(senderRows.map((r) => r.senderKey));
-    return new Set(
-      messageRows.filter((m) => withIdentity.has(m.senderKey)).map((m) => m.providerMessageId),
-    );
+  private async deleteMessages(
+    mailboxAccountId: string,
+    providerMessageIds: string[],
+  ): Promise<void> {
+    for (let i = 0; i < providerMessageIds.length; i += UPSERT_BATCH) {
+      const batch = providerMessageIds.slice(i, i + UPSERT_BATCH);
+      await this.deps.db
+        .delete(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            inArray(mailMessages.providerMessageId, batch),
+          ),
+        );
+    }
   }
 
   /**
@@ -441,6 +589,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const email = normalizeEmail(parsed.email);
     const senderKey = deriveSenderKey(email);
     const internalDate = new Date(Number(meta.internalDate));
+    const isOutbound = meta.labelIds.includes('SENT');
+    // Recipients are stored for OUTBOUND only — they power the future
+    // reply-attribution engine. Inbound `recipient_emails` would just be
+    // the connected mailbox itself, of no product value.
+    const recipientEmails = isOutbound
+      ? [...parseRecipients(meta.to), ...parseRecipients(meta.cc)]
+      : null;
+    const {
+      httpsUrl,
+      mailtoUrl,
+      oneClick: unsubscribeOneClick,
+    } = parseListUnsubscribe(meta.listUnsubscribe, meta.listUnsubscribePost);
 
     const message: NewMailMessage = {
       mailboxAccountId,
@@ -452,6 +612,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       internalDate,
       labelIds: meta.labelIds,
       isUnread: meta.labelIds.includes('UNREAD'),
+      isOutbound,
+      recipientEmails: recipientEmails && recipientEmails.length > 0 ? recipientEmails : null,
+      // Channels stored in separate columns so `building_sender_index`
+      // can detect mailto independently of HTTPS (Codex iter 5 fix).
+      unsubscribeUrl: httpsUrl,
+      unsubscribeMailtoUrl: mailtoUrl,
+      unsubscribeOneClick,
     };
 
     return {
@@ -463,6 +630,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         domain: emailDomain(email),
         internalDate,
         category: this.toGmailCategory(meta.labelIds),
+        isOutbound,
       },
     };
   }
@@ -492,7 +660,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   /** Fold one stored message into its sender's aggregate. */
   private foldMessage(
     aggregates: Map<string, SenderAggregate>,
-    row: { senderKey: string; internalDate: Date; labelIds: string[]; isUnread: boolean },
+    row: {
+      senderKey: string;
+      internalDate: Date;
+      labelIds: string[];
+      isUnread: boolean;
+      unsubscribeUrl: string | null;
+      unsubscribeMailtoUrl: string | null;
+      unsubscribeOneClick: boolean;
+    },
   ): void {
     let agg = aggregates.get(row.senderKey);
     if (!agg) {
@@ -501,6 +677,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastSeen: row.internalDate,
         categoryCounts: new Map(),
         months: new Map(),
+        httpsUrl: null,
+        mailtoUrl: null,
+        hasOneClick: false,
       };
       aggregates.set(row.senderKey, agg);
     }
@@ -520,6 +699,24 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       month.readCount += 1;
     }
     agg.months.set(ym, month);
+
+    // Track unsubscribe channels SEPARATELY (Codex iter 5 fix). The
+    // sender's final method/URL is derived in `deriveUnsubscribe` per
+    // Option B: one_click > mailto > none. Channel data is captured
+    // here independently so we never persist a `method='mailto'` with
+    // an `https://` URL.
+    if (row.unsubscribeOneClick && row.unsubscribeUrl) {
+      agg.hasOneClick = true;
+      // First one-click HTTPS URL wins — don't churn on a later one.
+      agg.httpsUrl ??= row.unsubscribeUrl;
+    } else if (row.unsubscribeUrl) {
+      // Plain HTTPS (no one-click). Captured for the future executor
+      // PR; does NOT contribute to sender-level method.
+      agg.httpsUrl ??= row.unsubscribeUrl;
+    }
+    if (row.unsubscribeMailtoUrl) {
+      agg.mailtoUrl ??= row.unsubscribeMailtoUrl;
+    }
   }
 
   /**
@@ -555,6 +752,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             internalDate: sql`excluded.internal_date`,
             labelIds: sql`excluded.label_ids`,
             isUnread: sql`excluded.is_unread`,
+            isOutbound: sql`excluded.is_outbound`,
+            recipientEmails: sql`excluded.recipient_emails`,
+            unsubscribeUrl: sql`excluded.unsubscribe_url`,
+            unsubscribeMailtoUrl: sql`excluded.unsubscribe_mailto_url`,
+            unsubscribeOneClick: sql`excluded.unsubscribe_one_click`,
             updatedAt: sql`now()`,
           },
         });
@@ -612,8 +814,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       });
   }
 
-  /** Final transition — stage `ready`, 100%, sync timestamp set. */
-  private async markReady(mailboxAccountId: string): Promise<void> {
+  /**
+   * Final transition — stage `ready`, 100%, sync timestamp set, AND the
+   * historyId snapshot captured at sync-start persisted to
+   * `last_history_id` so PR-D's incremental sync starts from there.
+   */
+  private async markReady(mailboxAccountId: string, historyId: string): Promise<void> {
+    const lastHistoryId = BigInt(historyId);
     await this.deps.db
       .insert(providerSyncState)
       .values({
@@ -621,6 +828,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         currentStage: 'ready',
         readinessStatus: 'ready',
         progressPct: 100,
+        lastHistoryId,
       })
       .onConflictDoUpdate({
         target: providerSyncState.mailboxAccountId,
@@ -629,11 +837,45 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           readinessStatus: 'ready',
           progressPct: 100,
           errorCode: null,
+          lastHistoryId,
           lastSyncedAt: sql`now()`,
           updatedAt: sql`now()`,
         },
       });
   }
+}
+
+/**
+ * Map an aggregate's unsubscribe state to the sender's
+ * `unsubscribe_method` + `unsubscribe_url` — Option B per Codex iter 5
+ * (2026-05-22, D9).
+ *
+ *   one_click  ← any message had RFC 8058 one-click (URL = its HTTPS)
+ *   mailto     ← else any message had a mailto channel (URL = mailto)
+ *   none       ← neither; URL = NULL
+ *
+ * A plain-HTTPS-only sender ends up `method='none'` deliberately:
+ * D230 makes mailto manual at launch and there is no HTTPS-link
+ * executor yet, so we surface no actionable method until the product
+ * supports it. The per-message `unsubscribe_url` still captures the
+ * HTTPS link for the future executor PR — no re-sync needed.
+ *
+ * INVARIANT: when method = `mailto` the URL is a `mailto:` URI; when
+ * method = `one_click` the URL is `https://...`; when method = `none`
+ * the URL is NULL. The split-channel aggregate makes this true by
+ * construction (the prior single-URL shape could not).
+ */
+function deriveUnsubscribe(agg: SenderAggregate): {
+  method: UnsubscribeMethod;
+  url: string | null;
+} {
+  if (agg.hasOneClick && agg.httpsUrl) {
+    return { method: 'one_click', url: agg.httpsUrl };
+  }
+  if (agg.mailtoUrl) {
+    return { method: 'mailto', url: agg.mailtoUrl };
+  }
+  return { method: 'none', url: null };
 }
 
 /** Facts parsed from one message's `From` header + labels. */
@@ -643,6 +885,8 @@ interface ParsedFacts {
   domain: string;
   internalDate: Date;
   category: GmailCategory;
+  /** True iff `labelIds` includes `SENT` — the user is the From. */
+  isOutbound: boolean;
 }
 
 /** First day of the message's calendar month, `YYYY-MM-01` (UTC). */

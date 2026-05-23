@@ -126,39 +126,57 @@ export class GoogleOAuthService {
     // keyed on the connected Gmail address to satisfy the NOT NULL FKs.
     const { userId, workspaceId } = await this.findOrCreateUser(email);
 
-    const [row] = await this.db
-      .insert(mailboxAccounts)
-      .values({
-        workspaceId,
-        userId,
-        provider: 'gmail',
-        providerAccountId: email,
-        encryptedRefreshToken: encrypted.ciphertext,
-        dekEncrypted: encrypted.wrappedDek,
-        keyVersion: encrypted.keyVersion,
-        connectedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
-        set: {
+    // Connect atomicity (Codex adversarial review iter 4 + iter 6,
+    // 2026-05-22).
+    //
+    // The OAuth refresh token is single-use, so "mailbox persisted" and
+    // "durable sync intent recorded" MUST commit or roll back together.
+    // If they were separate transactions and the second crashed, we'd
+    // have a mailbox row with a rotated refresh token but no `queued`
+    // sync_state row for the reconciler to find — a permanent strand.
+    //
+    // The BullMQ enqueue is BEST-EFFORT and runs AFTER the transaction
+    // commits. A Redis outage at this point cannot strand the user:
+    // the `queued` row is already durable, and the worker's continuous
+    // reconciler (every 60s) will materialize the missing job.
+    const row = await this.db.transaction(async (tx) => {
+      const [mb] = await tx
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId,
+          userId,
+          provider: 'gmail',
+          providerAccountId: email,
           encryptedRefreshToken: encrypted.ciphertext,
           dekEncrypted: encrypted.wrappedDek,
           keyVersion: encrypted.keyVersion,
           connectedAt: new Date(),
-          status: 'active',
-        },
-      })
-      .returning({ id: mailboxAccounts.id });
+        })
+        .onConflictDoUpdate({
+          target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
+          set: {
+            encryptedRefreshToken: encrypted.ciphertext,
+            dekEncrypted: encrypted.wrappedDek,
+            keyVersion: encrypted.keyVersion,
+            connectedAt: new Date(),
+            status: 'active',
+          },
+        })
+        .returning({ id: mailboxAccounts.id });
+      if (!mb) {
+        throw new InternalServerErrorException('Failed to persist the mailbox account.');
+      }
+      // SyncService owns provider_sync_state writes (D204). Passing the
+      // tx keeps both writes in one atomic unit without auth touching
+      // sync's table directly.
+      await this.sync.markQueued(tx, mb.id);
+      return mb;
+    });
 
-    if (!row) {
-      throw new InternalServerErrorException('Failed to persist the mailbox account.');
-    }
-
-    // Connect done → enqueue the full-mailbox backfill (D157). A failure
-    // here surfaces loudly: the connect is idempotent (the upsert above)
-    // and safe to retry, so a stuck mailbox is preferable to a silent
-    // one that never syncs.
-    await this.sync.enqueueInitialSync(row.id);
+    // Best-effort enqueue. The durable signal is the `queued` row
+    // committed above; if Redis is unreachable the reconciler picks it
+    // up. `schedule` swallows + logs queue errors itself.
+    await this.sync.schedule(row.id);
 
     return { mailboxAccountId: row.id, email };
   }

@@ -37,6 +37,24 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `sender_key` is denormalized here (not a FK) because a message may be
  * ingested before its `senders` row is materialized by the
  * `building_sender_index` stage (D224). It carries the same D12 hash.
+ *
+ * D7 ALLOWLIST AMENDMENT (2026-05-22, ADR-0004). Columns added:
+ *   - `is_outbound` — derived from `label_ids.includes('SENT')`. Lets
+ *     `building_sender_index` filter to inbound; outbound messages still
+ *     store full metadata for future reply-attribution (D9 area) so no
+ *     re-sync is needed when that engine lands.
+ *   - `recipient_emails` — To + Cc parsed and combined; populated for
+ *     OUTBOUND only. Reserved for the future Sent-sync / reply-attribution
+ *     engine. The `To`/`Cc` headers are on the amended allowlist.
+ *   - `unsubscribe_url` / `unsubscribe_mailto_url` /
+ *     `unsubscribe_one_click` — `List-Unsubscribe` +
+ *     `List-Unsubscribe-Post` parsed by CHANNEL (Codex iter 5 fix; D9,
+ *     RFC 8058). The HTTPS URL and the mailto URL are kept in
+ *     separate columns so `building_sender_index` can detect "this
+ *     sender had a mailto channel" independently of "this sender had
+ *     a usable HTTPS channel" — the prior single-column shape
+ *     misclassified plain-HTTPS senders as `method='mailto'` while
+ *     persisting a `https://` URL (a sender-table mismatch).
  */
 
 export const mailMessages = pgTable(
@@ -68,6 +86,50 @@ export const mailMessages = pgTable(
       .default(sql`'{}'::text[]`),
     /** Derived from the presence of the UNREAD label — D7 read state. */
     isUnread: boolean('is_unread').notNull(),
+    /**
+     * Derived from `label_ids.includes('SENT')` at fetch time. Outbound
+     * messages are stored (for future reply attribution) but excluded
+     * from `building_sender_index` — their `From` is the user themself,
+     * not a third-party sender.
+     *
+     * Deliberately UNINDEXED. `building_sender_index` selects with
+     * `WHERE mailbox_account_id = ? AND is_outbound = false` — the
+     * predicate matches the inbound MAJORITY (~70–90% of rows), so a
+     * partial index would pay a write-amplification tax per INSERT for
+     * essentially no read win. The existing `(mailbox_account_id, …)`
+     * indexes prefix-match the mailbox filter; the planner heap-filters
+     * `is_outbound` from there. Reviewed + intentional (D150 pattern is
+     * for SELECTIVE predicates, e.g. `is_unread = true`).
+     */
+    isOutbound: boolean('is_outbound').notNull().default(false),
+    /**
+     * To + Cc emails parsed and combined. NULL for inbound; reserved for
+     * the future Sent-sync / reply-attribution engine on outbound
+     * messages (D9 area). Header allowlist amendment per ADR-0004.
+     */
+    recipientEmails: text('recipient_emails').array(),
+    /**
+     * `https://...` URL parsed from `List-Unsubscribe`. NULL when the
+     * header is absent or carries only a mailto/insecure URL. Cleartext
+     * `http://` is dropped (RFC 8058 §3 — downgrade-vulnerable).
+     * Required to be HTTPS when `unsubscribe_one_click=true`. Header
+     * allowlist amendment per ADR-0004; powers D9.
+     */
+    unsubscribeUrl: text('unsubscribe_url'),
+    /**
+     * `mailto:` URL parsed from `List-Unsubscribe`. NULL when the
+     * header is absent or carries only an HTTPS form. Kept in its own
+     * column so `building_sender_index` can detect a mailto channel
+     * independently of the HTTPS channel (Codex iter 5 fix).
+     */
+    unsubscribeMailtoUrl: text('unsubscribe_mailto_url'),
+    /**
+     * Derived from `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
+     * AND the presence of an HTTPS URL (RFC 8058 — mailto-only senders
+     * can never be one-click). Header allowlist amendment per
+     * ADR-0004.
+     */
+    unsubscribeOneClick: boolean('unsubscribe_one_click').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -89,6 +151,17 @@ export const mailMessages = pgTable(
       table.mailboxAccountId,
       table.internalDate,
     ),
+    /**
+     * Keyset pagination index for `building_sender_index` (Codex iter 5,
+     * 2026-05-22). The stage streams the mailbox's stored messages with
+     * `WHERE mailbox_account_id = ? AND id > ? ORDER BY id LIMIT ?` to
+     * cap in-process memory; without this composite index, each page
+     * triggered a heap scan + sort over the whole mailbox. The id PK
+     * is a UUID v4 (random) — index access is sequential by storage
+     * order, not chronological, which is fine: aggregates fold in any
+     * order.
+     */
+    accountIdIdx: index('mail_messages_account_id_idx').on(table.mailboxAccountId, table.id),
     /** Partial index — the per-sender unread count is a hot Senders query. */
     unreadIdx: index('mail_messages_account_sender_unread_idx')
       .on(table.mailboxAccountId, table.senderKey)

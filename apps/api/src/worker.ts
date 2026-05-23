@@ -1,13 +1,14 @@
 import 'reflect-metadata';
 
-import { Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
-import { mailboxAccounts, schema } from '@declutrmail/db';
+import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
   createRedisConnection,
+  ensureInitialSyncJob,
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
@@ -58,6 +59,27 @@ async function bootstrap(): Promise<void> {
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
 
   /**
+   * Per-mailbox `RateLimiter`s, cached by `mailboxAccountId` for the
+   * lifetime of the worker process (Codex adversarial review iter 3,
+   * 2026-05-22). Earlier the limiter was created fresh per
+   * `getClient()` call — every BullMQ retry started with an empty
+   * window, but Gmail's per-user quota bucket persists for 60s. A
+   * post-quota retry within `perMailboxPolicy.backoff` (2s/4s/8s/...)
+   * would re-spend a full local budget while Gmail still counted the
+   * prior attempt's usage → repeated 403s and eventual dead-letter.
+   *
+   * Sharing the limiter across attempts lets its sliding-window state
+   * persist: a retry's first `acquire(5)` sees the prior attempt's
+   * spend, computes the remaining wait until the oldest event ages out
+   * of the 60s window, and sleeps before sending — no thrash.
+   *
+   * Memory: one limiter per distinct mailbox synced by this process,
+   * each holding at most `windowMs / minRequestSpacing` events
+   * (~thousands). Bounded; process restart clears the cache.
+   */
+  const limiterByMailbox = new Map<string, RateLimiter>();
+
+  /**
    * `GmailAccess` port impl: load the mailbox row, decrypt its OAuth
    * refresh token (D14 envelope decryption — reuses `TokenCryptoService`
    * unchanged), and return a token-bound Gmail client.
@@ -83,13 +105,14 @@ async function bootstrap(): Promise<void> {
       );
       const oauth = new OAuth2Client(clientId, clientSecret);
       oauth.setCredentials({ refresh_token: refreshToken });
-      // One limiter per sync attempt — it paces calls WITHIN the attempt
-      // under Gmail's per-user quota (D5). Across attempts the guarantee
-      // is resume (a retry skips already-stored messages, so it re-fetches
-      // far fewer) plus the policy's exponential backoff, which clears the
-      // 60s window — so a retry cannot re-burst the way the attempt it
-      // retries did.
-      const limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+
+      // Reuse the limiter across attempts so its sliding-window state
+      // outlives a single `processJob` call (D5 / Codex iter 3).
+      let limiter = limiterByMailbox.get(mailboxAccountId);
+      if (!limiter) {
+        limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+        limiterByMailbox.set(mailboxAccountId, limiter);
+      }
       return new GmailClientService(oauth, limiter);
     },
   };
@@ -109,22 +132,194 @@ async function bootstrap(): Promise<void> {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
+  // Continuous reconciler (Codex adversarial review iter 5 + 6,
+  // 2026-05-22).
+  //
+  // Contract: `provider_sync_state.readiness_status='queued'` IS the
+  // durable sync intent. BullMQ is the execution cache. The connect
+  // path writes the DB row first, then best-effort enqueues — if Redis
+  // was down at connect time the DB has a `queued` row with no live
+  // BullMQ job. We sweep periodically and materialize the missing job.
+  //
+  // Boot-only reconciliation (iter 4) was insufficient: a Redis outage
+  // that happens AFTER worker boot — Redis crashes, network blip — was
+  // never recovered from without a worker restart. Now we tick every
+  // 60s. The job is bounded (one BullMQ `getJob` + at most one `add`
+  // per `queued` row, batch-capped) and self-throttling: once the DB
+  // has no `queued` rows the sweep is a single `SELECT ... LIMIT N`.
+  const reconcilerQueue = new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, { connection });
+  const RECONCILE_BATCH = 100;
+  const RECONCILE_INTERVAL_MS = 60_000;
+
+  // Overlap + shutdown guards (Codex iter 6). A slow sweep (e.g.
+  // Redis-paginated `getJob`s under load) could exceed the interval
+  // and overlap with the next firing — without a guard, two
+  // concurrent sweeps could race a `remove`+`add` pair against each
+  // other for the same job. `inFlight` tracks the active tick (a
+  // Promise we can `await` on shutdown); `shuttingDown` short-circuits
+  // any tick that fires after the shutdown signal but before
+  // `clearInterval` runs.
+  let inFlight: Promise<void> | null = null;
+  let shuttingDown = false;
+
+  /**
+   * One reconciliation tick. Reads up to `RECONCILE_BATCH` rows whose
+   * `readiness_status='queued'` and ensures each has a live BullMQ job.
+   * Delegates the per-mailbox state machine to `ensureInitialSyncJob`
+   * — the single scheduling implementation shared with the connect
+   * path — so this loop cannot diverge from connect-time semantics.
+   *
+   * Returns counts for the structured log; never throws (it's a
+   * background sweep, not a request).
+   */
+  async function reconcileQueuedInitialSyncs(): Promise<{ added: number; replaced: number }> {
+    let added = 0;
+    let replaced = 0;
+    try {
+      const queuedRows = await db
+        .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.readinessStatus, 'queued'))
+        .limit(RECONCILE_BATCH);
+      for (const { mailboxAccountId } of queuedRows) {
+        if (shuttingDown) {
+          // Honor a mid-sweep shutdown signal — leftover rows pick up
+          // on the next worker boot.
+          break;
+        }
+        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId);
+        if (outcome === 'added') added += 1;
+        if (outcome === 'replaced') replaced += 1;
+      }
+      if (added > 0 || replaced > 0) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'reconciler.swept',
+            added,
+            replaced,
+            scanned: queuedRows.length,
+          }),
+        );
+      }
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'reconciler.failed',
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    return { added, replaced };
+  }
+
+  /**
+   * Wrap one tick with the overlap guard. If a prior tick is still
+   * running OR a shutdown is in progress, the firing is skipped —
+   * never queued behind the in-flight one (the next 60s tick has
+   * fresh data anyway).
+   */
+  function tick(): void {
+    if (shuttingDown || inFlight) {
+      return;
+    }
+    // `reconcileQueuedInitialSyncs` is documented to never reject (its
+    // body is wrapped in try/catch). The terminal `.catch` defends
+    // against future drift: if a refactor moves a line out of that try,
+    // an unhandled rejection here would otherwise be invisible
+    // (silent-failure-hunter, post-iter-6 review).
+    const p = reconcileQueuedInitialSyncs()
+      .then(() => undefined)
+      .finally(() => {
+        inFlight = null;
+      })
+      .catch((err: unknown) => {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'reconciler.tick_unexpected',
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      });
+    inFlight = p;
+  }
+
+  // Boot sweep — handles any `queued` rows that accumulated while the
+  // worker was offline (deploy gap, crash recovery). Tracked via the
+  // same `inFlight` slot so a shutdown during boot waits for it.
+  tick();
+  if (inFlight) {
+    await inFlight;
+  }
+
+  // Periodic sweep — handles outages that happen AFTER boot. The
+  // handle is captured so shutdown can `clearInterval` cleanly.
+  const reconcilerHandle = setInterval(tick, RECONCILE_INTERVAL_MS);
+  // Don't keep the process alive solely on the reconciler tick; the
+  // BullMQ worker is the foreground loop.
+  reconcilerHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
 
-  // Graceful shutdown — drain in-flight jobs, then release connections.
+  // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
+  // sweep, then drain BullMQ and release connections. Closing the
+  // queue/connection while a sweep is mid-`getJob` would throw
+  // unhandled errors and corrupt the structured log.
+  //
+  // The drain IIFE has its own `.catch` (silent-failure-hunter, post-
+  // iter-6 review): without it, a thrown `bullWorker.close()` /
+  // `connection.quit()` during a Redis outage would leave `exit(0)`
+  // unreached, the process would hang on still-attached resources, and
+  // K8s would SIGKILL after the grace period with no diagnostic.
   const shutdown = (signal: string): void => {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
+    shuttingDown = true;
+    clearInterval(reconcilerHandle);
     void (async () => {
+      if (inFlight) {
+        await inFlight;
+      }
       await bullWorker.close();
+      await reconcilerQueue.close();
       await connection.quit();
       await pg.end();
       process.exit(0);
-    })();
+    })().catch((err: unknown) => {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.shutdown_failed',
+          signal,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      // Exit non-zero so the orchestrator (K8s / Cloud Run) sees the
+      // drain failed instead of hanging until SIGKILL.
+      process.exit(1);
+    });
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-void bootstrap();
+// Boot-time errors (bad `DATABASE_URL`, Redis TLS failure, KMS
+// failure inside `createKmsProvider()`, the initial reconciler sweep
+// rejecting against an unreachable DB) would otherwise become
+// `unhandledRejection`s — Node's default printing varies by
+// `--unhandled-rejections` mode and would not produce a structured
+// `worker.boot_failed` log line the operator can grep. Catch + log +
+// non-zero exit. Silent-failure-hunter, post-iter-6 review.
+bootstrap().catch((err: unknown) => {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      kind: 'worker.boot_failed',
+      message: err instanceof Error ? err.message : String(err),
+    }),
+  );
+  process.exit(1);
+});
