@@ -8,9 +8,8 @@ import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
   createRedisConnection,
-  INITIAL_SYNC_JOB,
+  ensureInitialSyncJob,
   INITIAL_SYNC_QUEUE,
-  initialSyncJobOptions,
   InitialSyncWorker,
   InvalidGrantError,
   RateLimiter,
@@ -133,54 +132,93 @@ async function bootstrap(): Promise<void> {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
-  // Boot reconciler (Codex adversarial review iter 4). The connect flow
-  // commits `provider_sync_state.readiness_status='queued'` in the same
-  // DB transaction as the mailbox upsert — that's the durable sync
-  // intent. The subsequent `queue.add` is best-effort. If Redis was down
-  // during connect, the DB has `queued` rows with no BullMQ job. On
-  // worker boot we sweep them and add jobs for any that are missing,
-  // self-healing past outages without manual ops intervention.
+  // Continuous reconciler (Codex adversarial review iter 5, 2026-05-22).
+  //
+  // Contract: `provider_sync_state.readiness_status='queued'` IS the
+  // durable sync intent. BullMQ is the execution cache. The connect
+  // path writes the DB row first, then best-effort enqueues — if Redis
+  // was down at connect time the DB has a `queued` row with no live
+  // BullMQ job. We sweep periodically and materialize the missing job.
+  //
+  // Boot-only reconciliation (iter 4) was insufficient: a Redis outage
+  // that happens AFTER worker boot — Redis crashes, network blip — was
+  // never recovered from without a worker restart. Now we tick every
+  // 60s. The job is bounded (one BullMQ `getJob` + at most one `add`
+  // per `queued` row, batch-capped) and self-throttling: once the DB
+  // has no `queued` rows the sweep is a single `SELECT ... LIMIT N`.
   const reconcilerQueue = new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, { connection });
-  try {
-    const queuedRows = await db
-      .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
-      .from(providerSyncState)
-      .where(eq(providerSyncState.readinessStatus, 'queued'));
-    let requeued = 0;
-    for (const { mailboxAccountId } of queuedRows) {
-      const existing = await reconcilerQueue.getJob(mailboxAccountId);
-      if (!existing) {
-        await reconcilerQueue.add(
-          INITIAL_SYNC_JOB,
-          { mailboxAccountId },
-          initialSyncJobOptions(mailboxAccountId),
-        );
-        requeued += 1;
+  const RECONCILE_BATCH = 100;
+  const RECONCILE_INTERVAL_MS = 60_000;
+
+  /**
+   * One reconciliation tick. Reads up to `RECONCILE_BATCH` rows whose
+   * `readiness_status='queued'` and ensures each has a live BullMQ job.
+   * Delegates the per-mailbox state machine to `ensureInitialSyncJob`
+   * — the single scheduling implementation shared with the connect
+   * path — so this loop cannot diverge from connect-time semantics.
+   *
+   * Returns counts for the structured log; never throws (it's a
+   * background sweep, not a request).
+   */
+  async function reconcileQueuedInitialSyncs(): Promise<{ added: number; replaced: number }> {
+    let added = 0;
+    let replaced = 0;
+    try {
+      const queuedRows = await db
+        .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.readinessStatus, 'queued'))
+        .limit(RECONCILE_BATCH);
+      for (const { mailboxAccountId } of queuedRows) {
+        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId);
+        if (outcome === 'added') added += 1;
+        if (outcome === 'replaced') replaced += 1;
       }
-    }
-    if (requeued > 0) {
-      console.log(
-        JSON.stringify({ level: 'info', kind: 'reconciler.requeued', count: requeued }),
+      if (added > 0 || replaced > 0) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'reconciler.swept',
+            added,
+            replaced,
+            scanned: queuedRows.length,
+          }),
+        );
+      }
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'reconciler.failed',
+          message: err instanceof Error ? err.message : String(err),
+        }),
       );
     }
-  } catch (err) {
-    // Reconciler failure must not block the worker from starting.
-    console.error(
-      JSON.stringify({
-        level: 'error',
-        kind: 'reconciler.failed',
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
+    return { added, replaced };
   }
+
+  // Boot sweep — handles any `queued` rows that accumulated while the
+  // worker was offline (deploy gap, crash recovery).
+  await reconcileQueuedInitialSyncs();
+
+  // Periodic sweep — handles outages that happen AFTER boot. The
+  // handle is captured so shutdown can `clearInterval` cleanly.
+  const reconcilerHandle = setInterval(() => {
+    void reconcileQueuedInitialSyncs();
+  }, RECONCILE_INTERVAL_MS);
+  // Don't keep the process alive solely on the reconciler tick; the
+  // BullMQ worker is the foreground loop.
+  reconcilerHandle.unref();
 
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
 
-  // Graceful shutdown — drain in-flight jobs, then release connections.
+  // Graceful shutdown — stop the reconciler tick, drain in-flight
+  // jobs, then release connections.
   const shutdown = (signal: string): void => {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
+    clearInterval(reconcilerHandle);
     void (async () => {
       await bullWorker.close();
       await reconcilerQueue.close();

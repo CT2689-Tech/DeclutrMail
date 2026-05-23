@@ -1,0 +1,8 @@
+-- Rollback for 0004_unsubscribe_mailto_and_keyset_idx.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverse
+-- order of the forward. `IF EXISTS` keeps the rollback idempotent.
+
+DROP INDEX IF EXISTS "mail_messages_account_id_idx";
+--> statement-breakpoint
+ALTER TABLE "mail_messages" DROP COLUMN IF EXISTS "unsubscribe_mailto_url";

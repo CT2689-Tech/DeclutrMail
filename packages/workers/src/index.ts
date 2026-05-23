@@ -13,6 +13,7 @@ export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
   createRedisConnection,
+  ensureInitialSyncJob,
   INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
   initialSyncJobOptions,

@@ -304,6 +304,57 @@ describe('InitialSyncWorker', () => {
     expect(sender!.unsubscribeUrl).toBeNull();
   });
 
+  it('unsubscribe — plain HTTPS (no one-click, no mailto) is NOT classified as mailto (Codex iter 5)', async () => {
+    // The iter 5 bug: a `List-Unsubscribe: <https://...>` header
+    // without `List-Unsubscribe-Post: List-Unsubscribe=One-Click` was
+    // previously persisted as `unsubscribe_method='mailto'` with an
+    // `https://` URL — a scheme/method mismatch. Option B: surface no
+    // actionable method until the product supports HTTPS-link
+    // unsubscribe (D230 keeps mailto manual at launch; HTTPS-link
+    // executor is its own PR).
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/unsub>';
+    m[0]!.listUnsubscribePost = null;
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('none');
+    expect(sender!.unsubscribeUrl).toBeNull();
+    // The per-message HTTPS URL is still captured for the future
+    // executor PR — no re-sync needed when it lands. Select msg-0
+    // explicitly (storage order across rows isn't guaranteed).
+    const msgRows = await db.select().from(mailMessages);
+    const msg = msgRows.find((r) => r.providerMessageId === 'msg-0');
+    expect(msg!.unsubscribeUrl).toBe('https://example.com/unsub');
+    expect(msg!.unsubscribeMailtoUrl).toBeNull();
+    expect(msg!.unsubscribeOneClick).toBe(false);
+  });
+
+  it('unsubscribe — HTTPS + mailto without one-click prefers mailto at sender level', async () => {
+    // Both channels present but no RFC 8058 post header → sender's
+    // actionable method is `mailto` (D230 — mailto unsubscribe at
+    // launch). HTTPS still captured per message for the future
+    // executor.
+    const m = makeMessages(2, 1);
+    m[0]!.listUnsubscribe = '<https://example.com/unsub>, <mailto:unsub@example.com>';
+    m[0]!.listUnsubscribePost = null;
+    const client = new FakeGmailClient(m);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const [sender] = await db.select().from(senders);
+    expect(sender!.unsubscribeMethod).toBe('mailto');
+    expect(sender!.unsubscribeUrl).toBe('mailto:unsub@example.com');
+    const msgRows = await db.select().from(mailMessages);
+    const msg = msgRows.find((r) => r.providerMessageId === 'msg-0');
+    expect(msg!.unsubscribeUrl).toBe('https://example.com/unsub');
+    expect(msg!.unsubscribeMailtoUrl).toBe('mailto:unsub@example.com');
+  });
+
   it('reconciliation — stored messages no longer in Gmail are deleted', async () => {
     // First sync stores 10 messages from 5 senders.
     const first = new FakeGmailClient(makeMessages(10, 5));

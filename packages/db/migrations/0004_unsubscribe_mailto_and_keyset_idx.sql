@@ -1,0 +1,40 @@
+-- 0004_unsubscribe_mailto_and_keyset_idx.sql
+--
+-- Codex adversarial review iter 5 (2026-05-22) — two related additive
+-- changes to `mail_messages`:
+--
+--   1. `unsubscribe_mailto_url` — `List-Unsubscribe` is parsed by
+--      channel now (HTTPS vs mailto) instead of being collapsed into a
+--      single ambiguous URL. The prior shape misclassified plain-HTTPS
+--      senders as `method='mailto'` while persisting a `https://` URL,
+--      a mismatch the sender table cannot express. Storing the mailto
+--      URL in its own column lets `building_sender_index` detect a
+--      mailto channel independently of the HTTPS channel.
+--
+--   2. `mail_messages_account_id_idx` — keyset pagination index. The
+--      `building_sender_index` stage streams the mailbox's rows with
+--      `WHERE mailbox_account_id = ? AND id > ? ORDER BY id LIMIT ?`
+--      (Codex iter 4 — bounded memory). Without this composite, each
+--      page triggered a heap scan + sort across the whole mailbox. The
+--      existing `(mailbox_account_id, internal_date)` index does not
+--      cover the `id` order key.
+--
+-- `CREATE INDEX` is deliberately NOT `CONCURRENTLY` here:
+--   - PGlite (used by the migration round-trip test) does not support
+--     `CONCURRENTLY` outside an implicit transaction.
+--   - The table has zero rows in prod (ADR-0002 — no production deploy
+--     yet), so the non-concurrent build is instant and locks nothing
+--     of value. When prod data lands, a follow-up migration that
+--     rebuilds critical indexes with `CONCURRENTLY` (or `atlas migrate
+--     apply --tx-mode none`) will be sequenced before any backfill.
+-- The `atlas:nolint concurrent_index` directive tells Atlas migration
+-- lint not to flag the deliberate choice.
+--
+-- NO DML — Atlas's `data_depend = error` rule. Pre-existing rows have
+-- `unsubscribe_mailto_url IS NULL`; the next sync writes the column
+-- correctly.
+
+ALTER TABLE "mail_messages" ADD COLUMN "unsubscribe_mailto_url" text;
+--> statement-breakpoint
+-- atlas:nolint concurrent_index
+CREATE INDEX IF NOT EXISTS "mail_messages_account_id_idx" ON "mail_messages" USING btree ("mailbox_account_id", "id");

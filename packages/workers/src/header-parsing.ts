@@ -27,36 +27,39 @@ export function parseRecipients(headerValue: string | null): string[] {
 }
 
 /**
- * Parse `List-Unsubscribe` + `List-Unsubscribe-Post` into the URL we
- * will act on plus a one-click capability flag (RFC 8058, D9).
+ * Parse `List-Unsubscribe` + `List-Unsubscribe-Post` into the THREE
+ * channels they represent — HTTPS URL, mailto URL, RFC 8058 one-click
+ * capability — kept SEPARATE so callers never confuse them (Codex
+ * adversarial review iter 5, 2026-05-22, D9).
  *
- * `List-Unsubscribe` format: `<url1>, <url2>` where each URL is either
- * `https://...` or `mailto:...`. Multiple URLs are allowed; we prefer
- * https for one-click. `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
- * (case-insensitive on `One-Click`) signals one-click capability.
+ * The prior shape `{ url, oneClick }` collapsed channels and led
+ * `deriveUnsubscribeMethod` to misclassify a plain HTTPS link (no
+ * RFC 8058 post header) as `method='mailto'` while persisting an
+ * `https://` URL — a method/URL mismatch the sender table cannot
+ * express. Returning channels separately makes the aggregation rule's
+ * intent visible at the call site.
  *
- * Returns `{ url: null, oneClick: false }` when no usable header is present.
+ * `List-Unsubscribe` format: `<url1>, <url2>` — HTTPS or mailto.
+ * Cleartext `http:` URLs are dropped (downgrade-vulnerable per RFC
+ * 8058 §3; not surfaced as a channel at all).
+ *
+ * Returns `{ httpsUrl: null, mailtoUrl: null, oneClick: false }` for
+ * an absent / unusable header.
  */
 export function parseListUnsubscribe(
   headerValue: string | null,
   postHeaderValue: string | null,
-): { url: string | null; oneClick: boolean } {
+): { httpsUrl: string | null; mailtoUrl: string | null; oneClick: boolean } {
   if (!headerValue) {
-    return { url: null, oneClick: false };
+    return { httpsUrl: null, mailtoUrl: null, oneClick: false };
   }
   const urls = extractBracketedUrls(headerValue);
-  // One-click MUST be HTTPS (RFC 8058 §3 — security; cleartext `http:`
-  // POSTs are downgrade-vulnerable and not eligible for the automated
-  // unsubscribe trust boundary). `http:` URLs are simply not surfaced
-  // as one-click candidates; if the header also carries a mailto we
-  // fall back to that, otherwise the sender is treated as non-
-  // unsubscribable by automation. Codex adversarial review iter 4.
-  const https = urls.find((u) => /^https:/i.test(u));
-  const mailto = urls.find((u) => /^mailto:/i.test(u));
-  const url = https ?? mailto ?? null;
-  // One-click requires both the https URL AND the post-flag (RFC 8058).
-  const oneClick = !!(https && postHeaderValue && /one-click/i.test(postHeaderValue));
-  return { url, oneClick };
+  const httpsUrl = urls.find((u) => /^https:/i.test(u)) ?? null;
+  const mailtoUrl = urls.find((u) => /^mailto:/i.test(u)) ?? null;
+  // One-click requires BOTH an HTTPS URL AND the post-flag (RFC 8058).
+  // A mailto-only header carrying the post-flag is NOT one-click.
+  const oneClick = !!(httpsUrl && postHeaderValue && /one-click/i.test(postHeaderValue));
+  return { httpsUrl, mailtoUrl, oneClick };
 }
 
 /**

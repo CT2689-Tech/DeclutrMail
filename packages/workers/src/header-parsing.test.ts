@@ -37,19 +37,33 @@ describe('parseRecipients', () => {
 
 describe('parseListUnsubscribe', () => {
   it('returns nulls for missing header', () => {
-    expect(parseListUnsubscribe(null, null)).toEqual({ url: null, oneClick: false });
-  });
-
-  it('prefers https URL over mailto', () => {
-    expect(parseListUnsubscribe('<https://x.com/unsub>, <mailto:unsub@x.com>', null)).toEqual({
-      url: 'https://x.com/unsub',
+    expect(parseListUnsubscribe(null, null)).toEqual({
+      httpsUrl: null,
+      mailtoUrl: null,
       oneClick: false,
     });
   });
 
-  it('falls back to mailto when no https present', () => {
+  it('returns both channels when both URL forms are present', () => {
+    expect(parseListUnsubscribe('<https://x.com/unsub>, <mailto:unsub@x.com>', null)).toEqual({
+      httpsUrl: 'https://x.com/unsub',
+      mailtoUrl: 'mailto:unsub@x.com',
+      oneClick: false,
+    });
+  });
+
+  it('returns only mailto when no https is present', () => {
     expect(parseListUnsubscribe('<mailto:unsub@x.com>', null)).toEqual({
-      url: 'mailto:unsub@x.com',
+      httpsUrl: null,
+      mailtoUrl: 'mailto:unsub@x.com',
+      oneClick: false,
+    });
+  });
+
+  it('returns only https when no mailto is present', () => {
+    expect(parseListUnsubscribe('<https://x.com/unsub>', null)).toEqual({
+      httpsUrl: 'https://x.com/unsub',
+      mailtoUrl: null,
       oneClick: false,
     });
   });
@@ -60,20 +74,26 @@ describe('parseListUnsubscribe', () => {
         '<https://x.com/unsub>, <mailto:unsub@x.com>',
         'List-Unsubscribe=One-Click',
       ),
-    ).toEqual({ url: 'https://x.com/unsub', oneClick: true });
+    ).toEqual({
+      httpsUrl: 'https://x.com/unsub',
+      mailtoUrl: 'mailto:unsub@x.com',
+      oneClick: true,
+    });
   });
 
   it('does NOT report one-click without an https URL', () => {
     // Mailto-only — one-click is not applicable per RFC 8058.
     expect(parseListUnsubscribe('<mailto:unsub@x.com>', 'List-Unsubscribe=One-Click')).toEqual({
-      url: 'mailto:unsub@x.com',
+      httpsUrl: null,
+      mailtoUrl: 'mailto:unsub@x.com',
       oneClick: false,
     });
   });
 
   it('case-insensitive on the one-click flag', () => {
     expect(parseListUnsubscribe('<https://x.com>', 'list-unsubscribe=one-click')).toEqual({
-      url: 'https://x.com',
+      httpsUrl: 'https://x.com',
+      mailtoUrl: null,
       oneClick: true,
     });
   });
@@ -82,19 +102,34 @@ describe('parseListUnsubscribe', () => {
     // Cleartext `http:` is downgrade-vulnerable — never honored as
     // one-click even with the post-flag. Codex iter 4 finding.
     expect(parseListUnsubscribe('<http://x.com/unsub>', 'List-Unsubscribe=One-Click')).toEqual({
-      url: null,
+      httpsUrl: null,
+      mailtoUrl: null,
       oneClick: false,
     });
   });
 
-  it('falls back to mailto when only http: + mailto present (no one-click)', () => {
+  it('returns only mailto when http: + mailto present (http dropped, no one-click)', () => {
     expect(
       parseListUnsubscribe(
         '<http://x.com/unsub>, <mailto:unsub@x.com>',
         'List-Unsubscribe=One-Click',
       ),
     ).toEqual({
-      url: 'mailto:unsub@x.com',
+      httpsUrl: null,
+      mailtoUrl: 'mailto:unsub@x.com',
+      oneClick: false,
+    });
+  });
+
+  it('plain https (no post header) returns https without one-click — caller decides aggregation', () => {
+    // The Codex iter 5 bug: this case previously surfaced as
+    // {url: 'https://...', oneClick: false} and was mapped to
+    // method='mailto' downstream — a method/URL mismatch. The parser
+    // now returns the channels separately so the aggregator can
+    // distinguish "plain HTTPS link" from "actionable mailto".
+    expect(parseListUnsubscribe('<https://x.com/unsub>', null)).toEqual({
+      httpsUrl: 'https://x.com/unsub',
+      mailtoUrl: null,
       oneClick: false,
     });
   });
