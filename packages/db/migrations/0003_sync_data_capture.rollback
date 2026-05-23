@@ -6,8 +6,8 @@
 -- the forward.
 --
 -- NOT idempotent — assumes schema matches the forward migration's end
--- state. The backfill `UPDATE` is not reversed: the column it touched
--- (`is_outbound`) is dropped, so the data goes with it.
+-- state. No DML was run in the forward (Atlas data-depend), so the
+-- rollback is purely structural.
 
 ALTER TABLE "senders" DROP COLUMN IF EXISTS "unsubscribe_url";
 --> statement-breakpoint
