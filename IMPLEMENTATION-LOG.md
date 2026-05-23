@@ -207,7 +207,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
-| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | ⬜ |  |  |  |
+| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🔵 | #35 |  |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
 | D159 | Observability stack: **Sentry + PostHog | 🔵 | #34 |  |  |
