@@ -57,6 +57,10 @@
       "Bash(vercel deploy --prod:*)"
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "FORCE_COLOR=1 pnpm -s --dir \"${CLAUDE_PROJECT_DIR:-.}\" status --summary 2>/dev/null"
+  },
   "hooks": {
     "PreToolUse": [
       {

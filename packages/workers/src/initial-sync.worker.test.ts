@@ -6,7 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { mailboxAccounts, mailMessages, schema, senders, users, workspaces } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InitialSyncWorker } from './initial-sync.worker.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
@@ -249,6 +249,83 @@ describe('InitialSyncWorker', () => {
     expect(ccRow!.recipientEmails).toEqual(
       expect.arrayContaining(['recipient0@example.com', 'cc@example.com']),
     );
+  });
+
+  it('D6 sync gate — writes D224 stage sequence + monotonic progress + final ready', async () => {
+    // D6 strict gate consumers (useSyncStatus hook + action guards) read
+    // (current_stage, readiness_status, progress_pct) from this row. This
+    // pins the contract the gate depends on: stages emit in D224's
+    // declared order, progress is monotonic non-decreasing, and the run
+    // settles on (ready, ready, 100). Drift here = gate misreports.
+    type StageWrite = { stage: string; readiness: string; progressPct: number };
+    const writes: StageWrite[] = [];
+
+    // Spy the two private writers — `upsertSyncState` (stages 1-4) and
+    // `markReady` (terminal). Capture the originals first, then have the
+    // spies record + delegate. The proto is typed as `Record<string,
+    // unknown>` (not `any`) so eslint's no-explicit-any rule stays happy
+    // while keeping the access to the private surface.
+    const proto = InitialSyncWorker.prototype as unknown as Record<
+      string,
+      (this: InitialSyncWorker, ...args: unknown[]) => Promise<void>
+    >;
+    const originalUpsert = proto.upsertSyncState!;
+    const originalMarkReady = proto.markReady!;
+
+    const upsertSpy = vi.spyOn(proto, 'upsertSyncState').mockImplementation(async function (
+      this: InitialSyncWorker,
+      ...args: unknown[]
+    ): Promise<void> {
+      const [, stage, progressPct, readiness] = args as [string, string, number, string];
+      writes.push({ stage, readiness, progressPct });
+      return originalUpsert.apply(this, args);
+    });
+
+    const markReadySpy = vi.spyOn(proto, 'markReady').mockImplementation(async function (
+      this: InitialSyncWorker,
+      ...args: unknown[]
+    ): Promise<void> {
+      writes.push({ stage: 'ready', readiness: 'ready', progressPct: 100 });
+      return originalMarkReady.apply(this, args);
+    });
+
+    try {
+      const client = new FakeGmailClient(makeMessages(10, 3));
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      // 1. Exact D224 sequence, in order.
+      expect(writes.map((w) => w.stage)).toEqual([
+        'fetching_metadata',
+        'building_sender_index',
+        'computing_recommendations',
+        'finalizing',
+        'ready',
+      ]);
+
+      // 2. Readiness is `syncing` until the terminal `ready` write.
+      expect(writes.slice(0, -1).every((w) => w.readiness === 'syncing')).toBe(true);
+      expect(writes.at(-1)!.readiness).toBe('ready');
+
+      // 3. Progress is monotonic non-decreasing and lands on 100.
+      const pcts = writes.map((w) => w.progressPct);
+      for (let i = 1; i < pcts.length; i++) expect(pcts[i]).toBeGreaterThanOrEqual(pcts[i - 1]!);
+      expect(pcts.at(-1)).toBe(100);
+
+      // 4. Persisted row matches the terminal write — the gate reads this row.
+      const [state] = await db
+        .select()
+        .from(schema.providerSyncState)
+        .where(eq(schema.providerSyncState.mailboxAccountId, mailboxAccountId));
+      expect(state!.currentStage).toBe('ready');
+      expect(state!.readinessStatus).toBe('ready');
+      expect(state!.progressPct).toBe(100);
+    } finally {
+      upsertSpy.mockRestore();
+      markReadySpy.mockRestore();
+    }
   });
 
   it('historyId — snapshot is persisted to provider_sync_state.last_history_id', async () => {
