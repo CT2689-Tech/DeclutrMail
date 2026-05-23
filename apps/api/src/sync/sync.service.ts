@@ -27,12 +27,34 @@ export class SyncService {
 
   /**
    * Mark a mailbox `queued` and enqueue its full-mailbox backfill (D157,
-   * D224). Idempotent: the `provider_sync_state` row is upserted and the
-   * job uses `jobId = mailboxAccountId`, so a duplicate connect cannot
-   * start a second concurrent backfill.
+   * D224).
+   *
+   * Reconnect / retry semantics (Codex adversarial review 2026-05-22):
+   * BullMQ's `jobId = mailboxAccountId` provides the concurrency cap
+   * (only one running per mailbox), but a `queue.add()` with an existing
+   * `jobId` is a no-op — a completed-but-retained or failed-and-kept
+   * job would silently block a reconnect from ever running. We
+   * inspect the prior job's state before enqueueing:
+   *   - `active` / `waiting` / `delayed` / `prioritized` / `waiting-children`
+   *     — already in flight or queued; skip the add (no double-enqueue).
+   *   - `completed` / `failed` — terminal; remove the stale job so the
+   *     fresh add creates a runnable replacement.
+   *   - none — just add.
    */
   async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
-    // Write the `queued` row first so the onboarding gate (D224) has a
+    const existing = await this.queue.getJob(mailboxAccountId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existing.remove();
+      } else {
+        // active / waiting / delayed / prioritized / waiting-children /
+        // unknown — a sync is in flight or queued. Don't double-enqueue.
+        return;
+      }
+    }
+
+    // Write the `queued` row so the onboarding gate (D224) has a
     // state to read before the worker picks the job up.
     await this.db
       .insert(providerSyncState)

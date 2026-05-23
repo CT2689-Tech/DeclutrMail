@@ -1,6 +1,6 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -225,10 +225,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * Stage 1 — list every message id, fetch metadata for the ones not
-   * already stored (`format=metadata`), and upsert `mail_messages` +
-   * `senders` identity. Skipping already-stored ids is the resume
-   * mechanism — a retry never re-fetches.
+   * Stage 1 — list every message id, reconcile deletions, fetch
+   * metadata for ids not already stored (`format=metadata`), and upsert
+   * `mail_messages` + `senders` identity.
+   *
+   * Two correctness properties:
+   *
+   *   1. RESUME — skipping already-stored ids means a retry never
+   *      re-fetches (no re-burning of quota).
+   *   2. RECONCILE (Codex review 2026-05-22) — Gmail's id set is
+   *      authoritative; any stored id NOT in it has been deleted or
+   *      moved to SPAM/TRASH and gets removed from `mail_messages`. Sender
+   *      aggregates would otherwise drift permanently from the mailbox.
    */
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
@@ -247,11 +255,48 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     } while (pageToken);
     ids.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
     const total = ids.length;
+    const gmailIdSet = new Set(ids);
 
-    // Resume: skip ids already mirrored by an earlier attempt.
-    const stored = await this.loadStoredMessageIds(mailboxAccountId);
-    const toFetch = ids.filter((id) => !stored.has(id));
-    let processed = stored.size; // already-done count drives progress.
+    // Load stored state for both reconciliation and the resume cursor.
+    const [storedRows, senderIdentityRows] = await Promise.all([
+      this.deps.db
+        .select({
+          providerMessageId: mailMessages.providerMessageId,
+          senderKey: mailMessages.senderKey,
+          isOutbound: mailMessages.isOutbound,
+        })
+        .from(mailMessages)
+        .where(eq(mailMessages.mailboxAccountId, mailboxAccountId)),
+      this.deps.db
+        .select({ senderKey: senders.senderKey })
+        .from(senders)
+        .where(eq(senders.mailboxAccountId, mailboxAccountId)),
+    ]);
+    const withIdentity = new Set(senderIdentityRows.map((r) => r.senderKey));
+
+    // Reconcile deletions FIRST. A stored id not in Gmail's current list
+    // was deleted or moved to SPAM/TRASH and must be dropped.
+    const toDelete = storedRows
+      .filter((m) => !gmailIdSet.has(m.providerMessageId))
+      .map((m) => m.providerMessageId);
+    if (toDelete.length > 0) {
+      await this.deleteMessages(mailboxAccountId, toDelete);
+    }
+
+    // Resume cursor: stored ids STILL in Gmail's list, gated by either
+    // outbound (intentionally identity-less) or having a senders row
+    // (the orphan-heal guard).
+    const skipSet = new Set(
+      storedRows
+        .filter(
+          (m) =>
+            gmailIdSet.has(m.providerMessageId) &&
+            (m.isOutbound || withIdentity.has(m.senderKey)),
+        )
+        .map((m) => m.providerMessageId),
+    );
+    const toFetch = ids.filter((id) => !skipSet.has(id));
+    let processed = skipSet.size; // already-done count drives progress.
 
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
@@ -342,6 +387,39 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       this.foldMessage(aggregates, row);
     }
 
+    // Reconcile deletions on the derived tables (Codex review
+    // 2026-05-22). When `fetchAndStoreMetadata` removes a stored message,
+    // its sender's aggregate shrinks; once a sender has zero inbound
+    // messages, the senders / sender_timeseries rows must go too — else
+    // the Senders screen would show ghost rows with stale aggregates.
+    const survivingKeys = [...aggregates.keys()];
+    if (survivingKeys.length === 0) {
+      // No inbound mail at all — clear every sender + timeseries row.
+      await this.deps.db
+        .delete(senders)
+        .where(eq(senders.mailboxAccountId, mailboxAccountId));
+      await this.deps.db
+        .delete(senderTimeseries)
+        .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
+    } else {
+      await this.deps.db
+        .delete(senders)
+        .where(
+          and(
+            eq(senders.mailboxAccountId, mailboxAccountId),
+            notInArray(senders.senderKey, survivingKeys),
+          ),
+        );
+      await this.deps.db
+        .delete(senderTimeseries)
+        .where(
+          and(
+            eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
+            notInArray(senderTimeseries.senderKey, survivingKeys),
+          ),
+        );
+    }
+
     const senderRows: NewSender[] = [];
     const timeseriesRows: NewSenderTimeseries[] = [];
     let orphans = 0;
@@ -349,9 +427,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       const who = identity.get(senderKey);
       if (!who) {
         // A stored message whose sender identity is missing. The resume
-        // cursor (`loadStoredMessageIds`) re-fetches such messages, so a
-        // complete run leaves zero orphans — count + surface, never
-        // silently drop (CLAUDE.md §10).
+        // cursor in `fetchAndStoreMetadata` re-fetches such messages,
+        // so a complete run leaves zero orphans — count + surface,
+        // never silently drop (CLAUDE.md §10).
         orphans += 1;
         continue;
       }
@@ -428,42 +506,25 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 
   /**
-   * Provider-message-ids safe to skip on resume — stored messages whose
-   * sender identity is ALSO stored.
-   *
-   * `flushBatch` commits the `senders` identity row and the
-   * `mail_messages` row in one transaction, so in normal operation every
-   * stored message has its identity and this filter is a no-op. The
-   * filter self-heals any message that somehow lacks identity (e.g. data
-   * written by an earlier, pre-hardening code path): it is NOT skipped,
-   * so it gets re-fetched and its identity recovered — rather than
-   * silently dropped by `building_sender_index`.
+   * Drop `mail_messages` rows for ids no longer in Gmail's listing.
+   * Batched to bound the `IN (...)` list size (Codex review 2026-05-22 —
+   * reconciliation prevents permanent sender-aggregate drift).
    */
-  private async loadStoredMessageIds(mailboxAccountId: string): Promise<Set<string>> {
-    const [messageRows, senderRows] = await Promise.all([
-      this.deps.db
-        .select({
-          providerMessageId: mailMessages.providerMessageId,
-          senderKey: mailMessages.senderKey,
-          isOutbound: mailMessages.isOutbound,
-        })
-        .from(mailMessages)
-        .where(eq(mailMessages.mailboxAccountId, mailboxAccountId)),
-      this.deps.db
-        .select({ senderKey: senders.senderKey })
-        .from(senders)
-        .where(eq(senders.mailboxAccountId, mailboxAccountId)),
-    ]);
-    const withIdentity = new Set(senderRows.map((r) => r.senderKey));
-    // Skip a stored message iff EITHER it is outbound (intentionally
-    // identity-less — ADR-0004) OR its inbound sender has an identity
-    // row (the orphan-heal guard). An inbound message whose sender
-    // lacks identity is NOT skipped — it gets re-fetched + healed.
-    return new Set(
-      messageRows
-        .filter((m) => m.isOutbound || withIdentity.has(m.senderKey))
-        .map((m) => m.providerMessageId),
-    );
+  private async deleteMessages(
+    mailboxAccountId: string,
+    providerMessageIds: string[],
+  ): Promise<void> {
+    for (let i = 0; i < providerMessageIds.length; i += UPSERT_BATCH) {
+      const batch = providerMessageIds.slice(i, i + UPSERT_BATCH);
+      await this.deps.db
+        .delete(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            inArray(mailMessages.providerMessageId, batch),
+          ),
+        );
+    }
   }
 
   /**

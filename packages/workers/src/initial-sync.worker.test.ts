@@ -303,4 +303,56 @@ describe('InitialSyncWorker', () => {
     expect(sender!.unsubscribeMethod).toBe('none');
     expect(sender!.unsubscribeUrl).toBeNull();
   });
+
+  it('reconciliation — stored messages no longer in Gmail are deleted', async () => {
+    // First sync stores 10 messages from 5 senders.
+    const first = new FakeGmailClient(makeMessages(10, 5));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(mailMessages)).length).toBe(10);
+
+    // Second sync sees only 7 of the 10 (3 deleted from Gmail).
+    const second = new FakeGmailClient(makeMessages(10, 5).slice(0, 7));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    // The 3 deleted-from-Gmail rows are reconciled out of mail_messages.
+    const remaining = await db.select().from(mailMessages);
+    expect(remaining.length).toBe(7);
+    expect(remaining.every((m) => Number(m.providerMessageId.split('-')[1]) < 7)).toBe(true);
+    // No re-fetches of the 7 survivors (resume cursor still works).
+    expect(second.getCalls).toBe(0);
+  });
+
+  it('reconciliation — senders with no remaining inbound messages are pruned', async () => {
+    // First sync: 6 messages across 6 distinct senders.
+    const first = new FakeGmailClient(makeMessages(6, 6));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    expect((await db.select().from(senders)).length).toBe(6);
+
+    // Second sync: only the first 4 messages survive in Gmail → senders
+    // 4 and 5 lose their only message → their senders + sender_timeseries
+    // rows must be pruned.
+    const second = new FakeGmailClient(makeMessages(6, 6).slice(0, 4));
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const senderRows = await db.select().from(senders);
+    expect(senderRows.length).toBe(4);
+    const survivingEmails = new Set(senderRows.map((s) => s.email));
+    expect(survivingEmails.has('sender4@example.com')).toBe(false);
+    expect(survivingEmails.has('sender5@example.com')).toBe(false);
+
+    const timeseriesRows = await db.select().from(schema.senderTimeseries);
+    expect(timeseriesRows.every((t) => senderRows.some((s) => s.senderKey === t.senderKey))).toBe(
+      true,
+    );
+  });
 });
