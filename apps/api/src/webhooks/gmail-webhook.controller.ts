@@ -150,6 +150,10 @@ export class GmailWebhookController {
       case 'unknown_mailbox':
         this.logger.warn(`pubsub.unknown_mailbox emailAddress=${outcome.emailAddress}`);
         break;
+      case 'sync_state_uninitialized':
+        // Service already warn-logged with mailbox id; nothing to add here.
+        // (Outcome surfaces in the 200 response body for observability.)
+        break;
       case 'stale_history_id':
         this.logger.log(
           `pubsub.history_stale incoming=${outcome.incomingHistoryId} last=${outcome.lastHistoryId ?? 'null'}`,

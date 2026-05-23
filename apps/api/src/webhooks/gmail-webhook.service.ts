@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { mailboxAccounts, providerSyncState, webhookDedup } from '@declutrmail/db';
 
@@ -32,6 +32,7 @@ export interface GmailPubSubPayload {
 export type ProcessOutcome =
   | { kind: 'duplicate_message_id'; messageId: string }
   | { kind: 'unknown_mailbox'; emailAddress: string }
+  | { kind: 'sync_state_uninitialized'; mailboxAccountId: string }
   | { kind: 'stale_history_id'; lastHistoryId: bigint | null; incomingHistoryId: bigint }
   | {
       kind: 'enqueued';
@@ -41,19 +42,28 @@ export type ProcessOutcome =
     };
 
 /**
- * Snapshot of provider_sync_state before the historyId advance.
- * We capture the previous cursor by `RETURNING` from a transactional
- * read-modify-write below.
+ * Inner-transaction result of the historyId advance:
+ *   - `advanced`: row existed and was updated; previous cursor captured
+ *   - `stale`:    row existed but incoming historyId <= last_history_id
+ *   - `uninitialized`: no provider_sync_state row exists for this mailbox
+ *
+ * The transaction never writes a sync-state row itself — bootstrap is
+ * the OAuth-connect flow's responsibility (D109, D224). A webhook
+ * arriving for an uninitialized mailbox is a no-op; replying 200 stops
+ * Pub/Sub retries that the initial sync wouldn't fix anyway.
  */
-interface AdvanceResult {
-  previousHistoryId: bigint | null;
-}
+type AdvanceResult =
+  | { kind: 'advanced'; previousHistoryId: bigint | null }
+  | { kind: 'stale' }
+  | { kind: 'uninitialized' };
 
 /** TTL for dedup rows — 24h, well beyond Pub/Sub's 10-minute ack deadline. */
 const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class GmailWebhookService {
+  private readonly logger = new Logger(GmailWebhookService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
   /**
@@ -118,46 +128,49 @@ export class GmailWebhookService {
     // transaction so concurrent deliveries cannot both advance past
     // each other's writes. The SELECT takes a row lock; the UPDATE
     // sets both `last_history_id` and `history_id_updated_at`.
-    const advance = await this.db.transaction(async (tx): Promise<AdvanceResult | null> => {
+    //
+    // We deliberately do NOT bootstrap a missing `provider_sync_state`
+    // row from this path. Webhook arrival does not imply initial sync
+    // has completed; creating the row with `readiness_status='ready'`
+    // here would bypass D224's sync gate and let the UI render the
+    // mailbox as "ready to triage" without any real data. Bootstrap
+    // belongs to the OAuth-connect / InitialSyncWorker flow.
+    const advance = await this.db.transaction(async (tx): Promise<AdvanceResult> => {
       const rows = await tx
         .select({ lastHistoryId: providerSyncState.lastHistoryId })
         .from(providerSyncState)
         .where(eq(providerSyncState.mailboxAccountId, mailbox.id))
         .for('update')
         .limit(1);
-      const previousHistoryId = rows[0]?.lastHistoryId ?? null;
-      if (previousHistoryId !== null && previousHistoryId >= incomingHistoryId) {
-        return null;
-      }
       if (rows.length === 0) {
-        // No provider_sync_state row exists — mailbox connected but
-        // sync never queued. Create the row with the incoming cursor
-        // and `ready` state so future webhooks have something to
-        // compare against. This is the only path that bootstraps
-        // sync state from a webhook; the OAuth-connect path normally
-        // inserts the row.
-        await tx.insert(providerSyncState).values({
-          mailboxAccountId: mailbox.id,
-          lastHistoryId: incomingHistoryId,
-          historyIdUpdatedAt: new Date(),
-          readinessStatus: 'ready',
-          currentStage: 'ready',
-          progressPct: 100,
-        });
-      } else {
-        await tx
-          .update(providerSyncState)
-          .set({
-            lastHistoryId: incomingHistoryId,
-            historyIdUpdatedAt: sql`now()`,
-            updatedAt: sql`now()`,
-          })
-          .where(eq(providerSyncState.mailboxAccountId, mailbox.id));
+        return { kind: 'uninitialized' };
       }
-      return { previousHistoryId };
+      const previousHistoryId = rows[0]!.lastHistoryId ?? null;
+      if (previousHistoryId !== null && previousHistoryId >= incomingHistoryId) {
+        return { kind: 'stale' };
+      }
+      await tx
+        .update(providerSyncState)
+        .set({
+          lastHistoryId: incomingHistoryId,
+          historyIdUpdatedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(providerSyncState.mailboxAccountId, mailbox.id));
+      return { kind: 'advanced', previousHistoryId };
     });
 
-    if (advance === null) {
+    if (advance.kind === 'uninitialized') {
+      // Successful no-op: 200 to Pub/Sub so it doesn't retry — the
+      // mailbox needs OAuth + InitialSyncWorker to seed the cursor
+      // first, and Pub/Sub retries won't fix that. Privacy (D7): the
+      // mailbox-id-resolution succeeded but sync_state is missing;
+      // no message body, no payload — only the resolution outcome.
+      this.logger.warn(`webhook.received_for_uninitialized_mailbox mailbox=${mailbox.id}`);
+      return { kind: 'sync_state_uninitialized', mailboxAccountId: mailbox.id };
+    }
+
+    if (advance.kind === 'stale') {
       const current = await this.db
         .select({ lastHistoryId: providerSyncState.lastHistoryId })
         .from(providerSyncState)

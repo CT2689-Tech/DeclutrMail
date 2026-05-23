@@ -191,22 +191,37 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(dedup[0]!.messageId).toBe('msg-orphan');
   });
 
-  it('bootstraps provider_sync_state when the mailbox has no row yet', async () => {
+  it('returns sync_state_uninitialized + does NOT create provider_sync_state when the mailbox has no row yet', async () => {
+    // Webhook arrival != initial sync completed. Bootstrapping
+    // `provider_sync_state` here would bypass D224's sync gate and
+    // let the UI render the mailbox as "ready to triage" without any
+    // real data. Bootstrap is the OAuth-connect / InitialSyncWorker
+    // flow's responsibility (D109, D224).
     const { mailboxId } = await seedMailbox(db, 'bob@example.com', null);
 
     const outcome = await service.processVerifiedPush({
-      messageId: 'msg-bootstrap',
+      messageId: 'msg-uninitialized',
       payload: { emailAddress: 'bob@example.com', historyId: '42' },
     });
-    expect(outcome.kind).toBe('enqueued');
+    expect(outcome.kind).toBe('sync_state_uninitialized');
+    if (outcome.kind === 'sync_state_uninitialized') {
+      expect(outcome.mailboxAccountId).toBe(mailboxId);
+    }
 
+    // CRITICAL: the webhook path must NOT write a sync-state row.
     const sync = await db
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
-    expect(sync.length).toBe(1);
-    expect(sync[0]!.lastHistoryId).toBe(42n);
-    expect(sync[0]!.readinessStatus).toBe('ready');
+    expect(sync.length).toBe(0);
+
+    // Dedup row still written before lookup — at-least-once still safe.
+    const dedup = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-uninitialized'));
+    expect(dedup.length).toBe(1);
+    expect(dedup[0]!.mailboxAccountId).toBe(mailboxId);
   });
 
   it('rejects an oversized messageId at the DB length cap (varchar 512)', async () => {
