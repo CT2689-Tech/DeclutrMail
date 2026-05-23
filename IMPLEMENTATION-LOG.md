@@ -68,7 +68,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🔵 | #16 |  |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
-| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | ⬜ |  |  |  |
+| D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🔵 | #25 |  |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | ⬜ |  |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | ⬜ |  |  |  |
