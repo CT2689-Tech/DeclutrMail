@@ -249,9 +249,9 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D195 | Worker scaling decoupled from billing webhook (updates D161) | ⬜ |  |  |  |
 | D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | ⬜ |  |  |  |
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | ⬜ |  |  |  |
-| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | ⬜ |  |  |  |
-| D199 | Lazy promotion + spec override (component/utility placement rule) | ⬜ |  |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | ⬜ |  |  |  |
+| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🔵 | #29 |  |  |
+| D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🔵 | #29 |  |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | ⬜ |  |  |  |
 | D202 | API response envelope + cursor pagination | ⬜ |  |  |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | ⬜ |  |  |  |
