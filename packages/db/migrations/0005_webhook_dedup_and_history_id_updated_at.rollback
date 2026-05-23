@@ -1,0 +1,17 @@
+-- Rollback for 0005_webhook_dedup_and_history_id_updated_at.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverts
+-- 0005 — drops the index + column added to provider_sync_state, then
+-- drops the webhook_dedup index + table. Reverse order of the forward.
+--
+-- NOT idempotent — assumes schema matches the forward migration's end
+-- state. No DML was run in the forward (Atlas data-depend), so the
+-- rollback is purely structural.
+
+DROP INDEX IF EXISTS "provider_sync_state_history_id_updated_at_idx";
+--> statement-breakpoint
+ALTER TABLE "provider_sync_state" DROP COLUMN IF EXISTS "history_id_updated_at";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "webhook_dedup_expires_at_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "webhook_dedup";

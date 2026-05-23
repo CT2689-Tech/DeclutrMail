@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  index,
   pgEnum,
   pgTable,
   smallint,
@@ -29,6 +30,13 @@ import { mailboxAccounts } from './mailbox-accounts';
  * inbound history event whose id is `<=` this value is rejected as a
  * duplicate / out-of-order delivery. Stored as bigint (Gmail historyId
  * is an unsigned 64-bit counter).
+ *
+ * `history_id_updated_at` is the wall-clock timestamp of the last
+ * advancement of `last_history_id`. The D8 webhook updates both in
+ * the same transaction that enqueues the incremental-sync job, so
+ * the timestamp is a faithful "freshness" indicator for ops
+ * dashboards and alerting (a stale `history_id_updated_at` against a
+ * non-zero Pub/Sub volume signals a wedged mailbox).
  *
  * `(mailbox_account_id)` is unique — exactly one sync-state row per
  * mailbox.
@@ -60,6 +68,11 @@ export const providerSyncState = pgTable(
     progressPct: smallint('progress_pct').notNull().default(0),
     /** Gmail historyId cursor — must advance monotonically (D229). */
     lastHistoryId: bigint('last_history_id', { mode: 'bigint' }),
+    /** Wall-clock of the last `last_history_id` advancement (D8). */
+    historyIdUpdatedAt: timestamp('history_id_updated_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     errorCode: text('error_code'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
@@ -71,6 +84,9 @@ export const providerSyncState = pgTable(
   },
   (table) => ({
     mailboxUniq: uniqueIndex('provider_sync_state_mailbox_account_uniq').on(table.mailboxAccountId),
+    historyIdUpdatedAtIdx: index('provider_sync_state_history_id_updated_at_idx').on(
+      table.historyIdUpdatedAt,
+    ),
   }),
 );
 

@@ -103,6 +103,7 @@ describe('migration round-trip', () => {
       'table:sender_timeseries',
       'table:senders',
       'table:users',
+      'table:webhook_dedup',
       'table:workspaces',
       'enum:activity_action',
       'enum:activity_source',
