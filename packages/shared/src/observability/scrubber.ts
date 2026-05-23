@@ -45,20 +45,14 @@ const BANNED_KEY_PATTERNS: ReadonlyArray<RegExp> = [
  * from any `headers` object encountered in telemetry payloads.
  *
  * Matching is case-insensitive against the header NAME (object key).
- * Subject is in the allowlist because the product already stores it.
- * Message-ID is intentionally OMITTED per D231.
+ * Message-ID is NOT allowed in telemetry headers — D7's stored-header
+ * allowlist (subject/from/to/cc/date/list-unsubscribe/list-unsubscribe-post)
+ * defines the privacy boundary; telemetry must not be wider than DB storage.
  */
 const HEADER_ALLOWLIST: ReadonlySet<string> = new Set(
-  [
-    'subject',
-    'from',
-    'to',
-    'cc',
-    'date',
-    'message-id',
-    'list-unsubscribe',
-    'list-unsubscribe-post',
-  ].map((h) => h.toLowerCase()),
+  ['subject', 'from', 'to', 'cc', 'date', 'list-unsubscribe', 'list-unsubscribe-post'].map((h) =>
+    h.toLowerCase(),
+  ),
 );
 
 const REDACTED = '[redacted]' as const;

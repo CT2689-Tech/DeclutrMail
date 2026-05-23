@@ -91,11 +91,12 @@ describe('scrubObject', () => {
     const out = scrubObject(fullGmailMessage()) as {
       headers: Record<string, string>;
     };
-    // Allowlist: subject, from, to, cc, date, message-id, list-unsubscribe, list-unsubscribe-post
+    // Allowlist: subject, from, to, cc, date, list-unsubscribe, list-unsubscribe-post
     expect(out.headers.Subject).toBe('Q3 invoice');
     expect(out.headers.From).toBe('billing@example.com');
     expect(out.headers.To).toBe('me@example.com');
-    expect(out.headers['Message-ID']).toBe('<abc@example.com>');
+    // Message-ID is NOT in the telemetry allowlist (D7) — must be stripped
+    expect(out.headers['Message-ID']).toBeUndefined();
     // Non-allowlist — stripped
     expect(out.headers['X-Originating-IP']).toBeUndefined();
     expect(out.headers['X-Custom-Tracker']).toBeUndefined();
