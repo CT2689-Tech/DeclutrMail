@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm';
 import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { SyncService } from '../sync/sync.service.js';
 import { TokenCryptoService } from './token-crypto.service.js';
 
 /**
@@ -51,6 +52,7 @@ class EmailRaceLostError extends Error {}
 export class GoogleOAuthService {
   constructor(
     private readonly tokenCrypto: TokenCryptoService,
+    private readonly sync: SyncService,
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
   ) {}
 
@@ -151,6 +153,12 @@ export class GoogleOAuthService {
     if (!row) {
       throw new InternalServerErrorException('Failed to persist the mailbox account.');
     }
+
+    // Connect done → enqueue the full-mailbox backfill (D157). A failure
+    // here surfaces loudly: the connect is idempotent (the upsert above)
+    // and safe to retry, so a stuck mailbox is preferable to a silent
+    // one that never syncs.
+    await this.sync.enqueueInitialSync(row.id);
 
     return { mailboxAccountId: row.id, email };
   }
