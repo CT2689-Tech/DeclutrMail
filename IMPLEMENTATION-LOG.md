@@ -58,7 +58,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🔵 | #22 |  |  |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🔵 | #21 |  |  |
-| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | ⬜ |  |  |  |
+| D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🔵 | #26 |  |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23 |  |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
 | D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
-| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | ⬜ |  |  |  |
+| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🔵 | #26 |  |  |
 | D229 | Pub/Sub OIDC verification contract | ⬜ |  |  |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
