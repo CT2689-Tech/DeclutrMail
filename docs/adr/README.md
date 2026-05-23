@@ -26,6 +26,7 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 | [0004](./0004-d7-allowlist-amendment-data-capture.md) | Accepted | D7 storage-allowlist amendment — capture To/Cc + List-Unsubscribe + outbound tagging | D7, D9, D228 |
 | [0005](./0005-gmail-quota-rate-limiter-resumable-backfill.md) | Accepted | Gmail quota — sliding-window rate limiter + resumable backfill | D5, D157 |
 | [0006](./0006-unsubscribe-cascade-rfc8058-mailto-manual.md) | Accepted | Unsubscribe cascade — RFC 8058 one-click, mailto deferred manual, fallback none | D9, D230 |
+| [0007](./0007-component-placement-rule.md) | Accepted | Component placement — lazy promotion + spec override | D198, D199 |
 
 ## Authoring an ADR
 
