@@ -7,12 +7,19 @@ export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbo
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
 export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
-export { senderPolicies, senderPolicyType } from './schema/sender-policies';
+export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
 export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
 export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';
 export type { NewSender, Sender } from './schema/senders';
+export { triageDecisions, triageReasoningSource, triageVerdict } from './schema/triage-decisions';
+export type {
+  NewTriageDecision,
+  TriageDecision,
+  TriageReasoningSource,
+  TriageVerdict,
+} from './schema/triage-decisions';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { webhookDedup } from './schema/webhook-dedup';
