@@ -20,6 +20,37 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-23 — Two parallel agents independently bootstrapped the same vitest infra in `packages/shared`
+
+**Context:** Dispatched 3 worktrees in parallel — WT-1 (D7+D228 privacy
+badge in `packages/shared`) and WT-2 (D224 sync contract, also in
+`packages/shared`). Each agent received a tightly scoped file list that
+did NOT include test-runner setup. Both Definitions-of-Done required
+`pnpm vitest run` for the new tests.
+**Finding:** `packages/shared` had no test runner wired (its `test`
+script was `echo 'no tests yet'`). Both agents independently identified
+the gap, both added `vitest@^2.x` devDep + a `vitest.config.ts` +
+`test`/`test:watch` scripts, both mirrored the existing `packages/db`
+and `packages/workers` pattern, and both flagged the scope creep
+honestly. Net result: a clean merge conflict on
+`packages/shared/{vitest.config.ts,package.json}` + `pnpm-lock.yaml`,
+caused entirely by missing foundation rather than by feature overlap.
+Two independent agents arriving at the same scope-creep call is a
+strong signal that the foundation should have existed before either
+feature began.
+**Rule (provisional):** When seeding a workspace package for the first
+real consumer, the bootstrap (test runner + lint config + any shared
+deps) should land in its own PR *before* parallel feature work begins.
+For multi-worktree dispatch, audit the workspace target's
+`package.json` `scripts` and devDeps in the dispatcher (this thread)
+before fanning out — if any required tooling is missing, ship a
+`chore/bootstrap-<package>-<tool>` PR first.
+**Distillation trigger:** Promote to CLAUDE.md §5 (PR sequence) — add
+"foundation-before-fan-out" as an explicit rule — if a second parallel
+dispatch hits the same convergent-infra-bootstrap pattern. Single
+occurrence not yet enough to promote, but the cost (manual rebase +
+duplicate review) is high enough that 2× hits = promote.
+
 ## 2026-05-22 — A "harness-blocked" claim went unverified for two sessions
 
 **Context:** FOUNDER-FOLLOWUPS carried an item to fix a stale path in
