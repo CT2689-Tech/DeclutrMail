@@ -57,7 +57,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | ⬜ |  |  |  |
-| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | ⬜ |  |  |  |
+| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🔵 | #21 |  |  |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | ⬜ |  |  |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | ⬜ |  |  |  |
