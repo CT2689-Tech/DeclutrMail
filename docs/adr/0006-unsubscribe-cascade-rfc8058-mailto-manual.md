@@ -193,4 +193,4 @@ Each of those is its own PR + (where applicable) its own D-candidate.
 - `packages/db/migrations/0004_unsubscribe_mailto_and_keyset_idx.sql`
 - `packages/workers/src/header-parsing.ts`
 - PR #23 — `feat(sync): Widen D7 allowlist + capture SENT (D9,
-  ADR-0004)` (commit `5695d6a`)
+ADR-0004)` (commit `5695d6a`)

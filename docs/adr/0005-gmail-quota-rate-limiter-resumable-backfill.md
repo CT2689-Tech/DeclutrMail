@@ -29,8 +29,7 @@ failure:
    quota in the same first minute, and dead-lettered after exhausting
    the `perMailboxPolicy` attempts.
 
-Mailboxes under ~3,000 messages (e.g., the two seed accounts at 327 +
-140) sat under the ceiling, so small-sample tests stayed green and the
+Mailboxes under ~3,000 messages (e.g., the two seed accounts at 327 + 140) sat under the ceiling, so small-sample tests stayed green and the
 defect shipped. See `MISTAKES.md` 2026-05-22 for the full incident log
 and the rule it produced ("a throttle requirement means a rate limiter,
 not a concurrency cap; any worker calling a quota-metered API must pace
@@ -161,4 +160,4 @@ mid-window interruption never restarts from zero and re-burns quota.
 - `MISTAKES.md` 2026-05-22 — InitialSyncWorker could not sync a
   mailbox larger than ~3,000 messages
 - PR #22 — `fix(sync): Rate-limit + resumable backfill — quota
-  hardening (D5)` (commit `f42f9e7`)
+hardening (D5)` (commit `f42f9e7`)
