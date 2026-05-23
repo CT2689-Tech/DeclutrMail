@@ -7,4 +7,5 @@ export * from './sender-policies';
 export * from './sender-timeseries';
 export * from './senders';
 export * from './users';
+export * from './webhook-dedup';
 export * from './workspaces';

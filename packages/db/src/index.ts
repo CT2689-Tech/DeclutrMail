@@ -15,5 +15,7 @@ export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders
 export type { NewSender, Sender } from './schema/senders';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
+export { webhookDedup } from './schema/webhook-dedup';
+export type { NewWebhookDedup, WebhookDedup } from './schema/webhook-dedup';
 export { workspaces, workspaceTier } from './schema/workspaces';
 export type { NewWorkspace, Workspace } from './schema/workspaces';

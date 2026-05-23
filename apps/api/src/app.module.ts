@@ -4,6 +4,7 @@ import { Module } from '@nestjs/common';
 import { DbModule } from './db/db.module.js';
 import { GoogleOAuthModule } from './auth/google-oauth.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
+import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 /**
  * The Gmail OAuth connect feature is loaded ONLY when
@@ -19,8 +20,18 @@ import { RateLimitModule } from './common/rate-limit/index.js';
 const gmailConnectEnabled = process.env.GMAIL_CONNECT_ENABLED === 'true';
 
 /**
+ * The Gmail Pub/Sub push webhook (D8, D229) is loaded ONLY when
+ * `PUBSUB_WEBHOOK_ENABLED=true`. The verifier requires
+ * PUBSUB_PUSH_AUDIENCE + PUBSUB_PUSH_SA_EMAIL and crashes at boot
+ * if either is missing — keeping the module unimported until the
+ * env is configured avoids that bootstrap failure for envs that
+ * don't ship the webhook yet.
+ */
+const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
+
+/**
  * Root application module (D201). Loads env config, the global DB
- * module, and — when enabled — the Gmail OAuth feature module.
+ * module, and — when enabled — the feature modules.
  */
 @Module({
   imports: [
@@ -31,6 +42,7 @@ const gmailConnectEnabled = process.env.GMAIL_CONNECT_ENABLED === 'true';
     // REDIS_URL is absent so local dev without Redis still works.
     RateLimitModule,
     ...(gmailConnectEnabled ? [GoogleOAuthModule] : []),
+    ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
 })
 export class AppModule {}
