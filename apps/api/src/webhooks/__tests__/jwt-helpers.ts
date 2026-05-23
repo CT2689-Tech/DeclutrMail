@@ -47,10 +47,9 @@ function base64UrlEncode(input: string | Buffer): string {
 }
 
 /** Standard claims for a healthy Pub/Sub OIDC push, with overrides applied. */
-export function pubsubClaims(overrides: Partial<Record<string, unknown>> = {}): Record<
-  string,
-  unknown
-> {
+export function pubsubClaims(
+  overrides: Partial<Record<string, unknown>> = {},
+): Record<string, unknown> {
   const nowSec = Math.floor(Date.now() / 1000);
   return {
     iss: 'https://accounts.google.com',

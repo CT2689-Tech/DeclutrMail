@@ -26,7 +26,17 @@ import { GmailWebhookService } from '../gmail-webhook.service.js';
  * exercised against the real schema instead of a hand-rolled stub.
  */
 
-const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', '..', '..', '..', 'packages', 'db', 'migrations');
+const MIGRATIONS_DIR = join(
+  import.meta.dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  '..',
+  'packages',
+  'db',
+  'migrations',
+);
 
 async function freshDb(): Promise<DrizzleDb> {
   const pg = new PGlite({ extensions: { citext } });
@@ -107,7 +117,10 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     }
 
     // Dedup row exists + carries mailbox_account_id back-fill.
-    const dedupRows = await db.select().from(webhookDedup).where(eq(webhookDedup.messageId, 'msg-001'));
+    const dedupRows = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-001'));
     expect(dedupRows.length).toBe(1);
     expect(dedupRows[0]!.mailboxAccountId).toBe(mailboxId);
     expect(dedupRows[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now());

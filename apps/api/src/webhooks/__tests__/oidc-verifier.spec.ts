@@ -199,10 +199,7 @@ describe('PubSubOidcVerifier', () => {
     const key = createTestKey('test-kid-1');
     const nowSec = Math.floor(Date.now() / 1000);
     const verifier = makeVerifier({ publicJwk: key.publicJwk, now: () => nowSec });
-    const jwt = key.signJwt(
-      {},
-      pubsubClaims({ iat: nowSec - 1000, exp: nowSec - 100 }),
-    );
+    const jwt = key.signJwt({}, pubsubClaims({ iat: nowSec - 1000, exp: nowSec - 100 }));
     const result = await verifier.verify(`Bearer ${jwt}`);
     expect(result.ok).toBe(false);
     if (!result.ok && result.step === 6) {
@@ -214,10 +211,7 @@ describe('PubSubOidcVerifier', () => {
     const key = createTestKey('test-kid-1');
     const nowSec = Math.floor(Date.now() / 1000);
     const verifier = makeVerifier({ publicJwk: key.publicJwk, now: () => nowSec });
-    const jwt = key.signJwt(
-      {},
-      pubsubClaims({ iat: nowSec + 3600, exp: nowSec + 4200 }),
-    );
+    const jwt = key.signJwt({}, pubsubClaims({ iat: nowSec + 3600, exp: nowSec + 4200 }));
     const result = await verifier.verify(`Bearer ${jwt}`);
     expect(result.ok).toBe(false);
     if (!result.ok && result.step === 6) {
