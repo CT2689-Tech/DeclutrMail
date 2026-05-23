@@ -86,7 +86,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D32 | No bulk operations in Triage | ⬜ |  |  |  |
 | D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | ⬜ |  |  |  |
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | ⬜ |  |  |  |
-| D35 | Undo via persistent action tray (Doc 05 §11) | ⬜ |  |  |  |
+| D35 | Undo via persistent action tray (Doc 05 §11) | 🔵 | #33 |  |  |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | ⬜ |  |  |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #12 |  |  |
@@ -109,7 +109,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | ⬜ |  |  |  |
 | D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | ⬜ |  |  |  |
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | ⬜ |  |  |  |
-| D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | ⬜ |  |  |  |
+| D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🔵 | #33 |  |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
 | D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | ⬜ |  |  |  |
@@ -283,7 +283,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D229 | Pub/Sub OIDC verification contract | 🔵 | #31 |  |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
-| D232 | Account deletion respects undo windows (max-of, or typed waiver) | ⬜ |  |  |  |
+| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33 |  |  |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | ⬜ |  |  |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
