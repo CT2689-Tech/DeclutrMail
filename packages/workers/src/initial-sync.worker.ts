@@ -1,6 +1,6 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -39,6 +39,13 @@ const CATEGORY_ORDER: readonly GmailCategory[] = [
 const FETCH_CONCURRENCY = 20;
 /** Rows per upsert batch. */
 const UPSERT_BATCH = 500;
+/**
+ * Rows per streaming SELECT page (Codex iter 4 — bounded-memory
+ * pagination for 50k–250k+ mailbox targets). Keyset pagination over
+ * `mail_messages.id` (PG sort + indexed seek) avoids the OFFSET
+ * full-scan penalty.
+ */
+const SCAN_PAGE = 1000;
 
 /** Dependencies the worker needs — injected by the composition root. */
 export interface InitialSyncDeps {
@@ -237,6 +244,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    *      authoritative; any stored id NOT in it has been deleted or
    *      moved to SPAM/TRASH and gets removed from `mail_messages`. Sender
    *      aggregates would otherwise drift permanently from the mailbox.
+   *
+   * Memory profile (Codex iter 4): the only mailbox-sized structures
+   * held simultaneously are `gmailIdSet` and `skipSet` (string sets,
+   * ~12-25 MB at 250k). The stored-row scan and metadata fetch both
+   * stream in bounded batches — no whole-mailbox row array is
+   * materialised at any point.
    */
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
@@ -244,60 +257,80 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   ): Promise<{ messagesSynced: number; gmailApiCalls: number }> {
     let gmailApiCalls = 0;
 
-    // List every id so `total` is known → real progress_pct.
-    const ids: string[] = [];
+    // 1. List every Gmail id. Keep both an ordered array (for the
+    //    oldest→newest fetch order locked by fork #5) AND a Set (for
+    //    O(1) reconciliation `has` lookups). Two views of the same
+    //    list — at 250k mailboxes this is ~25 MB total, well below
+    //    the heap budget and bounded.
+    const orderedIds: string[] = [];
+    const gmailIdSet = new Set<string>();
     let pageToken: string | undefined;
     do {
       const page = await client.listMessageIds(pageToken);
       gmailApiCalls += 1;
-      ids.push(...page.ids);
+      for (const id of page.ids) {
+        orderedIds.push(id);
+        gmailIdSet.add(id);
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
-    ids.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
-    const total = ids.length;
-    const gmailIdSet = new Set(ids);
+    orderedIds.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
+    const total = orderedIds.length;
 
-    // Load stored state for both reconciliation and the resume cursor.
-    const [storedRows, senderIdentityRows] = await Promise.all([
-      this.deps.db
+    // 2. Sender identity set (small — thousands).
+    const senderIdentityRows = await this.deps.db
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    const withIdentity = new Set(senderIdentityRows.map((r) => r.senderKey));
+
+    // 3. Stream `mail_messages` in keyset-paginated pages, reconciling
+    //    deletions + building the resume cursor as we go. Bounded
+    //    memory: one page (~1k rows) + a deletion buffer.
+    const skipSet = new Set<string>();
+    let toDeleteBuffer: string[] = [];
+    let lastId: string | null = null;
+    for (;;) {
+      const page = await this.deps.db
         .select({
+          id: mailMessages.id,
           providerMessageId: mailMessages.providerMessageId,
           senderKey: mailMessages.senderKey,
           isOutbound: mailMessages.isOutbound,
         })
         .from(mailMessages)
-        .where(eq(mailMessages.mailboxAccountId, mailboxAccountId)),
-      this.deps.db
-        .select({ senderKey: senders.senderKey })
-        .from(senders)
-        .where(eq(senders.mailboxAccountId, mailboxAccountId)),
-    ]);
-    const withIdentity = new Set(senderIdentityRows.map((r) => r.senderKey));
-
-    // Reconcile deletions FIRST. A stored id not in Gmail's current list
-    // was deleted or moved to SPAM/TRASH and must be dropped.
-    const toDelete = storedRows
-      .filter((m) => !gmailIdSet.has(m.providerMessageId))
-      .map((m) => m.providerMessageId);
-    if (toDelete.length > 0) {
-      await this.deleteMessages(mailboxAccountId, toDelete);
+        .where(
+          lastId === null
+            ? eq(mailMessages.mailboxAccountId, mailboxAccountId)
+            : and(eq(mailMessages.mailboxAccountId, mailboxAccountId), gt(mailMessages.id, lastId)),
+        )
+        .orderBy(mailMessages.id)
+        .limit(SCAN_PAGE);
+      if (page.length === 0) {
+        break;
+      }
+      for (const m of page) {
+        if (!gmailIdSet.has(m.providerMessageId)) {
+          toDeleteBuffer.push(m.providerMessageId);
+          if (toDeleteBuffer.length >= UPSERT_BATCH) {
+            await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
+            toDeleteBuffer = [];
+          }
+        } else if (m.isOutbound || withIdentity.has(m.senderKey)) {
+          skipSet.add(m.providerMessageId);
+        }
+      }
+      lastId = page[page.length - 1]!.id;
+    }
+    if (toDeleteBuffer.length > 0) {
+      await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
     }
 
-    // Resume cursor: stored ids STILL in Gmail's list, gated by either
-    // outbound (intentionally identity-less) or having a senders row
-    // (the orphan-heal guard).
-    const skipSet = new Set(
-      storedRows
-        .filter(
-          (m) =>
-            gmailIdSet.has(m.providerMessageId) &&
-            (m.isOutbound || withIdentity.has(m.senderKey)),
-        )
-        .map((m) => m.providerMessageId),
-    );
-    const toFetch = ids.filter((id) => !skipSet.has(id));
-    let processed = skipSet.size; // already-done count drives progress.
-
+    // 4. Fetch metadata for ids not in the skip set. Iterate `gmailIdSet`
+    //    directly — never materialise a `toFetch` array. Insertion order
+    //    on a JS Set matches Gmail's list order (newest-first); we
+    //    reverse-process by walking the set in chunks of FETCH_CONCURRENCY.
+    let processed = skipSet.size;
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
 
@@ -310,10 +343,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       pendingSenders = new Map();
     };
 
-    for (let i = 0; i < toFetch.length; i += FETCH_CONCURRENCY) {
-      const chunk = toFetch.slice(i, i + FETCH_CONCURRENCY);
+    let chunk: string[] = [];
+    const processChunk = async (): Promise<void> => {
+      if (chunk.length === 0) {
+        return;
+      }
       const metas = await Promise.all(chunk.map((id) => client.getMessageMetadata(id)));
       gmailApiCalls += chunk.length;
+      chunk = [];
 
       for (const meta of metas) {
         if (!meta) {
@@ -337,7 +374,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         await flush();
         await this.updateProgress(mailboxAccountId, processed, total);
       }
+    };
+
+    for (const id of orderedIds) {
+      if (skipSet.has(id)) {
+        continue;
+      }
+      chunk.push(id);
+      if (chunk.length === FETCH_CONCURRENCY) {
+        await processChunk();
+      }
     }
+    await processChunk();
     await flush();
 
     return { messagesSynced: total, gmailApiCalls };
@@ -365,26 +413,48 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Fold every INBOUND stored message into a per-sender aggregate.
     // Outbound messages are excluded — their `From` is the user, never
     // a third-party sender (ADR-0004).
-    const messageRows = await this.deps.db
-      .select({
-        senderKey: mailMessages.senderKey,
-        internalDate: mailMessages.internalDate,
-        labelIds: mailMessages.labelIds,
-        isUnread: mailMessages.isUnread,
-        unsubscribeUrl: mailMessages.unsubscribeUrl,
-        unsubscribeOneClick: mailMessages.unsubscribeOneClick,
-      })
-      .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.isOutbound, false),
-        ),
-      );
-
+    //
+    // Stream with keyset pagination over `id` (Codex iter 4 — bounded
+    // memory). Loading the full inbound row set at 250k+ mailboxes was
+    // ~100 MB of duplicated state; pages of `SCAN_PAGE` cap the
+    // in-process footprint to a single page at any time. The
+    // `aggregates` map alone scales with distinct senders (~thousands),
+    // not with messages.
     const aggregates = new Map<string, SenderAggregate>();
-    for (const row of messageRows) {
-      this.foldMessage(aggregates, row);
+    let lastId: string | null = null;
+    for (;;) {
+      const page = await this.deps.db
+        .select({
+          id: mailMessages.id,
+          senderKey: mailMessages.senderKey,
+          internalDate: mailMessages.internalDate,
+          labelIds: mailMessages.labelIds,
+          isUnread: mailMessages.isUnread,
+          unsubscribeUrl: mailMessages.unsubscribeUrl,
+          unsubscribeOneClick: mailMessages.unsubscribeOneClick,
+        })
+        .from(mailMessages)
+        .where(
+          lastId === null
+            ? and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                eq(mailMessages.isOutbound, false),
+              )
+            : and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                eq(mailMessages.isOutbound, false),
+                gt(mailMessages.id, lastId),
+              ),
+        )
+        .orderBy(mailMessages.id)
+        .limit(SCAN_PAGE);
+      if (page.length === 0) {
+        break;
+      }
+      for (const row of page) {
+        this.foldMessage(aggregates, row);
+      }
+      lastId = page[page.length - 1]!.id;
     }
 
     // Build the rebuild payload purely in-memory FIRST — no DB writes

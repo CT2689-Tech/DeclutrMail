@@ -1,14 +1,16 @@
 import 'reflect-metadata';
 
-import { Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
-import { mailboxAccounts, schema } from '@declutrmail/db';
+import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
   createRedisConnection,
+  INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
+  initialSyncJobOptions,
   InitialSyncWorker,
   InvalidGrantError,
   RateLimiter,
@@ -131,6 +133,47 @@ async function bootstrap(): Promise<void> {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
+  // Boot reconciler (Codex adversarial review iter 4). The connect flow
+  // commits `provider_sync_state.readiness_status='queued'` in the same
+  // DB transaction as the mailbox upsert — that's the durable sync
+  // intent. The subsequent `queue.add` is best-effort. If Redis was down
+  // during connect, the DB has `queued` rows with no BullMQ job. On
+  // worker boot we sweep them and add jobs for any that are missing,
+  // self-healing past outages without manual ops intervention.
+  const reconcilerQueue = new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, { connection });
+  try {
+    const queuedRows = await db
+      .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.readinessStatus, 'queued'));
+    let requeued = 0;
+    for (const { mailboxAccountId } of queuedRows) {
+      const existing = await reconcilerQueue.getJob(mailboxAccountId);
+      if (!existing) {
+        await reconcilerQueue.add(
+          INITIAL_SYNC_JOB,
+          { mailboxAccountId },
+          initialSyncJobOptions(mailboxAccountId),
+        );
+        requeued += 1;
+      }
+    }
+    if (requeued > 0) {
+      console.log(
+        JSON.stringify({ level: 'info', kind: 'reconciler.requeued', count: requeued }),
+      );
+    }
+  } catch (err) {
+    // Reconciler failure must not block the worker from starting.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'reconciler.failed',
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
@@ -140,6 +183,7 @@ async function bootstrap(): Promise<void> {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
     void (async () => {
       await bullWorker.close();
+      await reconcilerQueue.close();
       await connection.quit();
       await pg.end();
       process.exit(0);
