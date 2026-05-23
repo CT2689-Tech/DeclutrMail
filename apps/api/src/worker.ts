@@ -58,6 +58,27 @@ async function bootstrap(): Promise<void> {
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
 
   /**
+   * Per-mailbox `RateLimiter`s, cached by `mailboxAccountId` for the
+   * lifetime of the worker process (Codex adversarial review iter 3,
+   * 2026-05-22). Earlier the limiter was created fresh per
+   * `getClient()` call — every BullMQ retry started with an empty
+   * window, but Gmail's per-user quota bucket persists for 60s. A
+   * post-quota retry within `perMailboxPolicy.backoff` (2s/4s/8s/...)
+   * would re-spend a full local budget while Gmail still counted the
+   * prior attempt's usage → repeated 403s and eventual dead-letter.
+   *
+   * Sharing the limiter across attempts lets its sliding-window state
+   * persist: a retry's first `acquire(5)` sees the prior attempt's
+   * spend, computes the remaining wait until the oldest event ages out
+   * of the 60s window, and sleeps before sending — no thrash.
+   *
+   * Memory: one limiter per distinct mailbox synced by this process,
+   * each holding at most `windowMs / minRequestSpacing` events
+   * (~thousands). Bounded; process restart clears the cache.
+   */
+  const limiterByMailbox = new Map<string, RateLimiter>();
+
+  /**
    * `GmailAccess` port impl: load the mailbox row, decrypt its OAuth
    * refresh token (D14 envelope decryption — reuses `TokenCryptoService`
    * unchanged), and return a token-bound Gmail client.
@@ -83,13 +104,14 @@ async function bootstrap(): Promise<void> {
       );
       const oauth = new OAuth2Client(clientId, clientSecret);
       oauth.setCredentials({ refresh_token: refreshToken });
-      // One limiter per sync attempt — it paces calls WITHIN the attempt
-      // under Gmail's per-user quota (D5). Across attempts the guarantee
-      // is resume (a retry skips already-stored messages, so it re-fetches
-      // far fewer) plus the policy's exponential backoff, which clears the
-      // 60s window — so a retry cannot re-burst the way the attempt it
-      // retries did.
-      const limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+
+      // Reuse the limiter across attempts so its sliding-window state
+      // outlives a single `processJob` call (D5 / Codex iter 3).
+      let limiter = limiterByMailbox.get(mailboxAccountId);
+      if (!limiter) {
+        limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+        limiterByMailbox.set(mailboxAccountId, limiter);
+      }
       return new GmailClientService(oauth, limiter);
     },
   };

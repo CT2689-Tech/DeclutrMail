@@ -349,6 +349,68 @@ describe('InitialSyncWorker', () => {
     expect((await db.select().from(senders)).length).toBe(3);
   });
 
+  it('reconciliation — stale sender_timeseries months are removed for surviving senders', async () => {
+    // Codex iter 3 regression: surviving sender loses a month's worth of
+    // messages → that (senderKey, yearMonth) row must be deleted from
+    // sender_timeseries. Previously the selective NOT-IN delete only
+    // removed rows for non-surviving senders, leaving stale months for
+    // survivors → permanently inflated historical volume/read counts.
+    const month1 = (id: string, day: number): GmailMessageMetadata => ({
+      id,
+      threadId: `t-${id}`,
+      labelIds: ['INBOX'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 0, day)), // January 2026
+      from: 'A <a@example.com>',
+      subject: 's',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+    const month2 = (id: string, day: number): GmailMessageMetadata => ({
+      id,
+      threadId: `t-${id}`,
+      labelIds: ['INBOX'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 1, day)), // February 2026
+      from: 'A <a@example.com>',
+      subject: 's',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+
+    // First sync: 2 messages in Jan + 2 in Feb for the same sender.
+    const first = new FakeGmailClient([
+      month1('jan-1', 5),
+      month1('jan-2', 10),
+      month2('feb-1', 5),
+      month2('feb-2', 10),
+    ]);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const tsBefore = await db.select().from(schema.senderTimeseries);
+    expect(tsBefore.length).toBe(2);
+    expect(tsBefore.map((r) => r.yearMonth).sort()).toEqual(['2026-01-01', '2026-02-01']);
+
+    // Second sync: only Jan survives. The sender survives but loses Feb.
+    // The Feb row must be deleted; otherwise the sender's lifetime volume
+    // would forever count messages Gmail no longer has.
+    const second = new FakeGmailClient([month1('jan-1', 5), month1('jan-2', 10)]);
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+    const tsAfter = await db.select().from(schema.senderTimeseries);
+    expect(tsAfter.length).toBe(1);
+    expect(tsAfter[0]!.yearMonth).toBe('2026-01-01');
+    expect(tsAfter[0]!.volume).toBe(2);
+  });
+
   it('reconciliation — senders with no remaining inbound messages are pruned', async () => {
     // First sync: 6 messages across 6 distinct senders.
     const first = new FakeGmailClient(makeMessages(6, 6));
