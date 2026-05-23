@@ -1,6 +1,6 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -391,7 +391,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // yet (Codex adversarial review 2026-05-22 — atomicity). Computing
     // before opening the transaction keeps the transaction window
     // small and lets us throw cleanly on a partial state.
-    const survivingKeys = [...aggregates.keys()];
     const senderRows: NewSender[] = [];
     const timeseriesRows: NewSenderTimeseries[] = [];
     let orphans = 0;
@@ -428,70 +427,29 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     }
 
-    // Atomic delete + upsert (Codex review 2026-05-22). PG rolls the
-    // delete back if any upsert throws — a mid-stage failure leaves
-    // the last known-good `senders` / `sender_timeseries` intact rather
-    // than committing a partial teardown.
+    // Authoritative atomic rebuild (Codex review 2026-05-22 + iter 3).
+    // Selective `NOT IN (surviving)` deletes left stale
+    // `(senderKey, yearMonth)` rows for survivors who lost a month's
+    // worth of messages — historical volume / read counts then drifted
+    // upward forever. Nuke + reinsert closes the gap: every derived row
+    // for this mailbox is a fresh write from the recomputed aggregate.
+    // PG rolls back if any insert throws → last known-good state
+    // preserved, never a partial teardown.
     await this.deps.db.transaction(async (tx) => {
-      // Reconcile: drop derived rows for sender_keys with no remaining
-      // inbound messages.
-      if (survivingKeys.length === 0) {
-        await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
-        await tx
-          .delete(senderTimeseries)
-          .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
-      } else {
-        await tx
-          .delete(senders)
-          .where(
-            and(
-              eq(senders.mailboxAccountId, mailboxAccountId),
-              notInArray(senders.senderKey, survivingKeys),
-            ),
-          );
-        await tx
-          .delete(senderTimeseries)
-          .where(
-            and(
-              eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
-              notInArray(senderTimeseries.senderKey, survivingKeys),
-            ),
-          );
-      }
+      await tx
+        .delete(senderTimeseries)
+        .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
+      await tx.delete(senders).where(eq(senders.mailboxAccountId, mailboxAccountId));
 
-      // Rebuild: upsert the fresh aggregates.
-      for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
-        await tx
-          .insert(senders)
-          .values(senderRows.slice(i, i + UPSERT_BATCH))
-          .onConflictDoUpdate({
-            target: [senders.mailboxAccountId, senders.senderKey],
-            set: {
-              gmailCategory: sql`excluded.gmail_category`,
-              firstSeenAt: sql`excluded.first_seen_at`,
-              lastSeenAt: sql`excluded.last_seen_at`,
-              unsubscribeMethod: sql`excluded.unsubscribe_method`,
-              unsubscribeUrl: sql`excluded.unsubscribe_url`,
-              updatedAt: sql`now()`,
-            },
-          });
+      if (senderRows.length > 0) {
+        for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
+          await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
+        }
       }
-
-      for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
-        await tx
-          .insert(senderTimeseries)
-          .values(timeseriesRows.slice(i, i + UPSERT_BATCH))
-          .onConflictDoUpdate({
-            target: [
-              senderTimeseries.mailboxAccountId,
-              senderTimeseries.senderKey,
-              senderTimeseries.yearMonth,
-            ],
-            set: {
-              volume: sql`excluded.volume`,
-              readCount: sql`excluded.read_count`,
-            },
-          });
+      if (timeseriesRows.length > 0) {
+        for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
+          await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
+        }
       }
     });
 
