@@ -1,0 +1,121 @@
+/**
+ * Triage feature — Zustand client-state slice (D200).
+ *
+ * Per D200's boundary: server data (the queue itself, undo journal,
+ * sender details) lives in TanStack Query; ephemeral client-only flags
+ * live in feature-local stores like this one. Cross-feature flags live
+ * in `packages/shared/src/state/ui-store.ts`.
+ *
+ * What this store owns:
+ *
+ *   - `rememberPreference`: per-verb toggle for D34 "always show the
+ *     action sheet on Archive / Unsubscribe / Later" vs the
+ *     remember-preference path. When `true` the sheet is suppressed
+ *     and the row's inline preview becomes the mandatory preview
+ *     surface (D226 — preview is non-skippable; only the sheet is).
+ *
+ *   - `expandedRowId`: which queue row is currently expanded. Hoisted
+ *     from `useExpandableRow` so the action-sheet flow and the
+ *     keyboard handler can both read it (the toolbar needs to know
+ *     which row is focused to dispatch a verb to it).
+ *
+ *   - `pendingAction`: the in-flight action awaiting preview-confirm.
+ *     `null` means no sheet is mounted; otherwise the sheet renders
+ *     and intercepts Enter/Escape.
+ *
+ * Why feature-local: the triage flow doesn't share state with other
+ * features (the senders feature has its own sheet flow that lives
+ * inside `senders-screen.tsx`). Keeping the slice scoped means the
+ * Brief / Followups / Screener screens never have to know about it.
+ *
+ * Persistence: `rememberPreference` is conceptually a per-user
+ * setting (Settings page, D34) — for this PR it lives in memory only.
+ * When the Settings page lands, a `persist` middleware writes to
+ * localStorage; the store contract stays identical so consumers don't
+ * change.
+ */
+
+'use client';
+
+import { create } from 'zustand';
+import type { ActionVerb } from './types';
+
+/** Verbs that surface the action sheet by default (D34). */
+export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Later'>;
+
+export interface PendingAction {
+  verb: ActionVerb;
+  rowId: string;
+  /**
+   * Source of the pending action — `'sheet'` means the action sheet
+   * is mounted and Enter/Escape are intercepted; `'inline'` means the
+   * inline preview is rendered alongside the row (no modal) per the
+   * remember-preference path. `null` after `clearPending`.
+   */
+  surface: 'sheet' | 'inline';
+}
+
+export interface TriageState {
+  /**
+   * Per-verb sheet-skip preference. `true` = skip the sheet, render
+   * the inline preview instead (the user has hit "remember this
+   * choice" for that verb). Default `false` — sheet shows.
+   */
+  rememberPreference: Record<SheetableVerb, boolean>;
+  /** Currently expanded row id, or `null` if none. */
+  expandedRowId: string | null;
+  /** In-flight action awaiting preview-confirm. */
+  pendingAction: PendingAction | null;
+}
+
+export interface TriageActions {
+  /** Toggle the remember-preference flag for one verb. */
+  setRememberPreference: (verb: SheetableVerb, value: boolean) => void;
+  /** Expand `id` (collapsing any other) or pass `null` to close. */
+  setExpandedRow: (id: string | null) => void;
+  /** Toggle: pass the currently-expanded id to collapse it. */
+  toggleExpandedRow: (id: string) => void;
+  /** Open the pending-action surface for `verb` on `rowId`. */
+  openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
+  /** Clear any pending action (cancel or post-confirm). */
+  clearPending: () => void;
+}
+
+/** Default — sheet shows for every verb (D34). */
+const DEFAULT_PREFS: Record<SheetableVerb, boolean> = {
+  Archive: false,
+  Unsubscribe: false,
+  Later: false,
+};
+
+export const useTriageStore = create<TriageState & TriageActions>((set) => ({
+  rememberPreference: { ...DEFAULT_PREFS },
+  expandedRowId: null,
+  pendingAction: null,
+
+  setRememberPreference: (verb, value) =>
+    set((s) => ({
+      rememberPreference: { ...s.rememberPreference, [verb]: value },
+    })),
+
+  setExpandedRow: (id) => set({ expandedRowId: id }),
+
+  toggleExpandedRow: (id) => set((s) => ({ expandedRowId: s.expandedRowId === id ? null : id })),
+
+  openPending: (verb, rowId, surface) => set({ pendingAction: { verb, rowId, surface } }),
+
+  clearPending: () => set({ pendingAction: null }),
+}));
+
+/**
+ * Reset the store to its defaults — used by tests so order doesn't
+ * matter and parallel runs stay isolated. Not exported from the
+ * feature barrel; tests import it directly.
+ */
+export function resetTriageStore(): void {
+  useTriageStore.setState({
+    rememberPreference: { ...DEFAULT_PREFS },
+    expandedRowId: null,
+    pendingAction: null,
+  });
+}
