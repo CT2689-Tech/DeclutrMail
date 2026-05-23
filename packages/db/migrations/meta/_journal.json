@@ -22,6 +22,20 @@
       "when": 1779441187215,
       "tag": "0002_mailbox_oauth_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779513573976,
+      "tag": "0003_sync_data_capture",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779513585776,
+      "tag": "0004_unsubscribe_mailto_and_keyset_idx",
+      "breakpoints": true
     }
   ]
 }

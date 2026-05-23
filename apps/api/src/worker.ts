@@ -224,10 +224,24 @@ async function bootstrap(): Promise<void> {
     if (shuttingDown || inFlight) {
       return;
     }
+    // `reconcileQueuedInitialSyncs` is documented to never reject (its
+    // body is wrapped in try/catch). The terminal `.catch` defends
+    // against future drift: if a refactor moves a line out of that try,
+    // an unhandled rejection here would otherwise be invisible
+    // (silent-failure-hunter, post-iter-6 review).
     const p = reconcileQueuedInitialSyncs()
       .then(() => undefined)
       .finally(() => {
         inFlight = null;
+      })
+      .catch((err: unknown) => {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'reconciler.tick_unexpected',
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
       });
     inFlight = p;
   }
@@ -255,6 +269,12 @@ async function bootstrap(): Promise<void> {
   // sweep, then drain BullMQ and release connections. Closing the
   // queue/connection while a sweep is mid-`getJob` would throw
   // unhandled errors and corrupt the structured log.
+  //
+  // The drain IIFE has its own `.catch` (silent-failure-hunter, post-
+  // iter-6 review): without it, a thrown `bullWorker.close()` /
+  // `connection.quit()` during a Redis outage would leave `exit(0)`
+  // unreached, the process would hang on still-attached resources, and
+  // K8s would SIGKILL after the grace period with no diagnostic.
   const shutdown = (signal: string): void => {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
     shuttingDown = true;
@@ -268,10 +288,38 @@ async function bootstrap(): Promise<void> {
       await connection.quit();
       await pg.end();
       process.exit(0);
-    })();
+    })().catch((err: unknown) => {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.shutdown_failed',
+          signal,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      // Exit non-zero so the orchestrator (K8s / Cloud Run) sees the
+      // drain failed instead of hanging until SIGKILL.
+      process.exit(1);
+    });
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
-void bootstrap();
+// Boot-time errors (bad `DATABASE_URL`, Redis TLS failure, KMS
+// failure inside `createKmsProvider()`, the initial reconciler sweep
+// rejecting against an unreachable DB) would otherwise become
+// `unhandledRejection`s — Node's default printing varies by
+// `--unhandled-rejections` mode and would not produce a structured
+// `worker.boot_failed` log line the operator can grep. Catch + log +
+// non-zero exit. Silent-failure-hunter, post-iter-6 review.
+bootstrap().catch((err: unknown) => {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      kind: 'worker.boot_failed',
+      message: err instanceof Error ? err.message : String(err),
+    }),
+  );
+  process.exit(1);
+});

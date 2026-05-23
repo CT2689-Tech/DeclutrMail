@@ -19,10 +19,13 @@ import type {
  * one `RateLimiter`.
  *
  * PRIVACY — D7 / D228. `getMessageMetadata` calls `messages.get` with
- * `format=metadata` and a `From` + `Subject` header allowlist. It NEVER
- * uses `format=full` or `format=raw`, so message bodies, attachments,
- * inline images, and raw MIME are never fetched — the "Full bodies
- * fetched: 0" guarantee. `messages.list` returns ids only. Enforced by
+ * `format=metadata` and the six-header allowlist defined in
+ * `METADATA_HEADERS` below (founder-approved per ADR-0004:
+ * `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
+ * `List-Unsubscribe-Post`). It NEVER uses `format=full` or
+ * `format=raw`, so message bodies, attachments, inline images, and
+ * raw MIME are never fetched — the "Full bodies fetched: 0"
+ * guarantee. `messages.list` returns ids only. Enforced by
  * `privacy-auditor`.
  *
  * QUOTA — D5. Gmail meters 15,000 quota units / user / minute;
