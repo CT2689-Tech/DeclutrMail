@@ -60,7 +60,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🔵 | #21 |  |  |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | ⬜ |  |  |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
-| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | ⬜ |  |  |  |
+| D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🔵 | #23 |  |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
