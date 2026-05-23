@@ -1,0 +1,26 @@
+-- Rollback for 0005_triage_decisions_and_sender_protection.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverts
+-- 0005 — drops the new `triage_decisions` table, the three new enums,
+-- and the two new `sender_policies` columns. Reverse order of the
+-- forward.
+--
+-- NOT idempotent — assumes schema matches the forward migration's end
+-- state. No DML was run in the forward (Atlas data-depend), so the
+-- rollback is purely structural.
+
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "protection_set_at";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN IF EXISTS "protection_reason";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "triage_decisions_expires_at_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "triage_decisions_account_sender_uniq";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "triage_decisions";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."protection_reason";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."triage_reasoning_source";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."triage_verdict";

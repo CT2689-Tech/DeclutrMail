@@ -102,6 +102,7 @@ describe('migration round-trip', () => {
       'table:sender_policies',
       'table:sender_timeseries',
       'table:senders',
+      'table:triage_decisions',
       'table:users',
       'table:webhook_dedup',
       'table:workspaces',
@@ -111,9 +112,12 @@ describe('migration round-trip', () => {
       'enum:gmail_unsubscribe_method',
       'enum:mailbox_provider',
       'enum:mailbox_status',
+      'enum:protection_reason',
       'enum:sender_policy_type',
       'enum:sync_readiness',
       'enum:sync_stage',
+      'enum:triage_reasoning_source',
+      'enum:triage_verdict',
       'enum:workspace_tier',
     ]);
 
