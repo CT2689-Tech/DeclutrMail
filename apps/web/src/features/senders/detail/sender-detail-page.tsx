@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button, EmptyState, tokens, toast } from '@declutrmail/shared';
 import {
   historicCount,
@@ -19,6 +19,12 @@ import { StatsStrip } from './stats-strip';
 import { Charts } from './charts';
 import { DecisionHistory } from './decision-history';
 import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './types';
+import { useSenderDetail } from '../api/use-sender-detail';
+import { useSenderMessages } from '../api/use-sender-messages';
+import { useSenderTimeseries } from '../api/use-sender-timeseries';
+import { useSenderHistory } from '../api/use-sender-history';
+import { adaptSenderDetail } from '../api/adapters';
+import { ApiError } from '@/lib/api/client';
 
 const { color, font } = tokens;
 
@@ -51,6 +57,69 @@ export function SenderDetailPage({ state }: { state: SenderDetailState }) {
   if (state.kind === 'loading') return <LoadingState />;
   if (state.kind === 'error') return <ErrorState message={state.message} />;
   return <ReadyState initial={state.detail} />;
+}
+
+/**
+ * Route-level wrapper that fans out the four sender-scoped queries
+ * (detail / messages / timeseries / history) and folds them into the
+ * `SenderDetailState` the page component already understands.
+ *
+ * Branching:
+ *   - Any in-flight query → loading skeleton (the page is composed and
+ *     the user reads it whole; partial reveals would be jarring).
+ *   - Detail 404 → not-found UI (the children never fetch since
+ *     `enabled` guards on `id.length > 0` only — but if the detail
+ *     returns 404 we still don't render the page).
+ *   - Detail error other than 404 → error UI with retry.
+ *   - All four succeed → adapt + render the ready state.
+ *
+ * D211/D212 — every branch is its own designed UI; no spinners.
+ */
+export function SenderDetailRoute({ id }: { id: string }) {
+  const detail = useSenderDetail(id);
+  const messages = useSenderMessages(id);
+  const timeseries = useSenderTimeseries(id);
+  const history = useSenderHistory(id);
+
+  const isLoading =
+    detail.isLoading || messages.isLoading || timeseries.isLoading || history.isLoading;
+
+  const adapted = useMemo(() => {
+    if (!detail.data || !messages.data || !timeseries.data || !history.data) {
+      return null;
+    }
+    return adaptSenderDetail({
+      detail: detail.data.data,
+      messages: messages.data.pages.flatMap((p) => p.data),
+      timeseries: timeseries.data.data,
+      history: history.data.pages.flatMap((p) => p.data),
+    });
+  }, [detail.data, messages.data, timeseries.data, history.data]);
+
+  // 404 — render the not-found branch. We check `detail` only; if the
+  // detail is missing the children are irrelevant.
+  if (detail.error instanceof ApiError && detail.error.status === 404) {
+    return <NotFoundState />;
+  }
+
+  // Any other detail error wins — show the error state with retry.
+  if (detail.isError) {
+    return (
+      <ErrorState
+        message={
+          detail.error instanceof ApiError
+            ? `We couldn't load this sender (HTTP ${detail.error.status}).`
+            : "We couldn't load this sender right now."
+        }
+      />
+    );
+  }
+
+  if (isLoading || adapted == null) {
+    return <LoadingState />;
+  }
+
+  return <ReadyState initial={adapted} />;
 }
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
@@ -220,6 +289,29 @@ function LoadingState() {
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading sender details</span>
+    </div>
+  );
+}
+
+function NotFoundState() {
+  return (
+    <div
+      style={{
+        padding: '20px 24px 28px',
+        maxWidth: 720,
+        margin: '0 auto',
+        fontFamily: font.sans,
+      }}
+    >
+      <EmptyState
+        title="Sender not found"
+        body="This sender isn't in your mailbox — either the URL is stale, or the sender hasn't mailed you yet."
+        action={
+          <Button tone="primary" onClick={() => window.history.back()}>
+            Back to Senders
+          </Button>
+        }
+      />
     </div>
   );
 }

@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from 'react';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import {
   GROUPS,
-  SENDERS,
   FACETS,
   canArchive,
   canLater,
@@ -30,8 +29,11 @@ import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal'
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { WeeklyHero } from './weekly-hero/weekly-hero';
 import { ReviewSession, type ReviewResult } from './review-session';
+import { useSenders } from './api/use-senders';
+import { adaptSenderListRow } from './api/adapters';
+import { ApiError } from '@/lib/api/client';
 
-const { font } = tokens;
+const { color, font } = tokens;
 
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boolean> = {
   Archive: canArchive,
@@ -41,8 +43,37 @@ const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boole
 
 let receiptSeq = 0;
 
-/** The Senders screen — weekly hero, cohort rail, category-grouped table. */
+/**
+ * The Senders screen — weekly hero, cohort rail, category-grouped table.
+ *
+ * Data flow (D200): `useSenders()` returns the paginated wire shape;
+ * we adapt rows to the `Sender` UI shape via `adaptSenderListRow`. All
+ * subsequent filtering (category chips, facets, search) runs over the
+ * accumulated client-side list. Pagination is automatic — the hook
+ * exposes `fetchNextPage` for an explicit "load more" UI; the initial
+ * page is plenty for the demo dataset.
+ *
+ * Edge states (D211/D212): loading / error / empty are first-class
+ * branches handled inline below.
+ */
 export function SendersScreen() {
+  const sendersQuery = useSenders();
+  const allSenders = useMemo<Sender[]>(() => {
+    const pages = sendersQuery.data?.pages ?? [];
+    return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
+  }, [sendersQuery.data]);
+
+  if (sendersQuery.isLoading) {
+    return <LoadingState />;
+  }
+  if (sendersQuery.isError) {
+    return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+  }
+  return <SendersScreenContent senders={allSenders} />;
+}
+
+/** Renders the screen once the senders list is loaded. */
+function SendersScreenContent({ senders }: { senders: Sender[] }) {
   const [query, setQuery] = useState('');
   const [activeGroup, setActiveGroup] = useState<SenderGroupKey | null>(null);
   const [activeFacets, setActiveFacets] = useState<Set<string>>(() => new Set());
@@ -52,16 +83,16 @@ export function SendersScreen() {
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
   const [heroSkipped, setHeroSkipped] = useState(false);
 
-  const cohorts = useMemo(() => detectCohorts(SENDERS), []);
+  const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
   // Query-filtered base — drives the category-chip counts.
   const queryBase = useMemo(() => {
-    if (!query) return SENDERS;
+    if (!query) return senders;
     const q = query.toLowerCase();
-    return SENDERS.filter(
+    return senders.filter(
       (s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q),
     );
-  }, [query]);
+  }, [query, senders]);
 
   // Apply category + facets. Facets OR within a group, AND across groups.
   const visible = useMemo(() => {
@@ -102,7 +133,10 @@ export function SendersScreen() {
     [visible],
   );
 
-  const selectedSenders = useMemo(() => SENDERS.filter((s) => selected.has(s.id)), [selected]);
+  const selectedSenders = useMemo(
+    () => senders.filter((s) => selected.has(s.id)),
+    [selected, senders],
+  );
 
   const toggleSelect = (id: string, _evt: MouseEvent) => {
     setSelected((prev) => {
@@ -238,11 +272,11 @@ export function SendersScreen() {
               margin: '4px 0 0',
             }}
           >
-            {SENDERS.length} senders mail you, grouped by Gmail category.
+            {senders.length} senders mail you, grouped by Gmail category.
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SenderSearch value={query} onChange={setQuery} senders={SENDERS} onPick={onSearchPick} />
+          <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
           <Button tone="dark" onClick={() => toast('Add-VIP flow opens here', 'info')}>
             + Add VIP
           </Button>
@@ -265,9 +299,9 @@ export function SendersScreen() {
         onDismiss={() => setReceipt(null)}
       />
 
-      {!heroSkipped && (
+      {!heroSkipped && senders.length > 0 && (
         <WeeklyHero
-          senders={SENDERS}
+          senders={senders}
           onReview={(slice, kind) => setReview({ slice, kind })}
           onSkip={() => {
             setHeroSkipped(true);
@@ -313,7 +347,14 @@ export function SendersScreen() {
       </div>
 
       {/* Grouped table */}
-      {grouped.length === 0 ? (
+      {grouped.length === 0 && senders.length === 0 ? (
+        // True-empty state — mailbox has no senders yet (e.g. first sync
+        // hasn't completed, or really nobody mails this address). D211/D212.
+        <EmptyState
+          title="No senders yet"
+          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
+        />
+      ) : grouped.length === 0 ? (
         <EmptyState
           title={`No senders match "${query}"`}
           body="Try a different search or clear the filters."
@@ -362,6 +403,64 @@ export function SendersScreen() {
         senders={review?.slice ?? []}
         onApply={applyReview}
         onCancel={closeReview}
+      />
+    </div>
+  );
+}
+
+/** D211 loading branch — skeleton rows for the in-flight initial fetch. */
+function LoadingState() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        padding: '20px 24px 28px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        maxWidth: 1180,
+      }}
+    >
+      {[72, 56, 120, 160, 160].map((h, i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          style={{
+            height: h,
+            background: color.card,
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: 12,
+          }}
+        />
+      ))}
+      <span style={{ position: 'absolute', left: -9999 }}>Loading senders</span>
+    </div>
+  );
+}
+
+/** D211 error branch — surfaces the error message with a retry affordance. */
+function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const message =
+    error instanceof ApiError
+      ? `We couldn't load your senders (${error.status}). Try again in a moment.`
+      : "We couldn't load your senders right now. Try again in a moment.";
+  return (
+    <div
+      style={{
+        padding: '20px 24px 28px',
+        maxWidth: 720,
+        fontFamily: font.sans,
+      }}
+    >
+      <EmptyState
+        title="We couldn't load your senders"
+        body={message}
+        action={
+          <Button tone="primary" onClick={onRetry}>
+            Try again
+          </Button>
+        }
       />
     </div>
   );
