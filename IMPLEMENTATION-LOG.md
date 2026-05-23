@@ -210,7 +210,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | ⬜ |  |  |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
-| D159 | Observability stack: **Sentry + PostHog | ⬜ |  |  |  |
+| D159 | Observability stack: **Sentry + PostHog | 🔵 | #34 |  |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | ⬜ |  |  |  |
