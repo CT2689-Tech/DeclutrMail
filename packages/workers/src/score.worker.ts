@@ -12,7 +12,15 @@ import {
 import type { schema, TriageVerdict } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { renderTemplate, type ReasoningLlmPort } from './reasoning.js';
+import {
+  createLimiter,
+  renderTemplate,
+  resolveExplainTimeoutMs,
+  resolveReasoningConcurrency,
+  runWithTimeout,
+  type ConcurrencyLimiter,
+  type ReasoningLlmPort,
+} from './reasoning.js';
 import { runCascade, type SenderSignals } from './score-cascade.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
@@ -61,6 +69,12 @@ export interface ScoreJobResult {
   /** Number of those that hit the LLM successfully vs the template fallback. */
   llmExplanations: number;
   templateExplanations: number;
+  /**
+   * Number of LLM calls that hit the per-call timeout (subset of
+   * `templateExplanations`). Surfaced so the success log carries enough
+   * signal to graph "how often is Haiku stalling?" without re-querying.
+   */
+  llmTimeouts: number;
 }
 
 /** Window for "monthly volume" — D21 reads the last full calendar month. */
@@ -76,6 +90,21 @@ export interface ScoreWorkerDeps {
   llm?: ReasoningLlmPort;
   /** Override clock for tests; defaults to `() => new Date()`. */
   now?: () => Date;
+  /**
+   * Per-call timeout for `llm.explain()`. Defaults to
+   * `DEFAULT_EXPLAIN_TIMEOUT_MS`. On timeout the call is treated as if
+   * the port returned `null`, the worker falls back to the template,
+   * and a `reasoning.timeout` line is logged. Tests override this to
+   * drive deterministic timing.
+   */
+  explainTimeoutMs?: number;
+  /**
+   * Max concurrent in-flight `llm.explain()` calls during the
+   * all-senders sweep. Defaults to `DEFAULT_REASONING_CONCURRENCY` (4),
+   * capped at `MAX_REASONING_CONCURRENCY` (16). The cap defends Haiku's
+   * rate limit and keeps the worker's peak memory bounded.
+   */
+  reasoningConcurrency?: number;
 }
 
 /**
@@ -116,8 +145,24 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   override readonly workerName = 'ScoreWorker';
   override readonly policy = 'perMailboxPolicy' as const;
 
+  /** Bounded fan-out for the all-senders sweep; built once at construction. */
+  private readonly limiter: ConcurrencyLimiter;
+  /** Per-call timeout for `llm.explain()`. */
+  private readonly explainTimeoutMs: number;
+
   constructor(private readonly deps: ScoreWorkerDeps) {
     super();
+    this.limiter = createLimiter(
+      deps.reasoningConcurrency ??
+        resolveReasoningConcurrency(process.env['REASONING_CONCURRENCY']),
+    );
+    this.explainTimeoutMs =
+      deps.explainTimeoutMs ?? resolveExplainTimeoutMs(process.env['REASONING_TIMEOUT_MS']);
+  }
+
+  /** Test-only: peek at the limiter's in-flight count (for cap assertions). */
+  getActiveExplainCount(): number {
+    return this.limiter.activeCount;
   }
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
@@ -142,25 +187,34 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       ? [payload.senderKey]
       : await this.listMailboxSenderKeys(payload.mailboxAccountId);
 
+    // Bounded fan-out. Each task runs `scoreOne` under the shared
+    // limiter; the limiter caps concurrent in-flight `llm.explain()`
+    // calls. Sequential DB writes were the original bottleneck; even
+    // with concurrency = 4 the wall-clock for a 1000-sender sweep drops
+    // by ~4x when the LLM is the long pole.
+    const results = await Promise.all(
+      senderKeys.map((senderKey) =>
+        this.limiter(() =>
+          this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt),
+        ),
+      ),
+    );
+
     let llmExplanations = 0;
     let templateExplanations = 0;
-
-    for (const senderKey of senderKeys) {
-      const written = await this.scoreOne(
-        payload.mailboxAccountId,
-        senderKey,
-        producedAt,
-        expiresAt,
-      );
+    let llmTimeouts = 0;
+    for (const written of results) {
       if (!written) continue;
       if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
       else templateExplanations += 1;
+      if (written.timedOut) llmTimeouts += 1;
     }
 
     return {
       decisionsWritten: llmExplanations + templateExplanations,
       llmExplanations,
       templateExplanations,
+      llmTimeouts,
     };
   }
 
@@ -174,23 +228,56 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     senderKey: string,
     producedAt: Date,
     expiresAt: Date,
-  ): Promise<{ verdict: TriageVerdict; generatedBy: 'llm_haiku' | 'template' } | null> {
+  ): Promise<{
+    verdict: TriageVerdict;
+    generatedBy: 'llm_haiku' | 'template';
+    timedOut: boolean;
+  } | null> {
     const signals = await this.loadSignals(mailboxAccountId, senderKey);
     if (!signals) return null;
     const result = runCascade(signals.signals);
 
     // Reasoning (D24) — LLM if wired + successful, template fallback.
+    // Per-call timeout: one stall must not block the sweep. On timeout
+    // we log `reasoning.timeout` and fall back to the template, exactly
+    // as if the port had returned `null`. The port's "no throws"
+    // contract is preserved from the consumer side.
     let reasoning: string | null = null;
+    let timedOut = false;
     if (this.deps.llm) {
-      reasoning = await this.deps.llm.explain({
-        displayName: signals.displayName,
-        domain: signals.domain,
-        verdict: result.verdict,
-        confidence: result.confidence,
-        ruleLabel: result.ruleId,
-        facts: result.facts,
-        gmailCategory: signals.signals.gmailCategory,
-      });
+      const port = this.deps.llm;
+      const raced = await runWithTimeout(
+        () =>
+          port.explain({
+            displayName: signals.displayName,
+            domain: signals.domain,
+            verdict: result.verdict,
+            confidence: result.confidence,
+            ruleLabel: result.ruleId,
+            facts: result.facts,
+            gmailCategory: signals.signals.gmailCategory,
+          }),
+        this.explainTimeoutMs,
+      );
+      if (raced.kind === 'ok') {
+        reasoning = raced.value;
+      } else {
+        timedOut = true;
+        // Structured log; matches the rest of the worker logging shape
+        // (JSON line on stdout, picked up by the same collector). Keep
+        // mailbox + sender keys here so the timeout can be correlated
+        // with a slow tenant without re-querying.
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'reasoning.timeout',
+            worker: this.workerName,
+            mailboxAccountId,
+            senderKey,
+            timeoutMs: this.explainTimeoutMs,
+          }),
+        );
+      }
     }
     const generatedBy: 'llm_haiku' | 'template' = reasoning ? 'llm_haiku' : 'template';
     const finalReasoning = reasoning ?? renderTemplate(signals.displayName, result);
@@ -221,7 +308,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         },
       });
 
-    return { verdict: result.verdict, generatedBy };
+    return { verdict: result.verdict, generatedBy, timedOut };
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */

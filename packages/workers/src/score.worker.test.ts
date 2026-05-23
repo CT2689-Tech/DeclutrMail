@@ -17,7 +17,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ScoreWorker } from './score.worker.js';
 import type { ScoreWorkerDeps } from './score.worker.js';
@@ -448,5 +448,108 @@ describe('ScoreWorker — LLM port', () => {
       .where(eq(triageDecisions.senderKey, senderKey));
     expect(row?.generatedBy).toBe('template');
     expect(row?.reasoning).toContain('Fallback Sender');
+  });
+
+  it('falls back to template + logs reasoning.timeout when explain() exceeds the per-call budget', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'slow@test.test', {
+      displayName: 'Slow LLM Sender',
+      gmailCategory: 'primary',
+    });
+
+    // A port whose explain() never resolves. With the per-call timeout
+    // set tight, the worker must fall back to the template + log
+    // `reasoning.timeout`. No throws from the port — the port's
+    // contract is preserved from the consumer side.
+    const stallingLlm: ReasoningLlmPort = {
+      explain: () => new Promise(() => {}),
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const worker = new ScoreWorker({
+        db,
+        llm: stallingLlm,
+        now: () => new Date('2026-05-23T00:00:00Z'),
+        explainTimeoutMs: 25, // tight budget — guaranteed to fire
+      });
+      const result = await worker.processJob(
+        { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 50_000 },
+        FAKE_CTX,
+      );
+      expect(result.llmTimeouts).toBe(1);
+      expect(result.templateExplanations).toBe(1);
+      expect(result.llmExplanations).toBe(0);
+
+      const [row] = await db
+        .select()
+        .from(triageDecisions)
+        .where(eq(triageDecisions.senderKey, senderKey));
+      expect(row?.generatedBy).toBe('template');
+      expect(row?.reasoning).toContain('Slow LLM Sender');
+
+      // The `reasoning.timeout` log line carries enough fields to
+      // correlate without a re-query.
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(warnSpy.mock.calls[0]![0] as string) as Record<string, unknown>;
+      expect(payload['kind']).toBe('reasoning.timeout');
+      expect(payload['worker']).toBe('ScoreWorker');
+      expect(payload['mailboxAccountId']).toBe(mailboxAccountId);
+      expect(payload['senderKey']).toBe(senderKey);
+      expect(payload['timeoutMs']).toBe(25);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('bounded concurrency — sweep caps in-flight explain() calls at the configured max', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    // Seed 8 senders so a concurrency cap of 3 is observably tighter
+    // than the input fan-out.
+    for (let i = 0; i < 8; i += 1) {
+      await seedSender(db, mailboxAccountId, `s${i}@cap.test`, {});
+    }
+
+    // Each explain() resolves after a fixed delay (no manual release —
+    // simpler) and ticks an active counter so we can observe the
+    // worker's peak in-flight count. The cap MUST hold at every tick.
+    let active = 0;
+    let peak = 0;
+    const observedActives: number[] = [];
+    const blockingLlm: ReasoningLlmPort = {
+      explain: async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        observedActives.push(active);
+        await new Promise<void>((r) => setTimeout(r, 30));
+        active -= 1;
+        return 'explained';
+      },
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: blockingLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      reasoningConcurrency: 3,
+      explainTimeoutMs: 60_000, // out of the way — we want concurrency, not timeout
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+
+    // The cap must have been observed at peak (the test fan-out is 8,
+    // cap 3 — the limiter HAD to queue, so peak == cap).
+    expect(peak).toBe(3);
+    // And the cap must NEVER have been exceeded mid-sweep.
+    expect(Math.max(...observedActives)).toBe(3);
+
+    expect(result.decisionsWritten).toBe(8);
+    expect(result.llmExplanations).toBe(8);
+    expect(result.templateExplanations).toBe(0);
+    expect(result.llmTimeouts).toBe(0);
   });
 });
