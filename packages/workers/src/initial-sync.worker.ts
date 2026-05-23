@@ -596,10 +596,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const recipientEmails = isOutbound
       ? [...parseRecipients(meta.to), ...parseRecipients(meta.cc)]
       : null;
-    const { httpsUrl, mailtoUrl, oneClick: unsubscribeOneClick } = parseListUnsubscribe(
-      meta.listUnsubscribe,
-      meta.listUnsubscribePost,
-    );
+    const {
+      httpsUrl,
+      mailtoUrl,
+      oneClick: unsubscribeOneClick,
+    } = parseListUnsubscribe(meta.listUnsubscribe, meta.listUnsubscribePost);
 
     const message: NewMailMessage = {
       mailboxAccountId,
@@ -864,9 +865,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
  * the URL is NULL. The split-channel aggregate makes this true by
  * construction (the prior single-URL shape could not).
  */
-function deriveUnsubscribe(
-  agg: SenderAggregate,
-): { method: UnsubscribeMethod; url: string | null } {
+function deriveUnsubscribe(agg: SenderAggregate): {
+  method: UnsubscribeMethod;
+  url: string | null;
+} {
   if (agg.hasOneClick && agg.httpsUrl) {
     return { method: 'one_click', url: agg.httpsUrl };
   }

@@ -18,8 +18,8 @@ extensions. Other fields whose product use is known and time-bounded
 remain open.
 
 In the 2026-05-22 interview the founder approved a coordinated set of
-small allowlist extensions, with the rule "capture the *data* now to
-avoid future re-syncs; defer derived *features* to their own PRs."
+small allowlist extensions, with the rule "capture the _data_ now to
+avoid future re-syncs; defer derived _features_ to their own PRs."
 Three additions, each tied to a planned product capability:
 
 1. **`To` and `Cc` headers** — needed by the future Sent-sync /
@@ -42,20 +42,20 @@ Three additions, each tied to a planned product capability:
 We **amend the D7 storage allowlist** with the four new fields and the
 direction-tagging column. The amended allowlist:
 
-| Field                                    | Source                              | Storage                                   |
-| ---------------------------------------- | ----------------------------------- | ----------------------------------------- |
-| Sender name + email                      | `From` header                       | `senders` (identity)                      |
-| Subject                                  | `Subject` header                    | `mail_messages.subject`                   |
-| Snippet                                  | Gmail `snippet`                     | `mail_messages.snippet` (varchar 300 cap) |
-| Dates                                    | Gmail `internalDate`                | `mail_messages.internal_date`             |
-| Gmail label ids                          | Gmail `labelIds`                    | `mail_messages.label_ids`                 |
-| Read state                               | Derived from `UNREAD` label         | `mail_messages.is_unread`                 |
-| **Recipients (outbound only)**           | `To` + `Cc` headers                 | `mail_messages.recipient_emails` (NULL inbound) |
-| **Unsubscribe HTTPS URL**                | `List-Unsubscribe` (https URL)      | `mail_messages.unsubscribe_url`           |
-| **Unsubscribe mailto URL**               | `List-Unsubscribe` (mailto URL)     | `mail_messages.unsubscribe_mailto_url`    |
-| **Sender-level unsubscribe action**      | derived per Option B                | `senders.unsubscribe_url` + `senders.unsubscribe_method` enum |
-| **Unsubscribe one-click flag**           | `List-Unsubscribe-Post` (RFC 8058) + HTTPS URL | `mail_messages.unsubscribe_one_click` |
-| **Outbound flag**                        | Derived from `SENT` label           | `mail_messages.is_outbound`               |
+| Field                               | Source                                         | Storage                                                       |
+| ----------------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| Sender name + email                 | `From` header                                  | `senders` (identity)                                          |
+| Subject                             | `Subject` header                               | `mail_messages.subject`                                       |
+| Snippet                             | Gmail `snippet`                                | `mail_messages.snippet` (varchar 300 cap)                     |
+| Dates                               | Gmail `internalDate`                           | `mail_messages.internal_date`                                 |
+| Gmail label ids                     | Gmail `labelIds`                               | `mail_messages.label_ids`                                     |
+| Read state                          | Derived from `UNREAD` label                    | `mail_messages.is_unread`                                     |
+| **Recipients (outbound only)**      | `To` + `Cc` headers                            | `mail_messages.recipient_emails` (NULL inbound)               |
+| **Unsubscribe HTTPS URL**           | `List-Unsubscribe` (https URL)                 | `mail_messages.unsubscribe_url`                               |
+| **Unsubscribe mailto URL**          | `List-Unsubscribe` (mailto URL)                | `mail_messages.unsubscribe_mailto_url`                        |
+| **Sender-level unsubscribe action** | derived per Option B                           | `senders.unsubscribe_url` + `senders.unsubscribe_method` enum |
+| **Unsubscribe one-click flag**      | `List-Unsubscribe-Post` (RFC 8058) + HTTPS URL | `mail_messages.unsubscribe_one_click`                         |
+| **Outbound flag**                   | Derived from `SENT` label                      | `mail_messages.is_outbound`                                   |
 
 The **permanent bans stand unchanged**: bodies (HTML + plain text),
 attachments, inline images, raw MIME, `sizeEstimate`, attachment sizes

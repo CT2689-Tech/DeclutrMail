@@ -106,10 +106,6 @@ export async function ensureInitialSyncJob(
     // waiting / active / delayed / prioritized / waiting-children — live.
     return 'noop';
   }
-  await queue.add(
-    INITIAL_SYNC_JOB,
-    { mailboxAccountId },
-    initialSyncJobOptions(mailboxAccountId),
-  );
+  await queue.add(INITIAL_SYNC_JOB, { mailboxAccountId }, initialSyncJobOptions(mailboxAccountId));
   return 'added';
 }
