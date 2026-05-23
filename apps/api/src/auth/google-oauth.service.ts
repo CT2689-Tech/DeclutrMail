@@ -5,8 +5,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
-import { eq, sql } from 'drizzle-orm';
-import { mailboxAccounts, providerSyncState, users, workspaces } from '@declutrmail/db';
+import { eq } from 'drizzle-orm';
+import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { SyncService } from '../sync/sync.service.js';
@@ -126,82 +126,49 @@ export class GoogleOAuthService {
     // keyed on the connected Gmail address to satisfy the NOT NULL FKs.
     const { userId, workspaceId } = await this.findOrCreateUser(email);
 
-    // Codex adversarial review iter 4: mailbox persistence + sync intent
-    // must commit together. Previously the mailbox row landed first and
-    // `enqueueInitialSync` ran after; a Redis outage would commit the
-    // mailbox (with a rotated, single-use refresh token) but leave no
-    // runnable sync job — stranding the user in a partially-connected
-    // state because the OAuth code is single-use. Now: upsert mailbox +
-    // `provider_sync_state='queued'` in one DB transaction. The DB row
-    // IS the durable sync intent. The subsequent enqueue is best-effort;
-    // any failure leaves a `queued` row that the worker reconciler picks
-    // up on its next boot.
-    const row = await this.db.transaction(async (tx) => {
-      const [mb] = await tx
-        .insert(mailboxAccounts)
-        .values({
-          workspaceId,
-          userId,
-          provider: 'gmail',
-          providerAccountId: email,
+    // Mailbox persistence + sync scheduling are split into two phases so
+    // there is ONE scheduling implementation (`sync.service`) shared
+    // with the worker's periodic reconciler (Codex adversarial review
+    // iter 5, 2026-05-22):
+    //
+    //   1. DB-only mailbox upsert. The OAuth refresh token is single-
+    //      use, so it MUST land before we touch a queue that may fail.
+    //   2. `sync.enqueueInitialSync` — writes the durable `queued` row,
+    //      then best-effort enqueues. Redis outages don't strand the
+    //      user: the worker's reconciler picks the row up on its next
+    //      tick.
+    const [row] = await this.db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: email,
+        encryptedRefreshToken: encrypted.ciphertext,
+        dekEncrypted: encrypted.wrappedDek,
+        keyVersion: encrypted.keyVersion,
+        connectedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
+        set: {
           encryptedRefreshToken: encrypted.ciphertext,
           dekEncrypted: encrypted.wrappedDek,
           keyVersion: encrypted.keyVersion,
           connectedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
-          set: {
-            encryptedRefreshToken: encrypted.ciphertext,
-            dekEncrypted: encrypted.wrappedDek,
-            keyVersion: encrypted.keyVersion,
-            connectedAt: new Date(),
-            status: 'active',
-          },
-        })
-        .returning({ id: mailboxAccounts.id });
+          status: 'active',
+        },
+      })
+      .returning({ id: mailboxAccounts.id });
 
-      if (!mb) {
-        throw new InternalServerErrorException('Failed to persist the mailbox account.');
-      }
-
-      await tx
-        .insert(providerSyncState)
-        .values({
-          mailboxAccountId: mb.id,
-          currentStage: 'queued',
-          readinessStatus: 'queued',
-          progressPct: 0,
-        })
-        .onConflictDoUpdate({
-          target: providerSyncState.mailboxAccountId,
-          set: {
-            currentStage: 'queued',
-            readinessStatus: 'queued',
-            progressPct: 0,
-            errorCode: null,
-            updatedAt: sql`now()`,
-          },
-        });
-
-      return mb;
-    });
-
-    // Best-effort enqueue. The durable signal is the `queued` row above;
-    // if Redis is unreachable the worker's boot reconciler will pick it
-    // up on its next start. Never fail the connect on a queue outage.
-    try {
-      await this.sync.enqueueInitialSync(row.id);
-    } catch (err) {
-      console.error(
-        JSON.stringify({
-          level: 'error',
-          kind: 'auth.enqueue_failed_post_connect',
-          mailboxAccountId: row.id,
-          message: err instanceof Error ? err.message : String(err),
-        }),
-      );
+    if (!row) {
+      throw new InternalServerErrorException('Failed to persist the mailbox account.');
     }
+
+    // Delegates to the single scheduling impl in `SyncService` — writes
+    // the durable `queued` row + best-effort enqueue. Connect never
+    // fails on a queue outage.
+    await this.sync.enqueueInitialSync(row.id);
 
     return { mailboxAccountId: row.id, email };
   }

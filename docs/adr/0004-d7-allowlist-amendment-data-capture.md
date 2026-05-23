@@ -51,8 +51,10 @@ direction-tagging column. The amended allowlist:
 | Gmail label ids                          | Gmail `labelIds`                    | `mail_messages.label_ids`                 |
 | Read state                               | Derived from `UNREAD` label         | `mail_messages.is_unread`                 |
 | **Recipients (outbound only)**           | `To` + `Cc` headers                 | `mail_messages.recipient_emails` (NULL inbound) |
-| **Unsubscribe URL**                      | `List-Unsubscribe` header           | `mail_messages.unsubscribe_url` + `senders.unsubscribe_url` |
-| **Unsubscribe one-click flag**           | `List-Unsubscribe-Post` (RFC 8058) | `mail_messages.unsubscribe_one_click` + `senders.unsubscribe_method` enum |
+| **Unsubscribe HTTPS URL**                | `List-Unsubscribe` (https URL)      | `mail_messages.unsubscribe_url`           |
+| **Unsubscribe mailto URL**               | `List-Unsubscribe` (mailto URL)     | `mail_messages.unsubscribe_mailto_url`    |
+| **Sender-level unsubscribe action**      | derived per Option B                | `senders.unsubscribe_url` + `senders.unsubscribe_method` enum |
+| **Unsubscribe one-click flag**           | `List-Unsubscribe-Post` (RFC 8058) + HTTPS URL | `mail_messages.unsubscribe_one_click` |
 | **Outbound flag**                        | Derived from `SENT` label           | `mail_messages.is_outbound`               |
 
 The **permanent bans stand unchanged**: bodies (HTML + plain text),
@@ -105,15 +107,44 @@ remains the only call shape.
 
 ## Implementation notes
 
-- Migration `0003_sync_data_capture.sql` adds the 4 `mail_messages`
-  columns + 2 `senders` columns + the `gmail_unsubscribe_method`
-  enum; backfills `is_outbound` from existing `label_ids`.
+- Migration `0003_sync_data_capture.sql` adds the original 4
+  `mail_messages` columns + 2 `senders` columns + the
+  `gmail_unsubscribe_method` enum.
+- Migration `0004_unsubscribe_mailto_and_keyset_idx.sql` (Codex iter 5
+  fix, 2026-05-22) splits the unsubscribe HTTPS / mailto channels
+  across two columns (`unsubscribe_url` + new `unsubscribe_mailto_url`)
+  so `building_sender_index` can never emit a sender row whose
+  `method='mailto'` carries an `https://` URL. Same migration adds
+  the `(mailbox_account_id, id)` composite index that the
+  keyset-paginated sender-rebuild streamer relies on.
 - `GmailClientService.METADATA_HEADERS` extends to
   `['From', 'Subject', 'To', 'Cc', 'List-Unsubscribe', 'List-Unsubscribe-Post']`.
 - Outbound messages SKIP `senders` identity upsert during fetch;
   `building_sender_index` filters to inbound (`is_outbound = false`).
 - Header parsing lives in `packages/workers/src/header-parsing.ts`
-  (`parseRecipients`, `parseListUnsubscribe`), unit-tested.
+  (`parseRecipients`, `parseListUnsubscribe`), unit-tested. The
+  parser returns `{ httpsUrl, mailtoUrl, oneClick }` — channels are
+  kept separate so the aggregator can apply Option B sender-method
+  derivation: `one_click` (HTTPS + RFC 8058 post header) →
+  `mailto` (mailto channel present) → `none`. Plain HTTPS without
+  one-click does NOT surface as an actionable sender method until the
+  product supports HTTPS-link unsubscribe (D230 keeps mailto manual at
+  launch; the HTTPS-link executor is its own follow-up PR + new D-
+  candidate).
+
+## Scope boundary — capture only
+
+This ADR records the **data capture** decision. It does NOT cover
+execution of one-click unsubscribe. RFC 8058 POST-mode is a destructive
+Gmail-side action (CLAUDE.md §9 stop-condition: founder approval) and
+ships in its own PR with:
+
+- audit / activity-log wiring (D232 undo journal awareness)
+- retry + timeout policy as an explicit D-candidate
+- HTTPS-only guard (cleartext `http:` is already dropped at parse time)
+- never-execute-on-method≠one_click invariant
+
+Tracked as a follow-up in `FOUNDER-FOLLOWUPS.md`.
 
 ## CLAUDE.md follow-up
 
@@ -128,5 +159,6 @@ fields into §2.1 in a separate `chore/distill-*` PR. Tracked in
 - `docs/execution/senders-backend-plan.md` §10 (attachment-metadata
   decision precedent)
 - `packages/db/migrations/0003_sync_data_capture.sql`
+- `packages/db/migrations/0004_unsubscribe_mailto_and_keyset_idx.sql`
 - Founder interview, 2026-05-22 (this session) — answers documented in
   the corresponding PR body.

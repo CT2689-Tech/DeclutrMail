@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
-import { INITIAL_SYNC_JOB, initialSyncJobOptions } from '@declutrmail/workers';
+import { ensureInitialSyncJob } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -26,50 +26,27 @@ export class SyncService {
   ) {}
 
   /**
-   * Mark a mailbox `queued` and enqueue its full-mailbox backfill (D157,
-   * D224).
+   * Mark a mailbox `queued` and (best-effort) enqueue its full-mailbox
+   * backfill (D157, D224).
    *
-   * Reconnect / retry semantics (Codex adversarial review 2026-05-22):
-   * BullMQ's `jobId = mailboxAccountId` provides the concurrency cap
-   * (only one running per mailbox), but a `queue.add()` with an existing
-   * `jobId` is a no-op — a completed-but-retained or failed-and-kept
-   * job would silently block a reconnect from ever running. We
-   * inspect the prior job's state before enqueueing:
-   *   - `active` / `waiting` / `delayed` / `prioritized` / `waiting-children`
-   *     — already in flight or queued; skip the add (no double-enqueue).
-   *   - `completed` / `failed` — terminal; remove the stale job so the
-   *     fresh add creates a runnable replacement.
-   *   - none — just add.
+   * Codex adversarial review iter 5, 2026-05-22 — durable-intent
+   * contract:
+   *
+   *   `provider_sync_state.readiness_status = 'queued'` IS the durable
+   *   sync intent. BullMQ is an execution cache.
+   *
+   * The DB write happens FIRST so it cannot be lost to a Redis outage.
+   * The enqueue is delegated to `ensureInitialSyncJob` (the single
+   * scheduling implementation, shared with the worker's periodic
+   * reconciler). If the enqueue throws, we LOG and SWALLOW — the
+   * `queued` row remains in place, and the worker's reconciler picks it
+   * up on its next tick. This is the inversion of the prior contract:
+   * we no longer require BullMQ to be reachable for sync intent to
+   * survive.
    */
   async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
-    const existing = await this.queue.getJob(mailboxAccountId);
-    if (existing) {
-      const state = await existing.getState();
-      if (state === 'completed' || state === 'failed') {
-        await existing.remove();
-      } else {
-        // active / waiting / delayed / prioritized / waiting-children /
-        // unknown — a sync is in flight or queued. Don't double-enqueue.
-        return;
-      }
-    }
-
-    // Add the BullMQ job BEFORE touching `provider_sync_state` (Codex
-    // adversarial review 2026-05-22). If `add()` throws (Redis down /
-    // BullMQ misbehaving), the DB state stays at whatever it was — the
-    // mailbox never advertises `queued` without a runnable job to back
-    // it. If the remove-then-add window crashed between the two Redis
-    // calls, the next reconnect's `getJob` returns null and just adds
-    // cleanly — no permanent stranding.
-    await this.queue.add(
-      INITIAL_SYNC_JOB,
-      { mailboxAccountId },
-      initialSyncJobOptions(mailboxAccountId),
-    );
-
-    // Job is queued. Now write the gate-visible `queued` state. If this
-    // DB write fails, the worker's first stage upserts the state itself
-    // (`upsertSyncState`) — never blocks the sync.
+    // 1. Durable intent. Survives a Redis outage; the reconciler will
+    //    materialize the missing job on its next tick.
     await this.db
       .insert(providerSyncState)
       .values({
@@ -88,5 +65,20 @@ export class SyncService {
           updatedAt: sql`now()`,
         },
       });
+
+    // 2. Best-effort enqueue. Failure here MUST NOT erase the durable
+    //    intent above — the reconciler is the safety net.
+    try {
+      await ensureInitialSyncJob(this.queue, mailboxAccountId);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sync.enqueue_failed',
+          mailboxAccountId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 }

@@ -81,17 +81,28 @@ export interface InitialSyncResult {
 /** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
 type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
-/** Per-sender aggregate folded from the persisted `mail_messages` rows. */
+/**
+ * Per-sender aggregate folded from the persisted `mail_messages` rows.
+ *
+ * `httpsUrl` / `mailtoUrl` track the unsubscribe channels SEPARATELY so
+ * the sender's `unsubscribe_method` + `unsubscribe_url` always agree on
+ * scheme (Codex iter 5 fix, 2026-05-22). The prior single-`url` shape
+ * collapsed them and let a plain-HTTPS message be persisted as
+ * `method='mailto'` with an `https://` URL — Option B from the iter 5
+ * fix prompt: never surface that mismatch.
+ */
 interface SenderAggregate {
   firstSeen: Date;
   lastSeen: Date;
   categoryCounts: Map<GmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
-  /** Best `List-Unsubscribe` URL across the sender's messages (D9). */
-  unsubscribeUrl: string | null;
-  /** True iff any of the sender's messages support RFC 8058 one-click. */
-  unsubscribeOneClick: boolean;
+  /** First HTTPS unsubscribe URL seen for this sender, or null. */
+  httpsUrl: string | null;
+  /** First mailto unsubscribe URL seen for this sender, or null. */
+  mailtoUrl: string | null;
+  /** True iff any message supports RFC 8058 one-click (needs HTTPS). */
+  hasOneClick: boolean;
 }
 
 /**
@@ -431,6 +442,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           labelIds: mailMessages.labelIds,
           isUnread: mailMessages.isUnread,
           unsubscribeUrl: mailMessages.unsubscribeUrl,
+          unsubscribeMailtoUrl: mailMessages.unsubscribeMailtoUrl,
           unsubscribeOneClick: mailMessages.unsubscribeOneClick,
         })
         .from(mailMessages)
@@ -474,6 +486,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         orphans += 1;
         continue;
       }
+      const { method: unsubscribeMethod, url: unsubscribeUrl } = deriveUnsubscribe(agg);
       senderRows.push({
         mailboxAccountId,
         senderKey,
@@ -483,8 +496,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         gmailCategory: dominantCategory(agg.categoryCounts),
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
-        unsubscribeMethod: deriveUnsubscribeMethod(agg),
-        unsubscribeUrl: agg.unsubscribeUrl,
+        unsubscribeMethod,
+        unsubscribeUrl,
       });
       for (const [yearMonth, month] of agg.months) {
         timeseriesRows.push({
@@ -583,7 +596,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const recipientEmails = isOutbound
       ? [...parseRecipients(meta.to), ...parseRecipients(meta.cc)]
       : null;
-    const { url: unsubscribeUrl, oneClick: unsubscribeOneClick } = parseListUnsubscribe(
+    const { httpsUrl, mailtoUrl, oneClick: unsubscribeOneClick } = parseListUnsubscribe(
       meta.listUnsubscribe,
       meta.listUnsubscribePost,
     );
@@ -600,7 +613,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       isUnread: meta.labelIds.includes('UNREAD'),
       isOutbound,
       recipientEmails: recipientEmails && recipientEmails.length > 0 ? recipientEmails : null,
-      unsubscribeUrl,
+      // Channels stored in separate columns so `building_sender_index`
+      // can detect mailto independently of HTTPS (Codex iter 5 fix).
+      unsubscribeUrl: httpsUrl,
+      unsubscribeMailtoUrl: mailtoUrl,
       unsubscribeOneClick,
     };
 
@@ -649,6 +665,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       labelIds: string[];
       isUnread: boolean;
       unsubscribeUrl: string | null;
+      unsubscribeMailtoUrl: string | null;
       unsubscribeOneClick: boolean;
     },
   ): void {
@@ -659,8 +676,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastSeen: row.internalDate,
         categoryCounts: new Map(),
         months: new Map(),
-        unsubscribeUrl: null,
-        unsubscribeOneClick: false,
+        httpsUrl: null,
+        mailtoUrl: null,
+        hasOneClick: false,
       };
       aggregates.set(row.senderKey, agg);
     }
@@ -681,13 +699,22 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
     agg.months.set(ym, month);
 
-    // Unsubscribe: one-click wins; any URL beats null. Once we've seen
-    // a one-click URL, keep it — don't downgrade to a later mailto.
-    if (row.unsubscribeOneClick && !agg.unsubscribeOneClick) {
-      agg.unsubscribeOneClick = true;
-      agg.unsubscribeUrl = row.unsubscribeUrl;
-    } else if (!agg.unsubscribeOneClick && row.unsubscribeUrl && !agg.unsubscribeUrl) {
-      agg.unsubscribeUrl = row.unsubscribeUrl;
+    // Track unsubscribe channels SEPARATELY (Codex iter 5 fix). The
+    // sender's final method/URL is derived in `deriveUnsubscribe` per
+    // Option B: one_click > mailto > none. Channel data is captured
+    // here independently so we never persist a `method='mailto'` with
+    // an `https://` URL.
+    if (row.unsubscribeOneClick && row.unsubscribeUrl) {
+      agg.hasOneClick = true;
+      // First one-click HTTPS URL wins — don't churn on a later one.
+      agg.httpsUrl ??= row.unsubscribeUrl;
+    } else if (row.unsubscribeUrl) {
+      // Plain HTTPS (no one-click). Captured for the future executor
+      // PR; does NOT contribute to sender-level method.
+      agg.httpsUrl ??= row.unsubscribeUrl;
+    }
+    if (row.unsubscribeMailtoUrl) {
+      agg.mailtoUrl ??= row.unsubscribeMailtoUrl;
     }
   }
 
@@ -727,6 +754,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             isOutbound: sql`excluded.is_outbound`,
             recipientEmails: sql`excluded.recipient_emails`,
             unsubscribeUrl: sql`excluded.unsubscribe_url`,
+            unsubscribeMailtoUrl: sql`excluded.unsubscribe_mailto_url`,
             unsubscribeOneClick: sql`excluded.unsubscribe_one_click`,
             updatedAt: sql`now()`,
           },
@@ -816,15 +844,36 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   }
 }
 
-/** Map an aggregate's unsubscribe state to the `gmail_unsubscribe_method` enum. */
-function deriveUnsubscribeMethod(agg: SenderAggregate): UnsubscribeMethod {
-  if (agg.unsubscribeOneClick) {
-    return 'one_click';
+/**
+ * Map an aggregate's unsubscribe state to the sender's
+ * `unsubscribe_method` + `unsubscribe_url` — Option B per Codex iter 5
+ * (2026-05-22, D9).
+ *
+ *   one_click  ← any message had RFC 8058 one-click (URL = its HTTPS)
+ *   mailto     ← else any message had a mailto channel (URL = mailto)
+ *   none       ← neither; URL = NULL
+ *
+ * A plain-HTTPS-only sender ends up `method='none'` deliberately:
+ * D230 makes mailto manual at launch and there is no HTTPS-link
+ * executor yet, so we surface no actionable method until the product
+ * supports it. The per-message `unsubscribe_url` still captures the
+ * HTTPS link for the future executor PR — no re-sync needed.
+ *
+ * INVARIANT: when method = `mailto` the URL is a `mailto:` URI; when
+ * method = `one_click` the URL is `https://...`; when method = `none`
+ * the URL is NULL. The split-channel aggregate makes this true by
+ * construction (the prior single-URL shape could not).
+ */
+function deriveUnsubscribe(
+  agg: SenderAggregate,
+): { method: UnsubscribeMethod; url: string | null } {
+  if (agg.hasOneClick && agg.httpsUrl) {
+    return { method: 'one_click', url: agg.httpsUrl };
   }
-  if (agg.unsubscribeUrl) {
-    return 'mailto';
+  if (agg.mailtoUrl) {
+    return { method: 'mailto', url: agg.mailtoUrl };
   }
-  return 'none';
+  return { method: 'none', url: null };
 }
 
 /** Facts parsed from one message's `From` header + labels. */
