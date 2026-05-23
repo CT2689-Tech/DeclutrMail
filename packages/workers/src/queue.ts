@@ -53,7 +53,7 @@ export function initialSyncJobOptions(mailboxAccountId: string): JobsOptions {
 
 /**
  * Schedule (or reschedule) the initial-sync job for one mailbox (Codex
- * adversarial review iter 5, 2026-05-22).
+ * adversarial review iter 5 + 6, 2026-05-22).
  *
  * ONE scheduling implementation, shared by every producer (the
  * connect/reconnect path, and the worker's continuous reconciler). The
@@ -62,15 +62,24 @@ export function initialSyncJobOptions(mailboxAccountId: string): JobsOptions {
  * consistent with the durable intent without ever double-enqueueing.
  *
  * State table for an existing job at `jobId = mailboxAccountId`:
- *   - none ........................ add a fresh job
- *   - `completed` / `failed` ...... terminal residue — remove + re-add
+ *   - none ........................ add a fresh job (`'added'`)
+ *   - `completed` / `failed` /
+ *     `unknown` ..................... non-live — remove + re-add
+ *                                    (`'replaced'`). `unknown` covers
+ *                                    Redis hash eviction (TTL, flushdb,
+ *                                    cluster failover) — without
+ *                                    treating it as replaceable a
+ *                                    `queued` durable intent could
+ *                                    never materialize (Codex iter 6).
  *   - `waiting` / `active` /
  *     `delayed` / `prioritized` /
- *     `waiting-children` ........... live job — no-op (do NOT double-enqueue)
+ *     `waiting-children` ........... live job — no-op (`'noop'`); do
+ *                                    NOT double-enqueue.
  *
  * Idempotent — safe to call from the connect path AND a periodic
  * reconciler concurrently. The reconciler's job is to add jobs the
- * connect path failed to enqueue (e.g. Redis was down at connect time).
+ * connect path failed to enqueue (e.g. Redis was down at connect time)
+ * AND to recover from Redis evictions.
  */
 export async function ensureInitialSyncJob(
   queue: Queue<InitialSyncJobData>,
@@ -79,7 +88,13 @@ export async function ensureInitialSyncJob(
   const existing = await queue.getJob(mailboxAccountId);
   if (existing) {
     const state = await existing.getState();
-    if (state === 'completed' || state === 'failed') {
+    // `unknown` indicates the job's hash has been evicted (Redis flush,
+    // TTL expiry, cluster failover) — `getJob` returned a thin handle
+    // but BullMQ can no longer schedule it. Treating it as live would
+    // permanently strand a `queued` durable intent (Codex iter 6).
+    if (state === 'completed' || state === 'failed' || state === 'unknown') {
+      // `remove()` is a no-op when there's no hash to remove; safe to
+      // call before adding the replacement.
       await existing.remove();
       await queue.add(
         INITIAL_SYNC_JOB,
@@ -88,7 +103,7 @@ export async function ensureInitialSyncJob(
       );
       return 'replaced';
     }
-    // active / waiting / delayed / prioritized / waiting-children — live.
+    // waiting / active / delayed / prioritized / waiting-children — live.
     return 'noop';
   }
   await queue.add(
