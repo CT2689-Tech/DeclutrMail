@@ -21,6 +21,35 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-22 — InitialSyncWorker could not sync a mailbox larger than ~3,000 messages
+**PR:** #17 (`feat/d157-initial-sync-worker`) shipped the bug; fixed in `feat/d005-sync-quota-hardening`
+**Caught by:** manual test — connecting a real 20K-message Gmail account
+**What happened:** PR-C's `InitialSyncWorker` fetched message metadata
+behind a concurrency cap (`FETCH_CONCURRENCY=20`) but NO rate limiter.
+§5 says "throttle per D5" — a concurrency cap is not a rate limit. A
+20K-message backfill burst past Gmail's per-user quota (15,000 units /
+user / minute; `messages.get` = 5 units → 3,000 messages/min) and got
+403 "Quota exceeded" at exactly 3,000 messages. Worse: (1) the 403 was
+classified as `TransientError` because only 429 mapped to
+`RateLimitError`; (2) the worker had no checkpointing, so each of the 5
+retries restarted from message 0, re-hit the quota, and dead-lettered.
+Net: any mailbox over ~3,000 messages could never sync. The two small
+test accounts (327, 140 messages) passed only because they sat under
+the ceiling — small-sample testing hid it.
+**Correct approach:** A real rate limiter pacing Gmail calls under the
+per-user quota; classify Gmail 403-quota AND 429 as `RateLimitError`;
+make the sync resumable (`mail_messages` IS the checkpoint — skip
+already-stored ids on retry) so an interruption never restarts from 0.
+All three shipped in the hardening PR.
+**Rule:** A "throttle" requirement means a rate limiter, not a
+concurrency cap. Any worker calling a quota-metered API MUST (a) pace
+under the documented quota and (b) be resumable — never restart a
+multi-minute job from zero. Test workers against data above the
+provider's per-window limit, not just small samples.
+**Enforcement update:** none yet — candidates: an `architecture-guardian`
+check that a quota-metered worker declares a limiter, and a load-shaped
+worker test. Logged for distillation if the pattern recurs.
+
 ## 2026-05-21 — Presented a "new" token-encryption decision that D14 already made
 **PR:** #14 (`docs/d039-senders-backend-plan`) — caught before merge
 **Caught by:** self — a plan grep for `D14` while finalizing the config file,
