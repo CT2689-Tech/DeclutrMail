@@ -132,7 +132,8 @@ async function bootstrap(): Promise<void> {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
-  // Continuous reconciler (Codex adversarial review iter 5, 2026-05-22).
+  // Continuous reconciler (Codex adversarial review iter 5 + 6,
+  // 2026-05-22).
   //
   // Contract: `provider_sync_state.readiness_status='queued'` IS the
   // durable sync intent. BullMQ is the execution cache. The connect
@@ -149,6 +150,17 @@ async function bootstrap(): Promise<void> {
   const reconcilerQueue = new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, { connection });
   const RECONCILE_BATCH = 100;
   const RECONCILE_INTERVAL_MS = 60_000;
+
+  // Overlap + shutdown guards (Codex iter 6). A slow sweep (e.g.
+  // Redis-paginated `getJob`s under load) could exceed the interval
+  // and overlap with the next firing — without a guard, two
+  // concurrent sweeps could race a `remove`+`add` pair against each
+  // other for the same job. `inFlight` tracks the active tick (a
+  // Promise we can `await` on shutdown); `shuttingDown` short-circuits
+  // any tick that fires after the shutdown signal but before
+  // `clearInterval` runs.
+  let inFlight: Promise<void> | null = null;
+  let shuttingDown = false;
 
   /**
    * One reconciliation tick. Reads up to `RECONCILE_BATCH` rows whose
@@ -170,6 +182,11 @@ async function bootstrap(): Promise<void> {
         .where(eq(providerSyncState.readinessStatus, 'queued'))
         .limit(RECONCILE_BATCH);
       for (const { mailboxAccountId } of queuedRows) {
+        if (shuttingDown) {
+          // Honor a mid-sweep shutdown signal — leftover rows pick up
+          // on the next worker boot.
+          break;
+        }
         const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId);
         if (outcome === 'added') added += 1;
         if (outcome === 'replaced') replaced += 1;
@@ -197,15 +214,35 @@ async function bootstrap(): Promise<void> {
     return { added, replaced };
   }
 
+  /**
+   * Wrap one tick with the overlap guard. If a prior tick is still
+   * running OR a shutdown is in progress, the firing is skipped —
+   * never queued behind the in-flight one (the next 60s tick has
+   * fresh data anyway).
+   */
+  function tick(): void {
+    if (shuttingDown || inFlight) {
+      return;
+    }
+    const p = reconcileQueuedInitialSyncs()
+      .then(() => undefined)
+      .finally(() => {
+        inFlight = null;
+      });
+    inFlight = p;
+  }
+
   // Boot sweep — handles any `queued` rows that accumulated while the
-  // worker was offline (deploy gap, crash recovery).
-  await reconcileQueuedInitialSyncs();
+  // worker was offline (deploy gap, crash recovery). Tracked via the
+  // same `inFlight` slot so a shutdown during boot waits for it.
+  tick();
+  if (inFlight) {
+    await inFlight;
+  }
 
   // Periodic sweep — handles outages that happen AFTER boot. The
   // handle is captured so shutdown can `clearInterval` cleanly.
-  const reconcilerHandle = setInterval(() => {
-    void reconcileQueuedInitialSyncs();
-  }, RECONCILE_INTERVAL_MS);
+  const reconcilerHandle = setInterval(tick, RECONCILE_INTERVAL_MS);
   // Don't keep the process alive solely on the reconciler tick; the
   // BullMQ worker is the foreground loop.
   reconcilerHandle.unref();
@@ -214,12 +251,18 @@ async function bootstrap(): Promise<void> {
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
 
-  // Graceful shutdown — stop the reconciler tick, drain in-flight
-  // jobs, then release connections.
+  // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
+  // sweep, then drain BullMQ and release connections. Closing the
+  // queue/connection while a sweep is mid-`getJob` would throw
+  // unhandled errors and corrupt the structured log.
   const shutdown = (signal: string): void => {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
+    shuttingDown = true;
     clearInterval(reconcilerHandle);
     void (async () => {
+      if (inFlight) {
+        await inFlight;
+      }
       await bullWorker.close();
       await reconcilerQueue.close();
       await connection.quit();

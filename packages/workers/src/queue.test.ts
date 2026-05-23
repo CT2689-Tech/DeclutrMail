@@ -24,6 +24,7 @@ interface FakeJob {
   state:
     | 'completed'
     | 'failed'
+    | 'unknown'
     | 'waiting'
     | 'active'
     | 'delayed'
@@ -85,6 +86,21 @@ describe('ensureInitialSyncJob', () => {
   it("replaces a 'failed' job", async () => {
     const q = new FakeQueue();
     q.setJob('failed');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const outcome = await ensureInitialSyncJob(q as any, 'mailbox-1');
+    expect(outcome).toBe('replaced');
+    expect(q.removeCalls).toBe(1);
+    expect(q.addCalls).toBe(1);
+  });
+
+  it("replaces an 'unknown' job (Redis eviction; Codex iter 6)", async () => {
+    // `getState()` returns `'unknown'` when the job's Redis hash has
+    // been evicted (TTL, flushdb, cluster failover). If we left this as
+    // 'noop' a `queued` durable intent could never materialize: the
+    // reconciler would forever see a thin job handle and skip. Must be
+    // treated as terminal residue → remove + re-add.
+    const q = new FakeQueue();
+    q.setJob('unknown');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const outcome = await ensureInitialSyncJob(q as any, 'mailbox-1');
     expect(outcome).toBe('replaced');
