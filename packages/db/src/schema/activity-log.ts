@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { index, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { mailboxAccounts } from './mailbox-accounts';
+import { undoJournal } from './undo-journal';
 
 /**
  * Activity log — append-only record of decisions taken on senders.
@@ -16,6 +17,13 @@ import { mailboxAccounts } from './mailbox-accounts';
  *
  * `sender_key` is nullable so the log can also carry account-scoped
  * entries that are not tied to a single sender.
+ *
+ * `undo_token` is the optional join to `undo_journal` (D35, D58, D232).
+ * Set when the activity row was a destructive action that issued an
+ * undo token at mutation time; null for non-destructive Keep entries
+ * and historical rows that predate the journal. The FK uses
+ * `onDelete: 'set null'` because journal rows are pruned on expiry by
+ * the cleanup worker — the activity row outlives the undo window.
  *
  * Append-only — no `updated_at`, no row mutation.
  *
@@ -51,6 +59,16 @@ export const activityLog = pgTable(
     source: activitySource('source').notNull(),
     action: activityAction('action').notNull(),
     affectedCount: integer('affected_count').notNull().default(0),
+    /**
+     * Optional FK to the undo token issued for this row's action (D35,
+     * D58, D232). Null for Keep actions (no-op to undo) and rows that
+     * predate the journal. `onDelete: 'set null'` so journal expiry
+     * (the cleanup worker pruning expired tokens) does not cascade-
+     * delete the historical activity row.
+     */
+    undoToken: uuid('undo_token').references(() => undoJournal.token, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -61,6 +79,8 @@ export const activityLog = pgTable(
       table.senderKey,
       table.occurredAt,
     ),
+    /** Activity-row → undo lookup (D58 "Undo" affordance per row). */
+    undoTokenIdx: index('activity_log_undo_token_idx').on(table.undoToken),
   }),
 );
 

@@ -1,0 +1,21 @@
+-- Rollback for 0005_undo_journal.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverse
+-- order of the forward. `IF EXISTS` keeps the rollback idempotent.
+--
+-- Drops the activity_log undo wiring first, then the undo_journal
+-- table, then the enum — FK dependency order.
+
+DROP INDEX IF EXISTS "activity_log_undo_token_idx";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP CONSTRAINT IF EXISTS "activity_log_undo_token_undo_journal_token_fk";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP COLUMN IF EXISTS "undo_token";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "undo_journal_account_action_created_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "undo_journal_account_expires_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "undo_journal";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."undo_action_kind";

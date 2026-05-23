@@ -1,4 +1,4 @@
-h1:qVlKbkQzzY4b8RVgkoHJJV4KHgrOlH/hlH7ltsNfm+s=
+h1:bYxEtAlTVvfHMX6UizHDju4ExABGo3ifIXEpTpD4Sm8=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:COE1cnXSzGmexAp7l9JwAYLVhPilqOD4Vo6roD/D5To=
 0002_mailbox_oauth_tokens.sql h1:1sPxNFc73SsT9MSMW+4KYw96x/5KT47gSpz6ysoOa7E=
@@ -6,3 +6,4 @@ h1:qVlKbkQzzY4b8RVgkoHJJV4KHgrOlH/hlH7ltsNfm+s=
 0004_unsubscribe_mailto_and_keyset_idx.sql h1:0MJEIoKTSZewjc1sLvfShgw2RYkutr/nMCGM49lE9Ig=
 0005_webhook_dedup_and_history_id_updated_at.sql h1:44RftxuLukWb8zS7Ni7znZ93hs8dByPtP/LbiW87400=
 0006_triage_decisions_and_sender_protection.sql h1:x9JDms4bx7+m3dinxWDOxlQquFP7hOlYfLPRsEM/WLs=
+0007_undo_journal.sql h1:gx9mLodPpGGI7OtlElIVD5scEYyL01ZX1DWV5NIIyaE=

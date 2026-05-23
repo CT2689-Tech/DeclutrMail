@@ -1,9 +1,11 @@
 import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 
+import { AccountModule } from './account/account.module.js';
 import { DbModule } from './db/db.module.js';
 import { GoogleOAuthModule } from './auth/google-oauth.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
+import { UndoModule } from './undo/undo.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 /**
@@ -31,7 +33,14 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
 
 /**
  * Root application module (D201). Loads env config, the global DB
- * module, and — when enabled — the feature modules.
+ * module, the rate limiter, the undo journal (D35, D58, D232), the
+ * account-deletion orchestrator (D205), and — when enabled — the
+ * Gmail OAuth + Pub/Sub feature modules.
+ *
+ * `UndoModule` + `AccountModule` need only `DATABASE_URL` (already
+ * supplied by the global DbModule), so they boot unconditionally —
+ * unlike `GoogleOAuthModule`, which requires KMS env and is flagged
+ * off until OAuth ships.
  */
 @Module({
   imports: [
@@ -41,6 +50,8 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     // any `@RateLimit(...)` annotation is enforced. Fails open when
     // REDIS_URL is absent so local dev without Redis still works.
     RateLimitModule,
+    UndoModule,
+    AccountModule,
     ...(gmailConnectEnabled ? [GoogleOAuthModule] : []),
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
