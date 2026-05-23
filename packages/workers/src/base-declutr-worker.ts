@@ -42,7 +42,13 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
   /** Exactly one of the five D225 policies (`architecture-guardian` Check B). */
   abstract readonly policy: WorkerPolicy;
 
-  /** The job body. Subclasses do the real work here. */
+  /**
+   * The job body. Subclasses do the real work here.
+   *
+   * `TResult` is logged on `worker.succeeded` (it carries job metrics —
+   * counts, durations). It MUST stay metric-only — never message content
+   * or any D7-sensitive data — because it lands in structured logs.
+   */
   abstract processJob(payload: TPayload, ctx: WorkerContext): Promise<TResult>;
 
   /**
@@ -87,7 +93,9 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         config.timeoutMs === null
           ? await this.processJob(job.data, ctx)
           : await withTimeout(this.processJob(job.data, ctx), config.timeoutMs, this.workerName);
-      this.emit('worker.succeeded', ctx);
+      // `result` carries job metrics (counts, durations) — logged so a
+      // sync's timing is observable. Metric-only per the processJob contract.
+      this.emit('worker.succeeded', ctx, { result });
       return result;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
