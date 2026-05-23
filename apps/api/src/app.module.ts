@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { DbModule } from './db/db.module.js';
 import { GoogleOAuthModule } from './auth/google-oauth.module.js';
+import { RateLimitModule } from './common/rate-limit/index.js';
 
 /**
  * The Gmail OAuth connect feature is loaded ONLY when
@@ -22,6 +23,14 @@ const gmailConnectEnabled = process.env.GMAIL_CONNECT_ENABLED === 'true';
  * module, and — when enabled — the Gmail OAuth feature module.
  */
 @Module({
-  imports: [ConfigModule.forRoot(), DbModule, ...(gmailConnectEnabled ? [GoogleOAuthModule] : [])],
+  imports: [
+    ConfigModule.forRoot(),
+    DbModule,
+    // RateLimitModule is global (D156) — registered on every boot so
+    // any `@RateLimit(...)` annotation is enforced. Fails open when
+    // REDIS_URL is absent so local dev without Redis still works.
+    RateLimitModule,
+    ...(gmailConnectEnabled ? [GoogleOAuthModule] : []),
+  ],
 })
 export class AppModule {}

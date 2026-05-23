@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { BadRequestException, Controller, Get, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 
 /** Name of the cookie that binds the OAuth `state` nonce to the caller. */
@@ -28,6 +29,7 @@ export class GoogleOAuthController {
   constructor(private readonly oauth: GoogleOAuthService) {}
 
   @Get('start')
+  @RateLimit('auth')
   start(@Res() res: Response): void {
     // CSRF: bind a random `state` nonce to the caller via an httpOnly
     // cookie; /callback rejects any code whose state doesn't match.
@@ -43,6 +45,7 @@ export class GoogleOAuthController {
   }
 
   @Get('callback')
+  @RateLimit('auth')
   async callback(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
