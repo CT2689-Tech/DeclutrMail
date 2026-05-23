@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./contracts": "./src/contracts/index.ts",
+    "./observability": "./src/observability/index.ts",
     "./tokens.css": "./src/styles/tokens.css"
   },
   "scripts": {
