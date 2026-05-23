@@ -77,4 +77,25 @@ describe('parseListUnsubscribe', () => {
       oneClick: true,
     });
   });
+
+  it('rejects insecure http: URLs as one-click candidates (RFC 8058 security)', () => {
+    // Cleartext `http:` is downgrade-vulnerable — never honored as
+    // one-click even with the post-flag. Codex iter 4 finding.
+    expect(parseListUnsubscribe('<http://x.com/unsub>', 'List-Unsubscribe=One-Click')).toEqual({
+      url: null,
+      oneClick: false,
+    });
+  });
+
+  it('falls back to mailto when only http: + mailto present (no one-click)', () => {
+    expect(
+      parseListUnsubscribe(
+        '<http://x.com/unsub>, <mailto:unsub@x.com>',
+        'List-Unsubscribe=One-Click',
+      ),
+    ).toEqual({
+      url: 'mailto:unsub@x.com',
+      oneClick: false,
+    });
+  });
 });

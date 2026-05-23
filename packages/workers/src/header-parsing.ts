@@ -45,7 +45,13 @@ export function parseListUnsubscribe(
     return { url: null, oneClick: false };
   }
   const urls = extractBracketedUrls(headerValue);
-  const https = urls.find((u) => /^https?:/i.test(u));
+  // One-click MUST be HTTPS (RFC 8058 §3 — security; cleartext `http:`
+  // POSTs are downgrade-vulnerable and not eligible for the automated
+  // unsubscribe trust boundary). `http:` URLs are simply not surfaced
+  // as one-click candidates; if the header also carries a mailto we
+  // fall back to that, otherwise the sender is treated as non-
+  // unsubscribable by automation. Codex adversarial review iter 4.
+  const https = urls.find((u) => /^https:/i.test(u));
   const mailto = urls.find((u) => /^mailto:/i.test(u));
   const url = https ?? mailto ?? null;
   // One-click requires both the https URL AND the post-flag (RFC 8058).
