@@ -208,7 +208,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | ⬜ |  |  |  |
-| D157 | Queue: **BullMQ on Redis (Upstash) | ⬜ |  |  |  |
+| D157 | Queue: **BullMQ on Redis (Upstash) | 🔵 | #17 |  |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
 | D159 | Observability stack: **Sentry + PostHog | ⬜ |  |  |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🔵 | #7 |  |  |
