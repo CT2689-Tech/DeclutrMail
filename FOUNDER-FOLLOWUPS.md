@@ -26,6 +26,25 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-22 — CHORE: resync Drizzle migration journal for 0003
+**Source:** schema-migration-reviewer gate on PR
+`feat/d009-sync-data-capture` (2026-05-22)
+**Why:** `0003_sync_data_capture.sql` + `.rollback` were hand-authored
+(no `drizzle-kit generate` run). `packages/db/migrations/meta/_journal.json`
++ `meta/0003_snapshot.json` were not updated. `drizzle-kit check`
+still passes against the schema files, but the next contributor who
+runs `drizzle-kit generate` will hit a confusing experience — either a
+duplicate numbering collision or an auto-emitted `0004_*.sql` that
+re-encodes columns this PR already added.
+**How:** Open `chore/db-journal-resync` — run `pnpm --filter
+@declutrmail/db db:generate` with the schema files as they are post-
+PR-#19+#20, compare the emitted SQL against `0003_sync_data_capture.sql`,
+keep my SQL but adopt the auto-generated `meta/0003_snapshot.json` +
+`_journal.json` entry. Run the round-trip test.
+**Verifies by:** `meta/_journal.json` lists `0003`; `meta/0003_snapshot.json`
+exists; round-trip + `drizzle-kit check` both clean.
+**Status:** Open
+
 ### 2026-05-22 — DISTILL: CLAUDE.md §2.1 storage allowlist amendment (ADR-0004)
 **Source:** ADR-0004 (D7 allowlist amendment — data-capture PR
 `feat/d009-sync-data-capture`)

@@ -85,6 +85,15 @@ export const mailMessages = pgTable(
      * messages are stored (for future reply attribution) but excluded
      * from `building_sender_index` — their `From` is the user themself,
      * not a third-party sender.
+     *
+     * Deliberately UNINDEXED. `building_sender_index` selects with
+     * `WHERE mailbox_account_id = ? AND is_outbound = false` — the
+     * predicate matches the inbound MAJORITY (~70–90% of rows), so a
+     * partial index would pay a write-amplification tax per INSERT for
+     * essentially no read win. The existing `(mailbox_account_id, …)`
+     * indexes prefix-match the mailbox filter; the planner heap-filters
+     * `is_outbound` from there. Reviewed + intentional (D150 pattern is
+     * for SELECTIVE predicates, e.g. `is_unread = true`).
      */
     isOutbound: boolean('is_outbound').notNull().default(false),
     /**
