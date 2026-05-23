@@ -2,6 +2,20 @@
 // external-integration contracts (D201).
 
 export type { KmsProvider } from './contracts/index';
+export type {
+  DecodedCursor,
+  Envelope,
+  PaginatedEnvelope,
+  PaginationMeta,
+} from './contracts/index';
+export {
+  clampLimit,
+  decodeCursor,
+  encodeCursor,
+  ok,
+  paginated,
+  withMeta,
+} from './contracts/index';
 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
