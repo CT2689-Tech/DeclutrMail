@@ -18,6 +18,8 @@ export { Eyebrow } from './components/eyebrow';
 export type { EyebrowTone } from './components/eyebrow';
 export { Pill } from './components/pill';
 export type { PillTone } from './components/pill';
+export { PrivacyBadge } from './components/privacy-badge';
+export type { PrivacyBadgeVariant } from './components/privacy-badge';
 export { Card } from './components/card';
 export { Spark } from './components/spark';
 export { Avatar } from './components/avatar';
@@ -30,3 +32,15 @@ export type { ToastTone } from './components/toast';
 
 export { Sidebar } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
+
+// D7 + D228 — privacy copy module. Re-exported so consumers can pull
+// canonical wording without depending on the components subtree.
+export {
+  PRIVACY_BADGE_HEADLINE,
+  PRIVACY_STORAGE_ITEMS,
+  PRIVACY_NEVER_ITEMS,
+  PRIVACY_BADGE_LEAD,
+  PRIVACY_STORAGE_LABEL,
+  PRIVACY_NEVER_LABEL,
+  GMAIL_PREVIEW_FIELD_LABEL,
+} from './copy/privacy';
