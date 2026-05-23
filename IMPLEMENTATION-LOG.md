@@ -71,15 +71,15 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #25 | docs/adr/ has template + 6 ADRs |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | ⬜ |  |  |  |
-| D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | ⬜ |  |  |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | ⬜ |  |  |  |
-| D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | ⬜ |  |  |  |
-| D23 | New sender default: **Screen | ⬜ |  |  |  |
-| D24 | LLM role: **Haiku for explanation only, template fallback | ⬜ |  |  |  |
-| D25 | Re-score cadence: **Trigger-based (sync + signal change) | ⬜ |  |  |  |
+| D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🔵 | #32 |  |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🔵 | #32 |  |  |
+| D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🔵 | #32 |  |  |
+| D23 | New sender default: **Screen | 🔵 | #32 |  |  |
+| D24 | LLM role: **Haiku for explanation only, template fallback | 🔵 | #32 |  |  |
+| D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🔵 | #32 |  |  |
 | D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | ⬜ |  |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
-| D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | ⬜ |  |  |  |
+| D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | ⬜ |  |  |  |
 | D30 | Queue size: **Adaptive 5–12 based on inbox activity | ⬜ |  |  |  |
 | D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | ⬜ |  |  |  |
