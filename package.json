@@ -18,6 +18,11 @@
     "build": "pnpm -r --parallel build",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",
+    "db:migrate": "./scripts/db-migrate.sh",
+    "db:migrate:status": "./scripts/db-migrate.sh --status",
+    "dev:up": "./scripts/dev-up.sh",
+    "dev:down": "./scripts/dev-up.sh --stop",
+    "dev:auth": "./scripts/dev-auth.sh",
     "prepare": "husky"
   },
   "devDependencies": {
