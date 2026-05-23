@@ -59,7 +59,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🟢 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 |  |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟢 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready |  |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
-| D8 | Inbound Pub/Sub idempotency (no user input needed) | ⬜ |  |  |  |
+| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🔵 | #31 |  |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
@@ -280,7 +280,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) |  |
-| D229 | Pub/Sub OIDC verification contract | ⬜ |  |  |  |
+| D229 | Pub/Sub OIDC verification contract | 🔵 | #31 |  |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
 | D232 | Account deletion respects undo windows (max-of, or typed waiver) | ⬜ |  |  |  |
