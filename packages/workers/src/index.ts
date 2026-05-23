@@ -54,3 +54,13 @@ export type {
   ScoreTrigger,
   ScoreWorkerDeps,
 } from './score.worker.js';
+export { UndoExpiryWorker } from './undo-expiry.worker.js';
+export type { UndoExpiryJobData, UndoExpiryResult } from './undo-expiry.worker.js';
+export {
+  enqueueUndoExpiryTick,
+  scheduledAtMinute,
+  UNDO_EXPIRY_INTERVAL_MS,
+  UNDO_EXPIRY_JOB,
+  UNDO_EXPIRY_QUEUE,
+  undoExpiryJobOptions,
+} from './undo-expiry.queue.js';

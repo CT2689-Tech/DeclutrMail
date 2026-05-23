@@ -32,6 +32,10 @@ export { ScreenIntro } from './components/screen-intro';
 export { ToastHost, toast } from './components/toast';
 export type { ToastTone } from './components/toast';
 
+// Persistent undo tray (D35, D58) + its data-source hook.
+export { UndoTray, useUndoTray } from './components/undo-tray';
+export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './components/undo-tray';
+
 export { Sidebar } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
 

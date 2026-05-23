@@ -215,3 +215,26 @@ this applies — it adds indexes to `mail_messages` post-PR-A.
 **Distillation trigger:** promote to CLAUDE.md §8 (migration PR
 definition-of-done) if a second migration is caught adding a
 non-concurrent index to a populated table.
+
+## 2026-05-23 — Two-phase idempotency for revert-shaped mutations
+**Context:** PR `feat/d232-undo-journal` — designing `POST /undo/:token`
+to be safely retryable without double-reverting.
+**Finding:** A single timestamp column (`reverted_at`) is NOT a complete
+idempotency lock for a mutation that can fail mid-flight. Two timestamps
+are needed:
+  - `executed_at` — claimed on REQUEST arrival (atomic UPDATE WHERE
+    executed_at IS NULL → that win serializes concurrent calls).
+  - `reverted_at` — stamped only on SUCCESS.
+This split lets a request whose Gmail call fails leave `reverted_at`
+null. The next request finds `reverted_at IS NULL` and re-runs the
+revert; the prior labels in the payload make the re-run a no-op when the
+mutation actually succeeded the first time. Single-timestamp variants
+either double-revert OR strand permanently after a transient failure.
+**Rule (provisional):** any mutation endpoint that can partially succeed
+(external API call) gets a two-phase claim/commit pair on its
+idempotency row. The claim is atomic UPDATE; the commit is the second
+stamp.
+**Distillation trigger:** promote to CLAUDE.md §7 (gate network) or
+add to `architecture-guardian` Check H if a second feature ships with
+single-timestamp idempotency that bites under retry. Watch for Stripe
+webhook handlers and the future per-verb reverters.

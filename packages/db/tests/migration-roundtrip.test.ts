@@ -103,6 +103,7 @@ describe('migration round-trip', () => {
       'table:sender_timeseries',
       'table:senders',
       'table:triage_decisions',
+      'table:undo_journal',
       'table:users',
       'table:webhook_dedup',
       'table:workspaces',
@@ -118,6 +119,7 @@ describe('migration round-trip', () => {
       'enum:sync_stage',
       'enum:triage_reasoning_source',
       'enum:triage_verdict',
+      'enum:undo_action_kind',
       'enum:workspace_tier',
     ]);
 

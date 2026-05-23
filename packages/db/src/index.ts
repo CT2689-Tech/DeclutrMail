@@ -20,6 +20,8 @@ export type {
   TriageReasoningSource,
   TriageVerdict,
 } from './schema/triage-decisions';
+export { undoActionKind, undoJournal } from './schema/undo-journal';
+export type { NewUndoJournalEntry, UndoJournalEntry } from './schema/undo-journal';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { webhookDedup } from './schema/webhook-dedup';

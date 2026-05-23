@@ -26,6 +26,54 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
+**Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
+**Why:** This PR ships the D232 schedule computation
+(`AccountDeletionOrchestrator.computeSchedule`) but DELIBERATELY does
+not execute the hard-delete. Account deletion is a CLAUDE.md §9 stop
+condition — the founder must review the destructive code path. Three
+pieces remain to complete D232/D205:
+  1. **Persistence.** New `account_deletion_requests` table (or rows on
+     `users`) recording `requested_at`, `effective_deletion_at`, the
+     basis, and the waiver-token if the user typed `DELETE AND WAIVE UNDO`.
+  2. **Sync pause** (D232 requirement). Once deletion is scheduled,
+     pause sync regardless of OAuth state — without this, "delete inbox
+     data while OAuth stays connected" silently repopulates from Gmail
+     after the worker tick.
+  3. **Cron-keyed deletion job** at `effective_deletion_at` via
+     `cronPolicy` (D225) with `scheduled_at_minute` keyed on the
+     computed time. The job hard-deletes per the existing
+     `mailbox_accounts.id → CASCADE` chain (already cascades
+     `provider_sync_state`, `mail_messages`, `senders`,
+     `sender_timeseries`, `sender_policies`, `undo_journal`).
+**How:** Open a `feat/d232-account-hard-delete` PR after this one
+merges. Add the `account_deletion_requests` schema in a new migration,
+extend `AccountDeletionOrchestrator` with `schedule()` (persists) +
+`execute()` (runs at the cron tick), and wire the sync-pause via a
+`account.deletion_scheduled` event (D204) consumed by SyncModule.
+**Verifies by:** Integration test: schedule a deletion with an active
+30-day undo token → effective time = now+30d, basis = `undo-window`,
+sync paused. Time-travel the test clock past `effective_deletion_at` →
+mailbox row + cascaded children gone.
+**Status:** Open
+
+### 2026-05-23 — D-CANDIDATE: undo-tray hook migrates to TanStack Query (D200)
+**Source:** PR `feat/d232-undo-journal`
+**Why:** `useUndoTray` in `packages/shared/src/components/undo-tray/`
+stubs `fetch` directly because the D200 TanStack Query foundation is
+not in place. The stub is correct (returns the right `UndoTrayDataSource`
+shape) but lacks first-class error states, refetch-on-window-focus, and
+optimistic mutation rollback — all things TanStack supplies.
+**How:** When the D200 query-client provider lands, swap the stub for
+`useQuery({ queryKey: ['undo', mailboxAccountId] })` + `useMutation`
+for revert. The `UndoTrayDataSource` contract does not change — only
+the hook's body — so consumers (UndoTray component, future Triage
+integration) need no updates.
+**Verifies by:** Network-failure path renders an error state instead of
+silently emptying the tray; a successful revert in one tab updates the
+tray in another via TanStack's stale-time invalidation.
+**Status:** Open
+
 ### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
 **Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
 **Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
