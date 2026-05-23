@@ -17,6 +17,14 @@ const bootLogger = new Logger('RateLimitModule');
  *                        we log a single warning at boot so it's visible
  *                        but don't crash the API (D156 fail-open rule).
  *
+ * Production startup guard: in `NODE_ENV=production`, an unset
+ * REDIS_URL is a security gap — per-process in-memory limiting on
+ * Cloud Run means attackers landing on different instances each get
+ * their own bucket, effectively bypassing the limit. We refuse to boot
+ * in that posture. The escape hatch is `RATE_LIMIT_ENABLED=false`
+ * (explicit acknowledgment that the limiter is intentionally off);
+ * dev/test are unaffected.
+ *
  * Connection reuse: we build a dedicated ioredis client here rather
  * than sharing the BullMQ connection. BullMQ requires
  * `maxRetriesPerRequest: null` which is wrong for short-deadline
@@ -25,7 +33,21 @@ const bootLogger = new Logger('RateLimitModule');
  */
 function buildStore(): TokenBucketStore | null {
   const url = process.env.REDIS_URL;
+  const isProd = process.env.NODE_ENV === 'production';
+  // RATE_LIMIT_ENABLED defaults to 'true' (any value other than the literal
+  // string 'false' keeps the limiter on). Explicit opt-out only.
+  const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED !== 'false';
+
   if (!url) {
+    if (isProd && rateLimitEnabled) {
+      throw new Error(
+        'REDIS_URL is required in production when rate limiting is enabled. ' +
+          'In-memory fail-open is per-process and does not share state across ' +
+          'Cloud Run instances — attackers can bypass limits by landing on ' +
+          'different instances. Set REDIS_URL, or explicitly disable the ' +
+          'limiter with RATE_LIMIT_ENABLED=false to acknowledge the gap.',
+      );
+    }
     bootLogger.warn(
       'REDIS_URL not set — rate limiter disabled (fail-open). Set REDIS_URL to enforce limits.',
     );
