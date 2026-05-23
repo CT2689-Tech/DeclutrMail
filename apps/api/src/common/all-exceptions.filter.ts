@@ -91,6 +91,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'NOT_FOUND';
       case HttpStatus.CONFLICT:
         return 'CONFLICT';
+      case HttpStatus.TOO_MANY_REQUESTS:
+        return 'RATE_LIMITED';
       default:
         return status >= HttpStatus.INTERNAL_SERVER_ERROR ? 'INTERNAL_ERROR' : 'ERROR';
     }
