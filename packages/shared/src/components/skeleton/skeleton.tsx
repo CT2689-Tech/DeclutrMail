@@ -17,10 +17,14 @@ import { color, radius } from '../../tokens/tokens';
  * Width and height accept either numbers (treated as px) or any valid
  * CSS length string. The default height matches one body line.
  *
- * Animation is a horizontal shimmer driven by the `dm-skeleton`
- * keyframes in `styles/tokens.css`. The keyframes are gated by the
- * global `prefers-reduced-motion` rule already in tokens.css, so this
- * component does not need to re-check the user's motion preference.
+ * Animation is a horizontal shimmer driven by the `.dm-skeleton`
+ * class in `styles/tokens.css`. The class — NOT an inline
+ * `animation:` declaration — is required so the
+ * `prefers-reduced-motion` override (which uses `!important`) can
+ * actually win the cascade against any inline style on the element.
+ * Inline styles outrank stylesheet rules without `!important`, so
+ * attaching the keyframe via inline style would silently break the
+ * a11y opt-out.
  *
  * Accessibility: the surface is marked `aria-hidden`. The semantically-
  * meaningful loading announcement belongs to the parent container
@@ -58,6 +62,7 @@ export function Skeleton({ variant = 'text', width, height, borderRadius, style 
     <span
       aria-hidden="true"
       data-dm-skeleton={variant}
+      className="dm-skeleton"
       style={{
         display: variant === 'text' ? 'inline-block' : 'block',
         width: toCss(width) ?? defaults.width,
@@ -65,7 +70,6 @@ export function Skeleton({ variant = 'text', width, height, borderRadius, style 
         borderRadius: toCss(borderRadius) ?? defaults.borderRadius,
         background: SHIMMER,
         backgroundSize: '200% 100%',
-        animation: 'dm-skeleton 1.6s ease-in-out infinite',
         ...style,
       }}
     />

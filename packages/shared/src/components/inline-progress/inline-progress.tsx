@@ -105,12 +105,19 @@ export function InlineProgress({
 
 function Spinner({ size, label }: { size: number; label: string }) {
   const border = Math.max(1.5, size / 8);
+  // Animation is attached via the `.dm-spinner` class — NOT an inline
+  // `animation:` declaration — so the `prefers-reduced-motion`
+  // override in tokens.css (which uses `!important`) can win the
+  // cascade. Inline styles outrank stylesheet rules without
+  // `!important`, so inlining the keyframe here would silently
+  // break the a11y opt-out (WCAG 2.3.3).
   return (
     <span
       role="status"
       aria-live="polite"
       aria-label={label}
       data-dm-spinner
+      className="dm-spinner"
       style={{
         display: 'inline-block',
         width: size,
@@ -118,7 +125,6 @@ function Spinner({ size, label }: { size: number; label: string }) {
         border: `${border}px solid ${color.line}`,
         borderTopColor: color.primary,
         borderRadius: '50%',
-        animation: 'dm-spin 0.7s linear infinite',
       }}
     />
   );

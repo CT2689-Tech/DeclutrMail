@@ -133,6 +133,29 @@ button {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Animation classes for D166 loading primitives.
+
+   The reduced-motion rule below uses `!important` to win the
+   cascade against any inline `animation` declarations a consumer
+   might layer on top. Components MUST attach `.dm-skeleton` /
+   `.dm-spinner` (not an inline `animation:` style) so this
+   override actually applies — inline styles outrank stylesheet
+   rules without `!important`.
+   ───────────────────────────────────────────────────────────── */
+.dm-skeleton {
+  animation: dm-skeleton 1.6s ease-in-out infinite;
+}
+.dm-spinner {
+  animation: dm-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dm-skeleton,
+  .dm-spinner {
+    animation: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
    Responsive shell — CSS-driven so the layout is correct at first
    paint. A JS breakpoint hook resolves only after hydration, which
    flashes the desktop shell on mobile; these media queries do not.

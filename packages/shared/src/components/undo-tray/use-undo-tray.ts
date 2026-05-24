@@ -66,16 +66,33 @@ export function useUndoTray(options: {
     // The tray must react to actions taken in another tab — D35 calls
     // out cross-tab consistency. The default `makeQueryClient` opts
     // out of refetch-on-focus globally; this hook opts back in.
+    //
+    // `staleTime` debounces rapid focus events (alt-tabbing between
+    // browser windows on macOS can fire `focus` multiple times per
+    // second). 15s is short enough that another tab's mutation still
+    // surfaces near-instantly the next time the user pokes the tab,
+    // and long enough that focus-thrashing can't hammer the API.
     refetchOnWindowFocus: true,
+    staleTime: 15_000,
   });
 
   const mutation = useMutation<unknown, Error, string, { previous: UndoTrayEntry[] }>({
     mutationFn: (token) => postUndoRevert({ apiBaseUrl, mailboxAccountId, token }),
 
     // Optimistically remove the row so the tray feels instant.
+    //
+    // Guard against reverting a token that isn't in our cache: that
+    // means either the local view has drifted (token already expired
+    // and was pruned by a refetch) or a caller passed a bogus token.
+    // Either way, blindly filtering would do nothing but the mutation
+    // would still POST and surface a confusing 404 toast. Failing
+    // fast here keeps the cache + UI honest.
     onMutate: async (token) => {
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<UndoTrayEntry[]>(queryKey) ?? [];
+      if (!previous.some((entry) => entry.token === token)) {
+        throw new Error(`undo_token_not_in_cache:${token}`);
+      }
       queryClient.setQueryData<UndoTrayEntry[]>(
         queryKey,
         previous.filter((entry) => entry.token !== token),

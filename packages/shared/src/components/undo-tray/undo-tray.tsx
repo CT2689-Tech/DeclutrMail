@@ -61,10 +61,19 @@ export function UndoTray({
     ...(apiBaseUrl ? { apiBaseUrl } : {}),
   });
 
-  // Error state must be visually distinct from "no tokens" — D211
-  // requires the tray to NOT silently empty on network failure.
-  // The error chip stays mounted until the next successful refetch
-  // so the user can see something went wrong.
+  // Render-order guards — order matters to avoid flicker between
+  // an in-progress refetch and a transient error.
+  //
+  // 1. Empty + no error + not loading → render nothing (D35 "tray
+  //    is invisible when no active undo tokens exist"). Checked
+  //    FIRST so a successful empty response never momentarily flashes
+  //    the error chip while a stale `isError` flag clears.
+  // 2. Error → render the error chip (D211 — the tray must NOT
+  //    silently empty on network failure). Stays mounted until the
+  //    next successful refetch.
+  if (!source.isLoading && !source.isError && source.entries.length === 0) {
+    return null;
+  }
   if (source.isError && source.entries.length === 0) {
     return (
       <aside
@@ -117,15 +126,6 @@ export function UndoTray({
         ) : null}
       </aside>
     );
-  }
-
-  // The tray is INVISIBLE when no active undo tokens exist (D35:
-  // "Tray persists during the session and for 3 seconds after queue
-  // empties"; the 3-second tail is a host-app concern — the
-  // component itself renders nothing when its data set is empty so
-  // the parent never has to conditionally mount).
-  if (!source.isLoading && source.entries.length === 0) {
-    return null;
   }
 
   return (
