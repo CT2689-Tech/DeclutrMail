@@ -26,6 +26,32 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-23 — Wire a pre-commit `prettier --check` so format never drifts on main
+**Source:** PR #47 — `Format check` CI gate failed on a baseline of 5
+files that had never been formatted (`docs/adr/0008-*.md`,
+`packages/shared/src/contracts/{envelope,index,paginate}.ts`,
+`packages/shared/src/index.ts`). The drift was on `origin/main`, not in
+this PR's diff — every PR opened from main would have failed the gate.
+Cleaned up in PR #47's `chore(format): prettier baseline cleanup` commit
+as a pragmatic unblock.
+**Why:** Local enforcement prevents the same drift from recurring. The
+CI gate is the last line of defense — pre-commit catches it before the
+commit even lands, so contributors don't have to re-run + amend after
+a remote failure. Husky is already wired (`.husky/commit-msg` enforces
+commitlint), so adding a `pre-commit` hook is the minimal next step.
+**How:**
+  1. Add `.husky/pre-commit` that runs `pnpm exec lint-staged` (or a
+     direct `pnpm exec prettier --check $(git diff --cached --name-only
+     --diff-filter=ACM)` if lint-staged isn't desired).
+  2. If using lint-staged, add a `lint-staged` block to root
+     `package.json` mapping `*.{ts,tsx,js,md,json,yaml,yml}` →
+     `prettier --check`.
+  3. Verify a deliberately mis-formatted file is rejected by the hook.
+**Verifies by:** `git commit` on a deliberately mis-formatted file
+fails with prettier's diff output, and `pnpm format:check` on
+`origin/main` stays green for ≥5 consecutive PRs.
+**Status:** Open
+
 ### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
 **Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
 **Why:** This PR ships the D232 schedule computation
