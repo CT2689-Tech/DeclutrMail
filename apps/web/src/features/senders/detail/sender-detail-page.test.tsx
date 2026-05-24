@@ -31,7 +31,12 @@ const DETAIL = {
   monthlyVolume: 64,
   readRate: 0,
   unsubscribeMethod: 'mailto' as const,
-  protectionFlags: { vip: false, protect: false },
+  protectionFlags: {
+    isVip: false,
+    isProtected: false,
+    protectionReason: null,
+    protectionSetAt: null,
+  },
 };
 
 const MESSAGE = {
@@ -159,14 +164,15 @@ describe('SenderDetailRoute', () => {
 
     renderDetail();
     // Two elements ("h3" title + "p" body) carry the same copy, so we
-    // target the heading explicitly. Retry backoff on 5xx (1s + 2s)
-    // means the error UI doesn't appear until ~3s in.
+    // target the heading explicitly. Retry backoff on 5xx (1s + 2s + 4s)
+    // via the shared `retryUnless404` predicate (3 retries) means the
+    // error UI doesn't appear until ~7s in.
     await waitFor(
       () =>
         expect(
           screen.getByRole('heading', { name: /couldn[’']t load this sender/i }),
         ).toBeInTheDocument(),
-      { timeout: 6000 },
+      { timeout: 10000 },
     );
-  });
+  }, 15000);
 });

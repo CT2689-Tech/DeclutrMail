@@ -15,6 +15,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchSenderDetail } from '@/lib/api/senders';
 import { sendersKeys } from './query-keys';
+import { retryUnless404 } from './retry';
 
 export function useSenderDetail(id: string) {
   return useQuery({
@@ -22,18 +23,10 @@ export function useSenderDetail(id: string) {
     queryFn: ({ signal }) => fetchSenderDetail(id, signal),
     // Don't retry 404s — they're permanent for the given id (until a
     // future sync surfaces the sender). TanStack's default retry would
-    // make the not-found branch appear to "hang" for ~5 seconds.
-    retry: (failureCount, error) => {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'status' in error &&
-        (error as { status: number }).status === 404
-      ) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    // make the not-found branch appear to "hang" for ~5 seconds. The
+    // sibling sender-scoped hooks share this predicate so all four
+    // panes short-circuit consistently when the id is stale.
+    retry: retryUnless404,
     // Don't fetch on an empty id — guards against a routing edge case
     // where the page mounts before params resolve.
     enabled: id.length > 0,

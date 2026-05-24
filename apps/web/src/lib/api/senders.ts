@@ -50,14 +50,33 @@ export interface SenderListRow {
 }
 
 /**
+ * Why a sender is protected. Mirrors the BE `protection_reason` enum
+ * (see `apps/api/src/senders/senders.types.ts`):
+ *   - `user_defined` — founder toggled Protect on
+ *   - `engagement_based` — engagement signals pinned the sender
+ *   - `vip` — protection inherited from VIP status
+ *   - `null` — not protected
+ */
+export type ProtectionReasonWire = 'user_defined' | 'engagement_based' | 'vip';
+
+/**
  * Detail shape on `GET /api/senders/:id` — extends the list row with
  * the protection-flag block. VIP and Protect are separate user-driven
  * policies (D42 / D43); both are mutually independent of each other.
+ *
+ * Field names mirror the BE source-of-truth (`SenderDetail.protectionFlags`
+ * in `apps/api/src/senders/senders.types.ts`). Drift between FE and BE
+ * shapes is silently swallowed by TypeScript when this type narrows on a
+ * non-existent field — keep them in lockstep.
  */
 export interface SenderDetailDto extends SenderListRow {
   protectionFlags: {
-    vip: boolean;
-    protect: boolean;
+    isVip: boolean;
+    isProtected: boolean;
+    /** Why the sender is protected — null when `isProtected` is false. */
+    protectionReason: ProtectionReasonWire | null;
+    /** ISO-8601 — when protection was last set. Null when not protected. */
+    protectionSetAt: string | null;
   };
 }
 

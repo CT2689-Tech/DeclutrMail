@@ -59,6 +59,9 @@ export function SenderDetailPage({ state }: { state: SenderDetailState }) {
   return <ReadyState initial={state.detail} />;
 }
 
+/** Generic retry copy used when an error short-circuits without a more specific status. */
+const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
+
 /**
  * Route-level wrapper that fans out the four sender-scoped queries
  * (detail / messages / timeseries / history) and folds them into the
@@ -109,8 +112,34 @@ export function SenderDetailRoute({ id }: { id: string }) {
         message={
           detail.error instanceof ApiError
             ? `We couldn't load this sender (HTTP ${detail.error.status}).`
-            : "We couldn't load this sender right now."
+            : GENERIC_RETRY_MESSAGE
         }
+        onRetry={() => {
+          detail.refetch();
+          messages.refetch();
+          timeseries.refetch();
+          history.refetch();
+        }}
+      />
+    );
+  }
+
+  // Children errors that don't propagate as `detail.isError` still leave
+  // `adapted` null with `isLoading` false — without this branch the page
+  // hangs on the loading skeleton forever (silent-failure-hunter finding
+  // on PR #41). Surface the same error UI with a retry that re-runs all
+  // four queries.
+  const anyChildError = messages.isError || timeseries.isError || history.isError;
+  if (anyChildError && adapted == null) {
+    return (
+      <ErrorState
+        message={GENERIC_RETRY_MESSAGE}
+        onRetry={() => {
+          detail.refetch();
+          messages.refetch();
+          timeseries.refetch();
+          history.refetch();
+        }}
       />
     );
   }
@@ -123,6 +152,13 @@ export function SenderDetailRoute({ id }: { id: string }) {
 }
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
+  // TODO(D200): VIP/Protect toggles currently mutate local state and
+  // will be clobbered by a TanStack Query refetch (window focus,
+  // navigation). When the senders-mutations slice lands, wire these
+  // as useMutation calls that invalidate sendersKeys.detail(id) — the
+  // architecture-guardian flagged this as a D200 violation in PR #41
+  // review; deferred to the mutations PR because this PR's scope is
+  // read-side wiring.
   const [detail, setDetail] = useState<SenderDetail>(initial);
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
@@ -316,7 +352,12 @@ function NotFoundState() {
   );
 }
 
-function ErrorState({ message }: { message: string }) {
+function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  // `onRetry` lets the `SenderDetailRoute` branch re-run all four
+  // sender-scoped queries in place — falls back to a page reload when
+  // the caller doesn't wire one (e.g. the `SenderDetailPage` adapter
+  // entry point that consumes a pre-built `SenderDetailState`).
+  const handleRetry = onRetry ?? (() => window.location.reload());
   return (
     <div
       style={{
@@ -330,7 +371,7 @@ function ErrorState({ message }: { message: string }) {
         title="We couldn't load this sender"
         body={message}
         action={
-          <Button tone="primary" onClick={() => window.location.reload()}>
+          <Button tone="primary" onClick={handleRetry}>
             Try again
           </Button>
         }

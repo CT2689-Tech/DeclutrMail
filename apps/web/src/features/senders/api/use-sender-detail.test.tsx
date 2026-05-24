@@ -25,7 +25,12 @@ const DETAIL = {
   monthlyVolume: 64,
   readRate: 0,
   unsubscribeMethod: 'mailto' as const,
-  protectionFlags: { vip: false, protect: false },
+  protectionFlags: {
+    isVip: false,
+    isProtected: false,
+    protectionReason: null,
+    protectionSetAt: null,
+  },
 };
 
 describe('useSenderDetail', () => {
