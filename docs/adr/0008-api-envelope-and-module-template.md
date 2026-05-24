@@ -51,8 +51,7 @@ interface Envelope<TData, TMeta = undefined> {
   meta?: TMeta;
 }
 
-interface PaginatedEnvelope<TItem>
-  extends Envelope<TItem[], { pagination: PaginationMeta }> {
+interface PaginatedEnvelope<TItem> extends Envelope<TItem[], { pagination: PaginationMeta }> {
   meta: { pagination: PaginationMeta };
 }
 
@@ -92,6 +91,7 @@ apps/api/src/<feature>/
 ```
 
 The controller:
+
 - Validates input (Zod when non-trivial; type guards for tiny payloads
   per the existing `UndoController` pattern).
 - Calls the service / read-service.
@@ -101,6 +101,7 @@ The controller:
   envelope per D168.
 
 The read service:
+
 - Holds the SELECT queries against the feature's own tables.
 - Returns plain data — no NestJS decorators, no exceptions for
   not-found (return null/empty array; let the controller decide the
@@ -136,10 +137,10 @@ inline `// ADR-0008 §3 exception: ...` comment at the call site so an
 for promotion to event-projected reads when the producing feature
 grows past its current single-table footprint.
 
-| Feature owner | Table | Why exception is pragmatic at launch |
-|---|---|---|
-| triage | `triage_decisions` | Senders Detail's decision history is one displayable list of the engine's most recent verdicts. The query is read-only; event-projection would require a new `senders_decision_history` table + dual-write before the access pattern is well-understood. |
-| messages (implicit, currently owned by the sync worker) | `mail_messages` | Senders Detail's recent-messages section is the natural Senders-table join — every message is keyed by `sender_key` and a per-sender list is the fastest path. There is no separate "messages" feature module today; the sync worker writes the table and senders is the first reader. When a messages feature module materializes, this exception is the migration's first candidate. |
+| Feature owner                                           | Table              | Why exception is pragmatic at launch                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| triage                                                  | `triage_decisions` | Senders Detail's decision history is one displayable list of the engine's most recent verdicts. The query is read-only; event-projection would require a new `senders_decision_history` table + dual-write before the access pattern is well-understood.                                                                                                                               |
+| messages (implicit, currently owned by the sync worker) | `mail_messages`    | Senders Detail's recent-messages section is the natural Senders-table join — every message is keyed by `sender_key` and a per-sender list is the fastest path. There is no separate "messages" feature module today; the sync worker writes the table and senders is the first reader. When a messages feature module materializes, this exception is the migration's first candidate. |
 
 Pragmatic at launch because each query is read-only and the projection
 adds operational complexity before we know the access pattern.
@@ -147,6 +148,7 @@ adds operational complexity before we know the access pattern.
 ## Consequences
 
 **Positive:**
+
 - One canonical envelope shape; the contract type travels with the
   data so BE controllers and FE hooks share compile-time checks.
 - Module skeleton documented — future agents don't reinvent it from
@@ -158,6 +160,7 @@ adds operational complexity before we know the access pattern.
   (FE consumes the typed envelope; mocks via MSW until BE merges).
 
 **Negative:**
+
 - The pragmatic exception for `triage_decisions` access from the
   senders read service is a small architectural debt. Tracked here so
   the migration is intentional, not accidental.
@@ -168,6 +171,7 @@ adds operational complexity before we know the access pattern.
   touched for an unrelated reason.
 
 **Neutral:**
+
 - The cursor is unsigned. Acceptable today; revisit if/when we
   introduce per-mailbox shared cursors (we won't).
 
