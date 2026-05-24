@@ -34,6 +34,18 @@ case "$file_path" in
     ;;
 esac
 
+# Test files are exempt: tests document intent (e.g. "never uses the word
+# 'Screen' in any rendered surface"), not user-facing copy. Including the
+# banned token inside an `it(...)` / `describe(...)` description or an
+# `expect(...).not.toMatch('Screen')` assertion is the WHOLE POINT of the
+# test — it would be absurd to forbid it. Storybook stories remain in scope
+# (they ARE user-facing surface) but *.stories.test.* files are tests.
+case "$file_path" in
+  *.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx)
+    exit 0
+    ;;
+esac
+
 # Scope: apps/web/** + any *.stories.* anywhere (Storybook stories live in
 # packages/shared and apps/web both)
 case "$file_path" in
