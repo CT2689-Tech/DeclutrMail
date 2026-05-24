@@ -26,6 +26,34 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
+
+**Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
+**Why:** The outbox dispatcher uses `FOR UPDATE SKIP LOCKED` for
+concurrent claim safety. The SQL-level assertion in the unit tests
+proves the clause is in the query, but PGlite (single-connection) cannot
+demonstrate the runtime semantics — two concurrent dispatchers cannot be
+proven to grab disjoint row sets via the in-process test harness. The
+behavior is standard Postgres; the gap is test coverage, not
+correctness. Same gap will apply to future multi-connection features
+(advisory locks for AutopilotApplyWorker, real-Postgres serializable
+isolation tests).
+**How:** Either (a) add `testcontainers` to a shared `packages/test-utils`
+package (avoids the workers-package peer-dep collision this PR hit when
+testcontainers was tried in `packages/workers/devDependencies` — see the
+PR description) and write a real-Postgres test that runs two dispatchers
+concurrently against 20 seeded rows; or (b) make the existing
+`docker-compose.yml` (Redis-only today, Postgres-already-on-host) the
+ad-hoc target by setting `OUTBOX_TEST_PG_URL` in dev/CI and gating the
+test with `describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)`. Option (a)
+is the durable answer; option (b) unblocks the runtime proof in days
+rather than weeks.
+**Verifies by:** A CI run that exercises the SKIP LOCKED concurrency
+test against real Postgres (visible in workflow logs as
+"OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
+than skipped).
+**Status:** Open
+
 ### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
 **Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
 **Why:** This PR ships the D232 schedule computation

@@ -269,3 +269,45 @@ stamp.
 add to `architecture-guardian` Check H if a second feature ships with
 single-timestamp idempotency that bites under retry. Watch for Stripe
 webhook handlers and the future per-verb reverters.
+
+## 2026-05-23 — Drizzle `tx.execute()` row shape varies by driver
+**Context:** PR `feat/d013-outbox-dispatcher` — the OutboxDispatcher
+runs a raw SQL claim with `FOR UPDATE SKIP LOCKED` via `tx.execute(sql\`...\`)`.
+The same code passed all assertions against postgres-js types but blew
+up in PGlite tests with `"claimed is not iterable"`.
+**Finding:** Drizzle's `execute()` returns DIFFERENT shapes per driver:
+  - `drizzle-orm/postgres-js`: returns a `RowList<Row[]>` that extends
+    `Array` — you can iterate directly (`for (const row of result)`).
+  - `drizzle-orm/pglite`: returns `Results<Row>` shaped as
+    `{ rows: Row[], affectedRows?, fields, blob? }` — iteration
+    requires `result.rows`.
+Both pass TypeScript because the return type is generic `T['execute']`.
+The mismatch only surfaces at runtime, in the PGlite test path.
+**Rule (provisional):** any call site that uses `db.execute()` /
+`tx.execute()` (raw SQL escape hatches) MUST normalize the row shape:
+`const rows = Array.isArray(result) ? result : (result.rows ?? []);`
+Prefer Drizzle's query builder (`.select().from()`) which returns
+arrays in both drivers; reserve `execute()` for SQL features the
+builder doesn't expose (in our case, `FOR UPDATE SKIP LOCKED`).
+**Distillation trigger:** promote to CLAUDE.md §6 (DB conventions) if
+a second raw-SQL site hits the same shape mismatch.
+
+## 2026-05-23 — PGlite cannot prove SKIP LOCKED runtime semantics
+**Context:** Same PR — testing the outbox dispatcher's
+`FOR UPDATE SKIP LOCKED` claim against PGlite to prove two concurrent
+dispatchers split the backlog without double-claiming.
+**Finding:** PGlite is single-connection (it's an in-process WASM build
+of Postgres). Concurrent transactions in the test harness serialize on
+the one connection, so SKIP LOCKED's "skip past locked rows" branch
+never exercises — the second `tick()` always waits for the first to
+commit. The clause is in the SQL (asserted via source-grep), and the
+behavior is standard Postgres semantics, but the test harness can't
+DEMONSTRATE the concurrency.
+**Rule (provisional):** for SKIP LOCKED / advisory-lock / serializable-
+isolation tests, document the gap explicitly and gate the runtime proof
+on `OUTBOX_TEST_PG_URL` (or the future testcontainers harness). Don't
+fake the test against PGlite — it would pass for the wrong reasons.
+**Distillation trigger:** promote to CLAUDE.md §8 (test strategy) when
+a second multi-connection Postgres feature lands (e.g. advisory locks
+for the AutopilotApplyWorker). Pairs with adding testcontainers to the
+shared test harness rather than per-package.
