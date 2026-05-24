@@ -20,6 +20,37 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-23 — Same parallel-vitest-bootstrap pattern recurred in `apps/web`
+
+**Context:** Option-1 fan-out from CLAUDE session — foundation PR #37
+(API envelope) then 3 parallel worktrees (WT-B senders BE / WT-C senders
+FE wire / WT-E triage UI). WT-C + WT-E both had to write tests under
+`apps/web`. The web app's pre-fan-out `test` script was
+`echo 'no tests yet'` and there was no `vitest.config.ts`.
+**Finding:** Both agents independently bootstrapped vitest in
+`apps/web` and produced two divergent configs in the same file —
+WT-C (FE) chose `happy-dom` + `@testing-library/*` + setupFiles +
+extended timeout; WT-E (triage) chose `node` env + SSR-only render
+(matching `packages/shared`). Both committed clean test suites
+(55 + 24 passing) but the configs collide at integration. Merge order
+needs WT-C's superset config kept. This is the **second** recurrence
+of "parallel agents independently bootstrap missing test foundation"
+— same root cause as the earlier `packages/shared` instance (entry
+below). One more occurrence and the rule promotes to CLAUDE.md §11.
+**Rule (provisional):** Before dispatching ≥2 parallel agents that
+will each need to write tests in a package whose `test` script is a
+no-op, the dispatcher (me, in foundation PR) bootstraps the
+test-runner config in that package as part of the foundation. The
+test-config decision (env, setup files, render mode) is one of those
+"every feature module touches this" foundations that must live in
+the foundation PR, not in any feature's PR.
+**Distillation trigger:** Promote to CLAUDE.md §1.1 ("Think before
+coding") if pattern recurs ≥1 more time (count: 2/3 today). The
+promotion will read roughly: "Before dispatching parallel agents,
+audit the foundation packages they will write into for missing
+infra (test runner, lint config, schema migrations) — land it in
+the foundation PR, not in any feature branch."
+
 ## 2026-05-23 — Two parallel agents independently bootstrapped the same vitest infra in `packages/shared`
 
 **Context:** Dispatched 3 worktrees in parallel — WT-1 (D7+D228 privacy
