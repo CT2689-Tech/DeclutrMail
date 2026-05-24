@@ -60,6 +60,23 @@ export type DispatchedEvent = Pick<
  */
 export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
 
+/**
+ * Optional background-failure capture port (D159). Implemented in the
+ * composition root by wiring to `@sentry/node`'s `captureException`. The
+ * dispatcher remains framework-agnostic: it knows how to call the port
+ * and what context to pass; it does NOT depend on Sentry directly.
+ *
+ * Defaults to a no-op so tests and bare-bones bootstraps run without
+ * needing Sentry configured. The shape mirrors what later worker tooling
+ * (e.g. a future `SentryWorkerObserver` per PR #49) will expose.
+ */
+export interface OutboxObserver {
+  captureBackgroundFailure(
+    error: unknown,
+    context: { kind: string; worker: string; [key: string]: unknown },
+  ): void;
+}
+
 /** Configuration knobs for the dispatcher. */
 export interface OutboxDispatcherDeps {
   db: WorkerDb;
@@ -92,11 +109,30 @@ export interface OutboxDispatcherDeps {
    * connection.
    */
   listen?: (handler: () => void) => Promise<() => Promise<void>>;
+  /**
+   * Background-failure observer (D159). Default no-op so tests don't
+   * need to stub Sentry. Production wires this to `@sentry/node`'s
+   * `captureException` in the composition root.
+   */
+  observer?: OutboxObserver;
+  /**
+   * Maximum number of pending NOTIFY-triggered ticks before the
+   * dispatcher starts dropping wake-ups (back-pressure). One tick is
+   * always allowed to run; ticks past this cap are dropped + logged
+   * `outbox.dispatch.tick_dropped_backpressure`. Defaults to 16, which
+   * comfortably absorbs NOTIFY bursts from large transactions without
+   * letting the wake-up queue grow unbounded.
+   */
+  maxPendingTicks?: number;
 }
 
 const DEFAULT_CLAIM_BATCH = 32;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_MAX_PENDING_TICKS = 16;
+const NOOP_OBSERVER: OutboxObserver = {
+  captureBackgroundFailure: () => undefined,
+};
 
 /**
  * One dispatcher tick's result counters — returned for the test harness
@@ -161,13 +197,24 @@ export class OutboxDispatcherWorker {
   private readonly claimBatchSize: number;
   private readonly maxAttempts: number;
   private readonly pollIntervalMs: number;
+  private readonly maxPendingTicks: number;
   private readonly listen?: OutboxDispatcherDeps['listen'];
+  private readonly observer: OutboxObserver;
 
   /** Set after `start()` until `stop()`. Both the timer + LISTEN unsub. */
   private pollHandle: ReturnType<typeof setInterval> | null = null;
   private unsubscribeListen: (() => Promise<void>) | null = null;
   /** Coalesces concurrent wake-ups: only one tick runs at a time. */
   private inFlight: Promise<DispatcherTickResult> | null = null;
+  /**
+   * Counter of wake-ups received while a tick is in-flight. Bounded by
+   * `maxPendingTicks` — anything over the cap is dropped + logged as
+   * `outbox.dispatch.tick_dropped_backpressure`. Without this, a burst
+   * of NOTIFY frames could pin a queue of `tick()` Promises that all
+   * resolve to the same in-flight Promise and never themselves run any
+   * additional work — the cap makes the bound explicit + observable.
+   */
+  private pendingTickCalls = 0;
   /** Set true on `stop()`; in-flight ticks drain, no new ones scheduled. */
   private shuttingDown = false;
 
@@ -175,7 +222,9 @@ export class OutboxDispatcherWorker {
     this.claimBatchSize = deps.claimBatchSize ?? DEFAULT_CLAIM_BATCH;
     this.maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    this.maxPendingTicks = deps.maxPendingTicks ?? DEFAULT_MAX_PENDING_TICKS;
     this.listen = deps.listen;
+    this.observer = deps.observer ?? NOOP_OBSERVER;
   }
 
   /**
@@ -256,7 +305,30 @@ export class OutboxDispatcherWorker {
       return { claimed: 0, dispatched: 0, consumerFailed: 0, flippedToFailed: 0 };
     }
     if (this.inFlight) {
-      return this.inFlight;
+      // Back-pressure: a NOTIFY flurry can queue dozens of wake-ups
+      // against the same in-flight tick. Beyond `maxPendingTicks` we
+      // drop the wake — the in-flight tick will drain everything it
+      // can see, and the polling timer covers any genuinely-missed
+      // row. Dropping is preferable to letting a long Promise list
+      // pile up in memory.
+      if (this.pendingTickCalls >= this.maxPendingTicks) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'outbox.dispatch.tick_dropped_backpressure',
+            worker: this.workerName,
+            pendingTickCalls: this.pendingTickCalls,
+            maxPendingTicks: this.maxPendingTicks,
+          }),
+        );
+        return { claimed: 0, dispatched: 0, consumerFailed: 0, flippedToFailed: 0 };
+      }
+      this.pendingTickCalls += 1;
+      try {
+        return await this.inFlight;
+      } finally {
+        this.pendingTickCalls -= 1;
+      }
     }
     const promise = this.runOneTick().finally(() => {
       this.inFlight = null;
@@ -279,6 +351,30 @@ export class OutboxDispatcherWorker {
    * Per-row dispatch failures are isolated via savepoints (Drizzle
    * `tx.transaction()` nests as a SAVEPOINT in Postgres) — one bad
    * consumer cannot poison the rest of the batch.
+   *
+   * Lock-expiry / crash recovery window (D203, `cronPolicy`).
+   * --------------------------------------------------------
+   * `FOR UPDATE SKIP LOCKED` holds row-level locks ONLY for the
+   * duration of the claim transaction. If the Postgres backend dies
+   * (worker OOM-killed, server crash, network partition that drops the
+   * connection) AFTER the claim SELECT but BEFORE the surrounding
+   * commit, the locks are released by Postgres connection cleanup and
+   * the row reverts to `status='pending'` with its pre-claim `attempts`
+   * value. The next dispatcher tick will re-claim it.
+   *
+   * The audit guard on the failure-UPDATE WHERE clause
+   * (`attempts = currentAttempts`) defends against the related race
+   * where two ticks claim the same row in different processes after a
+   * crash: only the tick whose view of `attempts` still matches the
+   * row's actual value wins the update. The losing tick's bookkeeping
+   * write is a no-op (0 rows affected), so we don't double-bump
+   * `attempts` past `maxAttempts` and prematurely flip to `failed`.
+   *
+   * What's NOT defended: a consumer that succeeds (e.g. enqueues to
+   * BullMQ) and then the dispatcher's commit fails. The consumer ran
+   * — its idempotency guarantee (consumer-side dedup on `event.id`)
+   * is the only protection, which is why the `OutboxConsumer` port
+   * contract requires idempotency. See the port docstring.
    */
   private async runOneTick(): Promise<DispatcherTickResult> {
     const result: DispatcherTickResult = {
@@ -370,6 +466,15 @@ export class OutboxDispatcherWorker {
             // commits even on consumer failure. Without this, a
             // thrown consumer would leave `attempts` un-bumped and
             // the row would retry forever with no audit trail.
+            //
+            // Audit guard: `attempts = event.attempts` on the WHERE
+            // clause. If a parallel tick (post-crash, see
+            // lock-expiry doc above) already bumped the row, our
+            // update affects 0 rows and our bookkeeping is a no-op
+            // instead of clobbering theirs. There is no lock-token
+            // column on `outbox_events`; the attempts counter doubles
+            // as the optimistic-concurrency token, which is enough
+            // because attempts only ever increases.
             await tx
               .update(outboxEvents)
               .set({
@@ -377,7 +482,13 @@ export class OutboxDispatcherWorker {
                 lastError,
                 ...(shouldFail ? { status: 'failed' as const } : {}),
               })
-              .where(and(eq(outboxEvents.id, event.id), eq(outboxEvents.status, 'pending')));
+              .where(
+                and(
+                  eq(outboxEvents.id, event.id),
+                  eq(outboxEvents.status, 'pending'),
+                  eq(outboxEvents.attempts, event.attempts),
+                ),
+              );
             if (shouldFail) {
               result.flippedToFailed += 1;
             }
@@ -408,11 +519,20 @@ export class OutboxDispatcherWorker {
     console.error(
       JSON.stringify({
         level: 'error',
-        kind: 'outbox.tick_failed',
+        kind: 'outbox.dispatch.tick_failed',
         worker: this.workerName,
         message: err instanceof Error ? err.message : String(err),
       }),
     );
+    // Hand to the observer (Sentry in prod, no-op by default). Tick
+    // failures are background failures by definition — there's no
+    // HTTP request to surface the error on. Without this, a tx-level
+    // problem (db down, deadlock storm) would only show up in stdout
+    // logs and miss the alerting path.
+    this.observer.captureBackgroundFailure(err, {
+      kind: 'outbox.dispatch.tick_failed',
+      worker: this.workerName,
+    });
   }
 }
 

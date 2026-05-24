@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { outboxEvents, schema } from '@declutrmail/db';
 
@@ -15,8 +16,14 @@ import {
   OutboxDispatcherWorker,
   type DispatchedEvent,
   type OutboxConsumer,
+  type OutboxObserver,
 } from './outbox-dispatcher.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
+
+/** Shared schemas for the test publishes (mirror what production callers pass). */
+const VerdictPayload = z.object({ verdict: z.string() }).strict();
+const EmptyPayload = z.object({}).strict();
+const RuleFiredPayload = z.object({ ruleId: z.string() }).strict();
 
 /**
  * OutboxDispatcherWorker integration tests (D13).
@@ -127,6 +134,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'triage.verdict_applied',
         aggregateId: 'op-1',
         payload: { verdict: 'archive' },
+        schema: VerdictPayload,
       });
     });
 
@@ -171,6 +179,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'sync.history_processed',
         aggregateId: 'mb-1',
         payload: {},
+        schema: EmptyPayload,
       });
     });
 
@@ -208,6 +217,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'triage.verdict_applied',
         aggregateId: 'wake-1',
         payload: { verdict: 'keep' },
+        schema: VerdictPayload,
       });
     });
 
@@ -231,6 +241,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'autopilot.rule_fired',
         aggregateId: 'rule-1',
         payload: { ruleId: 'preset-1' },
+        schema: RuleFiredPayload,
       });
     });
 
@@ -267,6 +278,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'triage.verdict_applied',
         aggregateId: 'op-fail',
         payload: {},
+        schema: EmptyPayload,
       });
     });
 
@@ -311,18 +323,21 @@ describe('OutboxDispatcherWorker', () => {
           topic: 'triage.verdict_applied',
           aggregateId: 'good-1',
           payload: {},
+          schema: EmptyPayload,
         }),
       );
       badId = await publisher.publish(tx, {
         topic: 'triage.verdict_applied',
         aggregateId: 'bad',
         payload: {},
+        schema: EmptyPayload,
       });
       goodIds.push(
         await publisher.publish(tx, {
           topic: 'triage.verdict_applied',
           aggregateId: 'good-2',
           payload: {},
+          schema: EmptyPayload,
         }),
       );
     });
@@ -373,6 +388,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'sync.history_processed',
         aggregateId: 'pre-existing',
         payload: {},
+        schema: EmptyPayload,
       });
     });
 
@@ -389,6 +405,146 @@ describe('OutboxDispatcherWorker', () => {
 
     expect(received).toHaveLength(1);
     expect(received[0]?.aggregateId).toBe('pre-existing');
+  });
+
+  it('rejects payloads whose top-level key is on the privacy denylist (D7/D228)', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const publisher = new OutboxPublisher();
+    // A naïve caller could write a schema that allows `subject` through
+    // — the denylist is the defense-in-depth gate that still rejects.
+    const BodyShapedPayload = z
+      .object({
+        subject: z.string(),
+      })
+      .strict() as unknown as z.ZodSchema<{ subject: string }>;
+
+    await expect(
+      db.transaction(async (tx) => {
+        await publisher.publish(tx, {
+          topic: 'triage.verdict_applied',
+          aggregateId: 'leak-1',
+          payload: { subject: 'Q4 board update' },
+          schema: BodyShapedPayload,
+        });
+      }),
+    ).rejects.toThrow(/privacy denylist/);
+
+    // Row was NOT inserted (the publisher threw inside the tx → rollback).
+    const rows = await db.select().from(outboxEvents);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('rejects payloads that fail the caller-provided Zod schema (D204 contract gate)', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const publisher = new OutboxPublisher();
+
+    await expect(
+      db.transaction(async (tx) => {
+        await publisher.publish(tx, {
+          topic: 'triage.verdict_applied',
+          aggregateId: 'bad-shape',
+          // Deliberate type-system bypass to model a runtime contract
+          // violation (e.g. an upstream feature whose internal type
+          // drifted from its publisher schema).
+          payload: { wrongKey: 123 } as unknown as { verdict: string },
+          schema: VerdictPayload,
+        });
+      }),
+    ).rejects.toThrow();
+
+    const rows = await db.select().from(outboxEvents);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('drops NOTIFY-triggered ticks past maxPendingTicks (back-pressure)', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+
+    let releaseConsumer!: () => void;
+    const consumerHolding = new Promise<void>((r) => {
+      releaseConsumer = r;
+    });
+
+    await db.transaction(async (tx) => {
+      await new OutboxPublisher().publish(tx, {
+        topic: 'sync.history_processed',
+        aggregateId: 'bp-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    // Capture dropped-backpressure log lines.
+    const droppedLines: string[] = [];
+    const origLog = console.log;
+    console.log = (msg?: unknown): void => {
+      if (typeof msg === 'string' && msg.includes('tick_dropped_backpressure')) {
+        droppedLines.push(msg);
+      }
+      origLog.call(console, msg);
+    };
+
+    try {
+      const dispatcher = new OutboxDispatcherWorker({
+        db: db as unknown as PostgresJsDatabase<typeof schema>,
+        consumer: async () => {
+          await consumerHolding;
+        },
+        pollIntervalMs: 60_000,
+        maxAttempts: 3,
+        maxPendingTicks: 2,
+      });
+      activeDispatcher = dispatcher;
+
+      // First tick — runs immediately, hangs on consumerHolding.
+      const t1 = dispatcher.tick();
+      // The next 2 calls fill the pending queue (within the cap).
+      const t2 = dispatcher.tick();
+      const t3 = dispatcher.tick();
+      // The 4th call is past the cap → dropped, returns a zero result.
+      const t4 = await dispatcher.tick();
+      expect(t4.claimed).toBe(0);
+      expect(droppedLines.length).toBeGreaterThanOrEqual(1);
+
+      // Unblock so the suite can tear down cleanly.
+      releaseConsumer();
+      await Promise.all([t1, t2, t3]);
+    } finally {
+      console.log = origLog;
+    }
+  });
+
+  it('routes tick failures to the observer port (D159)', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+
+    const captured: Array<{ error: unknown; context: Record<string, unknown> }> = [];
+    const observer: OutboxObserver = {
+      captureBackgroundFailure: (error, context) => {
+        captured.push({ error, context });
+      },
+    };
+
+    // Close the underlying PGlite so the dispatcher's tx throws.
+    await pg.close();
+    activePg = null;
+
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async () => undefined,
+      pollIntervalMs: 60_000,
+      observer,
+    });
+    activeDispatcher = null; // can't stop — pg is already closed
+    await dispatcher.tick();
+
+    expect(captured.length).toBeGreaterThanOrEqual(1);
+    expect(captured[0]?.context).toMatchObject({
+      kind: 'outbox.dispatch.tick_failed',
+      worker: 'OutboxDispatcherWorker',
+    });
   });
 
   it('stop() drains an in-flight tick and unsubscribes the listener', async () => {
@@ -409,6 +565,7 @@ describe('OutboxDispatcherWorker', () => {
         topic: 'sync.history_processed',
         aggregateId: 'drain-1',
         payload: {},
+        schema: EmptyPayload,
       });
     });
 
@@ -439,18 +596,119 @@ describe('OutboxDispatcherWorker', () => {
 });
 
 /**
- * SKIP LOCKED concurrency: runtime proof against real Postgres is
- * tracked separately.
+ * SKIP LOCKED concurrency — runtime proof against real Postgres.
  *
- * The SQL-level assertion above ("claim query includes FOR UPDATE SKIP
- * LOCKED") guarantees the clause is in the query Drizzle executes.
- * Proving that two concurrent transactions actually grab disjoint row
- * sets requires multiple connections to a real Postgres — PGlite is
- * single-connection and cannot model that.
+ * The in-suite `claim query includes FOR UPDATE SKIP LOCKED` test
+ * asserts the SQL string Drizzle emits. Proving that two concurrent
+ * transactions actually grab DISJOINT row sets requires multiple
+ * connections to a real Postgres — PGlite is single-connection in-
+ * process and cannot model that.
  *
- * Follow-up: when the testcontainers harness lands (FOUNDER-FOLLOWUPS
- * 2026-05-23), add a real-Postgres test here that runs two dispatchers
- * concurrently against 20 seeded rows and asserts disjoint claim sets.
- * Documented in LEARNINGS 2026-05-23 — the SKIP LOCKED clause is
- * standard Postgres semantics; the gap is test coverage, not behavior.
+ * This describe.skipIf block runs only when `OUTBOX_TEST_PG_URL` is
+ * set (e.g. in CI against a real Postgres or via a local dev pg, see
+ * FOUNDER-FOLLOWUPS 2026-05-23 entry). It spawns two `runOneTick`
+ * calls against the same DB concurrently and asserts the claimed-row-id
+ * sets are disjoint and together cover the seeded rows.
+ *
+ * Why a separate describe rather than inlining a `skipIf` per-test?
+ * Keeps the PGlite-only fixtures (`freshDb` above) clearly separate
+ * from the real-Postgres fixture (`freshRealDb` below). Future
+ * real-PG-only tests slot in here.
  */
+describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)(
+  'OutboxDispatcherWorker against real Postgres',
+  () => {
+    it('SKIP LOCKED — two concurrent ticks claim disjoint row sets', async () => {
+      // Intentional dynamic import: `postgres` is NOT a workspace
+      // dependency of @declutrmail/workers (the prod runtime uses the
+      // postgres-js client passed in by the composition root). Loading
+      // it here keeps the dep optional for the PGlite-only test path.
+      // Dynamic imports (kept dynamic so the PGlite-only test path
+      // does not need `postgres` installed at workspace level). The
+      // `as never` cast is a narrow workaround for ESLint's
+      // `consistent-type-imports` rule which forbids `typeof import(…)`
+      // type annotations inline — we instead trust the runtime shape.
+      const { default: postgres } = (await import('postgres' as string).catch(() => {
+        throw new Error(
+          'OUTBOX_TEST_PG_URL is set but the `postgres` package is not installed. ' +
+            'Install it as a devDependency or unset OUTBOX_TEST_PG_URL.',
+        );
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      })) as { default: (url: string, opts?: any) => any };
+      const { drizzle: drizzlePg } = (await import(
+        'drizzle-orm/postgres-js' as string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      )) as { drizzle: (client: any, opts?: any) => any };
+
+      const pgUrl = process.env.OUTBOX_TEST_PG_URL!;
+      const client = postgres(pgUrl, { max: 4 });
+      const realDb = drizzlePg(client, { schema }) as PostgresJsDatabase<typeof schema>;
+
+      try {
+        // Apply migrations into an isolated schema so the test does
+        // not collide with anything else in the target DB.
+        const isolated = `outbox_test_${Date.now()}`;
+        await client.unsafe(`CREATE SCHEMA "${isolated}"`);
+        await client.unsafe(`SET search_path TO "${isolated}"`);
+        const files = readdirSync(MIGRATIONS_DIR)
+          .filter((f) => f.endsWith('.sql'))
+          .sort();
+        for (const file of files) {
+          const sqlText = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+          for (const stmt of sqlText.split('--> statement-breakpoint')) {
+            const trimmed = stmt.trim();
+            if (trimmed) await client.unsafe(trimmed);
+          }
+        }
+
+        // Seed 20 pending rows so two batches of 10 are disjoint.
+        const seededIds: string[] = [];
+        for (let i = 0; i < 20; i += 1) {
+          const id = await realDb.transaction(async (tx) =>
+            new OutboxPublisher().publish(tx, {
+              topic: 'sync.history_processed',
+              aggregateId: `seed-${i}`,
+              payload: {},
+              schema: EmptyPayload,
+            }),
+          );
+          seededIds.push(id);
+        }
+
+        // Two dispatchers, each claims up to 10, against the same DB.
+        const claimedA: string[] = [];
+        const claimedB: string[] = [];
+        const dispatchA = new OutboxDispatcherWorker({
+          db: realDb,
+          consumer: async (e) => {
+            claimedA.push(e.id);
+          },
+          claimBatchSize: 10,
+          pollIntervalMs: 60_000,
+        });
+        const dispatchB = new OutboxDispatcherWorker({
+          db: realDb,
+          consumer: async (e) => {
+            claimedB.push(e.id);
+          },
+          claimBatchSize: 10,
+          pollIntervalMs: 60_000,
+        });
+
+        await Promise.all([dispatchA.tick(), dispatchB.tick()]);
+
+        // Disjoint claims + together cover the seed.
+        const setA = new Set(claimedA);
+        const setB = new Set(claimedB);
+        for (const id of setA) {
+          expect(setB.has(id)).toBe(false);
+        }
+        expect(setA.size + setB.size).toBe(seededIds.length);
+
+        await client.unsafe(`DROP SCHEMA "${isolated}" CASCADE`);
+      } finally {
+        await client.end({ timeout: 5 });
+      }
+    });
+  },
+);

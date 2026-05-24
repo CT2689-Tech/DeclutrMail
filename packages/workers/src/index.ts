@@ -60,6 +60,7 @@ export type {
   DispatcherTickResult,
   OutboxConsumer,
   OutboxDispatcherDeps,
+  OutboxObserver,
 } from './outbox-dispatcher.worker.js';
 export { OutboxPublisher } from './outbox-publisher.js';
 export type { OutboxPublishInput, OutboxTx } from './outbox-publisher.js';
