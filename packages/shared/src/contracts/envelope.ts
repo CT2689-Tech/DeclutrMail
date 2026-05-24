@@ -79,8 +79,10 @@ export interface PaginationMeta {
  *
  * Equivalent to `Envelope<TItem[], { pagination: PaginationMeta }>`.
  */
-export interface PaginatedEnvelope<TItem>
-  extends Envelope<TItem[], { pagination: PaginationMeta }> {
+export interface PaginatedEnvelope<TItem> extends Envelope<
+  TItem[],
+  { pagination: PaginationMeta }
+> {
   meta: { pagination: PaginationMeta };
 }
 

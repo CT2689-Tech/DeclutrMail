@@ -2,12 +2,7 @@
 // for the D202 cursor-pagination envelope. Pure functions, no I/O —
 // safe to import from controllers, services, and FE tests alike.
 
-import type {
-  DecodedCursor,
-  Envelope,
-  PaginatedEnvelope,
-  PaginationMeta,
-} from './envelope';
+import type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './envelope';
 
 /**
  * Wrap a single value in the D202 envelope. The thin helper exists so
