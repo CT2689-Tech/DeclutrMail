@@ -252,10 +252,10 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🔵 | #29 |  |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
 | D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🔵 | #29 |  |  |
-| D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | ⬜ |  |  |  |
-| D202 | API response envelope + cursor pagination | ⬜ |  |  |  |
+| D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🔵 | #37 |  |  |
+| D202 | API response envelope + cursor pagination | 🔵 | #37 |  |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | ⬜ |  |  |  |
-| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | ⬜ |  |  |  |
+| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🔵 | #37 |  |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | ⬜ |  |  |  |
