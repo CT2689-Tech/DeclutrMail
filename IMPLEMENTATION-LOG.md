@@ -275,7 +275,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | ⬜ |  |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | ⬜ |  |  |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🔵 | #38 |  |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
 | D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
