@@ -80,7 +80,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | ⬜ |  |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
-| D29 | Screen as the 4th verb (S key) | ⬜ |  |  |  |
+| D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
 | D30 | Queue size: **Adaptive 5–12 based on inbox activity | ⬜ |  |  |  |
 | D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | ⬜ |  |  |  |
 | D32 | No bulk operations in Triage | ⬜ |  |  |  |
