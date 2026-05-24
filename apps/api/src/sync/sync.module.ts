@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import { createRedisConnection, INITIAL_SYNC_QUEUE } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 
+import { SyncController } from './sync.controller.js';
 import { INITIAL_SYNC_QUEUE_TOKEN, SyncService } from './sync.service.js';
 
 /**
@@ -17,6 +18,7 @@ import { INITIAL_SYNC_QUEUE_TOKEN, SyncService } from './sync.service.js';
  * not part of this HTTP module.
  */
 @Module({
+  controllers: [SyncController],
   providers: [
     {
       provide: INITIAL_SYNC_QUEUE_TOKEN,

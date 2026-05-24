@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
 import { ensureInitialSyncJob } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
+import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -100,5 +101,44 @@ export class SyncService {
   async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
     await this.markQueued(this.db, mailboxAccountId);
     await this.schedule(mailboxAccountId);
+  }
+
+  /**
+   * Read the `provider_sync_state` row for one mailbox and project it
+   * into the D224 `SyncStatus` wire shape.
+   *
+   * Returns `null` when the mailbox has no row yet — caller maps that
+   * to a 404. The controller is the only allowed caller; it is the
+   * boundary where the projection is Zod-validated against
+   * `SyncStatusSchema` before being returned to the client (D224).
+   *
+   * No body data, no headers — stage + numeric progress + an
+   * allowlisted boolean (D7/§2.1).
+   */
+  async getStatus(mailboxAccountId: string): Promise<SyncStatus | null> {
+    const rows = await this.db
+      .select({
+        readinessStatus: providerSyncState.readinessStatus,
+        currentStage: providerSyncState.currentStage,
+        progressPct: providerSyncState.progressPct,
+        errorCode: providerSyncState.errorCode,
+      })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return null;
+
+    const base = {
+      readiness_status: row.readinessStatus,
+      current_stage: row.currentStage,
+      progress_pct: row.progressPct,
+      is_ready_for_triage: row.readinessStatus === 'ready',
+    } as const;
+
+    // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,
+    // never as `undefined`.
+    return row.errorCode === null ? base : { ...base, error_code: row.errorCode };
   }
 }

@@ -26,9 +26,10 @@
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.9"
   },
   "dependencies": {
+    "zod": "^4.4.3",
     "zustand": "^5.0.13"
   }
 }

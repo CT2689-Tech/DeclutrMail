@@ -1,6 +1,7 @@
 // @declutrmail/shared/contracts — external-integration adapter
-// contracts (D201). Pure TypeScript interfaces, no React; importable by
-// the NestJS api/worker apps without pulling in the component tree.
+// contracts (D201) and transport schemas (D224). Pure TypeScript /
+// Zod, no React; importable by the NestJS api/worker apps without
+// pulling in the component tree.
 
 export type { KmsProvider } from './kms-provider';
 
@@ -13,3 +14,11 @@ export type {
   PaginationMeta,
 } from './envelope';
 export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from './paginate';
+
+// D224 sync status transport — Zod schema + types for /api/v1/sync/status.
+export {
+  SyncStatusSchema,
+  SyncReadinessSchema,
+  SyncStageSchema,
+} from './sync-status';
+export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
