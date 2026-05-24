@@ -153,3 +153,34 @@ hooks, components, tokens, copy, types, Zod schemas).
 plan's structure decisions (D173).
 **Enforcement update:** none — one-off scaffold error; renamed to
 `packages/shared` in this PR.
+
+## 2026-05-23 — Drizzle correlated subquery silently degenerated to tautology
+**PR:** #43 — `feat(senders): senders read module + 5 endpoints (D39, D40, D44, D45, D46, D204)`
+**Caught by:** founder (manual Senders screen inspection — every row showed identical `monthlyVolume: 10`, `readRate: 0`)
+**What happened:** `SendersReadService.listSenders` / `getSenderDetail`
+([apps/api/src/senders/senders.read-service.ts:107-122](apps/api/src/senders/senders.read-service.ts:107),
+[:196-211](apps/api/src/senders/senders.read-service.ts:196)) built a correlated
+subquery against `sender_timeseries` to fill the latest-month `volume` and
+`read_count`. The `sql` template interpolated `Column` objects on BOTH sides of
+the join predicate (`${senderTimeseries.mailboxAccountId} = ${senders.mailboxAccountId}`).
+Drizzle's `sql` template emits **unqualified** column names for `Column` values,
+so the rendered SQL became `WHERE "mailbox_account_id" = "mailbox_account_id" AND
+"sender_key" = "sender_key"` — both names resolved to the inner
+`sender_timeseries` scope (PG scope rule), making the predicate a tautology. The
+subquery then returned the same single row (whichever the planner picked first)
+for every sender. Tests at [senders.read-service.spec.ts:268](apps/api/src/senders/senders.read-service.spec.ts:268)
+passed because they seeded ONE sender with ONE matching timeseries row — the
+tautology coincidentally returned the right row.
+**Correct approach:** Qualify outer-scope identifiers explicitly in `sql`
+templates — `${sql.raw('senders.mailbox_account_id')}` or `sql.identifier(...)`.
+For correlated subqueries Drizzle does not auto-qualify; the developer must.
+Tests for any correlated read MUST seed ≥2 senders, each with ≥2 distinct
+timeseries rows, and assert that each sender gets its OWN row.
+**Rule:** Drizzle `sql` templates referencing an OUTER table inside a subquery
+must use `sql.raw('table.column')` / `sql.identifier(...)`, never a bare
+`${table.column}` interpolation. Any read-service spec that exercises a
+correlated subquery must seed multi-sender + multi-timeseries fixtures.
+**Enforcement update:** Add a `silent-failure-hunter` / `architecture-guardian`
+prompt rule for "correlated subquery without qualified outer identifier"; add a
+checklist line to the schema-migration-reviewer for read-service specs ("seeds
+≥2 entities for cross-row queries").
