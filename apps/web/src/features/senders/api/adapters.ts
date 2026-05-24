@@ -114,9 +114,23 @@ export function adaptSenderDetail(args: {
   now?: number;
 }): SenderDetail {
   const sender = adaptSenderListRow(args.detail, args.now);
-  const isVip = args.detail.protectionFlags.vip;
-  const isProtected = args.detail.protectionFlags.protect;
-  const protectionReason: ProtectionReason | null = isProtected ? 'user-marked' : null;
+  const isVip = args.detail.protectionFlags.isVip;
+  const isProtected = args.detail.protectionFlags.isProtected;
+  // The wire's `protection_reason` enum (BE source-of-truth) maps to the
+  // narrower FE `ProtectionReason` union used by the header chip + banner:
+  //   user_defined     → user-marked
+  //   engagement_based → auto-receipts (closest existing FE bucket today;
+  //                       a richer enum lands when the BE adds more reasons)
+  //   vip              → user-marked (header already renders the VIP chip
+  //                       separately from the Protect chip)
+  // If `isProtected` is true but the wire omits the reason, fall back to
+  // `user-marked` so the chip renders something rather than nothing.
+  const wireReason = args.detail.protectionFlags.protectionReason;
+  const protectionReason: ProtectionReason | null = isProtected
+    ? wireReason === 'engagement_based'
+      ? 'auto-receipts'
+      : 'user-marked'
+    : null;
 
   // Use the existing fixture-builder for the synthesised fields
   // (recommendation, stats), then overlay wire-derived lists. When the

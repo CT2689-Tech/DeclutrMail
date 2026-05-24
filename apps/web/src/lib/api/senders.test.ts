@@ -88,7 +88,15 @@ describe('fetchSenderDetail', () => {
 
   it('GETs /api/senders/:id and returns the envelope', async () => {
     let observedUrl: URL | null = null;
-    const detail = { ...LIST_ROW, protectionFlags: { vip: true, protect: false } };
+    const detail = {
+      ...LIST_ROW,
+      protectionFlags: {
+        isVip: true,
+        isProtected: false,
+        protectionReason: null,
+        protectionSetAt: null,
+      },
+    };
     installFetchStub([
       {
         method: 'GET',
@@ -102,7 +110,7 @@ describe('fetchSenderDetail', () => {
 
     const env = await fetchSenderDetail('s-1');
     expect(observedUrl!.pathname).toBe('/api/senders/s-1');
-    expect(env.data.protectionFlags.vip).toBe(true);
+    expect(env.data.protectionFlags.isVip).toBe(true);
   });
 
   it('URL-encodes the id', async () => {
@@ -113,7 +121,17 @@ describe('fetchSenderDetail', () => {
         path: /^\/api\/senders\/[^/]+$/,
         respond: (_req, url) => {
           observedUrl = url;
-          return jsonOk({ data: { ...LIST_ROW, protectionFlags: { vip: false, protect: false } } });
+          return jsonOk({
+            data: {
+              ...LIST_ROW,
+              protectionFlags: {
+                isVip: false,
+                isProtected: false,
+                protectionReason: null,
+                protectionSetAt: null,
+              },
+            },
+          });
         },
       },
     ]);

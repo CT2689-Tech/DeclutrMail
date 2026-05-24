@@ -71,11 +71,19 @@ export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): Sen
 
 /** Project a fixture `Sender` to the wire `SenderDetailDto` (list row + protection flags). */
 export function fixtureToSenderDetailDto(s: Sender, now: number = Date.now()): SenderDetailDto {
+  const isProtected = s.protected === true;
   return {
     ...fixtureToSenderListRow(s, now),
     protectionFlags: {
-      vip: false,
-      protect: s.protected === true,
+      isVip: false,
+      isProtected,
+      // Fixtures don't carry a richer reason today; auto-protected
+      // senders project to `engagement_based` (the closest BE bucket for
+      // "system-pinned"). Founder-toggled protection projects to
+      // `user_defined`. Non-protected senders carry null reason + null
+      // timestamp, matching the BE invariant.
+      protectionReason: isProtected ? 'engagement_based' : null,
+      protectionSetAt: isProtected ? new Date(now).toISOString() : null,
     },
   };
 }
