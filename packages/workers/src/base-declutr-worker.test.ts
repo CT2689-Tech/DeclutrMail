@@ -130,7 +130,9 @@ describe('BaseDeclutrWorker', () => {
       const obs = recordingObserver();
       worker.setObserver(obs);
 
-      const result = await worker.run(fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-1' } }));
+      const result = await worker.run(
+        fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-1' } }),
+      );
 
       expect(result).toEqual({ ok: true });
       const lines = lifecycleLines();
@@ -174,7 +176,12 @@ describe('BaseDeclutrWorker', () => {
       worker.setObserver(obs);
 
       await expect(
-        worker.run(fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-1' }, attemptsMade: 0 })),
+        worker.run(
+          fakeJob<TestPayload, { ok: true }>({
+            data: { mailboxAccountId: 'mb-1' },
+            attemptsMade: 0,
+          }),
+        ),
       ).rejects.toBe(transient);
 
       const lines = lifecycleLines();
@@ -276,7 +283,10 @@ describe('BaseDeclutrWorker', () => {
       // attemptsMade=0 → first attempt — but InvalidGrantError is
       // non-retryable, so the base must short-circuit retries with
       // UnrecoverableError.
-      const job = fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-2' }, attemptsMade: 0 });
+      const job = fakeJob<TestPayload, { ok: true }>({
+        data: { mailboxAccountId: 'mb-2' },
+        attemptsMade: 0,
+      });
       await expect(worker.run(job)).rejects.toBeInstanceOf(UnrecoverableError);
 
       expect(callOrder).toEqual(['onTerminalFailure', 'captureFailure']);
@@ -294,7 +304,12 @@ describe('BaseDeclutrWorker', () => {
       worker.setObserver(obs);
 
       await expect(
-        worker.run(fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-3' }, attemptsMade: 0 })),
+        worker.run(
+          fakeJob<TestPayload, { ok: true }>({
+            data: { mailboxAccountId: 'mb-3' },
+            attemptsMade: 0,
+          }),
+        ),
       ).rejects.toBeInstanceOf(UnrecoverableError);
 
       expect(lifecycleLines().map((l) => l.kind)).toEqual([
@@ -351,7 +366,12 @@ describe('BaseDeclutrWorker', () => {
   describe('lifecycle log shape (snapshot-style)', () => {
     it('lifecycle log lines carry the documented field set — no PII, no body, no token', async () => {
       const worker = new TestWorker(async () => ({ ok: true }));
-      await worker.run(fakeJob<TestPayload, { ok: true }>({ id: 'shape-1', data: { mailboxAccountId: 'mb-shape' } }));
+      await worker.run(
+        fakeJob<TestPayload, { ok: true }>({
+          id: 'shape-1',
+          data: { mailboxAccountId: 'mb-shape' },
+        }),
+      );
 
       const lines = lifecycleLines();
       // The set of keys on every lifecycle line is documented above; if
