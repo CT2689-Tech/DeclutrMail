@@ -6,7 +6,7 @@
  * file shrinks to helpers; fixtures move to MSW handlers.
  */
 
-import { SENDERS, type Sender, type SenderGroup } from '../data';
+import type { Sender, SenderGroup } from '../data';
 import type {
   DecisionHistoryRow,
   ProtectionReason,
@@ -365,11 +365,4 @@ export function buildSenderDetail(
     timeseries: buildTimeseries(sender),
     history: overrides.history ?? buildHistory(sender),
   };
-}
-
-/** Look up the default detail for a sender id — used by the page. */
-export function getSenderDetailById(id: string): SenderDetail | null {
-  const sender = SENDERS.find((s) => s.id === id);
-  if (!sender) return null;
-  return buildSenderDetail(sender);
 }

@@ -1,34 +1,42 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import path from 'node:path';
 
-const here = dirname(fileURLToPath(import.meta.url));
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Web-app Vitest config.
+ * Vitest config for `apps/web`.
  *
- * Environment is `node` — no jsdom toolchain is wired into the web
- * package yet, and the V2 plan defers wider DOM testing to the
- * Playwright E2E layer (D182/D183/D206). Component-level tests here
- * use `react-dom/server` for render + snapshot, exactly like
- * `packages/shared`. Pure handlers (e.g. the K/A/U/L key resolver in
- * `action-toolbar.tsx`) are tested directly without rendering.
+ *  - `environment: 'happy-dom'` — lighter than jsdom, enough surface to
+ *    render @testing-library/react components and let TanStack Query
+ *    do its `useEffect`/microtask choreography. Triage tests authored
+ *    against `react-dom/server` (PR #44) also work under happy-dom —
+ *    the renderer is opt-in, not coupled to the test env.
+ *  - `setupFiles` wires in `@testing-library/jest-dom` matchers and
+ *    installs the `fetch` stub helpers used by the API + hook tests.
+ *  - `esbuild.jsx: 'automatic'` so test files can write JSX without
+ *    importing React explicitly — matches the Next.js runtime config.
+ *  - `resolve.alias` mirrors `tsconfig.json` so `@/foo` resolves inside
+ *    test files exactly as it does at runtime.
  */
 export default defineConfig({
-  resolve: {
-    alias: {
-      '@': resolve(here, 'src'),
-    },
+  test: {
+    environment: 'happy-dom',
+    include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./src/test/setup.ts'],
+    globals: false,
+    // Allow space for hooks that retry on transient errors (the sender
+    // detail hook retries 5xx twice with React-Query's exponential
+    // backoff — ~3s — so the default 5s timeout is too tight).
+    testTimeout: 15_000,
   },
-  // Next sets `jsx: "preserve"` in tsconfig so Next can compile JSX
-  // for browser. Vitest doesn't run through Next, so we tell esbuild
-  // to use the automatic JSX runtime for `.tsx` test files — the
-  // same setting `packages/shared`'s tsconfig uses.
   esbuild: {
     jsx: 'automatic',
   },
-  test: {
-    include: ['src/**/*.test.{ts,tsx}'],
-    environment: 'node',
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
   },
 });
