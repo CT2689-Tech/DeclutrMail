@@ -108,22 +108,6 @@ all gates green, Storybook story count ≥ 8, `Closes D29` through `D226`
 in body, no "Screen" UI strings, no body-field references.
 **Status:** Open
 
-### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
-**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
-**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
-lack `@Throttle()` decorators. Both routes are flag-gated
-(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
-absence is consequential the moment the flag flips on in any public
-environment: an attacker can fan out `/start` (each builds an
-`OAuth2Client` and sets a cookie) or replay `/callback` with random
-codes to harvest error-shape differences.
-**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
-true anywhere. D156 picks the per-feature limit; suggested floor
-`{ limit: 10, ttl: 60_000 }` per IP on both routes.
-**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
-burst test (11 requests/min from one IP) returns 429 on the 11th.
-**Status:** Open
-
 ### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
 **Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
 **Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
@@ -512,6 +496,34 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
+lack `@Throttle()` decorators. Both routes are flag-gated
+(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
+absence is consequential the moment the flag flips on in any public
+environment: an attacker can fan out `/start` (each builds an
+`OAuth2Client` and sets a cookie) or replay `/callback` with random
+codes to harvest error-shape differences.
+**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
+true anywhere. D156 picks the per-feature limit; suggested floor
+`{ limit: 10, ttl: 60_000 }` per IP on both routes.
+**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
+burst test (11 requests/min from one IP) returns 429 on the 11th.
+**Status:** Done 2026-05-23 — PR #35 (`feat(api): Redis token-bucket
+rate limiter + decorator (D156)`, merged 2026-05-23) shipped the D156
+infrastructure AND wired `@RateLimit('auth')` onto both
+`GoogleOAuthController.start` + `.callback` (`apps/api/src/auth/google-oauth.controller.ts`
+lines 32, 48). The `auth` bucket default is `5 / 60s per IP` —
+stricter than the originally-suggested `10 / 60s` floor, deliberately
+chosen for the OAuth surface in `rate-limit.types.ts:37`.
+`rate-limit.interceptor.spec.ts` covers the runtime 429 + Retry-After
+behavior; `google-oauth.controller.spec.ts` (added in this PR
+`feat/d012-sender-key-hash`) is the route-level metadata-presence
+guard against future decorator removal. The followup was authored
+2026-05-22, after PR #35 was opened but before this Done-move was
+filed; recording resolution now.
 
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
