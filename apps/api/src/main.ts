@@ -29,6 +29,16 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.set('trust proxy', 1);
+  // CORS (D179). Without this, the FE on :3000 cannot reach the API
+  // on :4000 — the preflight OPTIONS is rejected with 404 and the
+  // GET surfaces as a 503 (network error) in the browser console.
+  // Dev default: any localhost origin. Prod: lock to FE origin via
+  // CORS_ORIGIN env var.
+  app.enableCors({
+    origin: process.env.CORS_ORIGIN ?? /^http:\/\/localhost(:\d+)?$/,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'x-mailbox-account-id', 'Idempotency-Key'],
+  });
   app.setGlobalPrefix('api');
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
