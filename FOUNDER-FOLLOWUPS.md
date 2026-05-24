@@ -124,23 +124,6 @@ true anywhere. D156 picks the per-feature limit; suggested floor
 burst test (11 requests/min from one IP) returns 429 on the 11th.
 **Status:** Open
 
-### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
-**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
-**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
-single failure-capture point for D159 Sentry wiring. The boot/periodic
-reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
-loop, so its error path (raw `console.error` with
-`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
-`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
-**How:** When the D159 wiring PR lands, either (a) extract a shared
-`captureBackgroundFailure(err, { kind })` helper that both the worker
-base and the reconciler call, or (b) move the periodic reconciler
-inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
-covers it.
-**Verifies by:** A forced reconciler exception (DB unreachable in a
-test env) shows up in Sentry with `kind: reconciler.failed`.
-**Status:** Open
-
 ### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
 **Source:** silent-failure-hunter gate on PR `feat/d009-sync-data-capture`
 **Why:** `apps/api/src/worker.ts` keeps a `limiterByMailbox: Map<id,
@@ -512,6 +495,37 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
+single failure-capture point for D159 Sentry wiring. The boot/periodic
+reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
+loop, so its error path (raw `console.error` with
+`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
+`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
+**How:** When the D159 wiring PR lands, either (a) extract a shared
+`captureBackgroundFailure(err, { kind })` helper that both the worker
+base and the reconciler call, or (b) move the periodic reconciler
+inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
+covers it.
+**Verifies by:** A forced reconciler exception (DB unreachable in a
+test env) shows up in Sentry with `kind: reconciler.failed`.
+**Status:** Done 2026-05-23 — option (a) shipped on
+`feat/d203-base-declutr-worker`. `BaseDeclutrWorker` now accepts an
+injectable `WorkerObserver` via `setObserver()`; the observer interface
+exposes `captureFailure(err, ctx)` for the BullMQ job loop AND
+`captureBackgroundFailure(err, ctx)` for failures outside it. The
+reconciler in `apps/api/src/worker.ts` calls
+`observer.captureBackgroundFailure(error, { kind: 'reconciler.failed' })`
+right after the existing structured log; `tick_unexpected`,
+`worker.shutdown_failed`, and `worker.boot_failed` paths route through
+the same seam. With `SENTRY_DSN` unset the observer is a no-op
+(matches the API's `initSentry` posture). Verification deferred to a
+manual staging exercise once `SENTRY_DSN` is provisioned — the test
+suite covers the wiring (`packages/workers/src/base-declutr-worker.test.ts`
+asserts the "exactly once per terminal failure" contract; the no-DSN
+branch is unit-tested in `apps/api/src/observability/sentry-worker-observer.spec.ts`).
 
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
