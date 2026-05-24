@@ -192,3 +192,32 @@ export const Empty: Story<typeof UndoTray> = {
     mailboxAccountId: '00000000-0000-0000-0000-000000000000',
   },
 };
+
+/**
+ * Error — TanStack reported a failed fetch and no tokens are cached.
+ * The tray renders a distinct red-bordered chip with a link back to
+ * the Activity log (D211 — error states must not silently empty).
+ */
+export const ErrorState: Story<typeof UndoTray> = {
+  render: (args: TrayArgs) =>
+    frame(
+      <UndoTray
+        {...args}
+        dataSource={{
+          entries: [],
+          isLoading: false,
+          isError: true,
+          error: new globalThis.Error('undo_fetch_failed:503'),
+          revert: async () => {
+            /* no-op */
+          },
+        }}
+        onViewActivity={() => {
+          /* host-app route */
+        }}
+      />,
+    ),
+  args: {
+    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
+  },
+};

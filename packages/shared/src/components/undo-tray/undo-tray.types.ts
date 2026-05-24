@@ -19,7 +19,15 @@ export interface UndoTrayEntry {
   expiresAt: string;
 }
 
-/** Hook contract — the tray reads tokens, knows how to revert one. */
+/**
+ * Hook contract — the tray reads tokens, knows how to revert one.
+ *
+ * `isError` + `error` are optional for backwards-compatibility with
+ * static dataSource overrides (tests, Storybook) that don't simulate
+ * failure. The TanStack-backed `useUndoTray` (D200) supplies both so
+ * the tray can render a distinct error state — network failure must
+ * NOT silently collapse the tray into the empty state (D211).
+ */
 export interface UndoTrayDataSource {
   /** Active tokens for the current mailbox, newest first (D35). */
   entries: UndoTrayEntry[];
@@ -27,4 +35,8 @@ export interface UndoTrayDataSource {
   isLoading: boolean;
   /** Stable callback for one-row Undo (D58). */
   revert: (token: string) => Promise<void>;
+  /** True when the most recent fetch failed (network/5xx). */
+  isError?: boolean;
+  /** The error from the failed fetch, if any. */
+  error?: Error | null;
 }

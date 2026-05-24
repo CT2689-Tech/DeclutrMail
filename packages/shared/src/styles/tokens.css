@@ -125,6 +125,13 @@ button {
   }
 }
 
+/* InlineProgress spinner (D166 — inline action progress). */
+@keyframes dm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    Responsive shell — CSS-driven so the layout is correct at first
    paint. A JS breakpoint hook resolves only after hydration, which

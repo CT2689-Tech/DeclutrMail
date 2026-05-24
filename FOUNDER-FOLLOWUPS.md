@@ -57,23 +57,6 @@ sync paused. Time-travel the test clock past `effective_deletion_at` →
 mailbox row + cascaded children gone.
 **Status:** Open
 
-### 2026-05-23 — D-CANDIDATE: undo-tray hook migrates to TanStack Query (D200)
-**Source:** PR `feat/d232-undo-journal`
-**Why:** `useUndoTray` in `packages/shared/src/components/undo-tray/`
-stubs `fetch` directly because the D200 TanStack Query foundation is
-not in place. The stub is correct (returns the right `UndoTrayDataSource`
-shape) but lacks first-class error states, refetch-on-window-focus, and
-optimistic mutation rollback — all things TanStack supplies.
-**How:** When the D200 query-client provider lands, swap the stub for
-`useQuery({ queryKey: ['undo', mailboxAccountId] })` + `useMutation`
-for revert. The `UndoTrayDataSource` contract does not change — only
-the hook's body — so consumers (UndoTray component, future Triage
-integration) need no updates.
-**Verifies by:** Network-failure path renders an error state instead of
-silently emptying the tray; a successful revert in one tab updates the
-tray in another via TanStack's stale-time invalidation.
-**Status:** Open
-
 ### 2026-05-23 — Resume WT-A Triage screen (D29–D35, D207, D208, D226)
 **Source:** overnight 8-hr autonomous run — background agent hit session limit before commit
 **Why:** PR 5 (per D187) is the Triage feature slice — the critical-path
@@ -512,6 +495,33 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-23 — D-CANDIDATE: undo-tray hook migrates to TanStack Query (D200)
+**Source:** PR `feat/d232-undo-journal`
+**Why:** `useUndoTray` in `packages/shared/src/components/undo-tray/`
+stubs `fetch` directly because the D200 TanStack Query foundation is
+not in place. The stub is correct (returns the right `UndoTrayDataSource`
+shape) but lacks first-class error states, refetch-on-window-focus, and
+optimistic mutation rollback — all things TanStack supplies.
+**How:** When the D200 query-client provider lands, swap the stub for
+`useQuery({ queryKey: ['undo', mailboxAccountId] })` + `useMutation`
+for revert. The `UndoTrayDataSource` contract does not change — only
+the hook's body — so consumers (UndoTray component, future Triage
+integration) need no updates.
+**Verifies by:** Network-failure path renders an error state instead of
+silently emptying the tray; a successful revert in one tab updates the
+tray in another via TanStack's stale-time invalidation.
+**Status:** Done 2026-05-23 — shipped in `feat/d166-skeleton-loaders`.
+`useUndoTray` now uses `useQuery({ queryKey: ['undo', mailboxAccountId] })`
+with `refetchOnWindowFocus: true` and `useMutation` with `onMutate` /
+`onError` / `onSettled` for optimistic-update + rollback. The
+`UndoTrayDataSource` contract is extended with optional `isError` +
+`error` fields (additive, non-breaking); existing consumers compile
+unchanged. `<UndoTray>` renders a distinct red-bordered error chip
+when `isError && entries.length === 0` so failures no longer collapse
+silently into the empty branch. Verified by
+`apps/web/src/features/undo/use-undo-tray.test.tsx` (success / error /
+revert-success / revert-rollback / static-source paths).
 
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but

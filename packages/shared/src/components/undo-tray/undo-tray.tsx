@@ -61,6 +61,64 @@ export function UndoTray({
     ...(apiBaseUrl ? { apiBaseUrl } : {}),
   });
 
+  // Error state must be visually distinct from "no tokens" — D211
+  // requires the tray to NOT silently empty on network failure.
+  // The error chip stays mounted until the next successful refetch
+  // so the user can see something went wrong.
+  if (source.isError && source.entries.length === 0) {
+    return (
+      <aside
+        data-dm-undo-tray="error"
+        role="alert"
+        aria-label="Recent actions failed to load"
+        style={{
+          position: 'fixed',
+          bottom: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          minWidth: 280,
+          maxWidth: 480,
+          background: color.card,
+          border: `1px solid ${color.redBorder}`,
+          borderRadius: radius.lg,
+          boxShadow: shadow.card,
+          padding: '10px 14px',
+          fontFamily: font.sans,
+          fontSize: 13,
+          color: color.fg,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          zIndex: 50,
+          ...style,
+        }}
+      >
+        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>
+          Couldn’t load recent actions
+        </span>
+        {onViewActivity ? (
+          <button
+            type="button"
+            onClick={onViewActivity}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: color.primary,
+              fontFamily: font.sans,
+              fontSize: 12,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+              textUnderlineOffset: 2,
+            }}
+          >
+            View Activity
+          </button>
+        ) : null}
+      </aside>
+    );
+  }
+
   // The tray is INVISIBLE when no active undo tokens exist (D35:
   // "Tray persists during the session and for 3 seconds after queue
   // empties"; the 3-second tail is a host-app concern — the

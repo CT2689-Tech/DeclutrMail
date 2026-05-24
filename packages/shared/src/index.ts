@@ -2,20 +2,8 @@
 // external-integration contracts (D201).
 
 export type { KmsProvider } from './contracts/index';
-export type {
-  DecodedCursor,
-  Envelope,
-  PaginatedEnvelope,
-  PaginationMeta,
-} from './contracts/index';
-export {
-  clampLimit,
-  decodeCursor,
-  encodeCursor,
-  ok,
-  paginated,
-  withMeta,
-} from './contracts/index';
+export type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './contracts/index';
+export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from './contracts/index';
 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
@@ -49,6 +37,32 @@ export type { ToastTone } from './components/toast';
 // Persistent undo tray (D35, D58) + its data-source hook.
 export { UndoTray, useUndoTray } from './components/undo-tray';
 export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './components/undo-tray';
+
+// D166 — skeleton-first loading primitives + composite skeletons
+// matching the launch screens (Triage queue, Senders list, Sender
+// Detail) plus an `<InlineProgress>` for button-level action progress.
+export {
+  Skeleton,
+  SkeletonLines,
+  TriageQueueSkeleton,
+  TriageRowCardSkeleton,
+  SenderRowSkeleton,
+  SendersListSkeleton,
+  SenderDetailSkeleton,
+  SenderDetailHeaderSkeleton,
+  SenderDetailStatsSkeleton,
+  SenderDetailChartsSkeleton,
+  SenderDetailMessagesSkeleton,
+} from './components/skeleton';
+export type {
+  SkeletonProps,
+  SkeletonVariant,
+  SkeletonLinesProps,
+  TriageQueueSkeletonProps,
+  SendersListSkeletonProps,
+} from './components/skeleton';
+export { InlineProgress } from './components/inline-progress';
+export type { InlineProgressProps } from './components/inline-progress';
 
 export { Sidebar } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
