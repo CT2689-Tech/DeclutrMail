@@ -37,6 +37,7 @@ import {
   paginated,
 } from '@declutrmail/shared/contracts';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { SendersReadService } from './senders.read-service.js';
 import type {
   GmailCategory,
@@ -73,6 +74,7 @@ export class SendersController {
    * id DESC` — most-recently-active senders first.
    */
   @Get()
+  @RateLimit('triage-load')
   async list(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Query('category') rawCategory: string | undefined,
@@ -115,6 +117,7 @@ export class SendersController {
    * we don't leak existence across tenants.
    */
   @Get(':id')
+  @RateLimit('triage-load')
   async detail(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Param('id') id: string,
@@ -141,6 +144,7 @@ export class SendersController {
    * ORDER BY exactly.
    */
   @Get(':id/messages')
+  @RateLimit('triage-load')
   async messages(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Param('id') id: string,
@@ -187,6 +191,7 @@ export class SendersController {
    * `generate_series` in the DB).
    */
   @Get(':id/timeseries')
+  @RateLimit('triage-load')
   async timeseries(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Param('id') id: string,
@@ -216,6 +221,7 @@ export class SendersController {
    * read the triage-owned table directly at launch.
    */
   @Get(':id/history')
+  @RateLimit('triage-load')
   async history(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Param('id') id: string,

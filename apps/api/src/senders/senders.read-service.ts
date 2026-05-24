@@ -20,7 +20,7 @@
 // `mail_messages.snippet` column IS allowlisted (and capped at
 // varchar(300) at the schema level) — it can flow through.
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
 import {
   mailMessages,
@@ -450,7 +450,15 @@ export class SendersReadService {
       // precision (postgres-js + PGlite both); convert at the
       // boundary so the wire is a plain number with 2-decimal
       // precision matching the column's `numeric(3,2)` storage.
-      confidence: Number.parseFloat(row.confidence),
+      confidence: (() => {
+        const n = Number.parseFloat(row.confidence);
+        if (!Number.isFinite(n)) {
+          throw new InternalServerErrorException(
+            `Triage decision ${row.id} has invalid confidence value: ${row.confidence}`,
+          );
+        }
+        return n;
+      })(),
       producedAt: row.producedAt.toISOString(),
       reasoning: row.reasoning,
       generatedBy: row.generatedBy,
