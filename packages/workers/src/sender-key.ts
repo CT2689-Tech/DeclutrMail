@@ -5,14 +5,42 @@ import { createHash } from 'node:crypto';
  *
  *   sender_key = sha256("v1|" + normalized_email), hex
  *
- * `normalized_email` is the address lowercased + trimmed. The `"v1|"`
- * prefix versions the scheme so a future normalization change can ship a
- * `"v2|"` key without colliding with stored `"v1|"` keys.
+ * `normalized_email` is the address lowercased + trimmed, with the
+ * `+suffix` alias stripped from the local part (D12 example:
+ * `foo+notion@gmail.com` → `foo@gmail.com`). The `"v1|"` prefix versions
+ * the scheme so a future normalization change can ship a `"v2|"` key
+ * without colliding with stored `"v1|"` keys.
+ *
+ * Dotless-local-part normalization (the Gmail-specific "jane.doe ==
+ * janedoe" rule) is intentionally NOT applied — D12 only specifies the
+ * `+suffix` strip, and dotless folding would collide non-Gmail addresses
+ * that legitimately differ by dot.
  */
 
-/** Lowercase + trim — the D12 normalization. */
+/**
+ * Lowercase + trim + strip `+suffix` aliases from the local part (D12).
+ *
+ * The strip only happens when the `+` lives in the local part (before
+ * the last `@`) and is not at position 0 (no local part to alias).
+ * Inputs without an `@` or with the `+` only in the domain are
+ * lowercased/trimmed unchanged.
+ */
 export function normalizeEmail(raw: string): string {
-  return raw.trim().toLowerCase();
+  const lowered = raw.trim().toLowerCase();
+  const at = lowered.lastIndexOf('@');
+  if (at <= 0) {
+    // No local part (e.g. `@x.com`) or no `@` at all — return as-is.
+    return lowered;
+  }
+  const local = lowered.slice(0, at);
+  const domain = lowered.slice(at);
+  const plus = local.indexOf('+');
+  if (plus <= 0) {
+    // No `+`, or `+` is the entire local part — leave unchanged so the
+    // string round-trips to itself and we don't synthesise an empty local.
+    return lowered;
+  }
+  return `${local.slice(0, plus)}${domain}`;
 }
 
 /** sha256("v1|" + normalized_email), hex (D12). */
