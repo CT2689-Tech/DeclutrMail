@@ -168,19 +168,34 @@ so the rendered SQL became `WHERE "mailbox_account_id" = "mailbox_account_id" AN
 "sender_key" = "sender_key"` — both names resolved to the inner
 `sender_timeseries` scope (PG scope rule), making the predicate a tautology. The
 subquery then returned the same single row (whichever the planner picked first)
-for every sender. Tests at [senders.read-service.spec.ts:268](apps/api/src/senders/senders.read-service.spec.ts:268)
+for every sender — and because the tautology eliminated the mailbox predicate
+entirely, that row could come from ANY mailbox in the table. Tests at
+[senders.read-service.spec.ts:268](apps/api/src/senders/senders.read-service.spec.ts:268)
 passed because they seeded ONE sender with ONE matching timeseries row — the
 tautology coincidentally returned the right row.
+**Severity:** Cross-tenant data exposure of integer rollup columns
+(`volume`, `read_count`). No body content, headers, snippets, or PII fields
+were involved — D7/D228 invariants remained intact — but the mailbox
+boundary for `sender_timeseries` was effectively bypassed by every list /
+detail response until the fix landed. The post-fix specs include explicit
+cross-mailbox `sender_key` collision regression tests that fail loudly if
+the boundary is dropped again.
 **Correct approach:** Qualify outer-scope identifiers explicitly in `sql`
-templates — `${sql.raw('senders.mailbox_account_id')}` or `sql.identifier(...)`.
-For correlated subqueries Drizzle does not auto-qualify; the developer must.
-Tests for any correlated read MUST seed ≥2 senders, each with ≥2 distinct
-timeseries rows, and assert that each sender gets its OWN row.
-**Rule:** Drizzle `sql` templates referencing an OUTER table inside a subquery
-must use `sql.raw('table.column')` / `sql.identifier(...)`, never a bare
-`${table.column}` interpolation. Any read-service spec that exercises a
-correlated subquery must seed multi-sender + multi-timeseries fixtures.
+templates — prefer `sql.identifier(getTableName(table))` over a hardcoded
+string so a future schema rename surfaces in one helper call rather than
+silently re-introducing the tautology. For correlated subqueries Drizzle
+does not auto-qualify; the developer must. Tests for any correlated read
+MUST seed ≥2 senders, each with ≥2 distinct timeseries rows, AND a
+cross-mailbox `sender_key` collision case, and assert that each sender /
+mailbox gets its OWN row.
+**Rule:** Drizzle `sql` templates referencing an OUTER table inside a
+subquery must use `sql.identifier(getTableName(table))` (or
+`sql.raw('table.column')` if the table is irrefutably stable), never a
+bare `${table.column}` interpolation. Any read-service spec that
+exercises a correlated subquery must seed multi-sender + multi-timeseries
+fixtures AND a cross-mailbox collision case for tenant-boundary coverage.
 **Enforcement update:** Add a `silent-failure-hunter` / `architecture-guardian`
-prompt rule for "correlated subquery without qualified outer identifier"; add a
-checklist line to the schema-migration-reviewer for read-service specs ("seeds
-≥2 entities for cross-row queries").
+prompt rule for "correlated subquery without qualified outer identifier";
+add a checklist line to the schema-migration-reviewer for read-service
+specs ("seeds ≥2 entities for cross-row queries AND a cross-mailbox
+collision case").

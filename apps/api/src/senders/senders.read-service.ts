@@ -21,7 +21,7 @@
 // varchar(300) at the schema level) — it can flow through.
 
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableName, gte, lt, or, sql } from 'drizzle-orm';
 import {
   mailMessages,
   senderPolicies,
@@ -113,22 +113,27 @@ export class SendersReadService {
     // `sender_timeseries` scope, the WHERE collapses to a tautology,
     // and every outer row gets the same constant timeseries row.
     // Caught in PR #43 → see MISTAKES.md 2026-05-23. The fix is to
-    // qualify the outer-scope identifiers explicitly with
-    // `sql.raw('senders.mailbox_account_id')` so the correlated
-    // reference survives template expansion.
+    // qualify the outer-scope identifiers explicitly so the
+    // correlated reference survives template expansion. We use
+    // `getTableName(senders)` + `sql.identifier(...)` rather than a
+    // hardcoded `'senders.mailbox_account_id'` string so a future
+    // schema rename surfaces as a compile-time miss in this helper
+    // instead of a silent re-introduction of the tautology bug.
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const latestVolumeSql = sql<number | null>`(
       SELECT ${senderTimeseries.volume}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${sql.raw('senders.mailbox_account_id')}
-        AND ${senderTimeseries.senderKey} = ${sql.raw('senders.sender_key')}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
     const latestReadCountSql = sql<number | null>`(
       SELECT ${senderTimeseries.readCount}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${sql.raw('senders.mailbox_account_id')}
-        AND ${senderTimeseries.senderKey} = ${sql.raw('senders.sender_key')}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
@@ -207,21 +212,23 @@ export class SendersReadService {
     // FE only calls this once per page navigation.
     //
     // See the matching comment in `listSenders` for why the outer-scope
-    // references are wrapped in `sql.raw(...)` rather than bare column
-    // interpolations.
+    // references are built via `sql.identifier(getTableName(senders))`
+    // rather than bare `${senders.column}` interpolations.
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const latestVolumeSql = sql<number | null>`(
       SELECT ${senderTimeseries.volume}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${sql.raw('senders.mailbox_account_id')}
-        AND ${senderTimeseries.senderKey} = ${sql.raw('senders.sender_key')}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
     const latestReadCountSql = sql<number | null>`(
       SELECT ${senderTimeseries.readCount}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${sql.raw('senders.mailbox_account_id')}
-        AND ${senderTimeseries.senderKey} = ${sql.raw('senders.sender_key')}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;

@@ -376,8 +376,71 @@ describe('SendersReadService', () => {
       const byId = new Map(rows.map((r) => [r.id, r]));
       expect(byId.get(a.id)!.monthlyVolume).toBe(30);
       expect(byId.get(a.id)!.readRate).toBe(0.5);
+      // Older 2026-04 row (volume 7) must NOT win — locks the
+      // ORDER BY year_month DESC LIMIT 1 predicate alongside the
+      // correlation fix. Pre-fix tautology would have picked
+      // whichever the planner returned first regardless of date.
+      expect(byId.get(a.id)!.monthlyVolume).not.toBe(7);
       expect(byId.get(b.id)!.monthlyVolume).toBe(4);
       expect(byId.get(b.id)!.readRate).toBe(0.25);
+      expect(byId.get(b.id)!.monthlyVolume).not.toBe(2);
+    });
+
+    // Regression — MISTAKES.md 2026-05-23 (cross-tenant variant). The
+    // pre-fix tautological predicate `WHERE mailbox_account_id =
+    // mailbox_account_id AND sender_key = sender_key` resolved entirely
+    // inside `sender_timeseries` and therefore could pick a row from
+    // ANOTHER mailbox — a cross-tenant integer leak. The fix's
+    // `WHERE sender_timeseries.mailbox_account_id = senders.mailbox_account_id`
+    // restores the mailbox boundary. Seed identical `sender_key`
+    // values across two mailboxes with deliberately different
+    // timeseries values; assert each mailbox sees only its own row.
+    it('does not leak timeseries across mailboxes when sender_key collides (cross-tenant correlated-subquery regression)', async () => {
+      const otherMailbox = await seedMailbox(db, 'other-tenant');
+      const here = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'collide@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const there = await seedSender(db, {
+        mailboxAccountId: otherMailbox,
+        email: 'collide@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // `sender_key` is derived from the normalized email — both
+      // senders should share it. Assert that precondition so this
+      // test breaks loudly if the key derivation changes.
+      expect(here.senderKey).toBe(there.senderKey);
+
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: here.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 8,
+        readCount: 2,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: otherMailbox,
+        senderKey: there.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 77,
+        readCount: 77,
+      });
+
+      const rowsHere = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      const rowsThere = await svc.listSenders({
+        mailboxAccountId: otherMailbox,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      expect(rowsHere.find((r) => r.id === here.id)!.monthlyVolume).toBe(8);
+      expect(rowsThere.find((r) => r.id === there.id)!.monthlyVolume).toBe(77);
     });
   });
 
@@ -477,6 +540,47 @@ describe('SendersReadService', () => {
       expect(detail).not.toBeNull();
       expect(detail!.monthlyVolume).toBe(12);
       expect(detail!.readRate).toBe(0.25);
+      // Other sender's row (volume 99) must NOT leak.
+      expect(detail!.monthlyVolume).not.toBe(99);
+    });
+
+    // Regression — MISTAKES.md 2026-05-23 (cross-tenant variant for
+    // the detail endpoint). Mirror of the list-side cross-tenant
+    // test: a colliding sender_key across mailboxes must not surface
+    // the wrong tenant's timeseries row.
+    it('does not leak timeseries across mailboxes when sender_key collides (cross-tenant detail regression)', async () => {
+      const otherMailbox = await seedMailbox(db, 'other-detail-tenant');
+      const here = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'collide-detail@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const there = await seedSender(db, {
+        mailboxAccountId: otherMailbox,
+        email: 'collide-detail@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      expect(here.senderKey).toBe(there.senderKey);
+
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: here.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 6,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: otherMailbox,
+        senderKey: there.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 88,
+        readCount: 88,
+      });
+
+      const detailHere = await svc.getSenderDetail(mailboxId, here.id);
+      expect(detailHere).not.toBeNull();
+      expect(detailHere!.monthlyVolume).toBe(6);
+      expect(detailHere!.monthlyVolume).not.toBe(88);
     });
   });
 
