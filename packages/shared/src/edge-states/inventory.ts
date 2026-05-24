@@ -87,15 +87,26 @@ export type ScreenId =
  * the build if the file is missing.
  *
  * `status`:
- *   - `covered`  — variant exists and is wired.
- *   - `todo`     — declared but not yet built; design-system gate
- *                  flags this without blocking merge.
- *   - `n/a`      — explicitly not applicable.
+ *   - `covered`              — variant exists and is wired.
+ *   - `covered-by-pr-52`     — variant ships in the parallel
+ *                              `feat/d039-senders-tightening-pass-1`
+ *                              branch (PR #52). Tracked as its own
+ *                              literal so the inventory test fails
+ *                              loudly if PR #52 merges first (this
+ *                              status should become `covered` with a
+ *                              real `storybook` pointer) OR is
+ *                              cancelled (this status should drop back
+ *                              to `todo`). Either way the dangling
+ *                              linkage surfaces at PR time, not in
+ *                              production.
+ *   - `todo`                 — declared but not yet built; design-system
+ *                              gate flags this without blocking merge.
+ *   - `n/a`                  — explicitly not applicable.
  */
 export interface StateCoverage {
   required: boolean;
   storybook?: string;
-  status: 'covered' | 'todo' | 'n/a';
+  status: 'covered' | 'covered-by-pr-52' | 'todo' | 'n/a';
 }
 
 export type EdgeStateCoverage = Record<EdgeState, StateCoverage>;
@@ -103,13 +114,14 @@ export type EdgeStateCoverage = Record<EdgeState, StateCoverage>;
 /**
  * The full inventory.
  *
- * Senders + Sender Detail entries are intentionally **TODO** at this
- * point — a parallel agent is rewriting the senders stories under
- * `apps/web/src/features/senders/**`. When their PR lands, flip
- * `status: 'todo'` → `status: 'covered'` and point `storybook` at the
- * concrete files. Until then, the inventory still declares the
- * required states so the design-system gate doesn't lose sight of
- * them.
+ * Senders + Sender Detail required states are marked
+ * `covered-by-pr-52` — a parallel branch
+ * (`feat/d039-senders-tightening-pass-1`, PR #52) ships the storybook
+ * variants. The explicit literal (rather than `todo`) makes the
+ * cross-PR linkage diff-visible: when PR #52 merges, this file must
+ * flip those entries to `covered` with a real `storybook` pointer.
+ * If PR #52 is closed without shipping the variants, these entries
+ * drop back to `todo`. Either way the design-system gate notices.
  */
 export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   triage: {
@@ -170,12 +182,16 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     },
   },
 
-  // Senders + Sender Detail — TODO. Parallel agent owns these.
-  // Inventory still declares required states so the gate tracks them.
+  // Senders + Sender Detail — required edge-state variants ship in PR
+  // #52 (`feat/d039-senders-tightening-pass-1`). Marked
+  // `covered-by-pr-52` rather than `todo` so the cross-PR linkage is
+  // explicit; the inventory test treats this literal as not-yet-covered
+  // (no storybook resolution required) but the design-system gate can
+  // surface it as a tracked dependency rather than free-floating debt.
   senders: {
-    loading: { required: true, status: 'todo' },
-    empty: { required: true, status: 'todo' },
-    error: { required: true, status: 'todo' },
+    loading: { required: true, status: 'covered-by-pr-52' },
+    empty: { required: true, status: 'covered-by-pr-52' },
+    error: { required: true, status: 'covered-by-pr-52' },
     'partial-error': { required: false, status: 'n/a' },
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
@@ -188,9 +204,9 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   },
 
   'sender-detail': {
-    loading: { required: true, status: 'todo' },
-    empty: { required: true, status: 'todo' },
-    error: { required: true, status: 'todo' },
+    loading: { required: true, status: 'covered-by-pr-52' },
+    empty: { required: true, status: 'covered-by-pr-52' },
+    error: { required: true, status: 'covered-by-pr-52' },
     'partial-error': { required: false, status: 'todo' },
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
@@ -198,7 +214,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'sync-failed-transient': { required: false, status: 'n/a' },
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
-    'sender-deleted-upstream': { required: true, status: 'todo' },
+    'sender-deleted-upstream': { required: true, status: 'covered-by-pr-52' },
     'account-deletion-pending': { required: false, status: 'todo' },
   },
 

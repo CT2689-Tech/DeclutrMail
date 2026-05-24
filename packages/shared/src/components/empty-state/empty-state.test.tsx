@@ -81,6 +81,25 @@ describe('<EmptyState /> — D212 primitive', () => {
     expect(freeHtml).toContain('Plus removes the daily cap.');
   });
 
+  it('never renders the nudge for tier=pro (Pro is already past the cap)', () => {
+    // Pro is the topmost paid tier — a Plus-targeted upgrade nudge would
+    // be a UX regression (we'd be asking a Pro user to upgrade to Plus).
+    // Lock the gating so a future refactor of `showNudge` can't widen
+    // it past `tier === 'free'`.
+    const proHtml = renderToStaticMarkup(
+      <EmptyState
+        title="You cleared today's queue."
+        tier="pro"
+        tierNudge={{
+          headline: 'You are out of free decisions today.',
+          body: 'Plus removes the daily cap.',
+        }}
+      />,
+    );
+    expect(proHtml).not.toContain('You are out of free decisions today.');
+    expect(proHtml).not.toContain('Plus removes the daily cap.');
+  });
+
   it('does not render the nudge when tier=free but tierNudge is omitted', () => {
     const html = renderToStaticMarkup(<EmptyState title="No rules yet" tier="free" />);
     // The nudge surface uses the primaryWash; if no nudge is supplied,

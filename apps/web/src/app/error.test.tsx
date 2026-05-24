@@ -105,15 +105,20 @@ describe('AppError boundary — D167', () => {
 
   it('does not leak the raw error message into the rendered HTML', () => {
     // The message can contain user data. Only the digest is safe.
+    // Use a neutral, obviously-fake sentinel string rather than a
+    // plausible-looking email so the assertion is unambiguous: if the
+    // sentinel shows up in rendered HTML, the leak is real, not a
+    // coincidence with some other email-shaped string elsewhere.
+    const SENTINEL = '<redacted-pii-sentinel>';
     const { container } = render(
       <AppError
-        error={Object.assign(new Error('user@example.com tried to do X'), {
+        error={Object.assign(new Error(`${SENTINEL} tried to do X`), {
           digest: 'safe',
         })}
         reset={() => undefined}
       />,
     );
-    expect(container.textContent).not.toContain('user@example.com');
+    expect(container.textContent).not.toContain(SENTINEL);
   });
 
   it('uses calm, non-apologetic copy (D209) — no forbidden framings', () => {

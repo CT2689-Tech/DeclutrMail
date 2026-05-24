@@ -161,7 +161,7 @@ export function EmptyState({
             <strong style={{ fontWeight: 600 }}>{tierNudge.headline}</strong>{' '}
             <span style={{ color: color.fgSoft }}>{tierNudge.body}</span>
           </span>
-          {tierNudge.cta}
+          {tierNudge.cta != null && tierNudge.cta}
         </div>
       )}
     </div>

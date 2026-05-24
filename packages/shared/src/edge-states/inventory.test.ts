@@ -8,13 +8,20 @@
 //      — D211's design-system gate would otherwise rubber-stamp a
 //      screen claiming coverage it doesn't have.
 //
-//   2. Every entry marked `required: true` MUST be either `covered` or
-//      `todo` (never `n/a`). Required-and-N/A is a contradiction —
-//      flag it at PR time before it ships.
+//   2. Every entry marked `required: true` MUST be either `covered`,
+//      `covered-by-pr-52`, or `todo` (never `n/a`). Required-and-N/A
+//      is a contradiction — flag it at PR time before it ships.
 //
 //   3. Every entry marked `required: false` is allowed any status,
 //      but if `status: 'covered'` and `storybook` is set, the file
 //      still has to exist (no broken pointers).
+//
+//   4. `covered-by-pr-52` is a transitional literal pointing at the
+//      parallel `feat/d039-senders-tightening-pass-1` PR. It MUST be
+//      flipped to `covered` (with a real `storybook`) once that PR
+//      merges, or back to `todo` if it's cancelled. A dedicated test
+//      asserts the literal is bounded — if it sticks around past PR
+//      #52's resolution, the founder sees it.
 //
 // The repo root is resolved via `process.cwd()` because Vitest runs
 // from the shared package, but the storybook paths in the inventory
@@ -113,6 +120,35 @@ describe('D211 — edge-state inventory contract', () => {
       'sender-deleted-upstream',
       'account-deletion-pending',
     ] satisfies EdgeState[]);
+  });
+
+  it('tracks the PR #52 hand-off with the explicit `covered-by-pr-52` literal', () => {
+    // The senders + sender-detail required edge-states ship in the
+    // parallel `feat/d039-senders-tightening-pass-1` branch (PR #52).
+    // The explicit literal — rather than a vague `todo` — keeps the
+    // cross-PR linkage diff-visible. When PR #52 merges, flip these
+    // to `covered` with a real `storybook` pointer; if cancelled, drop
+    // them back to `todo`. Until then, this assertion locks the
+    // current expectation so a silent drift can't happen.
+    const sendersRequired = (
+      ['loading', 'empty', 'error'] as const satisfies readonly EdgeState[]
+    ).map((s) => EDGE_STATE_INVENTORY.senders[s].status);
+    expect(sendersRequired).toEqual(['covered-by-pr-52', 'covered-by-pr-52', 'covered-by-pr-52']);
+
+    const detailRequired = (
+      [
+        'loading',
+        'empty',
+        'error',
+        'sender-deleted-upstream',
+      ] as const satisfies readonly EdgeState[]
+    ).map((s) => EDGE_STATE_INVENTORY['sender-detail'][s].status);
+    expect(detailRequired).toEqual([
+      'covered-by-pr-52',
+      'covered-by-pr-52',
+      'covered-by-pr-52',
+      'covered-by-pr-52',
+    ]);
   });
 
   it('covers the App Router error surfaces (D167)', () => {
