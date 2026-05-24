@@ -31,6 +31,28 @@ export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'f
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
+/**
+ * Bucketed volume trend mirrored from `senders.types.ts:VolumeTrendBucket`.
+ * Surfaces as a chip on the Senders row evidence line. Bucketed
+ * (rather than raw %) to avoid false precision on small baselines —
+ * see the senders-tightening brief + Codex review for context.
+ */
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+
+/**
+ * Last-review summary mirrored from `senders.types.ts:LastReview`.
+ * Drives the "Last reviewed …" eyebrow on Sender Detail. `null` when
+ * the engine has never produced a decision for (mailbox, sender).
+ */
+export interface LastReviewWire {
+  /** ISO-8601 — most-recent `triage_decisions.produced_at`. */
+  at: string;
+  /** Engine verdict — closed enum mirroring `triage_decisions.verdict`. */
+  verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
+  /** Provenance — LLM call vs deterministic template fallback. */
+  generatedBy: 'llm_haiku' | 'template';
+}
+
 /** Row shape on `GET /api/senders` — the list endpoint. */
 export interface SenderListRow {
   id: string;
@@ -42,11 +64,21 @@ export interface SenderListRow {
   lastSeenAt: string;
   /** ISO-8601 — first message received. */
   firstSeenAt: string;
-  /** Recent monthly cadence (4-week trailing average). */
-  monthlyVolume: number;
-  /** Open rate over the trailing window — 0..1. */
-  readRate: number;
+  /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
+  monthlyVolume: number | null;
+  /**
+   * Read-state proxy — `read_count / volume` for the latest month.
+   * 0..1. Counts messages WITHOUT the UNREAD label (NOT email opens —
+   * Gmail exposes no open events). `null` when there's no timeseries
+   * row or `volume = 0`. The FE labels this as "marked read", never
+   * "opened", to avoid overclaiming.
+   */
+  readRate: number | null;
+  /** Bucketed MoM trend. `null` when there's no timeseries history. */
+  volumeTrend: VolumeTrendBucket | null;
   unsubscribeMethod: UnsubscribeMethod | null;
+  /** Most-recent triage decision summary. `null` when never reviewed. */
+  lastReview: LastReviewWire | null;
 }
 
 /**

@@ -8,6 +8,29 @@
 
 export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
+/**
+ * Bucketed volume-trend label — mirrors the BE `VolumeTrendBucket`
+ * wire enum. Drives the trend chip on the row evidence line and the
+ * trend cell on the detail stats strip. Bucketed (not raw %) to avoid
+ * false precision on small baselines.
+ */
+export type VolumeTrend = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+
+/**
+ * Last-review summary surfaced on the detail header eyebrow. The
+ * `verdict` mirrors the canonical engine output (lowercase enum). The
+ * UI maps it to the K/A/U/L user-facing verb at render time so the
+ * underlying enum and the user-visible label stay decoupled (D227).
+ */
+export interface SenderLastReview {
+  /** ISO-8601 — when the engine produced this decision. */
+  at: string;
+  /** Engine verdict — closed enum mirroring `triage_decisions.verdict`. */
+  verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
+  /** Provenance — LLM call vs deterministic template fallback. */
+  generatedBy: 'llm_haiku' | 'template';
+}
+
 export interface Sender {
   id: string;
   name: string;
@@ -29,6 +52,17 @@ export interface Sender {
   protected?: boolean;
   /** Volume spike multiplier vs. the sender's usual rate. */
   spike?: number;
+  /**
+   * Bucketed MoM volume trend. `null` when the sender has no
+   * timeseries history — the row falls back to the cadence-only
+   * evidence line in that case.
+   */
+  volumeTrend?: VolumeTrend | null;
+  /**
+   * Most-recent triage decision summary. `null` when never reviewed
+   * — the detail header surfaces "Never reviewed" in that case.
+   */
+  lastReview?: SenderLastReview | null;
 }
 
 export interface GroupMeta {

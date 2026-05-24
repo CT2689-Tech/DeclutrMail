@@ -115,18 +115,39 @@ export interface TimeseriesPoint {
   opens: number;
 }
 
-/** Aggregated stats strip data (D44 — 5 numbers). */
+/**
+ * Aggregated stats strip data (D44).
+ *
+ * Reshape pass (senders-tightening v2 brief):
+ *   - `totalAllTime` removed — it was synthesized (`monthly × months`)
+ *     and therefore misleading. The 12-month chart already carries
+ *     lifetime context; we don't need a fake aggregate.
+ *   - `readRate` demoted from a headline cell to a secondary line
+ *     under the chart (rendered by the chart component). Stays on
+ *     this shape for callers that still surface it caveated.
+ *   - `volumeTrend` added — bucketed MoM trend. Drives the trend
+ *     cell on the stats strip + the chip on the row evidence line.
+ */
 export interface SenderStats {
   /** Most-recent monthly cadence — e.g. 47/mo. */
   monthlyVolume: number;
-  /** 0–1 read rate. */
+  /**
+   * Read-state proxy — 0..1. Gmail `!UNREAD` flag rate, NOT real
+   * opens. The detail surface MUST label this as "marked read" and
+   * explicitly caveat the source; never call it "opens" or
+   * "opened" — Gmail exposes no open events.
+   */
   readRate: number;
   /** Relationship age in months. */
   relationshipMonths: number;
   /** Days since the most recent message. */
   lastSeenDays: number;
-  /** Lifetime received count from this sender. */
-  totalAllTime: number;
+  /**
+   * Bucketed MoM trend. `null` when there's no timeseries history
+   * — the stats strip renders a quiet "—" cell rather than a
+   * misleading bucket. Mirrors `Sender.volumeTrend`.
+   */
+  volumeTrend: 'new' | 'up' | 'down' | 'steady' | 'dormant' | null;
 }
 
 /**

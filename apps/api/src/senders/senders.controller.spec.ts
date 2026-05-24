@@ -37,7 +37,9 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     lastSeenAt: '2026-05-01T00:00:00.000Z',
     monthlyVolume: 10,
     readRate: 0.5,
+    volumeTrend: 'steady',
     unsubscribeMethod: 'one_click',
+    lastReview: null,
     ...overrides,
   };
 }

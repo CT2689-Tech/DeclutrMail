@@ -144,6 +144,80 @@ export const HighConfidenceVerdict: Story<typeof SenderDetailPage> = {
 };
 
 /**
+ * Trend bucket coverage — stats-strip "Trend" cell renders each
+ * bucket with its glyph + tone. Founder-eyeball aid for the
+ * vocabulary review before stories migrate to real Storybook.
+ */
+export const TrendBucketUp: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(linkedin),
+        stats: {
+          ...buildSenderDetail(linkedin).stats,
+          volumeTrend: 'up',
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+export const TrendBucketDormant: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail(groupon),
+        stats: {
+          ...buildSenderDetail(groupon).stats,
+          volumeTrend: 'dormant',
+          monthlyVolume: 0,
+        },
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/**
+ * Last-reviewed eyebrow — verdict + recency on the header. Surfaces
+ * "Last reviewed Archive · 3d ago" for the recently-reviewed case,
+ * and "Never reviewed" for the unreviewed case.
+ */
+export const LastReviewedRecently: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail({
+          ...linkedin,
+          lastReview: {
+            at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+            verdict: 'archive',
+            generatedBy: 'llm_haiku',
+          },
+        }),
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+export const NeverReviewed: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...buildSenderDetail({ ...sarah, lastReview: null }),
+      },
+    },
+  },
+  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
+};
+
+/**
  * Mobile-narrow — phone viewport. Verifies the stats strip reflows
  * to a single column, the charts stack vertically, and no fixed-width
  * column overflows the viewport (LEARNINGS 2026-05-19 regression guard).

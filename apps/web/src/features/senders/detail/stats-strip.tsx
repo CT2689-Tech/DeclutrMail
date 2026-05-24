@@ -14,31 +14,60 @@ function fmtRelationship(months: number): string {
 }
 
 /**
+ * Render a `VolumeTrendBucket` as a single compact glyph + label.
+ * Bucketed (not raw %) per the senders-tightening v2 brief — false
+ * precision on small baselines is the failure mode we're avoiding.
+ *
+ * `null` (no timeseries history) collapses to "—" so the cell stays
+ * the same visual size as the other stats.
+ */
+function fmtTrend(bucket: SenderStats['volumeTrend']): {
+  value: string;
+  tone?: 'primary' | 'amber';
+} {
+  if (bucket === null) return { value: '—' };
+  if (bucket === 'up') return { value: '↑ Up', tone: 'primary' };
+  if (bucket === 'down') return { value: '↓ Down', tone: 'amber' };
+  if (bucket === 'dormant') return { value: '○ Dormant', tone: 'amber' };
+  if (bucket === 'new') return { value: '• New' };
+  return { value: '→ Steady' };
+}
+
+/**
  * Stats strip (D39 #5, D44).
  *
- * Five scan-only stats in a single reflow row. Mono numerals with
+ * Four scan-only stats in a single reflow row. Mono numerals with
  * tabular-nums so values stay column-aligned across screens. Auto-fit
  * grid reflows to 2 columns on tablet and stacks on phone widths —
  * directly addresses LEARNINGS.md 2026-05-19 (no fixed-width columns).
+ *
+ * Reshape pass (senders-tightening v2 brief):
+ *   - Dropped `Read rate` headline cell — Gmail `!UNREAD` is a
+ *     read-state proxy, not an open signal; we surface it caveated
+ *     under the 12-month chart instead of as a primary stat.
+ *   - Dropped `Total all-time` — was synthesized from
+ *     `monthly × months × 0.85`. Misleading. The 12-month chart
+ *     already carries lifetime context.
+ *   - Added `Trend` cell — bucketed MoM trend (`up/down/steady/
+ *     dormant/new`), the strongest decision signal we have today
+ *     besides volume.
  *
  * No interactivity per D44 — clicking does nothing.
  */
 export function StatsStrip({ stats }: { stats: SenderStats }) {
   type Tone = 'primary' | 'amber';
-  const readTone: Tone | null =
-    stats.readRate >= 0.5 ? 'primary' : stats.readRate < 0.2 ? 'amber' : null;
-  const readRate: { label: string; value: string; tone?: Tone } = {
-    label: 'Read rate',
-    value: `${Math.round(stats.readRate * 100)}%`,
+  const trend = fmtTrend(stats.volumeTrend);
+  const trendCell: { label: string; value: string; tone?: Tone } = {
+    label: 'Trend',
+    value: trend.value,
   };
-  if (readTone != null) readRate.tone = readTone;
+  if (trend.tone != null) trendCell.tone = trend.tone;
 
   const items: Array<{ label: string; value: string; tone?: Tone }> = [
     { label: 'Monthly volume', value: `${stats.monthlyVolume}/mo` },
-    readRate,
+    trendCell,
     { label: 'Relationship', value: fmtRelationship(stats.relationshipMonths) },
     { label: 'Last seen', value: relTime(stats.lastSeenDays) },
-    { label: 'Total all-time', value: stats.totalAllTime.toLocaleString() },
   ];
 
   return (
