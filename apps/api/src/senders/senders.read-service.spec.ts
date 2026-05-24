@@ -313,6 +313,135 @@ describe('SendersReadService', () => {
       expect(rows[0]!.monthlyVolume).toBeNull();
       expect(rows[0]!.readRate).toBeNull();
     });
+
+    // Regression — MISTAKES.md 2026-05-23. The correlated subquery in
+    // `listSenders` previously interpolated `${senders.mailboxAccountId}`
+    // (bare column), which PG resolved to the inner `sender_timeseries`
+    // scope, making the predicate a tautology. Every sender then got
+    // the SAME timeseries row. Seed two senders, each with two distinct
+    // timeseries rows, and assert that each sender resolves to its OWN
+    // latest row — a single-sender fixture coincidentally hides the
+    // tautology, so this multi-sender shape is the canonical regression
+    // surface for any correlated subquery in a read service.
+    it('isolates monthlyVolume + readRate per sender across multiple senders (correlated-subquery regression)', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'a@x.com',
+        lastSeenAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      const b = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'b@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // Sender A — older month decoy + winning latest month.
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-04-01',
+        volume: 7,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 30,
+        readCount: 15,
+      });
+      // Sender B — distinct latest-month values so a tautological join
+      // would surface as a value swap (B taking A's row, or both rows
+      // taking the planner-chosen first row).
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: b.senderKey,
+        yearMonth: '2026-04-01',
+        volume: 2,
+        readCount: 1,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: b.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 4,
+        readCount: 1,
+      });
+
+      const rows = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      expect(byId.get(a.id)!.monthlyVolume).toBe(30);
+      expect(byId.get(a.id)!.readRate).toBe(0.5);
+      // Older 2026-04 row (volume 7) must NOT win — locks the
+      // ORDER BY year_month DESC LIMIT 1 predicate alongside the
+      // correlation fix. Pre-fix tautology would have picked
+      // whichever the planner returned first regardless of date.
+      expect(byId.get(a.id)!.monthlyVolume).not.toBe(7);
+      expect(byId.get(b.id)!.monthlyVolume).toBe(4);
+      expect(byId.get(b.id)!.readRate).toBe(0.25);
+      expect(byId.get(b.id)!.monthlyVolume).not.toBe(2);
+    });
+
+    // Regression — MISTAKES.md 2026-05-23 (cross-tenant variant). The
+    // pre-fix tautological predicate `WHERE mailbox_account_id =
+    // mailbox_account_id AND sender_key = sender_key` resolved entirely
+    // inside `sender_timeseries` and therefore could pick a row from
+    // ANOTHER mailbox — a cross-tenant integer leak. The fix's
+    // `WHERE sender_timeseries.mailbox_account_id = senders.mailbox_account_id`
+    // restores the mailbox boundary. Seed identical `sender_key`
+    // values across two mailboxes with deliberately different
+    // timeseries values; assert each mailbox sees only its own row.
+    it('does not leak timeseries across mailboxes when sender_key collides (cross-tenant correlated-subquery regression)', async () => {
+      const otherMailbox = await seedMailbox(db, 'other-tenant');
+      const here = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'collide@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const there = await seedSender(db, {
+        mailboxAccountId: otherMailbox,
+        email: 'collide@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // `sender_key` is derived from the normalized email — both
+      // senders should share it. Assert that precondition so this
+      // test breaks loudly if the key derivation changes.
+      expect(here.senderKey).toBe(there.senderKey);
+
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: here.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 8,
+        readCount: 2,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: otherMailbox,
+        senderKey: there.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 77,
+        readCount: 77,
+      });
+
+      const rowsHere = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      const rowsThere = await svc.listSenders({
+        mailboxAccountId: otherMailbox,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      expect(rowsHere.find((r) => r.id === here.id)!.monthlyVolume).toBe(8);
+      expect(rowsThere.find((r) => r.id === there.id)!.monthlyVolume).toBe(77);
+    });
   });
 
   describe('getSenderDetail', () => {
@@ -373,6 +502,85 @@ describe('SendersReadService', () => {
       });
       const detail = await svc.getSenderDetail(mailboxId, a.id);
       expect(detail).toBeNull();
+    });
+
+    // Regression — MISTAKES.md 2026-05-23. Mirror of the `listSenders`
+    // regression: `getSenderDetail` runs the same correlated subquery,
+    // so a second sender with its own timeseries row must NOT leak
+    // through into the queried sender's stats.
+    it('isolates monthlyVolume + readRate when another sender has its own timeseries (correlated-subquery regression)', async () => {
+      const target = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'target@x.com',
+        lastSeenAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      const other = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'other@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: target.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 12,
+        readCount: 3,
+      });
+      // Distinct values for the other sender — if the predicate were a
+      // tautology the planner could pick this row for `target`.
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: other.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 99,
+        readCount: 99,
+      });
+
+      const detail = await svc.getSenderDetail(mailboxId, target.id);
+      expect(detail).not.toBeNull();
+      expect(detail!.monthlyVolume).toBe(12);
+      expect(detail!.readRate).toBe(0.25);
+      // Other sender's row (volume 99) must NOT leak.
+      expect(detail!.monthlyVolume).not.toBe(99);
+    });
+
+    // Regression — MISTAKES.md 2026-05-23 (cross-tenant variant for
+    // the detail endpoint). Mirror of the list-side cross-tenant
+    // test: a colliding sender_key across mailboxes must not surface
+    // the wrong tenant's timeseries row.
+    it('does not leak timeseries across mailboxes when sender_key collides (cross-tenant detail regression)', async () => {
+      const otherMailbox = await seedMailbox(db, 'other-detail-tenant');
+      const here = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'collide-detail@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const there = await seedSender(db, {
+        mailboxAccountId: otherMailbox,
+        email: 'collide-detail@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      expect(here.senderKey).toBe(there.senderKey);
+
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: here.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 6,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: otherMailbox,
+        senderKey: there.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 88,
+        readCount: 88,
+      });
+
+      const detailHere = await svc.getSenderDetail(mailboxId, here.id);
+      expect(detailHere).not.toBeNull();
+      expect(detailHere!.monthlyVolume).toBe(6);
+      expect(detailHere!.monthlyVolume).not.toBe(88);
     });
   });
 
