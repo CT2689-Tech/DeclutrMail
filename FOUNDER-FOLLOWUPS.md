@@ -26,6 +26,32 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-24 — Plan-drift: `chore/distill-*` vs hook enforcement
+**Source:** session — surfaced while preparing the CLAUDE.md improver PR
+**Why:** CLAUDE.md §11 ("Distillation") says distill PRs use a
+`chore/distill-<topic>` branch, but BOTH the `.husky/pre-push` regex
+and `commitlint.config.cjs:d-number-reference` only recognize
+`chore/bootstrap-<topic>`. A future distill PR named per §11 will fail
+both hooks. Resolved in this session by renaming the branch to
+`chore/bootstrap-claude-md-dev-cmds`, which is a workaround rather
+than a fix.
+**How:** pick one of two reconciliations and ship a small PR:
+  (a) **Enforcement follows docs** — extend `.husky/pre-push` regex to
+      `(d[0-9]{3}-|bootstrap-|distill-)` AND update commitlint plugin
+      `d-number-reference` to also short-circuit on `^chore/distill-`.
+      Preserves §11's semantic split between bootstrap (groundwork) and
+      distill (log-driven CLAUDE.md updates).
+  (b) **Docs follow enforcement** — edit CLAUDE.md §11 line 504 + 581
+      to use `chore/bootstrap-distill-<topic>` instead of
+      `chore/distill-<topic>`. Collapses the two lifecycles under one
+      branch prefix.
+Recommended: (a). Distillation is a distinct enough lifecycle to keep
+the branch prefix separate, and the regex change is two characters.
+**Verifies by:** a follow-up branch named literally
+`chore/distill-test-rule` can `git push` and produce a green PR with
+a non-D-trailer commit subject.
+**Status:** Open
+
 ### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
 
 **Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
