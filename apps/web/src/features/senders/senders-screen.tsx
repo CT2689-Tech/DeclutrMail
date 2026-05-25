@@ -4,8 +4,6 @@ import type { MouseEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import {
-  GROUPS,
-  FACETS,
   canArchive,
   canLater,
   canUnsubscribe,
@@ -15,23 +13,28 @@ import {
   type ActionRequest,
   type ActionVerb,
   type Cohort,
+  type GroupMeta,
   type ReviewKind,
   type Sender,
-  type SenderGroup as SenderGroupKey,
 } from './data';
-import { CategoryChip } from './category-chip';
 import { CohortRail } from './cohort-rail';
 import { SenderSearch } from './sender-search';
-import { FiltersMenu } from './filters-menu';
 import { SenderGroup } from './table/sender-group';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
-import { WeeklyHero } from './weekly-hero/weekly-hero';
 import { ReviewSession, type ReviewResult } from './review-session';
 import { useSenders } from './api/use-senders';
 import { adaptSenderListRow } from './api/adapters';
 import { ApiError } from '@/lib/api/client';
+import {
+  InboxStoryHero,
+  KpiStrip,
+  WeeklyProgress,
+  groupByIntent,
+  INTENT_META,
+  type SenderIntent,
+} from './uplift-d';
 
 const { color, font } = tokens;
 
@@ -44,14 +47,22 @@ const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boole
 let receiptSeq = 0;
 
 /**
- * The Senders screen — weekly hero, cohort rail, category-grouped table.
+ * The Senders screen — Variant D weekly-cleanup-cockpit composition.
+ *
+ * Composition (per ~/.claude/plans/how-can-we-uplift-foamy-cloud.md §D1):
+ *   1. Brand header + search + +Add VIP
+ *   2. InboxStoryHero — editorial framing + outcome CTA + trust line
+ *   3. WeeklyProgress — retention loop (hidden when no decisions queued)
+ *   4. KpiStrip — Senders / Noise reducible / Time cost / Protected / Needs review
+ *   5. CohortRail — bulk-review suggestions
+ *   6. Intent filter chips — All / Clean up / Move later / Protect / People
+ *   7. Intent-grouped tables (per ADR-0012; replaces Gmail-category groups)
  *
  * Data flow (D200): `useSenders()` returns the paginated wire shape;
- * we adapt rows to the `Sender` UI shape via `adaptSenderListRow`. All
- * subsequent filtering (category chips, facets, search) runs over the
- * accumulated client-side list. Pagination is automatic — the hook
- * exposes `fetchNextPage` for an explicit "load more" UI; the initial
- * page is plenty for the demo dataset.
+ * we adapt rows to the `Sender` UI shape via `adaptSenderListRow`.
+ * Intent grouping is a pure client-side derivation over the existing
+ * `lastReview.verdict` + `protected` fields — no new wire data, no
+ * schema migration, no ML (D222 honored).
  *
  * Edge states (D211/D212): loading / error / empty are first-class
  * branches handled inline below.
@@ -72,20 +83,28 @@ export function SendersScreen() {
   return <SendersScreenContent senders={allSenders} />;
 }
 
+/**
+ * Reading-cost coefficient — average minutes per email scanned. Empirical
+ * placeholder used for the "Time cost" KPI cell and the hero meta-strip;
+ * matches the figure used in the Variant D detail page (37min/mo for a
+ * sender at 23 msg/mo). When the analytics team produces a per-user
+ * calibrated coefficient (FOUNDER-FOLLOWUPS candidate), thread it in here.
+ */
+const READ_MIN_PER_MSG = 1.6;
+
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({ senders }: { senders: Sender[] }) {
   const [query, setQuery] = useState('');
-  const [activeGroup, setActiveGroup] = useState<SenderGroupKey | null>(null);
-  const [activeFacets, setActiveFacets] = useState<Set<string>>(() => new Set());
+  const [activeIntent, setActiveIntent] = useState<SenderIntent | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
-  const [heroSkipped, setHeroSkipped] = useState(false);
+  const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
 
   const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
-  // Query-filtered base — drives the category-chip counts.
+  // Search-filtered base. Used by every downstream count + grouping.
   const queryBase = useMemo(() => {
     if (!query) return senders;
     const q = query.toLowerCase();
@@ -94,49 +113,41 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
     );
   }, [query, senders]);
 
-  // Apply category + facets. Facets OR within a group, AND across groups.
-  const visible = useMemo(() => {
-    let list = activeGroup ? queryBase.filter((s) => s.group === activeGroup) : queryBase;
-    if (activeFacets.size > 0) {
-      const byGroup = new Map<string, ((s: Sender) => boolean)[]>();
-      for (const f of FACETS) {
-        if (!activeFacets.has(f.key)) continue;
-        const arr = byGroup.get(f.group) ?? [];
-        arr.push(f.test);
-        byGroup.set(f.group, arr);
-      }
-      list = list.filter((s) => [...byGroup.values()].every((tests) => tests.some((t) => t(s))));
-    }
-    return list;
-  }, [queryBase, activeGroup, activeFacets]);
+  // Intent-grouped buckets — replaces the prior Gmail-category groups
+  // per ADR-0012. INTENT_ORDER is honored; empty buckets are kept so
+  // the filter chips show real counts even for empty intents.
+  const intentBuckets = useMemo(() => groupByIntent(queryBase), [queryBase]);
 
-  const groupCounts = useMemo(() => {
-    const counts: Record<string, number> = { __all: queryBase.length };
-    for (const g of GROUPS) counts[g.key] = 0;
-    for (const s of queryBase) counts[s.group] = (counts[s.group] ?? 0) + 1;
+  const intentCounts = useMemo(() => {
+    const counts: Record<SenderIntent, number> = {
+      cleanup: 0,
+      later: 0,
+      protect: 0,
+      people: 0,
+    };
+    for (const b of intentBuckets) counts[b.intent] = b.items.length;
     return counts;
-  }, [queryBase]);
+  }, [intentBuckets]);
 
-  const facetCounts = useMemo(() => {
-    const base = activeGroup ? queryBase.filter((s) => s.group === activeGroup) : queryBase;
-    const counts: Record<string, number> = {};
-    for (const f of FACETS) counts[f.key] = base.filter(f.test).length;
-    return counts;
-  }, [queryBase, activeGroup]);
-
-  const grouped = useMemo(
+  // Visible groups after the active-intent filter. When `activeIntent` is
+  // null ('All' chip), every non-empty group renders; when set, only that
+  // group renders expanded.
+  const visibleGroups = useMemo(
     () =>
-      GROUPS.map((group) => ({
-        group,
-        items: visible.filter((s) => s.group === group.key).sort((a, b) => b.monthly - a.monthly),
-      })).filter((g) => g.items.length > 0),
-    [visible],
+      intentBuckets
+        .filter((b) => b.items.length > 0)
+        .filter((b) => activeIntent === null || b.intent === activeIntent),
+    [intentBuckets, activeIntent],
   );
 
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
   );
+
+  // Hero / KPI numbers — derived from the unfiltered list so the hero
+  // reflects the whole mailbox, not the active filter slice.
+  const totals = useMemo(() => computeTotals(senders), [senders]);
 
   const toggleSelect = (id: string, _evt: MouseEvent) => {
     setSelected((prev) => {
@@ -148,23 +159,17 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
   };
 
   const applyCohort = (cohort: Cohort) => {
-    setActiveGroup(null);
-    setActiveFacets(new Set());
+    setActiveIntent(null);
     setQuery('');
     setSelected(new Set(cohort.ids));
     toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
   };
 
-  // Search is global. Picking a suggestion clears category/facet filters
-  // so the chosen sender is always visible in the table below.
   const onSearchPick = useCallback((s: Sender) => {
     setQuery(s.name);
-    setActiveGroup(null);
-    setActiveFacets(new Set());
+    setActiveIntent(null);
   }, []);
 
-  // Memoised so the modal/review keydown effects bind against stable
-  // handlers — the confirm gate must not depend on render timing.
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
@@ -193,8 +198,8 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
   );
 
   // Archive / Unsubscribe / Later move mail, so they route through the
-  // mandatory preview. Keep / Protect change nothing about the mail and
-  // fire directly.
+  // mandatory preview (D226). Keep / Protect change nothing and fire
+  // directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
@@ -220,8 +225,6 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
     (result: ReviewResult) => {
       const slice = review?.slice ?? [];
       setReview(null);
-      // Each verb bucket fires independently — a mixed review (some
-      // Unsubscribe, some Later) must apply every decision, not just one.
       const buckets: [ActionVerb, Sender[]][] = [
         ['Unsubscribe', slice.filter((s) => result.decisions[s.id] === 'unsub')],
         ['Later', slice.filter((s) => result.decisions[s.id] === 'later')],
@@ -240,6 +243,17 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
     },
     [review, performAction],
   );
+
+  // Hero CTA opens the review session over the senders the engine
+  // wants to clean up — same Wave-1 review primitive, new entry point.
+  const onStartReview = useCallback(() => {
+    const cleanup = senders.filter((s) => s.lastReview?.verdict === 'unsubscribe');
+    if (cleanup.length === 0) {
+      toast('No cleanup recommendations right now — your inbox is in shape.', 'info');
+      return;
+    }
+    setReview({ slice: cleanup, kind: 'promo' });
+  }, [senders]);
 
   return (
     <div
@@ -272,7 +286,7 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
               margin: '4px 0 0',
             }}
           >
-            {senders.length} senders mail you, grouped by Gmail category.
+            Your senders
           </h1>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -286,7 +300,7 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, and service that mails you, grouped by Gmail's own categories. Decide once per sender — your choice applies to past and future mail."
+        body="Every account, list, and service that mails you, regrouped by what we think you should do. Decide once per sender — your choice applies to past and future mail."
         tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
       />
 
@@ -299,71 +313,94 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         onDismiss={() => setReceipt(null)}
       />
 
-      {!heroSkipped && senders.length > 0 && (
-        <WeeklyHero
-          senders={senders}
-          onReview={(slice, kind) => setReview({ slice, kind })}
-          onSkip={() => {
-            setHeroSkipped(true);
-            toast("Skipped this week's recommendations", 'info');
-          }}
+      {senders.length > 0 && (
+        <InboxStoryHero
+          eyebrow="Your inbox this week"
+          story={renderHeroStory(totals)}
+          meta={[{ value: `${totals.readingHrs.toFixed(1)}h`, label: 'Reading time / mo' }]}
+          ctaCopy={renderCtaCopy(totals)}
+          ctaLabel="Start review"
+          onCtaClick={onStartReview}
+        />
+      )}
+
+      <WeeklyProgress
+        label="This week"
+        done={doneThisWeek}
+        total={totals.cleanupCount}
+        caption={
+          totals.cleanupCount > 0
+            ? `Estimated savings so far: ${totals.estSavedHrs.toFixed(1)}h/year`
+            : undefined
+        }
+      />
+
+      {senders.length > 0 && (
+        <KpiStrip
+          cells={[
+            { label: 'Senders', value: senders.length },
+            {
+              label: 'Noise reducible',
+              value: `~${totals.noiseReductionPct}`,
+              unit: '%',
+            },
+            {
+              label: 'Time cost',
+              value: totals.readingHrs.toFixed(1),
+              unit: 'h/mo',
+            },
+            {
+              label: 'Protected',
+              value: totals.protectedCount,
+              micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
+            },
+            { label: 'Needs review', value: totals.needsReview },
+          ]}
         />
       )}
 
       {cohorts.length > 0 && <CohortRail cohorts={cohorts} onApply={applyCohort} />}
 
-      {/* Category chips + filters */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        <CategoryChip
-          label="All"
-          count={groupCounts.__all ?? 0}
-          active={activeGroup === null}
-          onClick={() => setActiveGroup(null)}
-        />
-        {GROUPS.map((g) => (
-          <CategoryChip
-            key={g.key}
-            label={g.label}
-            count={groupCounts[g.key] ?? 0}
-            active={activeGroup === g.key}
-            onClick={() => setActiveGroup(activeGroup === g.key ? null : g.key)}
+      {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
+      {senders.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <IntentChip
+            label="All"
+            count={queryBase.length}
+            active={activeIntent === null}
+            onClick={() => setActiveIntent(null)}
           />
-        ))}
-        <span style={{ flex: 1 }} />
-        <FiltersMenu
-          facets={FACETS}
-          counts={facetCounts}
-          active={activeFacets}
-          onToggle={(key) =>
-            setActiveFacets((prev) => {
-              const next = new Set(prev);
-              if (next.has(key)) next.delete(key);
-              else next.add(key);
-              return next;
-            })
-          }
-          onClear={() => setActiveFacets(new Set())}
-        />
-      </div>
+          {(Object.keys(INTENT_META) as SenderIntent[]).map((intent) => (
+            <IntentChip
+              key={intent}
+              label={INTENT_META[intent].label}
+              count={intentCounts[intent]}
+              active={activeIntent === intent}
+              onClick={() => setActiveIntent(activeIntent === intent ? null : intent)}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Grouped table */}
-      {grouped.length === 0 && senders.length === 0 ? (
-        // True-empty state — mailbox has no senders yet (e.g. first sync
-        // hasn't completed, or really nobody mails this address). D211/D212.
+      {/* Intent-grouped tables */}
+      {visibleGroups.length === 0 && senders.length === 0 ? (
         <EmptyState
           title="No senders yet"
           body="Once your mailbox finishes syncing, the senders who mail you will appear here."
         />
-      ) : grouped.length === 0 ? (
+      ) : visibleGroups.length === 0 ? (
         <EmptyState
-          title={`No senders match "${query}"`}
+          title={
+            query
+              ? `No senders match "${query}"`
+              : `No senders in ${activeIntent ? INTENT_META[activeIntent].label : 'this group'}`
+          }
           body="Try a different search or clear the filters."
           action={
             <Button
               onClick={() => {
                 setQuery('');
-                setActiveGroup(null);
-                setActiveFacets(new Set());
+                setActiveIntent(null);
               }}
             >
               Clear search & filters
@@ -371,11 +408,11 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
           }
         />
       ) : (
-        grouped.map(({ group, items }) => (
+        visibleGroups.map((bucket) => (
           <SenderGroup
-            key={group.key}
-            group={group}
-            items={items}
+            key={bucket.intent}
+            group={intentToGroupMeta(bucket.intent, bucket.meta)}
+            items={bucket.items}
             selectedIds={selected}
             onToggleSelect={toggleSelect}
             onAction={requestAction}
@@ -405,6 +442,150 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         onCancel={closeReview}
       />
     </div>
+  );
+}
+
+/* ────────────────── HELPERS ────────────────── */
+
+interface SenderTotals {
+  totalMonthly: number;
+  avgReadPct: number;
+  readingHrs: number;
+  noiseReductionPct: number;
+  cleanupCount: number;
+  protectedCount: number;
+  needsReview: number;
+  estSavedHrs: number;
+}
+
+function computeTotals(senders: Sender[]): SenderTotals {
+  if (senders.length === 0) {
+    return {
+      totalMonthly: 0,
+      avgReadPct: 0,
+      readingHrs: 0,
+      noiseReductionPct: 0,
+      cleanupCount: 0,
+      protectedCount: 0,
+      needsReview: 0,
+      estSavedHrs: 0,
+    };
+  }
+  const totalMonthly = senders.reduce((a, s) => a + s.monthly, 0);
+  const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
+  const avgReadPct = totalMonthly === 0 ? 0 : Math.round((totalRead / totalMonthly) * 100);
+  const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
+  const cleanupSenders = senders.filter((s) => s.lastReview?.verdict === 'unsubscribe');
+  const cleanupMonthly = cleanupSenders.reduce((a, s) => a + s.monthly, 0);
+  const noiseReductionPct =
+    totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
+  const protectedCount = senders.filter((s) => s.protected === true).length;
+  const needsReview = senders.filter((s) => s.lastReview != null).length;
+  // Yearly savings = cleanup-sender minutes/year ÷ 60.
+  const estSavedHrs = (cleanupMonthly * 12 * READ_MIN_PER_MSG) / 60;
+  return {
+    totalMonthly,
+    avgReadPct,
+    readingHrs,
+    noiseReductionPct,
+    cleanupCount: cleanupSenders.length,
+    protectedCount,
+    needsReview,
+    estSavedHrs,
+  };
+}
+
+/**
+ * Editorial hero story per ADR-0011 (hero-surface relaxation). One
+ * editorial framing phrase ("worth reading") is permitted; D209
+ * forbidden words remain forbidden. Renders two paragraphs.
+ */
+function renderHeroStory(totals: SenderTotals) {
+  return [
+    <>
+      <span style={{ color: color.amber, fontWeight: 600 }}>{totals.totalMonthly}</span> emails
+      reached you.
+    </>,
+    <>
+      Only <span style={{ color: color.primary, fontWeight: 600 }}>{totals.avgReadPct}%</span> were
+      worth reading.
+    </>,
+  ];
+}
+
+function renderCtaCopy(totals: SenderTotals) {
+  if (totals.cleanupCount === 0) {
+    return (
+      <>
+        <strong>No cleanup recommendations this week.</strong> Your inbox is in shape — next review
+        when new senders arrive.
+      </>
+    );
+  }
+  return (
+    <>
+      <strong>
+        {totals.cleanupCount} decision{totals.cleanupCount === 1 ? '' : 's'} can cut next week's
+        inbox by ~{totals.noiseReductionPct}%.
+      </strong>{' '}
+      We'll guide you one at a time. {totals.cleanupCount <= 5 ? '3' : '5'} minutes.
+    </>
+  );
+}
+
+/**
+ * Adapt an intent bucket to the legacy `GroupMeta` shape so `SenderGroup`
+ * — which still types `key: SenderGroup` (Gmail-cat enum) — accepts our
+ * intent-derived groups. The key is widened via cast at the boundary; a
+ * future refactor can broaden `GroupMeta.key` to `string` so the cast
+ * goes away.
+ */
+function intentToGroupMeta(
+  intent: SenderIntent,
+  meta: (typeof INTENT_META)[SenderIntent],
+): GroupMeta {
+  return {
+    // Cast required until `GroupMeta.key` is broadened from `SenderGroup`
+    // (Gmail-cat enum) to `string`. Tracked as a follow-up; not blocking.
+    key: intent as unknown as GroupMeta['key'],
+    label: meta.label,
+    hint: meta.description,
+  };
+}
+
+interface IntentChipProps {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}
+
+function IntentChip({ label, count, active, onClick }: IntentChipProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '6px 14px',
+        borderRadius: 999,
+        fontSize: 12.5,
+        fontWeight: 500,
+        background: active ? color.fg : color.card,
+        color: active ? '#FFFFFF' : color.fgSoft,
+        border: `1px solid ${active ? color.fg : color.line}`,
+        cursor: 'pointer',
+        transition: 'background 120ms, color 120ms, border-color 120ms',
+        fontFamily: font.sans,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}
+    >
+      {label}
+      <span style={{ color: active ? 'rgba(255,255,255,0.65)' : color.fgMuted, fontWeight: 500 }}>
+        {count}
+      </span>
+    </button>
   );
 }
 

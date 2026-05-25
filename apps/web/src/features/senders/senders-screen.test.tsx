@@ -89,7 +89,10 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
   });
 
-  it('renders the sender count + table when the list resolves', async () => {
+  it('renders the editorial hero + KPI strip when the list resolves', async () => {
+    // Two senders × monthlyVolume 30 = 60 emails reached you.
+    // Variant D hero (per ADR-0011) frames the user's mailbox in
+    // narrative form rather than the prior "N senders mail you" header.
     installFetchStub([
       {
         method: 'GET',
@@ -103,6 +106,17 @@ describe('SendersScreen — edge states', () => {
     ]);
 
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/2 senders mail you/i)).toBeInTheDocument());
+    // Hero story line — "60 emails reached you." (totalMonthly = 60).
+    // React renders the number inside a <span> so the text is split;
+    // match the trailing plain text and assert the count separately.
+    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
+    expect(screen.getByText('60')).toBeInTheDocument();
+    // Hero meta strip — reading time derived from totalMonthly.
+    expect(screen.getByText(/Reading time \/ mo/i)).toBeInTheDocument();
+    // KPI strip — "Noise reducible" is unique to the strip.
+    expect(screen.getByText(/Noise reducible/i)).toBeInTheDocument();
+    // Intent filter chips replaced the Gmail-category chips.
+    expect(screen.getByRole('button', { name: /^All\b/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
   });
 });
