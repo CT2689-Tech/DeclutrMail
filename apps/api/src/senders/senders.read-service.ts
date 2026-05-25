@@ -21,7 +21,7 @@
 // varchar(300) at the schema level) — it can flow through.
 
 import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableName, gte, lt, or, sql } from 'drizzle-orm';
 import {
   mailMessages,
   senderPolicies,
@@ -104,19 +104,36 @@ export class SendersReadService {
     // and postgres-js (prod). Indexed by the timeseries PK
     // `(mailbox_account_id, sender_key, year_month)`, so the
     // `ORDER BY year_month DESC LIMIT 1` is a range-scan tail-read.
+    //
+    // CORRELATION QUOTE-TRAP. Drizzle's `sql` template emits BARE
+    // column names when a `Column` object is interpolated (e.g.
+    // `${senders.mailboxAccountId}` renders as `"mailbox_account_id"`,
+    // with no table qualifier). Inside this subquery PG's name
+    // resolution then binds BOTH sides of the predicate to the inner
+    // `sender_timeseries` scope, the WHERE collapses to a tautology,
+    // and every outer row gets the same constant timeseries row.
+    // Caught in PR #43 → see MISTAKES.md 2026-05-23. The fix is to
+    // qualify the outer-scope identifiers explicitly so the
+    // correlated reference survives template expansion. We use
+    // `getTableName(senders)` + `sql.identifier(...)` rather than a
+    // hardcoded `'senders.mailbox_account_id'` string so a future
+    // schema rename surfaces as a compile-time miss in this helper
+    // instead of a silent re-introduction of the tautology bug.
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const latestVolumeSql = sql<number | null>`(
       SELECT ${senderTimeseries.volume}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${senders.mailboxAccountId}
-        AND ${senderTimeseries.senderKey} = ${senders.senderKey}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
     const latestReadCountSql = sql<number | null>`(
       SELECT ${senderTimeseries.readCount}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${senders.mailboxAccountId}
-        AND ${senderTimeseries.senderKey} = ${senders.senderKey}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
@@ -193,19 +210,25 @@ export class SendersReadService {
     // consistent. A LATERAL join would be more efficient at very high
     // scale but is overkill at the per-row single-fetch path; the
     // FE only calls this once per page navigation.
+    //
+    // See the matching comment in `listSenders` for why the outer-scope
+    // references are built via `sql.identifier(getTableName(senders))`
+    // rather than bare `${senders.column}` interpolations.
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const latestVolumeSql = sql<number | null>`(
       SELECT ${senderTimeseries.volume}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${senders.mailboxAccountId}
-        AND ${senderTimeseries.senderKey} = ${senders.senderKey}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
     const latestReadCountSql = sql<number | null>`(
       SELECT ${senderTimeseries.readCount}
       FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${senders.mailboxAccountId}
-        AND ${senderTimeseries.senderKey} = ${senders.senderKey}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;

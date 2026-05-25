@@ -51,6 +51,48 @@ without mocking the SDK.
 "Observability seams" subsection) if pattern recurs ≥2 more times —
 e.g., when PostHog event emission lands on workers, or when a
 Datadog-style metrics sink shows up. Count: 1/3.
+## 2026-05-23 — D12 normalize-email had two consumers with different semantic needs
+
+**Context:** Overnight PR `feat/d012-sender-key-hash` — adding the
+D12-mandated `+suffix` strip to `normalizeEmail` in
+`packages/workers/src/sender-key.ts`.
+**Finding:** `normalizeEmail` was used by TWO call sites with subtly
+different needs: (1) `initial-sync.worker.ts` passes it the From-header
+email to compute the dedup `sender_key` — wants the strip (collapses
+`foo+notion@gmail.com` and `foo@gmail.com` to one sender). (2)
+`header-parsing.ts` `parseRecipients` normalizes outbound To/Cc for
+storage in `mail_messages.recipient_emails` — does NOT want the strip
+(the user literally wrote to `bob+work@example.com` and a future
+reply-attribution feature wants to see that). A single shared utility
+served both well only because the prior contract was the
+lowest-common-denominator lowercase+trim; once D12 added strip-`+`
+semantics, the two consumers diverged.
+**Rule (provisional):** When a "normalize X" utility serves multiple
+call sites, audit them before changing the contract. Prefer giving the
+extra normalization a dedicated function name (or inlining the
+lowercase+trim at the second site) over silently broadening the shared
+helper.
+**Distillation trigger:** promote to CLAUDE.md §1.3 (surgical changes)
+if the same multi-consumer-utility-drift pattern recurs ≥3 times.
+
+## 2026-05-23 — D156 FOUNDER-FOLLOWUPS entry was stale by ~1 day
+
+**Context:** Overnight PR `feat/d012-sender-key-hash` was briefed to
+ship D156 throttle decorators on the OAuth connect routes per the
+2026-05-22 FOUNDER-FOLLOWUPS entry.
+**Finding:** The work was already done. PR #35 (merged 2026-05-23,
+i.e. earlier same day as this overnight session) shipped both the
+`RateLimitModule` infrastructure AND wired `@RateLimit('auth')` onto
+both `GoogleOAuthController.start` + `.callback`. The FOUNDER-FOLLOWUPS
+entry was filed before that PR landed and never moved to Done. Caught
+by `grep -rn "RateLimit" apps/api/src/auth/` as the first verification
+step — saved hours of duplicated work.
+**Rule (provisional):** Before implementing a FOUNDER-FOLLOWUPS item,
+grep the codebase for the proposed code shape FIRST — entries can go
+stale between filing and the next session that picks them up. The
+follow-up's "Verifies by" line is the most precise grep target.
+**Distillation trigger:** promote to CLAUDE.md §9 ("What to do if
+unsure") if stale FOUNDER-FOLLOWUPS items mislead ≥3 sessions.
 
 ## 2026-05-23 — Same parallel-vitest-bootstrap pattern recurred in `apps/web`
 

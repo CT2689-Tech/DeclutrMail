@@ -26,6 +26,32 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-23 — Wire a pre-commit `prettier --check` so format never drifts on main
+**Source:** PR #47 — `Format check` CI gate failed on a baseline of 5
+files that had never been formatted (`docs/adr/0008-*.md`,
+`packages/shared/src/contracts/{envelope,index,paginate}.ts`,
+`packages/shared/src/index.ts`). The drift was on `origin/main`, not in
+this PR's diff — every PR opened from main would have failed the gate.
+Cleaned up in PR #47's `chore(format): prettier baseline cleanup` commit
+as a pragmatic unblock.
+**Why:** Local enforcement prevents the same drift from recurring. The
+CI gate is the last line of defense — pre-commit catches it before the
+commit even lands, so contributors don't have to re-run + amend after
+a remote failure. Husky is already wired (`.husky/commit-msg` enforces
+commitlint), so adding a `pre-commit` hook is the minimal next step.
+**How:**
+  1. Add `.husky/pre-commit` that runs `pnpm exec lint-staged` (or a
+     direct `pnpm exec prettier --check $(git diff --cached --name-only
+     --diff-filter=ACM)` if lint-staged isn't desired).
+  2. If using lint-staged, add a `lint-staged` block to root
+     `package.json` mapping `*.{ts,tsx,js,md,json,yaml,yml}` →
+     `prettier --check`.
+  3. Verify a deliberately mis-formatted file is rejected by the hook.
+**Verifies by:** `git commit` on a deliberately mis-formatted file
+fails with prettier's diff output, and `pnpm format:check` on
+`origin/main` stays green for ≥5 consecutive PRs.
+**Status:** Open
+
 ### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
 **Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
 **Why:** This PR ships the D232 schedule computation
@@ -122,6 +148,21 @@ true anywhere. D156 picks the per-feature limit; suggested floor
 `{ limit: 10, ttl: 60_000 }` per IP on both routes.
 **Verifies by:** Both controller handlers carry `@Throttle({...})`; a
 burst test (11 requests/min from one IP) returns 429 on the 11th.
+### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
+single failure-capture point for D159 Sentry wiring. The boot/periodic
+reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
+loop, so its error path (raw `console.error` with
+`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
+`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
+**How:** When the D159 wiring PR lands, either (a) extract a shared
+`captureBackgroundFailure(err, { kind })` helper that both the worker
+base and the reconciler call, or (b) move the periodic reconciler
+inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
+covers it.
+**Verifies by:** A forced reconciler exception (DB unreachable in a
+test env) shows up in Sentry with `kind: reconciler.failed`.
 **Status:** Open
 
 ### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
@@ -526,6 +567,33 @@ manual staging exercise once `SENTRY_DSN` is provisioned — the test
 suite covers the wiring (`packages/workers/src/base-declutr-worker.test.ts`
 asserts the "exactly once per terminal failure" contract; the no-DSN
 branch is unit-tested in `apps/api/src/observability/sentry-worker-observer.spec.ts`).
+### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
+lack `@Throttle()` decorators. Both routes are flag-gated
+(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
+absence is consequential the moment the flag flips on in any public
+environment: an attacker can fan out `/start` (each builds an
+`OAuth2Client` and sets a cookie) or replay `/callback` with random
+codes to harvest error-shape differences.
+**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
+true anywhere. D156 picks the per-feature limit; suggested floor
+`{ limit: 10, ttl: 60_000 }` per IP on both routes.
+**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
+burst test (11 requests/min from one IP) returns 429 on the 11th.
+**Status:** Done 2026-05-23 — PR #35 (`feat(api): Redis token-bucket
+rate limiter + decorator (D156)`, merged 2026-05-23) shipped the D156
+infrastructure AND wired `@RateLimit('auth')` onto both
+`GoogleOAuthController.start` + `.callback` (`apps/api/src/auth/google-oauth.controller.ts`
+lines 32, 48). The `auth` bucket default is `5 / 60s per IP` —
+stricter than the originally-suggested `10 / 60s` floor, deliberately
+chosen for the OAuth surface in `rate-limit.types.ts:37`.
+`rate-limit.interceptor.spec.ts` covers the runtime 429 + Retry-After
+behavior; `google-oauth.controller.spec.ts` (added in this PR
+`feat/d012-sender-key-hash`) is the route-level metadata-presence
+guard against future decorator removal. The followup was authored
+2026-05-22, after PR #35 was opened but before this Done-move was
+filed; recording resolution now.
 
 ### 2026-05-19 — Fix `Flip D-rows ⬜ → 🔵` workflow — failing silently on every merge
 **Source:** PR #5 + PR #7 — both merged with `Closes D###` in body, but
