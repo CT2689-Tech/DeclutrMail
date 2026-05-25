@@ -26,6 +26,99 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-25 — Ratify Variant D direction for Senders uplift (4 ADRs + 2 follow-up PRs)
+**Source:** session — Senders surface uplift exploration, produced
+`apps/web/prototypes/senders-uplift.html` (Variant D) + 4 draft ADRs
+on branch `chore/bootstrap-senders-uplift-d-adrs`.
+**Why:** The current Senders surface reads as a flat directory.
+Variant D reframes it as a weekly cleanup cockpit (editorial hero
++ intent groups + clean tables + per-action ROI). The reframe needs
+constitutional amendments to D2 (palette), D213 (motion), D209
+(copy voice), and D38/D39 (intent grouping). Each amendment is
+proposed as a standalone ADR so they can be approved / rejected /
+revised independently.
+**How:**
+  1. Open prototype in browser to walk Variant D:
+     ```bash
+     python3 -m http.server 4123 --directory apps/web/prototypes &
+     open 'http://localhost:4123/senders-uplift.html?variant=D&view=list'
+     ```
+     Floating bar bottom cycles A / B / C / D × list / detail.
+  2. Read the 4 ADR drafts in order; they cite the plan section that
+     depends on each:
+     - `docs/adr/0009-dashboard-palette-extension.md` (amends D2)
+     - `docs/adr/0010-dashboard-motion-extension.md` (amends D213)
+     - `docs/adr/0011-editorial-copy-scope.md` (amends D209)
+     - `docs/adr/0012-senders-intent-groups.md` (amends D38, D39)
+  3. Read `~/.claude/plans/how-can-we-uplift-foamy-cloud.md` §D0–D8
+     for full Variant D rationale + file plan + phasing.
+  4. For each ADR: edit Status from `Proposed` → `Accepted` (or
+     comment + reject). For accepted ADRs, also update the
+     corresponding D-decision in `docs/execution/Implementation-Plan.md`
+     with an `[ADR-0009 PATCH on D2]` (etc.) annotation per CLAUDE.md
+     §3 inline-patch pattern.
+  5. Push the ADR branch and open the PR:
+     ```bash
+     git push -u origin chore/bootstrap-senders-uplift-d-adrs
+     gh pr create --fill --base main \
+       --title "chore(docs): 4 ADRs for Senders uplift Variant D direction" \
+       --body "Closes: drafts ADRs 0009–0012. Awaits ratification before any feature PR lands. See FOUNDER-FOLLOWUPS.md (2026-05-25 Variant D)."
+     ```
+  6. After ADRs land on main, run the follow-up PRs in this order
+     (each on its own branch, each blocks on the previous):
+     - `feat/d038-senders-list-uplift-d` — restructure list page
+       (hero + intent groups + KPI strip + new row). Amends D38.
+     - `feat/d039-senders-detail-uplift-d` — restructure detail page
+       (editorial hero + 4-cell KPI strip + decision timeline,
+       delete charts). Amends D39 / D44 / D45 / D46.
+     - `feat/d038-inbox-story-endpoint` — new `GET /api/inbox/story`
+       returning weekly aggregates derived from existing tables
+       (no schema change, no body access, no new wire content).
+  7. After Variant D ships, delete the prototype + revert the
+     launch.json entry:
+     ```bash
+     rm apps/web/prototypes/senders-uplift.html
+     # remove "senders-uplift-prototype" config from .claude/launch.json
+     ```
+**Verifies by:**
+  - 4 ADRs at `Accepted` status with corresponding D-decision
+    annotations in the plan.
+  - 3 feature PRs merged with `architecture-guardian` +
+    `design-system-agent` gate passes.
+  - Prototype HTML deleted; `apps/web/prototypes/` directory empty
+    or removed.
+**Status:** Open
+
+### 2026-05-25 — Optional: extend `check-microcopy.sh` for ADR-0011 path-scoped relaxation
+**Source:** session — ADR-0011 follow-up
+**Why:** ADR-0011 allows ONE editorial framing phrase per hero or
+empty-state surface. The relaxation is path-scoped (only files
+matching `*/hero*.{ts,tsx}` and `*/empty-state*.{ts,tsx}` are
+affected). Without a hook change, `check-microcopy.sh` either
+blocks the hero copy globally or has to be silenced manually.
+**How:** small PR `chore/bootstrap-microcopy-hero-scope` that
+extends `check-microcopy.sh` with a `--strict-paths` mode and
+defaults the path scope to the regex above. Land only after
+ADR-0011 is `Accepted`.
+**Verifies by:** Variant D hero PR passes microcopy lint without
+hand-silencing.
+**Status:** Open
+
+### 2026-05-25 — Optional: lint guardrail for ADR-0009 `color.dashboard.*` scope
+**Source:** session — ADR-0009 follow-up
+**Why:** ADR-0009 restricts the new `color.dashboard.*` violet
+tokens to dashboard surfaces only (Senders, Activity, Brief,
+future Insights). Without an ESLint rule, an agent could import
+`color.dashboard.accent` into Settings or marketing pages and the
+review would miss it.
+**How:** add an ESLint rule that flags imports of
+`color.dashboard.*` outside of
+`apps/web/src/features/{senders,activity,brief}/**`. Small follow-up
+PR `chore/bootstrap-eslint-dashboard-palette-scope`.
+**Verifies by:** rule fires on a deliberately-mislocated import in
+a test fixture.
+**Status:** Open
+
 ### 2026-05-24 — Plan-drift: `chore/distill-*` vs hook enforcement
 **Source:** session — surfaced while preparing the CLAUDE.md improver PR
 **Why:** CLAUDE.md §11 ("Distillation") says distill PRs use a

@@ -1,0 +1,4553 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Senders Uplift — Prototype (A / B / C)</title>
+    <!--
+  THROWAWAY PROTOTYPE — DELETE AFTER PICKING A VARIANT
+  ────────────────────────────────────────────────────
+  Three variants of the DeclutrMail Senders surface (list + detail),
+  switchable via URL ?variant=A|B|C and ?view=list|detail or the floating
+  bottom bar. Built to compare composition and direction visually before
+  picking one to implement.
+  See plan at /Users/chintant/.claude/plans/how-can-we-uplift-foamy-cloud.md
+-->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #fafaf7;
+        --paper: #f4f4f0;
+        --card: #ffffff;
+        --fg: #0e1413;
+        --fgSoft: #4b5552;
+        --fgMuted: #646d69;
+        --primary: #006b5f;
+        --primaryDeep: #00463f;
+        --primarySoft: rgba(0, 107, 95, 0.08);
+        --primaryWash: hsl(174 60% 96%);
+        --amber: #b45309;
+        --amberWash: hsl(31 70% 95%);
+        --emerald: #047857;
+        --emeraldWash: hsl(160 60% 95%);
+        --red: #b91c1c;
+        --violet: #7c3aed;
+        --violetWash: hsl(263 80% 97%);
+        --line: rgba(14, 20, 19, 0.1);
+        --lineSoft: rgba(14, 20, 19, 0.06);
+        --border: rgba(14, 20, 19, 0.14);
+        --shadow-card: 0 1px 2px rgba(14, 20, 19, 0.04), 0 1px 4px rgba(14, 20, 19, 0.04);
+        --shadow-pop: 0 10px 28px rgba(14, 20, 19, 0.08);
+        --shadow-lift: 0 8px 24px rgba(14, 20, 19, 0.1);
+        --font-sans: 'Geist', 'Inter', system-ui, -apple-system, sans-serif;
+        --font-mono: 'Geist Mono', ui-monospace, 'JetBrains Mono', monospace;
+        --font-display: 'Fraunces', Georgia, serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.4;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .mono {
+        font-family: var(--font-mono);
+      }
+      .display {
+        font-family: var(--font-display);
+      }
+
+      .app-shell {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 24px 28px 120px;
+        min-height: 100vh;
+      }
+      .top-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 0 20px;
+        border-bottom: 1px solid var(--lineSoft);
+        margin-bottom: 28px;
+      }
+      .top-nav .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+      }
+      .top-nav .brand .logo-dot {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background: linear-gradient(135deg, var(--primary), var(--primaryDeep));
+        box-shadow: 0 2px 8px rgba(0, 107, 95, 0.25);
+      }
+      .top-nav .right {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .search {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        width: 240px;
+        font-size: 13px;
+        color: var(--fgMuted);
+      }
+      .btn {
+        padding: 7px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--card);
+        transition: all 150ms;
+      }
+      .btn:hover {
+        box-shadow: var(--shadow-card);
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+      .btn.primary:hover {
+        background: var(--primaryDeep);
+      }
+      .btn.warn {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+      }
+      .btn.ghost {
+        background: transparent;
+        border-color: transparent;
+      }
+      .btn-sm {
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        background: var(--paper);
+        color: var(--fgSoft);
+        border: 1px solid var(--lineSoft);
+      }
+      .pill.teal {
+        background: var(--primarySoft);
+        color: var(--primaryDeep);
+        border-color: rgba(0, 107, 95, 0.18);
+      }
+      .pill.amber {
+        background: var(--amberWash);
+        color: var(--amber);
+        border-color: rgba(180, 83, 9, 0.18);
+      }
+      .pill.emerald {
+        background: var(--emeraldWash);
+        color: var(--emerald);
+        border-color: rgba(4, 120, 87, 0.18);
+      }
+      .pill.violet {
+        background: var(--violetWash);
+        color: var(--violet);
+        border-color: rgba(124, 58, 237, 0.18);
+      }
+      .kbd {
+        display: inline-block;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--fgSoft);
+        line-height: 1.2;
+      }
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background: var(--paper);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 12px;
+        flex-shrink: 0;
+        color: white;
+        overflow: hidden;
+      }
+      .avatar.lg {
+        width: 56px;
+        height: 56px;
+        font-size: 18px;
+        border-radius: 12px;
+      }
+      .avatar.xl {
+        width: 72px;
+        height: 72px;
+        font-size: 24px;
+        border-radius: 14px;
+      }
+      .page-eyebrow {
+        color: var(--fgMuted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+      .page-title {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .page-title.display {
+        font-family: var(--font-display);
+        font-size: 30px;
+        font-weight: 500;
+      }
+
+      /* ────────── VARIANT A — LIST ────────── */
+      .vA-list .header-band {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 24px;
+      }
+      .vA-list .header-band .lhs {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .vA-list .header-band .rhs {
+        display: flex;
+        gap: 8px;
+      }
+      .vA-hero {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr 200px;
+        gap: 24px;
+        padding: 24px 28px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 20px;
+        align-items: center;
+      }
+      .vA-hero .kpi-eyebrow {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        margin-bottom: 6px;
+        font-weight: 500;
+      }
+      .vA-hero .kpi-num {
+        font-size: 34px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        color: var(--fg);
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .vA-hero .kpi-sub {
+        font-size: 12px;
+        color: var(--fgMuted);
+        margin-top: 4px;
+      }
+      .vA-hero .spark-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+      }
+      .vA-hero .spark-cta {
+        font-size: 12px;
+        color: var(--primary);
+        font-weight: 500;
+      }
+      .vA-hero .spark-cta:hover {
+        color: var(--primaryDeep);
+      }
+      .vA-filters {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .chip {
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        color: var(--fgSoft);
+        cursor: pointer;
+      }
+      .chip.active {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+      .chip:hover:not(.active) {
+        background: var(--paper);
+      }
+      .vA-group {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        overflow: hidden;
+        box-shadow: var(--shadow-card);
+      }
+      .vA-group-head {
+        padding: 14px 20px 8px;
+        border-bottom: 1px solid var(--lineSoft);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .vA-group-head-row {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        justify-content: space-between;
+      }
+      .vA-group-head .label {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        color: var(--fg);
+      }
+      .vA-group-head .count {
+        font-size: 12px;
+        color: var(--fgMuted);
+        margin-left: 6px;
+      }
+      .vA-group-head .noise-share {
+        font-size: 11px;
+        color: var(--fgMuted);
+        font-variant-numeric: tabular-nums;
+      }
+      .vA-group-head .noise-stripe {
+        height: 3px;
+        background: var(--primary);
+        border-radius: 2px;
+        margin-top: 4px;
+      }
+      .vA-row {
+        display: grid;
+        grid-template-columns: 20px 32px minmax(0, 1.6fr) minmax(0, 1.2fr) 80px 156px 22px;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 20px;
+        border-top: 1px solid var(--lineSoft);
+        transition: all 150ms;
+        cursor: pointer;
+      }
+      .vA-row:first-child {
+        border-top: none;
+      }
+      .vA-row:hover {
+        background: var(--paper);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(14, 20, 19, 0.04);
+        z-index: 1;
+        position: relative;
+      }
+      .vA-row input[type='checkbox'] {
+        accent-color: var(--primary);
+      }
+      .vA-row .name-cell {
+        min-width: 0;
+      }
+      .vA-row .name-cell .nm {
+        font-weight: 500;
+        font-size: 13.5px;
+        letter-spacing: -0.005em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .vA-row .name-cell .dom {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--fgMuted);
+        margin-top: 1px;
+      }
+      .vA-row .evidence {
+        font-size: 12px;
+        color: var(--fgSoft);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .vA-row .evidence .sep {
+        color: var(--line);
+      }
+      .vA-row .evidence .trend-up {
+        color: var(--amber);
+      }
+      .vA-row .evidence .trend-down {
+        color: var(--fgMuted);
+      }
+      .vA-row .evidence .read-low {
+        color: var(--amber);
+      }
+      .vA-row .actions {
+        display: flex;
+        gap: 4px;
+        justify-content: flex-end;
+      }
+      .vA-row .actions .verb {
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fgSoft);
+        transition: all 120ms;
+      }
+      .vA-row .actions .verb.rec.unsub {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+        padding: 5px 12px;
+      }
+      .vA-row .actions .verb.rec.keep {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+        padding: 5px 12px;
+      }
+      .vA-row .actions .verb.rec.archive {
+        background: var(--fg);
+        color: white;
+        border-color: var(--fg);
+        padding: 5px 12px;
+      }
+      .vA-row .actions .verb.icon-only {
+        padding: 5px 7px;
+      }
+      .vA-row .actions .verb:hover {
+        box-shadow: var(--shadow-card);
+      }
+      .vA-row .chev {
+        color: var(--fgMuted);
+        font-size: 12px;
+      }
+      .vA-row .spark-wrap {
+        display: flex;
+        justify-content: center;
+      }
+
+      /* ────────── VARIANT A — DETAIL ────────── */
+      .vA-detail .back-link {
+        color: var(--fgMuted);
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 16px;
+      }
+      .vA-detail .hero-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+      .vA-detail .rec-band {
+        padding: 10px 24px;
+        background: var(--amberWash);
+        border-bottom: 1px solid rgba(180, 83, 9, 0.18);
+        color: var(--amber);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .vA-detail .hero-body {
+        padding: 24px 28px;
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        gap: 32px;
+        align-items: center;
+      }
+      .vA-detail .hero-id {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+      }
+      .vA-detail .hero-id .name {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .vA-detail .hero-id .dom {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fgMuted);
+        margin-top: 4px;
+      }
+      .vA-detail .hero-id .chips {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .vA-detail .hero-kpi {
+        text-align: right;
+      }
+      .vA-detail .hero-kpi .label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vA-detail .hero-kpi .num {
+        font-size: 44px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        margin-top: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+      .vA-detail .hero-kpi .spark-row {
+        margin-top: 8px;
+      }
+      .vA-detail .toolbar {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        box-shadow: var(--shadow-card);
+      }
+      .vA-detail .toolbar .verb-btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--card);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        justify-content: center;
+      }
+      .vA-detail .toolbar .verb-btn.rec {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+      .vA-detail .toolbar .verb-btn.rec.warn {
+        background: var(--amber);
+        border-color: var(--amber);
+      }
+      .vA-detail .toolbar .verb-btn:hover:not(.rec) {
+        background: var(--paper);
+      }
+      .vA-detail .hero-chart {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .vA-detail .hero-chart .chart-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 16px;
+      }
+      .vA-detail .hero-chart .footnote {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--lineSoft);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--fgMuted);
+      }
+      .vA-detail .stats-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .vA-detail .stat {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .vA-detail .stat .label {
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vA-detail .stat .val {
+        font-size: 17px;
+        font-weight: 600;
+        margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.015em;
+      }
+      .vA-detail .stat .val .unit {
+        font-size: 11px;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 3px;
+      }
+      .section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        box-shadow: var(--shadow-card);
+      }
+      .section h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-bottom: 12px;
+      }
+      .msg-row {
+        display: grid;
+        grid-template-columns: 8px 1fr auto auto;
+        gap: 12px;
+        padding: 10px 0;
+        border-top: 1px solid var(--lineSoft);
+        align-items: baseline;
+      }
+      .msg-row:first-of-type {
+        border-top: none;
+      }
+      .msg-row .unread-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--primary);
+        margin-top: 6px;
+      }
+      .msg-row .unread-dot.read {
+        background: var(--lineSoft);
+      }
+      .msg-row .subj {
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .msg-row .snippet {
+        display: block;
+        font-size: 11.5px;
+        color: var(--fgMuted);
+        margin-top: 2px;
+      }
+      .msg-row .when {
+        font-size: 11px;
+        color: var(--fgMuted);
+        font-variant-numeric: tabular-nums;
+      }
+      .hist-row {
+        display: flex;
+        gap: 12px;
+        padding: 8px 0;
+        border-top: 1px solid var(--lineSoft);
+        align-items: center;
+        font-size: 12px;
+      }
+      .hist-row:first-of-type {
+        border-top: none;
+      }
+      .hist-row .when {
+        color: var(--fgMuted);
+        font-variant-numeric: tabular-nums;
+        min-width: 80px;
+        font-size: 11px;
+      }
+
+      /* ────────── VARIANT B — LIST ────────── */
+      .vB-list .header-band {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 24px;
+      }
+      .vB-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 0;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .vB-kpi-cell {
+        padding: 20px 22px;
+        border-right: 1px solid var(--lineSoft);
+        position: relative;
+      }
+      .vB-kpi-cell:last-child {
+        border-right: none;
+      }
+      .vB-kpi-cell .label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vB-kpi-cell .pulse-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--violet);
+        display: inline-block;
+        animation: pulse 2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .vB-kpi-cell .num {
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        margin-top: 8px;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .vB-kpi-cell .num .unit {
+        font-size: 13px;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 2px;
+        letter-spacing: 0;
+      }
+      .vB-kpi-cell .micro {
+        margin-top: 10px;
+        height: 24px;
+        display: flex;
+        align-items: flex-end;
+      }
+      .vB-filters {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .vB-filters .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vB-filters .chip.active {
+        background: var(--violet);
+        color: white;
+        border-color: var(--violet);
+      }
+      .vB-filters .chip .label-stripe {
+        width: 3px;
+        height: 12px;
+        border-radius: 2px;
+      }
+      .vB-group {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        overflow: hidden;
+        box-shadow: var(--shadow-card);
+      }
+      .vB-group-head {
+        padding: 14px 20px 10px;
+        border-bottom: 1px solid var(--lineSoft);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .vB-group-head-row {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        justify-content: space-between;
+      }
+      .vB-group-head .label {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .vB-group-head .count {
+        font-size: 12px;
+        color: var(--fgMuted);
+      }
+      .vB-group-head .noise-stripe {
+        height: 4px;
+        background: var(--primary);
+        border-radius: 2px;
+        margin-top: 4px;
+      }
+      .vB-row {
+        display: grid;
+        grid-template-columns: 20px 38px minmax(0, 1.5fr) minmax(0, 1fr) 64px 160px 22px;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--lineSoft);
+        transition: all 150ms;
+        cursor: pointer;
+        animation: vBfadein 400ms both;
+      }
+      .vB-row:first-child {
+        border-top: none;
+      }
+      @keyframes vBfadein {
+        from {
+          opacity: 0;
+          transform: translateY(4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .vB-row:hover {
+        background: var(--paper);
+      }
+      .vB-row .avatar-cell {
+        position: relative;
+      }
+      .vB-row .avatar-cell .pulse {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--violet);
+        border: 2px solid var(--card);
+        animation: pulse 2s ease-in-out infinite;
+      }
+      .vB-row .name-cell .nm {
+        font-weight: 500;
+        font-size: 13.5px;
+        letter-spacing: -0.005em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .vB-row .name-cell .dom {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        color: var(--fgMuted);
+        margin-top: 1px;
+      }
+      .vB-row .evidence {
+        font-size: 12px;
+        color: var(--fgSoft);
+      }
+      .vB-row .minibar-cell {
+        display: flex;
+        justify-content: center;
+      }
+      .vB-row .actions {
+        display: flex;
+        gap: 4px;
+        justify-content: flex-end;
+      }
+      .vB-row .actions .verb {
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fgSoft);
+      }
+      .vB-row .actions .verb.rec.unsub {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+        padding: 5px 12px;
+      }
+      .vB-row .actions .verb.rec.keep {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+        padding: 5px 12px;
+      }
+      .vB-row .actions .verb.rec.archive {
+        background: var(--fg);
+        color: white;
+        border-color: var(--fg);
+        padding: 5px 12px;
+      }
+      .vB-row .actions .verb.icon-only {
+        padding: 5px 7px;
+      }
+      .vB-row .chev {
+        color: var(--fgMuted);
+        font-size: 12px;
+      }
+
+      /* ────────── VARIANT B — DETAIL ────────── */
+      .vB-detail .back-link {
+        color: var(--fgMuted);
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 16px;
+      }
+      .vB-detail .hero-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+      .vB-detail .rec-band {
+        padding: 10px 24px;
+        background: var(--amberWash);
+        border-bottom: 1px solid rgba(180, 83, 9, 0.18);
+        color: var(--amber);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .vB-detail .hero-body {
+        padding: 24px 28px;
+        display: flex;
+        gap: 18px;
+        align-items: center;
+      }
+      .vB-detail .hero-id .name {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .vB-detail .hero-id .dom {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--fgMuted);
+        margin-top: 4px;
+      }
+      .vB-detail .hero-id .chips {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .vB-kpi6 {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 0;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .vB-kpi6 .cell {
+        padding: 16px 18px;
+        border-right: 1px solid var(--lineSoft);
+      }
+      .vB-kpi6 .cell:last-child {
+        border-right: none;
+      }
+      .vB-kpi6 .label {
+        font-size: 9.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vB-kpi6 .num {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        margin-top: 6px;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .vB-kpi6 .num .unit {
+        font-size: 11px;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 2px;
+        letter-spacing: 0;
+      }
+      .vB-kpi6 .micro {
+        margin-top: 8px;
+        height: 18px;
+      }
+      .vB-heatmap-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 22px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .vB-heatmap-card .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 14px;
+      }
+      .vB-heatmap-card h3 {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .vB-heatmap-card .head .sub {
+        font-size: 11px;
+        color: var(--fgMuted);
+      }
+      .vB-heatmap {
+        display: grid;
+        grid-template-columns: 30px repeat(12, 1fr);
+        gap: 3px;
+        margin-bottom: 6px;
+      }
+      .vB-heatmap .label {
+        font-size: 10px;
+        color: var(--fgMuted);
+        display: flex;
+        align-items: center;
+        height: 18px;
+        font-family: var(--font-mono);
+      }
+      .vB-heatmap .cell {
+        height: 18px;
+        border-radius: 3px;
+        background: var(--lineSoft);
+      }
+      .vB-heatmap-legend {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        justify-content: flex-end;
+        font-size: 10px;
+        color: var(--fgMuted);
+        margin-top: 8px;
+        font-family: var(--font-mono);
+      }
+      .vB-heatmap-legend .scale {
+        display: flex;
+        gap: 2px;
+      }
+      .vB-heatmap-legend .scale span {
+        width: 12px;
+        height: 10px;
+        border-radius: 2px;
+      }
+
+      /* ────────── VARIANT C — LIST ────────── */
+      .vC-list .top-nav {
+        border-bottom: none;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+      }
+      .vC-trust-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        background: var(--emeraldWash);
+        border: 1px solid rgba(4, 120, 87, 0.18);
+        border-radius: 999px;
+        color: var(--emerald);
+        font-size: 11px;
+        font-weight: 500;
+        font-family: var(--font-mono);
+      }
+      .vC-trust-badge .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--emerald);
+      }
+      .vC-story {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow-pop);
+        padding: 32px 36px;
+        margin-bottom: 24px;
+        position: relative;
+        overflow: hidden;
+      }
+      .vC-story::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 92% 0%, var(--primaryWash), transparent 60%);
+        pointer-events: none;
+      }
+      .vC-story .eyebrow {
+        margin-bottom: 8px;
+      }
+      .vC-story .head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 32px;
+        align-items: end;
+        margin-bottom: 24px;
+        position: relative;
+      }
+      .vC-story .story-line {
+        font-family: var(--font-display);
+        font-weight: 500;
+        font-size: 32px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+        color: var(--fg);
+      }
+      .vC-story .story-line .em {
+        color: var(--amber);
+      }
+      .vC-story .story-line .em-teal {
+        color: var(--primary);
+      }
+      .vC-story .meta-strip {
+        display: flex;
+        gap: 28px;
+        align-items: flex-end;
+      }
+      .vC-story .meta {
+        text-align: right;
+      }
+      .vC-story .meta .v {
+        font-size: 22px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+      }
+      .vC-story .meta .l {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        margin-top: 4px;
+      }
+      .vC-story .meta .delta.up {
+        color: var(--amber);
+      }
+      .vC-story .meta .delta.down {
+        color: var(--emerald);
+      }
+      .vC-cta {
+        background: var(--primaryWash);
+        border: 1px solid rgba(0, 107, 95, 0.18);
+        border-radius: 14px;
+        padding: 18px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        position: relative;
+      }
+      .vC-cta .copy {
+        font-size: 14.5px;
+        color: var(--primaryDeep);
+        line-height: 1.45;
+        max-width: 540px;
+      }
+      .vC-cta .copy strong {
+        color: var(--primaryDeep);
+        font-weight: 600;
+      }
+      .vC-cta .btn-start {
+        background: var(--primary);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid var(--primaryDeep);
+        box-shadow: 0 6px 16px rgba(0, 107, 95, 0.25);
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .vC-cta .btn-start:hover {
+        background: var(--primaryDeep);
+      }
+      .vC-quadrant-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 24px 28px;
+        margin-bottom: 20px;
+        box-shadow: var(--shadow-card);
+      }
+      .vC-quadrant-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 18px;
+      }
+      .vC-quadrant-head h2 {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      .vC-quadrant-head .toggle {
+        display: flex;
+        gap: 6px;
+      }
+      .vC-quadrant-head .toggle button {
+        padding: 5px 12px;
+        border-radius: 7px;
+        background: transparent;
+        border: 1px solid transparent;
+        font-size: 12px;
+        color: var(--fgMuted);
+      }
+      .vC-quadrant-head .toggle button.active {
+        background: var(--paper);
+        border-color: var(--line);
+        color: var(--fg);
+      }
+      .vC-quadrant-wrap {
+        position: relative;
+        height: 380px;
+        background: linear-gradient(to bottom, var(--paper), var(--card));
+        border-radius: 12px;
+        padding: 0;
+        border: 1px solid var(--lineSoft);
+      }
+      .vC-quadrant-legend {
+        display: flex;
+        gap: 18px;
+        margin-top: 14px;
+        font-size: 11px;
+        color: var(--fgMuted);
+        justify-content: flex-end;
+      }
+      .vC-quadrant-legend .key {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vC-quadrant-legend .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .vC-cat-band {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 22px;
+        margin-bottom: 8px;
+        display: grid;
+        grid-template-columns: 140px 1fr 80px 24px;
+        align-items: center;
+        gap: 16px;
+        cursor: pointer;
+        box-shadow: var(--shadow-card);
+        transition: all 150ms;
+      }
+      .vC-cat-band:hover {
+        background: var(--paper);
+      }
+      .vC-cat-band .name {
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: -0.01em;
+      }
+      .vC-cat-band .count {
+        color: var(--fgMuted);
+        font-size: 12px;
+        font-weight: 500;
+        margin-left: 6px;
+      }
+      .vC-cat-band .desc {
+        font-size: 12.5px;
+        color: var(--fgSoft);
+      }
+      .vC-cat-band .noise {
+        text-align: right;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        color: var(--amber);
+      }
+      .vC-cat-band .noise .pct-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+        display: block;
+        margin-top: 2px;
+      }
+      .vC-cat-band .chev {
+        color: var(--fgMuted);
+      }
+
+      /* ────────── VARIANT C — DETAIL ────────── */
+      .vC-detail .back-link {
+        color: var(--fgMuted);
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 18px;
+      }
+      .vC-hero-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 28px 32px;
+        margin-bottom: 18px;
+        box-shadow: var(--shadow-pop);
+        position: relative;
+        overflow: hidden;
+      }
+      .vC-hero-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 100% 0%, var(--amberWash), transparent 50%);
+        pointer-events: none;
+      }
+      .vC-hero-head {
+        display: flex;
+        gap: 22px;
+        align-items: center;
+        margin-bottom: 22px;
+        position: relative;
+      }
+      .vC-hero-head .name {
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .vC-hero-head .meta {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        color: var(--fgMuted);
+        margin-top: 4px;
+      }
+      .vC-hero-narrative {
+        font-family: var(--font-display);
+        font-size: 22px;
+        line-height: 1.35;
+        font-weight: 500;
+        letter-spacing: -0.015em;
+        color: var(--fgSoft);
+        margin-bottom: 14px;
+        position: relative;
+        max-width: 640px;
+      }
+      .vC-hero-narrative .em {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .vC-hero-roi {
+        font-size: 13.5px;
+        color: var(--amber);
+        margin-bottom: 18px;
+        position: relative;
+        font-weight: 500;
+      }
+      .vC-hero-rec {
+        background: var(--amberWash);
+        border: 1px solid rgba(180, 83, 9, 0.18);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin-bottom: 18px;
+        position: relative;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .vC-hero-rec .icon {
+        font-size: 18px;
+        color: var(--amber);
+      }
+      .vC-hero-rec .copy {
+        flex: 1;
+        font-size: 13px;
+        color: var(--amber);
+      }
+      .vC-hero-rec .copy strong {
+        font-weight: 600;
+      }
+      .vC-hero-rec .copy .why {
+        display: block;
+        color: rgba(180, 83, 9, 0.85);
+        margin-top: 4px;
+        font-size: 12px;
+      }
+      .vC-actions {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1fr;
+        gap: 8px;
+        position: relative;
+      }
+      .vC-actions .verb-btn {
+        padding: 14px 18px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+        text-align: left;
+      }
+      .vC-actions .verb-btn.rec {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+      }
+      .vC-actions .verb-btn .verb-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .vC-actions .verb-btn .roi {
+        font-size: 11px;
+        opacity: 0.85;
+      }
+      .vC-actions .verb-btn:hover:not(.rec) {
+        background: var(--paper);
+      }
+      .vC-detail-grid {
+        display: grid;
+        grid-template-columns: 1.6fr 1fr;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      .vC-detail-grid .heatmap-card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 20px 24px;
+        box-shadow: var(--shadow-card);
+      }
+      .vC-detail-grid .heatmap-card h3 {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .vC-detail-grid .heatmap-card .sub {
+        font-size: 11px;
+        color: var(--fgMuted);
+        margin-bottom: 16px;
+      }
+      .vC-day-heatmap {
+        display: grid;
+        grid-template-columns: 36px repeat(7, 1fr);
+        gap: 4px;
+      }
+      .vC-day-heatmap .label {
+        font-size: 10px;
+        color: var(--fgMuted);
+        display: flex;
+        align-items: center;
+        font-family: var(--font-mono);
+        height: 22px;
+      }
+      .vC-day-heatmap .label.hdr {
+        justify-content: center;
+      }
+      .vC-day-heatmap .cell {
+        height: 22px;
+        border-radius: 4px;
+        background: var(--lineSoft);
+        transition: background 150ms;
+      }
+      .vC-detail-grid .kpi-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .vC-detail-grid .kpi-mini {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+        box-shadow: var(--shadow-card);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .vC-detail-grid .kpi-mini .lhs .v {
+        font-size: 17px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.015em;
+      }
+      .vC-detail-grid .kpi-mini .lhs .l {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        margin-top: 2px;
+      }
+      .vC-detail-grid .kpi-mini .rhs {
+        color: var(--fgMuted);
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .vC-detail-grid .kpi-mini .rhs.up {
+        color: var(--amber);
+      }
+      .vC-detail-grid .kpi-mini .rhs.down {
+        color: var(--emerald);
+      }
+      .vC-timeline {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px 24px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 14px;
+      }
+      .vC-timeline h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-bottom: 14px;
+      }
+      .vC-tl-item {
+        display: grid;
+        grid-template-columns: 80px 16px 1fr;
+        gap: 12px;
+        padding: 8px 0;
+        position: relative;
+        align-items: center;
+      }
+      .vC-tl-item .when {
+        font-size: 11.5px;
+        color: var(--fgMuted);
+        font-variant-numeric: tabular-nums;
+      }
+      .vC-tl-item .node {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--card);
+        border: 2px solid var(--primary);
+        z-index: 1;
+        margin-left: 3px;
+      }
+      .vC-tl-item .node.recent {
+        background: var(--primary);
+      }
+      .vC-tl-item:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        left: 88px;
+        top: 50%;
+        width: 2px;
+        height: 100%;
+        background: var(--lineSoft);
+        z-index: 0;
+      }
+      .vC-tl-item .what {
+        font-size: 13px;
+      }
+      .vC-tl-item .what .src {
+        color: var(--fgMuted);
+        font-size: 11px;
+      }
+
+      /* ────────── VARIANT D — COMPOSITE WINNER ────────── */
+      .vD-list .top-nav {
+        border-bottom: none;
+        padding-bottom: 8px;
+        margin-bottom: 16px;
+      }
+
+      /* hero — editorial display, restrained gradient wash */
+      .vD-hero {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: var(--shadow-pop);
+        padding: 36px 40px 30px;
+        margin-bottom: 18px;
+        position: relative;
+        overflow: hidden;
+      }
+      .vD-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at 85% -10%, var(--primaryWash) 0%, transparent 55%);
+        pointer-events: none;
+      }
+      .vD-hero .eyebrow {
+        position: relative;
+        margin-bottom: 12px;
+      }
+      .vD-hero-grid {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 40px;
+        align-items: end;
+        margin-bottom: 26px;
+        position: relative;
+      }
+      .vD-hero .story {
+        font-family: var(--font-display);
+        font-size: 34px;
+        line-height: 1.22;
+        letter-spacing: -0.02em;
+        font-weight: 500;
+        color: var(--fg);
+        max-width: 720px;
+      }
+      .vD-hero .story p {
+        margin: 0;
+      }
+      .vD-hero .story p + p {
+        margin-top: 8px;
+        color: var(--fgSoft);
+      }
+      .vD-hero .story .em {
+        color: var(--amber);
+        font-weight: 600;
+      }
+      .vD-hero .story .em-teal {
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .vD-hero .trust-line {
+        margin-top: 14px;
+        font-size: 12px;
+        color: var(--fgMuted);
+        font-family: var(--font-mono);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        position: relative;
+      }
+      .vD-hero .trust-line .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--emerald);
+      }
+      .vD-hero .meta-strip {
+        display: flex;
+        gap: 32px;
+        align-items: flex-end;
+      }
+      .vD-hero .meta {
+        text-align: right;
+      }
+      .vD-hero .meta .v {
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        font-variant-numeric: tabular-nums;
+      }
+      .vD-hero .meta .l {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fgMuted);
+        margin-top: 5px;
+        font-weight: 500;
+      }
+      .vD-hero .meta .delta.down {
+        color: var(--emerald);
+      }
+      .vD-hero .meta .delta.up {
+        color: var(--amber);
+      }
+      .vD-hero-cta {
+        position: relative;
+        background: var(--primaryWash);
+        border: 1px solid rgba(0, 107, 95, 0.18);
+        border-radius: 14px;
+        padding: 18px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+      .vD-hero-cta .copy {
+        color: var(--primaryDeep);
+        font-size: 14.5px;
+        line-height: 1.5;
+        max-width: 560px;
+      }
+      .vD-hero-cta .copy strong {
+        font-weight: 600;
+      }
+      .vD-hero-cta .btn-start {
+        background: var(--primary);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 500;
+        border: 1px solid var(--primaryDeep);
+        box-shadow: 0 6px 16px rgba(0, 107, 95, 0.25);
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 150ms;
+      }
+      .vD-hero-cta .btn-start:hover {
+        background: var(--primaryDeep);
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(0, 107, 95, 0.3);
+      }
+
+      /* Weekly progress loop — retention surface, restrained */
+      .vD-progress {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px 22px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 14px;
+        box-shadow: var(--shadow-card);
+      }
+      .vD-progress .lhs {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .vD-progress .label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vD-progress .copy {
+        font-size: 13.5px;
+        color: var(--fg);
+        font-weight: 500;
+      }
+      .vD-progress .copy .em {
+        color: var(--primary);
+        font-weight: 600;
+      }
+      .vD-progress .bar {
+        width: 220px;
+        height: 6px;
+        background: var(--lineSoft);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .vD-progress .bar .fill {
+        height: 100%;
+        background: linear-gradient(to right, var(--primary), var(--primaryDeep));
+        border-radius: 3px;
+      }
+
+      /* KPI strip — calmer than B (no pulse dots), 5 cells */
+      .vD-kpi-strip {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 18px;
+        overflow: hidden;
+      }
+      .vD-kpi-cell {
+        padding: 18px 22px;
+        border-right: 1px solid var(--lineSoft);
+      }
+      .vD-kpi-cell:last-child {
+        border-right: none;
+      }
+      .vD-kpi-cell .label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vD-kpi-cell .num {
+        font-size: 26px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        margin-top: 8px;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+        color: var(--fg);
+      }
+      .vD-kpi-cell .num .unit {
+        font-size: 12px;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 3px;
+        letter-spacing: 0;
+      }
+      .vD-kpi-cell .micro {
+        margin-top: 8px;
+        height: 14px;
+        opacity: 0.7;
+      }
+
+      /* filter chips */
+      .vD-filters {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .vD-filters .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 12.5px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        color: var(--fgSoft);
+        cursor: pointer;
+        transition: all 120ms;
+        font-weight: 500;
+      }
+      .vD-filters .chip:hover:not(.active) {
+        background: var(--paper);
+        border-color: var(--border);
+      }
+      .vD-filters .chip.active {
+        background: var(--fg);
+        color: white;
+        border-color: var(--fg);
+      }
+      .vD-filters .chip .stripe {
+        width: 3px;
+        height: 13px;
+        border-radius: 2px;
+      }
+
+      /* category tables — clean, no row chart */
+      .vD-group {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        margin-bottom: 12px;
+        overflow: hidden;
+        box-shadow: var(--shadow-card);
+      }
+      .vD-group-head {
+        padding: 18px 24px 14px;
+        border-bottom: 1px solid var(--lineSoft);
+      }
+      .vD-group-head-row {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .vD-group-head .label {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+        color: var(--fg);
+      }
+      .vD-group-head .count {
+        font-size: 12px;
+        color: var(--fgMuted);
+        margin-left: 8px;
+        font-weight: 500;
+      }
+      .vD-group-head .desc {
+        font-size: 12.5px;
+        color: var(--fgMuted);
+        margin-top: 2px;
+      }
+      .vD-group-head .noise {
+        font-size: 12.5px;
+        color: var(--amber);
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .vD-group-head .noise .l {
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 4px;
+      }
+      .vD-group-head .noise-stripe {
+        height: 4px;
+        background: linear-gradient(to right, var(--amber), rgba(180, 83, 9, 0.3));
+        border-radius: 3px;
+      }
+      .vD-group-head .noise-stripe.teal {
+        background: linear-gradient(to right, var(--primary), rgba(0, 107, 95, 0.3));
+      }
+      .vD-group-head .noise-stripe.fg {
+        background: linear-gradient(to right, var(--fg), rgba(14, 20, 19, 0.3));
+      }
+      .vD-group-head .noise-stripe.emerald {
+        background: linear-gradient(to right, var(--emerald), rgba(4, 120, 87, 0.3));
+      }
+      .vD-group-head .group-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        margin-right: 10px;
+        vertical-align: middle;
+      }
+      .vD-group-head .group-icon.cleanup {
+        background: var(--amberWash);
+        color: var(--amber);
+      }
+      .vD-group-head .group-icon.later {
+        background: var(--paper);
+        color: var(--fg);
+      }
+      .vD-group-head .group-icon.protect {
+        background: var(--emeraldWash);
+        color: var(--emerald);
+      }
+      .vD-group-head .group-icon.people {
+        background: var(--primarySoft);
+        color: var(--primaryDeep);
+      }
+      .vD-group-head .noise.teal {
+        color: var(--primary);
+      }
+      .vD-group-head .noise.fg {
+        color: var(--fgSoft);
+      }
+      .vD-group-head .noise.emerald {
+        color: var(--emerald);
+      }
+
+      .vD-row {
+        display: grid;
+        grid-template-columns: 22px 44px minmax(0, 1fr) auto 32px 22px;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 24px;
+        border-top: 1px solid var(--lineSoft);
+        cursor: pointer;
+        transition: background 120ms;
+      }
+      .vD-row:first-of-type {
+        border-top: none;
+      }
+      .vD-row:hover {
+        background: var(--paper);
+      }
+      .vD-row input[type='checkbox'] {
+        accent-color: var(--primary);
+      }
+      .vD-row .av-wrap {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        position: relative;
+      }
+      .vD-row .av-wrap .avatar {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        font-size: 16px;
+        box-shadow: 0 2px 8px rgba(14, 20, 19, 0.08);
+      }
+      .vD-row .name-cell {
+        min-width: 0;
+      }
+      .vD-row .name-cell .nm-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        min-width: 0;
+      }
+      .vD-row .name-cell .nm {
+        font-weight: 600;
+        font-size: 14.5px;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      .vD-row .name-cell .sub {
+        margin-top: 4px;
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        color: var(--fgMuted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .vD-row .name-cell .sub .sep {
+        color: var(--line);
+        margin: 0 6px;
+      }
+      .vD-row .name-cell .why {
+        margin-top: 6px;
+        font-size: 11.5px;
+        color: var(--amber);
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .vD-row .name-cell .why .why-label {
+        font-weight: 600;
+      }
+      .vD-row .freq-eyebrow {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        background: var(--paper);
+        color: var(--fgSoft);
+        border: 1px solid var(--lineSoft);
+        flex-shrink: 0;
+      }
+      .vD-row .freq-eyebrow.daily {
+        background: rgba(180, 83, 9, 0.08);
+        color: var(--amber);
+        border-color: rgba(180, 83, 9, 0.18);
+      }
+      .vD-row .freq-eyebrow.weekly {
+        background: var(--paper);
+        color: var(--fgSoft);
+      }
+      .vD-row .freq-eyebrow.vip {
+        background: var(--primarySoft);
+        color: var(--primaryDeep);
+        border-color: rgba(0, 107, 95, 0.18);
+      }
+      .vD-row .freq-eyebrow.protected {
+        background: var(--emeraldWash);
+        color: var(--emerald);
+        border-color: rgba(4, 120, 87, 0.18);
+      }
+
+      /* Action: single primary + overflow */
+      .vD-row .rec-action {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vD-row .rec-btn {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fgSoft);
+        transition: all 120ms;
+        white-space: nowrap;
+      }
+      .vD-row .rec-btn.unsub {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+      }
+      .vD-row .rec-btn.keep {
+        background: var(--primary);
+        color: white;
+        border-color: var(--primary);
+      }
+      .vD-row .rec-btn.archive {
+        background: var(--fg);
+        color: white;
+        border-color: var(--fg);
+      }
+      .vD-row .rec-btn:hover:not(.unsub):not(.keep):not(.archive) {
+        background: var(--paper);
+      }
+      .vD-row .rec-btn:hover.unsub,
+      .vD-row .rec-btn:hover.keep,
+      .vD-row .rec-btn:hover.archive {
+        filter: brightness(0.95);
+      }
+
+      .vD-row .more-btn {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        color: var(--fgMuted);
+        background: transparent;
+        border: 1px solid transparent;
+        font-size: 16px;
+        font-weight: 600;
+        transition: all 120ms;
+      }
+      .vD-row:hover .more-btn {
+        color: var(--fgSoft);
+        border-color: var(--line);
+        background: var(--card);
+      }
+      .vD-row .more-btn:hover {
+        background: var(--paper);
+      }
+      .vD-row .chev {
+        color: var(--fgMuted);
+        font-size: 13px;
+      }
+      .vD-row .collapsed-msg {
+        padding: 14px 24px;
+        font-size: 12px;
+        color: var(--fgMuted);
+      }
+
+      /* ────────── VARIANT D — DETAIL ────────── */
+      .vD-detail .back-link {
+        color: var(--fgMuted);
+        font-size: 12.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 20px;
+      }
+      .vD-detail-hero {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 32px 36px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-pop);
+        position: relative;
+        overflow: hidden;
+      }
+      .vD-detail-hero::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 95% -10%, var(--amberWash) 0%, transparent 50%);
+        pointer-events: none;
+      }
+      .vD-detail-hero .head {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+        margin-bottom: 24px;
+        position: relative;
+      }
+      .vD-detail-hero .head .name {
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        line-height: 1;
+      }
+      .vD-detail-hero .head .meta {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        color: var(--fgMuted);
+        margin-top: 6px;
+      }
+      .vD-detail-hero .head .freq-eyebrow {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        background: rgba(180, 83, 9, 0.08);
+        color: var(--amber);
+        border: 1px solid rgba(180, 83, 9, 0.18);
+        margin-bottom: 8px;
+      }
+      .vD-detail-hero .narrative {
+        font-family: var(--font-display);
+        font-size: 24px;
+        line-height: 1.32;
+        font-weight: 500;
+        color: var(--fgSoft);
+        margin-bottom: 16px;
+        max-width: 720px;
+        position: relative;
+      }
+      .vD-detail-hero .narrative .em {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      .vD-detail-hero .roi {
+        font-size: 14px;
+        color: var(--amber);
+        font-weight: 500;
+        margin-bottom: 22px;
+        position: relative;
+      }
+      .vD-detail-hero .rec-box {
+        background: var(--amberWash);
+        border: 1px solid rgba(180, 83, 9, 0.2);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 22px;
+        position: relative;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+      }
+      .vD-detail-hero .rec-box .icon {
+        font-size: 18px;
+        color: var(--amber);
+        line-height: 1.2;
+      }
+      .vD-detail-hero .rec-box .body {
+        flex: 1;
+        font-size: 13.5px;
+        color: var(--amber);
+        line-height: 1.5;
+      }
+      .vD-detail-hero .rec-box .body strong {
+        font-weight: 600;
+      }
+      .vD-detail-hero .rec-box .body .why {
+        display: block;
+        color: rgba(180, 83, 9, 0.85);
+        margin-top: 6px;
+        font-size: 12.5px;
+      }
+      .vD-detail-hero .actions {
+        display: grid;
+        grid-template-columns: 2.2fr 1fr 1fr 1fr;
+        gap: 10px;
+        position: relative;
+      }
+      .vD-detail-hero .actions .verb {
+        padding: 11px 16px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 3px;
+        text-align: left;
+        transition: all 120ms;
+      }
+      .vD-detail-hero .actions .verb.rec {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+      }
+      .vD-detail-hero .actions .verb.rec:hover {
+        filter: brightness(0.95);
+      }
+      .vD-detail-hero .actions .verb:hover:not(.rec) {
+        background: var(--paper);
+        border-color: var(--border);
+      }
+      .vD-detail-hero .actions .verb .verb-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .vD-detail-hero .actions .verb .roi {
+        font-size: 11px;
+        opacity: 0.82;
+        font-weight: 500;
+        color: var(--fgMuted);
+      }
+      .vD-detail-hero .actions .verb.rec .roi {
+        color: white;
+        opacity: 0.9;
+      }
+      .vD-detail-hero .reasoning-disclose {
+        margin-top: 12px;
+        position: relative;
+        font-size: 12px;
+        color: var(--fgMuted);
+      }
+      .vD-detail-hero .reasoning-disclose a {
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .vD-detail-hero .reasoning-disclose a:hover {
+        color: var(--fgSoft);
+      }
+
+      .vD-kpi4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        overflow: hidden;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow-card);
+      }
+      .vD-kpi4 .cell {
+        padding: 18px 22px;
+        border-right: 1px solid var(--lineSoft);
+      }
+      .vD-kpi4 .cell:last-child {
+        border-right: none;
+      }
+      .vD-kpi4 .cell .label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fgMuted);
+        font-weight: 500;
+      }
+      .vD-kpi4 .cell .v {
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.025em;
+        margin-top: 8px;
+        font-variant-numeric: tabular-nums;
+      }
+      .vD-kpi4 .cell .v .unit {
+        font-size: 12px;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-left: 3px;
+        letter-spacing: 0;
+      }
+      .vD-kpi4 .cell .delta {
+        font-size: 11px;
+        color: var(--fgMuted);
+        margin-top: 4px;
+        font-family: var(--font-mono);
+      }
+      .vD-kpi4 .cell .delta.up {
+        color: var(--amber);
+      }
+      .vD-kpi4 .cell .delta.down {
+        color: var(--emerald);
+      }
+
+      .vD-timeline {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 22px 26px;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 14px;
+      }
+      .vD-timeline h3 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fgMuted);
+        font-weight: 500;
+        margin-bottom: 16px;
+      }
+      .vD-tl-item {
+        display: grid;
+        grid-template-columns: 84px 18px 1fr;
+        gap: 14px;
+        padding: 10px 0;
+        position: relative;
+        align-items: center;
+      }
+      .vD-tl-item .when {
+        font-size: 12px;
+        color: var(--fgMuted);
+        font-variant-numeric: tabular-nums;
+      }
+      .vD-tl-item .node {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--card);
+        border: 2px solid var(--primary);
+        z-index: 1;
+        margin-left: 3px;
+      }
+      .vD-tl-item .node.recent {
+        background: var(--primary);
+        box-shadow: 0 0 0 4px var(--primarySoft);
+      }
+      .vD-tl-item:not(:last-child)::after {
+        content: '';
+        position: absolute;
+        left: 92px;
+        top: 50%;
+        width: 2px;
+        height: 100%;
+        background: var(--lineSoft);
+        z-index: 0;
+      }
+      .vD-tl-item .what {
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
+      .vD-tl-item .what .src {
+        color: var(--fgMuted);
+        font-size: 11.5px;
+      }
+
+      /* ────────── VARIANT D — MICRO-INTERACTIONS (Codex polish) ────────── */
+      /* Receipt strip — visualizes D35 UndoTray on the list */
+      .vD-receipt {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 18px;
+        margin-bottom: 14px;
+        background: var(--fg);
+        color: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 22px rgba(14, 20, 19, 0.18);
+        font-size: 13px;
+        animation: vD-receipt-in 220ms ease-out;
+      }
+      @keyframes vD-receipt-in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .vD-receipt .icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .vD-receipt .copy {
+        flex: 1;
+      }
+      .vD-receipt .copy strong {
+        font-weight: 600;
+      }
+      .vD-receipt .copy .ttl {
+        color: rgba(255, 255, 255, 0.55);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        margin-left: 8px;
+      }
+      .vD-receipt .undo {
+        color: white;
+        background: rgba(255, 255, 255, 0.12);
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 12.5px;
+        font-weight: 500;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        transition: all 120ms;
+      }
+      .vD-receipt .undo:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.3);
+      }
+      .vD-receipt .dismiss {
+        color: rgba(255, 255, 255, 0.5);
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        transition: color 120ms;
+      }
+      .vD-receipt .dismiss:hover {
+        color: white;
+      }
+
+      /* Sticky bottom action bar on detail */
+      .vD-sticky-bar {
+        position: fixed;
+        bottom: 140px; /* above floating switcher (switcher wraps description ~110px tall) */
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(100% - 56px);
+        max-width: 1184px;
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: saturate(180%) blur(12px);
+        -webkit-backdrop-filter: saturate(180%) blur(12px);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        box-shadow: 0 8px 28px rgba(14, 20, 19, 0.12);
+        z-index: 999;
+      }
+      .vD-sticky-bar .ctx {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex: 1;
+        font-size: 13px;
+        color: var(--fgSoft);
+      }
+      .vD-sticky-bar .ctx .nm {
+        font-weight: 600;
+        color: var(--fg);
+      }
+      .vD-sticky-bar .ctx .meta {
+        color: var(--fgMuted);
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+      }
+      .vD-sticky-bar .actions {
+        display: flex;
+        gap: 6px;
+      }
+      .vD-sticky-bar .actions .verb {
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12.5px;
+        font-weight: 500;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fgSoft);
+        transition: all 120ms;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .vD-sticky-bar .actions .verb:hover:not(.rec) {
+        background: var(--paper);
+        border-color: var(--border);
+      }
+      .vD-sticky-bar .actions .verb.rec {
+        background: var(--amber);
+        color: white;
+        border-color: var(--amber);
+        padding: 8px 18px;
+      }
+      .vD-sticky-bar .actions .verb.rec:hover {
+        filter: brightness(0.95);
+        box-shadow: 0 4px 12px rgba(180, 83, 9, 0.25);
+      }
+
+      /* Chevron animation — collapsed state rotates */
+      .vD-group-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        color: var(--fgMuted);
+        font-size: 14px;
+        transition: transform 150ms ease-out;
+        cursor: pointer;
+        margin-right: 6px;
+        transform: rotate(0deg);
+      }
+      .vD-group-toggle.collapsed {
+        transform: rotate(-90deg);
+      }
+      .vD-group-toggle:hover {
+        color: var(--fg);
+      }
+
+      /* Detail action cards hover border (already there, strengthen) */
+      .vD-detail-hero .actions .verb {
+        border-color: var(--line);
+      }
+      .vD-detail-hero .actions .verb:hover:not(.rec) {
+        border-color: var(--border);
+      }
+
+      /* ────────── FLOATING SWITCHER ────────── */
+      .switcher {
+        position: fixed;
+        bottom: 22px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--fg);
+        color: white;
+        border-radius: 14px;
+        padding: 8px 8px;
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+        box-shadow:
+          0 16px 40px rgba(0, 0, 0, 0.35),
+          0 4px 12px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        font-size: 12px;
+        font-family: var(--font-mono);
+      }
+      .switcher .group {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px 6px;
+        background: rgba(255, 255, 255, 0.06);
+        border-radius: 8px;
+      }
+      .switcher .group .label {
+        padding: 0 4px;
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .switcher button {
+        color: rgba(255, 255, 255, 0.7);
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-weight: 500;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        transition: all 120ms;
+      }
+      .switcher button:hover {
+        color: white;
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .switcher button.active {
+        background: white;
+        color: var(--fg);
+      }
+      .switcher .arrow {
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 14px;
+      }
+      .switcher .desc {
+        align-self: center;
+        padding: 0 10px;
+        color: rgba(255, 255, 255, 0.55);
+        font-size: 11px;
+        max-width: 280px;
+        line-height: 1.4;
+      }
+
+      .demo-note {
+        margin-top: 32px;
+        padding: 14px 18px;
+        background: var(--card);
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        color: var(--fgMuted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .demo-note strong {
+        color: var(--fgSoft);
+      }
+
+      /* Avatar palette */
+      .av-0 {
+        background: #0e7490;
+      }
+      .av-1 {
+        background: #7c3aed;
+      }
+      .av-2 {
+        background: #059669;
+      }
+      .av-3 {
+        background: #0891b2;
+      }
+      .av-4 {
+        background: #dc2626;
+      }
+      .av-5 {
+        background: #0369a1;
+      }
+      .av-6 {
+        background: #b45309;
+      }
+      .av-7 {
+        background: #15803d;
+      }
+      .av-tint-0 {
+        background: rgba(14, 116, 144, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-1 {
+        background: rgba(124, 58, 237, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-2 {
+        background: rgba(5, 150, 105, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-3 {
+        background: rgba(8, 145, 178, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-4 {
+        background: rgba(220, 38, 38, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-5 {
+        background: rgba(3, 105, 161, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-6 {
+        background: rgba(180, 83, 9, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+      .av-tint-7 {
+        background: rgba(21, 128, 61, 0.1);
+        padding: 2px;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+
+    <nav class="switcher" id="switcher">
+      <button class="arrow" id="arrLeft" title="Prev variant (←)">‹</button>
+      <div class="group">
+        <span class="label">Variant</span>
+        <button data-v="A" class="active">A</button>
+        <button data-v="B">B</button>
+        <button data-v="C">C</button>
+        <button data-v="D">D ★</button>
+      </div>
+      <div class="group">
+        <span class="label">View</span>
+        <button data-w="list" class="active">List</button>
+        <button data-w="detail">Detail</button>
+      </div>
+      <button class="arrow" id="arrRight" title="Next variant (→)">›</button>
+      <div class="desc" id="desc"></div>
+    </nav>
+
+    <script>
+      /*
+  PROTOTYPE — render via Range.createContextualFragment (no innerHTML).
+  All content is hardcoded — no user input. SVG namespacing handled correctly
+  by contextual fragments. Throwaway: delete this file after picking variant.
+*/
+
+      const VARIANTS = {
+        A: 'Within-constitution redesign',
+        B: 'Dashboard-amending (Stripe/Pulse)',
+        C: 'No-constraints reimagining ("Your Inbox Story")',
+        D: 'COMPOSITE WINNER — editorial hero + clean tables + ROI actions',
+      };
+
+      const params = new URLSearchParams(location.search);
+      let state = {
+        variant: (params.get('variant') || 'A').toUpperCase(),
+        view: (params.get('view') || 'list').toLowerCase(),
+      };
+
+      const monthlyVol12 = (peak, drift) => {
+        const out = [];
+        for (let i = 0; i < 12; i++) {
+          const t = i / 11;
+          const wave = Math.sin(t * Math.PI * 1.6) * 0.4 + 0.6;
+          const noise = (Math.sin((i + 1) * 7.1) + 1) / 2;
+          out.push(Math.max(1, Math.round(peak * (wave + noise * 0.35 + drift * t))));
+        }
+        return out;
+      };
+
+      const SENDERS = [
+        {
+          id: '1',
+          name: 'LinkedIn',
+          domain: 'linkedin.com',
+          cat: 'social',
+          monthly: 23,
+          read: 0.12,
+          trend: 'up',
+          last: 0,
+          vip: false,
+          protected: false,
+          rec: 'unsubscribe',
+          conf: 0.89,
+          vol: monthlyVol12(22, 0.2),
+          last24h: true,
+          avIdx: 5,
+        },
+        {
+          id: '2',
+          name: 'Stripe',
+          domain: 'stripe.com',
+          cat: 'primary',
+          monthly: 4,
+          read: 0.95,
+          trend: 'steady',
+          last: 1,
+          vip: false,
+          protected: true,
+          rec: null,
+          conf: 0,
+          vol: monthlyVol12(4, 0),
+          last24h: false,
+          avIdx: 1,
+        },
+        {
+          id: '3',
+          name: 'Substack Digest',
+          domain: 'substack.com',
+          cat: 'updates',
+          monthly: 18,
+          read: 0.34,
+          trend: 'up',
+          last: 0,
+          vip: false,
+          protected: false,
+          rec: 'archive',
+          conf: 0.68,
+          vol: monthlyVol12(16, 0.18),
+          last24h: true,
+          avIdx: 6,
+        },
+        {
+          id: '4',
+          name: 'GitHub',
+          domain: 'github.com',
+          cat: 'primary',
+          monthly: 47,
+          read: 0.78,
+          trend: 'steady',
+          last: 0,
+          vip: true,
+          protected: false,
+          rec: null,
+          conf: 0,
+          vol: monthlyVol12(45, 0),
+          last24h: true,
+          avIdx: 0,
+        },
+        {
+          id: '5',
+          name: 'Notion',
+          domain: 'notion.so',
+          cat: 'updates',
+          monthly: 8,
+          read: 0.22,
+          trend: 'down',
+          last: 3,
+          vip: false,
+          protected: false,
+          rec: 'unsubscribe',
+          conf: 0.72,
+          vol: monthlyVol12(8, -0.05),
+          last24h: false,
+          avIdx: 2,
+        },
+        {
+          id: '6',
+          name: 'DoorDash',
+          domain: 'doordash.com',
+          cat: 'promotions',
+          monthly: 32,
+          read: 0.05,
+          trend: 'up',
+          last: 1,
+          vip: false,
+          protected: false,
+          rec: 'unsubscribe',
+          conf: 0.92,
+          vol: monthlyVol12(28, 0.3),
+          last24h: false,
+          avIdx: 4,
+        },
+        {
+          id: '7',
+          name: 'Spotify',
+          domain: 'spotify.com',
+          cat: 'promotions',
+          monthly: 12,
+          read: 0.18,
+          trend: 'steady',
+          last: 4,
+          vip: false,
+          protected: false,
+          rec: 'archive',
+          conf: 0.55,
+          vol: monthlyVol12(11, 0),
+          last24h: false,
+          avIdx: 7,
+        },
+        {
+          id: '8',
+          name: 'Y Combinator',
+          domain: 'ycombinator.com',
+          cat: 'updates',
+          monthly: 6,
+          read: 0.81,
+          trend: 'steady',
+          last: 2,
+          vip: false,
+          protected: false,
+          rec: null,
+          conf: 0,
+          vol: monthlyVol12(6, 0),
+          last24h: false,
+          avIdx: 3,
+        },
+        {
+          id: '9',
+          name: 'Medium Daily Digest',
+          domain: 'medium.com',
+          cat: 'updates',
+          monthly: 28,
+          read: 0.08,
+          trend: 'up',
+          last: 0,
+          vip: false,
+          protected: false,
+          rec: 'unsubscribe',
+          conf: 0.91,
+          vol: monthlyVol12(24, 0.2),
+          last24h: true,
+          avIdx: 1,
+        },
+        {
+          id: '10',
+          name: 'Reddit',
+          domain: 'reddit.com',
+          cat: 'social',
+          monthly: 19,
+          read: 0.21,
+          trend: 'up',
+          last: 0,
+          vip: false,
+          protected: false,
+          rec: 'archive',
+          conf: 0.61,
+          vol: monthlyVol12(17, 0.1),
+          last24h: true,
+          avIdx: 4,
+        },
+        {
+          id: '11',
+          name: 'Vercel',
+          domain: 'vercel.com',
+          cat: 'primary',
+          monthly: 14,
+          read: 0.86,
+          trend: 'steady',
+          last: 1,
+          vip: true,
+          protected: false,
+          rec: null,
+          conf: 0,
+          vol: monthlyVol12(13, 0),
+          last24h: false,
+          avIdx: 0,
+        },
+        {
+          id: '12',
+          name: 'Uber Eats',
+          domain: 'uber.com',
+          cat: 'promotions',
+          monthly: 21,
+          read: 0.04,
+          trend: 'up',
+          last: 1,
+          vip: false,
+          protected: false,
+          rec: 'unsubscribe',
+          conf: 0.93,
+          vol: monthlyVol12(18, 0.25),
+          last24h: false,
+          avIdx: 0,
+        },
+      ];
+
+      const CAT_LABEL = {
+        primary: 'Primary',
+        social: 'Social',
+        updates: 'Updates',
+        promotions: 'Promotions',
+        forums: 'Forums',
+      };
+      const CAT_COLOR = {
+        primary: '#0369A1',
+        social: '#7C3AED',
+        updates: '#B45309',
+        promotions: '#DC2626',
+        forums: '#059669',
+      };
+
+      const totalSenders = SENDERS.length;
+      const totalMonthly = SENDERS.reduce((a, s) => a + s.monthly, 0);
+      const noisePerSender = (s) => Math.round(s.monthly * (1 - s.read));
+      const totalNoise = SENDERS.reduce((a, s) => a + noisePerSender(s), 0);
+      const noiseDecisionCount = SENDERS.filter(
+        (s) => s.rec === 'unsubscribe' || s.rec === 'archive',
+      ).length;
+      const noiseReductionPct = Math.round(
+        (SENDERS.filter((s) => s.rec === 'unsubscribe').reduce((a, s) => a + s.monthly, 0) /
+          totalMonthly) *
+          100,
+      );
+
+      const groupedByCat = () => {
+        const groups = {};
+        SENDERS.forEach((s) => {
+          (groups[s.cat] = groups[s.cat] || []).push(s);
+        });
+        return Object.entries(groups)
+          .map(([cat, items]) => {
+            const noise = items.reduce((a, s) => a + noisePerSender(s), 0);
+            return { cat, items: items.sort((a, b) => b.monthly - a.monthly), noise };
+          })
+          .sort((a, b) => b.noise - a.noise);
+      };
+
+      /* ─── SVG helpers ─── */
+      function spark(values, opts) {
+        opts = opts || {};
+        const w = opts.w || 64,
+          h = opts.h || 18,
+          color = opts.color || 'var(--primary)';
+        const min = Math.min.apply(null, values),
+          max = Math.max.apply(null, values);
+        const range = max - min || 1;
+        const stepX = w / (values.length - 1);
+        const pts = values.map((v, i) => [i * stepX, h - ((v - min) / range) * (h - 2) - 1]);
+        const d = pts
+          .map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1))
+          .join(' ');
+        return (
+          '<svg viewBox="0 0 ' +
+          w +
+          ' ' +
+          h +
+          '" width="' +
+          w +
+          '" height="' +
+          h +
+          '" preserveAspectRatio="none"><path d="' +
+          d +
+          '" fill="none" stroke="' +
+          color +
+          '" stroke-width="' +
+          (opts.sw || 1.5) +
+          '" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        );
+      }
+
+      function sparkArea(values, opts) {
+        opts = opts || {};
+        const w = opts.w || 200,
+          h = opts.h || 40,
+          color = opts.color || 'var(--primary)';
+        const max = Math.max.apply(null, values) || 1;
+        const stepX = w / (values.length - 1);
+        const pts = values.map((v, i) => [i * stepX, h - (v / max) * (h - 4) - 2]);
+        const d = pts
+          .map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1))
+          .join(' ');
+        const da = d + ' L ' + w + ',' + h + ' L 0,' + h + ' Z';
+        return (
+          '<svg viewBox="0 0 ' +
+          w +
+          ' ' +
+          h +
+          '" width="' +
+          w +
+          '" height="' +
+          h +
+          '" preserveAspectRatio="none"><path d="' +
+          da +
+          '" fill="' +
+          color +
+          '" fill-opacity="0.08"/><path d="' +
+          d +
+          '" fill="none" stroke="' +
+          color +
+          '" stroke-width="' +
+          (opts.sw || 1.8) +
+          '" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        );
+      }
+
+      function barChart(values, opts) {
+        opts = opts || {};
+        const w = opts.w || 600,
+          h = opts.h || 180,
+          color = opts.color || 'var(--primary)';
+        const max = Math.max.apply(null, values);
+        const n = values.length;
+        const gap = 6;
+        const bw = (w - gap * (n - 1)) / n;
+        const labels = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+        let rects = '';
+        let lbls = '';
+        for (let i = 0; i < n; i++) {
+          const x = i * (bw + gap);
+          const bh = (values[i] / max) * (h - 26);
+          const y = h - 26 - bh;
+          const isPeak = values[i] === max;
+          rects +=
+            '<rect x="' +
+            x +
+            '" y="' +
+            y +
+            '" width="' +
+            bw +
+            '" height="' +
+            bh +
+            '" fill="' +
+            color +
+            '" fill-opacity="' +
+            (isPeak ? 1 : 0.35) +
+            '" rx="2"/>';
+          if (isPeak)
+            rects +=
+              '<text x="' +
+              (x + bw / 2) +
+              '" y="' +
+              (y - 4) +
+              '" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--fgMuted)">' +
+              values[i] +
+              '</text>';
+          lbls +=
+            '<text x="' +
+            (x + bw / 2) +
+            '" y="' +
+            (h - 8) +
+            '" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--fgMuted)">' +
+            labels[i] +
+            '</text>';
+        }
+        return (
+          '<svg viewBox="0 0 ' +
+          w +
+          ' ' +
+          h +
+          '" width="100%" height="' +
+          h +
+          '" preserveAspectRatio="none">' +
+          rects +
+          lbls +
+          '</svg>'
+        );
+      }
+
+      function miniBar3(values) {
+        const w = 60,
+          h = 18;
+        const colors = ['var(--emerald)', 'var(--fg)', 'var(--amber)'];
+        const max = Math.max.apply(null, values.concat([1]));
+        const bw = (w - 8) / 3;
+        let out = '';
+        values.forEach((v, i) => {
+          const bh = (v / max) * h;
+          const y = h - bh;
+          out +=
+            '<rect x="' +
+            i * (bw + 4) +
+            '" y="' +
+            y +
+            '" width="' +
+            bw +
+            '" height="' +
+            bh +
+            '" fill="' +
+            colors[i] +
+            '" fill-opacity="' +
+            (0.5 + (i === 1 ? 0 : i === 0 ? 0.25 : 0.15)) +
+            '" rx="1.5"/>';
+        });
+        return (
+          '<svg viewBox="0 0 ' +
+          w +
+          ' ' +
+          h +
+          '" width="' +
+          w +
+          '" height="' +
+          h +
+          '">' +
+          out +
+          '</svg>'
+        );
+      }
+
+      function weeklyHeatmapCells(sender) {
+        const cells = [];
+        for (let w = 0; w < 12; w++) {
+          for (let d = 0; d < 7; d++) {
+            const seed = (parseInt(sender.id) * 137 + w * 7 + d) % 100;
+            const dayPattern =
+              sender.id === '1'
+                ? d === 1 || d === 3
+                  ? 0.8
+                  : 0.1
+                : sender.id === '4'
+                  ? d < 5
+                    ? 0.6
+                    : 0.05
+                  : 0.3;
+            const intensity = Math.max(0, Math.min(1, dayPattern + (seed / 100 - 0.5) * 0.6));
+            cells.push(intensity);
+          }
+        }
+        return cells;
+      }
+
+      function quadrantSvg(senders) {
+        const W = 760,
+          H = 380;
+        const pad = { l: 60, r: 30, t: 24, b: 50 };
+        const innerW = W - pad.l - pad.r;
+        const innerH = H - pad.t - pad.b;
+        const maxVol =
+          Math.max.apply(
+            null,
+            senders.map((s) => s.monthly),
+          ) * 1.1;
+        const bubbles = senders.map((s) => {
+          const x = pad.l + s.read * innerW;
+          const y = pad.t + (1 - s.monthly / maxVol) * innerH;
+          const r = 6 + Math.sqrt(s.monthly) * 2.5;
+          let fill = 'rgba(100,109,105,0.55)';
+          let stroke = 'rgba(100,109,105,0.9)';
+          if (s.rec === 'unsubscribe') {
+            fill = 'rgba(180,83,9,0.55)';
+            stroke = '#B45309';
+          }
+          if (s.vip) {
+            fill = 'rgba(0,107,95,0.55)';
+            stroke = '#006B5F';
+          }
+          if (s.protected) {
+            fill = 'rgba(4,120,87,0.55)';
+            stroke = '#047857';
+          }
+          return { x: x, y: y, r: r, s: s, fill: fill, stroke: stroke };
+        });
+        const midX = pad.l + 0.5 * innerW;
+        const midY = pad.t + 0.5 * innerH;
+        let svg =
+          '<svg viewBox="0 0 ' +
+          W +
+          ' ' +
+          H +
+          '" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">';
+        svg +=
+          '<rect x="' +
+          pad.l +
+          '" y="' +
+          pad.t +
+          '" width="' +
+          0.5 * innerW +
+          '" height="' +
+          0.5 * innerH +
+          '" fill="hsl(31 70% 95%)" fill-opacity="0.5"/>';
+        svg +=
+          '<rect x="' +
+          midX +
+          '" y="' +
+          midY +
+          '" width="' +
+          0.5 * innerW +
+          '" height="' +
+          0.5 * innerH +
+          '" fill="hsl(160 60% 95%)" fill-opacity="0.5"/>';
+        svg +=
+          '<line x1="' +
+          midX +
+          '" y1="' +
+          pad.t +
+          '" x2="' +
+          midX +
+          '" y2="' +
+          (pad.t + innerH) +
+          '" stroke="rgba(14,20,19,0.06)" stroke-dasharray="2 4"/>';
+        svg +=
+          '<line x1="' +
+          pad.l +
+          '" y1="' +
+          midY +
+          '" x2="' +
+          (pad.l + innerW) +
+          '" y2="' +
+          midY +
+          '" stroke="rgba(14,20,19,0.06)" stroke-dasharray="2 4"/>';
+        svg +=
+          '<text x="' +
+          (pad.l + 12) +
+          '" y="' +
+          (pad.t + 20) +
+          '" font-family="monospace" font-size="10" fill="#B45309" font-weight="600">UNSUB CANDIDATES</text>';
+        svg +=
+          '<text x="' +
+          (pad.l + innerW - 12) +
+          '" y="' +
+          (pad.t + innerH - 8) +
+          '" text-anchor="end" font-family="monospace" font-size="10" fill="#047857" font-weight="600">VIPs &amp; KEEPERS</text>';
+        svg +=
+          '<text x="' +
+          (pad.l + innerW / 2) +
+          '" y="' +
+          (pad.t + innerH + 30) +
+          '" text-anchor="middle" font-family="monospace" font-size="10" fill="#646D69">ENGAGEMENT  (read rate) →</text>';
+        svg +=
+          '<text x="20" y="' +
+          (pad.t + innerH / 2) +
+          '" transform="rotate(-90 20 ' +
+          (pad.t + innerH / 2) +
+          ')" text-anchor="middle" font-family="monospace" font-size="10" fill="#646D69">VOLUME →</text>';
+        bubbles.forEach((b) => {
+          svg += '<g>';
+          svg +=
+            '<circle cx="' +
+            b.x +
+            '" cy="' +
+            b.y +
+            '" r="' +
+            b.r +
+            '" fill="' +
+            b.fill +
+            '" stroke="' +
+            b.stroke +
+            '" stroke-width="1.5"/>';
+          svg +=
+            '<text x="' +
+            b.x +
+            '" y="' +
+            (b.y + b.r + 12) +
+            '" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#4B5552" font-weight="500">' +
+            b.s.name +
+            '</text>';
+          svg += '</g>';
+        });
+        svg += '</svg>';
+        return svg;
+      }
+
+      function avatarHtml(s, size) {
+        size = size || 'sm';
+        const cls =
+          'avatar' + (size === 'lg' ? ' lg' : size === 'xl' ? ' xl' : '') + ' av-' + s.avIdx;
+        return '<div class="' + cls + '">' + s.name[0] + '</div>';
+      }
+
+      function fmtPct(p) {
+        return Math.round(p * 100) + '%';
+      }
+
+      /* ─── shared header ─── */
+      function brandHeader(extraRight) {
+        extraRight = extraRight || '';
+        return (
+          '<div class="top-nav"><div class="brand"><span class="logo-dot"></span>DeclutrMail</div><div class="right"><div class="search"><span>⌕</span><span>Search senders…</span></div><button class="btn">+ Add VIP</button>' +
+          extraRight +
+          '</div></div>'
+        );
+      }
+
+      /* ─── VARIANT A — LIST ─── */
+      function renderA_List() {
+        const groups = groupedByCat();
+        const totalRolledSpark = monthlyVol12(totalMonthly / 8, 0.1);
+
+        let html = '<div class="vA-list app-shell">';
+        html += brandHeader();
+        html +=
+          '<div class="header-band"><div class="lhs"><div class="page-eyebrow">Senders</div><div class="page-title">Your senders this week</div></div></div>';
+        html += '<div class="vA-hero">';
+        html +=
+          '<div><div class="kpi-eyebrow">Senders mail you</div><div class="kpi-num">' +
+          totalSenders +
+          '</div><div class="kpi-sub">Across ' +
+          groups.length +
+          ' groups</div></div>';
+        html +=
+          '<div><div class="kpi-eyebrow">Noise reduction available</div><div class="kpi-num">~' +
+          noiseReductionPct +
+          '<span style="font-size:18px;color:var(--fgMuted);font-weight:500;">%</span></div><div class="kpi-sub">If you unsubscribe from ' +
+          SENDERS.filter((s) => s.rec === 'unsubscribe').length +
+          ' senders we picked</div></div>';
+        html +=
+          '<div><div class="kpi-eyebrow">Decisions queued</div><div class="kpi-num">' +
+          noiseDecisionCount +
+          '</div><div class="kpi-sub">Engine recommendations</div></div>';
+        html +=
+          '<div class="spark-cell"><div class="kpi-eyebrow" style="align-self:flex-end;">Weekly volume</div>' +
+          sparkArea(totalRolledSpark, { w: 180, h: 36, color: 'var(--primary)' }) +
+          '<a class="spark-cta" href="#">Start weekly review →</a></div>';
+        html += '</div>';
+
+        html +=
+          '<div class="vA-filters"><button class="chip active">All</button><button class="chip">Primary</button><button class="chip">Promotions</button><button class="chip">Social</button><button class="chip">Updates</button><button class="chip">Forums</button></div>';
+
+        groups.forEach((g, gi) => {
+          const sharePct = Math.round((g.noise / totalNoise) * 100);
+          const isFirst = gi === 0;
+          html +=
+            '<div class="vA-group"><div class="vA-group-head"><div class="vA-group-head-row"><div><span class="label">' +
+            CAT_LABEL[g.cat] +
+            '</span><span class="count">' +
+            g.items.length +
+            ' senders</span></div><div class="noise-share">' +
+            sharePct +
+            '% of weekly noise</div></div><div class="noise-stripe" style="width:' +
+            sharePct +
+            '%;opacity:' +
+            (0.4 + (sharePct / 100) * 0.6) +
+            ';"></div></div>';
+          if (isFirst) {
+            g.items.forEach((s) => {
+              let recVerb = '',
+                tone = '';
+              if (s.rec === 'unsubscribe') {
+                recVerb = 'Unsubscribe';
+                tone = 'unsub';
+              } else if (s.rec === 'archive') {
+                recVerb = 'Archive';
+                tone = 'archive';
+              }
+              const recBtn = recVerb
+                ? '<button class="verb rec ' + tone + '">' + recVerb + '</button>'
+                : '<button class="verb">Keep</button>';
+              const otherVerbs =
+                (recVerb !== 'Keep'
+                  ? '<button class="verb icon-only" title="Keep (K)">K</button>'
+                  : '') +
+                (recVerb !== 'Archive'
+                  ? '<button class="verb icon-only" title="Archive (A)">A</button>'
+                  : '') +
+                (recVerb !== 'Unsubscribe' && !s.protected
+                  ? '<button class="verb icon-only" title="Unsubscribe (U)">U</button>'
+                  : '') +
+                '<button class="verb icon-only" title="Later (L)">L</button>';
+              const trendBit =
+                s.trend === 'up'
+                  ? '<span class="trend-up">↑ Up</span>'
+                  : s.trend === 'down'
+                    ? '<span class="trend-down">↓ Down</span>'
+                    : '';
+              const readBit =
+                s.read < 0.1
+                  ? '<span class="read-low">Almost never read</span>'
+                  : s.read > 0.7
+                    ? fmtPct(s.read) + ' read'
+                    : '';
+              const evidenceParts = [s.monthly + '/mo', trendBit, readBit].filter(Boolean);
+              const evidence = evidenceParts.join(' <span class="sep">·</span> ');
+              const sparkColor =
+                s.rec === 'unsubscribe'
+                  ? 'var(--amber)'
+                  : s.vip
+                    ? 'var(--primary)'
+                    : 'var(--fgMuted)';
+              const chips =
+                (s.protected
+                  ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
+                  : '') +
+                (s.vip
+                  ? ' <span class="pill teal" style="margin-left:8px;font-size:9px;padding:1px 6px;">VIP</span>'
+                  : '');
+              html +=
+                '<div class="vA-row"><input type="checkbox" /><div class="av-tint-' +
+                s.avIdx +
+                '">' +
+                avatarHtml(s, 'sm') +
+                '</div><div class="name-cell"><div class="nm">' +
+                s.name +
+                chips +
+                '</div><div class="dom">' +
+                s.domain +
+                '</div></div><div class="evidence">' +
+                evidence +
+                '</div><div class="spark-wrap">' +
+                spark(s.vol, { w: 64, h: 18, color: sparkColor }) +
+                '</div><div class="actions">' +
+                recBtn +
+                otherVerbs +
+                '</div><div class="chev">›</div></div>';
+            });
+          } else {
+            html +=
+              '<div style="padding:14px 20px;font-size:12px;color:var(--fgMuted);">Collapsed — ' +
+              g.items.length +
+              ' senders · click to expand</div>';
+          }
+          html += '</div>';
+        });
+
+        html +=
+          '<div class="demo-note"><strong>Variant A — within constitution.</strong> Hero strip frames decisions vs. noise. Group headers gain a teal stripe sized to that group\'s noise share — Promotions becomes visually loudest without new colors. Highest-noise group auto-expands. Row gains a 64×18 sparkline and an 8% avatar tint. Recommended verb is the only filled button on the row. No new tokens, no new motion, no microcopy that violates D209.</div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT A — DETAIL ─── */
+      function renderA_Detail() {
+        const s = SENDERS[0];
+        let html = '<div class="vA-detail app-shell">';
+        html += brandHeader();
+        html += '<a class="back-link" href="?variant=A&view=list">‹ Back to senders</a>';
+        html +=
+          '<div class="hero-card"><div class="rec-band"><span>▸ Engine recommends <strong>Unsubscribe</strong> · 89% confidence · <a href="#" style="text-decoration:underline;">Why?</a></span><span class="mono" style="font-size:11px;">RECOMMENDATION</span></div>';
+        html +=
+          '<div class="hero-body"><div class="hero-id"><div class="av-tint-' +
+          s.avIdx +
+          '" style="padding:4px;border-radius:14px;">' +
+          avatarHtml(s, 'xl') +
+          '</div><div><div class="page-eyebrow" style="margin-bottom:2px;">' +
+          CAT_LABEL[s.cat].toUpperCase() +
+          '</div><div class="name">' +
+          s.name +
+          '</div><div class="dom">' +
+          s.domain +
+          '</div><div class="chips"><span class="pill">VIP</span><span class="pill">PROTECT</span></div></div></div>';
+        html +=
+          '<div class="hero-kpi"><div class="label">Volume · last 30 days</div><div class="num">' +
+          s.monthly +
+          '</div><div class="spark-row">' +
+          sparkArea(s.vol, { w: 240, h: 40, color: 'var(--primary)' }) +
+          '</div></div></div></div>';
+        html +=
+          '<div class="toolbar"><button class="verb-btn rec warn"><span>Unsubscribe</span> <span class="kbd" style="background:rgba(255,255,255,0.2);color:white;border-color:rgba(255,255,255,0.3);">U</span></button><button class="verb-btn"><span>Keep</span> <span class="kbd">K</span></button><button class="verb-btn"><span>Archive</span> <span class="kbd">A</span></button><button class="verb-btn"><span>Later</span> <span class="kbd">L</span></button></div>';
+        html +=
+          '<div class="hero-chart"><div class="chart-head"><h3 style="font-size:13px;font-weight:600;">Volume — last 12 months</h3><div class="eyebrow">Peak: ' +
+          Math.max.apply(null, s.vol) +
+          ' messages</div></div>' +
+          barChart(s.vol, { w: 600, h: 180, color: 'var(--primary)' }) +
+          '<div class="footnote"><span>Marked-read trend ↗</span>' +
+          spark(
+            s.vol.map((v, i) => Math.round(v * s.read * (1 + i * 0.02))),
+            { w: 120, h: 24, color: 'var(--fgSoft)' },
+          ) +
+          '<span style="color:var(--fgMuted);">12-month rolling</span></div></div>';
+        html +=
+          '<div class="stats-strip"><div class="stat"><div class="label">Monthly volume</div><div class="val">' +
+          s.monthly +
+          ' <span class="unit">msg/mo</span></div></div><div class="stat"><div class="label">Read rate</div><div class="val">' +
+          Math.round(s.read * 100) +
+          '<span class="unit">%</span></div></div><div class="stat"><div class="label">Trend</div><div class="val">↑ Up</div></div><div class="stat"><div class="label">Relationship</div><div class="val">2<span class="unit">yr</span></div></div></div>';
+        html +=
+          '<div class="section"><h3>Recent messages</h3><div class="msg-row"><span class="unread-dot"></span><div><span class="subj">You have 7 new connections</span><span class="snippet">Stay in touch with the people in your network…</span></div><span class="when">2d ago</span><span style="color:var(--fgMuted);font-size:11px;">12KB</span></div><div class="msg-row"><span class="unread-dot read"></span><div><span class="subj">Your weekly job alert</span><span class="snippet">5 new jobs match your search…</span></div><span class="when">4d ago</span><span style="color:var(--fgMuted);font-size:11px;">8KB</span></div><div class="msg-row"><span class="unread-dot"></span><div><span class="subj">5 jobs match your search</span><span class="snippet">Software Engineer at Vercel, Senior PM at Linear…</span></div><span class="when">6d ago</span><span style="color:var(--fgMuted);font-size:11px;">9KB</span></div></div>';
+        html +=
+          '<div class="section"><h3>Decision history</h3><div class="hist-row"><span class="when">today</span><span class="pill teal">recommendation</span><span class="pill amber">unsubscribe</span><span style="color:var(--fgMuted);">engine · 89% confidence</span></div><div class="hist-row"><span class="when">3w ago</span><span class="pill">manual</span><span class="pill">kept</span><span style="color:var(--fgMuted);">you · 1 msg</span></div><div class="hist-row"><span class="when">2mo ago</span><span class="pill teal">recommendation</span><span class="pill">archived</span><span style="color:var(--fgMuted);">engine · 7 msgs · <a href="#" style="text-decoration:underline;">Undo</a></span></div></div>';
+        html +=
+          '<div class="demo-note"><strong>Variant A — detail.</strong> Recommendation collapses into a band on top of the header (drops card count 7→6). Header gains a right-side hero KPI w/ volume Spark — top of page now anchors the eye. Volume chart promoted to full width; open-rate demoted to a footnote spark. Stats strip tightened to 17px numbers so it reads as supporting, not parallel-hero. Same data, redistributed weight.</div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT B — LIST ─── */
+      function renderB_List() {
+        const groups = groupedByCat();
+        const last24hCount = SENDERS.filter((s) => s.last24h).length;
+        const activeWeekCount = SENDERS.filter((s) => s.last < 7).length;
+
+        let html = '<div class="vB-list app-shell">';
+        html += brandHeader();
+        html +=
+          '<div class="header-band"><div><div class="page-eyebrow">Senders</div><div class="page-title">Senders dashboard</div></div></div>';
+        html += '<div class="vB-kpi-grid">';
+        html +=
+          '<div class="vB-kpi-cell"><div class="label">Senders</div><div class="num">' +
+          totalSenders +
+          '</div><div class="micro">' +
+          sparkArea([12, 15, 18, 22, 28, 32, 35, 38, 42, 45, 48, totalSenders + 38], {
+            w: 100,
+            h: 24,
+            color: 'var(--primary)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="vB-kpi-cell"><div class="label">Noise reduction available <span class="pulse-dot"></span></div><div class="num">~' +
+          noiseReductionPct +
+          '<span class="unit">%</span></div><div class="micro">' +
+          sparkArea([12, 18, 22, 28, 24, 30, 32, 35, 28, 32, 28, noiseReductionPct], {
+            w: 100,
+            h: 24,
+            color: 'var(--amber)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="vB-kpi-cell"><div class="label">Decisions queued</div><div class="num">' +
+          noiseDecisionCount +
+          '</div><div class="micro">' +
+          sparkArea(
+            [
+              3,
+              5,
+              8,
+              12,
+              9,
+              11,
+              noiseDecisionCount - 2,
+              noiseDecisionCount,
+              noiseDecisionCount - 1,
+              noiseDecisionCount + 1,
+              noiseDecisionCount,
+              noiseDecisionCount,
+            ],
+            { w: 100, h: 24, color: 'var(--primary)' },
+          ) +
+          '</div></div>';
+        html +=
+          '<div class="vB-kpi-cell"><div class="label">Last 24h <span class="pulse-dot"></span></div><div class="num">' +
+          last24hCount +
+          '<span class="unit"> active</span></div><div class="micro">' +
+          sparkArea([2, 1, 3, 2, 4, last24hCount - 1, last24hCount], {
+            w: 100,
+            h: 24,
+            color: 'var(--violet)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="vB-kpi-cell"><div class="label">Active this week</div><div class="num">' +
+          activeWeekCount +
+          '</div><div class="micro">' +
+          sparkArea([6, 7, 8, 8, 9, activeWeekCount - 1, activeWeekCount], {
+            w: 100,
+            h: 24,
+            color: 'var(--fgSoft)',
+          }) +
+          '</div></div>';
+        html += '</div>';
+
+        html +=
+          '<div class="vB-filters"><button class="chip active">All</button><button class="chip"><span class="label-stripe" style="background:' +
+          CAT_COLOR.primary +
+          '"></span>Primary</button><button class="chip"><span class="label-stripe" style="background:' +
+          CAT_COLOR.promotions +
+          '"></span>Promotions</button><button class="chip"><span class="label-stripe" style="background:' +
+          CAT_COLOR.social +
+          '"></span>Social</button><button class="chip"><span class="label-stripe" style="background:' +
+          CAT_COLOR.updates +
+          '"></span>Updates</button></div>';
+
+        groups.forEach((g, gi) => {
+          const sharePct = Math.round((g.noise / totalNoise) * 100);
+          const isFirst = gi === 0;
+          html +=
+            '<div class="vB-group"><div class="vB-group-head"><div class="vB-group-head-row"><div><span class="label">' +
+            CAT_LABEL[g.cat] +
+            '</span><span class="count">' +
+            g.items.length +
+            ' senders</span></div><div style="font-size:11px;color:var(--fgMuted);font-variant-numeric:tabular-nums;">' +
+            sharePct +
+            '% noise</div></div><div class="noise-stripe" style="width:' +
+            sharePct +
+            '%;"></div></div>';
+          if (isFirst) {
+            g.items.forEach((s, i) => {
+              let recVerb = '',
+                tone = '';
+              if (s.rec === 'unsubscribe') {
+                recVerb = 'Unsubscribe';
+                tone = 'unsub';
+              } else if (s.rec === 'archive') {
+                recVerb = 'Archive';
+                tone = 'archive';
+              }
+              const recBtn = recVerb
+                ? '<button class="verb rec ' + tone + '">' + recVerb + '</button>'
+                : '<button class="verb">Keep</button>';
+              const otherVerbs =
+                (recVerb !== 'Keep'
+                  ? '<button class="verb icon-only" title="Keep (K)">K</button>'
+                  : '') +
+                (recVerb !== 'Archive'
+                  ? '<button class="verb icon-only" title="Archive (A)">A</button>'
+                  : '') +
+                (recVerb !== 'Unsubscribe' && !s.protected
+                  ? '<button class="verb icon-only" title="Unsubscribe (U)">U</button>'
+                  : '') +
+                '<button class="verb icon-only" title="Later (L)">L</button>';
+              const evidence =
+                s.monthly +
+                '/mo · ' +
+                (s.read < 0.1 ? 'rarely read' : Math.round(s.read * 100) + '% read');
+              const pulseDot = s.last24h ? '<span class="pulse"></span>' : '';
+              const chips =
+                (s.protected
+                  ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
+                  : '') +
+                (s.vip
+                  ? ' <span class="pill teal" style="margin-left:8px;font-size:9px;padding:1px 6px;">VIP</span>'
+                  : '');
+              html +=
+                '<div class="vB-row" style="animation-delay:' +
+                i * 30 +
+                'ms;"><input type="checkbox" /><div class="avatar-cell av-tint-' +
+                s.avIdx +
+                '" style="padding:3px;border-radius:10px;">' +
+                avatarHtml(s, 'sm') +
+                pulseDot +
+                '</div><div class="name-cell"><div class="nm">' +
+                s.name +
+                chips +
+                '</div><div class="dom">' +
+                s.domain +
+                '</div></div><div class="evidence">' +
+                evidence +
+                '</div><div class="minibar-cell">' +
+                miniBar3([
+                  Math.round((s.monthly * s.read) / 4),
+                  Math.round((s.monthly * (1 - s.read)) / 4),
+                  Math.round(s.monthly / 8),
+                ]) +
+                '</div><div class="actions">' +
+                recBtn +
+                otherVerbs +
+                '</div><div class="chev">›</div></div>';
+            });
+          } else {
+            html +=
+              '<div style="padding:14px 20px;font-size:12px;color:var(--fgMuted);">Collapsed — ' +
+              g.items.length +
+              ' senders · click to expand</div>';
+          }
+          html += '</div>';
+        });
+
+        html +=
+          '<div class="demo-note"><strong>Variant B — dashboard-amending.</strong> Hero is a 5-cell KPI grid w/ sparkline per cell + violet "live" pulse on metrics changed since last visit. Filter chips carry Gmail-label color stripes (semantic, not predicted). Rows gain a 3-bar read/unread/archived chart, stagger-fade on first load (D-NEW-β), and a violet pulse dot on senders that mailed in last 24h. <em>Requires drafting D-NEW-α (palette) + D-NEW-β (motion).</em></div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT B — DETAIL ─── */
+      function renderB_Detail() {
+        const s = SENDERS[0];
+        const heatCells = weeklyHeatmapCells(s);
+        const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+        let heatRows = '';
+        for (let d = 0; d < 7; d++) {
+          heatRows += '<div class="vB-heatmap">';
+          heatRows += '<div class="label">' + days[d] + '</div>';
+          for (let w = 0; w < 12; w++) {
+            const i = w * 7 + d;
+            const intensity = heatCells[i];
+            const opacity = 0.1 + intensity * 0.9;
+            const bg = intensity < 0.05 ? 'var(--lineSoft)' : 'rgba(0,107,95,' + opacity + ')';
+            heatRows += '<div class="cell" style="background:' + bg + ';"></div>';
+          }
+          heatRows += '</div>';
+        }
+
+        let weekHeaderCells = '';
+        for (let i = 0; i < 12; i++) {
+          weekHeaderCells +=
+            '<div style="font-size:9px;color:var(--fgMuted);text-align:center;font-family:var(--font-mono);">' +
+            (i === 0 ? 'W1' : i === 11 ? 'W12' : '') +
+            '</div>';
+        }
+
+        let html = '<div class="vB-detail app-shell">';
+        html += brandHeader();
+        html += '<a class="back-link" href="?variant=B&view=list">‹ Back to senders</a>';
+        html +=
+          '<div class="hero-card"><div class="rec-band"><span>▸ Engine recommends <strong>Unsubscribe</strong> · 89% confidence · <a href="#" style="text-decoration:underline;">Why?</a></span><span class="mono" style="font-size:11px;">RECOMMENDATION</span></div>';
+        html +=
+          '<div class="hero-body"><div class="avatar-cell av-tint-' +
+          s.avIdx +
+          '" style="padding:3px;border-radius:14px;position:relative;">' +
+          avatarHtml(s, 'xl') +
+          '<span class="pulse" style="position:absolute;top:-2px;right:-2px;width:10px;height:10px;border-radius:50%;background:var(--violet);border:2px solid var(--card);animation:pulse 2s ease-in-out infinite;"></span></div><div class="hero-id" style="flex:1;"><div><div class="page-eyebrow" style="margin-bottom:2px;">' +
+          CAT_LABEL[s.cat].toUpperCase() +
+          '</div><div class="name">' +
+          s.name +
+          '</div><div class="dom">' +
+          s.domain +
+          '</div><div class="chips"><span class="pill">VIP</span><span class="pill">PROTECT</span></div></div></div><div style="display:flex;gap:6px;"><button class="btn">K</button><button class="btn warn" style="color:white;">Unsubscribe</button></div></div></div>';
+        html +=
+          '<div class="vB-kpi6"><div class="cell"><div class="label">Monthly</div><div class="num">' +
+          s.monthly +
+          '<span class="unit">/mo</span></div><div class="micro">' +
+          spark(s.vol, { w: 100, h: 18, color: 'var(--primary)' }) +
+          '</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Trend</div><div class="num" style="color:var(--amber);">↑ Up</div><div class="micro" style="font-size:10px;color:var(--fgMuted);font-family:var(--font-mono);">+40% vs prior 3mo</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Read rate</div><div class="num">' +
+          Math.round(s.read * 100) +
+          '<span class="unit">%</span></div><div class="micro">' +
+          spark([0.1, 0.12, 0.14, 0.13, 0.11, 0.12, 0.13, 0.1, 0.12, 0.13, 0.11, 0.12], {
+            w: 100,
+            h: 18,
+            color: 'var(--fgSoft)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Relationship</div><div class="num">2<span class="unit">yr</span></div><div class="micro" style="font-size:10px;color:var(--fgMuted);font-family:var(--font-mono);">First: Mar 2024</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Last seen</div><div class="num">2<span class="unit">d</span></div><div class="micro" style="font-size:10px;color:var(--fgMuted);font-family:var(--font-mono);">23 May 2026</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Decisions Q</div><div class="num">3</div><div class="micro" style="font-size:10px;color:var(--fgMuted);font-family:var(--font-mono);">2 kept, 1 archived</div></div></div>';
+        html +=
+          '<div class="vB-heatmap-card"><div class="head"><div><h3>When they mail you</h3><div class="sub" style="margin-top:4px;">Past 12 weeks × 7 days · heatmap of message volume</div></div><span class="eyebrow">Pattern: Tue + Thu mornings</span></div>';
+        html +=
+          '<div class="vB-heatmap" style="grid-template-columns:30px repeat(12, 1fr);margin-bottom:0;"><div class="label"></div>' +
+          weekHeaderCells +
+          '</div>';
+        html += heatRows;
+        html +=
+          '<div class="vB-heatmap-legend"><span>fewer</span><div class="scale"><span style="background:var(--lineSoft);"></span><span style="background:rgba(0,107,95,0.25);"></span><span style="background:rgba(0,107,95,0.5);"></span><span style="background:rgba(0,107,95,0.75);"></span><span style="background:rgba(0,107,95,1);"></span></div><span>more</span></div></div>';
+        html +=
+          '<div class="toolbar" style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;gap:8px;box-shadow:var(--shadow-card);">';
+        html +=
+          '<button style="padding:8px 16px;border-radius:8px;background:var(--amber);color:white;border:1px solid var(--amber);font-weight:500;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">Unsubscribe <span class="kbd" style="background:rgba(255,255,255,0.2);color:white;border-color:rgba(255,255,255,0.3);">U</span></button>';
+        html +=
+          '<button style="padding:8px 16px;border-radius:8px;background:var(--card);border:1px solid var(--line);font-weight:500;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">Keep <span class="kbd">K</span></button>';
+        html +=
+          '<button style="padding:8px 16px;border-radius:8px;background:var(--card);border:1px solid var(--line);font-weight:500;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">Archive <span class="kbd">A</span></button>';
+        html +=
+          '<button style="padding:8px 16px;border-radius:8px;background:var(--card);border:1px solid var(--line);font-weight:500;flex:1;display:flex;align-items:center;justify-content:center;gap:8px;">Later <span class="kbd">L</span></button></div>';
+        html +=
+          '<div class="section"><h3>Recent messages</h3><div class="msg-row"><span class="unread-dot"></span><div><span class="subj">You have 7 new connections</span><span class="snippet">Stay in touch with the people in your network…</span></div><span class="when">2d ago</span><span style="color:var(--fgMuted);font-size:11px;">12KB</span></div><div class="msg-row"><span class="unread-dot read"></span><div><span class="subj">Your weekly job alert</span><span class="snippet">5 new jobs match your search…</span></div><span class="when">4d ago</span><span style="color:var(--fgMuted);font-size:11px;">8KB</span></div></div>';
+        html +=
+          '<div class="demo-note"><strong>Variant B — detail.</strong> 6-cell KPI grid replaces today\'s 4-cell stats strip and absorbs the open-rate footnote. Heatmap strip (12w × 7d) replaces the volume bar chart — instantly reveals "this sender mails me Tue/Thu mornings." Uses deep-teal hue ramp (not generic green-yellow-red) to stay on-brand. Pulse dot on avatar = active in last 24h.</div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT C — LIST ─── */
+      function renderC_List() {
+        const groups = groupedByCat();
+        const totalThisWeek = 312;
+        const readPct = 18;
+        const readingHrs = 4.2;
+        const noiseUnsubCount = 12;
+        const noiseDropPct = 38;
+
+        let html = '<div class="vC-list app-shell">';
+        html += brandHeader(
+          '<span class="vC-trust-badge"><span class="dot"></span>Bodies fetched: 0</span>',
+        );
+        html +=
+          '<section class="vC-story"><div class="head"><div><div class="eyebrow">Your inbox this week</div><div class="story-line"><span class="em">' +
+          totalThisWeek +
+          '</span> emails reached you. You read <span class="em-teal">' +
+          readPct +
+          '%</span>.</div></div><div class="meta-strip"><div class="meta"><div class="v">' +
+          readingHrs +
+          '<span style="font-size:14px;color:var(--fgMuted);">h</span></div><div class="l">Reading time / mo</div></div><div class="meta"><div class="v delta down">−8%</div><div class="l">vs last month</div></div></div></div>';
+        html +=
+          '<div class="vC-cta"><div class="copy"><strong>If you unsubscribe from ' +
+          noiseUnsubCount +
+          ' senders we picked, your inbox drops ~' +
+          noiseDropPct +
+          '% next week.</strong> We\'ll guide you one at a time. 3 minutes.</div><button class="btn-start">Start review <span style="opacity:0.7;">→</span></button></div></section>';
+        html +=
+          '<section class="vC-quadrant-card"><div class="vC-quadrant-head"><h2>The pattern at a glance</h2><div class="toggle"><button class="active">Quadrant</button><button>List</button></div></div><div class="vC-quadrant-wrap">' +
+          quadrantSvg(SENDERS) +
+          '</div><div class="vC-quadrant-legend"><span class="key"><span class="swatch" style="background:rgba(180,83,9,0.55);border:1px solid var(--amber);"></span>Unsub candidate</span><span class="key"><span class="swatch" style="background:rgba(0,107,95,0.55);border:1px solid var(--primary);"></span>VIP</span><span class="key"><span class="swatch" style="background:rgba(4,120,87,0.55);border:1px solid var(--emerald);"></span>Protected</span><span class="key"><span class="swatch" style="background:rgba(100,109,105,0.55);border:1px solid rgba(100,109,105,0.9);"></span>Neutral</span></div></section>';
+
+        groups.forEach((g) => {
+          const sharePct = Math.round((g.noise / totalNoise) * 100);
+          const desc =
+            g.cat === 'promotions'
+              ? 'Marketing, sales, deals'
+              : g.cat === 'updates'
+                ? 'Newsletters, digests, notifications'
+                : g.cat === 'social'
+                  ? 'LinkedIn, Reddit, social feeds'
+                  : g.cat === 'primary'
+                    ? 'People + tools you actually use'
+                    : 'Forums and lists';
+          html +=
+            '<div class="vC-cat-band"><div><span class="name">' +
+            CAT_LABEL[g.cat] +
+            '</span><span class="count">' +
+            g.items.length +
+            '</span></div><div class="desc">' +
+            desc +
+            '</div><div class="noise">' +
+            sharePct +
+            '%<span class="pct-label">noise</span></div><div class="chev">›</div></div>';
+        });
+
+        html +=
+          '<div class="demo-note"><strong>Variant C — no-constraints reimagining ("Your Inbox Story").</strong> Hero is editorial display copy (Fraunces serif) that frames the user\'s mail as a personal narrative, not a count. Below it: a quadrant view (volume × engagement) — pattern recognition at a glance, unsub candidates auto-cluster in the amber zone. List view is a one-click toggle, not the default. Category bands collapse by default. Trust badge ("Bodies fetched: 0") sits next to bold ROI copy — that contrast is the wedge. Requires D-NEW-γ (editorial copy scope) + D-NEW-δ (quadrant as default).</div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT C — DETAIL ─── */
+      function renderC_Detail() {
+        const s = SENDERS[0];
+        const readingMins = Math.round(s.monthly * 1.6);
+        const yearlySavedHrs = ((s.monthly * 12 * 1.6) / 60).toFixed(1);
+
+        const dayLabels = ['9a', '10a', '11a', '12p', '1p', '2p', '3p'];
+        const dayHdr = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+        let heatRows = '<div class="label hdr"></div>';
+        dayHdr.forEach((d) => {
+          heatRows += '<div class="label hdr">' + d + '</div>';
+        });
+        for (let h = 0; h < 7; h++) {
+          heatRows += '<div class="label">' + dayLabels[h] + '</div>';
+          for (let d = 0; d < 7; d++) {
+            const intensity =
+              (d === 1 || d === 3) && h <= 1
+                ? 0.85
+                : d === 4 && h === 2
+                  ? 0.45
+                  : Math.random() * 0.15;
+            const bg =
+              intensity < 0.05
+                ? 'var(--lineSoft)'
+                : 'rgba(0,107,95,' + (0.15 + intensity * 0.85) + ')';
+            heatRows += '<div class="cell" style="background:' + bg + ';"></div>';
+          }
+        }
+
+        let html = '<div class="vC-detail app-shell">';
+        html += brandHeader(
+          '<span class="vC-trust-badge"><span class="dot"></span>Bodies fetched: 0</span>',
+        );
+        html += '<a class="back-link" href="?variant=C&view=list">‹ Back to your inbox story</a>';
+        html +=
+          '<div class="vC-hero-card"><div class="vC-hero-head"><div class="av-tint-' +
+          s.avIdx +
+          '" style="padding:4px;border-radius:16px;position:relative;">' +
+          avatarHtml(s, 'xl') +
+          '</div><div><div class="page-eyebrow" style="margin-bottom:4px;">' +
+          CAT_LABEL[s.cat].toUpperCase() +
+          '</div><div class="name">' +
+          s.name +
+          '</div><div class="meta">' +
+          s.domain +
+          ' · since Mar 2024</div></div></div>';
+        html +=
+          '<div class="vC-hero-narrative">Mails you <span class="em">~5×/week</span>. You read <span class="em">' +
+          Math.round(s.read * 100) +
+          '%</span> of what they send.</div>';
+        html +=
+          '<div class="vC-hero-roi">↘ Estimated reading cost: ' +
+          readingMins +
+          ' minutes/month. Unsubscribing would save you ~' +
+          yearlySavedHrs +
+          ' hours/year.</div>';
+        html +=
+          '<div class="vC-hero-rec"><span class="icon">▸</span><div class="copy"><strong>We recommend Unsubscribe.</strong> Confidence: 89%. <span class="why">Why? Volume is up 40% over the last quarter, and you\'ve read &lt;15% of their messages all year. <a href="#" style="text-decoration:underline;">See full reasoning ›</a></span></div></div>';
+        html += '<div class="vC-actions">';
+        html +=
+          '<button class="verb-btn rec"><span class="verb-line">Unsubscribe <span class="kbd" style="background:rgba(255,255,255,0.2);color:white;border-color:rgba(255,255,255,0.3);">U</span></span><span class="roi">Saves ~' +
+          yearlySavedHrs +
+          'h/year</span></button>';
+        html +=
+          '<button class="verb-btn"><span class="verb-line">Keep <span class="kbd">K</span></span><span class="roi" style="color:var(--fgMuted);">Stay in inbox</span></button>';
+        html +=
+          '<button class="verb-btn"><span class="verb-line">Archive <span class="kbd">A</span></span><span class="roi" style="color:var(--fgMuted);">Out of inbox, kept</span></button>';
+        html +=
+          '<button class="verb-btn"><span class="verb-line">Later <span class="kbd">L</span></span><span class="roi" style="color:var(--fgMuted);">Decide tomorrow</span></button></div></div>';
+        html +=
+          '<div class="vC-detail-grid"><div class="heatmap-card"><h3>When they mail you</h3><div class="sub">Past 12 weeks, hour-of-day pattern. Tue + Thu mornings most active.</div><div class="vC-day-heatmap">' +
+          heatRows +
+          '</div></div>';
+        html +=
+          '<div class="kpi-stack"><div class="kpi-mini"><div class="lhs"><div class="v">' +
+          s.monthly +
+          '<span style="font-size:11px;color:var(--fgMuted);font-weight:500;"> /mo</span></div><div class="l">Volume</div></div><div class="rhs up">↑ 40%</div></div>';
+        html +=
+          '<div class="kpi-mini"><div class="lhs"><div class="v">' +
+          Math.round(s.read * 100) +
+          '<span style="font-size:11px;color:var(--fgMuted);font-weight:500;">%</span></div><div class="l">Read rate</div></div><div class="rhs" style="color:var(--fgMuted);font-size:11px;">below 20% all year</div></div>';
+        html +=
+          '<div class="kpi-mini"><div class="lhs"><div class="v">2<span style="font-size:11px;color:var(--fgMuted);font-weight:500;"> yr</span></div><div class="l">Relationship</div></div><div class="rhs" style="color:var(--fgMuted);font-size:11px;">Since Mar 2024</div></div>';
+        html +=
+          '<div class="kpi-mini"><div class="lhs"><div class="v">' +
+          readingMins +
+          '<span style="font-size:11px;color:var(--fgMuted);font-weight:500;"> min</span></div><div class="l">Reading cost / mo</div></div><div class="rhs up">~' +
+          yearlySavedHrs +
+          'h/year</div></div></div></div>';
+        html +=
+          '<div class="section"><h3>Recent messages</h3><div class="msg-row"><span class="unread-dot"></span><div><span class="subj">You have 7 new connections</span><span class="snippet">Stay in touch with the people in your network…</span></div><span class="when">2d ago</span><span style="color:var(--fgMuted);font-size:11px;">12KB</span></div><div class="msg-row"><span class="unread-dot read"></span><div><span class="subj">Your weekly job alert</span><span class="snippet">5 new jobs match your search…</span></div><span class="when">4d ago</span><span style="color:var(--fgMuted);font-size:11px;">8KB</span></div><div class="msg-row"><span class="unread-dot"></span><div><span class="subj">5 jobs match your search</span><span class="snippet">Software Engineer at Vercel, Senior PM at Linear…</span></div><span class="when">6d ago</span><span style="color:var(--fgMuted);font-size:11px;">9KB</span></div></div>';
+        html += '<div class="vC-timeline"><h3>Decision timeline</h3>';
+        html +=
+          '<div class="vC-tl-item"><div class="when">today</div><div class="node recent"></div><div class="what">Engine recommends <strong style="color:var(--amber);">Unsubscribe</strong> <span class="src">· 89% confidence</span></div></div>';
+        html +=
+          '<div class="vC-tl-item"><div class="when">3w ago</div><div class="node"></div><div class="what">You chose to <strong>Keep</strong> <span class="src">· manual</span></div></div>';
+        html +=
+          '<div class="vC-tl-item"><div class="when">2mo ago</div><div class="node"></div><div class="what">Engine recommended <strong>Archive</strong> — you accepted <span class="src">· 7 messages affected</span></div></div>';
+        html +=
+          '<div class="vC-tl-item"><div class="when">2yr ago</div><div class="node"></div><div class="what">First message received <span class="src">· Mar 2024</span></div></div></div>';
+        html +=
+          '<div class="demo-note"><strong>Variant C — detail.</strong> Hero card is the page — display-serif narrative ("Mails you ~5×/week. You read 12% of what they send."), explicit time-cost ROI (38min/mo), recommendation w/ "Why?", and action buttons that <em>show the time savings</em> on each verb. Heatmap is the supporting anchor visual ("Tue + Thu mornings"). History reframes as a timeline, not a table. Every element answers "what is this sender doing to my time, and what should I do about it?"</div></div>';
+        return html;
+      }
+
+      /* ─── VARIANT D — composite winner (Codex-tightened) ─── */
+      // Status eyebrow — ONLY for VIP / Protected (avoid Daily/Weekly noise — already in sub line)
+      function statusEyebrow(s) {
+        if (s.protected) return { txt: 'Protected', cls: 'protected' };
+        if (s.vip) return { txt: 'VIP', cls: 'vip' };
+        return null;
+      }
+
+      // Engine reason copy — derives from existing fields, not new data
+      function engineWhy(s) {
+        if (!s.rec) return null;
+        if (s.rec === 'unsubscribe' && s.read < 0.1)
+          return Math.round(s.read * 100) + '% read rate · volume up';
+        if (s.rec === 'unsubscribe') return 'Read rate below 20% and rising volume';
+        if (s.rec === 'archive') return 'Read sometimes, but not time-sensitive';
+        return null;
+      }
+
+      // Intent groups replace Gmail categories — user-intent framing
+      function intentGroups() {
+        const cleanup = SENDERS.filter((s) => s.rec === 'unsubscribe');
+        const later = SENDERS.filter((s) => s.rec === 'archive');
+        const protect = SENDERS.filter((s) => (s.vip || s.protected) && !s.rec);
+        const people = SENDERS.filter((s) => !s.rec && !s.vip && !s.protected);
+        return [
+          {
+            key: 'cleanup',
+            label: 'Clean up',
+            icon: '↘',
+            desc: 'Senders we think you can let go',
+            items: cleanup,
+            accent: 'amber',
+          },
+          {
+            key: 'later',
+            label: 'Move later',
+            icon: '↗',
+            desc: 'Out of inbox, still here when you need them',
+            items: later,
+            accent: 'fg',
+          },
+          {
+            key: 'protect',
+            label: 'Protect',
+            icon: '◆',
+            desc: 'Always-keep · receipts, VIPs, important threads',
+            items: protect,
+            accent: 'emerald',
+          },
+          {
+            key: 'people',
+            label: 'People',
+            icon: '◯',
+            desc: 'Folks and tools you stay in touch with',
+            items: people,
+            accent: 'teal',
+          },
+        ];
+      }
+
+      function renderD_List() {
+        const groups = intentGroups();
+        const totalThisWeek = 312;
+        const readPct = 18;
+        const readingHrs = 4.2;
+        const noiseUnsubCount = SENDERS.filter((s) => s.rec === 'unsubscribe').length;
+        const noiseDropPct = noiseReductionPct;
+        const protectedCount = SENDERS.filter((s) => s.vip || s.protected).length;
+        const needsReview = SENDERS.filter((s) => s.rec).length;
+        const doneCount = 2,
+          totalDecisions = needsReview; // demo progress state
+
+        let html = '<div class="vD-list app-shell">';
+        html += brandHeader();
+
+        // Hero — sharper two-line story + trust line baked in
+        html += '<section class="vD-hero">';
+        html += '<div class="eyebrow">Your inbox this week</div>';
+        html += '<div class="vD-hero-grid">';
+        html += '<div class="story">';
+        html += '<p><span class="em">' + totalThisWeek + '</span> emails reached you.</p>';
+        html += '<p>Only <span class="em-teal">' + readPct + '%</span> were worth reading.</p>';
+        html += '</div>';
+        html +=
+          '<div class="meta-strip"><div class="meta"><div class="v">' +
+          readingHrs +
+          '<span style="font-size:15px;color:var(--fgMuted);font-weight:500;">h</span></div><div class="l">Reading time / mo</div></div><div class="meta"><div class="v delta down">−8%</div><div class="l">vs last month</div></div></div>';
+        html += '</div>';
+        html +=
+          '<div class="vD-hero-cta"><div class="copy"><strong>' +
+          noiseUnsubCount +
+          " decisions can cut next week's inbox by ~" +
+          noiseDropPct +
+          '%.</strong> We\'ll guide you one at a time. 3 minutes.</div><button class="btn-start">Start review <span style="opacity:0.7;">→</span></button></div>';
+        html +=
+          '<div class="trust-line"><span class="dot"></span>Metadata only · No message bodies · Reversible for 7 days</div>';
+        html += '</section>';
+
+        // Receipt strip — visualize D35 undo loop (shown when recent action just happened)
+        html += '<div class="vD-receipt">';
+        html += '<span class="icon">✓</span>';
+        html +=
+          '<div class="copy"><strong>Notion</strong> moved out of inbox<span class="ttl">6d 23h to undo</span></div>';
+        html += '<button class="undo">Undo</button>';
+        html += '<button class="dismiss" title="Dismiss">×</button>';
+        html += '</div>';
+
+        // Weekly progress loop — retention surface
+        html += '<div class="vD-progress">';
+        html += '<div class="lhs">';
+        html += '<div class="label">This week</div>';
+        html +=
+          '<div class="copy"><span class="em">' +
+          doneCount +
+          ' of ' +
+          totalDecisions +
+          '</span> cleanup decisions done · Estimated savings so far: <span class="em">3.1h/year</span></div>';
+        html += '</div>';
+        html +=
+          '<div class="bar"><div class="fill" style="width:' +
+          Math.round((doneCount / totalDecisions) * 100) +
+          '%;"></div></div>';
+        html += '</div>';
+
+        // KPI strip — user-value labels
+        html += '<div class="vD-kpi-strip">';
+        html +=
+          '<div class="vD-kpi-cell"><div class="label">Senders</div><div class="num">' +
+          totalSenders +
+          '</div><div class="micro">' +
+          spark([8, 10, 11, 12, 12, 12, 12], { w: 80, h: 14, color: 'var(--fgSoft)' }) +
+          '</div></div>';
+        html +=
+          '<div class="vD-kpi-cell"><div class="label">Noise reducible</div><div class="num">~' +
+          noiseReductionPct +
+          '<span class="unit">%</span></div><div class="micro">' +
+          spark([22, 28, 30, 35, 32, 38, noiseReductionPct], {
+            w: 80,
+            h: 14,
+            color: 'var(--amber)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="vD-kpi-cell"><div class="label">Time cost</div><div class="num">' +
+          readingHrs +
+          '<span class="unit">h/mo</span></div><div class="micro">' +
+          spark([5.0, 4.8, 4.6, 4.5, 4.4, 4.3, readingHrs], {
+            w: 80,
+            h: 14,
+            color: 'var(--emerald)',
+          }) +
+          '</div></div>';
+        html +=
+          '<div class="vD-kpi-cell"><div class="label">Protected</div><div class="num">' +
+          protectedCount +
+          '</div><div class="micro" style="font-size:10px;color:var(--fgMuted);font-family:var(--font-mono);">VIPs · receipts</div></div>';
+        html +=
+          '<div class="vD-kpi-cell"><div class="label">Needs review</div><div class="num">' +
+          needsReview +
+          '</div><div class="micro">' +
+          spark([3, 5, 6, 7, 8, 8, needsReview], { w: 80, h: 14, color: 'var(--primary)' }) +
+          '</div></div>';
+        html += '</div>';
+
+        // Filter chips — intent groups (user outcomes, not Gmail categories)
+        html += '<div class="vD-filters">';
+        html += '<button class="chip active">All</button>';
+        groups.forEach((g) => {
+          html +=
+            '<button class="chip">' +
+            g.label +
+            '<span style="color:var(--fgMuted);font-weight:500;margin-left:4px;">' +
+            g.items.length +
+            '</span></button>';
+        });
+        html += '</div>';
+
+        // Intent-grouped tables
+        groups.forEach((g, gi) => {
+          if (g.items.length === 0) return;
+          const totalIntentNoise = g.items.reduce((a, s) => a + noisePerSender(s), 0);
+          const sharePct = Math.round((totalIntentNoise / totalNoise) * 100);
+          const isExpanded = g.key === 'cleanup'; // only top-priority group auto-expands
+          html += '<div class="vD-group"><div class="vD-group-head">';
+          html += '<div class="vD-group-head-row">';
+          html +=
+            '<div style="display:flex;align-items:flex-start;gap:4px;"><span class="vD-group-toggle' +
+            (isExpanded ? '' : ' collapsed') +
+            '">▾</span><div><div style="display:flex;align-items:center;gap:8px;"><span class="group-icon ' +
+            g.key +
+            '">' +
+            g.icon +
+            '</span><span class="label">' +
+            g.label +
+            '</span><span class="count">' +
+            g.items.length +
+            ' senders</span></div><div class="desc" style="margin-top:6px;margin-left:38px;">' +
+            g.desc +
+            '</div></div></div>';
+          if (g.key === 'cleanup' || g.key === 'later') {
+            html +=
+              '<div class="noise ' +
+              g.accent +
+              '">' +
+              sharePct +
+              '%<span class="l">of noise</span></div>';
+          } else {
+            html +=
+              '<div class="noise ' +
+              g.accent +
+              '" style="font-weight:500;font-size:12px;">' +
+              g.items.length +
+              ' kept</div>';
+          }
+          html += '</div>';
+          html +=
+            '<div class="noise-stripe ' +
+            g.accent +
+            '" style="width:' +
+            Math.max(sharePct, 15) +
+            '%;"></div>';
+          html += '</div>';
+
+          if (isExpanded) {
+            g.items.forEach((s) => {
+              // Recommended verb logic
+              let recBtnText = 'Keep',
+                recBtnCls = '';
+              if (s.rec === 'unsubscribe') {
+                recBtnText = 'Unsubscribe';
+                recBtnCls = 'unsub';
+              } else if (s.rec === 'archive') {
+                recBtnText = 'Archive';
+                recBtnCls = 'archive';
+              }
+              const eyebrow = statusEyebrow(s);
+              const why = engineWhy(s);
+              const readBit = s.read < 0.1 ? 'rarely read' : Math.round(s.read * 100) + '% read';
+
+              html += '<div class="vD-row"><input type="checkbox" />';
+              html +=
+                '<div class="av-wrap av-tint-' + s.avIdx + '">' + avatarHtml(s, 'sm') + '</div>';
+              html += '<div class="name-cell">';
+              html += '<div class="nm-row"><span class="nm">' + s.name + '</span>';
+              if (eyebrow)
+                html += '<span class="freq-eyebrow ' + eyebrow.cls + '">' + eyebrow.txt + '</span>';
+              html += '</div>';
+              html +=
+                '<div class="sub">' +
+                s.domain +
+                '<span class="sep">·</span>' +
+                s.monthly +
+                '/mo<span class="sep">·</span>' +
+                readBit +
+                '</div>';
+              if (why)
+                html += '<div class="why"><span class="why-label">Why:</span>' + why + '</div>';
+              html += '</div>';
+              html +=
+                '<div class="rec-action"><button class="rec-btn ' +
+                recBtnCls +
+                '">' +
+                recBtnText +
+                '</button></div>';
+              html += '<button class="more-btn" title="More actions (K/A/U/L)">···</button>';
+              html += '<div class="chev">›</div>';
+              html += '</div>';
+            });
+          } else {
+            html +=
+              '<div class="collapsed-msg">Collapsed — ' +
+              g.items.length +
+              ' senders · click to expand</div>';
+          }
+          html += '</div>';
+        });
+
+        html +=
+          '<div class="demo-note"><strong>Variant D — Codex-tightened.</strong> Hero: 2-line story + trust line ("Metadata only · No message bodies · Reversible for 7 days"). Weekly progress loop ("2 of 5 cleanup decisions done · 3.1h/year saved"). KPI labels reframed (Senders / Noise reducible / Time cost / Protected / Needs review). Filters + groups are user-intent (Clean up / Move later / Protect / People), not Gmail categories. Rows: one primary action (subtler — no glow shadow), K/A/U/L hidden behind "···" hover-revealed overflow. Inline "Why:" line shows engine reason. Status eyebrow only for VIP/Protected — Daily/Weekly chips dropped to avoid duplicating sub line.</div></div>';
+        return html;
+      }
+
+      function renderD_Detail() {
+        const s = SENDERS[0];
+        const readingMins = Math.round(s.monthly * 1.6);
+        const yearlySavedHrs = ((s.monthly * 12 * 1.6) / 60).toFixed(1);
+
+        let html = '<div class="vD-detail app-shell">';
+        // Trust badge renamed per Codex
+        html += brandHeader(
+          '<span class="vC-trust-badge"><span class="dot"></span>No message bodies</span>',
+        );
+        html += '<a class="back-link" href="?variant=D&view=list">‹ Back to your inbox story</a>';
+
+        // Hero card — editorial narrative; reasoning is a quiet disclosure (not inline)
+        html += '<div class="vD-detail-hero"><div class="head">';
+        html +=
+          '<div class="av-tint-' +
+          s.avIdx +
+          '" style="padding:4px;border-radius:18px;">' +
+          avatarHtml(s, 'xl') +
+          '</div>';
+        html += '<div>';
+        html += '<span class="freq-eyebrow">' + CAT_LABEL[s.cat] + '</span>';
+        html += '<div class="name">' + s.name + '</div>';
+        html += '<div class="meta">' + s.domain + ' · since Mar 2024</div>';
+        html += '</div></div>';
+        html +=
+          '<div class="narrative">Mails you <span class="em">~5×/week</span>. You read <span class="em">' +
+          Math.round(s.read * 100) +
+          '%</span> of what they send.</div>';
+        html +=
+          '<div class="roi">↘ Estimated reading cost: ' +
+          readingMins +
+          ' minutes/month. Unsubscribing saves ~' +
+          yearlySavedHrs +
+          ' hours/year.</div>';
+        // Rec box — tighter, no inline "See reasoning" link
+        html +=
+          '<div class="rec-box"><span class="icon">▸</span><div class="body"><strong>We recommend Unsubscribe.</strong> Confidence: 89%. <span class="why">Volume up 40% this quarter, read rate below 15% all year.</span></div></div>';
+        html += '<div class="actions">';
+        html +=
+          '<button class="verb rec"><span class="verb-line">Unsubscribe <span class="kbd" style="background:rgba(255,255,255,0.2);color:white;border-color:rgba(255,255,255,0.3);">U</span></span><span class="roi">Saves ~' +
+          yearlySavedHrs +
+          'h/year</span></button>';
+        html +=
+          '<button class="verb"><span class="verb-line">Keep <span class="kbd">K</span></span><span class="roi" style="color:var(--fgMuted);">Stay in inbox</span></button>';
+        html +=
+          '<button class="verb"><span class="verb-line">Archive <span class="kbd">A</span></span><span class="roi" style="color:var(--fgMuted);">Out of inbox</span></button>';
+        html +=
+          '<button class="verb"><span class="verb-line">Later <span class="kbd">L</span></span><span class="roi" style="color:var(--fgMuted);">Decide tomorrow</span></button>';
+        html += '</div>';
+        // Quieter reasoning disclosure (moved out of rec-box per Codex)
+        html +=
+          '<div class="reasoning-disclose"><a href="#">See full reasoning ›</a> · how the engine decided</div>';
+        html += '</div>';
+
+        // KPI strip — 4 cells, clean (no spark, no heatmap)
+        html += '<div class="vD-kpi4">';
+        html +=
+          '<div class="cell"><div class="label">Volume</div><div class="v">' +
+          s.monthly +
+          '<span class="unit"> /mo</span></div><div class="delta up">↑ 40% vs prior 3mo</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Read rate</div><div class="v">' +
+          Math.round(s.read * 100) +
+          '<span class="unit">%</span></div><div class="delta">below 20% all year</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Relationship</div><div class="v">2<span class="unit"> yr</span></div><div class="delta">Since Mar 2024</div></div>';
+        html +=
+          '<div class="cell"><div class="label">Reading cost</div><div class="v">' +
+          readingMins +
+          '<span class="unit"> min/mo</span></div><div class="delta up">~' +
+          yearlySavedHrs +
+          'h/year</div></div>';
+        html += '</div>';
+
+        // Recent messages
+        html += '<div class="section"><h3>Recent messages</h3>';
+        html +=
+          '<div class="msg-row"><span class="unread-dot"></span><div><span class="subj">You have 7 new connections</span><span class="snippet">Stay in touch with the people in your network…</span></div><span class="when">2d ago</span><span style="color:var(--fgMuted);font-size:11px;">12KB</span></div>';
+        html +=
+          '<div class="msg-row"><span class="unread-dot read"></span><div><span class="subj">Your weekly job alert</span><span class="snippet">5 new jobs match your search…</span></div><span class="when">4d ago</span><span style="color:var(--fgMuted);font-size:11px;">8KB</span></div>';
+        html +=
+          '<div class="msg-row"><span class="unread-dot"></span><div><span class="subj">5 jobs match your search</span><span class="snippet">Software Engineer at Vercel, Senior PM at Linear…</span></div><span class="when">6d ago</span><span style="color:var(--fgMuted);font-size:11px;">9KB</span></div>';
+        html += '</div>';
+
+        // Decision timeline (from C, polished)
+        html += '<div class="vD-timeline"><h3>Decision timeline</h3>';
+        html +=
+          '<div class="vD-tl-item"><div class="when">today</div><div class="node recent"></div><div class="what">Engine recommends <strong style="color:var(--amber);">Unsubscribe</strong> <span class="src">· 89% confidence</span></div></div>';
+        html +=
+          '<div class="vD-tl-item"><div class="when">3w ago</div><div class="node"></div><div class="what">You chose to <strong>Keep</strong> <span class="src">· manual</span></div></div>';
+        html +=
+          '<div class="vD-tl-item"><div class="when">2mo ago</div><div class="node"></div><div class="what">Engine recommended <strong>Archive</strong> — you accepted <span class="src">· 7 messages affected</span></div></div>';
+        html +=
+          '<div class="vD-tl-item"><div class="when">2yr ago</div><div class="node"></div><div class="what">First message received <span class="src">· Mar 2024</span></div></div>';
+        html += '</div>';
+
+        html +=
+          '<div class="demo-note"><strong>Variant D — detail.</strong> Editorial hero w/ Fraunces narrative, explicit time-cost ROI, recommendation w/ "Why?", 4 action buttons w/ per-verb time savings. KPI strip = 4 clean cells, NO sparklines per cell, NO heatmap. Sticky bottom action bar keeps decision reachable while scrolling.</div></div>';
+
+        // Sticky bottom action bar — Codex polish addition
+        html += '<div class="vD-sticky-bar">';
+        html +=
+          '<div class="ctx"><div class="avatar av-' +
+          s.avIdx +
+          '" style="width:28px;height:28px;border-radius:8px;font-size:11px;">' +
+          s.name[0] +
+          '</div><div><span class="nm">' +
+          s.name +
+          '</span> <span class="meta">· ' +
+          s.monthly +
+          '/mo · ' +
+          Math.round(s.read * 100) +
+          '% read</span></div></div>';
+        html += '<div class="actions">';
+        html +=
+          '<button class="verb rec">Unsubscribe <span class="kbd" style="background:rgba(255,255,255,0.2);color:white;border-color:rgba(255,255,255,0.3);">U</span></button>';
+        html += '<button class="verb">Keep <span class="kbd">K</span></button>';
+        html += '<button class="verb">Archive <span class="kbd">A</span></button>';
+        html += '<button class="verb">Later <span class="kbd">L</span></button>';
+        html += '</div></div>';
+
+        return html;
+      }
+
+      /* ─── ROUTER (uses Range API, no innerHTML) ─── */
+      const RENDERERS = {
+        A: { list: renderA_List, detail: renderA_Detail },
+        B: { list: renderB_List, detail: renderB_Detail },
+        C: { list: renderC_List, detail: renderC_Detail },
+        D: { list: renderD_List, detail: renderD_Detail },
+      };
+
+      function render() {
+        const fn = RENDERERS[state.variant] && RENDERERS[state.variant][state.view];
+        const html = fn ? fn() : '<p style="padding:40px;">Variant not implemented.</p>';
+        const app = document.getElementById('app');
+        // Use Range.createContextualFragment — safe parse, proper SVG namespace handling.
+        // All content above is hardcoded; no user input flows through this fragment.
+        const range = document.createRange();
+        range.selectNode(app);
+        const frag = range.createContextualFragment(html);
+        app.replaceChildren(frag);
+
+        document
+          .querySelectorAll('[data-v]')
+          .forEach((b) => b.classList.toggle('active', b.dataset.v === state.variant));
+        document
+          .querySelectorAll('[data-w]')
+          .forEach((b) => b.classList.toggle('active', b.dataset.w === state.view));
+        document.getElementById('desc').textContent = VARIANTS[state.variant];
+        const p = new URLSearchParams({ variant: state.variant, view: state.view });
+        history.replaceState(null, '', '?' + p.toString());
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
+
+      function setVariant(v) {
+        state.variant = v;
+        render();
+      }
+      function setView(w) {
+        state.view = w;
+        render();
+      }
+
+      document
+        .querySelectorAll('[data-v]')
+        .forEach((btn) => btn.addEventListener('click', () => setVariant(btn.dataset.v)));
+      document
+        .querySelectorAll('[data-w]')
+        .forEach((btn) => btn.addEventListener('click', () => setView(btn.dataset.w)));
+
+      document.getElementById('arrLeft').addEventListener('click', () => {
+        const keys = Object.keys(VARIANTS);
+        const i = keys.indexOf(state.variant);
+        setVariant(keys[(i - 1 + keys.length) % keys.length]);
+      });
+      document.getElementById('arrRight').addEventListener('click', () => {
+        const keys = Object.keys(VARIANTS);
+        const i = keys.indexOf(state.variant);
+        setVariant(keys[(i + 1) % keys.length]);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (e.key === 'ArrowLeft') document.getElementById('arrLeft').click();
+        if (e.key === 'ArrowRight') document.getElementById('arrRight').click();
+      });
+
+      render();
+    </script>
+  </body>
+</html>
