@@ -217,6 +217,9 @@ importers:
         specifier: ^5.0.13
         version: 5.0.13(@types/react@19.2.15)(react@19.2.6)
     devDependencies:
+      '@tanstack/react-query':
+        specifier: ^5.100.13
+        version: 5.100.14(react@19.2.6)
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.15

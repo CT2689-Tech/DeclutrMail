@@ -18,10 +18,12 @@
     "build": "echo 'no build yet'"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5.100.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@tanstack/react-query": "^5.100.13",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",

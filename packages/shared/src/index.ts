@@ -53,6 +53,32 @@ export type { ToastTone } from './components/toast';
 export { UndoTray, useUndoTray } from './components/undo-tray';
 export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './components/undo-tray';
 
+// D166 — skeleton-first loading primitives + composite skeletons
+// matching the launch screens (Triage queue, Senders list, Sender
+// Detail) plus an `<InlineProgress>` for button-level action progress.
+export {
+  Skeleton,
+  SkeletonLines,
+  TriageQueueSkeleton,
+  TriageRowCardSkeleton,
+  SenderRowSkeleton,
+  SendersListSkeleton,
+  SenderDetailSkeleton,
+  SenderDetailHeaderSkeleton,
+  SenderDetailStatsSkeleton,
+  SenderDetailChartsSkeleton,
+  SenderDetailMessagesSkeleton,
+} from './components/skeleton';
+export type {
+  SkeletonProps,
+  SkeletonVariant,
+  SkeletonLinesProps,
+  TriageQueueSkeletonProps,
+  SendersListSkeletonProps,
+} from './components/skeleton';
+export { InlineProgress } from './components/inline-progress';
+export type { InlineProgressProps } from './components/inline-progress';
+
 export { Sidebar } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
 

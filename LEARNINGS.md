@@ -20,6 +20,32 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-23 — Conditional-hook pattern for TanStack + static-source override
+
+**Context:** Migrating `useUndoTray` from a stub fetch to TanStack
+Query (D200) while keeping the existing `dataSource` override seam
+that Storybook + tests rely on. First attempt called either
+`useUndoTrayStatic(dataSource)` or `useUndoTrayQuery(options)`
+conditionally — readable, but React's rules-of-hooks rule fires
+generically against the `?:` even though each branch is internally
+unconditional. The eslint config doesn't include
+`react-hooks/rules-of-hooks` as a rule, so the disable comment
+ITSELF was the lint error ("Definition for rule … was not found").
+**Finding:** The pattern that compiles cleanly AND matches existing
+codebase shape: always call all TanStack hooks, gate `useQuery` with
+`enabled: dataSource === undefined`, and short-circuit the return
+when `dataSource` is supplied. Requires that the consumer is always
+under a `QueryClientProvider` — true for `apps/web` routes and
+test wrappers. Storybook stories don't run yet (PR-3) so the
+constraint is invisible today.
+**Rule (provisional):** When migrating a stub hook to TanStack
+behind an existing dataSource override, do NOT branch into a
+hookless static path — always invoke the TanStack hooks and use
+`enabled: false` + a return short-circuit. Document the
+QueryClientProvider requirement so future consumers don't mount
+the hook in a provider-less tree.
+**Distillation trigger:** Promote to CLAUDE.md §1.2 if a second
+stub→TanStack migration runs into the same shape (currently 1/3).
 ## 2026-05-23 — Observer-injection seam over base-class hardcoding for D159
 
 **Context:** Wiring D159 (Sentry) onto `BaseDeclutrWorker` and the
