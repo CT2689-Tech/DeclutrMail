@@ -180,7 +180,7 @@ async function seedTriageDecision(
   args: {
     mailboxAccountId: string;
     senderKey: string;
-    verdict: 'keep' | 'archive' | 'unsubscribe' | 'later' | 'screen';
+    verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
     producedAt: Date;
     generatedBy?: 'llm_haiku' | 'template';
     confidence?: string;
