@@ -217,7 +217,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
 | D165 | Notification preferences: **Per-category toggles in Settings | ⬜ |  |  |  |
-| D166 | Loading patterns: **Skeleton-first with inline action progress | ⬜ |  |  |  |
+| D166 | Loading patterns: **Skeleton-first with inline action progress | 🔵 | #50 |  |  |
 | D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🔵 | #51 |  |  |
 | D168 | API error envelope: **Standardized structured format | ⬜ |  |  |  |
 | D169 | Three severity tiers | ⬜ |  |  |  |
