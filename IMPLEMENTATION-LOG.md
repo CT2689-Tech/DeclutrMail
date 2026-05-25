@@ -64,7 +64,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
-| D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | ⬜ |  |  |  |
+| D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🔵 | #53 |  |  |
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🟢 | #16 | apps/api/src/auth/token-crypto.service.spec.ts (4/4 incl tamper + uniqueness) |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
@@ -254,7 +254,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🔵 | #29 |  |  |
 | D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🔵 | #37 |  |  |
 | D202 | API response envelope + cursor pagination | 🔵 | #37 |  |  |
-| D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | ⬜ |  |  |  |
+| D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🔵 | #49 |  |  |
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🔵 | #37 |  |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |

@@ -46,6 +46,37 @@ QueryClientProvider requirement so future consumers don't mount
 the hook in a provider-less tree.
 **Distillation trigger:** Promote to CLAUDE.md §1.2 if a second
 stub→TanStack migration runs into the same shape (currently 1/3).
+## 2026-05-23 — Observer-injection seam over base-class hardcoding for D159
+
+**Context:** Wiring D159 (Sentry) onto `BaseDeclutrWorker` and the
+periodic reconciler (FOUNDER-FOLLOWUPS 2026-05-22 — D-CANDIDATE).
+Three options were on the table: (a) import `@sentry/node` directly
+inside `BaseDeclutrWorker.captureFailure`; (b) move the reconciler
+inside a `BaseDeclutrWorker` subclass so the existing seam covers it;
+(c) extract a `WorkerObserver` interface with `setObserver(observer)`
+on the base + a `captureBackgroundFailure(err, ctx)` for non-job paths.
+**Finding:** (c) was the only option that kept three properties
+simultaneously: `packages/workers` framework-agnostic (no @sentry/node
+dep added), reconciler covered without becoming a worker (it's a
+DB-state reconciler, not a job consumer), and dev/test boots
+unchanged (default `NOOP_WORKER_OBSERVER` is inert). Option (a)
+would have leaked the SDK into the workers package; option (b) would
+have forced the reconciler into a job lifecycle it doesn't fit
+(repeatable jobs already exist via D225 cronPolicy, but the reconciler
+predates that and the founder ratified its sweep design in PR-D).
+The cost was one extra interface file + a wiring line in the
+composition root — surgical, no new tables, no new dependencies.
+**Rule (provisional):** When a framework-free package needs to emit
+to an opinionated infra (Sentry, Datadog, PostHog), build a small
+*observer interface* in the package, default it to no-op, and have
+the composition root inject the real adapter. Avoids both
+"package depends on SDK" and "ifs branching on env var inside the
+package". The pattern also gives unit tests a recording observer
+without mocking the SDK.
+**Distillation trigger:** Promote to CLAUDE.md §6 (or a new
+"Observability seams" subsection) if pattern recurs ≥2 more times —
+e.g., when PostHog event emission lands on workers, or when a
+Datadog-style metrics sink shows up. Count: 1/3.
 ## 2026-05-23 — D12 normalize-email had two consumers with different semantic needs
 
 **Context:** Overnight PR `feat/d012-sender-key-hash` — adding the
@@ -338,3 +369,45 @@ stamp.
 add to `architecture-guardian` Check H if a second feature ships with
 single-timestamp idempotency that bites under retry. Watch for Stripe
 webhook handlers and the future per-verb reverters.
+
+## 2026-05-23 — Drizzle `tx.execute()` row shape varies by driver
+**Context:** PR `feat/d013-outbox-dispatcher` — the OutboxDispatcher
+runs a raw SQL claim with `FOR UPDATE SKIP LOCKED` via `tx.execute(sql\`...\`)`.
+The same code passed all assertions against postgres-js types but blew
+up in PGlite tests with `"claimed is not iterable"`.
+**Finding:** Drizzle's `execute()` returns DIFFERENT shapes per driver:
+  - `drizzle-orm/postgres-js`: returns a `RowList<Row[]>` that extends
+    `Array` — you can iterate directly (`for (const row of result)`).
+  - `drizzle-orm/pglite`: returns `Results<Row>` shaped as
+    `{ rows: Row[], affectedRows?, fields, blob? }` — iteration
+    requires `result.rows`.
+Both pass TypeScript because the return type is generic `T['execute']`.
+The mismatch only surfaces at runtime, in the PGlite test path.
+**Rule (provisional):** any call site that uses `db.execute()` /
+`tx.execute()` (raw SQL escape hatches) MUST normalize the row shape:
+`const rows = Array.isArray(result) ? result : (result.rows ?? []);`
+Prefer Drizzle's query builder (`.select().from()`) which returns
+arrays in both drivers; reserve `execute()` for SQL features the
+builder doesn't expose (in our case, `FOR UPDATE SKIP LOCKED`).
+**Distillation trigger:** promote to CLAUDE.md §6 (DB conventions) if
+a second raw-SQL site hits the same shape mismatch.
+
+## 2026-05-23 — PGlite cannot prove SKIP LOCKED runtime semantics
+**Context:** Same PR — testing the outbox dispatcher's
+`FOR UPDATE SKIP LOCKED` claim against PGlite to prove two concurrent
+dispatchers split the backlog without double-claiming.
+**Finding:** PGlite is single-connection (it's an in-process WASM build
+of Postgres). Concurrent transactions in the test harness serialize on
+the one connection, so SKIP LOCKED's "skip past locked rows" branch
+never exercises — the second `tick()` always waits for the first to
+commit. The clause is in the SQL (asserted via source-grep), and the
+behavior is standard Postgres semantics, but the test harness can't
+DEMONSTRATE the concurrency.
+**Rule (provisional):** for SKIP LOCKED / advisory-lock / serializable-
+isolation tests, document the gap explicitly and gate the runtime proof
+on `OUTBOX_TEST_PG_URL` (or the future testcontainers harness). Don't
+fake the test against PGlite — it would pass for the wrong reasons.
+**Distillation trigger:** promote to CLAUDE.md §8 (test strategy) when
+a second multi-connection Postgres feature lands (e.g. advisory locks
+for the AutopilotApplyWorker). Pairs with adding testcontainers to the
+shared test harness rather than per-package.

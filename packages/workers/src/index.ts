@@ -1,5 +1,11 @@
 export { BaseDeclutrWorker } from './base-declutr-worker.js';
 export type { WorkerContext } from './worker-context.js';
+export { NOOP_WORKER_OBSERVER } from './worker-observer.js';
+export type {
+  BackgroundFailureContext,
+  WorkerFailureContext,
+  WorkerObserver,
+} from './worker-observer.js';
 export {
   AuthExpiredError,
   InvalidGrantError,
@@ -54,6 +60,16 @@ export type {
   ScoreTrigger,
   ScoreWorkerDeps,
 } from './score.worker.js';
+export { OUTBOX_NOTIFY_CHANNEL, OutboxDispatcherWorker } from './outbox-dispatcher.worker.js';
+export type {
+  DispatchedEvent,
+  DispatcherTickResult,
+  OutboxConsumer,
+  OutboxDispatcherDeps,
+  OutboxObserver,
+} from './outbox-dispatcher.worker.js';
+export { OutboxPublisher } from './outbox-publisher.js';
+export type { OutboxPublishInput, OutboxTx } from './outbox-publisher.js';
 export { UndoExpiryWorker } from './undo-expiry.worker.js';
 export type { UndoExpiryJobData, UndoExpiryResult } from './undo-expiry.worker.js';
 export {

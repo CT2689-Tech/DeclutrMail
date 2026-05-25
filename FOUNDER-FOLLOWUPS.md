@@ -26,6 +26,32 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
+
+**Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
+**Why:** The outbox dispatcher uses `FOR UPDATE SKIP LOCKED` for
+concurrent claim safety. The SQL-level assertion in the unit tests
+proves the clause is in the query, but PGlite (single-connection) cannot
+demonstrate the runtime semantics — two concurrent dispatchers cannot be
+proven to grab disjoint row sets via the in-process test harness. The
+behavior is standard Postgres; the gap is test coverage, not
+correctness. Same gap will apply to future multi-connection features
+(advisory locks for AutopilotApplyWorker, real-Postgres serializable
+isolation tests).
+**How:** Either (a) add `testcontainers` to a shared `packages/test-utils`
+package (avoids the workers-package peer-dep collision this PR hit when
+testcontainers was tried in `packages/workers/devDependencies` — see the
+PR description) and write a real-Postgres test that runs two dispatchers
+concurrently against 20 seeded rows; or (b) make the existing
+`docker-compose.yml` (Redis-only today, Postgres-already-on-host) the
+ad-hoc target by setting `OUTBOX_TEST_PG_URL` in dev/CI and gating the
+test with `describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)`. Option (a)
+is the durable answer; option (b) unblocks the runtime proof in days
+rather than weeks.
+**Verifies by:** A CI run that exercises the SKIP LOCKED concurrency
+test against real Postgres (visible in workflow logs as
+"OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
+than skipped).
 ### 2026-05-23 — Wire a pre-commit `prettier --check` so format never drifts on main
 **Source:** PR #47 — `Format check` CI gate failed on a baseline of 5
 files that had never been formatted (`docs/adr/0008-*.md`,
@@ -117,6 +143,20 @@ all gates green, Storybook story count ≥ 8, `Closes D29` through `D226`
 in body, no "Screen" UI strings, no body-field references.
 **Status:** Open
 
+### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
+lack `@Throttle()` decorators. Both routes are flag-gated
+(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
+absence is consequential the moment the flag flips on in any public
+environment: an attacker can fan out `/start` (each builds an
+`OAuth2Client` and sets a cookie) or replay `/callback` with random
+codes to harvest error-shape differences.
+**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
+true anywhere. D156 picks the per-feature limit; suggested floor
+`{ limit: 10, ttl: 60_000 }` per IP on both routes.
+**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
+burst test (11 requests/min from one IP) returns 429 on the 11th.
 ### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
 **Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
 **Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
@@ -532,6 +572,36 @@ when `isError && entries.length === 0` so failures no longer collapse
 silently into the empty branch. Verified by
 `apps/web/src/features/undo/use-undo-tray.test.tsx` (success / error /
 revert-success / revert-rollback / static-source paths).
+### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
+single failure-capture point for D159 Sentry wiring. The boot/periodic
+reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
+loop, so its error path (raw `console.error` with
+`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
+`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
+**How:** When the D159 wiring PR lands, either (a) extract a shared
+`captureBackgroundFailure(err, { kind })` helper that both the worker
+base and the reconciler call, or (b) move the periodic reconciler
+inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
+covers it.
+**Verifies by:** A forced reconciler exception (DB unreachable in a
+test env) shows up in Sentry with `kind: reconciler.failed`.
+**Status:** Done 2026-05-23 — option (a) shipped on
+`feat/d203-base-declutr-worker`. `BaseDeclutrWorker` now accepts an
+injectable `WorkerObserver` via `setObserver()`; the observer interface
+exposes `captureFailure(err, ctx)` for the BullMQ job loop AND
+`captureBackgroundFailure(err, ctx)` for failures outside it. The
+reconciler in `apps/api/src/worker.ts` calls
+`observer.captureBackgroundFailure(error, { kind: 'reconciler.failed' })`
+right after the existing structured log; `tick_unexpected`,
+`worker.shutdown_failed`, and `worker.boot_failed` paths route through
+the same seam. With `SENTRY_DSN` unset the observer is a no-op
+(matches the API's `initSentry` posture). Verification deferred to a
+manual staging exercise once `SENTRY_DSN` is provisioned — the test
+suite covers the wiring (`packages/workers/src/base-declutr-worker.test.ts`
+asserts the "exactly once per terminal failure" contract; the no-DSN
+branch is unit-tested in `apps/api/src/observability/sentry-worker-observer.spec.ts`).
 ### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
 **Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
 **Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
