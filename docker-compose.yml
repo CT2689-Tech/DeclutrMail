@@ -1,0 +1,31 @@
+# Local-dev sidecars for DeclutrMail.
+#
+# Currently: a throwaway Redis for BullMQ + the API rate limiter, so
+# `pnpm dev` does NOT burn Upstash quota. Production keeps using the
+# real Upstash REDIS_URL via [gcp] secrets — this compose file is
+# laptop-only.
+#
+# Why no persistence: BullMQ is the *execution cache* (D157, see
+# packages/workers/src/queue.ts header). The durable sync intent lives
+# in Postgres `provider_sync_state.readiness_status='queued'`; the
+# reconciler in apps/api/src/worker.ts re-materializes BullMQ jobs from
+# that table on boot. Wiping this container loses nothing recoverable.
+#
+# Usage:
+#   docker compose up -d redis     # start
+#   docker compose down            # stop + remove
+#   ./scripts/dev-up.sh            # starts redis automatically
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: declutrmail-dev-redis
+    ports:
+      - '6379:6379'
+    # --save "" + --appendonly no = no disk writes. Fastest, lowest
+    # footprint, matches "execution cache" semantics above.
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 2s
+      retries: 10

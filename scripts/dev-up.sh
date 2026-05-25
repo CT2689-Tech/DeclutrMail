@@ -8,14 +8,16 @@
 #
 # Steps:
 #   1. pnpm install (only if lockfile changed)
-#   2. apply pending migrations (idempotent)
-#   3. start api on :4000 in background
-#   4. start worker in background
-#   5. tail both logs
+#   2. start local redis container (docker-compose.yml) — avoids burning
+#      Upstash quota in dev (see .env.example REDIS_URL comment)
+#   3. apply pending migrations (idempotent)
+#   4. start api on :4000 in background
+#   5. start worker in background
+#   6. tail both logs
 #
 # Usage:
-#   ./scripts/dev-up.sh           bring api + worker up
-#   ./scripts/dev-up.sh --stop    kill api + worker
+#   ./scripts/dev-up.sh           bring redis + api + worker up
+#   ./scripts/dev-up.sh --stop    kill api + worker (leaves redis container running)
 #
 set -euo pipefail
 
@@ -55,11 +57,29 @@ if [[ pnpm-lock.yaml -nt node_modules/.modules.yaml || ! -d node_modules ]]; the
   pnpm install
 fi
 
-# 2. Migrate.
+# 2. Start local redis sidecar for BullMQ + rate limiter. Idempotent —
+# `up -d` no-ops if the container is already running. Skipped if docker
+# isn't installed so contributors who run a system redis aren't blocked.
+if command -v docker >/dev/null 2>&1; then
+  echo "→ starting local redis container"
+  docker compose up -d redis
+  # Wait for the healthcheck so the worker / api don't race the boot.
+  for i in {1..20}; do
+    if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.5
+  done
+else
+  echo "⚠ docker not installed — skipping redis sidecar."
+  echo "  Provide your own redis on \$REDIS_URL or install Docker Desktop."
+fi
+
+# 3. Migrate.
 echo "→ applying pending migrations"
 "$REPO_ROOT/scripts/db-migrate.sh" apply
 
-# 3+4. Restart api + worker.
+# 4+5. Restart api + worker.
 stop
 echo "→ starting api → $API_LOG"
 ( "$REPO_ROOT/scripts/dev-api.sh" >"$API_LOG" 2>&1 ) &
