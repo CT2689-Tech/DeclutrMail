@@ -143,13 +143,6 @@ function seedFor(id: string): number {
   return h >>> 0;
 }
 
-/** Approximate lifetime received-count — synthesised from monthly cadence. */
-export function lifetimeCount(s: Sender): number {
-  const months = Math.max(1, s.firstSeenMo);
-  // Recent cadence × months is a reasonable upper bound; tone it down slightly.
-  return Math.max(0, Math.round(s.monthly * months * 0.85));
-}
-
 /** Map the parent module's recommended verb onto the closed `Verdict` union. */
 function inferVerdict(s: Sender, isVip: boolean, isProtected: boolean): Verdict {
   if (isVip || isProtected) return 'keep';
@@ -267,7 +260,10 @@ function buildStats(s: Sender): SenderStats {
     readRate: s.read,
     relationshipMonths: s.firstSeenMo,
     lastSeenDays: s.lastDays,
-    totalAllTime: lifetimeCount(s),
+    // Fixture senders inherit their trend bucket directly; default to
+    // `steady` when the fixture didn't specify one so existing stories
+    // render a sensible chip.
+    volumeTrend: s.volumeTrend ?? 'steady',
   };
 }
 

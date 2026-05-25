@@ -73,23 +73,33 @@ function monthsSince(iso: string, now: number = Date.now()): number {
  * gracefully (flat sparkline, zero unread badge, no spike chip).
  */
 export function adaptSenderListRow(row: SenderListRow, now: number = Date.now()): Sender {
+  // BE returns `monthlyVolume` and `readRate` as nullable when the
+  // sender has no `sender_timeseries` rows yet. The FE `Sender` shape
+  // pre-dates that nullability (carries `number`); coerce to `0` so
+  // existing sort / why-line code paths keep working and the
+  // missing-data case degrades to a quiet "0/mo" rather than a NaN
+  // render. The `volumeTrend` chip + `lastReview` slot are the
+  // canonical surfaces for "no data yet" — they explicitly carry
+  // `null` instead of pretending.
+  const monthly = row.monthlyVolume ?? 0;
+  const read = row.readRate ?? 0;
   const sender: Sender = {
     id: row.id,
     name: row.displayName || row.email,
     domain: row.domain,
-    monthly: row.monthlyVolume,
+    monthly,
     group: CATEGORY_TO_GROUP[row.gmailCategory],
-    read: row.readRate,
+    read,
     // 4-week sparkline placeholder — wire doesn't carry per-week buckets
     // yet; render a flat line at the recent monthly cadence quarter.
-    spark: [row.monthlyVolume, row.monthlyVolume, row.monthlyVolume, row.monthlyVolume].map((v) =>
-      Math.round(v / 4),
-    ),
+    spark: [monthly, monthly, monthly, monthly].map((v) => Math.round(v / 4)),
     lastDays: daysSince(row.lastSeenAt, now),
     // Wire doesn't return current-unread-from-sender yet. Surfaces as 0
     // in the row badge until BE adds the field — non-blocking.
     unread: 0,
     firstSeenMo: monthsSince(row.firstSeenAt, now),
+    volumeTrend: row.volumeTrend,
+    lastReview: row.lastReview,
   };
   return sender;
 }
@@ -133,20 +143,20 @@ export function adaptSenderDetail(args: {
     : null;
 
   // Use the existing fixture-builder for the synthesised fields
-  // (recommendation, stats), then overlay wire-derived lists. When the
-  // BE PR adds richer recommendation rows + stats blocks we delete the
-  // fallback and pass the wire values through directly.
+  // (recommendation only — stats are now wire-driven), then overlay
+  // wire-derived lists. When the BE PR adds richer recommendation rows
+  // we delete the fallback and pass the wire values through directly.
   const seeded = buildSenderDetail(sender, { isVip, isProtected });
 
   const stats: SenderStats = {
-    monthlyVolume: args.detail.monthlyVolume,
-    readRate: args.detail.readRate,
+    // Both BE fields are nullable when sender has no timeseries; coerce
+    // to 0 because the existing chart + stats components carry
+    // `number` types. The empty-state cue is `volumeTrend === null`.
+    monthlyVolume: args.detail.monthlyVolume ?? 0,
+    readRate: args.detail.readRate ?? 0,
     relationshipMonths: monthsSince(args.detail.firstSeenAt, args.now),
     lastSeenDays: daysSince(args.detail.lastSeenAt, args.now),
-    // The wire doesn't return a lifetime sum yet — `seeded` synthesises
-    // it from monthly × relationship-months, which is a reasonable
-    // placeholder until BE adds the field.
-    totalAllTime: seeded.stats.totalAllTime,
+    volumeTrend: args.detail.volumeTrend,
   };
 
   return {

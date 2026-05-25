@@ -170,6 +170,36 @@ async function seedTimeseries(
   });
 }
 
+/**
+ * Compact triage_decisions seeder for the last-reviewed regression
+ * specs. Defaults track the schema's documented shape so callers can
+ * focus on the fields the test actually cares about.
+ */
+async function seedTriageDecision(
+  db: Db,
+  args: {
+    mailboxAccountId: string;
+    senderKey: string;
+    verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    producedAt: Date;
+    generatedBy?: 'llm_haiku' | 'template';
+    confidence?: string;
+    reasoning?: string;
+    expiresAt?: Date;
+  },
+): Promise<void> {
+  await db.insert(triageDecisions).values({
+    mailboxAccountId: args.mailboxAccountId,
+    senderKey: args.senderKey,
+    verdict: args.verdict,
+    confidence: args.confidence ?? '0.90',
+    reasoning: args.reasoning ?? 'Test reasoning.',
+    generatedBy: args.generatedBy ?? 'template',
+    producedAt: args.producedAt,
+    expiresAt: args.expiresAt ?? new Date(args.producedAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+  });
+}
+
 describe('SendersReadService', () => {
   let db: Db;
   let mailboxId: string;
@@ -442,6 +472,312 @@ describe('SendersReadService', () => {
       expect(rowsHere.find((r) => r.id === here.id)!.monthlyVolume).toBe(8);
       expect(rowsThere.find((r) => r.id === there.id)!.monthlyVolume).toBe(77);
     });
+
+    // Volume-trend bucket coverage — one test per bucket plus the two
+    // null-history edges. Each test pins `now` to a fixed anchor and
+    // seeds timeseries rows relative to it so the prior-3-month window
+    // is deterministic. Covers the `computeTrendBucket` precedence
+    // ladder end-to-end (SQL + TS), not just the helper in isolation.
+    describe('volumeTrend bucket', () => {
+      const NOW = new Date('2026-05-15T00:00:00Z'); // anchor: May 2026
+      const CURRENT_MONTH = '2026-05-01';
+
+      it('returns null when sender has no timeseries rows at all', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'fresh@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBeNull();
+      });
+
+      it('returns "new" when sender has fewer than 2 months of history', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'one-month@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: CURRENT_MONTH,
+          volume: 12,
+          readCount: 0,
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBe('new');
+      });
+
+      it('returns "up" when current month ≥ prior 3-month avg × 1.3', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'ramping@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        // Prior 3 months avg = (5 + 5 + 5) / 3 = 5; current = 8 (= 5 × 1.6)
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-02-01',
+          volume: 5,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-03-01',
+          volume: 5,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-04-01',
+          volume: 5,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: CURRENT_MONTH,
+          volume: 8,
+          readCount: 0,
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBe('up');
+      });
+
+      it('returns "down" when current month ≤ prior 3-month avg × 0.7', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'fading@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        // Prior avg = (10 + 10 + 10) / 3 = 10; current = 5 (= 10 × 0.5)
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-02-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-03-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-04-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: CURRENT_MONTH,
+          volume: 5,
+          readCount: 0,
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBe('down');
+      });
+
+      it('returns "steady" when current month is within ±30% of prior avg', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'steady@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        // Prior avg = 10; current = 11 (= 10 × 1.1) — inside both thresholds
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-02-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-03-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-04-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: CURRENT_MONTH,
+          volume: 11,
+          readCount: 0,
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBe('steady');
+      });
+
+      it('returns "dormant" when current month is 0 but prior months had volume', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'dormant@x.com',
+          lastSeenAt: new Date('2026-04-15T00:00:00Z'),
+        });
+        // Prior months had volume; current month has NO row → 0
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-02-01',
+          volume: 7,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-03-01',
+          volume: 7,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          yearMonth: '2026-04-01',
+          volume: 7,
+          readCount: 0,
+        });
+        // NO 2026-05 row
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          now: NOW,
+        });
+        expect(rows[0]!.volumeTrend).toBe('dormant');
+      });
+    });
+
+    // last-reviewed eyebrow coverage. Same correlated-subquery shape
+    // as the trend inputs, so the cross-mailbox + null-paths matter.
+    describe('lastReview eyebrow', () => {
+      it('returns null when no triage_decisions row exists for the sender', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'no-decision@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows[0]!.lastReview).toBeNull();
+      });
+
+      it('returns the most-recent decision for the sender', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'reviewed@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const producedAt = new Date('2026-05-10T15:30:00Z');
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'archive',
+          generatedBy: 'llm_haiku',
+          producedAt,
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows[0]!.lastReview).toEqual({
+          at: producedAt.toISOString(),
+          verdict: 'archive',
+          generatedBy: 'llm_haiku',
+        });
+      });
+
+      it('does not leak a decision from another mailbox when sender_key collides', async () => {
+        // Cross-mailbox safety — the lastReview subqueries use the
+        // same outer-scope qualification as the timeseries reads.
+        // If a future refactor drops the mailbox predicate inside the
+        // correlated subquery this regression test fires.
+        const otherMailbox = await seedMailbox(db, 'other-decision-tenant');
+        const here = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'decision-collide@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const there = await seedSender(db, {
+          mailboxAccountId: otherMailbox,
+          email: 'decision-collide@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        expect(here.senderKey).toBe(there.senderKey);
+
+        // Only the OTHER mailbox has a decision; the queried mailbox
+        // must NOT see it.
+        await seedTriageDecision(db, {
+          mailboxAccountId: otherMailbox,
+          senderKey: there.senderKey,
+          verdict: 'unsubscribe',
+          producedAt: new Date('2026-05-12T00:00:00Z'),
+        });
+
+        const rowsHere = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rowsHere.find((r) => r.id === here.id)!.lastReview).toBeNull();
+      });
+    });
   });
 
   describe('getSenderDetail', () => {
@@ -581,6 +917,66 @@ describe('SendersReadService', () => {
       expect(detailHere).not.toBeNull();
       expect(detailHere!.monthlyVolume).toBe(6);
       expect(detailHere!.monthlyVolume).not.toBe(88);
+    });
+
+    // Trend + lastReview symmetry with `listSenders` — the detail
+    // path runs the same correlated-subquery shape and shares the
+    // helpers. One end-to-end test per dimension is sufficient
+    // because the bucket precedence + cross-mailbox safety are
+    // already exercised by the list tests.
+    it('returns volumeTrend + lastReview on the detail payload', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'detail-stats@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const NOW = new Date('2026-05-15T00:00:00Z');
+      // Prior avg = 5; current = 8 → up
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-02-01',
+        volume: 5,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-03-01',
+        volume: 5,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-04-01',
+        volume: 5,
+        readCount: 0,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 8,
+        readCount: 0,
+      });
+      const producedAt = new Date('2026-05-10T15:30:00Z');
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        verdict: 'keep',
+        generatedBy: 'template',
+        producedAt,
+      });
+
+      const detail = await svc.getSenderDetail(mailboxId, a.id, { now: NOW });
+      expect(detail).not.toBeNull();
+      expect(detail!.volumeTrend).toBe('up');
+      expect(detail!.lastReview).toEqual({
+        at: producedAt.toISOString(),
+        verdict: 'keep',
+        generatedBy: 'template',
+      });
     });
   });
 

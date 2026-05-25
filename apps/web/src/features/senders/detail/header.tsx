@@ -1,10 +1,52 @@
 'use client';
 
 import { Avatar, Eyebrow, tokens } from '@declutrmail/shared';
-import type { Sender } from '../data';
+import type { Sender, SenderLastReview } from '../data';
 import type { ProtectionReason } from './types';
 
 const { color, font, radius } = tokens;
+
+const VERDICT_LABEL: Record<SenderLastReview['verdict'], string> = {
+  keep: 'Keep',
+  archive: 'Archive',
+  unsubscribe: 'Unsubscribe',
+  later: 'Later',
+};
+
+/**
+ * Render a `Sender.lastReview` as a single eyebrow line —
+ * `Last reviewed Archive · 3d ago` or `Never reviewed`.
+ *
+ * Vocabulary: "reviewed" (not "decided") per Codex review on the
+ * senders-tightening v2 brief. `generatedBy = 'template'` means an
+ * auto-template fired the verdict without explicit user action;
+ * calling that "decided" would overstate user agency. "Reviewed"
+ * stays neutral across both LLM and template provenances.
+ *
+ * Recency is computed FE-side from `at` because the eyebrow re-renders
+ * on every detail open and we don't want stale "5h ago" copy after a
+ * long page session; the BE returns ISO `at` and the FE formats it
+ * each render.
+ */
+function fmtLastReview(review: SenderLastReview | null, now: number = Date.now()): string {
+  if (review === null) return 'Never reviewed';
+  const verdictLabel = VERDICT_LABEL[review.verdict];
+  const ageMs = now - new Date(review.at).getTime();
+  const days = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+  let recency: string;
+  if (days <= 0) {
+    recency = 'today';
+  } else if (days === 1) {
+    recency = 'yesterday';
+  } else if (days < 7) {
+    recency = `${days}d ago`;
+  } else if (days < 60) {
+    recency = `${Math.round(days / 7)}w ago`;
+  } else {
+    recency = `${Math.round(days / 30)}mo ago`;
+  }
+  return `Last reviewed ${verdictLabel} · ${recency}`;
+}
 
 /**
  * Sender Detail header (D39 #1).
@@ -120,6 +162,13 @@ export function SenderDetailHeader({
           <span>{sender.domain}</span>
           <span aria-hidden="true">·</span>
           <span>{gmailCategory}</span>
+          <span aria-hidden="true">·</span>
+          {/* Last-reviewed eyebrow — see senders-tightening v2 brief.
+              Neutral copy ("Last reviewed …" not "Decided …") because the
+              underlying verdict may have been auto-template-fired. */}
+          <span title="Most recent triage decision for this sender">
+            {fmtLastReview(sender.lastReview ?? null)}
+          </span>
         </div>
       </div>
     </header>

@@ -34,12 +34,15 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   DecisionHistoryRow,
   GmailCategory,
+  LastReview,
   MailMessageRow,
   ProtectionFlags,
   SenderDetail,
   SenderListRow,
   TimeseriesPoint,
+  VolumeTrendBucket,
 } from './senders.types.js';
+import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
 /**
  * Service-internal cursor shape — keyset on `(sort_col, id)` per D202.
@@ -95,8 +98,17 @@ export class SendersReadService {
     cursor: SenderListCursor | null;
     /** Honored limit (already clamped by the controller). */
     limit: number;
+    /**
+     * Anchor for "current month" used by the volume-trend bucket.
+     * Injectable for tests; defaults to `new Date()` in production so
+     * controllers don't have to thread the clock through.
+     */
+    now?: Date;
   }): Promise<SenderListRow[]> {
     const { mailboxAccountId, category, cursor, limit } = args;
+    const now = args.now ?? new Date();
+    const currentMonthIso = startOfMonthIso(now);
+    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
 
     // Correlated subquery — most-recent timeseries row per sender. We
     // can't LATERAL-join with Drizzle's current builder cleanly, so
@@ -138,6 +150,78 @@ export class SendersReadService {
       LIMIT 1
     )`;
 
+    // Trend inputs — pulled in their own indexed subqueries so the
+    // bucket computation happens in TypeScript (`computeTrendBucket`)
+    // rather than in SQL. Easier to test, easier to extend with new
+    // buckets later, and keeps the SQL legible. Each subquery hits
+    // the same `(mailbox_account_id, sender_key, year_month)` PK as
+    // the latest-month reads above, so the extra cost is one indexed
+    // tail-read per subquery per row.
+    const currentMonthVolumeSql = sql<number | null>`(
+      SELECT ${senderTimeseries.volume}
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
+      LIMIT 1
+    )`;
+    // Prior-window average — the 3 complete calendar months immediately
+    // before the current one. Cast AVG to float because PG returns it
+    // as `numeric` which postgres-js + PGlite hand back as a string;
+    // float keeps the TS side type-clean and the rounding harmless
+    // (the bucket thresholds are 1.3× / 0.7×, not precision-sensitive).
+    const priorAvgVolumeSql = sql<number | null>`(
+      SELECT AVG(${senderTimeseries.volume})::float
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
+        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
+    )`;
+    // History depth — drives the `new` bucket (fewer than 2 complete
+    // months of data). Cast to int for the same string-vs-number
+    // reason as the AVG.
+    const historyMonthCountSql = sql<number>`(
+      SELECT COUNT(*)::int
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+    )`;
+
+    // Last-reviewed inputs — three scalar subqueries against
+    // `triage_decisions` for the most-recent (mailbox, sender) row.
+    // The current schema enforces ONE row per (mailbox, sender) via
+    // a unique index, but the ORDER BY + LIMIT 1 keeps us forward-
+    // compatible with the planned `triage_decision_history` table
+    // (referenced in the triage-decisions schema header). Per
+    // ADR-0008 §3 the senders read service is allowed to touch
+    // `triage_decisions` directly until the triage feature outgrows
+    // its single-table footprint.
+    const lastDecisionAtSql = sql<Date | null>`(
+      SELECT ${triageDecisions.producedAt}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+    const lastDecisionVerdictSql = sql<TriageVerdict | null>`(
+      SELECT ${triageDecisions.verdict}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+    const lastDecisionGeneratedBySql = sql<TriageReasoningSource | null>`(
+      SELECT ${triageDecisions.generatedBy}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+
     // Keyset predicate — `(last_seen_at, id) < (cursor.lastSeenAt,
     // cursor.id)` expressed as the equivalent OR-chain so PG can use
     // the `(mailbox_account_id, last_seen_at, id)` candidate index.
@@ -170,6 +254,12 @@ export class SendersReadService {
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
+        currentMonthVolume: currentMonthVolumeSql,
+        priorAvgVolume: priorAvgVolumeSql,
+        historyMonthCount: historyMonthCountSql,
+        lastDecisionAt: lastDecisionAtSql,
+        lastDecisionVerdict: lastDecisionVerdictSql,
+        lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
       })
       .from(senders)
       .where(and(...conditions))
@@ -192,7 +282,17 @@ export class SendersReadService {
       lastSeenAt: row.lastSeenAt.toISOString(),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
+      volumeTrend: computeTrendBucket(
+        row.currentMonthVolume,
+        row.priorAvgVolume,
+        row.historyMonthCount,
+      ),
       unsubscribeMethod: row.unsubscribeMethod,
+      lastReview: buildLastReview(
+        row.lastDecisionAt,
+        row.lastDecisionVerdict,
+        row.lastDecisionGeneratedBy,
+      ),
     }));
   }
 
@@ -205,7 +305,11 @@ export class SendersReadService {
    * guardian rule, mailbox isolation is enforced by the WHERE clause
    * here, not by a guard above us.
    */
-  async getSenderDetail(mailboxAccountId: string, senderId: string): Promise<SenderDetail | null> {
+  async getSenderDetail(
+    mailboxAccountId: string,
+    senderId: string,
+    args: { now?: Date } = {},
+  ): Promise<SenderDetail | null> {
     // Same correlated subqueries as the list to keep the read shape
     // consistent. A LATERAL join would be more efficient at very high
     // scale but is overkill at the per-row single-fetch path; the
@@ -213,7 +317,11 @@ export class SendersReadService {
     //
     // See the matching comment in `listSenders` for why the outer-scope
     // references are built via `sql.identifier(getTableName(senders))`
-    // rather than bare `${senders.column}` interpolations.
+    // rather than bare `${senders.column}` interpolations, and for the
+    // trend-bucket / last-reviewed subquery rationale.
+    const now = args.now ?? new Date();
+    const currentMonthIso = startOfMonthIso(now);
+    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
     const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
     const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
     const latestVolumeSql = sql<number | null>`(
@@ -232,6 +340,52 @@ export class SendersReadService {
       ORDER BY ${senderTimeseries.yearMonth} DESC
       LIMIT 1
     )`;
+    const currentMonthVolumeSql = sql<number | null>`(
+      SELECT ${senderTimeseries.volume}
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
+      LIMIT 1
+    )`;
+    const priorAvgVolumeSql = sql<number | null>`(
+      SELECT AVG(${senderTimeseries.volume})::float
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
+        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
+    )`;
+    const historyMonthCountSql = sql<number>`(
+      SELECT COUNT(*)::int
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+    )`;
+    const lastDecisionAtSql = sql<Date | null>`(
+      SELECT ${triageDecisions.producedAt}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+    const lastDecisionVerdictSql = sql<TriageVerdict | null>`(
+      SELECT ${triageDecisions.verdict}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+    const lastDecisionGeneratedBySql = sql<TriageReasoningSource | null>`(
+      SELECT ${triageDecisions.generatedBy}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
 
     const [row] = await this.db
       .select({
@@ -246,6 +400,12 @@ export class SendersReadService {
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
+        currentMonthVolume: currentMonthVolumeSql,
+        priorAvgVolume: priorAvgVolumeSql,
+        historyMonthCount: historyMonthCountSql,
+        lastDecisionAt: lastDecisionAtSql,
+        lastDecisionVerdict: lastDecisionVerdictSql,
+        lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
         isVip: senderPolicies.isVip,
@@ -285,7 +445,17 @@ export class SendersReadService {
       lastSeenAt: row.lastSeenAt.toISOString(),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
+      volumeTrend: computeTrendBucket(
+        row.currentMonthVolume,
+        row.priorAvgVolume,
+        row.historyMonthCount,
+      ),
       unsubscribeMethod: row.unsubscribeMethod,
+      lastReview: buildLastReview(
+        row.lastDecisionAt,
+        row.lastDecisionVerdict,
+        row.lastDecisionGeneratedBy,
+      ),
       protectionFlags,
     };
   }
@@ -539,4 +709,94 @@ function computeReadRate(volume: number | null, readCount: number | null): numbe
  */
 function startOfMonthMonthsAgo(anchor: Date, n: number): Date {
   return new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() - n, 1));
+}
+
+/**
+ * Pure helper — add `n` months to the provided anchor (negative = back
+ * in time) and return a new `Date` anchored to UTC. Wrapper around
+ * `Date.UTC(y, m + n, 1)` so the SQL-side `year_month` boundary string
+ * is consistent across DST / locale shifts.
+ */
+function addMonthsUtc(anchor: Date, n: number): Date {
+  return new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + n, 1));
+}
+
+/**
+ * Pure helper — render a UTC Date as the first-of-month `YYYY-MM-DD`
+ * string used by `sender_timeseries.year_month`. Centralised so the
+ * trend-window subqueries above stay readable and the format is
+ * impossible to drift across helpers.
+ */
+function startOfMonthIso(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+}
+
+/**
+ * Pure helper — map the raw timeseries inputs to one of the bucketed
+ * trend labels (`VolumeTrendBucket`) the FE renders. Centralising the
+ * thresholds here keeps the SQL clean and gives the bucket logic a
+ * single unit-tested home.
+ *
+ * Bucket order matters — the early returns encode the precedence:
+ *
+ *   1. No history at all                 → null   ("—" on FE)
+ *   2. < 2 months of history             → 'new'
+ *   3. Prior average is zero (gap)       → 'up' if current > 0 else null
+ *   4. Current is zero, prior > 0        → 'dormant'
+ *   5. current ≥ prior × 1.3             → 'up'
+ *   6. current ≤ prior × 0.7             → 'down'
+ *   7. otherwise                         → 'steady'
+ *
+ * The 1.3× / 0.7× thresholds are placeholders pending ratification
+ * against real mailbox variance (flagged in MISTAKES.md / brief).
+ * They are deliberately centralised so a single edit re-buckets every
+ * surface.
+ */
+function computeTrendBucket(
+  currentVolume: number | null,
+  priorAvg: number | null,
+  historyMonthCount: number,
+): VolumeTrendBucket | null {
+  if (historyMonthCount === 0) return null;
+  if (historyMonthCount < 2) return 'new';
+  const current = currentVolume ?? 0;
+  const prior = priorAvg ?? 0;
+  if (prior === 0) {
+    return current > 0 ? 'up' : null;
+  }
+  if (current === 0) return 'dormant';
+  if (current >= prior * 1.3) return 'up';
+  if (current <= prior * 0.7) return 'down';
+  return 'steady';
+}
+
+/**
+ * Pure helper — assemble a `LastReview` from the three optional
+ * scalar-subquery columns. All three are populated together (same
+ * `triage_decisions` row) or all null. If `at` is set the other two
+ * MUST be set; the helper treats partial population as a contract
+ * violation surfaced as null rather than a partial object so the FE
+ * never has to defensive-check intermediate fields.
+ */
+function buildLastReview(
+  at: Date | string | null,
+  verdict: TriageVerdict | null,
+  generatedBy: TriageReasoningSource | null,
+): LastReview | null {
+  if (at === null || verdict === null || generatedBy === null) {
+    return null;
+  }
+  // Scalar correlated subqueries on a `timestamptz` column come back
+  // as strings from postgres-js + PGlite (no Drizzle column-type
+  // coercion in scalar `sql<>` contexts), even though the TS template
+  // type promises `Date`. Normalise via `new Date(...)` so a future
+  // driver change that DOES coerce to `Date` doesn't break us either.
+  const asDate = at instanceof Date ? at : new Date(at);
+  return {
+    at: asDate.toISOString(),
+    verdict,
+    generatedBy,
+  };
 }

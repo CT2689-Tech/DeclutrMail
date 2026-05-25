@@ -65,7 +65,16 @@ export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): Sen
     firstSeenAt,
     monthlyVolume: s.monthly,
     readRate: s.read,
+    // Fixtures don't carry a real trend signal; default to `steady` so
+    // Storybook variants render a sensible chip without setting it
+    // explicitly. Stress-case stories override via `volumeTrend` on
+    // the seed sender.
+    volumeTrend: s.volumeTrend ?? 'steady',
     unsubscribeMethod: pickUnsubscribeMethod(s),
+    // Fixtures don't carry a real decision history; default to "never
+    // reviewed" so the detail header's eyebrow defaults to that copy.
+    // Stress-case stories can override with `lastReview` on the seed.
+    lastReview: s.lastReview ?? null,
   };
 }
 

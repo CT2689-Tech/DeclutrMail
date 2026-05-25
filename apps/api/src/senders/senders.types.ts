@@ -16,6 +16,48 @@
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
 /**
+ * Bucketed month-over-month volume trend, computed BE-side from
+ * `sender_timeseries`. Bucketed rather than raw % to avoid false
+ * precision on small baselines (Codex review on the senders-tightening
+ * brief) — `+47%` from a baseline of 2 messages is noise; `up` after
+ * a sustained 3-month average is signal.
+ *
+ *   - `up`      — current month ≥ prior-3-month average × 1.3
+ *   - `down`    — current month ≤ prior-3-month average × 0.7
+ *   - `steady`  — otherwise (within ±30% of prior average)
+ *   - `dormant` — current month is 0 and prior average > 0
+ *   - `new`     — fewer than 2 completed months of history
+ *
+ * `null` indicates no timeseries data at all (sync hasn't run); the FE
+ * surfaces this as a quiet "—" rather than picking a misleading bucket.
+ */
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+
+/**
+ * Summary of the most-recent triage decision for a sender. Surfaces on
+ * the Sender Detail header as a "Last reviewed …" eyebrow so users can
+ * see whether a stale recommendation is being shown. Each field is
+ * `null` when no `triage_decisions` row exists for `(mailbox, sender)`
+ * yet — the FE renders "Never reviewed" in that case.
+ *
+ * The wire deliberately uses the neutral "reviewed" vocabulary at the
+ * UI seam (rather than "decided") because `generatedBy = 'template'`
+ * means an auto-template fired the verdict without explicit user
+ * action; calling that "decided" overstates user agency. The wire
+ * still passes the raw `generatedBy` through so the FE can colour or
+ * caveat the eyebrow if it wants to distinguish LLM vs template
+ * provenance later.
+ */
+export interface LastReview {
+  /** ISO-8601 — `triage_decisions.produced_at` of the most recent row. */
+  at: string;
+  /** Verdict that engine settled on. */
+  verdict: TriageVerdict;
+  /** Provenance — LLM call vs deterministic template fallback. */
+  generatedBy: TriageReasoningSource;
+}
+
+/**
  * Gmail's own category enum mirrored from the `gmail_category` Postgres
  * enum. Kept in sync with `packages/db/src/schema/senders.ts` — adding
  * a value requires touching both the migration and this union (one
@@ -54,7 +96,21 @@ export interface SenderListRow {
   lastSeenAt: string;
   monthlyVolume: number | null;
   readRate: number | null;
+  /**
+   * Bucketed month-over-month volume trend — see `VolumeTrendBucket`.
+   * `null` when there's no timeseries data at all (sync hasn't run).
+   * Drives the trend chip on the Senders row evidence line.
+   */
+  volumeTrend: VolumeTrendBucket | null;
   unsubscribeMethod: UnsubscribeMethod | null;
+  /**
+   * Summary of the most-recent triage decision for this sender —
+   * powers the "Last reviewed …" eyebrow on the Sender Detail header
+   * AND lets the Senders row decide whether to render a stale-decision
+   * cue. `null` when the engine has never produced a decision for
+   * (mailbox, sender).
+   */
+  lastReview: LastReview | null;
 }
 
 /**
