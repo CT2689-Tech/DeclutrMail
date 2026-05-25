@@ -1,4 +1,4 @@
-import { normalizeEmail, parseFromHeader } from './sender-key.js';
+import { parseFromHeader } from './sender-key.js';
 
 /**
  * Parsing for the D7-allowlist-amended headers added in ADR-0004 —
@@ -11,6 +11,13 @@ import { normalizeEmail, parseFromHeader } from './sender-key.js';
  * recipient emails. Handles comma-separated lists with mixed forms:
  *   `"Alice" <a@x.com>, b@x.com, "Bob" <b@x.com>`
  * Returns `[]` for a null / unusable header.
+ *
+ * Recipients are lowercased + trimmed but `+suffix` aliases are
+ * **preserved** — D12's `+suffix` strip applies to the sender-key
+ * dedup identity (one row per sender), not to the recipient header
+ * the user actually sent to. A reply-attribution feature should still
+ * be able to see that the user wrote to `bob+work@example.com`
+ * specifically.
  */
 export function parseRecipients(headerValue: string | null): string[] {
   if (!headerValue) {
@@ -20,7 +27,7 @@ export function parseRecipients(headerValue: string | null): string[] {
   for (const piece of splitAddressList(headerValue)) {
     const parsed = parseFromHeader(piece);
     if (parsed) {
-      out.add(normalizeEmail(parsed.email));
+      out.add(parsed.email.trim().toLowerCase());
     }
   }
   return [...out];

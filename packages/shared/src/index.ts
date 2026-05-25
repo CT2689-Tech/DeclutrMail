@@ -30,7 +30,22 @@ export { Avatar } from './components/avatar';
 export { Button } from './components/button';
 export type { ButtonTone, ButtonSize } from './components/button';
 export { EmptyState } from './components/empty-state';
+export type {
+  EmptyStateProps,
+  EmptyStateTier,
+  EmptyStateTierNudge,
+} from './components/empty-state';
 export { ScreenIntro } from './components/screen-intro';
+
+// D211 — typed edge-state inventory. Enforces that every launch screen
+// has designed coverage for every edge state it can enter.
+export { EDGE_STATE_INVENTORY, EDGE_STATES } from './edge-states/inventory';
+export type {
+  EdgeState,
+  EdgeStateCoverage,
+  EdgeStateInventory,
+  ScreenId,
+} from './edge-states/inventory';
 export { ToastHost, toast } from './components/toast';
 export type { ToastTone } from './components/toast';
 

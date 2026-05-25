@@ -218,7 +218,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
 | D165 | Notification preferences: **Per-category toggles in Settings | ⬜ |  |  |  |
 | D166 | Loading patterns: **Skeleton-first with inline action progress | ⬜ |  |  |  |
-| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | ⬜ |  |  |  |
+| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🔵 | #51 |  |  |
 | D168 | API error envelope: **Standardized structured format | ⬜ |  |  |  |
 | D169 | Three severity tiers | ⬜ |  |  |  |
 | D170 | Three named critical-trust scenarios | ⬜ |  |  |  |
@@ -262,8 +262,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D208 | "What happens next" preview mandatory before every automation or destructive action | ⬜ |  |  |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
-| D211 | Edge-state screen inventory at launch (extends D166-D171) | ⬜ |  |  |  |
-| D212 | Empty states as first-class | ⬜ |  |  |  |
+| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #51 |  |  |
+| D212 | Empty states as first-class | 🔵 | #51 |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
