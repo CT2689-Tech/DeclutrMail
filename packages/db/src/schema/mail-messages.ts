@@ -166,6 +166,23 @@ export const mailMessages = pgTable(
     unreadIdx: index('mail_messages_account_sender_unread_idx')
       .on(table.mailboxAccountId, table.senderKey)
       .where(sql`${table.isUnread} = true`),
+    /**
+     * Thread-grouped lookup index — needed by `FollowupCheckWorker`
+     * (D87) for its `DISTINCT ON (provider_thread_id) ... ORDER BY
+     * provider_thread_id, internal_date DESC` CTE and its
+     * `flipReplied` EXISTS subquery (selective on
+     * `provider_thread_id`). The existing
+     * `mail_messages_account_date_idx` cannot satisfy either pattern
+     * — its sort order is by date, not thread. Added in migration
+     * 0011 as a performance fix-up for the followup check worker;
+     * future thread-grouped read paths (e.g. Senders detail thread
+     * view) reuse the same index.
+     */
+    accountThreadDateIdx: index('mail_messages_account_thread_date_idx').on(
+      table.mailboxAccountId,
+      table.providerThreadId,
+      table.internalDate,
+    ),
   }),
 );
 

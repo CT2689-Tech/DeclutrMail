@@ -4,9 +4,29 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { followupTracker, mailboxAccounts, type schema } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { createLimiter } from './reasoning.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Default bounded-concurrency cap for the per-mailbox sweep. The cron
+ * iterates every mailbox in the system every 6 hours; serial `await`
+ * per mailbox would take O(N × per-mailbox-ms) → at 10K mailboxes this
+ * is hours. Fan-out at 8-wide keeps the cron under a few minutes while
+ * staying well under any reasonable Postgres connection pool ceiling
+ * (default pool: 10).
+ *
+ * Override via env `FOLLOWUP_CHECK_CONCURRENCY` (clamped to [1, 32]).
+ */
+const DEFAULT_FOLLOWUP_CHECK_CONCURRENCY = 8;
+const MAX_FOLLOWUP_CHECK_CONCURRENCY = 32;
+
+function resolveConcurrency(raw: string | undefined): number {
+  const n = raw ? Number.parseInt(raw, 10) : DEFAULT_FOLLOWUP_CHECK_CONCURRENCY;
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_FOLLOWUP_CHECK_CONCURRENCY;
+  return Math.min(n, MAX_FOLLOWUP_CHECK_CONCURRENCY);
+}
 
 /**
  * Periodic sweep payload — the scheduler enqueues one tick per cron
@@ -42,6 +62,14 @@ export interface FollowupCheckDeps {
   db: WorkerDb;
   /** Override clock for tests. Defaults to `() => new Date()`. */
   now?: () => Date;
+  /**
+   * Bounded-concurrency cap for the per-mailbox sweep. Defaults to
+   * `process.env.FOLLOWUP_CHECK_CONCURRENCY` (8 if unset; clamped to
+   * [1, 32]). Tests inject `1` for deterministic ordering. The cap
+   * keeps the worker from blowing the Postgres connection pool —
+   * each in-flight mailbox holds at most one connection at a time.
+   */
+  concurrency?: number;
 }
 
 /**
@@ -135,27 +163,41 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
     let repliedFlipped = 0;
     let mailboxesFailed = 0;
 
-    // Per-mailbox try/catch — one mailbox's failure (transient DB
-    // error, schema drift, raw-SQL execute shape change) must NOT
-    // stop every other user's followups from being updated. The next
-    // mailbox still runs; the failed one retries on the next 6h tick.
-    for (const mb of mailboxes) {
-      try {
-        awaitingUpserted += await this.sweepMailbox(mb.id, mb.workspaceId, now);
-        repliedFlipped += await this.flipReplied(mb.id);
-      } catch (err) {
-        mailboxesFailed += 1;
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            kind: 'followup.mailbox_failed',
-            worker: this.workerName,
-            mailboxAccountId: mb.id,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-      }
-    }
+    // Bounded-concurrency fan-out — serial `await` per mailbox would
+    // take O(N × ms) → hours at 10K mailboxes. The limiter caps
+    // in-flight mailboxes so the Postgres pool isn't overwhelmed.
+    // The per-mailbox try/catch still applies so one mailbox failure
+    // is caught + counted, not propagated.
+    //
+    // Counters are mutated only from the awaited per-mailbox body —
+    // the limiter serializes the increment with the surrounding await
+    // so no race exists despite the parallelism.
+    const concurrency =
+      this.deps.concurrency ?? resolveConcurrency(process.env.FOLLOWUP_CHECK_CONCURRENCY);
+    const limiter = createLimiter(concurrency);
+    await Promise.all(
+      mailboxes.map((mb) =>
+        limiter(async () => {
+          try {
+            const upserted = await this.sweepMailbox(mb.id, mb.workspaceId, now);
+            const flipped = await this.flipReplied(mb.id);
+            awaitingUpserted += upserted;
+            repliedFlipped += flipped;
+          } catch (err) {
+            mailboxesFailed += 1;
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                kind: 'followup.mailbox_failed',
+                worker: this.workerName,
+                mailboxAccountId: mb.id,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }),
+      ),
+    );
 
     return {
       mailboxesProcessed: mailboxes.length,
