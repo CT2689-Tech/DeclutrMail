@@ -1,0 +1,62 @@
+-- 0011_mail_messages_thread_index.sql
+--
+-- Performance fix-up for `FollowupCheckWorker` (D87) — adds the
+-- `(mailbox_account_id, provider_thread_id, internal_date)` index
+-- on `mail_messages` that the worker's hot-path queries need at
+-- scale.
+--
+-- Why this index:
+--
+--   1. `latest_per_thread` CTE — uses `DISTINCT ON (provider_thread_id)
+--      ... ORDER BY provider_thread_id, internal_date DESC, id DESC`
+--      over the 60-day window. Without an index sorted on
+--      `(provider_thread_id, internal_date DESC)`, Postgres must
+--      external-sort every row in the window before the DISTINCT ON
+--      can deduplicate. At 100K+ messages per mailbox the sort is
+--      the dominant cost.
+--
+--   2. `flipReplied` EXISTS subquery — checks
+--      `WHERE mailbox_account_id=? AND provider_thread_id=? AND
+--      is_outbound=false AND internal_date > followup_tracker.sent_at`
+--      for every awaiting row. The lookup is selective on
+--      `provider_thread_id` (one thread per row), so a
+--      `(mailbox, thread, date)` index is the right cover.
+--
+-- The existing `mail_messages_account_date_idx` (`mailbox_account_id,
+-- internal_date`) cannot satisfy either pattern — its sort order is
+-- by date, not by thread. The existing
+-- `mail_messages_account_sender_date_idx` (`mailbox_account_id,
+-- sender_key, internal_date`) is for sender-scoped queries, not
+-- thread-scoped.
+--
+-- Coverage scope:
+--
+--   - The Followups feature is the primary consumer today.
+--   - Any future thread-grouped read path (e.g. a thread view on the
+--     Senders detail page) benefits without a follow-up migration.
+--
+-- Privacy (D7, D228): index-only change. No new columns, no row
+-- mutation, no data movement. The columns indexed (`mailbox_account_id`,
+-- `provider_thread_id`, `internal_date`) are all on the D7 metadata
+-- allowlist.
+--
+-- `CREATE INDEX` is deliberately NOT `CONCURRENTLY` here:
+--
+--   - PGlite (the migration round-trip driver) cannot run
+--     `CONCURRENTLY` outside an implicit transaction (LEARNINGS
+--     2026-05-21 documents the constraint).
+--   - `mail_messages` has ZERO rows in any production environment
+--     pre-launch (ADR-0002 — no production deploy yet). The non-
+--     concurrent build is instant on an empty table.
+--   - The first production migration after launch that adds an index
+--     to `mail_messages` MUST use `--tx-mode none` +
+--     `CREATE INDEX CONCURRENTLY` per LEARNINGS 2026-05-21. This
+--     migration ships before the first deploy, so the rule doesn't
+--     apply yet.
+--   - `atlas:nolint concurrent_index` marks the deliberate choice
+--     for the Atlas lint pass.
+--
+-- NO DML — Atlas's `data_depend = error` rule. Index-only add.
+
+-- atlas:nolint concurrent_index
+CREATE INDEX IF NOT EXISTS "mail_messages_account_thread_date_idx" ON "mail_messages" USING btree ("mailbox_account_id", "provider_thread_id", "internal_date");
