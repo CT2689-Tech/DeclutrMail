@@ -30,8 +30,19 @@ if [[ ! -f .env.local ]]; then
   exit 1
 fi
 if ! grep -qE '^REDIS_URL=.+' .env.local; then
-  echo "✗ REDIS_URL is empty in .env.local — set the Upstash connection string." >&2
+  echo "✗ REDIS_URL is empty in .env.local — set redis://localhost:6379 for dev." >&2
+  echo "  (Production injects an Upstash rediss:// URL via [gcp] Secret Manager.)" >&2
   exit 1
+fi
+
+# 2b. Loud warning if dev points at a paid Upstash endpoint. BullMQ's
+#     idle blocking polls burn ~700K commands/month per worker — the
+#     Upstash free tier (500K/month) breaks within ~3 weeks of leaving
+#     a worker on. See .env.example REDIS_URL comment.
+if grep -qE '^REDIS_URL=rediss?://.*upstash\.io' .env.local; then
+  echo "⚠ REDIS_URL points at Upstash — dev usage burns prod quota." >&2
+  echo "  Recommended: run \`docker compose up -d redis\` and set" >&2
+  echo "  REDIS_URL=redis://localhost:6379 in .env.local." >&2
 fi
 
 # 3. Start the worker. `pnpm --filter` runs with cwd=apps/api, so the
