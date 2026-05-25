@@ -2,6 +2,7 @@ export * from './_custom-types';
 export * from './activity-log';
 export * from './mail-messages';
 export * from './mailbox-accounts';
+export * from './outbox-events';
 export * from './provider-sync-state';
 export * from './sender-policies';
 export * from './sender-timeseries';

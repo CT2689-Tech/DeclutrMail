@@ -1,0 +1,19 @@
+-- Rollback for 0008_outbox_events.sql
+--
+-- Per D152: every forward migration has a companion rollback file.
+-- Reverse order of the forward; `IF EXISTS` keeps the rollback idempotent.
+--
+-- Trigger and trigger function drop first (depend on the table), then
+-- indexes, then the table, then the enum — strict dependency order.
+
+DROP TRIGGER IF EXISTS "outbox_events_notify_insert" ON "outbox_events";
+--> statement-breakpoint
+DROP FUNCTION IF EXISTS "outbox_notify_inserted"();
+--> statement-breakpoint
+DROP INDEX IF EXISTS "outbox_events_topic_created_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "outbox_events_pending_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "outbox_events";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."outbox_status";

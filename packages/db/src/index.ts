@@ -5,6 +5,8 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
+export { outboxEvents, outboxStatus } from './schema/outbox-events';
+export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-events';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
 export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
 export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
