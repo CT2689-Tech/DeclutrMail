@@ -20,6 +20,37 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-23 — Observer-injection seam over base-class hardcoding for D159
+
+**Context:** Wiring D159 (Sentry) onto `BaseDeclutrWorker` and the
+periodic reconciler (FOUNDER-FOLLOWUPS 2026-05-22 — D-CANDIDATE).
+Three options were on the table: (a) import `@sentry/node` directly
+inside `BaseDeclutrWorker.captureFailure`; (b) move the reconciler
+inside a `BaseDeclutrWorker` subclass so the existing seam covers it;
+(c) extract a `WorkerObserver` interface with `setObserver(observer)`
+on the base + a `captureBackgroundFailure(err, ctx)` for non-job paths.
+**Finding:** (c) was the only option that kept three properties
+simultaneously: `packages/workers` framework-agnostic (no @sentry/node
+dep added), reconciler covered without becoming a worker (it's a
+DB-state reconciler, not a job consumer), and dev/test boots
+unchanged (default `NOOP_WORKER_OBSERVER` is inert). Option (a)
+would have leaked the SDK into the workers package; option (b) would
+have forced the reconciler into a job lifecycle it doesn't fit
+(repeatable jobs already exist via D225 cronPolicy, but the reconciler
+predates that and the founder ratified its sweep design in PR-D).
+The cost was one extra interface file + a wiring line in the
+composition root — surgical, no new tables, no new dependencies.
+**Rule (provisional):** When a framework-free package needs to emit
+to an opinionated infra (Sentry, Datadog, PostHog), build a small
+*observer interface* in the package, default it to no-op, and have
+the composition root inject the real adapter. Avoids both
+"package depends on SDK" and "ifs branching on env var inside the
+package". The pattern also gives unit tests a recording observer
+without mocking the SDK.
+**Distillation trigger:** Promote to CLAUDE.md §6 (or a new
+"Observability seams" subsection) if pattern recurs ≥2 more times —
+e.g., when PostHog event emission lands on workers, or when a
+Datadog-style metrics sink shows up. Count: 1/3.
 ## 2026-05-23 — D12 normalize-email had two consumers with different semantic needs
 
 **Context:** Overnight PR `feat/d012-sender-key-hash` — adding the

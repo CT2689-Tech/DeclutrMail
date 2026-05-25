@@ -20,6 +20,8 @@ import type { GmailAccess, InitialSyncJobData, InitialSyncResult } from '@declut
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import { initSentry } from './observability/sentry.js';
+import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 
 /**
  * Worker process composition root (D157).
@@ -52,6 +54,13 @@ function requireEnv(name: string): string {
 }
 
 async function bootstrap(): Promise<void> {
+  // D159: initialise Sentry before anything else so the worker process —
+  // including the boot-time reconciler sweep — has the SDK installed for
+  // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
+  // process; local dev + tests are unaffected).
+  await initSentry();
+  const observer = await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) });
+
   const pg = postgres(requireEnv('DATABASE_URL'));
   const db = drizzle(pg, { schema });
   const tokenCrypto = new TokenCryptoService(createKmsProvider());
@@ -118,6 +127,10 @@ async function bootstrap(): Promise<void> {
   };
 
   const initialSync = new InitialSyncWorker({ db, gmailAccess });
+  // D159: install the Sentry seam on every BaseDeclutrWorker BEFORE the
+  // BullMQ `Worker` starts pulling jobs, so the very first terminal
+  // failure routes through the observer (no warm-up window).
+  initialSync.setObserver(observer);
   const connection = createRedisConnection(requireEnv('REDIS_URL'));
 
   const bullWorker = new Worker<InitialSyncJobData, InitialSyncResult>(
@@ -203,13 +216,19 @@ async function bootstrap(): Promise<void> {
         );
       }
     } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error(
         JSON.stringify({
           level: 'error',
           kind: 'reconciler.failed',
-          message: err instanceof Error ? err.message : String(err),
+          message: error.message,
         }),
       );
+      // D159 — route reconciler failures through the SAME Sentry seam as
+      // BaseDeclutrWorker (FOUNDER-FOLLOWUPS 2026-05-22 D-CANDIDATE). The
+      // reconciler runs outside the BullMQ loop, so without this call
+      // it would silently miss Sentry once the DSN is configured.
+      observer.captureBackgroundFailure(error, { kind: 'reconciler.failed' });
     }
     return { added, replaced };
   }
@@ -235,13 +254,20 @@ async function bootstrap(): Promise<void> {
         inFlight = null;
       })
       .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'reconciler.tick_unexpected',
-            message: err instanceof Error ? err.message : String(err),
+            message: error.message,
           }),
         );
+        // Defense-in-depth seam: `reconcileQueuedInitialSyncs` is
+        // documented never to reject, but if a future refactor moves a
+        // line out of its try/catch, an unhandled rejection here would
+        // otherwise be invisible. Route through the same Sentry seam
+        // (D159).
+        observer.captureBackgroundFailure(error, { kind: 'reconciler.tick_unexpected' });
       });
     inFlight = p;
   }
@@ -289,14 +315,22 @@ async function bootstrap(): Promise<void> {
       await pg.end();
       process.exit(0);
     })().catch((err: unknown) => {
+      const error = err instanceof Error ? err : new Error(String(err));
       console.error(
         JSON.stringify({
           level: 'error',
           kind: 'worker.shutdown_failed',
           signal,
-          message: err instanceof Error ? err.message : String(err),
+          message: error.message,
         }),
       );
+      // D159 background seam — shutdown failures also live outside the
+      // BullMQ loop; capture them so a stuck drain shows up in Sentry
+      // instead of only the K8s SIGKILL log.
+      observer.captureBackgroundFailure(error, {
+        kind: 'worker.shutdown_failed',
+        tags: { signal },
+      });
       // Exit non-zero so the orchestrator (K8s / Cloud Run) sees the
       // drain failed instead of hanging until SIGKILL.
       process.exit(1);
@@ -313,13 +347,33 @@ async function bootstrap(): Promise<void> {
 // `--unhandled-rejections` mode and would not produce a structured
 // `worker.boot_failed` log line the operator can grep. Catch + log +
 // non-zero exit. Silent-failure-hunter, post-iter-6 review.
+//
+// D159: also route boot failures to Sentry via a one-shot observer.
+// `initSentry()` is idempotent — calling it again here is a safe no-op
+// after a successful boot, and a critical signal if the bootstrap
+// `initSentry()` itself was the failure (the second call still
+// completes since the DSN is read fresh from env).
 bootstrap().catch((err: unknown) => {
+  const error = err instanceof Error ? err : new Error(String(err));
   console.error(
     JSON.stringify({
       level: 'error',
       kind: 'worker.boot_failed',
-      message: err instanceof Error ? err.message : String(err),
+      message: error.message,
     }),
   );
-  process.exit(1);
+  void (async () => {
+    try {
+      await initSentry();
+      const obs = await createSentryWorkerObserver({
+        dsnSet: Boolean(process.env.SENTRY_DSN),
+      });
+      obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+    } catch {
+      // Capturing the boot failure must never itself crash the exit
+      // path — better to lose the Sentry event than hang the process.
+    } finally {
+      process.exit(1);
+    }
+  })();
 });
