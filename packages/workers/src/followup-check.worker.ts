@@ -23,6 +23,13 @@ export interface FollowupCheckJobData {
 export interface FollowupCheckResult {
   /** Mailboxes inspected this pass. */
   mailboxesProcessed: number;
+  /**
+   * Subset of `mailboxesProcessed` whose per-mailbox sweep threw and
+   * was caught. The error is logged with the mailbox id; the next
+   * mailbox still runs so one bad mailbox cannot stop every other
+   * user's followups from being updated.
+   */
+  mailboxesFailed: number;
   /** Rows written or refreshed in the `awaiting` state. */
   awaitingUpserted: number;
   /** Existing `awaiting` rows flipped to `replied` because a later inbound arrived. */
@@ -126,14 +133,33 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
 
     let awaitingUpserted = 0;
     let repliedFlipped = 0;
+    let mailboxesFailed = 0;
 
+    // Per-mailbox try/catch — one mailbox's failure (transient DB
+    // error, schema drift, raw-SQL execute shape change) must NOT
+    // stop every other user's followups from being updated. The next
+    // mailbox still runs; the failed one retries on the next 6h tick.
     for (const mb of mailboxes) {
-      awaitingUpserted += await this.sweepMailbox(mb.id, mb.workspaceId, now);
-      repliedFlipped += await this.flipReplied(mb.id);
+      try {
+        awaitingUpserted += await this.sweepMailbox(mb.id, mb.workspaceId, now);
+        repliedFlipped += await this.flipReplied(mb.id);
+      } catch (err) {
+        mailboxesFailed += 1;
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'followup.mailbox_failed',
+            worker: this.workerName,
+            mailboxAccountId: mb.id,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
     }
 
     return {
       mailboxesProcessed: mailboxes.length,
+      mailboxesFailed,
       awaitingUpserted,
       repliedFlipped,
       durationMs: Date.now() - startedAt,
