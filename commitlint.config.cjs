@@ -6,7 +6,10 @@
  * The `d-number-reference` rule enforces the trailing `(D###)` reference
  * (or `(D###, D###)` for multi-D commits) for non-bootstrap branches.
  * Bootstrap commits (`chore/bootstrap-*` branches) are exempt because PR 1
- * lays groundwork before D-decisions are assignable.
+ * lays groundwork before D-decisions are assignable. Distill commits
+ * (`chore/distill-*` branches, CLAUDE.md §11) are also exempt because they
+ * promote learnings/mistakes into CLAUDE.md or supporting hooks without
+ * shipping a D-decision.
  */
 module.exports = {
   extends: ['@commitlint/config-conventional'],
@@ -31,7 +34,7 @@ module.exports = {
           } catch {
             return [true];
           }
-          if (/^chore\/bootstrap-/.test(branch)) return [true];
+          if (/^chore\/(bootstrap|distill)-/.test(branch)) return [true];
           const header = parsed.header || '';
           const ok = /\(D\d{1,3}(,\s*D\d{1,3})*\)\s*$/.test(header);
           return [
