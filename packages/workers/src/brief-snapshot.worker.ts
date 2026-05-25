@@ -15,9 +15,29 @@ import {
 } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { createLimiter } from './reasoning.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Default bounded-concurrency cap for the per-mailbox snapshot. The
+ * cron iterates every mailbox in the system every hour; serial
+ * `await` per mailbox would take O(N × per-mailbox-ms) → at 10K
+ * mailboxes this is many minutes. Fan-out at 8-wide keeps the cron
+ * tight while staying well under any reasonable Postgres connection
+ * pool ceiling (default pool: 10).
+ *
+ * Override via env `BRIEF_SNAPSHOT_CONCURRENCY` (clamped to [1, 32]).
+ */
+const DEFAULT_BRIEF_SNAPSHOT_CONCURRENCY = 8;
+const MAX_BRIEF_SNAPSHOT_CONCURRENCY = 32;
+
+function resolveConcurrency(raw: string | undefined): number {
+  const n = raw ? Number.parseInt(raw, 10) : DEFAULT_BRIEF_SNAPSHOT_CONCURRENCY;
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_BRIEF_SNAPSHOT_CONCURRENCY;
+  return Math.min(n, MAX_BRIEF_SNAPSHOT_CONCURRENCY);
+}
 
 /** Cron job payload — same shape as `UndoExpiry` + `FollowupCheck`. */
 export interface BriefSnapshotJobData {
@@ -48,6 +68,14 @@ export interface BriefSnapshotDeps {
   db: WorkerDb;
   /** Override clock for tests. Defaults to `() => new Date()`. */
   now?: () => Date;
+  /**
+   * Bounded-concurrency cap for the per-mailbox snapshot. Defaults to
+   * `process.env.BRIEF_SNAPSHOT_CONCURRENCY` (8 if unset; clamped to
+   * [1, 32]). Tests inject `1` for deterministic ordering. The cap
+   * keeps the worker from blowing the Postgres connection pool —
+   * each in-flight mailbox holds at most one connection at a time.
+   */
+  concurrency?: number;
 }
 
 /** D63 — Reply section cap. */
@@ -138,31 +166,44 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     let emptyBriefs = 0;
     let mailboxesFailed = 0;
 
-    // Per-mailbox try/catch — one mailbox's failure (transient DB
-    // error, schema drift, etc.) must NOT stop every other user from
-    // getting their Brief. The next mailbox still runs; D69's UNIQUE
-    // on `(mailbox, run_date_local)` means the failed mailbox just
-    // retries on the next hourly cron tick.
-    for (const mb of mailboxes) {
-      try {
-        const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
-        if (generated) {
-          briefsGenerated += 1;
-          if (generated.isEmpty) emptyBriefs += 1;
-        }
-      } catch (err) {
-        mailboxesFailed += 1;
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            kind: 'brief.mailbox_failed',
-            worker: this.workerName,
-            mailboxAccountId: mb.id,
-            error: err instanceof Error ? err.message : String(err),
-          }),
-        );
-      }
-    }
+    // Bounded-concurrency fan-out — serial `await` per mailbox would
+    // take O(N × ms) → many minutes at 10K mailboxes. The limiter
+    // caps in-flight mailboxes so the Postgres pool isn't overwhelmed.
+    // The per-mailbox try/catch still applies so one mailbox's failure
+    // (transient DB error, schema drift, etc.) is caught + counted,
+    // not propagated. D69's UNIQUE on `(mailbox, run_date_local)`
+    // means a failed mailbox just retries on the next hourly tick.
+    //
+    // Counters are mutated only from the awaited per-mailbox body —
+    // the limiter serializes the increment with the surrounding await
+    // so no race exists despite the parallelism.
+    const concurrency =
+      this.deps.concurrency ?? resolveConcurrency(process.env.BRIEF_SNAPSHOT_CONCURRENCY);
+    const limiter = createLimiter(concurrency);
+    await Promise.all(
+      mailboxes.map((mb) =>
+        limiter(async () => {
+          try {
+            const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
+            if (generated) {
+              briefsGenerated += 1;
+              if (generated.isEmpty) emptyBriefs += 1;
+            }
+          } catch (err) {
+            mailboxesFailed += 1;
+            console.error(
+              JSON.stringify({
+                level: 'error',
+                kind: 'brief.mailbox_failed',
+                worker: this.workerName,
+                mailboxAccountId: mb.id,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        }),
+      ),
+    );
 
     return {
       mailboxesProcessed: mailboxes.length,
