@@ -29,6 +29,13 @@ export interface BriefSnapshotJobData {
 export interface BriefSnapshotResult {
   /** Mailboxes inspected this pass. */
   mailboxesProcessed: number;
+  /**
+   * Subset of `mailboxesProcessed` whose per-mailbox snapshot threw
+   * mid-loop and was caught. The error is logged with the mailbox id;
+   * the next mailbox still runs so one bad mailbox cannot stop every
+   * other user from getting their morning Brief.
+   */
+  mailboxesFailed: number;
   /** New Brief rows written (excludes mailboxes whose Brief was already present). */
   briefsGenerated: number;
   /** Subset of `briefsGenerated` that landed an empty-section brief (D70). */
@@ -129,17 +136,37 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
 
     let briefsGenerated = 0;
     let emptyBriefs = 0;
+    let mailboxesFailed = 0;
 
+    // Per-mailbox try/catch — one mailbox's failure (transient DB
+    // error, schema drift, etc.) must NOT stop every other user from
+    // getting their Brief. The next mailbox still runs; D69's UNIQUE
+    // on `(mailbox, run_date_local)` means the failed mailbox just
+    // retries on the next hourly cron tick.
     for (const mb of mailboxes) {
-      const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
-      if (generated) {
-        briefsGenerated += 1;
-        if (generated.isEmpty) emptyBriefs += 1;
+      try {
+        const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
+        if (generated) {
+          briefsGenerated += 1;
+          if (generated.isEmpty) emptyBriefs += 1;
+        }
+      } catch (err) {
+        mailboxesFailed += 1;
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'brief.mailbox_failed',
+            worker: this.workerName,
+            mailboxAccountId: mb.id,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
       }
     }
 
     return {
       mailboxesProcessed: mailboxes.length,
+      mailboxesFailed,
       briefsGenerated,
       emptyBriefs,
       durationMs: Date.now() - startedAt,

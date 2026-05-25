@@ -575,4 +575,60 @@ describe('BriefSnapshotWorker', () => {
     // Mailbox B has no yesterday inbound — still gets an empty-day brief.
     expect(bRows).toHaveLength(1);
   });
+
+  it('one mailbox failure does not block other mailboxes (partial-failure resilience)', async () => {
+    const db = await freshDb();
+    const a = await seedMailbox(db, 'a@example.com');
+    const b = await seedMailbox(db, 'b@example.com');
+
+    // Both mailboxes have empty days — both would normally land an
+    // empty-day brief. Inject a synthetic insert failure for the FIRST
+    // `brief_runs` insert call; the second mailbox should still get
+    // its Brief and `mailboxesFailed` should be 1.
+    //
+    // The proxy throws synchronously on the intercepted `.insert()`
+    // call rather than rejecting an unhandled Promise — the worker's
+    // chain is `.insert(...).values(...).onConflictDoNothing(...).returning(...)`
+    // and synchronous throw is the cleanest way to interrupt that
+    // chain inside the worker's try/catch.
+    let injectedForFirst = false;
+    const dbWithFault = new Proxy(db as never as Record<string, unknown>, {
+      get(target, prop, receiver) {
+        if (prop === 'insert') {
+          return (table: unknown) => {
+            if (table === briefRuns && !injectedForFirst) {
+              injectedForFirst = true;
+              throw new Error('synthetic brief_runs failure');
+            }
+            const origInsert = Reflect.get(target, prop, receiver) as (t: unknown) => unknown;
+            return origInsert.call(target, table);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as never;
+
+    const worker = new BriefSnapshotWorker({ db: dbWithFault, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(2);
+    expect(result.mailboxesFailed).toBe(1);
+    // One mailbox still got its Brief.
+    expect(result.briefsGenerated).toBe(1);
+
+    // Confirm only one mailbox has a brief row.
+    const aRows = await db
+      .select({ id: briefRuns.id })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, a.mailboxAccountId));
+    const bRows = await db
+      .select({ id: briefRuns.id })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, b.mailboxAccountId));
+    // Exactly one mailbox succeeded; the other one's row is missing.
+    expect(aRows.length + bRows.length).toBe(1);
+  });
 });
