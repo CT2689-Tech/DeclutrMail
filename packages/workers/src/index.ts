@@ -53,6 +53,24 @@ export {
 export type { ConcurrencyLimiter, ReasoningInput, ReasoningLlmPort } from './reasoning.js';
 export { runCascade } from './score-cascade.js';
 export type { CascadePhase, CascadeResult, CascadeRuleId, SenderSignals } from './score-cascade.js';
+export { AUTOPILOT_PRESETS } from './autopilot-presets.js';
+export type {
+  PresetDefinition,
+  PresetInput,
+  PresetMatchResult,
+  PresetSignals,
+} from './autopilot-presets.js';
+export { seedAutopilotPresets } from './autopilot-preset-seeder.js';
+export {
+  AUTOPILOT_APPLY_JOB,
+  AUTOPILOT_APPLY_QUEUE,
+  AutopilotApplyWorker,
+} from './autopilot-apply.worker.js';
+export type {
+  AutopilotApplyDeps,
+  AutopilotApplyJobData,
+  AutopilotApplyJobResult,
+} from './autopilot-apply.worker.js';
 export { BriefSnapshotWorker } from './brief-snapshot.worker.js';
 export type {
   BriefSnapshotDeps,

@@ -1,0 +1,384 @@
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+
+import {
+  AUTOPILOT_PRESET_KEYS,
+  type AutomationRule,
+  type AutopilotMatchMode,
+  type AutopilotMatchResolution,
+  type AutopilotPresetKey,
+  automationRules,
+  mailMessages,
+  ruleMatchLog,
+  type schema,
+  senderPolicies,
+  senders,
+  senderTimeseries,
+  triageDecisions,
+  type TriageVerdict,
+} from '@declutrmail/db';
+
+import { AUTOPILOT_PRESETS, type PresetInput, type PresetSignals } from './autopilot-presets.js';
+import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { ValidationError } from './worker-errors.js';
+import type { WorkerContext } from './worker-context.js';
+
+type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Job payload for one Autopilot apply pass over a mailbox.
+ *
+ * `triggeredAtMs` is the wall-clock at the trigger event; it forms the
+ * BullMQ `jobId` so duplicate adds within the same trigger window are
+ * deduped per `perMailboxPolicy` (D203/D225).
+ */
+export interface AutopilotApplyJobData {
+  mailboxAccountId: string;
+  triggeredAtMs: number;
+}
+
+/** Metrics from one apply pass — logged on `worker.succeeded`. */
+export interface AutopilotApplyJobResult {
+  /** Number of enabled, non-paused rules that ran. */
+  rulesEvaluated: number;
+  /** Total match rows inserted across all rules. */
+  matchesWritten: number;
+  /** Subset of `matchesWritten` that wrote with `mode_at_match='observe'`. */
+  observeMatches: number;
+  /** Subset of `matchesWritten` that wrote with `mode_at_match='active'`. */
+  activeMatches: number;
+  /** Senders considered (after the protect-filter). */
+  sendersConsidered: number;
+  /** Wall-clock ms. */
+  durationMs: number;
+}
+
+export interface AutopilotApplyDeps {
+  db: WorkerDb;
+  /** Override clock for tests. Defaults to `() => new Date()`. */
+  now?: () => Date;
+}
+
+/** 90 days in milliseconds — read-rate aggregate window. */
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * AutopilotApplyWorker (D99, D100, D101, D102, D104, D105, D124).
+ *
+ * Runs the V2 preset matchers against every sender in a mailbox and
+ * logs matches to `rule_match_log`. Policy: `perMailboxPolicy` per
+ * D203/D225 — one in-flight job per mailbox. Idempotency key is
+ * `${mailbox}:${triggeredAtMs}` so a Pub/Sub redelivery within the
+ * same trigger event is a no-op.
+ *
+ * What the worker DOES:
+ *   - Loads enabled, non-paused rules for the mailbox.
+ *   - Materializes the minimal `PresetSignals` for every sender (the
+ *     rule set does not need the full cascade signal vector).
+ *   - Runs each preset matcher; on match, INSERTs into `rule_match_log`.
+ *   - Filters protected senders (`signals.isProtected = true`) BEFORE
+ *     matching. Protected senders should never be auto-actioned.
+ *   - Updates `automation_rules.last_run_at` + `last_run_actions` +
+ *     `last_run_senders` once per rule for the D101 inline summary.
+ *
+ * What the worker does NOT do (deferred to the action-consumer PR):
+ *   - Emit Gmail mutations. Active-mode matches write
+ *     `(mode_at_match='active', resolution='approved', intent_applied=false,
+ *     intent_token=null)`. The action consumer (a separate worker, future
+ *     PR) reads `WHERE mode_at_match='active' AND intent_applied=false`,
+ *     creates the `undo_journal` row, emits the Gmail mutation, and
+ *     flips `intent_applied=true` with `intent_token`. Splitting the
+ *     emission from the matching keeps this worker idempotent on
+ *     retry and aligns with the §9 stop-condition that destructive
+ *     Gmail actions go through dedicated wiring (D226 lifecycle).
+ *
+ * Observe vs Active mode handling:
+ *   - `mode='observe'` rule → `(mode_at_match='observe', resolution='pending')`.
+ *     Sits in the pending-suggestions read path until the user
+ *     approves or dismisses.
+ *   - `mode='active'`  rule → `(mode_at_match='active', resolution='approved',
+ *     intent_applied=false)`. Auto-approved by virtue of Active mode;
+ *     the action consumer takes it from there.
+ *   - `mode='paused'`  rule → filtered out by `processJob`'s rule load;
+ *     the worker never sees the row.
+ *
+ * Privacy (D7, D228): every read is metadata. The signal materializer
+ * touches `senders`, `sender_policies`, `sender_timeseries` (volume +
+ * read counts only), and `mail_messages` (`count(*)` only — no body,
+ * no snippet). The match log stores `sender_key` (sha256) — never the
+ * email itself, never a message id, never any body content.
+ */
+export class AutopilotApplyWorker extends BaseDeclutrWorker<
+  AutopilotApplyJobData,
+  AutopilotApplyJobResult
+> {
+  override readonly workerName = 'AutopilotApplyWorker';
+  override readonly policy = 'perMailboxPolicy' as const;
+
+  constructor(private readonly deps: AutopilotApplyDeps) {
+    super();
+  }
+
+  protected override getIdempotencyKey(payload: AutopilotApplyJobData): string {
+    return `${payload.mailboxAccountId}:${payload.triggeredAtMs}`;
+  }
+
+  override async processJob(
+    payload: AutopilotApplyJobData,
+    _ctx: WorkerContext,
+  ): Promise<AutopilotApplyJobResult> {
+    const startedAt = Date.now();
+    const { mailboxAccountId } = payload;
+    if (!mailboxAccountId) {
+      throw new ValidationError('AutopilotApplyJobData.mailboxAccountId is required');
+    }
+
+    const now = (this.deps.now ?? (() => new Date()))();
+    const rules = await this.loadEnabledRules(mailboxAccountId);
+    if (rules.length === 0) {
+      return {
+        rulesEvaluated: 0,
+        matchesWritten: 0,
+        observeMatches: 0,
+        activeMatches: 0,
+        sendersConsidered: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
+    const signalRows = await this.loadSignalsForMailbox(mailboxAccountId, now);
+    // Protect filter — defense-in-depth even though the cascade also
+    // returns 'keep' for protected senders. A rule must NEVER act on
+    // a sender the user has marked protected.
+    const eligible = signalRows.filter((s) => !s.signals.isProtected);
+
+    let matchesWritten = 0;
+    let observeMatches = 0;
+    let activeMatches = 0;
+
+    const presetKeySet = new Set<string>(AUTOPILOT_PRESET_KEYS);
+    const isPresetKey = (k: string | null): k is AutopilotPresetKey =>
+      k !== null && presetKeySet.has(k);
+
+    for (const rule of rules) {
+      // Custom rules (presetKey=NULL) and any future preset keys the
+      // worker doesn't know about yet — V2.1 territory; skip per D197.
+      if (!isPresetKey(rule.presetKey)) continue;
+      const def = AUTOPILOT_PRESETS[rule.presetKey];
+
+      // numeric(3,2) → number. The schema stores a string; the matcher
+      // wants a float. `null` means "use the preset default".
+      const threshold =
+        rule.confidenceThreshold !== null ? Number.parseFloat(rule.confidenceThreshold) : null;
+      const modeAtMatch: AutopilotMatchMode = rule.mode === 'active' ? 'active' : 'observe';
+      const resolution: AutopilotMatchResolution =
+        modeAtMatch === 'active' ? 'approved' : 'pending';
+
+      const matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
+      for (const { senderKey, signals, decision } of eligible) {
+        const input: PresetInput = { signals, triageDecision: decision };
+        const result = def.match(input, threshold);
+        if (!result.matched) continue;
+        // Confidence stored on the match row: the engine's current
+        // confidence if a decision row exists; otherwise the rule's
+        // threshold (or 0 for non-threshold presets) as a stable default.
+        const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
+        matchesForRule.push({ senderKey, confidence, reason: result.reason });
+      }
+
+      if (matchesForRule.length > 0) {
+        await this.deps.db.insert(ruleMatchLog).values(
+          matchesForRule.map((m) => ({
+            ruleId: rule.id,
+            mailboxAccountId,
+            senderKey: m.senderKey,
+            matchedAt: now,
+            modeAtMatch,
+            confidence: m.confidence.toFixed(2),
+            reason: m.reason,
+            intentApplied: false,
+            resolution,
+          })),
+        );
+        matchesWritten += matchesForRule.length;
+        if (modeAtMatch === 'observe') observeMatches += matchesForRule.length;
+        else activeMatches += matchesForRule.length;
+      }
+
+      // Update D101 inline-summary fields once per rule, even when zero
+      // matches — last_run_at carries "the rule ran" signal for the UI.
+      const distinctSenders = new Set(matchesForRule.map((m) => m.senderKey)).size;
+      await this.deps.db
+        .update(automationRules)
+        .set({
+          lastRunAt: now,
+          lastRunActions: matchesForRule.length,
+          lastRunSenders: distinctSenders,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(automationRules.id, rule.id));
+    }
+
+    return {
+      rulesEvaluated: rules.length,
+      matchesWritten,
+      observeMatches,
+      activeMatches,
+      sendersConsidered: eligible.length,
+      durationMs: Date.now() - startedAt,
+    };
+  }
+
+  /**
+   * Enabled, non-paused rules for a mailbox. Custom rules (`is_preset
+   * = false`) are accepted by the schema but skipped at runtime per
+   * D197 — V2 ships only the preset matchers.
+   */
+  private async loadEnabledRules(mailboxAccountId: string): Promise<AutomationRule[]> {
+    return this.deps.db
+      .select()
+      .from(automationRules)
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.enabled, true),
+          ne(automationRules.mode, 'paused'),
+          eq(automationRules.isPreset, true),
+        ),
+      );
+  }
+
+  /**
+   * Materialize the minimal `PresetSignals` for every sender in a
+   * mailbox, plus the engine's current triage decision. One SQL pass
+   * over `senders` joined with the aggregates the presets need.
+   *
+   * Three small follow-up queries (`sender_policies`, `sender_timeseries`,
+   * `mail_messages count(*)`) keep this readable — the apply worker is
+   * not yet on the hot path, and unifying them is straightforward later
+   * if profiling shows cost.
+   *
+   * D7 / D228: every column read is metadata. `mail_messages.count(*)`
+   * does not touch body / snippet / non-allowlisted headers.
+   */
+  private async loadSignalsForMailbox(
+    mailboxAccountId: string,
+    now: Date,
+  ): Promise<
+    Array<{
+      senderKey: string;
+      signals: PresetSignals;
+      decision: { verdict: TriageVerdict; confidence: number } | null;
+    }>
+  > {
+    const senderRows = await this.deps.db
+      .select({
+        senderKey: senders.senderKey,
+        firstSeenAt: senders.firstSeenAt,
+        lastSeenAt: senders.lastSeenAt,
+      })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    if (senderRows.length === 0) return [];
+
+    const keys = senderRows.map((r) => r.senderKey);
+
+    const policyRows = await this.deps.db
+      .select({ senderKey: senderPolicies.senderKey, isProtected: senderPolicies.isProtected })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          inArray(senderPolicies.senderKey, keys),
+        ),
+      );
+    const isProtectedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected]));
+
+    const decisionRows = await this.deps.db
+      .select({
+        senderKey: triageDecisions.senderKey,
+        verdict: triageDecisions.verdict,
+        confidence: triageDecisions.confidence,
+      })
+      .from(triageDecisions)
+      .where(
+        and(
+          eq(triageDecisions.mailboxAccountId, mailboxAccountId),
+          inArray(triageDecisions.senderKey, keys),
+        ),
+      );
+    const decisionBy = new Map(
+      decisionRows.map((r) => [
+        r.senderKey,
+        { verdict: r.verdict, confidence: Number.parseFloat(r.confidence) },
+      ]),
+    );
+
+    // 90-day timeseries — sum volume + reads per sender.
+    const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
+    const yearMonth90 = ninetyDaysAgo.toISOString().slice(0, 10);
+    const tsRows = await this.deps.db
+      .select({
+        senderKey: senderTimeseries.senderKey,
+        volume: senderTimeseries.volume,
+        readCount: senderTimeseries.readCount,
+      })
+      .from(senderTimeseries)
+      .where(
+        and(
+          eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
+          inArray(senderTimeseries.senderKey, keys),
+          sql`${senderTimeseries.yearMonth} >= ${yearMonth90}`,
+        ),
+      );
+    const tsAgg = new Map<string, { volume: number; reads: number }>();
+    for (const r of tsRows) {
+      const prev = tsAgg.get(r.senderKey) ?? { volume: 0, reads: 0 };
+      tsAgg.set(r.senderKey, {
+        volume: prev.volume + r.volume,
+        reads: prev.reads + r.readCount,
+      });
+    }
+
+    // Total messages per sender — count(*) only; no body access.
+    const totalRows = await this.deps.db
+      .select({
+        senderKey: mailMessages.senderKey,
+        total: sql<number>`count(*)::int`,
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          inArray(mailMessages.senderKey, keys),
+        ),
+      )
+      .groupBy(mailMessages.senderKey);
+    const totalBy = new Map(
+      totalRows
+        .filter((r): r is { senderKey: string; total: number } => r.senderKey !== null)
+        .map((r) => [r.senderKey, r.total]),
+    );
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    return senderRows.map((s) => {
+      const ts = tsAgg.get(s.senderKey) ?? { volume: 0, reads: 0 };
+      const signals: PresetSignals = {
+        isProtected: Boolean(isProtectedBy.get(s.senderKey) ?? false),
+        firstSeenDaysAgo: Math.floor((now.getTime() - s.firstSeenAt.getTime()) / dayMs),
+        lastSeenDaysAgo: Math.floor((now.getTime() - s.lastSeenAt.getTime()) / dayMs),
+        totalMessages: totalBy.get(s.senderKey) ?? 0,
+        readRate90d: ts.volume > 0 ? ts.reads / ts.volume : 0,
+      };
+      return {
+        senderKey: s.senderKey,
+        signals,
+        decision: decisionBy.get(s.senderKey) ?? null,
+      };
+    });
+  }
+}
+
+/** Queue + job name for the Autopilot apply worker (matches the score-worker pattern). */
+export const AUTOPILOT_APPLY_QUEUE = 'autopilot-apply';
+export const AUTOPILOT_APPLY_JOB = 'autopilot-apply';
