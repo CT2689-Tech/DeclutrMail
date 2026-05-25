@@ -1,4 +1,4 @@
--- Rollback for 0009_followup_tracker.sql
+-- Rollback for 0010_followup_tracker.sql
 --
 -- Reverse order of the forward; `IF EXISTS` keeps the rollback
 -- idempotent. The `.rollback` extension (no `.sql`) keeps Atlas from
