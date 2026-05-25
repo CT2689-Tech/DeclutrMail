@@ -171,32 +171,6 @@ rather than weeks.
 test against real Postgres (visible in workflow logs as
 "OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
 than skipped).
-### 2026-05-23 — Wire a pre-commit `prettier --check` so format never drifts on main
-**Source:** PR #47 — `Format check` CI gate failed on a baseline of 5
-files that had never been formatted (`docs/adr/0008-*.md`,
-`packages/shared/src/contracts/{envelope,index,paginate}.ts`,
-`packages/shared/src/index.ts`). The drift was on `origin/main`, not in
-this PR's diff — every PR opened from main would have failed the gate.
-Cleaned up in PR #47's `chore(format): prettier baseline cleanup` commit
-as a pragmatic unblock.
-**Why:** Local enforcement prevents the same drift from recurring. The
-CI gate is the last line of defense — pre-commit catches it before the
-commit even lands, so contributors don't have to re-run + amend after
-a remote failure. Husky is already wired (`.husky/commit-msg` enforces
-commitlint), so adding a `pre-commit` hook is the minimal next step.
-**How:**
-  1. Add `.husky/pre-commit` that runs `pnpm exec lint-staged` (or a
-     direct `pnpm exec prettier --check $(git diff --cached --name-only
-     --diff-filter=ACM)` if lint-staged isn't desired).
-  2. If using lint-staged, add a `lint-staged` block to root
-     `package.json` mapping `*.{ts,tsx,js,md,json,yaml,yml}` →
-     `prettier --check`.
-  3. Verify a deliberately mis-formatted file is rejected by the hook.
-**Verifies by:** `git commit` on a deliberately mis-formatted file
-fails with prettier's diff output, and `pnpm format:check` on
-`origin/main` stays green for ≥5 consecutive PRs.
-**Status:** Open
-
 ### 2026-05-23 — Account hard-delete execution (D205 + D232 completion)
 **Source:** PR `feat/d232-undo-journal` — schedule-only scope per CLAUDE.md §9 stop-condition
 **Why:** This PR ships the D232 schedule computation
@@ -226,71 +200,6 @@ extend `AccountDeletionOrchestrator` with `schedule()` (persists) +
 30-day undo token → effective time = now+30d, basis = `undo-window`,
 sync paused. Time-travel the test clock past `effective_deletion_at` →
 mailbox row + cascaded children gone.
-**Status:** Open
-
-### 2026-05-23 — Resume WT-A Triage screen (D29–D35, D207, D208, D226)
-**Source:** overnight 8-hr autonomous run — background agent hit session limit before commit
-**Why:** PR 5 (per D187) is the Triage feature slice — the critical-path
-feature gating the rest of the product surface. The WT-A agent shipped
-~50% (6 quality files, 1058 LoC) before being killed by the API session
-limit (resets 2:20am PT).
-**State on disk:** worktree `.claude/worktrees/agent-a1b6fdeaf8e452bce`,
-branch `feat/d207-triage-screen` (local-only, not pushed). Files
-present:
-  - `apps/web/src/features/triage/data.ts` (386 LoC — fixtures + types)
-  - `apps/web/src/features/triage/store.ts` (68 LoC — Zustand store: undo tokens + skipSheet pref per D34)
-  - `apps/web/src/features/triage/use-triage-actions.ts` (81 LoC — verdict mutation hook)
-  - `apps/web/src/features/triage/use-triage-queue.ts` (59 LoC — TanStack queue hook, mocked)
-  - `apps/web/src/features/triage/action-sheet.tsx` (242 LoC — D34 modal + remember-pref toggle)
-  - `apps/web/src/features/triage/action-preview.tsx` (222 LoC — D226 MANDATORY preview)
-**Still missing for a complete PR:**
-  1. `apps/web/src/features/triage/triage-page.tsx` orchestrator (~150 LoC) — loading / empty / error / queue states; wires the 6 existing files
-  2. `apps/web/src/features/triage/triage-queue-card.tsx` (~150 LoC) — single sender card; uses `useExpandableRow` from foundation; K/A/U/L toolbar; confidence-emphasis at >0.85 (D31)
-  3. `apps/web/src/features/triage/empty-state.tsx` (~50 LoC) — D33 stats + tomorrow CTA + upgrade nudge
-  4. `apps/web/src/features/triage/undo-tray.tsx` (~80 LoC) — D35 persistent tray with countdown
-  5. `apps/web/src/app/(app)/triage/page.tsx` route (~10 LoC)
-  6. Storybook stories per component (~200 LoC; D210)
-  7. `zustand` package add to `apps/web/package.json` (typecheck currently fails because feature imports zustand directly; foundation only added it to `packages/shared`)
-  8. Mobile reflow proof at 380px (LEARNINGS 2026-05-19)
-**How:** Either (a) re-launch a background agent post-session-reset with
-prompt focused only on the remaining 7 items, or (b) finish manually in
-~30–60 min next session. Base branch for the PR remains
-`feat/d198-d200-frontend-foundation` (PR #29, stacked).
-**Verifies by:** PR opened with title
-`feat(triage): Triage screen + action lifecycle (D29-D37, D207, D208, D226)`,
-all gates green, Storybook story count ≥ 8, `Closes D29` through `D226`
-in body, no "Screen" UI strings, no body-field references.
-**Status:** Open
-
-### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
-**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
-**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
-lack `@Throttle()` decorators. Both routes are flag-gated
-(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
-absence is consequential the moment the flag flips on in any public
-environment: an attacker can fan out `/start` (each builds an
-`OAuth2Client` and sets a cookie) or replay `/callback` with random
-codes to harvest error-shape differences.
-**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
-true anywhere. D156 picks the per-feature limit; suggested floor
-`{ limit: 10, ttl: 60_000 }` per IP on both routes.
-**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
-burst test (11 requests/min from one IP) returns 429 on the 11th.
-### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
-**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
-**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
-single failure-capture point for D159 Sentry wiring. The boot/periodic
-reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
-loop, so its error path (raw `console.error` with
-`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
-`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
-**How:** When the D159 wiring PR lands, either (a) extract a shared
-`captureBackgroundFailure(err, { kind })` helper that both the worker
-base and the reconciler call, or (b) move the periodic reconciler
-inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
-covers it.
-**Verifies by:** A forced reconciler exception (DB unreachable in a
-test env) shows up in Sentry with `kind: reconciler.failed`.
 **Status:** Open
 
 ### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
@@ -664,6 +573,109 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-23 — Wire a pre-commit `prettier --check` so format never drifts on main
+**Source:** PR #47 — `Format check` CI gate failed on a baseline of 5
+files that had never been formatted (`docs/adr/0008-*.md`,
+`packages/shared/src/contracts/{envelope,index,paginate}.ts`,
+`packages/shared/src/index.ts`). The drift was on `origin/main`, not in
+this PR's diff — every PR opened from main would have failed the gate.
+Cleaned up in PR #47's `chore(format): prettier baseline cleanup` commit
+as a pragmatic unblock.
+**Why:** Local enforcement prevents the same drift from recurring. The
+CI gate is the last line of defense — pre-commit catches it before the
+commit even lands, so contributors don't have to re-run + amend after
+a remote failure. Husky is already wired (`.husky/commit-msg` enforces
+commitlint), so adding a `pre-commit` hook is the minimal next step.
+**How:**
+  1. Add `.husky/pre-commit` that runs `pnpm exec lint-staged` (or a
+     direct `pnpm exec prettier --check $(git diff --cached --name-only
+     --diff-filter=ACM)` if lint-staged isn't desired).
+  2. If using lint-staged, add a `lint-staged` block to root
+     `package.json` mapping `*.{ts,tsx,js,md,json,yaml,yml}` →
+     `prettier --check`.
+  3. Verify a deliberately mis-formatted file is rejected by the hook.
+**Verifies by:** `git commit` on a deliberately mis-formatted file
+fails with prettier's diff output, and `pnpm format:check` on
+`origin/main` stays green for ≥5 consecutive PRs.
+**Status:** Done 2026-05-24 — PR #59 (`chore/bootstrap-pre-commit-prettier`)
+added `.husky/pre-commit` + `lint-staged` config. `pnpm format:check`
+has stayed green on every PR since.
+
+### 2026-05-23 — Resume WT-A Triage screen (D29–D35, D207, D208, D226)
+**Source:** overnight 8-hr autonomous run — background agent hit session limit before commit
+**Why:** PR 5 (per D187) is the Triage feature slice — the critical-path
+feature gating the rest of the product surface. The WT-A agent shipped
+~50% (6 quality files, 1058 LoC) before being killed by the API session
+limit (resets 2:20am PT).
+**State on disk:** worktree `.claude/worktrees/agent-a1b6fdeaf8e452bce`,
+branch `feat/d207-triage-screen` (local-only, not pushed). Files
+present:
+  - `apps/web/src/features/triage/data.ts` (386 LoC — fixtures + types)
+  - `apps/web/src/features/triage/store.ts` (68 LoC — Zustand store: undo tokens + skipSheet pref per D34)
+  - `apps/web/src/features/triage/use-triage-actions.ts` (81 LoC — verdict mutation hook)
+  - `apps/web/src/features/triage/use-triage-queue.ts` (59 LoC — TanStack queue hook, mocked)
+  - `apps/web/src/features/triage/action-sheet.tsx` (242 LoC — D34 modal + remember-pref toggle)
+  - `apps/web/src/features/triage/action-preview.tsx` (222 LoC — D226 MANDATORY preview)
+**Still missing for a complete PR:**
+  1. `apps/web/src/features/triage/triage-page.tsx` orchestrator (~150 LoC) — loading / empty / error / queue states; wires the 6 existing files
+  2. `apps/web/src/features/triage/triage-queue-card.tsx` (~150 LoC) — single sender card; uses `useExpandableRow` from foundation; K/A/U/L toolbar; confidence-emphasis at >0.85 (D31)
+  3. `apps/web/src/features/triage/empty-state.tsx` (~50 LoC) — D33 stats + tomorrow CTA + upgrade nudge
+  4. `apps/web/src/features/triage/undo-tray.tsx` (~80 LoC) — D35 persistent tray with countdown
+  5. `apps/web/src/app/(app)/triage/page.tsx` route (~10 LoC)
+  6. Storybook stories per component (~200 LoC; D210)
+  7. `zustand` package add to `apps/web/package.json` (typecheck currently fails because feature imports zustand directly; foundation only added it to `packages/shared`)
+  8. Mobile reflow proof at 380px (LEARNINGS 2026-05-19)
+**How:** Either (a) re-launch a background agent post-session-reset with
+prompt focused only on the remaining 7 items, or (b) finish manually in
+~30–60 min next session. Base branch for the PR remains
+`feat/d198-d200-frontend-foundation` (PR #29, stacked).
+**Verifies by:** PR opened with title
+`feat(triage): Triage screen + action lifecycle (D29-D37, D207, D208, D226)`,
+all gates green, Storybook story count ≥ 8, `Closes D29` through `D226`
+in body, no "Screen" UI strings, no body-field references.
+**Status:** Done 2026-05-23 — PR #44 (`feat/d029-triage-ui-shell`)
+shipped Triage screen end-to-end with the queue, action sheet,
+preview, and undo wiring. Closed D29, D31, D32, D33, D34, D36, D208, D226.
+
+### 2026-05-22 — D-CANDIDATE: D156 throttle on Gmail OAuth connect routes
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `GET /api/auth/google/start` + `GET /api/auth/google/callback`
+lack `@Throttle()` decorators. Both routes are flag-gated
+(`GMAIL_CONNECT_ENABLED=false`) and unauthenticated pre-D109, so the
+absence is consequential the moment the flag flips on in any public
+environment: an attacker can fan out `/start` (each builds an
+`OAuth2Client` and sets a cookie) or replay `/callback` with random
+codes to harvest error-shape differences.
+**How:** Land per-route throttles before `GMAIL_CONNECT_ENABLED` goes
+true anywhere. D156 picks the per-feature limit; suggested floor
+`{ limit: 10, ttl: 60_000 }` per IP on both routes.
+**Verifies by:** Both controller handlers carry `@Throttle({...})`; a
+burst test (11 requests/min from one IP) returns 429 on the 11th.
+**Status:** Done 2026-05-23 — PR #48 (`feat/d012-sender-key-hash`)
+shipped per-route `@RateLimit('auth')` on both `/api/auth/google/start`
+and `/api/auth/google/callback` per D156. Closed D12, D156.
+
+### 2026-05-22 — D-CANDIDATE: D159 Sentry seam for background reconciler
+**Source:** architecture-guardian gate on PR `feat/d009-sync-data-capture`
+**Why:** `BaseDeclutrWorker.captureFailure()` is documented as the
+single failure-capture point for D159 Sentry wiring. The boot/periodic
+reconciler in `apps/api/src/worker.ts` runs OUTSIDE the BullMQ job
+loop, so its error path (raw `console.error` with
+`kind: 'reconciler.failed'`) bypasses that seam. When D159 lands on
+`BaseDeclutrWorker`, the reconciler will silently miss Sentry.
+**How:** When the D159 wiring PR lands, either (a) extract a shared
+`captureBackgroundFailure(err, { kind })` helper that both the worker
+base and the reconciler call, or (b) move the periodic reconciler
+inside a long-lived `BaseDeclutrWorker` subclass so the existing seam
+covers it.
+**Verifies by:** A forced reconciler exception (DB unreachable in a
+test env) shows up in Sentry with `kind: reconciler.failed`.
+**Status:** Done 2026-05-23 — PR #49 (`feat/d203-base-declutr-worker`)
+extended `WorkerObserver` with `captureBackgroundFailure()`. The
+reconciler in `apps/api/src/worker.ts:231,270` routes both
+`reconciler.failed` and `reconciler.tick_unexpected` through the
+same Sentry seam as BaseDeclutrWorker. Closed D159, D203.
 
 ### 2026-05-23 — D-CANDIDATE: undo-tray hook migrates to TanStack Query (D200)
 **Source:** PR `feat/d232-undo-journal`
