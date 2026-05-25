@@ -1,7 +1,8 @@
 # ADR-0009: Dashboard-surface palette extension (amends D2)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-25
+- **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
 - **Related D-decisions:** D2 (cool / Vercel palette, restrained color),
   D38 (Senders surface), D199 (lazy promotion)

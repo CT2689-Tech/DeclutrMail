@@ -1,7 +1,8 @@
 # ADR-0012: Senders intent-grouped tables (amends D38, D39)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-25
+- **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
 - **Related D-decisions:** D38 (Senders surface composition), D39
   (Sender detail page strict layout order), D222 (Auto-Protect via

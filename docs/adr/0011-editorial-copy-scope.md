@@ -1,7 +1,8 @@
 # ADR-0011: Editorial copy voice scope (amends D209)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-25
+- **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
 - **Related D-decisions:** D209 (microcopy — trust-first, forbidden
   words: smart, AI-powered, magic, nuke, blast, clean (verb),

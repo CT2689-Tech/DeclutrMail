@@ -1,7 +1,8 @@
 # ADR-0010: Dashboard-surface motion budget extension (amends D213)
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-05-25
+- **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
 - **Related D-decisions:** D213 (sparse, calm motion budget — 150 /
   250 / 400 ms tokens; no bouncy, no staggered, no confetti), D166

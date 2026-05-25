@@ -9379,3 +9379,83 @@ its base copy enforcement.
 
 ---
 
+## Variant D Senders uplift patches — 2026-05-25
+
+Five inline patches applied via four ADRs in PR #62
+(`chore/bootstrap-senders-uplift-d-adrs`). All ADRs `Accepted`
+2026-05-25. See `docs/adr/0009-0012` for full rationale.
+
+### [ADR-0009 PATCH 2026-05-25 on D2] — Dashboard palette extension
+
+The D2 cool/Vercel/restrained palette is unchanged for the product as
+a whole. Dashboard surfaces (Senders, Activity, Brief, future
+Insights) may additionally import a single new accent — violet
+`#7C3AED` — under `color.dashboard.{accent, accentSoft, accentBorder}`
+for live/active affordances and active-filter-chip state ONLY.
+
+Forbidden everywhere: violet on action buttons, on trust affordances,
+on recommendation tones, on any non-dashboard surface. See ADR-0009
+for the consumer convention + future ESLint guardrail.
+
+### [ADR-0010 PATCH 2026-05-25 on D213] — Dashboard motion budget extension
+
+D213's allowlist gains three patterns on dashboard surfaces, all
+reusing existing duration tokens, all gated by
+`prefers-reduced-motion: reduce`:
+
+1. Sparkline draw-on (400 ms, once per component mount)
+2. Inline receipt-strip slide in/out (250 ms, reuses `dm-toast-in`)
+3. Group chevron rotate on expand/collapse (150 ms)
+
+Activity-pulse dot, stagger-on-first-load, and counter-tick animation
+are explicitly REJECTED. D213's forbidden list (confetti, bouncy,
+animated charts, idle pulse, page transitions >300 ms) is unchanged.
+See ADR-0010.
+
+### [ADR-0011 PATCH 2026-05-25 on D209] — Editorial copy voice scope
+
+D209's forbidden-word list and trust-first rule continue to apply
+everywhere unchanged. D209's "purely descriptive, no editorial
+framing" rule is RELAXED on two surfaces only: hero strips and
+first-class empty states (D212). On those surfaces, copy may include
+ONE editorial framing phrase per surface (e.g., "Only 18% were worth
+reading."). Action buttons, confirms, receipts, errors, and all
+non-hero / non-empty surfaces remain strictly functional. `check-microcopy.sh`
+gets a follow-up `--strict-paths` extension. See ADR-0011.
+
+### [ADR-0012 PATCH 2026-05-25 on D38] — Senders intent-grouped tables
+
+D38's Gmail-category grouping (`primary` / `promotions` / `social` /
+`updates` / `forums`) is replaced on the Senders surface by
+user-intent grouping derived from existing fields:
+
+- **Clean up** = `triage_decisions.verdict = 'unsubscribe'` (auto-expanded)
+- **Move later** = `triage_decisions.verdict = 'archive'`
+- **Protect** = `sender_policies.is_vip OR is_protected`
+- **People** = everything else
+
+Group ordering is fixed; the Clean up group auto-expands. Gmail
+category is retained as a 3 px row stripe + secondary advanced-filter
+drawer. No new ML, no new schema, no new wire field — derives from
+existing `triage_decisions` rows. D222's no-prediction rule is honored
+(the verdict already exists; the grouping just regroups by it). See
+ADR-0012.
+
+### [ADR-0012 PATCH 2026-05-25 on D39] — Sender detail page editorial composition
+
+D39's strict layout order (`Header → Recommendation banner → Actions
+→ Messages → Stats → Charts → History`) is replaced on Variant D's
+detail page with: `Editorial hero card (avatar + Fraunces narrative
++ ROI + recommendation + actions + quiet reasoning disclosure) →
+4-cell KPI strip → Recent messages → Decision timeline`. The volume
+bar chart + open-rate line chart from D45 and the table-style
+history from D46 are dropped — the heatmap was prototyped and
+rejected ("chart adds noise"). KPI strip absorbs D44's stats. See
+ADR-0012 + `~/.claude/plans/how-can-we-uplift-foamy-cloud.md` §D2.
+
+---
+
+**Patch count post-2026-05-25:** 235 decisions + 5 original inline +
+9 audit + 19 Round 2 + **5 ADR-0009/10/11/12 patches** + 3 reversal
+markers across 5 phases.
+
