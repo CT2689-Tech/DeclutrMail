@@ -3,7 +3,14 @@ import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
-import { followupTracker, mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
+import {
+  activityLog,
+  followupTracker,
+  mailboxAccounts,
+  schema,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -241,6 +248,46 @@ describe('FollowupReadService', () => {
         .where(eq(followupTracker.id, id));
       expect(row!.status).toBe('dismissed');
       expect(row!.dismissedAt).not.toBeNull();
+    });
+
+    it('D88 — writes an activity_log row with source=manual + action=followup-dismiss', async () => {
+      const id = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+      });
+      await service.dismiss(mailboxA.mailboxAccountId, id);
+
+      const rows = await db
+        .select({
+          source: activityLog.source,
+          action: activityLog.action,
+          senderKey: activityLog.senderKey,
+          affectedCount: activityLog.affectedCount,
+        })
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxA.mailboxAccountId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.source).toBe('manual');
+      expect(rows[0]!.action).toBe('followup-dismiss');
+      // Thread-scoped, not sender-scoped — D88 audit row carries no sender_key.
+      expect(rows[0]!.senderKey).toBeNull();
+      expect(rows[0]!.affectedCount).toBe(1);
+    });
+
+    it('D88 — failed dismiss (already terminal) does NOT write an activity_log row', async () => {
+      const id = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+        status: 'replied',
+      });
+      const result = await service.dismiss(mailboxA.mailboxAccountId, id);
+      expect(result).toBeNull();
+
+      const rows = await db
+        .select({ id: activityLog.id })
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxA.mailboxAccountId));
+      expect(rows).toHaveLength(0);
     });
 
     it('returns null on cross-tenant dismiss attempts', async () => {

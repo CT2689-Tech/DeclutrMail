@@ -42,6 +42,12 @@ export const activityAction = pgEnum('activity_action', [
   'archive',
   'unsubscribe',
   'later',
+  // D88: user clicks "Mark resolved" on a followup row. Not a K/A/U/L
+  // canonical verb — the action is feature-specific ("I resolved this
+  // followup outside email — Slack, phone, in-person"). Hyphenated form
+  // mirrors `undo_action_kind`'s `apply-rule` precedent for non-verb
+  // feature-specific actions.
+  'followup-dismiss',
 ]);
 
 export const activityLog = pgTable(

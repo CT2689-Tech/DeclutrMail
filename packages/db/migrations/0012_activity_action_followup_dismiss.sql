@@ -1,0 +1,35 @@
+-- 0012_activity_action_followup_dismiss.sql
+--
+-- D88 — wire the "Mark resolved" affordance on Followups rows to the
+-- audit log. The dismissal logs an activity_log row so the audit trail
+-- captures who resolved which followup and when (the followup_tracker
+-- row alone records the state change, not who/when at the activity-log
+-- granularity).
+--
+-- Adds `'followup-dismiss'` to the `activity_action` enum. The value is
+-- feature-specific — not one of D227's K/A/U/L canonical verbs — and
+-- mirrors `undo_action_kind`'s existing `'apply-rule'` precedent for
+-- non-verb actions.
+--
+-- The `ADD VALUE` form is forward-only-friendly: Postgres supports it
+-- without recreating the type, and the new value is usable immediately
+-- after commit. The `.rollback` companion drops + recreates the type
+-- so the round-trip test can prove the schema returns to the prior
+-- state; if any row carries the new value the rollback fails on the
+-- USING cast (correct semantics — you cannot rollback if data depends
+-- on the new value).
+--
+-- `IF NOT EXISTS` makes the forward statement idempotent so re-applying
+-- this migration on an environment that already ran it is a no-op
+-- rather than an error.
+--
+-- atlas:nolint incompatible — `ALTER TYPE ... ADD VALUE` is forward-
+-- compatible (existing consumers still recognize the old values); the
+-- "incompatible" lint flags type changes generally. The new value is
+-- additive and not used by any existing code path until the API
+-- service writes it on dismiss.
+--
+-- Privacy (D7, D228): metadata only — the activity_log row records the
+-- action kind, not message content.
+
+ALTER TYPE "public"."activity_action" ADD VALUE IF NOT EXISTS 'followup-dismiss';

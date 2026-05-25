@@ -2,22 +2,23 @@
 // surface for the Followups Pro feature (D84-D91).
 //
 // Owns the SELECTs against `followup_tracker` plus the per-row
-// dismissal mutation (D88). The dismissal touches only Followups'
-// own table; D88 also calls for an activity_log entry, but the
-// activity_log enum doesn't yet include a `followup-dismiss` value
-// — adding it is a schema change tracked as a follow-up. Until then,
-// the dismissal flips status to `dismissed` and sets `dismissedAt`;
-// the UI's "Mark resolved" affordance works end-to-end without the
-// activity-log row.
+// dismissal mutation (D88). The dismissal flips status to `dismissed`,
+// sets `dismissedAt`, AND writes an `activity_log` entry per D88 so
+// the audit trail captures who resolved which followup. Both writes
+// happen in a single transaction so an outage between the status flip
+// and the audit insert cannot leave the audit log out of sync with
+// the row state.
 //
 // PRIVACY (D7, D228): metadata only. `subject` is allowlisted by D7;
 // `recipient_email` + `recipient_display_name` are To-header metadata
-// per the D7 amended allowlist (ADR-0004). No body content.
+// per the D7 amended allowlist (ADR-0004). No body content. The
+// activity_log row carries no sender_key (followups are thread-scoped,
+// not sender-scoped) and an `affected_count` of 1.
 
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
-import { followupTracker } from '@declutrmail/db';
+import { activityLog, followupTracker } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Followup, FollowupDismissResult, FollowupPriority } from './followup.types.js';
@@ -61,29 +62,48 @@ export class FollowupReadService {
    * Only `awaiting` rows can transition to `dismissed`. `replied` rows
    * stay `replied` (the recipient already answered — dismissal would
    * lose audit signal).
+   *
+   * Writes the status flip + the D88 activity_log entry inside one
+   * transaction so the audit row cannot diverge from the row state on
+   * partial failure. The activity_log row uses `source='manual'` (user-
+   * initiated) and `action='followup-dismiss'` (added in migration 0011).
    */
   async dismiss(mailboxAccountId: string, id: string): Promise<FollowupDismissResult | null> {
-    const [updated] = await this.db
-      .update(followupTracker)
-      .set({ status: 'dismissed', dismissedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(followupTracker.mailboxAccountId, mailboxAccountId),
-          eq(followupTracker.id, id),
-          eq(followupTracker.status, 'awaiting'),
-        ),
-      )
-      .returning({
-        id: followupTracker.id,
-        status: followupTracker.status,
-        dismissedAt: followupTracker.dismissedAt,
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(followupTracker)
+        .set({ status: 'dismissed', dismissedAt: sql`now()`, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(followupTracker.mailboxAccountId, mailboxAccountId),
+            eq(followupTracker.id, id),
+            eq(followupTracker.status, 'awaiting'),
+          ),
+        )
+        .returning({
+          id: followupTracker.id,
+          status: followupTracker.status,
+          dismissedAt: followupTracker.dismissedAt,
+        });
+      if (!updated) return null;
+
+      // D88 — audit row. `senderKey=null` because followups are
+      // thread-scoped, not sender-scoped; the audit row stays
+      // mailbox-scoped. `affectedCount=1` (one followup row resolved).
+      await tx.insert(activityLog).values({
+        mailboxAccountId,
+        senderKey: null,
+        source: 'manual',
+        action: 'followup-dismiss',
+        affectedCount: 1,
       });
-    if (!updated) return null;
-    return {
-      id: updated.id,
-      status: updated.status,
-      dismissedAt: updated.dismissedAt?.toISOString() ?? new Date().toISOString(),
-    };
+
+      return {
+        id: updated.id,
+        status: updated.status,
+        dismissedAt: updated.dismissedAt?.toISOString() ?? new Date().toISOString(),
+      };
+    });
   }
 }
 
