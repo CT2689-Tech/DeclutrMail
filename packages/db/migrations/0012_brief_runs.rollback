@@ -1,0 +1,13 @@
+-- Rollback for 0012_brief_runs.sql
+--
+-- Reverse order of the forward; `IF EXISTS` keeps the rollback
+-- idempotent. The `.rollback` extension (no `.sql`) keeps Atlas from
+-- picking this up as an additional migration.
+
+DROP INDEX IF EXISTS "brief_runs_mailbox_date_desc_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "brief_runs_mailbox_date_uniq";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "brief_runs";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."brief_generated_by";

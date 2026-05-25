@@ -1,6 +1,15 @@
 export * as schema from './schema';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
 export type { ActivityLogEntry, NewActivityLogEntry } from './schema/activity-log';
+export { briefGeneratedBy, briefRuns } from './schema/brief-runs';
+export type {
+  BriefGeneratedBy,
+  BriefItem,
+  BriefPayload,
+  BriefRun,
+  BriefSenderGroup,
+  NewBriefRun,
+} from './schema/brief-runs';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
