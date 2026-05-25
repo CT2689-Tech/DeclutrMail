@@ -97,6 +97,7 @@ describe('migration round-trip', () => {
     expect(objects).toEqual([
       'table:activity_log',
       'table:brief_runs',
+      'table:followup_tracker',
       'table:mail_messages',
       'table:mailbox_accounts',
       'table:outbox_events',
@@ -112,6 +113,7 @@ describe('migration round-trip', () => {
       'enum:activity_action',
       'enum:activity_source',
       'enum:brief_generated_by',
+      'enum:followup_status',
       'enum:gmail_category',
       'enum:gmail_unsubscribe_method',
       'enum:mailbox_provider',

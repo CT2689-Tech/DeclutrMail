@@ -1,6 +1,7 @@
 export * from './_custom-types';
 export * from './activity-log';
 export * from './brief-runs';
+export * from './followup-tracker';
 export * from './mail-messages';
 export * from './mailbox-accounts';
 export * from './outbox-events';
