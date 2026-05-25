@@ -1,6 +1,21 @@
 export * as schema from './schema';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
 export type { ActivityLogEntry, NewActivityLogEntry } from './schema/activity-log';
+export {
+  AUTOPILOT_PRESET_KEYS,
+  autopilotActionKind,
+  autopilotRuleMode,
+  autopilotRuleScope,
+  automationRules,
+} from './schema/automation-rules';
+export type {
+  AutomationRule,
+  AutopilotActionKind,
+  AutopilotPresetKey,
+  AutopilotRuleMode,
+  AutopilotRuleScope,
+  NewAutomationRule,
+} from './schema/automation-rules';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
@@ -9,6 +24,17 @@ export { outboxEvents, outboxStatus } from './schema/outbox-events';
 export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-events';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
 export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
+export {
+  autopilotMatchMode,
+  autopilotMatchResolution,
+  ruleMatchLog,
+} from './schema/rule-match-log';
+export type {
+  AutopilotMatchMode,
+  AutopilotMatchResolution,
+  NewRuleMatchLog,
+  RuleMatchLog,
+} from './schema/rule-match-log';
 export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
 export { senderTimeseries } from './schema/sender-timeseries';

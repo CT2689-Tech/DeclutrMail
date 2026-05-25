@@ -1,4 +1,4 @@
-h1:4+U8wyl/qmVbJzyzD+w8t1IkDpKSZSJC4BDtZmdyhpk=
+h1:PE86+rCMKSuTtvxJXwpgzmUQUrCMU/OjxBe46r/5H58=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:COE1cnXSzGmexAp7l9JwAYLVhPilqOD4Vo6roD/D5To=
 0002_mailbox_oauth_tokens.sql h1:1sPxNFc73SsT9MSMW+4KYw96x/5KT47gSpz6ysoOa7E=
@@ -8,3 +8,4 @@ h1:4+U8wyl/qmVbJzyzD+w8t1IkDpKSZSJC4BDtZmdyhpk=
 0006_triage_decisions_and_sender_protection.sql h1:x9JDms4bx7+m3dinxWDOxlQquFP7hOlYfLPRsEM/WLs=
 0007_undo_journal.sql h1:gx9mLodPpGGI7OtlElIVD5scEYyL01ZX1DWV5NIIyaE=
 0008_outbox_events.sql h1:PclAz3fibDhkGbPI8Xix2VNLkT5Zl0twdsTv9eE7D9k=
+0009_autopilot_rules.sql h1:RskF3ZF8LArDLkC8i6A+VVSPPmhl/1JpePdQM+cXSQ8=
