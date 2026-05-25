@@ -96,6 +96,7 @@ describe('migration round-trip', () => {
     const objects = await listSchemaObjects(db);
     expect(objects).toEqual([
       'table:activity_log',
+      'table:followup_tracker',
       'table:mail_messages',
       'table:mailbox_accounts',
       'table:outbox_events',
@@ -110,6 +111,7 @@ describe('migration round-trip', () => {
       'table:workspaces',
       'enum:activity_action',
       'enum:activity_source',
+      'enum:followup_status',
       'enum:gmail_category',
       'enum:gmail_unsubscribe_method',
       'enum:mailbox_provider',

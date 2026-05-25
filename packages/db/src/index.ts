@@ -1,6 +1,12 @@
 export * as schema from './schema';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
 export type { ActivityLogEntry, NewActivityLogEntry } from './schema/activity-log';
+export { followupStatus, followupTracker } from './schema/followup-tracker';
+export type {
+  FollowupStatus,
+  FollowupTracker,
+  NewFollowupTracker,
+} from './schema/followup-tracker';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
