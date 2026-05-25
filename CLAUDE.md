@@ -405,6 +405,33 @@ A PR is not complete until ALL of these pass:
 - **`IMPLEMENTATION-LOG.md` is updated** (or auto-update is verified post-merge)
 - **No gate agent has unresolved blocking comments**
 - **No new TODOs** unless linked to a D-decision or GitHub issue
+- **Local smoke test passes** — see "Smoke before merge" below
+
+### Smoke before merge
+
+Green CI is necessary but NOT sufficient. Before recommending a merge,
+the agent (or session) MUST pull the PR branch locally and exercise the
+changed surface. CI cannot catch what wasn't tested in CI.
+
+The smoke matches the change type:
+
+| PR touches… | Minimum smoke |
+|---|---|
+| `apps/web/**` | `pnpm --filter @declutrmail/web dev` → load the affected route in browser, verify expected render + no console errors |
+| `apps/api/**` | `./scripts/dev-up.sh` → hit the affected endpoint with `curl`, verify status code + envelope shape + a downstream log line |
+| `packages/workers/**` | `./scripts/dev-up.sh` → enqueue a real job (or via test harness), verify `worker.succeeded` log line |
+| `packages/db/migrations/**` | `./scripts/db-migrate.sh apply` then revert; verify expected schema with `psql` |
+| `.husky/**` or `commitlint.config.cjs` | create a throwaway branch matching the new rule, run `sh .husky/<hook>` directly, exit code MUST be the expected value (0 for accept, 1 for reject) |
+| `scripts/**` | run the script; observe expected side effects |
+| docs-only (`CLAUDE.md`, `*.md`, `docs/**`) | smoke is N/A — green CI is sufficient |
+
+If a smoke step requires founder action (OAuth grant, real Gmail account,
+prod migration approval), the agent stops at the smoke step and asks for
+the founder's hands rather than guessing.
+
+If the smoke fails, the agent reports the failure and does NOT recommend
+merge. CI passing alongside a failed local smoke is itself a signal
+worth flagging (CI gap to close).
 
 PR-type-specific additions:
 
