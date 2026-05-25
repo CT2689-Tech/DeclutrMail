@@ -53,6 +53,20 @@ export {
 export type { ConcurrencyLimiter, ReasoningInput, ReasoningLlmPort } from './reasoning.js';
 export { runCascade } from './score-cascade.js';
 export type { CascadePhase, CascadeResult, CascadeRuleId, SenderSignals } from './score-cascade.js';
+export { BriefSnapshotWorker } from './brief-snapshot.worker.js';
+export type {
+  BriefSnapshotDeps,
+  BriefSnapshotJobData,
+  BriefSnapshotResult,
+} from './brief-snapshot.worker.js';
+export {
+  BRIEF_SNAPSHOT_INTERVAL_MS,
+  BRIEF_SNAPSHOT_JOB,
+  BRIEF_SNAPSHOT_QUEUE,
+  briefSnapshotJobOptions,
+  enqueueBriefSnapshotTick,
+  scheduledAtMinute as briefSnapshotScheduledAtMinute,
+} from './brief-snapshot.queue.js';
 export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
 export type {
   ScoreJobData,
