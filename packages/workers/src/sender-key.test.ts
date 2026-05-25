@@ -48,6 +48,53 @@ describe('normalizeEmail', () => {
   it('lowercases and trims', () => {
     expect(normalizeEmail('  Foo@Bar.COM ')).toBe('foo@bar.com');
   });
+
+  it('strips `+suffix` aliases from the local part (D12 example)', () => {
+    // The exact D12-body example: `foo+notion@gmail.com` → `foo@gmail.com`.
+    expect(normalizeEmail('foo+notion@gmail.com')).toBe('foo@gmail.com');
+  });
+
+  it('strips multi-`+` suffixes from the first `+` onward', () => {
+    expect(normalizeEmail('foo+a+b@example.com')).toBe('foo@example.com');
+  });
+
+  it('lowercases the address before stripping `+`', () => {
+    expect(normalizeEmail('Foo+Notion@GMAIL.com')).toBe('foo@gmail.com');
+  });
+
+  it('leaves the address unchanged when there is no `+` in the local part', () => {
+    expect(normalizeEmail('noreply@example.com')).toBe('noreply@example.com');
+  });
+
+  it('does NOT strip when `+` is the first local character (no alias root)', () => {
+    // `+only@x.com` → empty local part if stripped; keep the input.
+    expect(normalizeEmail('+only@example.com')).toBe('+only@example.com');
+  });
+
+  it('does NOT strip when `+` is only in the domain part', () => {
+    // `+` is not legal in domains, but be defensive — only strip from local.
+    expect(normalizeEmail('jane@exa+mple.com')).toBe('jane@exa+mple.com');
+  });
+
+  it('returns the lowercased input unchanged when there is no `@`', () => {
+    expect(normalizeEmail('not-an-email')).toBe('not-an-email');
+  });
+
+  it('returns the lowercased input unchanged when local part is empty', () => {
+    expect(normalizeEmail('@example.com')).toBe('@example.com');
+  });
+});
+
+describe('deriveSenderKey — D12 `+suffix` collapse', () => {
+  it('keys `foo+notion@gmail.com` and `foo@gmail.com` to the same hash', () => {
+    // The whole point of D12's strip — Notion's plus-aliased newsletters
+    // collapse to one sender row instead of fragmenting per-alias.
+    expect(deriveSenderKey('foo+notion@gmail.com')).toBe(deriveSenderKey('foo@gmail.com'));
+  });
+
+  it('keys distinct local parts distinctly even with the same `+suffix`', () => {
+    expect(deriveSenderKey('alice+x@example.com')).not.toBe(deriveSenderKey('bob+x@example.com'));
+  });
 });
 
 describe('emailDomain', () => {
