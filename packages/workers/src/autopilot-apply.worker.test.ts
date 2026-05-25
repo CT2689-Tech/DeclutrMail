@@ -472,4 +472,85 @@ describe('AutopilotApplyWorker', () => {
     expect(result.rulesEvaluated).toBe(0);
     expect(result.matchesWritten).toBe(0);
   });
+
+  // ─── Resilience patches (review feedback) ───────────────────────────
+  //
+  // Defense-in-depth NaN guards for `numeric(3,2)` → string columns
+  // (`automation_rules.confidence_threshold`, `triage_decisions.confidence`)
+  // are present in the worker but not exercised from the DB path — the
+  // column's CHECK rejects non-numeric writes at the SQL layer, so a
+  // malformed value would only arrive via a future schema loosening or
+  // a hypothetical Drizzle deserialization bug. The guards keep the
+  // worker from silently mis-evaluating in those cases; they're
+  // intentionally untested via PGlite because the column type prevents
+  // the bad value from ever reaching the worker through normal writes.
+
+  it('catches per-rule failures, increments rulesFailed, and continues the loop', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    // Enable two rules — the test injects a DB stub that throws on the
+    // first INSERT (the first matching rule) but succeeds on the second.
+    await db
+      .update(automationRules)
+      .set({ enabled: true, mode: 'observe' })
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mbId),
+          eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+        ),
+      );
+    await db
+      .update(automationRules)
+      .set({ enabled: true, mode: 'observe' })
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mbId),
+          eq(automationRules.presetKey, 'auto_unsubscribe_noisy'),
+        ),
+      );
+    // One sender that matches preset #1, one that matches preset #2.
+    await seedSender(db, mbId, {
+      email: 'archive-target@example.com',
+      decision: { verdict: 'archive', confidence: 0.95 },
+      totalMessages: 5,
+    });
+    await seedSender(db, mbId, {
+      email: 'unsub-target@example.com',
+      decision: { verdict: 'unsubscribe', confidence: 0.95 },
+      totalMessages: 5,
+    });
+
+    // Patch the db so the first ruleMatchLog insert throws; let the
+    // rest pass through. Use a proxy that intercepts only `.insert()`
+    // when targeting ruleMatchLog.
+    let injected = false;
+    const dbWithFault = new Proxy(db as never as Record<string, unknown>, {
+      get(target, prop, receiver) {
+        if (prop === 'insert') {
+          return (table: unknown) => {
+            if (table === ruleMatchLog && !injected) {
+              injected = true;
+              return {
+                values: () => Promise.reject(new Error('synthetic insert failure')),
+              };
+            }
+            const origInsert = Reflect.get(target, prop, receiver) as (t: unknown) => unknown;
+            return origInsert.call(target, table);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as never;
+
+    const worker = new AutopilotApplyWorker({ db: dbWithFault, now: () => NOW });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+    expect(result.rulesEvaluated).toBe(2);
+    expect(result.rulesFailed).toBe(1);
+    // The surviving rule wrote its match (1 match), not the failing one.
+    expect(result.matchesWritten).toBe(1);
+  });
 });
