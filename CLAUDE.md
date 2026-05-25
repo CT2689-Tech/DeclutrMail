@@ -278,6 +278,12 @@ For pre-PR-1 bootstrap work or PRs with no D-tie, use
 `chore/bootstrap-<topic>` (e.g., `chore/bootstrap-claude-md`). The
 convention applies from day 0 — no exception for setup work.
 
+`chore/bootstrap-*` branches are exempt from BOTH the branch-name
+regex (pre-push hook) AND commitlint's `(D###)` subject-trailer rule
+(`commitlint.config.cjs:d-number-reference`). The commit `type` can
+still be `fix(scope):` / `feat(scope):` / etc. — only the D-trailer
+is dropped.
+
 Examples:
 
 - `feat/d011-drizzle-orm-setup`
@@ -641,6 +647,13 @@ pnpm build                # all packages, parallel
 pnpm verify-d <D###>      # flip a D-row 🔵 → 🟢 when verification passes
 pnpm generate-impl-log    # regenerate IMPLEMENTATION-LOG.md
 git wt new <branch>       # create worktree ../wt-<branch>
+
+# Local dev runtime
+docker compose up -d redis              # local Redis sidecar (BullMQ + rate limiter)
+./scripts/dev-up.sh                     # redis + api (:4000) + worker, backgrounded
+./scripts/dev-up.sh --stop              # kill api + worker
+pnpm --filter @declutrmail/web dev      # web (:3000), foreground
+./scripts/dev-auth.sh                   # destructive: drop DB + restart + open OAuth flow
 ```
 
 - **Plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (repo mirror at `docs/execution/Implementation-Plan.md` after PR 1)
