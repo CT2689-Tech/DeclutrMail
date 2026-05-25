@@ -363,4 +363,61 @@ describe('FollowupCheckWorker', () => {
     });
     expect(key).toBe('FollowupCheckWorker:2026-05-25T08:00');
   });
+
+  it('one mailbox failure does not block other mailboxes (partial-failure resilience)', async () => {
+    const db = await freshDb();
+    const a = await seedMailbox(db, 'a@example.com');
+    const b = await seedMailbox(db, 'b@example.com');
+
+    // Both mailboxes have a follow-up-worthy outbound thread. Inject a
+    // synthetic failure for the first sweep's execute() (the raw SQL
+    // the worker uses for `latest_per_thread`); the second mailbox
+    // should still get its row written and `mailboxesFailed` should be 1.
+    await seedMessage(db, {
+      mailboxAccountId: a.mailboxAccountId,
+      threadId: 'thread-a',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['boss-a@example.com'],
+    });
+    await seedMessage(db, {
+      mailboxAccountId: b.mailboxAccountId,
+      threadId: 'thread-b',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['boss-b@example.com'],
+    });
+
+    let injectedForA = false;
+    const dbWithFault = new Proxy(db as never as Record<string, unknown>, {
+      get(target, prop, receiver) {
+        if (prop === 'execute') {
+          return (q: unknown) => {
+            // First execute call is mailbox A's sweepMailbox SELECT.
+            if (!injectedForA) {
+              injectedForA = true;
+              throw new Error('synthetic execute failure');
+            }
+            const orig = Reflect.get(target, prop, receiver) as (q: unknown) => unknown;
+            return orig.call(target, q);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    }) as never;
+
+    const worker = new FollowupCheckWorker({ db: dbWithFault, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(2);
+    expect(result.mailboxesFailed).toBe(1);
+    // The surviving mailbox wrote its row.
+    expect(result.awaitingUpserted).toBe(1);
+
+    const rows = await db.select({ id: followupTracker.id }).from(followupTracker);
+    expect(rows).toHaveLength(1);
+  });
 });
