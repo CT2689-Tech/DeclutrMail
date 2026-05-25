@@ -41,6 +41,20 @@ export interface AutopilotApplyJobData {
 export interface AutopilotApplyJobResult {
   /** Number of enabled, non-paused rules that ran. */
   rulesEvaluated: number;
+  /**
+   * Subset of `rulesEvaluated` whose per-rule body threw mid-loop and
+   * was caught. Logged with the rule id + error message; the loop
+   * continues to the next rule so one bad rule cannot wreck the
+   * whole pass.
+   */
+  rulesFailed: number;
+  /**
+   * Subset of `rulesEvaluated` skipped because a stored field was
+   * malformed (e.g. `confidence_threshold` not a finite number). The
+   * worker logs once per occurrence and continues; a re-sweep after a
+   * fix processes the rule normally.
+   */
+  rulesSkippedMalformed: number;
   /** Total match rows inserted across all rules. */
   matchesWritten: number;
   /** Subset of `matchesWritten` that wrote with `mode_at_match='observe'`. */
@@ -138,6 +152,8 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     if (rules.length === 0) {
       return {
         rulesEvaluated: 0,
+        rulesFailed: 0,
+        rulesSkippedMalformed: 0,
         matchesWritten: 0,
         observeMatches: 0,
         activeMatches: 0,
@@ -155,6 +171,9 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     let matchesWritten = 0;
     let observeMatches = 0;
     let activeMatches = 0;
+    let rulesEvaluated = 0;
+    let rulesFailed = 0;
+    let rulesSkippedMalformed = 0;
 
     const presetKeySet = new Set<string>(AUTOPILOT_PRESET_KEYS);
     const isPresetKey = (k: string | null): k is AutopilotPresetKey =>
@@ -168,59 +187,111 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
 
       // numeric(3,2) → number. The schema stores a string; the matcher
       // wants a float. `null` means "use the preset default".
-      const threshold =
-        rule.confidenceThreshold !== null ? Number.parseFloat(rule.confidenceThreshold) : null;
+      //
+      // Defensive: a malformed string (DB corruption, manual UPDATE,
+      // future schema migration that loosens the column) would parse
+      // to `NaN`, and `confidence <= NaN` is always false — the rule
+      // would silently never match. Skip + log + count so the failure
+      // is visible in metrics.
+      let threshold: number | null = null;
+      if (rule.confidenceThreshold !== null) {
+        const parsed = Number.parseFloat(rule.confidenceThreshold);
+        if (!Number.isFinite(parsed)) {
+          rulesSkippedMalformed += 1;
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'autopilot.malformed_threshold',
+              worker: this.workerName,
+              ruleId: rule.id,
+              rawConfidenceThreshold: rule.confidenceThreshold,
+            }),
+          );
+          continue;
+        }
+        threshold = parsed;
+      }
       const modeAtMatch: AutopilotMatchMode = rule.mode === 'active' ? 'active' : 'observe';
       const resolution: AutopilotMatchResolution =
         modeAtMatch === 'active' ? 'approved' : 'pending';
 
-      const matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
-      for (const { senderKey, signals, decision } of eligible) {
-        const input: PresetInput = { signals, triageDecision: decision };
-        const result = def.match(input, threshold);
-        if (!result.matched) continue;
-        // Confidence stored on the match row: the engine's current
-        // confidence if a decision row exists; otherwise the rule's
-        // threshold (or 0 for non-threshold presets) as a stable default.
-        const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
-        matchesForRule.push({ senderKey, confidence, reason: result.reason });
-      }
+      // Per-rule try/catch — one rule's failure (deadlock, transient
+      // DB error, schema drift) must NOT kill the whole apply pass.
+      // The next rule still runs; the failed rule's count surfaces on
+      // the result envelope so observability sees partial failures.
+      try {
+        rulesEvaluated += 1;
+        const matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
+        for (const { senderKey, signals, decision } of eligible) {
+          const input: PresetInput = { signals, triageDecision: decision };
+          const result = def.match(input, threshold);
+          if (!result.matched) continue;
+          // Confidence stored on the match row: the engine's current
+          // confidence if a decision row exists; otherwise the rule's
+          // threshold (or 0 for non-threshold presets) as a stable default.
+          const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
+          matchesForRule.push({ senderKey, confidence, reason: result.reason });
+        }
 
-      if (matchesForRule.length > 0) {
-        await this.deps.db.insert(ruleMatchLog).values(
-          matchesForRule.map((m) => ({
+        if (matchesForRule.length > 0) {
+          await this.deps.db.insert(ruleMatchLog).values(
+            matchesForRule.map((m) => ({
+              ruleId: rule.id,
+              mailboxAccountId,
+              senderKey: m.senderKey,
+              matchedAt: now,
+              modeAtMatch,
+              confidence: m.confidence.toFixed(2),
+              reason: m.reason,
+              intentApplied: false,
+              resolution,
+            })),
+          );
+          matchesWritten += matchesForRule.length;
+          if (modeAtMatch === 'observe') observeMatches += matchesForRule.length;
+          else activeMatches += matchesForRule.length;
+        }
+
+        // Update D101 inline-summary fields once per rule, even when zero
+        // matches — last_run_at carries "the rule ran" signal for the UI.
+        //
+        // Match-log insert + rule update are NOT wrapped in a tx: the
+        // failure mode is "stale `last_run_at` after a successful match
+        // insert" which is benign (the next sweep refreshes it). The
+        // opposite ordering (update first, insert second) would risk
+        // showing the user a fresh `last_run_at` with no matching rows
+        // — strictly worse UX.
+        const distinctSenders = new Set(matchesForRule.map((m) => m.senderKey)).size;
+        await this.deps.db
+          .update(automationRules)
+          .set({
+            lastRunAt: now,
+            lastRunActions: matchesForRule.length,
+            lastRunSenders: distinctSenders,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(automationRules.id, rule.id));
+      } catch (err) {
+        rulesFailed += 1;
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'autopilot.rule_failed',
+            worker: this.workerName,
             ruleId: rule.id,
             mailboxAccountId,
-            senderKey: m.senderKey,
-            matchedAt: now,
-            modeAtMatch,
-            confidence: m.confidence.toFixed(2),
-            reason: m.reason,
-            intentApplied: false,
-            resolution,
-          })),
+            error: err instanceof Error ? err.message : String(err),
+          }),
         );
-        matchesWritten += matchesForRule.length;
-        if (modeAtMatch === 'observe') observeMatches += matchesForRule.length;
-        else activeMatches += matchesForRule.length;
+        // Continue to next rule — partial failure is preferable to
+        // total failure for a cron sweep across many rules.
       }
-
-      // Update D101 inline-summary fields once per rule, even when zero
-      // matches — last_run_at carries "the rule ran" signal for the UI.
-      const distinctSenders = new Set(matchesForRule.map((m) => m.senderKey)).size;
-      await this.deps.db
-        .update(automationRules)
-        .set({
-          lastRunAt: now,
-          lastRunActions: matchesForRule.length,
-          lastRunSenders: distinctSenders,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(automationRules.id, rule.id));
     }
 
     return {
-      rulesEvaluated: rules.length,
+      rulesEvaluated,
+      rulesFailed,
+      rulesSkippedMalformed,
       matchesWritten,
       observeMatches,
       activeMatches,
@@ -307,12 +378,27 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           inArray(triageDecisions.senderKey, keys),
         ),
       );
-    const decisionBy = new Map(
-      decisionRows.map((r) => [
-        r.senderKey,
-        { verdict: r.verdict, confidence: Number.parseFloat(r.confidence) },
-      ]),
-    );
+    // Skip decision rows whose `confidence` (numeric(3,2) → string)
+    // doesn't parse to a finite number. NaN would propagate into the
+    // matcher's `confidence <= threshold` comparison and silently
+    // mis-evaluate; treating it as "no decision" is the safe default.
+    const decisionBy = new Map<string, { verdict: TriageVerdict; confidence: number }>();
+    for (const r of decisionRows) {
+      const c = Number.parseFloat(r.confidence);
+      if (!Number.isFinite(c)) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'autopilot.malformed_decision_confidence',
+            worker: this.workerName,
+            senderKey: r.senderKey,
+            rawConfidence: r.confidence,
+          }),
+        );
+        continue;
+      }
+      decisionBy.set(r.senderKey, { verdict: r.verdict, confidence: c });
+    }
 
     // 90-day timeseries — sum volume + reads per sender.
     const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
