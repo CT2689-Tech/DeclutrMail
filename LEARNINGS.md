@@ -20,6 +20,38 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-25 — Cron workers iterating every mailbox need bounded fan-out from day 1
+
+**Context:** Three new cron workers shipped during the engine PR sweep
+(AutopilotApply, BriefSnapshot, FollowupCheck) all started life with the
+same shape: `for (const mb of mailboxes) { try { ... } catch ... }`.
+Each per-mailbox body takes 5–50ms under load; at 10K mailboxes the
+serial loop is O(minutes-to-hours) per cron tick — the cron interval
+becomes the bottleneck, not the work.
+
+**Finding:** The `createLimiter(n)` helper already exists in
+`packages/workers/src/reasoning.ts` and is callable: `await limiter(async
+() => ...)`. Wrapping the per-mailbox body with `Promise.all(mailboxes
+.map(mb => limiter(async () => { try { ... } catch ... })))` keeps the
+per-mailbox try/catch intact (so one bad mailbox can't stop the others)
+while capping in-flight work below the Postgres pool ceiling. Default 8,
+env override clamped to [1, 32] — same shape used in ScoreWorker.
+
+Side-finding: when running the same vitest workspace across multiple
+branch checkouts in sequence (smoke driver), PGlite container init
+contention can spike the first test of each branch past the default
+5s testTimeout. Re-running in isolation passes in <2s. The 5s
+default is fine for production CI but tight for back-to-back smoke runs.
+
+**Rule (provisional):** Any new cron worker that iterates `mailbox_accounts`
+in a loop ships with `createLimiter` bounded concurrency from the first
+PR. The serial pattern is a perf regression in disguise. Default cap 8;
+env override `<WORKER>_CONCURRENCY` clamped to [1, 32].
+
+**Distillation trigger:** Promote to CLAUDE.md §2 or a new "Worker performance"
+section if a 4th cron worker repeats the pattern. Count: 3/3 — promotion
+candidate already.
+
 ## 2026-05-25 — Throwaway HTML prototype unlocks design conversation faster than Storybook
 
 **Context:** Senders surface uplift exploration. Founder asked for a
