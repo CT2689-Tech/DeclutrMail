@@ -20,6 +20,71 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-25 — Throwaway HTML prototype unlocks design conversation faster than Storybook
+
+**Context:** Senders surface uplift exploration. Founder asked for a
+"massive" visual improvement. After two rounds of plan-only design
+(text + ASCII), the conversation stayed abstract. Built a standalone
+HTML prototype at `apps/web/prototypes/senders-uplift.html` with
+three radically different variants (A within-constitution, B
+dashboard-amending, C no-constraints reimagining) toggleable via a
+floating bottom bar — built per the `prototype` skill's UI sub-shape
+B (no nearby route to embed in).
+
+**Finding:** The prototype changed the founder review from "I like
+the words" to "the editorial hero from C with the tables from B but
+the row chart is noise" — a concrete, actionable, half-sentence
+decision. Two follow-up rounds (Codex review + my pushback) produced
+a Variant D synthesis with crisp scope and a 4-ADR amendment
+package, all in one session.
+
+By contrast, the same conversation in Storybook would have required
+(a) extracting primitives first, (b) typechecking against real
+imports, (c) building stories that compose them — at least a day of
+plumbing before the founder could see a side-by-side. The HTML
+prototype was ~1500 lines, built in one Write, ready to compare in
+under an hour.
+
+The cost: a throwaway file lives in the repo. Marked for deletion
+in FOUNDER-FOLLOWUPS once Variant D ships.
+
+**Rule (provisional):** When a design decision is the bottleneck and
+the existing codebase doesn't have a fast story-composing path, reach
+for the `prototype` skill's HTML branch *before* extracting
+primitives. Use the throwaway as the conversation substrate; let the
+decision come back into the real codebase as ADRs + feature PRs.
+
+**Distillation trigger:** promote to CLAUDE.md §5 (Implementation
+phase order) if pattern recurs ≥3 times — "before extracting
+primitives for a redesign, prototype the composition in
+`apps/{web,api}/prototypes/` and delete after ratification."
+
+## 2026-05-25 — Codex review caught a scope leak disguised as polish
+
+**Context:** Same Senders uplift session. After founder + Codex
+review converged on Variant D, Codex's second-round review proposed
+8 "micro-interactions" including #2 "smooth review-mode transition
+from dashboard to one-sender-at-a-time review."
+
+**Finding:** That transition IS the card-deck triage ritual from
+Variant C, which we explicitly deferred to a later wave because it's
+polarizing for power users + needs A/B testing + needs the
+`triage-card-deck` primitive + state machine. Codex re-introduced it
+framed as "polish," not as a scope decision. Easy to miss without
+re-reading the variant-D scope. CLAUDE.md §1.3 ("surgical changes —
+every changed line must trace directly to the request") applies to
+agent reviewers, not just to the agent writing code.
+
+**Rule (provisional):** When a reviewer proposes a "polish" or
+"transition" item, ask: "is this an existing feature relabeled?" If
+yes, push back and flag the scope. Don't accept polish framing for
+work that's actually wave-N feature scope.
+
+**Distillation trigger:** promote to CLAUDE.md §1.3 or §10 (don't
+do) if pattern recurs ≥3 times — "agent reviewers may smuggle
+deferred features into polish frames; check scope explicitly before
+accepting."
+
 ## 2026-05-23 — Conditional-hook pattern for TanStack + static-source override
 
 **Context:** Migrating `useUndoTray` from a stub fetch to TanStack
