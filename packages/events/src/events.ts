@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { TOPICS } from './topics.js';
+import { TOPICS, type EventTopic } from './topics.js';
 
 /**
  * D204 — typed Zod schemas for every cross-feature event the outbox
@@ -250,7 +250,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
-} as const;
+} as const satisfies Record<EventTopic, z.ZodSchema>;
 
 /**
  * Map from topic literal → payload type. The `z.infer` form on each
