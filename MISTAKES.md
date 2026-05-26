@@ -21,6 +21,70 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-26 — Five reviewable bugs caught by Codex across the Variant D + Autopilot stacks
+
+**PRs:** #64 (db), #65 (workers), #77 (api adapter), #78 (events),
+#82 (web — gate), #83 (web — settings)
+**Caught by:** Codex review (post-push, pre-merge)
+**What happened:** Five distinct bugs, all caught on the same review
+sweep. Notable that they share an underlying pattern: **partial
+application of new logic** — a rule was introduced at one site but
+not extended to the parallel sites that exercise the same data path.
+
+  1. PR #82 — added `intentOf()` confidence gate in `groupByIntent`
+     but left two other call sites (`onStartReview()`, `computeTotals`)
+     filtering on the raw `lastReview.verdict`. The Cleanup bucket
+     suppressed low-confidence verdicts; the hero CTA + KPI cells
+     did not.
+
+  2. PR #83 — `useSenders()` is an infinite query. The new screen
+     `flatMap`'d only the first page. API clamps `limit` to 100 →
+     any protected sender past row 100 was invisible on a screen
+     whose contract is "every standing policy lives here".
+
+  3. PR #78 — `EVENT_SCHEMAS` comment claimed `satisfies
+     Record<EventTopic, ZodSchema>` exhaustiveness, but the actual
+     declaration was only `as const`. A new topic in `TOPICS`
+     without a schema entry would compile clean and fail only at
+     the runtime parity test.
+
+  4. PR #65 — `newsletter_graveyard` (`lastSeenDaysAgo > 90`) and
+     `long_dormant_unsubscribe` (`> 180`) had overlapping windows
+     w/ identical `actionKind: 'unsubscribe'`. A sender at 200d w/
+     low read rate fired BOTH presets → two unsubscribe-match rows
+     for a single sweep.
+
+  5. PR #64/#65 — match insert was plain `INSERT VALUES (...)` with
+     no dedup. Re-running the worker created N duplicate pending
+     suggestions for the same `(rule, sender)` until the user
+     resolved one — flooding the suggestion UI.
+
+**Correct approach (per finding):**
+  1. Reuse `intentOf(s) === 'cleanup'` everywhere; never re-derive
+     "is this Cleanup?" from raw fields after a centralizing helper
+     exists.
+  2. For "list every X" screens, auto-paginate via `useEffect` →
+     `fetchNextPage` loop with a hard cap, OR add a dedicated
+     filtered endpoint.
+  3. `as const satisfies T` is the canonical exhaustiveness pattern;
+     neither half alone suffices.
+  4. Disjoint windows by construction; never two unsubscribe-class
+     presets overlap on the same predicate axis.
+  5. Pair every match-insert with a DB-level partial unique idx +
+     `onConflictDoNothing({ target, where })` mirroring the
+     predicate.
+
+**Rule:** When a new helper / gate / index centralizes a decision,
+grep ALL call sites of the parallel raw-field check and migrate
+them in the same PR. Centralization without migration is a worse
+state than no centralization — it creates a quiet two-truths bug.
+
+**Enforcement update:** None directly. Indirect: continue running
+Codex review after every push during the multi-PR-stack workflow —
+the failures here were detectable by a reviewer that grep'd for
+parallel use of the gated field, which the existing review prompt
+already encourages.
+
 ## 2026-05-22 — InitialSyncWorker could not sync a mailbox larger than ~3,000 messages
 **PR:** #17 (`feat/d157-initial-sync-worker`) shipped the bug; fixed in `feat/d005-sync-quota-hardening`
 **Caught by:** manual test — connecting a real 20K-message Gmail account
