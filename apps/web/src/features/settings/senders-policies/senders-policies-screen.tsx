@@ -1,0 +1,279 @@
+'use client';
+// apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx
+//
+// Phase X3 of the sender-bucketing re-design — lets the user see all
+// senders that have standing policies in one place + jump to the
+// detail page to toggle them off.
+//
+// Today this surface is READ-ONLY for Protected senders only:
+//   - Protected: shipped on the list wire shape (Sender.protected).
+//     User clicks "Manage" -> jumps to /senders/[id], toggles Protect
+//     off via the existing detail-page chip (D42/D43).
+//
+// Future iteration (separate PRs):
+//   - VIP: needs Sender.vip on the list wire shape (today only on
+//     SenderDetail). When wired, add a VIP section here.
+//   - One-click "Remove protection" inline (no jump to detail).
+//     Needs the senders-mutations slice (TODO(D200) in sender-detail-
+//     page.tsx). Until then, the jump-to-detail flow is the safe
+//     option — uses the existing mutation path.
+//
+// Lazy-promoted per ADR-0007: lives in apps/web/src/features/settings/
+// because settings is the only consumer. Move to packages/shared/ if
+// another feature needs the same "Manage standing policies" pattern
+// (mobile settings, billing surface, etc.).
+
+import { useMemo } from 'react';
+import Link from 'next/link';
+import { Avatar, Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import { useSenders } from '@/features/senders/api/use-senders';
+import { adaptSenderListRow } from '@/features/senders/api/adapters';
+import type { Sender } from '@/features/senders/data';
+import { ApiError } from '@/lib/api/client';
+
+const { color, font, space, radius } = tokens;
+
+/**
+ * Settings → Senders → standing policies view. Lists every sender
+ * with a non-default disposition (Protected today; VIP pending wire).
+ */
+export function SendersPoliciesScreen() {
+  const sendersQuery = useSenders({ limit: 200 });
+  const allSenders = useMemo<Sender[]>(() => {
+    const pages = sendersQuery.data?.pages ?? [];
+    return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
+  }, [sendersQuery.data]);
+
+  const protectedSenders = useMemo(
+    () =>
+      allSenders.filter((s) => s.protected === true).sort((a, b) => a.name.localeCompare(b.name)),
+    [allSenders],
+  );
+
+  if (sendersQuery.isLoading) return <LoadingState />;
+  if (sendersQuery.isError) {
+    return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+  }
+
+  return (
+    <div
+      style={{
+        padding: '20px 24px 28px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+        maxWidth: 1024,
+        margin: '0 auto',
+        fontFamily: font.sans,
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <Eyebrow>Settings · standing policies</Eyebrow>
+        <h1
+          style={{
+            fontFamily: font.display,
+            fontSize: 26,
+            fontWeight: 600,
+            letterSpacing: '-0.018em',
+            margin: '4px 0 0',
+          }}
+        >
+          Standing policies
+        </h1>
+        <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
+          Senders you've pinned with a standing rule. Protected senders skip auto-rules so they
+          always stay in your inbox. Click a sender to manage its protection from the detail page.
+        </p>
+      </div>
+
+      <section
+        style={{
+          background: color.card,
+          border: `1px solid ${color.line}`,
+          borderRadius: radius.lg,
+          padding: '0',
+          overflow: 'hidden',
+        }}
+      >
+        <header
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            padding: `${space[4]}px ${space[5]}px`,
+            borderBottom: `1px solid ${color.lineSoft}`,
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                fontSize: 15,
+                fontWeight: 600,
+                letterSpacing: '-0.012em',
+                margin: 0,
+              }}
+            >
+              Protected
+            </h2>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: color.fgMuted,
+                margin: '4px 0 0',
+              }}
+            >
+              Auto-rules skip these senders. Mail always lands in your inbox.
+            </p>
+          </div>
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 11,
+              color: color.fgMuted,
+            }}
+          >
+            {protectedSenders.length} {protectedSenders.length === 1 ? 'sender' : 'senders'}
+          </span>
+        </header>
+
+        {protectedSenders.length === 0 ? (
+          <div style={{ padding: `${space[5]}px ${space[5]}px` }}>
+            <EmptyState
+              title="No protected senders yet"
+              description="When you mark a sender as Protected from their detail page, it will appear here. Protected senders are skipped by auto-rules and bulk actions."
+            />
+          </div>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {protectedSenders.map((s, i) => (
+              <PolicyRow key={s.id} sender={s} isLast={i === protectedSenders.length - 1} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Placeholder for VIP section — pending Sender.vip on list wire shape. */}
+      <section
+        style={{
+          background: color.card,
+          border: `1px dashed ${color.line}`,
+          borderRadius: radius.lg,
+          padding: `${space[4]}px ${space[5]}px`,
+          color: color.fgMuted,
+          fontSize: 12.5,
+          fontFamily: font.mono,
+        }}
+      >
+        VIP section coming soon — needs the VIP flag plumbed through the senders list wire shape
+        (today VIP is only exposed on the per-sender detail endpoint).
+      </section>
+    </div>
+  );
+}
+
+function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
+  return (
+    <li
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '40px minmax(0, 1fr) auto',
+        gap: space[3],
+        alignItems: 'center',
+        padding: `${space[3]}px ${space[5]}px`,
+        borderBottom: isLast ? 'none' : `1px solid ${color.lineSoft}`,
+      }}
+    >
+      <Avatar name={sender.name} domain={sender.domain} size={32} />
+      <div style={{ minWidth: 0 }}>
+        <div
+          style={{
+            fontWeight: 500,
+            fontSize: 14,
+            letterSpacing: '-0.005em',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {sender.name}
+        </div>
+        <div
+          style={{
+            fontFamily: font.mono,
+            fontSize: 11,
+            color: color.fgMuted,
+            marginTop: 2,
+          }}
+        >
+          {sender.domain} · {sender.monthly}/mo
+        </div>
+      </div>
+      <Link
+        href={`/senders/${sender.id}`}
+        style={{ textDecoration: 'none' }}
+        aria-label={`Manage ${sender.name}`}
+      >
+        <Button size="sm">Manage</Button>
+      </Link>
+    </li>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        padding: '20px 24px 28px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        maxWidth: 1024,
+        margin: '0 auto',
+        fontFamily: font.sans,
+      }}
+    >
+      {[60, 200, 60].map((h, i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          style={{
+            height: h,
+            background: color.card,
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: radius.lg,
+          }}
+        />
+      ))}
+      <span style={{ position: 'absolute', left: -9999 }}>Loading standing policies</span>
+    </div>
+  );
+}
+
+function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const message =
+    error instanceof ApiError
+      ? `We couldn't load your standing policies (${error.status}). Try again in a moment.`
+      : "We couldn't load your standing policies right now. Try again in a moment.";
+  return (
+    <div
+      style={{
+        padding: '20px 24px 28px',
+        maxWidth: 720,
+        margin: '0 auto',
+        fontFamily: font.sans,
+      }}
+    >
+      <EmptyState
+        title="We couldn't load standing policies"
+        description={message}
+        action={
+          <Button tone="primary" onClick={onRetry}>
+            Try again
+          </Button>
+        }
+      />
+    </div>
+  );
+}
