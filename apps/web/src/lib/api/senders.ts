@@ -51,6 +51,18 @@ export interface LastReviewWire {
   verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
   /** Provenance — LLM call vs deterministic template fallback. */
   generatedBy: 'llm_haiku' | 'template';
+  /**
+   * Engine confidence, 0..1 — mirrors `triage_decisions.confidence`
+   * (numeric(3,2)). Optional for backward compatibility; defaults to
+   * 1.0 client-side when omitted. Drives the confidence gate in the
+   * FE intent-bucketing logic (uplift-d/intent.ts).
+   *
+   * BE TODO: populate from the cascade result. Cascade already
+   * computes this (see packages/workers/src/score-cascade.ts
+   * CascadeResult.confidence). Wire it through
+   * apps/api/src/senders/senders.service.ts in a follow-up PR.
+   */
+  confidence?: number;
 }
 
 /** Row shape on `GET /api/senders` — the list endpoint. */

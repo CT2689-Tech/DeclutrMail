@@ -29,6 +29,19 @@ export interface SenderLastReview {
   verdict: 'keep' | 'archive' | 'unsubscribe' | 'later';
   /** Provenance — LLM call vs deterministic template fallback. */
   generatedBy: 'llm_haiku' | 'template';
+  /**
+   * Engine confidence, 0..1. Drives the confidence gate in
+   * `uplift-d/intent.ts` — low-confidence verdicts are suppressed from
+   * the action buckets (sender stays in the catch-all rather than
+   * showing a "Cleanup recommendation" the engine isn't sure about).
+   *
+   * Optional for backward compatibility — when omitted (older wire
+   * payloads), defaults to `1.0` (full confidence) so existing
+   * behavior is preserved. BE adapter
+   * (`apps/api/src/senders/senders.service.ts`) should populate from
+   * `triage_decisions.confidence` once a follow-up PR wires that.
+   */
+  confidence?: number;
 }
 
 export interface Sender {

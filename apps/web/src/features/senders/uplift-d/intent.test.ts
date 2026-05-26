@@ -7,7 +7,7 @@
 // later; protected → protect; everything else → people.
 
 import { describe, expect, it } from 'vitest';
-import { intentOf, groupByIntent, INTENT_ORDER } from './intent';
+import { intentOf, groupByIntent, INTENT_ORDER, ENGINE_CONFIDENCE_GATE } from './intent';
 import type { Sender } from '../data';
 
 function senderFixture(overrides: Partial<Sender>): Sender {
@@ -65,12 +65,95 @@ describe('intentOf — ADR-0012 bucketing rules', () => {
     expect(intentOf(s)).toBe('people');
   });
 
-  it('cleanup wins over protect when both signals are present', () => {
-    // Engine recommendation beats the protect default — the user can
-    // still act, the recommendation just exists.
+  it('protect wins over engine recommendations (user-pinned policy beats engine)', () => {
+    // X2 confidence-gate change: protected senders always bucket as
+    // Protect, regardless of engine verdict. User's standing policy
+    // is more authoritative than any engine recommendation. Prior
+    // ADR-0012 phrasing (cleanup wins over protect) reverted in X2.
     const s = senderFixture({
       protected: true,
-      lastReview: { at: '2026-05-25T00:00:00Z', verdict: 'unsubscribe', generatedBy: 'llm_haiku' },
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'llm_haiku',
+        confidence: 0.95,
+      },
+    });
+    expect(intentOf(s)).toBe('protect');
+  });
+});
+
+describe('intentOf — confidence gate (X2)', () => {
+  it('passes high-confidence unsubscribe through to cleanup', () => {
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'llm_haiku',
+        confidence: 0.9,
+      },
+    });
+    expect(intentOf(s)).toBe('cleanup');
+  });
+
+  it('suppresses low-confidence unsubscribe — falls back to people catch-all', () => {
+    // Phase B insufficient_signal returns 0.70 < gate (0.75). Sender
+    // should NOT show up as Cleanup just because engine made a guess.
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'template',
+        confidence: 0.7,
+      },
+    });
+    expect(intentOf(s)).toBe('people');
+  });
+
+  it('suppresses low-confidence archive — falls back to people catch-all', () => {
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'archive',
+        generatedBy: 'template',
+        confidence: 0.6,
+      },
+    });
+    expect(intentOf(s)).toBe('people');
+  });
+
+  it('passes high-confidence archive through to later', () => {
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'archive',
+        generatedBy: 'llm_haiku',
+        confidence: 0.85,
+      },
+    });
+    expect(intentOf(s)).toBe('later');
+  });
+
+  it('defaults missing confidence to 1.0 (backward compatible with older wire payloads)', () => {
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'llm_haiku',
+        // confidence omitted — older wire shape
+      },
+    });
+    expect(intentOf(s)).toBe('cleanup');
+  });
+
+  it('exact-threshold confidence (0.75) passes the gate (inclusive boundary)', () => {
+    const s = senderFixture({
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'template',
+        confidence: ENGINE_CONFIDENCE_GATE,
+      },
     });
     expect(intentOf(s)).toBe('cleanup');
   });
