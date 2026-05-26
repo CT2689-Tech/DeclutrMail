@@ -8,6 +8,8 @@
 -- Drop tables (rule_match_log first — it references automation_rules
 -- via FK), then enums.
 
+DROP INDEX IF EXISTS "rule_match_log_pending_dedup_uniq";
+--> statement-breakpoint
 DROP INDEX IF EXISTS "rule_match_log_mailbox_matched_idx";
 --> statement-breakpoint
 DROP INDEX IF EXISTS "rule_match_log_rule_matched_idx";

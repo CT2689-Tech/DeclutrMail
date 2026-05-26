@@ -306,4 +306,57 @@ describe('autopilot rules × match-log integration', () => {
     expect(remainingRules).toHaveLength(0);
     expect(remainingMatches).toHaveLength(0);
   });
+
+  it('partial UNIQUE on (rule_id, sender_key) WHERE resolution=pending dedups re-runs', async () => {
+    // Per Codex review of PR #64/#65 (finding #3): the apply worker
+    // can re-run against the same sender and the prior implementation
+    // would create N duplicate pending suggestions. The partial unique
+    // index pairs with `onConflictDoNothing()` in the worker so re-runs
+    // are idempotent for unresolved matches.
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    const [rule] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId: mbId,
+        isPreset: true,
+        presetKey: 'auto_archive_low_engagement',
+        name: 'Auto-archive low-engagement',
+        actionKind: 'archive',
+      })
+      .returning({ id: automationRules.id });
+
+    const senderKey = 'd'.repeat(64);
+    const row = {
+      ruleId: rule!.id,
+      mailboxAccountId: mbId,
+      senderKey,
+      modeAtMatch: 'observe' as const,
+      confidence: '0.90' as const,
+      reason: 'first match',
+    };
+
+    // First pending insert succeeds.
+    await db.insert(ruleMatchLog).values(row);
+    // Second pending insert for the same (rule, sender) violates the
+    // partial unique idx. Worker paths must use onConflictDoNothing.
+    await expect(db.insert(ruleMatchLog).values({ ...row, reason: 'rerun' })).rejects.toThrow();
+
+    // Resolving the first match (approved or dismissed) releases the
+    // partial-unique slot — a future re-match becomes a legitimate new
+    // pending suggestion the user can act on again.
+    await db
+      .update(ruleMatchLog)
+      .set({ resolution: 'dismissed', resolvedAt: new Date() })
+      .where(eq(ruleMatchLog.ruleId, rule!.id));
+    await db.insert(ruleMatchLog).values({ ...row, reason: 'after-dismiss rerun' });
+
+    const allMatches = await db
+      .select({ id: ruleMatchLog.id, resolution: ruleMatchLog.resolution })
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.ruleId, rule!.id));
+    expect(allMatches).toHaveLength(2);
+    const resolutions = allMatches.map((m) => m.resolution).sort();
+    expect(resolutions).toEqual(['dismissed', 'pending']);
+  });
 });

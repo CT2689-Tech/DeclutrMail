@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -145,6 +146,26 @@ export const ruleMatchLog = pgTable(
       table.mailboxAccountId,
       table.matchedAt,
     ),
+    /**
+     * Unresolved-match dedup. Per Codex review of PR #64/#65 (finding #3):
+     * the apply worker inserts matches with no dedup, so re-running a
+     * rule against the same sender spawns N pending suggestions until
+     * the user resolves one. This partial unique index makes the DB
+     * the source of truth — paired with `onConflictDoNothing()` in the
+     * worker, re-runs become idempotent for unresolved matches.
+     *
+     * Scope is `resolution = 'pending'` on purpose:
+     *   - Approved / dismissed rows are terminal audit records; the user
+     *     has consciously acted on them, so a fresh re-match should be
+     *     allowed to surface again as a new pending suggestion (cadence
+     *     may have changed; the rule re-decided).
+     *   - Pending rows are the buffer the UI reads from — duplicates here
+     *     would show the user the same sender N times in the suggestions
+     *     list, which is the bug Codex flagged.
+     */
+    pendingDedupUniq: uniqueIndex('rule_match_log_pending_dedup_uniq')
+      .on(table.ruleId, table.senderKey)
+      .where(sql`${table.resolution} = 'pending'`),
   }),
 );
 
