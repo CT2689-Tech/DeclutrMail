@@ -32,6 +32,7 @@ import {
   KpiStrip,
   WeeklyProgress,
   groupByIntent,
+  intentOf,
   INTENT_META,
   type SenderIntent,
 } from './uplift-d';
@@ -246,8 +247,15 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
 
   // Hero CTA opens the review session over the senders the engine
   // wants to clean up — same Wave-1 review primitive, new entry point.
+  //
+  // Filter via `intentOf()` (NOT the raw `lastReview.verdict`) so the
+  // X2 confidence gate is honored end-to-end: low-confidence
+  // `unsubscribe` verdicts that get suppressed from the Cleanup bucket
+  // also stay out of the hero CTA's review slice. Per Codex review of
+  // PR #82 (finding #4) — the gate previously affected `groupByIntent`
+  // only, leaving the hero + KPI totals counting raw verdicts.
   const onStartReview = useCallback(() => {
-    const cleanup = senders.filter((s) => s.lastReview?.verdict === 'unsubscribe');
+    const cleanup = senders.filter((s) => intentOf(s) === 'cleanup');
     if (cleanup.length === 0) {
       toast('No cleanup recommendations right now — your inbox is in shape.', 'info');
       return;
@@ -475,7 +483,11 @@ function computeTotals(senders: Sender[]): SenderTotals {
   const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
   const avgReadPct = totalMonthly === 0 ? 0 : Math.round((totalRead / totalMonthly) * 100);
   const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
-  const cleanupSenders = senders.filter((s) => s.lastReview?.verdict === 'unsubscribe');
+  // `intentOf()` honors the X2 confidence gate (and protect-wins) — the
+  // raw `verdict === 'unsubscribe'` check would surface low-confidence
+  // recommendations the user shouldn't act on, contradicting the
+  // Cleanup-bucket suppression. Codex finding #4 on PR #82.
+  const cleanupSenders = senders.filter((s) => intentOf(s) === 'cleanup');
   const cleanupMonthly = cleanupSenders.reduce((a, s) => a + s.monthly, 0);
   const noiseReductionPct =
     totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
