@@ -187,6 +187,17 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
       };
     },
   },
+  /**
+   * Newsletter graveyard — recently dormant low-engagement senders.
+   *
+   * Bounded to the (90, 180] day window per Codex review of PR #65
+   * (finding #2): the prior `lastSeenDaysAgo > 90` predicate overlapped
+   * `long_dormant_unsubscribe`'s `> 180` predicate, so a sender at
+   * 200d w/ low read rate fired BOTH presets and produced TWO
+   * unsubscribe-match rows from a single sweep. The window is now
+   * disjoint — this preset covers the first dormancy tier; the
+   * long-dormant preset takes over past 180d.
+   */
   newsletter_graveyard: {
     defaultName: 'Newsletter graveyard',
     actionKind: 'unsubscribe',
@@ -195,12 +206,17 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     match: ({ signals }) => {
       if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 90) return { matched: false, reason: '' };
+      if (signals.lastSeenDaysAgo > 180) return { matched: false, reason: '' };
       return {
         matched: true,
         reason: `Read rate ${pctOf(signals.readRate90d)}%, last seen ${signals.lastSeenDaysAgo}d ago`,
       };
     },
   },
+  /**
+   * Long-dormant unsubscribe — senders past the 180d threshold the
+   * `newsletter_graveyard` preset stops at. Disjoint by construction.
+   */
   long_dormant_unsubscribe: {
     defaultName: 'Long-dormant unsubscribe',
     actionKind: 'unsubscribe',

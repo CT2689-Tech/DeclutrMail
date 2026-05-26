@@ -172,6 +172,36 @@ describe('AUTOPILOT_PRESETS', () => {
         AUTOPILOT_PRESETS.long_dormant_unsubscribe.match(input(signals, null), null).matched,
       ).toBe(false);
     });
+
+    it('disjoint windows — past 180d, only long_dormant matches (no double-fire)', () => {
+      // Per Codex review of PR #65 (finding #2): the prior implementation
+      // had newsletter_graveyard matching `> 90d` AND long_dormant matching
+      // `> 180d`, so at 200d both fired → two unsubscribe-match rows for
+      // the same sender. The (90, 180] bound on newsletter_graveyard makes
+      // the two windows disjoint by construction.
+      const signals = { readRate90d: 0.01, lastSeenDaysAgo: 200 };
+      expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
+        false,
+      );
+      expect(
+        AUTOPILOT_PRESETS.long_dormant_unsubscribe.match(input(signals, null), null).matched,
+      ).toBe(true);
+    });
+
+    it('newsletter_graveyard upper bound — does NOT match at lastSeenDaysAgo=181', () => {
+      // Boundary test: 180 inclusive (matches), 181 exclusive (no match).
+      const signals = { readRate90d: 0.02, lastSeenDaysAgo: 181 };
+      expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
+        false,
+      );
+    });
+
+    it('newsletter_graveyard upper bound — DOES match at lastSeenDaysAgo=180 (inclusive)', () => {
+      const signals = { readRate90d: 0.02, lastSeenDaysAgo: 180 };
+      expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(input(signals, null), null).matched).toBe(
+        true,
+      );
+    });
   });
 
   describe('preset metadata', () => {
