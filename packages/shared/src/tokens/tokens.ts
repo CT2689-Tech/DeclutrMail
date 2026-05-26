@@ -39,6 +39,28 @@ export const color = {
   red: '#B91C1C',
   redBg: 'rgba(220,38,38,0.06)',
   redBorder: 'rgba(220,38,38,0.25)',
+
+  /**
+   * Dashboard-surface palette extension per ADR-0009 (amends D2).
+   *
+   * SCOPE: Senders, Activity, Brief, future Insights surfaces ONLY.
+   * Use violet for live/active affordances + filter-chip active state.
+   *
+   * FORBIDDEN everywhere: violet on action buttons (Keep / Archive /
+   * Unsubscribe / Later — D227), on trust affordances (D7 / D228), on
+   * recommendation tones (D26 / D31), or on any non-dashboard surface
+   * (Triage / Onboarding / Settings / Billing / marketing).
+   *
+   * Consumer convention: files importing `color.dashboard.*` must
+   * include the ADR-0009 file-header comment block. An ESLint guardrail
+   * scoping these imports to apps/web/src/features/{senders,activity,brief}/**
+   * is tracked in FOUNDER-FOLLOWUPS.md (2026-05-25 entry).
+   */
+  dashboard: {
+    accent: '#7C3AED',
+    accentSoft: 'rgba(124, 58, 237, 0.10)',
+    accentBorder: 'rgba(124, 58, 237, 0.20)',
+  },
 } as const;
 
 export const font = {
