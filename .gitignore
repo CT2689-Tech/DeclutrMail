@@ -54,3 +54,11 @@ test-results/
 
 # Local dev runtime — pidfiles + tailed logs from scripts/dev-up.sh
 .local-logs/
+
+# Sender classification eval set — contains real sender domains from
+# dev mailbox. Per ADR-0004 + D7, sender identity stays local. Regenerate
+# locally via:
+#   PGPASSWORD=postgres psql -h localhost -U postgres -d declutrmail \
+#     -P pager=off -f docs/eval/regenerate-eval-set.sql \
+#     > docs/eval/sender-classification-eval-set.csv
+docs/eval/sender-classification-eval-set.csv
