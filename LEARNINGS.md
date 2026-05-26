@@ -20,6 +20,78 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-26 — Reviewer model staleness — verify model IDs against live docs
+
+**Context:** Codex review of PR #77 flagged `claude-haiku-4-5` as an
+invalid Anthropic model id, suggesting `claude-3-5-haiku-20241022`
+as the "current" one. Verified via context7 against the official
+Anthropic Claude API model catalog — `claude-haiku-4-5` is the
+correct bare alias (Haiku 4.5 shipped 2025-10-01); the Codex
+suggestion was an older Haiku 3.5 id.
+
+**Finding:** Reviewer training data lags behind model releases. An
+LLM reviewer that confidently cites a "canonical" model id can be
+months stale. The cost of accepting the false-positive is shipping a
+working model id labeled "broken" — or worse, swapping in the older
+id Codex suggested and breaking the live call path silently
+(`claude-3-5-haiku-20241022` would route to a deprecated model).
+
+**Rule (provisional):** When a reviewer flags a model id / SDK
+version / library API, ALWAYS verify against live docs via context7
+before changing the code. Pin the verification in the source
+comment with retrieval date + canonical-catalog URL so the next
+reviewer doesn't re-flag the same false positive.
+
+**Distillation trigger:** promote to CLAUDE.md §10 ("What NOT to do")
+as "do not change model ids based on reviewer claim — verify via
+live docs first" if pattern recurs ≥3 times across reviews.
+
+## 2026-05-26 — `as const satisfies T` is the canonical exhaustiveness pattern
+
+**Context:** Codex review of PR #78 flagged that `EVENT_SCHEMAS`
+declared itself "exhaustive" in its doc comment but the actual
+declaration was only `as const` — no `satisfies` clause. Adding a
+new topic to `TOPICS` without a schema entry would compile clean and
+only fail at the runtime parity test.
+
+**Finding:** Two patterns look interchangeable but aren't:
+  - `as const` alone — preserves literal-keyed lookup type but
+    skips shape check entirely
+  - `: Record<EventTopic, ZodSchema>` annotation — enforces shape
+    but widens away the literal keys, breaking downstream lookups
+  - `as const satisfies Record<EventTopic, ZodSchema>` — both:
+    literal-keyed lookups preserved AND missing-key is a compile
+    error at the assignment site
+
+**Rule (provisional):** When mapping a closed set of enum/const
+keys to per-key values where downstream code does literal-keyed
+lookups, ALWAYS use `as const satisfies Record<KeySet, ValueType>`.
+Either alone is insufficient.
+
+**Distillation trigger:** promote to CLAUDE.md §1.2 (Simplicity
+first) as a typed-map pattern note if pattern recurs ≥3 times.
+
+## 2026-05-26 — `onConflictDoNothing` against a partial unique idx needs `target` + `where`
+
+**Context:** Adding ON CONFLICT DO NOTHING to the autopilot apply
+worker's match insert paired with a new partial unique index on
+`rule_match_log (rule_id, sender_key) WHERE resolution='pending'`.
+
+**Finding:** Drizzle's `.onConflictDoNothing({ target, where })`
+requires BOTH the column list AND the same predicate as the partial
+unique idx — Postgres uses both to identify which unique constraint
+backs the conflict clause. Without the `where`, the planner can't
+prove the ON CONFLICT specification corresponds to a unique index
+and the insert errors instead of suppressing. Mirrors the seeder
+pattern in `autopilot-preset-seeder.ts:78-80`.
+
+**Rule (provisional):** When pairing `onConflictDoNothing` with a
+partial unique index, the `where` clause MUST mirror the index
+predicate exactly.
+
+**Distillation trigger:** local pattern; promote to CLAUDE.md only
+if other partial-idx use sites appear and confuse contributors.
+
 ## 2026-05-25 — Cron workers iterating every mailbox need bounded fan-out from day 1
 
 **Context:** Three new cron workers shipped during the engine PR sweep
