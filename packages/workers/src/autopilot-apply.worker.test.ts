@@ -525,15 +525,28 @@ describe('AutopilotApplyWorker', () => {
     // rest pass through. Use a proxy that intercepts only `.insert()`
     // when targeting ruleMatchLog.
     let injected = false;
+    // The mock proxy synthesises a chain-aware insert builder so the
+    // worker's `.insert().values().onConflictDoNothing().returning()`
+    // chain (added per Codex finding #3) doesn't trip on a Promise
+    // returned mid-chain — the rejection must surface at the awaited
+    // terminus to be caught by the worker's per-rule try/catch.
     const dbWithFault = new Proxy(db as never as Record<string, unknown>, {
       get(target, prop, receiver) {
         if (prop === 'insert') {
           return (table: unknown) => {
             if (table === ruleMatchLog && !injected) {
               injected = true;
-              return {
-                values: () => Promise.reject(new Error('synthetic insert failure')),
+              const failingTerminus = Promise.reject(new Error('synthetic insert failure'));
+              // Pre-attach a no-op catch so the rejection isn't flagged
+              // as unhandled when the chain builder is evaluated but the
+              // returning() terminus hasn't been awaited yet.
+              failingTerminus.catch(() => {});
+              const chain = {
+                values: () => chain,
+                onConflictDoNothing: () => chain,
+                returning: () => failingTerminus,
               };
+              return chain;
             }
             const origInsert = Reflect.get(target, prop, receiver) as (t: unknown) => unknown;
             return origInsert.call(target, table);

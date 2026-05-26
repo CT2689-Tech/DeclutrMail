@@ -234,22 +234,46 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
 
         if (matchesForRule.length > 0) {
-          await this.deps.db.insert(ruleMatchLog).values(
-            matchesForRule.map((m) => ({
-              ruleId: rule.id,
-              mailboxAccountId,
-              senderKey: m.senderKey,
-              matchedAt: now,
-              modeAtMatch,
-              confidence: m.confidence.toFixed(2),
-              reason: m.reason,
-              intentApplied: false,
-              resolution,
-            })),
-          );
-          matchesWritten += matchesForRule.length;
-          if (modeAtMatch === 'observe') observeMatches += matchesForRule.length;
-          else activeMatches += matchesForRule.length;
+          // `onConflictDoNothing` is paired with the partial unique idx
+          // `rule_match_log_pending_dedup_uniq` on (rule_id, sender_key)
+          // WHERE resolution='pending' (see packages/db migration 0009).
+          // Re-runs of the same sweep — cron, manual rescore, retry —
+          // become idempotent for unresolved matches: a pending row
+          // already in the buffer for (rule, sender) suppresses the
+          // duplicate insert instead of flooding the suggestions UI.
+          // Per Codex review of PR #65 (finding #3).
+          //
+          // The `target` + `where` clauses MUST mirror the partial idx
+          // exactly — Postgres uses both to identify which unique index
+          // backs the conflict clause. Active-mode inserts (resolution
+          // = 'approved') are unaffected: the partial idx skips them,
+          // so the ON CONFLICT clause is a no-op for those rows.
+          const inserted = await this.deps.db
+            .insert(ruleMatchLog)
+            .values(
+              matchesForRule.map((m) => ({
+                ruleId: rule.id,
+                mailboxAccountId,
+                senderKey: m.senderKey,
+                matchedAt: now,
+                modeAtMatch,
+                confidence: m.confidence.toFixed(2),
+                reason: m.reason,
+                intentApplied: false,
+                resolution,
+              })),
+            )
+            .onConflictDoNothing({
+              target: [ruleMatchLog.ruleId, ruleMatchLog.senderKey],
+              where: sql`${ruleMatchLog.resolution} = 'pending'`,
+            })
+            .returning({ id: ruleMatchLog.id });
+          // Counters reflect ACTUAL inserts so observability can spot a
+          // re-run pattern (matchesForRule.length kept growing but
+          // matchesWritten flatlined → dedup is firing).
+          matchesWritten += inserted.length;
+          if (modeAtMatch === 'observe') observeMatches += inserted.length;
+          else activeMatches += inserted.length;
         }
 
         // Update D101 inline-summary fields once per rule, even when zero
