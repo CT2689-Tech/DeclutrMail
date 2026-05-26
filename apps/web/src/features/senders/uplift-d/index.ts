@@ -23,3 +23,6 @@ export type { InboxStoryHeroProps } from './inbox-story-hero';
 
 export { DecisionTimeline } from './decision-timeline';
 export type { DecisionTimelineProps, TimelineItem } from './decision-timeline';
+
+export { WeeklyProgress } from './weekly-progress';
+export type { WeeklyProgressProps } from './weekly-progress';
