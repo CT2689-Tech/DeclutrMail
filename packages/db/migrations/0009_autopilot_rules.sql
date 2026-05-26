@@ -186,3 +186,11 @@ CREATE INDEX IF NOT EXISTS "rule_match_log_rule_matched_idx" ON "rule_match_log"
 --> statement-breakpoint
 -- atlas:nolint concurrent_index
 CREATE INDEX IF NOT EXISTS "rule_match_log_mailbox_matched_idx" ON "rule_match_log" USING btree ("mailbox_account_id", "matched_at");
+--> statement-breakpoint
+-- Partial unique index — paired with `ON CONFLICT DO NOTHING` in the
+-- apply worker so a re-run cannot spawn duplicate pending suggestions
+-- for the same (rule, sender). Approved/dismissed rows are excluded by
+-- the WHERE clause so the audit history can carry repeat matches over
+-- time. Per Codex review of PR #64/#65 (finding #3).
+-- atlas:nolint concurrent_index
+CREATE UNIQUE INDEX IF NOT EXISTS "rule_match_log_pending_dedup_uniq" ON "rule_match_log" USING btree ("rule_id", "sender_key") WHERE "resolution" = 'pending';
