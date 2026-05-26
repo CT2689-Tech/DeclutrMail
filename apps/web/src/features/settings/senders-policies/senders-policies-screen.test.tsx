@@ -98,6 +98,40 @@ describe('SendersPoliciesScreen', () => {
     await waitFor(() => expect(screen.getByText(/VIP section coming soon/i)).toBeInTheDocument());
   });
 
+  it('auto-fetches every page until hasMore=false (Codex finding #5)', async () => {
+    // The standing-policies screen MUST see every sender to surface
+    // every Protected one — a Protected sender on page 2 is otherwise
+    // invisible. Pin the multi-page traversal so a regression here
+    // (e.g. removing the auto-pagination useEffect) fails the build
+    // instead of silently dropping rows.
+    let pageRequests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          pageRequests += 1;
+          const cursor = url.searchParams.get('cursor');
+          if (cursor === 'page-2') {
+            return jsonOk({
+              data: [{ ...BASE_ROW, id: 'p2-a', displayName: 'Page2 Sender' }],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 100 } },
+            });
+          }
+          return jsonOk({
+            data: [{ ...BASE_ROW, id: 'p1-a', displayName: 'Page1 Sender' }],
+            meta: { pagination: { nextCursor: 'page-2', hasMore: true, limit: 100 } },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    // Wait until the auto-pagination has settled on both pages.
+    await waitFor(() => expect(pageRequests).toBeGreaterThanOrEqual(2));
+    // VIP placeholder still renders — header didn't crash on multi-page.
+    expect(screen.getByText(/VIP section coming soon/i)).toBeInTheDocument();
+  });
+
   it('renders the error state on 500', async () => {
     installFetchStub([
       {

@@ -23,7 +23,7 @@
 // another feature needs the same "Manage standing policies" pattern
 // (mobile settings, billing surface, etc.).
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Avatar, Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
 import { useSenders } from '@/features/senders/api/use-senders';
@@ -31,18 +31,56 @@ import { adaptSenderListRow } from '@/features/senders/api/adapters';
 import type { Sender } from '@/features/senders/data';
 import { ApiError } from '@/lib/api/client';
 
+/**
+ * Hard cap on auto-paginated page fetches. At the BE-clamped page size
+ * of 100 (per `senders.controller.ts` `clampLimit(LIST_LIMIT=100)`),
+ * 20 pages = 2000 senders — well above the 90th-percentile mailbox.
+ * If a mailbox ever exceeds this, the cap surfaces as a known truncation
+ * (visible because the bottom row count won't equal the BE total) and
+ * the dedicated `/api/senders?protected=true` endpoint becomes the
+ * proper fix (FOUNDER-FOLLOWUPS candidate — see PR #83 review thread).
+ */
+const MAX_AUTO_PAGES = 20;
+
 const { color, font, space, radius } = tokens;
 
 /**
  * Settings → Senders → standing policies view. Lists every sender
  * with a non-default disposition (Protected today; VIP pending wire).
+ *
+ * Pagination: this view MUST see every sender to surface every standing
+ * policy — a Protected sender on page 2 of the list endpoint is
+ * invisible to the user otherwise. The BE clamps `limit` to 100
+ * (per `senders.controller.ts` `clampLimit(LIST_LIMIT=100)`), so we
+ * auto-fetch every next page until `hasNextPage` flips false. Capped
+ * at `MAX_AUTO_PAGES` so a misbehaving cursor cannot infinite-loop.
+ * Per Codex review of PR #83 (finding #5) — the prior single-page
+ * fetch silently dropped protected senders beyond page 1.
+ *
+ * Longer term, a dedicated `/api/senders?protected=true` endpoint
+ * (BE follow-up) would remove the multi-fetch round-trip entirely.
  */
 export function SendersPoliciesScreen() {
-  const sendersQuery = useSenders({ limit: 200 });
+  // `limit: 100` matches the BE clamp — passing 200 was silently capped,
+  // which made the bug invisible to local testing on small mailboxes.
+  const sendersQuery = useSenders({ limit: 100 });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, data } = sendersQuery;
+
+  // Auto-fetch the rest of the pages on mount + whenever a fresh page
+  // resolves with `hasNextPage`. TanStack Query dedupes the request so
+  // a re-render while one is in flight is harmless. The page cap stops
+  // the loop on the rare mailbox that exceeds it.
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage) return;
+    const pageCount = data?.pages.length ?? 0;
+    if (pageCount >= MAX_AUTO_PAGES) return;
+    void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, data?.pages.length, fetchNextPage]);
+
   const allSenders = useMemo<Sender[]>(() => {
-    const pages = sendersQuery.data?.pages ?? [];
+    const pages = data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
-  }, [sendersQuery.data]);
+  }, [data]);
 
   const protectedSenders = useMemo(
     () =>
