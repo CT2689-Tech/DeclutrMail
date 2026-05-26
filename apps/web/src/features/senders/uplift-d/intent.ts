@@ -86,15 +86,47 @@ export const INTENT_META: Record<SenderIntent, IntentMeta> = {
 };
 
 /**
+ * Confidence threshold below which an engine verdict is treated as
+ * "not sure" — the sender stays in the catch-all bucket instead of
+ * surfacing as a Cleanup / Move-later recommendation the engine isn't
+ * confident about.
+ *
+ * Rationale (founder Q "if we are not sure about something, would we
+ * avoid surfacing recommended action?"): yes. Cascade Phase B
+ * (`insufficient_signal`) returns confidence 0.70; Phase C fallback
+ * (`score_inconclusive`) returns 0.60. Both fall below the 0.75 gate,
+ * so an unsure recommendation does NOT pressure the user — they see
+ * the sender unbucketed and decide cold.
+ *
+ * High-confidence Phase A rules (replied, gmail_primary, starred,
+ * high_read_rate) score 0.80-1.00 and pass the gate cleanly.
+ */
+export const ENGINE_CONFIDENCE_GATE = 0.75;
+
+/**
  * Bucket a single sender into its intent group. Returns 'people' when
- * the sender has no engine recommendation and is not protected — the
- * 'people' bucket is the catch-all middle. Pure function, no side
- * effects, deterministic on the input.
+ * the sender has no engine recommendation (or has one below the
+ * confidence gate) and is not protected — the 'people' bucket is the
+ * catch-all middle. Pure function, no side effects, deterministic on
+ * the input.
+ *
+ * Confidence handling: when `lastReview.confidence` is missing (older
+ * wire payloads — the field is optional per `SenderLastReview`), we
+ * default to 1.0 = full confidence, preserving the prior behavior. BE
+ * follow-up will populate the field from `triage_decisions.confidence`.
  */
 export function intentOf(s: Pick<Sender, 'lastReview' | 'protected'>): SenderIntent {
-  if (s.lastReview?.verdict === 'unsubscribe') return 'cleanup';
-  if (s.lastReview?.verdict === 'archive') return 'later';
+  // Protected always wins — user-pinned standing policy beats any
+  // engine recommendation.
   if (s.protected === true) return 'protect';
+
+  // Confidence gate: low-confidence verdicts are NOT surfaced as
+  // action buckets. Sender stays in catch-all so user decides cold.
+  const confidence = s.lastReview?.confidence ?? 1.0;
+  const verdict = confidence >= ENGINE_CONFIDENCE_GATE ? s.lastReview?.verdict : undefined;
+
+  if (verdict === 'unsubscribe') return 'cleanup';
+  if (verdict === 'archive') return 'later';
   return 'people';
 }
 
