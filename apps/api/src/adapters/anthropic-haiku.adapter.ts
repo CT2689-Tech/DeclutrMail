@@ -40,6 +40,17 @@ import type { ReasoningInput, ReasoningLlmPort } from '@declutrmail/workers';
  * D62 — Anthropic Haiku 4.5. The bare alias auto-resolves to the
  * latest stable Haiku 4.5 release; date-suffixed IDs are reserved for
  * pinning when reproducibility matters (none of our use cases require it).
+ *
+ * Canonical model catalog (verified 2026-05-26):
+ *   https://platform.claude.com/docs/en/api/csharp/beta/messages → "Fast Models"
+ *   - claude-haiku-4-5             (bare alias, used here)
+ *   - claude-haiku-4-5-20251001    (pinned date, available if we ever
+ *                                    need reproducibility)
+ *
+ * NOTE for reviewers: an earlier review pass questioned this id against
+ * the older `claude-3-5-haiku-20241022` (Haiku 3.5, deprecated). Haiku
+ * 4.5 shipped 2025-10-01 — the 4-5 id is the current canonical Haiku.
+ * Re-verify against the URL above before flagging.
  */
 const HAIKU_MODEL_ID = 'claude-haiku-4-5';
 
