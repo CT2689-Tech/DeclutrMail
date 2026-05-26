@@ -1,0 +1,104 @@
+# Dependabot configuration (D178).
+#
+# Weekly batched updates across three ecosystems. Groups minor + patch
+# bumps into one PR per ecosystem per week so the founder sees ONE
+# review queue, not thirty. Majors stay split (one PR per major) so the
+# breaking-change review is explicit.
+#
+# Schedule: Monday 06:00 UTC — early enough for a same-day morning
+# review across most timezones; clear of the weekend code-freeze.
+#
+# Why no Snyk here:
+#   Snyk free tier requires an account + a SNYK_TOKEN secret + a
+#   GitHub Action wiring step. That's a founder follow-up (account
+#   creation + token storage) outside this PR's scope. See the PR
+#   body for the carry-over note.
+#
+# Why no labels block:
+#   The repo doesn't have a Dependabot labels convention yet; adding
+#   `labels: ['dependencies']` would 422 on PRs against an empty
+#   labels set. A second PR can land the labels-config + this block
+#   together when the founder establishes the convention.
+
+version: 2
+updates:
+  # ─── npm / pnpm — root workspace covers every package/app ──────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    commit-message:
+      # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
+      # PR out of the feat/fix release-notes ladder.
+      prefix: chore
+      include: scope
+    groups:
+      # One PR per week for everything minor/patch — keeps reviewer
+      # load to a single grouped diff.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+      # Security updates always grouped, regardless of bump kind.
+      security:
+        applies-to: security-updates
+        update-types:
+          - patch
+          - minor
+          - major
+    # Stay off the floor of D173's stack — Dependabot can't reason
+    # about peer-dep edges across the pnpm workspace and will trip on
+    # NestJS / Drizzle major bumps. Surface them as advisory PRs but
+    # keep them out of the auto-merge candidate set when that lands.
+    ignore:
+      # Drizzle is pre-1.0 and breaks contract semantics on each minor
+      # bump; we pin in package.json and bump deliberately.
+      - dependency-name: drizzle-orm
+        update-types: [version-update:semver-major]
+      - dependency-name: drizzle-kit
+        update-types: [version-update:semver-major]
+      # NestJS major bumps require a coordinated app-level migration.
+      - dependency-name: '@nestjs/*'
+        update-types: [version-update:semver-major]
+      # Next.js major bumps are a coordinated FE migration (App Router /
+      # React versions / Turbopack defaults change between majors).
+      - dependency-name: next
+        update-types: [version-update:semver-major]
+
+  # ─── GitHub Actions — pinned-by-version Actions in .github/workflows ─
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+
+  # ─── Docker — docker-compose.yml (local Redis sidecar) ─────────────
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: chore
+      include: scope
