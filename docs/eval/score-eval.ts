@@ -40,8 +40,16 @@ interface EvalRow {
   display_name: string;
   domain: string;
   signals: SenderSignals;
-  desired_action: string;
+  /**
+   * Effective label = `desired_action` when present (human override),
+   * else `auto_action` from the Tier A rules (see auto-label.ts).
+   * Empty means the row is skipped.
+   */
+  effective_label: string;
+  /** Where the effective label came from. */
+  label_source: 'manual' | 'auto' | 'none';
   desired_reason: string;
+  auto_reason: string;
   notes: string;
 }
 
@@ -146,23 +154,43 @@ function main(): number {
   const text = readFileSync(CSV_PATH, 'utf8');
   const raw = parseCsv(text);
 
-  const rows: EvalRow[] = raw.map((r) => ({
-    sample_band: r.sample_band ?? '',
-    display_name: r.display_name ?? '',
-    domain: r.domain ?? '',
-    signals: rowToSignals(r),
-    desired_action: (r.desired_action ?? '').trim().toLowerCase(),
-    desired_reason: (r.desired_reason ?? '').trim(),
-    notes: (r.notes ?? '').trim(),
-  }));
+  const rows: EvalRow[] = raw.map((r) => {
+    const desired = (r.desired_action ?? '').trim().toLowerCase();
+    const auto = (r.auto_action ?? '').trim().toLowerCase();
+    let effective_label = '';
+    let label_source: EvalRow['label_source'] = 'none';
+    if (BUCKETS.has(desired as Bucket)) {
+      effective_label = desired;
+      label_source = 'manual';
+    } else if (BUCKETS.has(auto as Bucket)) {
+      effective_label = auto;
+      label_source = 'auto';
+    }
+    return {
+      sample_band: r.sample_band ?? '',
+      display_name: r.display_name ?? '',
+      domain: r.domain ?? '',
+      signals: rowToSignals(r),
+      effective_label,
+      label_source,
+      desired_reason: (r.desired_reason ?? '').trim(),
+      auto_reason: (r.auto_reason ?? '').trim(),
+      notes: (r.notes ?? '').trim(),
+    };
+  });
 
-  const labeled = rows.filter((r) => BUCKETS.has(r.desired_action as Bucket));
+  const labeled = rows.filter((r) => BUCKETS.has(r.effective_label as Bucket));
   if (labeled.length === 0) {
     console.error(
-      `No labeled rows found in ${CSV_PATH}. Fill the desired_action column with one of: people / cleanup / engaged / watching.`,
+      `No labeled rows found in ${CSV_PATH}.\n` +
+        `Run \`pnpm tsx docs/eval/auto-label.ts\` first to auto-label via Tier A rules,\n` +
+        `OR fill the desired_action column manually with one of: people / cleanup / engaged / watching.`,
     );
     return 2;
   }
+
+  const manualCount = labeled.filter((r) => r.label_source === 'manual').length;
+  const autoCount = labeled.filter((r) => r.label_source === 'auto').length;
 
   let agree = 0;
   const mismatches: Array<{
@@ -186,7 +214,7 @@ function main(): number {
   for (const row of labeled) {
     const result = runCascade(row.signals);
     const got = cascadeToBucket(result.verdict, result.ruleId);
-    const desired = row.desired_action as Bucket;
+    const desired = row.effective_label as Bucket;
     if (got === desired) {
       agree++;
       byBucketAgreement[desired].hit++;
@@ -200,7 +228,10 @@ function main(): number {
         ruleId: result.ruleId,
         confidence: result.confidence,
         signals: row.signals,
-        reason: row.desired_reason,
+        reason:
+          row.label_source === 'manual'
+            ? row.desired_reason
+            : `auto: ${row.auto_reason || '(no reason)'}`,
       });
     }
   }
@@ -212,6 +243,7 @@ function main(): number {
   console.log(
     `Labeled rows:  ${labeled.length} of ${rows.length} (${rows.length - labeled.length} unlabeled, skipped)`,
   );
+  console.log(`Label source:  ${manualCount} manual override · ${autoCount} auto (Tier A rules)`);
   console.log(`Agreement:     ${agree} / ${labeled.length} = ${accuracyPct}%`);
   console.log(`Target:        ${TARGET_ACCURACY_PCT}%`);
   console.log('');
