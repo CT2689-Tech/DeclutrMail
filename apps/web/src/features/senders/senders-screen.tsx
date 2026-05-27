@@ -1,7 +1,7 @@
 'use client';
 
 import type { MouseEvent } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import {
   canArchive,
@@ -115,6 +115,26 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
   // timezone"). The single in-flight fetch is cheap and keeps the
   // cache warm so a same-week revisit is instant.
   const heroQuery = useWeeklyHero();
+
+  // D211/D212: a fetch failure must NOT be silently swallowed. Surface
+  // through structured `console.warn` (the observability seam picks it
+  // up downstream) so a Monday-morning hero outage is visible in logs
+  // even though the UI itself stays calm — we never block the senders
+  // list on the hero, which is a value-add card. The fallback render
+  // below shows a single-line inline notice on Mondays so the user
+  // knows the slot is "loading failed" rather than "you have nothing
+  // to review".
+  useEffect(() => {
+    if (heroQuery.error) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'senders.weekly_hero.fetch_failed',
+          message: heroQuery.error.message,
+        }),
+      );
+    }
+  }, [heroQuery.error]);
 
   const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
