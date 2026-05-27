@@ -138,7 +138,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | ⬜ |  |  |  |
 | D85 | Priority: **Thread age only | ⬜ |  |  |  |
 | D86 | Exclusion rules: **Filter out non-followup-worthy threads | ⬜ |  |  |  |
-| D87 | Schema: **followup_tracker denormalized table | ⬜ |  |  |  |
+| D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
 | D88 | User dismissal: **"Mark resolved" affordance per row | ⬜ |  |  |  |
 | D89 | Pro gating | ⬜ |  |  |  |
 | D90 | Followups screen layout | ⬜ |  |  |  |
