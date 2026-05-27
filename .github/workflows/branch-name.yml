@@ -13,6 +13,12 @@ jobs:
     name: Branch follows CLAUDE.md §6 convention
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    # Dependabot picks its own branch names (`dependabot/<ecosystem>/...`).
+    # The §6 convention is about traceability between D-decisions and
+    # human-authored work — dependency bumps have no D-tie by design, so
+    # exempt the bot rather than rename its branches. The substantive
+    # gates (Typecheck / Lint / Test) still run.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Validate branch name
         env:
@@ -62,6 +68,10 @@ jobs:
     name: PR body references D-decisions or is bootstrap-exempt
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    # Dependabot bodies are auto-generated changelog dumps with no
+    # `Closes D###` trailer — same reasoning as the branch-name job
+    # above: exempt the bot, not rename its convention.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - name: Check body
         env:
