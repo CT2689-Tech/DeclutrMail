@@ -21,6 +21,53 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-27 — Raw `sql\`\`` template interpolation of a JS `Date` failed Bind on postgres-js@3.4.9 / Node v24
+
+**PR:** [#117](https://github.com/CT2689-Tech/DeclutrMail/pull/117) — `fix(workers): serialise Date params in raw sql templates (D86)`
+**Caught by:** founder (manual `dev-populate` run against real Postgres
+surfaced `followup.mailbox_failed` for every mailbox; CI was green
+because the test driver doesn't reproduce the bug).
+**What happened:** [packages/workers/src/followup-check.worker.ts:246](packages/workers/src/followup-check.worker.ts:246)
+interpolated `lookbackCutoff` (a `Date`) directly into a `sql\`\`` template:
+```ts
+AND internal_date > ${lookbackCutoff}
+```
+On the production driver (`postgres@3.4.9`, Node v24) Bind tried
+`Buffer.byteLength(Date)` and threw `ERR_INVALID_ARG_TYPE`. The
+per-mailbox try/catch swallowed it into a structured
+`followup.mailbox_failed` log, so the whole sweep ran to completion
+reporting `mailboxesFailed: N`, `awaitingUpserted: 0` — silently empty.
+**Why CI didn't catch it:** the followup-check vitest suite uses
+[PGlite](packages/workers/src/followup-check.worker.test.ts:4) as the
+test driver. PGlite serialises a JS `Date` to a timestamp parameter
+without complaint, so the fixed and broken code both passed all 10
+existing integration tests. The bug only manifests against the real
+postgres-js bind path.
+**Correct approach:** Convert dates explicitly before passing them
+through raw `sql\`\`` template literals — `${cutoff.toISOString()}`. The
+ISO-8601 string casts losslessly into `timestamptz` and is unambiguous
+across drivers. Drizzle's typed comparators (`gte()`, `lt()`, etc.)
+auto-serialise, so a builder-style rewrite is an alternative; the raw
+template stays whenever the SQL needs DISTINCT ON / CTEs that the
+builder can't express ergonomically.
+**Rule:** In any raw `sql\`\`` template (workers OR services), do NOT
+interpolate `Date` / `BigInt` / typed wrapper values directly. Convert
+to the corresponding canonical string form (`.toISOString()` for dates,
+`.toString()` for bigints) before interpolation, OR switch to the
+Drizzle typed comparator if the SQL allows it.
+**Enforcement update:**
+- 1-line fix shipped + explanatory comment at the call site naming the
+  driver version and node version so the next developer doesn't have to
+  rediscover the trap.
+- Until D182 (testcontainers) lands, the regression isn't catchable in
+  CI. Once we have a `@testcontainers/postgresql` fixture, every raw
+  template in workers / services should run through it; until then,
+  the only safety net is reviewer eyeballs + this rule.
+- Add `silent-failure-hunter` prompt rule: flag any per-iteration
+  try/catch that only logs structured + swallows when the loop drives
+  externally-observable side effects (the followup sweep silently
+  reported empty for every mailbox).
+
 ## 2026-05-27 — `testTimeout: 30s` set but `hookTimeout` left at default 10s — PGlite 0.4 bump tipped CI red
 
 **PR:** [#97](https://github.com/CT2689-Tech/DeclutrMail/pull/97)
