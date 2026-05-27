@@ -221,10 +221,19 @@ async function bootstrap(): Promise<void> {
    * throws — it returns `null` on any failure per the `ReasoningLlmPort`
    * contract, which the worker treats as "use the template".
    *
-   * Policy `perMailboxPolicy` (D203/D225): per-mailbox concurrency=1 is
-   * enforced by the BullMQ jobId = `${mailboxAccountId}:${senderKey}` /
-   * `${mailboxAccountId}:full` dedup. The outer `concurrency: 20` is the
-   * global cap across distinct mailboxes.
+   * Policy `perMailboxPolicy` (D203/D225). BullMQ `jobId` dedup is
+   * exact-string match: the producer's
+   * `${mailboxAccountId}:${senderKey}:${producedAtMs}` key changes per
+   * trigger event, so distinct trigger events for the same (mailbox,
+   * sender) produce different jobs that this consumer CAN run in
+   * parallel under the global `concurrency: 20` cap. True per-mailbox
+   * concurrency=1 is not enforced at the consumer here; instead
+   * `ScoreWorker`'s upsert is monotonic (`ON CONFLICT DO UPDATE …
+   * WHERE existing.produced_at < new.produced_at`), so an older job
+   * that finishes after a newer one is a no-op at the DB layer.
+   * That keeps `triage_decisions` race-correct without sacrificing
+   * cross-mailbox throughput — distinct mailboxes still run in
+   * parallel under the outer cap.
    */
   const reasoningLlm = process.env.ANTHROPIC_API_KEY
     ? new AnthropicHaikuAdapter({
