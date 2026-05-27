@@ -9,6 +9,7 @@ import { FollowupModule } from './followups/followup.module.js';
 import { GoogleOAuthModule } from './auth/google-oauth.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
 import { SendersModule } from './senders/senders.module.js';
+import { TriageModule } from './triage/triage.module.js';
 import { UndoModule } from './undo/undo.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 
@@ -56,6 +57,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     RateLimitModule,
     UndoModule,
     SendersModule,
+    TriageModule,
     AutopilotModule,
     BriefModule,
     FollowupModule,

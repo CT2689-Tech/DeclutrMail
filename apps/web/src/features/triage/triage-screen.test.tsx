@@ -15,7 +15,12 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, TRIAGE_SESSION_STATS_FREE } from './data';
+import {
+  TRIAGE_QUEUE,
+  TRIAGE_SESSION_STATS,
+  TRIAGE_SESSION_STATS_FREE,
+  TRIAGE_SESSION_STATS_PRO,
+} from './data';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
@@ -83,7 +88,7 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).toContain('Come back tomorrow');
   });
 
-  it('surfaces the upgrade nudge only when freeRemaining <= 5', () => {
+  it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
     const free = renderToStaticMarkup(
       <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE }} />,
     );
@@ -94,6 +99,56 @@ describe('TriageScreen — empty / loading branches', () => {
       <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
     );
     expect(paid).not.toContain('See Plus');
+  });
+
+  it('surfaces the Pro nudge for Plus users only — single soft link (D33)', () => {
+    // Plus user → soft "Pro could do this for you automatically" link.
+    const plus = renderToStaticMarkup(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
+    );
+    expect(plus).toContain('Pro could do this for you automatically');
+
+    // Free user → Plus banner only; NO Pro link (the funnel is
+    // Free → Plus → Pro, not Free → Pro).
+    const free = renderToStaticMarkup(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE }} />,
+    );
+    expect(free).not.toContain('Pro could do this for you automatically');
+
+    // Pro user → no nudge at all (D33 explicit: hidden for Pro).
+    const pro = renderToStaticMarkup(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO }} />,
+    );
+    expect(pro).not.toContain('Pro could do this for you automatically');
+    expect(pro).not.toContain('See Plus');
+  });
+
+  it('renders the estimated impact projection when the user decided something today (D33)', () => {
+    const html = renderToStaticMarkup(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
+    );
+    expect(html).toContain('Estimated impact');
+    expect(html).toContain('future emails will skip your inbox');
+    expect(html).toContain('min/week saved on email triage');
+    // The actual numbers from the fixture surface.
+    expect(html).toContain(String(TRIAGE_SESSION_STATS.futureEmailsSkipped));
+    expect(html).toContain(String(TRIAGE_SESSION_STATS.minutesSavedPerWeek));
+  });
+
+  it('hides the impact card when the user decided nothing today (no hollow brag)', () => {
+    const empty = {
+      decidedToday: 0,
+      archivedToday: 0,
+      unsubscribedToday: 0,
+      laterToday: 0,
+      streakDays: 0,
+      freeRemaining: null,
+      futureEmailsSkipped: 0,
+      minutesSavedPerWeek: 0,
+      tier: 'plus' as const,
+    };
+    const html = renderToStaticMarkup(<TriageScreen state={{ kind: 'empty', stats: empty }} />);
+    expect(html).not.toContain('Estimated impact');
   });
 
   it('renders the skeleton when state.kind=loading', () => {
