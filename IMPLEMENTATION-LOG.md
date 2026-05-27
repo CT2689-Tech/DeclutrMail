@@ -81,7 +81,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
-| D30 | Queue size: **Adaptive 5–12 based on inbox activity | ⬜ |  |  |  |
+| D30 | Queue size: **Adaptive 5–12 based on inbox activity | 🔵 | #112 |  |  |
 | D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🟢 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis |  |
 | D32 | No bulk operations in Triage | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted |  |
 | D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge |  |
