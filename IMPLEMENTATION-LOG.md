@@ -120,7 +120,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | VIP in Brief: **Inline ⭐ star on Reply rows | ⬜ |  |  |  |
 | D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | ⬜ |  |  |  |
-| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | ⬜ |  |  |  |
+| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🔵 | #74 |  |  |
 | D70 | Brief empty state: **Calm message when no email yesterday | ⬜ |  |  |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | ⬜ |  |  |  |
