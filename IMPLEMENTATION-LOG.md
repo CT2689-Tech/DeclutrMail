@@ -141,8 +141,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
 | D88 | User dismissal: **"Mark resolved" affordance per row | 🔵 | #106 |  |  |
 | D89 | Pro gating | ⬜ |  |  |  |
-| D90 | Followups screen layout | ⬜ |  |  |  |
-| D91 | Followups empty state | ⬜ |  |  |  |
+| D90 | Followups screen layout | 🔵 | #111 |  |  |
+| D91 | Followups empty state | 🔵 | #111 |  |  |
 | D92 | Trigger: **Both manual toggle + scheduled recurring windows | ⬜ |  |  |  |
 | D93 | Non-essential rule: **Non-VIP AND not active correspondent (smart) | ⬜ |  |  |  |
 | D94 | Restoration: **Trickle over 10 minutes when quiet ends | ⬜ |  |  |  |
