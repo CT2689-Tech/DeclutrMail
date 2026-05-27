@@ -63,7 +63,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
-| D12 | sender_key formula: **sha256("v1|" + normalized_email) | ⬜ |  |  |  |
+| D12 | sender_key formula: **sha256("v1|" + normalized_email) | 🔵 | #48 |  |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🔵 | #53 |  |  |
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🟢 | #16 | apps/api/src/auth/token-crypto.service.spec.ts (4/4 incl tamper + uniqueness) |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
@@ -82,12 +82,12 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
 | D30 | Queue size: **Adaptive 5–12 based on inbox activity | ⬜ |  |  |  |
-| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | ⬜ |  |  |  |
-| D32 | No bulk operations in Triage | ⬜ |  |  |  |
-| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | ⬜ |  |  |  |
-| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | ⬜ |  |  |  |
+| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🔵 | #44 |  |  |
+| D32 | No bulk operations in Triage | 🔵 | #44 |  |  |
+| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🔵 | #44 |  |  |
+| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 |  |  |
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🔵 | #33 |  |  |
-| D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | ⬜ |  |  |  |
+| D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 |  |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #12 |  |  |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🔵 | #30 |  |  |
@@ -113,15 +113,15 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
 | D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🔵 | #102 |  |  |
-| D62 | Brief AI: **Haiku LLM with deterministic template fallback | ⬜ |  |  |  |
-| D63 | Brief categories: **3 sections (Reply / FYI / Noise) | ⬜ |  |  |  |
+| D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🔵 | #77 |  |  |
+| D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🔵 | #102 |  |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | ⬜ |  |  |  |
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
-| D67 | VIP in Brief: **Inline ⭐ star on Reply rows | ⬜ |  |  |  |
+| D67 | VIP in Brief: **Inline ⭐ star on Reply rows | 🔵 | #102 |  |  |
 | D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | ⬜ |  |  |  |
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🔵 | #74 |  |  |
-| D70 | Brief empty state: **Calm message when no email yesterday | ⬜ |  |  |  |
+| D70 | Brief empty state: **Calm message when no email yesterday | 🔵 | #102 |  |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | ⬜ |  |  |  |
 | D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | ⬜ |  |  |  |
@@ -136,8 +136,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
 | D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🔵 | #105 |  |  |
-| D85 | Priority: **Thread age only | ⬜ |  |  |  |
-| D86 | Exclusion rules: **Filter out non-followup-worthy threads | ⬜ |  |  |  |
+| D85 | Priority: **Thread age only | 🔵 | #105 |  |  |
+| D86 | Exclusion rules: **Filter out non-followup-worthy threads | 🔵 | #105 |  |  |
 | D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
 | D88 | User dismissal: **"Mark resolved" affordance per row | 🔵 | #106 |  |  |
 | D89 | Pro gating | ⬜ |  |  |  |
@@ -152,11 +152,11 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D98 | Pro gating | ⬜ |  |  |  |
 | D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🔵 | #107 |  |  |
 | D100 | Condition vocabulary (sender-layer only per D22) | ⬜ |  |  |  |
-| D101 | Preset library at launch (5 rules) | ⬜ |  |  |  |
-| D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | ⬜ |  |  |  |
+| D101 | Preset library at launch (5 rules) | 🔵 | #107 |  |  |
+| D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | 🔵 | #108 |  |  |
 | D103 | Custom rule builder UI | ⬜ |  |  |  |
-| D104 | Observe mode UI (per D10) | ⬜ |  |  |  |
-| D105 | Autopilot pause | ⬜ |  |  |  |
+| D104 | Observe mode UI (per D10) | 🔵 | #108 |  |  |
+| D105 | Autopilot pause | 🔵 | #108 |  |  |
 | D106 | Onboarding 5-step structure | ⬜ |  |  |  |
 | D107 | Step 1: Promise screen content | ⬜ |  |  |  |
 | D108 | Step 2: Connect (OAuth) | ⬜ |  |  |  |
@@ -247,8 +247,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D193 | API service min_instances=1 from launch (updates D158, D161) | ⬜ |  |  |  |
 | D194 | Screener marketing-copy hard rule (lifts D72 rationale into enforceable rule) | ⬜ |  |  |  |
 | D195 | Worker scaling decoupled from billing webhook (updates D161) | ⬜ |  |  |  |
-| D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | ⬜ |  |  |  |
-| D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | ⬜ |  |  |  |
+| D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | 🔵 | #107 |  |  |
+| D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🔵 | #107 |  |  |
 | D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🔵 | #29 |  |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
 | D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🔵 | #29 |  |  |
@@ -259,7 +259,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | ⬜ |  |  |  |
-| D208 | "What happens next" preview mandatory before every automation or destructive action | ⬜ |  |  |  |
+| D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 |  |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
 | D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #51 |  |  |
@@ -277,7 +277,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D223 | Landing page primary headline (locks tentative) | ⬜ |  |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🔵 | #38 |  |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
-| D226 | Action lifecycle ordering (resolves SC-1) | ⬜ |  |  |  |
+| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44 |  |  |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) |  |
 | D229 | Pub/Sub OIDC verification contract | 🔵 | #31 |  |  |
@@ -285,7 +285,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
 | D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33 |  |  |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
-| D234 | Custom-rule production API gated at `is_preset=false` | ⬜ |  |  |  |
+| D234 | Custom-rule production API gated at `is_preset=false` | 🔵 | #107 |  |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
 
 <!-- AUTO:DECISIONS:END -->
