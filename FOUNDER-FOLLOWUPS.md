@@ -26,6 +26,137 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
+**Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
+
+  - `apps/api/src/triage/triage.controller.ts:27` — `POST /score-sender` (enqueues a BullMQ score job; a single client can flood the worker queue without a limit)
+  - `apps/api/src/undo/undo.controller.ts:47` — `GET /undo` (tray sits on the chrome of every authenticated page)
+  - `apps/api/src/undo/undo.controller.ts:93` — `POST /undo/:token` (destructive revert surface — no rate limit)
+  - `apps/api/src/sync/sync.controller.ts:48` — `GET /v1/sync/status` (polled every 3s by `useSyncStatus()`; trivially escalatable to 100s/sec)
+
+**How:** Add `@RateLimit({ ... })` per route. Suggested caps:
+  - score-sender: `{ tokens: 60, refillPerSec: 1 }` (one new sender/sec is enough for any human interaction)
+  - undo GET: `{ tokens: 30, refillPerSec: 5 }` (page-load + a few re-fetches per minute)
+  - undo POST: `{ tokens: 20, refillPerSec: 0.5 }` (slow refill — undo is rare)
+  - sync status: `{ tokens: 30, refillPerSec: 1 }` (one poll/3s = 0.33/sec; 30-token bucket absorbs the page-load burst)
+
+Founder decision is which limits to pick; the values above are anchored to expected client behavior, not contractual.
+
+**Verifies by:** `rg -n "@RateLimit" apps/api/src/{triage,undo,sync}` returns 4 hits; the next weekly oracle's Check G reports clean.
+**Status:** Open
+
+### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check F
+**Why:** Both `POST /v1/triage/score-sender` ([apps/api/src/triage/triage.controller.ts:30](apps/api/src/triage/triage.controller.ts:30)) and the two `/v1/undo` routes ([apps/api/src/undo/undo.controller.ts:51](apps/api/src/undo/undo.controller.ts:51), [:93](apps/api/src/undo/undo.controller.ts:93)) hand-construct the `{ data, meta }` envelope inline. The shape is D202-compliant in spirit but diverges from the shared `ok()` / `Envelope<T>`-typed helper used by autopilot/briefs/followups/senders. Future helper changes (extra `meta` fields, version stamps, request-id propagation) will skip these three handlers silently.
+**How:** Replace each inline construction with `return ok(...)` from the shared envelope helper. Triage's `score-sender` is a single-field response (`{ idempotencyKey }`); undo's tray + revert each return small typed objects. Pure mechanical refactor, no contract change at the wire.
+**Verifies by:** `rg -n "return \{ data:" apps/api/src/{triage,undo}` returns no hits; existing route specs continue to pass.
+**Status:** Open
+
+### 2026-05-26 — ARCH-DRIFT: no end-to-end `Idempotency-Key` header support; repeat-dismiss returns 404 vs stored result (D202, D207)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check H
+**Why:** The `Idempotency-Key` HTTP header is whitelisted in CORS at [apps/api/src/main.ts:40](apps/api/src/main.ts:40) but NO mutation endpoint accepts it end-to-end. Today's substitutes are three different patterns:
+  - URL-param-as-key (`undo POST /:token` — atomic claim, well-documented)
+  - WHERE-clause guards yielding 404 on replay (`autopilot dismiss`, `followup dismiss`)
+  - Service-derived keys not exposed to client (`triage score-sender` — `${mailbox}:${sender}:${producedAt}`)
+
+The gap that bites users: `autopilot.controller.ts:159` and `followup.controller.ts:53` return **404** on repeat-dismiss instead of the stored prior result, so a client retrying a flaky network request cannot distinguish "I already dismissed this" from "this never existed". Per D202/D207's idempotency contract, a repeat key must return the stored result rather than re-executing.
+
+No `idempotency_records` table or 24h-TTL infrastructure exists yet — the full `Idempotency-Key` contract has nowhere to land.
+
+**How:** Two-phase plan, founder decision on sequencing:
+  - **Phase 1 (small):** for the two dismiss endpoints, change the 404-on-replay to a 200 with `{ data: { alreadyDismissed: true } }` so the client can render the success state on retry. No new infra. Loses the strict "stored result" guarantee but eliminates the user-visible flaky-network bug.
+  - **Phase 2 (full D207):** introduce `idempotency_records (key, request_hash, response_json, created_at, expires_at)` with a 24h TTL sweeper. Wire a NestJS interceptor that reads the header, hashes the request, and short-circuits with the stored response when the key + hash match. Apply to all current and future mutation endpoints. Likely should land alongside the action-consumer worker (which owns destructive Gmail mutations and is the highest-stakes idempotency surface).
+
+**Verifies by:** Phase 1: a `curl -X POST /v1/autopilot/dismiss/...` repeated yields 200 + `alreadyDismissed: true` on the second call. Phase 2: any mutation route with a repeated `Idempotency-Key` returns the byte-identical first response.
+**Status:** Open
+
+### 2026-05-27 — IMPL-LOG-DRIFT: 10 merged PRs cite D-numbers in title but omit `Closes` trailers
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
+**Why:** `pr-merged.yml` flips ⬜ → 🔵 ONLY for D-numbers explicitly listed via `Closes D###` in the PR body. PRs in the last 7 days have repeatedly cited multiple Ds in the title but a single `Closes` line in the body, so the un-cited Ds remain ⬜ even though the code shipped. This breaks the plan-integrity trace — `IMPLEMENTATION-LOG.md` is no longer an accurate map of what's merged. 14 distinct D-rows are stuck ⬜ across these merges (D12, D31, D32, D33, D34, D36, D62, D63, D67, D70, D85, D86, D101, D102, D104, D105, D196, D197, D208, D226, D234).
+**How:** Founder decision per PR — either (a) edit the merged PR body to add the missing `Closes` lines and rely on a future workflow re-run, or (b) open a manual `chore/distill-closes-trailers` PR that updates `IMPLEMENTATION-LOG.md` directly with PR-refs for the affected rows. Affected PRs (PR # — missing Ds that are still ⬜):
+
+  - #44 — D31, D32, D33, D34, D36, D208, D226
+  - #48 — D12
+  - #77 — D62
+  - #102 — D62, D63, D67, D70
+  - #105 — D85, D86
+  - #107 — D101, D196, D197, D234
+  - #108 — D101, D102, D104, D105
+  - #109 — D104, D105, D234
+
+  Trailer-only hygiene (Ds already flipped by sibling PRs, no row state to fix — fold into the same `chore/distill-closes-trailers` PR if convenient):
+
+  - #47 — D40 (flipped via #30)
+  - #50 — D200 (flipped via #29)
+  - #52 — D44 (flipped via #30)
+  - #103 — D69 (flipped via #74)
+  - #105 — D88 (flipped via #106)
+  - #102 — D69 (flipped via #74)
+
+  Per-PR body-edit form:
+  ```bash
+  gh pr edit <NN> --body "$(gh pr view <NN> --json body --jq .body)
+
+  Closes D###
+  Closes D###"
+  ```
+
+**Verifies by:** Each affected row in `IMPLEMENTATION-LOG.md` shows the originating PR # in the `PR` column and state 🔵 (or 🟢 after `pnpm verify-d`). `gh pr list --base main --state merged --search "merged:>2026-05-20"` re-checked → title-Ds ⊆ Closes-Ds for every PR.
+**Status:** Resolution in-flight via `chore/distill-closes-trailers` (this session) — 21 ⬜ rows flipped to 🔵 with originating PR refs in `IMPLEMENTATION-LOG.md`; 11 merged PR bodies (`#44, #47, #50, #52, #77, #102, #103, #105, #107, #108, #109`) edited via `gh pr edit` to add the missing `Closes D###` lines so future oracle sweeps stay clean. Will move to Done once the chore PR merges. Pending founder action: `pnpm verify-d D###` for each row to advance 🔵 → 🟢 when the implementation is actually verified (oracle does not run the verifier).
+
+### 2026-05-27 — IMPL-LOG-DRIFT: pr-merged.yml flip regex breaks on D-row titles containing `|`
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep) — discovered while patching D12 manually
+**Why:** `.github/workflows/pr-merged.yml`'s flip step uses `[^|]+` to capture the row title between the first and second `|` separators. D12's row title (`sender_key formula: **sha256("v1|" + normalized_email)`) contains a literal `|` inside `"v1|"`, so the regex stops short and the row never flips even when the PR body carries `Closes D12`. PR #48 shipped with the correct trailer; the flip silently no-op'd. This is a latent bug — any future D-row with `|` in the title will silently fail to flip and the only signal is the weekly oracle catching it as un-flipped.
+**How:** Patch the regex in `.github/workflows/pr-merged.yml` to anchor on the trailing `| ⬜ |` token rather than greedy-stopping at the first `|`:
+
+```python
+# replace
+pattern = re.compile(rf'^\| D{re.escape(num)} \| ([^|]+) \| ⬜ \|  \|(.*)$', re.MULTILINE)
+# with
+pattern = re.compile(rf'^\| D{re.escape(num)} \| (.+?) \| ⬜ \|  \|(.*)$', re.MULTILINE)
+```
+
+The non-greedy `.+?` paired with the explicit ` \| ⬜ \|` anchor matches the title regardless of embedded `|`. Add a regression line to whatever workflow test harness covers `pr-merged.yml` (or a fixture row with `|` in the title) so a future regression fires loudly.
+
+**Verifies by:** Create a throwaway branch, drop a row like `| D999 | foo |bar baz | ⬜ |  |  |  |` into `IMPLEMENTATION-LOG.md` in a test, run the python block locally with `PR_NUMBER=999` + `d_numbers=D999` → row flips to `🔵 | #999 |`.
+**Status:** Open
+
+### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
+**Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
+**How:** Pick one of two reinforcement options:
+  - **Option A (loosen the flipper):** edit `.github/workflows/pr-merged.yml` to harvest D-numbers from `pull_request.title` parens AS WELL AS `Closes` lines, then flip the union. Lower friction for authors; risk = flipping a D the author casually mentioned but didn't actually ship.
+  - **Option B (tighten the gate):** add a GH Action that runs on `pull_request.opened/edited` and fails if `set(D-refs in title) ⊄ set(D-refs in Closes lines)`. Forces authors to keep the two in sync; risk = friction on every multi-D PR.
+**Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
+**Status:** Open
+
+### 2026-05-26 — Hook-modification WARNING from weekly security-regression sweep
+
+**Source:** security-regression-oracle (scheduled task, 2026-05-26 sweep)
+**Why:** Task rule flags any `.claude/hooks/*.sh` change in the trailing
+7d as a `[WARNING]` for founder review. Two commits qualified:
+- `f063e7b` (PR #54, 2026-05-24) — `check-microcopy.sh`: exempt
+  `*.test.*` / `*.spec.*` from microcopy scan to fix R1 Stream E
+  false positives. Documented + has bash regression suite at
+  `.claude/hooks/test/check-microcopy.test.sh`.
+- `2743b6a` (PR #11, 2026-05-20) — `check-microcopy.sh` +
+  `require-preview-before-mutation.sh`: scope-glob fix for the
+  `packages/ui` → `packages/shared` rename (D173).
+
+Both were merged via founder-authored PRs with review notes; neither
+is silent drift. The sweep rule is conservative: it cannot tell a
+PR-mediated change from a tampered hook.
+**How:** (a) confirm these two changes match the PRs above and dismiss,
+or (b) tighten the oracle rule (`/Users/chintant/.claude/scheduled-tasks/declutrmail-security-regression-weekly/SKILL.md`
+Check 6) so it only warns on hook changes NOT introduced via a merged PR
+(e.g. compare commit author against `CT2689` or check merge-commit
+parentage). Option (b) prevents weekly false-positive noise.
+**Verifies by:** Next Sunday sweep either passes CLEAN (option b
+applied) or surfaces only new, un-reviewed hook changes (option a
+accepted as ongoing cost).
+**Status:** Open
+
 ### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
 
 **Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
