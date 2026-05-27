@@ -21,6 +21,31 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-26 — Outbox dispatcher pg_notify wake-up test flaked CI on main
+
+**PR:** chore/fix-outbox-pg-notify-test-flake
+**Caught by:** CI on main (consistently red — masking signal on downstream PRs)
+**What happened:** `OutboxDispatcherWorker > LISTEN handler wakes a tick
+before the polling interval fires` exceeded vitest's default 5000ms
+test timeout (CI run measured 5120ms). The test's internal 2s wake-up
+deadline is correct for catching a real regression, but the per-`it()`
+budget had no margin for the PGlite spin-up + 30+ migration apply +
+initial `start()` drain that runs before the wake-up window even opens.
+Locally the same test completes in ~570ms — the failure is pure CI
+fixture overhead, not a race.
+**Correct approach:** When a test exercises a slow fixture (PGlite +
+all migrations) AND measures a small async signal, the test-level
+timeout must cover **fixture + measurement**, not just the
+measurement. Bump the per-`it()` timeout (third arg to `it()`) high
+enough to absorb fixture overhead with 2–3x CI variance headroom.
+Keep the internal deadline tight so a real wake-up regression still
+trips it. Fix here: `it(..., 15_000)`; internal 2s poll unchanged.
+**Rule:** PGlite + migration-driven integration tests get explicit
+per-`it()` timeouts (≥10s) — the default 5s does not cover fixture
+spin-up on CI.
+**Enforcement update:** none yet — single-test pattern; promote to
+CLAUDE.md if it recurs across other PGlite tests.
+
 ## 2026-05-26 — Five reviewable bugs caught by Codex across the Variant D + Autopilot stacks
 
 **PRs:** #64 (db), #65 (workers), #77 (api adapter), #78 (events),
