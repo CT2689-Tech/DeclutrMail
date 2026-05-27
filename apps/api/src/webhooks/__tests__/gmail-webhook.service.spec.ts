@@ -231,11 +231,22 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     await seedMailbox(db, 'alice@example.com', 1000n);
     const oversized = 'x'.repeat(513);
 
-    await expect(
-      service.processVerifiedPush({
+    // Drizzle 0.43+ wraps Postgres errors in a `DrizzleQueryError` whose
+    // top-level `.message` is just "Failed query: <SQL>". The real
+    // string-truncation message ("value too long for type character
+    // varying(512)") lives on `.cause`. Walk the chain so the assertion
+    // still pins the schema invariant rather than the wrapper format.
+    const err = await service
+      .processVerifiedPush({
         messageId: oversized,
         payload: { emailAddress: 'alice@example.com', historyId: '1500' },
-      }),
-    ).rejects.toThrow(/value too long|length|varying\(512\)/i);
+      })
+      .then(
+        () => null,
+        (e: unknown) => e as Error & { cause?: { message?: string; code?: string } },
+      );
+    expect(err).not.toBeNull();
+    const messages = [err?.message, err?.cause?.message].filter(Boolean).join(' | ');
+    expect(messages).toMatch(/value too long|length|varying\(512\)/i);
   });
 });
