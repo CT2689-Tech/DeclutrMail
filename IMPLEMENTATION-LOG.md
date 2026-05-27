@@ -112,7 +112,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🔵 | #33 |  |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
-| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | ⬜ |  |  |  |
+| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🔵 | #102 |  |  |
 | D62 | Brief AI: **Haiku LLM with deterministic template fallback | ⬜ |  |  |  |
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | ⬜ |  |  |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | ⬜ |  |  |  |
