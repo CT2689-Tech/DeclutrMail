@@ -25,8 +25,14 @@ import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal'
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { ReviewSession, type ReviewResult } from './review-session';
 import { useSenders } from './api/use-senders';
+import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptSenderListRow } from './api/adapters';
 import { ApiError } from '@/lib/api/client';
+import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
+import { SenderGrid } from './grid/sender-grid';
+import { ViewToggle } from './view-toggle';
+import { useSendersStore } from './store';
+import type { WeeklyHeroSliceKind } from '@/lib/api/senders';
 import {
   InboxStoryHero,
   KpiStrip,
@@ -102,6 +108,13 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
   const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
+  const [heroDismissed, setHeroDismissed] = useState(false);
+  const view = useSendersStore((s) => s.view);
+  // Weekly Hero (D47, D48). Always fetched; only RENDERED when
+  // `data.isMonday=true` per D47 ("refreshes Monday morning per user
+  // timezone"). The single in-flight fetch is cheap and keeps the
+  // cache warm so a same-week revisit is instant.
+  const heroQuery = useWeeklyHero();
 
   const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
@@ -299,6 +312,8 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
+          {/* Grid/Table toggle (D49) — per-session, defaults to grid. */}
+          <ViewToggle />
           <Button tone="dark" onClick={() => toast('Add-VIP flow opens here', 'info')}>
             + Add VIP
           </Button>
@@ -320,6 +335,36 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         }}
         onDismiss={() => setReceipt(null)}
       />
+
+      {/*
+        Weekly Hero (D47, D48) — visible ONLY on Mondays per D47.
+        Hidden when the user has dismissed for the week (D47 — "Hero
+        auto-dismisses for the week after user reviews any slice OR
+        clicks 'Not now.'"). Dismissal state is local-only at launch
+        (no `weekly_hero_runs.dismissed_at` table yet — that schema is
+        deferred); refreshing the page brings the hero back, which is
+        acceptable for V2 launch.
+      */}
+      {!heroDismissed &&
+        heroQuery.data &&
+        heroQuery.data.data.isMonday &&
+        heroQuery.data.data.slices.length > 0 && (
+          <WeeklyHeroLive
+            data={heroQuery.data.data}
+            onReview={(kind, sliceSenders) => {
+              const reviewKind = mapHeroSliceToReviewKind(kind);
+              const ids = new Set(sliceSenders.map((s) => s.id));
+              const slice = senders.filter((s) => ids.has(s.id));
+              if (slice.length === 0) {
+                toast('Hero slice senders are not in the loaded list yet.', 'info');
+                return;
+              }
+              setReview({ slice, kind: reviewKind });
+              setHeroDismissed(true);
+            }}
+            onSkip={() => setHeroDismissed(true)}
+          />
+        )}
 
       {senders.length > 0 && (
         <InboxStoryHero
@@ -415,7 +460,26 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
             </Button>
           }
         />
+      ) : view === 'grid' ? (
+        // D49 default — grid of cards. Flatten the intent buckets so
+        // the responsive `auto-fit` layout fills the row evenly; the
+        // intent chips (above) still apply via `visibleGroups`'
+        // filtering.
+        <SenderGrid
+          senders={visibleGroups.flatMap((b) => b.items)}
+          selectedIds={selected}
+          onToggleSelect={(id) =>
+            setSelected((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          onAction={requestAction}
+        />
       ) : (
+        // D49 toggle path — intent-grouped tables (preserved as-is).
         visibleGroups.map((bucket) => (
           <SenderGroup
             key={bucket.intent}
@@ -543,6 +607,24 @@ function renderCtaCopy(totals: SenderTotals) {
       We'll guide you one at a time. {totals.cleanupCount <= 5 ? '3' : '5'} minutes.
     </>
   );
+}
+
+/**
+ * Map a wire Hero slice kind (`high_confidence` / `spike` / `quiet`)
+ * to the existing FE `ReviewKind` enum (`promo` / `quiet` / `protect`).
+ * The mappings are pragmatic: high-confidence cleanups and spikes both
+ * route through the "promo" review flow (Unsubscribe / Archive); the
+ * long-quiet slice routes through the softer "quiet" flow.
+ */
+function mapHeroSliceToReviewKind(kind: WeeklyHeroSliceKind): ReviewKind {
+  switch (kind) {
+    case 'high_confidence':
+      return 'promo';
+    case 'spike':
+      return 'promo';
+    case 'quiet':
+      return 'quiet';
+  }
 }
 
 /**

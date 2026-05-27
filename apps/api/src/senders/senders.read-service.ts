@@ -41,6 +41,9 @@ import type {
   SenderListRow,
   TimeseriesPoint,
   VolumeTrendBucket,
+  WeeklyHero,
+  WeeklyHeroSenderRow,
+  WeeklyHeroSlice,
 } from './senders.types.js';
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
@@ -659,6 +662,282 @@ export class SendersReadService {
   }
 
   /**
+   * Compute the three Weekly Hero slices for a mailbox (D47, D48).
+   *
+   * Slices, per D48:
+   *   1. high_confidence — engine confidence > 0.85 on archive/unsubscribe
+   *      verdicts, sorted by latest monthly volume desc, cap 24.
+   *   2. spike — current month volume ≥ 3× prior-3-month average,
+   *      sorted by ratio desc, cap 24.
+   *   3. quiet — last_seen > 30d ago, read_rate < 0.30, first_seen ≥
+   *      6 months, sorted by `monthly_volume × first_seen_months` desc,
+   *      cap 24.
+   *
+   * Each slice is computed in a single SELECT against `senders` +
+   * correlated `sender_timeseries` reads. Slices with < 3 qualifying
+   * senders are OMITTED from the response — the FE iterates the
+   * returned slices unconditionally (D48 — "If any slice has < 3
+   * senders, the card hides itself").
+   *
+   * `isMonday` and `weekOf` are computed in TS from the optional `now`
+   * anchor; the BE always computes the freshest slices and the FE
+   * decides whether to surface the Hero based on `isMonday`. Surfacing
+   * the Hero only on Mondays is a presentation choice (D47), not a
+   * cadence-of-computation one.
+   *
+   * Sparklines are loaded in a single batched SELECT against
+   * `sender_timeseries` after the slice members are determined — N+1
+   * avoidance. The slice rows ride a small set of UUIDs through the
+   * WHERE clause so the index `(mailbox_account_id, sender_key,
+   * year_month)` PK serves the read directly.
+   *
+   * SUBQUERY CORRELATION (MISTAKES.md 2026-05-23). Outer-scope
+   * `senders.mailbox_account_id` and `senders.sender_key` references
+   * inside correlated subqueries use `sql.identifier(getTableName(senders))`
+   * — bare `${senders.col}` would degenerate to a tautology and silently
+   * collapse the tenant boundary. The spec covers this with a
+   * cross-mailbox `sender_key` collision regression case.
+   */
+  async listWeeklyHero(args: {
+    mailboxAccountId: string;
+    /** Anchor for "now" — injectable for tests. Defaults to `new Date()`. */
+    now?: Date;
+  }): Promise<WeeklyHero> {
+    const { mailboxAccountId } = args;
+    const now = args.now ?? new Date();
+    const currentMonthIso = startOfMonthIso(now);
+    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
+    const sparklineStart = startOfMonthMonthsAgo(now, 11);
+    const sparklineStartIso = sparklineStart.toISOString().slice(0, 10);
+    const longQuietCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixMonthsAgo = addMonthsUtc(now, -6);
+
+    // Outer-scope identifiers for correlated subqueries (see MISTAKES.md
+    // 2026-05-23 + the matching block in `listSenders`).
+    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+
+    const latestVolumeSql = sql<number | null>`(
+      SELECT ${senderTimeseries.volume}
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+      ORDER BY ${senderTimeseries.yearMonth} DESC
+      LIMIT 1
+    )`;
+    const latestReadCountSql = sql<number | null>`(
+      SELECT ${senderTimeseries.readCount}
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+      ORDER BY ${senderTimeseries.yearMonth} DESC
+      LIMIT 1
+    )`;
+    const currentMonthVolumeSql = sql<number | null>`(
+      SELECT ${senderTimeseries.volume}
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
+      LIMIT 1
+    )`;
+    const priorAvgVolumeSql = sql<number | null>`(
+      SELECT AVG(${senderTimeseries.volume})::float
+      FROM ${senderTimeseries}
+      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
+        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
+    )`;
+    // Confidence subquery — the most-recent triage decision's
+    // confidence. Stored as `numeric(3,2)`; cast to float for the
+    // > 0.85 comparison in TS (postgres-js + PGlite return numerics as
+    // strings).
+    const latestConfidenceSql = sql<string | null>`(
+      SELECT ${triageDecisions.confidence}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+    const latestVerdictSql = sql<'keep' | 'archive' | 'unsubscribe' | 'later' | null>`(
+      SELECT ${triageDecisions.verdict}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
+
+    // One SELECT pulls every column the three slices need — keeps the
+    // round-trip count to 2 (1 for candidates + 1 for sparklines) per
+    // hero render, regardless of slice cardinality.
+    const candidates = await this.db
+      .select({
+        id: senders.id,
+        senderKey: senders.senderKey,
+        displayName: senders.displayName,
+        email: senders.email,
+        domain: senders.domain,
+        firstSeenAt: senders.firstSeenAt,
+        lastSeenAt: senders.lastSeenAt,
+        latestVolume: latestVolumeSql,
+        latestReadCount: latestReadCountSql,
+        currentMonthVolume: currentMonthVolumeSql,
+        priorAvgVolume: priorAvgVolumeSql,
+        latestConfidence: latestConfidenceSql,
+        latestVerdict: latestVerdictSql,
+      })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+
+    const SLICE_MAX = 24;
+    const SLICE_MIN = 3;
+
+    // High-confidence slice — engine recommends archive/unsubscribe AND
+    // confidence > 0.85. Sort by latest monthly volume desc (highest
+    // noise first), per D48.
+    const highConfidence = candidates
+      .filter((c) => {
+        if (c.latestVerdict !== 'archive' && c.latestVerdict !== 'unsubscribe') return false;
+        if (c.latestConfidence === null) return false;
+        const conf = Number.parseFloat(c.latestConfidence);
+        if (!Number.isFinite(conf)) return false;
+        return conf > 0.85;
+      })
+      .sort((a, b) => (b.latestVolume ?? 0) - (a.latestVolume ?? 0));
+
+    // Spike slice — current month ≥ 3× prior 3-month average. Skip
+    // senders with no prior baseline (prevents division-by-zero "new
+    // sender" senders from polluting spike — they belong in their own
+    // cohort, not here).
+    const spike = candidates
+      .map((c) => {
+        const current = c.currentMonthVolume ?? 0;
+        const prior = c.priorAvgVolume ?? 0;
+        const ratio = prior > 0 ? current / prior : 0;
+        return { c, ratio };
+      })
+      .filter((row) => {
+        const prior = row.c.priorAvgVolume ?? 0;
+        // Require non-trivial baseline so a sender jumping 1 → 4 doesn't
+        // surface as a "spike" — a single message is noise, not signal.
+        if (prior < 1) return false;
+        return row.ratio >= 3;
+      })
+      .sort((a, b) => b.ratio - a.ratio)
+      .map((row) => row.c);
+
+    // Long-quiet slice — last_seen ≥ 30 days ago, read_rate < 30%,
+    // relationship ≥ 6 months (D48 — "only surface senders the user
+    // has had inbox presence with for ≥ 6 months — no surprises").
+    const quiet = candidates
+      .filter((c) => {
+        if (c.lastSeenAt >= longQuietCutoff) return false;
+        if (c.firstSeenAt >= sixMonthsAgo) return false;
+        const vol = c.latestVolume ?? 0;
+        if (vol === 0) return false;
+        const rate = (c.latestReadCount ?? 0) / vol;
+        return rate < 0.3;
+      })
+      .map((c) => {
+        // Sort key per D48: monthly_volume × first_seen_months (target
+        // senders that were noisy when active).
+        const monthsActive = Math.max(
+          1,
+          Math.floor((now.getTime() - c.firstSeenAt.getTime()) / (1000 * 60 * 60 * 24 * 30)),
+        );
+        return { c, sortKey: (c.latestVolume ?? 0) * monthsActive };
+      })
+      .sort((a, b) => b.sortKey - a.sortKey)
+      .map((row) => row.c);
+
+    // Pick the top N members per slice and build a single de-duped key
+    // set for the batched sparkline read.
+    const sliceMembers = {
+      high_confidence: highConfidence,
+      spike,
+      quiet,
+    } as const;
+
+    const allSenderKeys = new Set<string>();
+    for (const kind of ['high_confidence', 'spike', 'quiet'] as const) {
+      if (sliceMembers[kind].length < SLICE_MIN) continue;
+      for (const member of sliceMembers[kind].slice(0, SLICE_MAX)) {
+        allSenderKeys.add(member.senderKey);
+      }
+    }
+
+    // Batch-load 12 months of timeseries for every member in any
+    // included slice. One indexed SELECT, no N+1.
+    const sparkPoints =
+      allSenderKeys.size === 0
+        ? []
+        : await this.db
+            .select({
+              senderKey: senderTimeseries.senderKey,
+              yearMonth: senderTimeseries.yearMonth,
+              volume: senderTimeseries.volume,
+            })
+            .from(senderTimeseries)
+            .where(
+              and(
+                eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
+                gte(senderTimeseries.yearMonth, sparklineStartIso),
+              ),
+            )
+            .orderBy(asc(senderTimeseries.yearMonth));
+
+    // Build 12-month sparklines per sender. Months without a row fill
+    // with 0 so every sparkline is exactly 12 numbers.
+    const sparklineByKey = new Map<string, number[]>();
+    const monthSlots = build12MonthSlots(now); // YYYY-MM in chronological order
+    for (const point of sparkPoints) {
+      if (!allSenderKeys.has(point.senderKey)) continue;
+      const slot = monthSlots.indexOf(point.yearMonth.slice(0, 7));
+      if (slot === -1) continue;
+      let series = sparklineByKey.get(point.senderKey);
+      if (!series) {
+        series = new Array<number>(12).fill(0);
+        sparklineByKey.set(point.senderKey, series);
+      }
+      series[slot] = point.volume;
+    }
+
+    const slices: WeeklyHeroSlice[] = [];
+    for (const kind of ['high_confidence', 'spike', 'quiet'] as const) {
+      const members = sliceMembers[kind];
+      if (members.length < SLICE_MIN) continue;
+      const capped = members.slice(0, SLICE_MAX);
+      const rows: WeeklyHeroSenderRow[] = capped.map((m) => {
+        const vol = m.latestVolume ?? 0;
+        const reads = m.latestReadCount ?? 0;
+        return {
+          id: m.id,
+          displayName: m.displayName,
+          email: m.email,
+          domain: m.domain,
+          monthlyVolume: vol,
+          readRate: vol === 0 ? null : Math.round((reads / vol) * 100) / 100,
+          sparkline: sparklineByKey.get(m.senderKey) ?? new Array<number>(12).fill(0),
+        };
+      });
+      slices.push({
+        kind,
+        totalCount: members.length,
+        senders: rows,
+      });
+    }
+
+    return {
+      isMonday: now.getUTCDay() === 1,
+      weekOf: mondayOfWeekIso(now),
+      slices,
+    };
+  }
+
+  /**
    * Resolve a sender row id to its `sender_key` within a mailbox.
    *
    * Returns `null` when the sender doesn't exist OR belongs to a
@@ -731,6 +1010,41 @@ function startOfMonthIso(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}-01`;
+}
+
+/**
+ * Pure helper — build the 12-slot chronological list of `YYYY-MM`
+ * strings ending at the current month. Used to project each sparkline
+ * read into a fixed-length 12-number array. Kept centralised so the
+ * sparkline slot index agrees with the SQL window boundary.
+ */
+function build12MonthSlots(anchor: Date): string[] {
+  const slots: string[] = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = addMonthsUtc(anchor, -i);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    slots.push(`${y}-${m}`);
+  }
+  return slots;
+}
+
+/**
+ * Pure helper — return the Monday of the week containing `d` as
+ * `YYYY-MM-DD` in UTC. Used for the Weekly Hero header "Week of …"
+ * copy. UTC anchoring is a pragmatic launch choice — a per-mailbox
+ * timezone is the documented eventual home but requires adding a
+ * `timezone` column to `mailbox_accounts` (out of scope here).
+ */
+function mondayOfWeekIso(d: Date): string {
+  // getUTCDay: 0=Sun, 1=Mon, ..., 6=Sat. Shift so Monday=0.
+  const dow = d.getUTCDay();
+  const daysFromMonday = dow === 0 ? 6 : dow - 1;
+  const monday = new Date(d.getTime() - daysFromMonday * 24 * 60 * 60 * 1000);
+  const y = monday.getUTCFullYear();
+  const m = String(monday.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(monday.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**

@@ -1254,4 +1254,469 @@ describe('SendersReadService', () => {
       expect(rows).toEqual([]);
     });
   });
+
+  /**
+   * Weekly Hero (D47, D48) — slice-computation correctness AND the
+   * tenant-boundary regression case for any new correlated subquery
+   * (MISTAKES.md 2026-05-23). Each test seeds a deliberately small
+   * fixture so the bucket logic is obvious from the seed values.
+   *
+   * The NOW anchor below sits in mid-May 2026 — picked so the
+   * "current month" (May), the "prior window" (Feb-Apr), and the
+   * "6 months ago" cutoff (Nov 2025) are all unambiguous calendar
+   * months and the long-quiet window (30 days back) doesn't straddle
+   * a month boundary in a confusing way.
+   */
+  describe('listWeeklyHero', () => {
+    const NOW = new Date('2026-05-15T00:00:00Z');
+
+    it('returns slices=[] when the mailbox has no senders', async () => {
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      expect(hero.slices).toEqual([]);
+      // Header fields still populated.
+      expect(hero.weekOf).toBe('2026-05-11'); // Monday of week containing May 15
+      expect(hero.isMonday).toBe(false); // Friday
+    });
+
+    it('marks Monday correctly via the `now` anchor', async () => {
+      // 2026-05-11 is a Monday (UTC).
+      const monday = new Date('2026-05-11T08:00:00Z');
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: monday });
+      expect(hero.isMonday).toBe(true);
+      expect(hero.weekOf).toBe('2026-05-11');
+    });
+
+    /**
+     * High-confidence slice — needs ≥ 3 senders qualifying (verdict in
+     * {archive, unsubscribe} AND confidence > 0.85). The 4th sender
+     * below has confidence = 0.85 exactly (boundary check) and must
+     * NOT appear; the 5th has verdict = keep and must NOT appear.
+     */
+    it('builds the high_confidence slice when ≥ 3 senders meet the threshold', async () => {
+      // Three qualifying senders, distinct volumes so we can lock the
+      // sort-by-volume ordering.
+      const big = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'big@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const mid = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'mid@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const small = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'small@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // Boundary — exactly 0.85, should be excluded (predicate is `> 0.85`).
+      const boundary = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'boundary@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // Verdict = keep — wrong verdict, must be excluded even with high confidence.
+      const keeper = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'keeper@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+
+      for (const [s, vol] of [
+        [big, 60],
+        [mid, 30],
+        [small, 10],
+        [boundary, 25],
+        [keeper, 25],
+      ] as const) {
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-05-01',
+          volume: vol,
+          readCount: 0,
+        });
+      }
+
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: big.senderKey,
+        verdict: 'archive',
+        confidence: '0.95',
+        producedAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: mid.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.90',
+        producedAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: small.senderKey,
+        verdict: 'archive',
+        confidence: '0.86',
+        producedAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: boundary.senderKey,
+        verdict: 'archive',
+        confidence: '0.85',
+        producedAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: keeper.senderKey,
+        verdict: 'keep',
+        confidence: '0.99',
+        producedAt: new Date('2026-05-10T00:00:00Z'),
+      });
+
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const hc = hero.slices.find((s) => s.kind === 'high_confidence');
+      expect(hc).toBeDefined();
+      expect(hc!.totalCount).toBe(3);
+      // Sort by monthly volume desc — big (60) > mid (30) > small (10).
+      expect(hc!.senders.map((s) => s.email)).toEqual(['big@x.com', 'mid@x.com', 'small@x.com']);
+      expect(hc!.senders[0]!.monthlyVolume).toBe(60);
+      expect(hc!.senders[0]!.sparkline.length).toBe(12);
+    });
+
+    it('omits high_confidence slice when fewer than 3 senders qualify', async () => {
+      // Only 2 qualifying senders — slice must be omitted entirely.
+      for (const email of ['a@x.com', 'b@x.com']) {
+        const s = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email,
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-05-01',
+          volume: 10,
+          readCount: 0,
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          verdict: 'archive',
+          confidence: '0.95',
+          producedAt: new Date('2026-05-10T00:00:00Z'),
+        });
+      }
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      expect(hero.slices.find((s) => s.kind === 'high_confidence')).toBeUndefined();
+    });
+
+    /**
+     * Spike slice — 3+ senders with current month ≥ 3× prior 3-month avg
+     * (and prior avg ≥ 1 to avoid trivial-baseline noise).
+     */
+    it('builds the spike slice with ratio ≥ 3× and sorts by ratio desc', async () => {
+      // Sender A — ratio 5/1 = 5 (highest).
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spike-a@x.com',
+        lastSeenAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      // Sender B — ratio 6/2 = 3 (boundary, qualifies).
+      const b = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spike-b@x.com',
+        lastSeenAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      // Sender C — ratio 12/3 = 4.
+      const c = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spike-c@x.com',
+        lastSeenAt: new Date('2026-05-10T00:00:00Z'),
+      });
+      // Sender D — ratio 2/2 = 1 (does not qualify).
+      const d = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spike-d@x.com',
+        lastSeenAt: new Date('2026-05-10T00:00:00Z'),
+      });
+
+      const seedTrendFor = async (sk: string, prior: number, current: number) => {
+        for (const ym of ['2026-02-01', '2026-03-01', '2026-04-01']) {
+          await seedTimeseries(db, {
+            mailboxAccountId: mailboxId,
+            senderKey: sk,
+            yearMonth: ym,
+            volume: prior,
+            readCount: 0,
+          });
+        }
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: sk,
+          yearMonth: '2026-05-01',
+          volume: current,
+          readCount: 0,
+        });
+      };
+      await seedTrendFor(a.senderKey, 1, 5); // ratio 5
+      await seedTrendFor(b.senderKey, 2, 6); // ratio 3
+      await seedTrendFor(c.senderKey, 3, 12); // ratio 4
+      await seedTrendFor(d.senderKey, 2, 2); // ratio 1 (no)
+
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const spike = hero.slices.find((s) => s.kind === 'spike');
+      expect(spike).toBeDefined();
+      expect(spike!.totalCount).toBe(3);
+      expect(spike!.senders.map((s) => s.email)).toEqual([
+        'spike-a@x.com', // 5
+        'spike-c@x.com', // 4
+        'spike-b@x.com', // 3
+      ]);
+    });
+
+    /**
+     * Long-quiet slice — 3+ senders with last_seen ≥ 30d ago, read_rate
+     * < 30%, first_seen ≥ 6 months ago. Sorted by `monthlyVolume ×
+     * first_seen_months` desc.
+     */
+    it('builds the quiet slice and excludes senders younger than 6 months', async () => {
+      // Three quiet, 6mo+ senders.
+      const seedQuiet = async (
+        email: string,
+        firstSeen: Date,
+        lastSeen: Date,
+        vol: number,
+        reads: number,
+      ) => {
+        const s = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email,
+          firstSeenAt: firstSeen,
+          lastSeenAt: lastSeen,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-03-01',
+          volume: vol,
+          readCount: reads,
+        });
+        return s;
+      };
+      // first_seen 2 years ago (24 months); vol 10 → sortKey 240
+      await seedQuiet(
+        'old-loud@x.com',
+        new Date('2024-05-15T00:00:00Z'),
+        new Date('2026-03-15T00:00:00Z'),
+        10,
+        1,
+      );
+      // first_seen 1 year ago (12 months); vol 8 → sortKey 96
+      await seedQuiet(
+        'old-mid@x.com',
+        new Date('2025-05-15T00:00:00Z'),
+        new Date('2026-03-20T00:00:00Z'),
+        8,
+        1,
+      );
+      // first_seen 7 months ago; vol 5 → sortKey 35
+      await seedQuiet(
+        'old-thin@x.com',
+        new Date('2025-10-01T00:00:00Z'),
+        new Date('2026-04-01T00:00:00Z'),
+        5,
+        1,
+      );
+      // first_seen 3 months ago — disqualified by the 6-month gate.
+      await seedQuiet(
+        'young@x.com',
+        new Date('2026-02-01T00:00:00Z'),
+        new Date('2026-04-01T00:00:00Z'),
+        10,
+        0,
+      );
+      // last_seen 5 days ago — disqualified by the 30d gate.
+      await seedQuiet(
+        'recent@x.com',
+        new Date('2024-01-01T00:00:00Z'),
+        new Date('2026-05-10T00:00:00Z'),
+        10,
+        0,
+      );
+      // read_rate 90% — disqualified by the < 30% read-rate gate.
+      await seedQuiet(
+        'engaged@x.com',
+        new Date('2024-01-01T00:00:00Z'),
+        new Date('2026-03-01T00:00:00Z'),
+        10,
+        9,
+      );
+
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const quiet = hero.slices.find((s) => s.kind === 'quiet');
+      expect(quiet).toBeDefined();
+      expect(quiet!.totalCount).toBe(3);
+      expect(quiet!.senders.map((s) => s.email)).toEqual([
+        'old-loud@x.com',
+        'old-mid@x.com',
+        'old-thin@x.com',
+      ]);
+    });
+
+    /**
+     * Sparklines — 12-month series, filled with 0 for missing months,
+     * always exactly 12 numbers, in chronological order.
+     */
+    it('builds 12-month sparklines per slice sender, padding missing months with 0', async () => {
+      // Three high-confidence senders (the minimum to make the slice
+      // appear). Only seed two months for sender A to lock the pad
+      // behavior — May 2026 should be at slot[11] and the row should
+      // carry exactly 12 entries.
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spark-a@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const b = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spark-b@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const c = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'spark-c@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      for (const [s, vol] of [
+        [a, 17],
+        [b, 16],
+        [c, 15],
+      ] as const) {
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-04-01',
+          volume: 7,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-05-01',
+          volume: vol,
+          readCount: 0,
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          verdict: 'archive',
+          confidence: '0.95',
+          producedAt: new Date('2026-05-10T00:00:00Z'),
+        });
+      }
+
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const hc = hero.slices.find((s) => s.kind === 'high_confidence');
+      expect(hc).toBeDefined();
+      const aRow = hc!.senders.find((r) => r.email === 'spark-a@x.com');
+      expect(aRow).toBeDefined();
+      expect(aRow!.sparkline).toHaveLength(12);
+      // May 2026 = slot[11]; Apr 2026 = slot[10]; earlier slots = 0.
+      expect(aRow!.sparkline[11]).toBe(17);
+      expect(aRow!.sparkline[10]).toBe(7);
+      expect(aRow!.sparkline[0]).toBe(0);
+      expect(aRow!.sparkline[5]).toBe(0);
+    });
+
+    /**
+     * Tenant boundary (MISTAKES.md 2026-05-23) — the spike, quiet, and
+     * high_confidence slices all use correlated subqueries against
+     * `sender_timeseries` and `triage_decisions`. Seed identical
+     * `sender_key` values across two mailboxes with deliberately
+     * different timeseries and triage decisions; assert each
+     * mailbox's hero sees ONLY its own data.
+     *
+     * Required by the task spec — any correlated read MUST exercise
+     * the cross-mailbox collision. Without this case, a regression
+     * that re-introduces the tautology in any of the three slice
+     * subqueries passes silently.
+     */
+    it('does not leak slice data across mailboxes when sender_key collides (cross-tenant correlated-subquery regression)', async () => {
+      const otherMailbox = await seedMailbox(db, 'other-tenant');
+      // Three colliding senders — same email/sender_key in both
+      // mailboxes. Each pair gets distinct timeseries + triage so the
+      // hero's slice contents diverge by mailbox.
+      const pairs: Array<{ email: string; hereVol: number; thereVol: number }> = [
+        { email: 'collide-1@x.com', hereVol: 60, thereVol: 5 },
+        { email: 'collide-2@x.com', hereVol: 50, thereVol: 4 },
+        { email: 'collide-3@x.com', hereVol: 40, thereVol: 3 },
+      ];
+      for (const p of pairs) {
+        const here = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: p.email,
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const there = await seedSender(db, {
+          mailboxAccountId: otherMailbox,
+          email: p.email,
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        // Same email → same sender_key — locked precondition so a
+        // future key-derivation change breaks this assertion loudly.
+        expect(here.senderKey).toBe(there.senderKey);
+
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: here.senderKey,
+          yearMonth: '2026-05-01',
+          volume: p.hereVol,
+          readCount: 0,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: otherMailbox,
+          senderKey: there.senderKey,
+          yearMonth: '2026-05-01',
+          volume: p.thereVol,
+          readCount: 0,
+        });
+        // Only `here` gets a high-confidence triage decision; `there`
+        // gets verdict=keep so its high_confidence slice is empty.
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: here.senderKey,
+          verdict: 'archive',
+          confidence: '0.95',
+          producedAt: new Date('2026-05-10T00:00:00Z'),
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: otherMailbox,
+          senderKey: there.senderKey,
+          verdict: 'keep',
+          confidence: '0.95',
+          producedAt: new Date('2026-05-10T00:00:00Z'),
+        });
+      }
+
+      const heroHere = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const heroThere = await svc.listWeeklyHero({
+        mailboxAccountId: otherMailbox,
+        now: NOW,
+      });
+
+      const hcHere = heroHere.slices.find((s) => s.kind === 'high_confidence');
+      expect(hcHere).toBeDefined();
+      // Mailbox A — own volumes (60/50/40), NOT the other mailbox's (5/4/3).
+      expect(hcHere!.senders.map((s) => s.monthlyVolume).sort((a, b) => b - a)).toEqual([
+        60, 50, 40,
+      ]);
+
+      // Mailbox B — no qualifying high_confidence senders (its
+      // triage decisions are all `keep`), so the slice must be
+      // omitted. A leak would surface mailbox A's data here.
+      expect(heroThere.slices.find((s) => s.kind === 'high_confidence')).toBeUndefined();
+    });
+  });
 });

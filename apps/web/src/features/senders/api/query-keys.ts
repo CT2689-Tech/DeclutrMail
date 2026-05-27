@@ -21,6 +21,8 @@ export const sendersKeys = {
   /** List page — keyed by category filter so each filter caches independently. */
   list: (params: { category?: GmailCategory | undefined } = {}) =>
     ['senders', 'list', params] as const,
+  /** Weekly Hero slices (D47, D48) — singleton per mailbox. */
+  weeklyHero: () => ['senders', 'weekly-hero'] as const,
   /** Single sender — the umbrella the per-id child queries hang off. */
   detail: (id: string) => ['senders', 'detail', id] as const,
   /** Recent-messages for one sender. */
