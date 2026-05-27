@@ -33,7 +33,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Atlas
         # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a
