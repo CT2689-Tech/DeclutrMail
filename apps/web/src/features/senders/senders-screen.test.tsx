@@ -7,10 +7,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { useSendersStore } from './store';
 
 const ROW = {
   id: 'a',
@@ -34,13 +35,39 @@ function renderScreen() {
   );
 }
 
+/** Stock weekly-hero response (non-Monday, empty slices) — the bare
+ * minimum the screen needs to render without errors. Per-test handlers
+ * override this when the hero is what's under test. */
+function weeklyHeroHandler(
+  overrides: Partial<{ isMonday: boolean; slices: unknown[]; weekOf: string }> = {},
+) {
+  return {
+    method: 'GET' as const,
+    path: '/api/senders/weekly-hero',
+    respond: () =>
+      jsonOk({
+        data: {
+          isMonday: overrides.isMonday ?? false,
+          weekOf: overrides.weekOf ?? '2026-05-25',
+          slices: overrides.slices ?? [],
+        },
+      }),
+  };
+}
+
 describe('SendersScreen — edge states', () => {
-  beforeEach(() => installFetchStub([]));
+  beforeEach(() => {
+    installFetchStub([weeklyHeroHandler()]);
+    // Reset the per-session view to grid (D49 — default) so a prior
+    // test that flipped the toggle doesn't leak into the next.
+    useSendersStore.setState({ view: 'grid' });
+  });
   afterEach(() => resetFetchStub());
 
   it('shows a loading skeleton while the initial fetch is in-flight', () => {
     // Handler that never resolves keeps the query in pending state.
     installFetchStub([
+      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -54,6 +81,7 @@ describe('SendersScreen — edge states', () => {
 
   it('renders the error branch with a retry CTA on 500', async () => {
     installFetchStub([
+      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -74,6 +102,7 @@ describe('SendersScreen — edge states', () => {
 
   it('renders the empty-mailbox state when the API returns an empty page', async () => {
     installFetchStub([
+      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -94,6 +123,7 @@ describe('SendersScreen — edge states', () => {
     // Variant D hero (per ADR-0011) frames the user's mailbox in
     // narrative form rather than the prior "N senders mail you" header.
     installFetchStub([
+      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -118,5 +148,143 @@ describe('SendersScreen — edge states', () => {
     // Intent filter chips replaced the Gmail-category chips.
     expect(screen.getByRole('button', { name: /^All\b/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Weekly Hero (D47, D48) + grid/table toggle (D49). These tests
+ * exercise the BE-driven Hero visibility branch and the per-session
+ * view toggle.
+ */
+describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
+  beforeEach(() => {
+    useSendersStore.setState({ view: 'grid' });
+  });
+  afterEach(() => resetFetchStub());
+
+  const HERO_SLICE = {
+    kind: 'high_confidence' as const,
+    totalCount: 3,
+    senders: [
+      {
+        id: 'a',
+        displayName: 'Sender A',
+        email: 'a@example.com',
+        domain: 'example.com',
+        monthlyVolume: 30,
+        readRate: 0.05,
+        sparkline: new Array<number>(12).fill(0),
+      },
+    ],
+  };
+
+  it('shows the Weekly Hero only when isMonday=true (D47)', async () => {
+    installFetchStub([
+      // Hero present on a Monday with at least one slice.
+      {
+        method: 'GET',
+        path: '/api/senders/weekly-hero',
+        respond: () =>
+          jsonOk({
+            data: { isMonday: true, weekOf: '2026-05-11', slices: [HERO_SLICE] },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    // The live Hero carries a stable `data-testid` for this kind of
+    // visibility assertion — surface-not-text contract.
+    await waitFor(() => expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument());
+  });
+
+  it('hides the Weekly Hero when isMonday=false (D47 — non-Monday branch)', async () => {
+    installFetchStub([
+      weeklyHeroHandler({ isMonday: false, slices: [HERO_SLICE] }),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    // Wait for the senders list to settle, then assert the hero is absent.
+    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
+    expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
+  });
+
+  it('hides the Hero on Monday when every slice has < 3 senders (D48 empty-card guard)', async () => {
+    installFetchStub([
+      // BE responds with isMonday=true but slices=[] — the empty-card
+      // guard already happened server-side.
+      weeklyHeroHandler({ isMonday: true, slices: [] }),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
+    expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
+  });
+
+  it('defaults to grid view and flips to table when the toggle is clicked (D49)', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    // Default — grid is visible.
+    await waitFor(() => expect(screen.getByTestId('sender-grid')).toBeInTheDocument());
+    // Flip to table — find the segmented control's Table button.
+    const tableBtn = screen.getByRole('button', { name: 'Table' });
+    fireEvent.click(tableBtn);
+    await waitFor(() => expect(useSendersStore.getState().view).toBe('table'));
+    // After flipping, the grid is gone.
+    expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
   });
 });

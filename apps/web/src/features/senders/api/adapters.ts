@@ -72,6 +72,57 @@ function monthsSince(iso: string, now: number = Date.now()): number {
  * the BE PR will add them in a follow-up; for now the visuals degrade
  * gracefully (flat sparkline, zero unread badge, no spike chip).
  */
+/**
+ * Adapt a Weekly Hero slice row (D47/D48 — `GET /api/senders/weekly-hero`)
+ * into the FE `Sender` shape so the Hero CTA's review-session opens
+ * across the FULL slice even when slice members live outside the
+ * currently-loaded paginated sender list (PR #115 P2 review).
+ *
+ * The hero DTO carries `id, displayName, email, domain, monthlyVolume,
+ * readRate, sparkline` — everything the K/A/U/L action surface actually
+ * reads. The wider `Sender` shape carries fields the hero doesn't
+ * surface (group, lastDays, firstSeenMo, volumeTrend, lastReview). Those
+ * default to safe placeholders here:
+ *   - `group: 'updates'` — Gmail's "things that aren't conversations"
+ *     bucket. Hero slices are inherently update-flavoured (cleanup
+ *     candidates), so this is the closest safe default. The review
+ *     session uses `group` only for filter-pill rendering; cleared via
+ *     refresh once the user navigates to the full senders list.
+ *   - `lastDays: 0`, `firstSeenMo: 12` — the hero already implicitly
+ *     filtered for relationship age (quiet slice = first_seen ≥ 6mo,
+ *     other slices have a current-month timeseries row), so a non-zero
+ *     `firstSeenMo` keeps the cadence-line render sane.
+ *   - `volumeTrend: null`, `lastReview: null` — the row tile falls
+ *     back to its evidence-line render for these.
+ *
+ * `spark` is the BE-provided 12-month sparkline (chronological,
+ * 0-padded) — already correct, no shaping needed.
+ */
+export function adaptHeroSender(row: {
+  id: string;
+  displayName: string;
+  email: string;
+  domain: string;
+  monthlyVolume: number;
+  readRate: number | null;
+  sparkline: number[];
+}): Sender {
+  return {
+    id: row.id,
+    name: row.displayName || row.email,
+    domain: row.domain,
+    monthly: row.monthlyVolume,
+    group: 'updates',
+    read: row.readRate ?? 0,
+    spark: row.sparkline,
+    lastDays: 0,
+    unread: 0,
+    firstSeenMo: 12,
+    volumeTrend: null,
+    lastReview: null,
+  };
+}
+
 export function adaptSenderListRow(row: SenderListRow, now: number = Date.now()): Sender {
   // BE returns `monthlyVolume` and `readRate` as nullable when the
   // sender has no `sender_timeseries` rows yet. The FE `Sender` shape

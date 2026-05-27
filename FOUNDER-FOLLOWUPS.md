@@ -770,6 +770,18 @@ cloud sessions auto-discover them on startup.
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
 
+### 2026-05-27 — `listWeeklyHero` N+1 (no outer LIMIT + 6 correlated subqueries per sender)
+
+**Source:** PR #115 — `feat(senders): Weekly Hero + 3 slices + grid default (D47, D48, D49)` — gate review [BLOCKING] from silent-failure-hunter + architecture-guardian. Re-evaluated when the founder OAuth'd a second mailbox with ~60k messages → ~5k senders, moving the perf concern from theoretical to real and landing the patch in #115 directly instead of the deferred follow-up PR.
+**Why:** [apps/api/src/senders/senders.read-service.ts](apps/api/src/senders/senders.read-service.ts) previously selected every sender in the mailbox (no `LIMIT`) and ran 6 correlated subqueries per row. At 5k senders × 6 subqueries × the per-row JIT cost, Monday-morning hero renders executed 30k subqueries — a wall-clock-synchronised traffic spike on a single endpoint.
+**How (landed):** added an `EXISTS`-based candidate pre-filter to the outer SELECT that narrows to senders that COULD belong to ANY of the three slices:
+  - high_confidence path: `EXISTS (SELECT 1 FROM triage_decisions WHERE ... verdict IN ('archive','unsubscribe') AND confidence > 0.85)`
+  - spike path: `EXISTS` current-month timeseries AND `EXISTS` prior-window timeseries
+  - quiet path: `last_seen_at < 30d ago AND first_seen_at < 6mo ago`
+  OR'd together. Defensive `LIMIT 1500` caps the outer scan if data is unexpectedly skewed. The 6 correlated subqueries then only run on the bounded candidate set.
+**Verifies by:** new regression spec at `apps/api/src/senders/senders.read-service.spec.ts` ("pre-filters the candidate set at scale") seeds 1500 noise senders + 3 qualifying senders; asserts the slice members come back correct AND the request completes in < 5s on PGlite (proxy for "pre-filter actually narrows the scan"). All 41 read-service spec cases green.
+**Status:** Done 2026-05-27 — landed in #115
+
 ### 2026-05-26 — Repo switched to public to unblock GitHub Actions billing
 **Source:** session — mid-sweep merge of 12 PRs (#79, #68, #73, #77, #78,
 #84, #80, #90, #63, #69, #71, #82, #83). GH Actions billing quota

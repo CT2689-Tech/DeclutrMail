@@ -46,6 +46,7 @@ import type {
   SenderDetail,
   SenderListRow,
   TimeseriesPoint,
+  WeeklyHero,
 } from './senders.types.js';
 
 /** Allowed `?category=` values — mirrors the `gmail_category` enum. */
@@ -107,6 +108,32 @@ export class SendersController {
       encodeCursor({ key: row.lastSeenAt, id: row.id }),
     );
     return paginated({ items: page, limit, nextCursor });
+  }
+
+  /**
+   * GET /api/senders/weekly-hero — Weekly Hero slices (D47, D48).
+   *
+   * Returns the three slice cards (`high_confidence`, `spike`,
+   * `quiet`) the FE renders on Mondays. Slices with fewer than 3
+   * qualifying senders are OMITTED — the FE iterates the returned
+   * slices unconditionally.
+   *
+   * NOTE on route ORDER. This route MUST be declared BEFORE
+   * `GET :id` — NestJS matches in declaration order; otherwise
+   * `weekly-hero` is interpreted as an `:id` param and falls into
+   * the UUID-validation 400 path.
+   *
+   * No pagination — the response is bounded (3 × 24 = 72 rows max)
+   * and the FE re-fetches on screen mount.
+   */
+  @Get('weekly-hero')
+  @RateLimit('triage-load')
+  async weeklyHero(
+    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+  ): Promise<Envelope<WeeklyHero>> {
+    const accountId = this.requireMailbox(mailboxAccountId);
+    const hero = await this.reads.listWeeklyHero({ mailboxAccountId: accountId });
+    return ok(hero);
   }
 
   /**

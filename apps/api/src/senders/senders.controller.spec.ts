@@ -75,6 +75,7 @@ interface MockReadService {
   listMessagesForSender: ReturnType<typeof vi.fn>;
   listTimeseries: ReturnType<typeof vi.fn>;
   listDecisionHistory: ReturnType<typeof vi.fn>;
+  listWeeklyHero: ReturnType<typeof vi.fn>;
 }
 
 function buildController(): { ctrl: SendersController; reads: MockReadService } {
@@ -88,6 +89,7 @@ function buildController(): { ctrl: SendersController; reads: MockReadService } 
     listMessagesForSender: vi.fn(),
     listTimeseries: vi.fn(),
     listDecisionHistory: vi.fn(),
+    listWeeklyHero: vi.fn(),
   };
   const ctrl = new SendersController(reads as unknown as SendersReadService);
   return { ctrl, reads };
@@ -341,6 +343,48 @@ describe('SendersController', () => {
       const res = await ctrl.history(MAILBOX_ID, SENDER_ID, undefined, undefined);
       expect(res.data).toHaveLength(1);
       expect(res.data[0]!.verdict).toBe('archive');
+    });
+  });
+
+  /**
+   * Weekly Hero (D47, D48) — controller-level contract. The service
+   * unit-test covers slice computation; here we only verify header
+   * validation, the envelope shape, and the route precedence comment
+   * (the literal `weekly-hero` path must NOT fall into the `:id` UUID
+   * 400 path).
+   */
+  describe('weeklyHero', () => {
+    it('throws 400 when the mailbox header is missing', async () => {
+      await expect(ctrl.weeklyHero(undefined)).rejects.toThrow(/x-mailbox-account-id/);
+    });
+
+    it('returns the envelope with isMonday + weekOf + slices', async () => {
+      reads.listWeeklyHero.mockResolvedValue({
+        isMonday: true,
+        weekOf: '2026-05-11',
+        slices: [
+          {
+            kind: 'high_confidence',
+            totalCount: 3,
+            senders: [
+              {
+                id: SENDER_ID,
+                displayName: 'X',
+                email: 'x@example.com',
+                domain: 'example.com',
+                monthlyVolume: 12,
+                readRate: 0,
+                sparkline: new Array<number>(12).fill(0),
+              },
+            ],
+          },
+        ],
+      });
+      const res = await ctrl.weeklyHero(MAILBOX_ID);
+      expect(res.data.isMonday).toBe(true);
+      expect(res.data.weekOf).toBe('2026-05-11');
+      expect(res.data.slices).toHaveLength(1);
+      expect(res.data.slices[0]!.kind).toBe('high_confidence');
     });
   });
 });
