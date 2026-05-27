@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 
+import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
@@ -17,6 +18,8 @@ import {
   InitialSyncWorker,
   InvalidGrantError,
   RateLimiter,
+  SCORE_QUEUE,
+  ScoreWorker,
   ValidationError,
 } from '@declutrmail/workers';
 import type {
@@ -25,8 +28,11 @@ import type {
   GmailAccess,
   InitialSyncJobData,
   InitialSyncResult,
+  ScoreJobData,
+  ScoreJobResult,
 } from '@declutrmail/workers';
 
+import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
@@ -196,6 +202,50 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: BRIEF_SNAPSHOT_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * ScoreWorker consumer (D21, D25, D203). Runs the cascade + scoring
+   * engine for one (mailbox, sender) — or every active sender in the
+   * mailbox when the job payload omits `senderKey`. Producer side lives
+   * in `TriageModule.SCORE_QUEUE_TOKEN` (POST `/api/triage/score-sender`)
+   * and — once D25's trigger-based wiring lands — in the initial-sync
+   * worker's terminal "ready" stage.
+   *
+   * D24 reasoning: `AnthropicHaikuAdapter` is wired when `ANTHROPIC_API_KEY`
+   * is set; absent the key the worker runs template-only (still produces
+   * verdicts, just without LLM-generated reasoning). The adapter never
+   * throws — it returns `null` on any failure per the `ReasoningLlmPort`
+   * contract, which the worker treats as "use the template".
+   *
+   * Policy `perMailboxPolicy` (D203/D225): per-mailbox concurrency=1 is
+   * enforced by the BullMQ jobId = `${mailboxAccountId}:${senderKey}` /
+   * `${mailboxAccountId}:full` dedup. The outer `concurrency: 20` is the
+   * global cap across distinct mailboxes.
+   */
+  const reasoningLlm = process.env.ANTHROPIC_API_KEY
+    ? new AnthropicHaikuAdapter({
+        client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+      })
+    : undefined;
+  const scoreWorker = new ScoreWorker(reasoningLlm ? { db, llm: reasoningLlm } : { db });
+  scoreWorker.setObserver(observer);
+
+  const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
+    SCORE_QUEUE,
+    (job) => scoreWorker.run(job),
+    { connection, concurrency: 20 },
+  );
+
+  scoreBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SCORE_QUEUE,
         message: err.message,
       }),
     );
@@ -421,6 +471,7 @@ async function bootstrap(): Promise<void> {
       await bullWorker.close();
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();
+      await scoreBullWorker.close();
       await reconcilerQueue.close();
       await connection.quit();
       await pg.end();
