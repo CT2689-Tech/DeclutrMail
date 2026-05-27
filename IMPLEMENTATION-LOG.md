@@ -135,7 +135,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D81 | Snooze trigger surfaces | ⬜ |  |  |  |
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
-| D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | ⬜ |  |  |  |
+| D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🔵 | #105 |  |  |
 | D85 | Priority: **Thread age only | ⬜ |  |  |  |
 | D86 | Exclusion rules: **Filter out non-followup-worthy threads | ⬜ |  |  |  |
 | D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
