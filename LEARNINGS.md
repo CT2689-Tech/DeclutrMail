@@ -20,6 +20,32 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-27 — Drizzle 0.43+ wraps PG errors in `DrizzleQueryError` — assertions must walk `.cause`
+
+**Context:** Rebasing dependabot PR #97 (minor+patch group, drizzle
+0.38 → 0.45 among 13 bumps). One spec failed:
+`gmail-webhook.service.spec.ts` asserted on
+`/value too long|length|varying\(512\)/i` against a deliberate
+varchar(512) overflow.
+**Finding:** Drizzle 0.43 introduced `DrizzleQueryError` that wraps
+the underlying PG error. The wrapper's `.message` is
+`"Failed query: <SQL>\nparams: <...>"` — the original PG text
+("value too long for type character varying(512)") is preserved on
+`.cause.message` (and `.cause.code === '22001'` for string
+truncation specifically). Tests written against drizzle ≤ 0.42 that
+match on `.message` silently lose coverage on the wrapped form.
+**Rule (provisional):** When asserting on PG-side error semantics
+in tests, walk `.cause` or check `.cause.code` rather than
+matching `.message`. Pattern that works against both versions:
+```
+const err = await op().catch((e) => e);
+const msg = [err?.message, err?.cause?.message].filter(Boolean).join(' | ');
+expect(msg).toMatch(/<invariant>/);
+```
+**Distillation trigger:** Promote to CLAUDE.md §10 ("things not
+to do") as "Don't assert on drizzle's wrapped `.message`" if a
+second test hits the same trap.
+
 ## 2026-05-26 — Reviewer model staleness — verify model IDs against live docs
 
 **Context:** Codex review of PR #77 flagged `claude-haiku-4-5` as an

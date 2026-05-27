@@ -26,6 +26,59 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
+
+**Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
+PR shows two non-required failures: `Branch follows CLAUDE.md §6
+convention` and `PR body references D-decisions or is bootstrap-
+exempt`. Dependabot branches are `dependabot/<package-ecosystem>/...`
+and dependabot PR bodies never contain a `Closes D###` trailer, so
+both gates are permanently red for this PR class.
+**Why:** Noise red ✗ next to every dependency PR makes "what
+actually failed" harder to scan. Long-term: enforces a pattern
+where the only PRs that satisfy the convention are ones written by
+humans + Claude.
+**How:** Either (a) extend the branch-name regex
+(`.github/workflows/branch-name.yml`) and the D-trailer check
+(`.github/workflows/require-pr-template.sh` or equivalent) with
+`if: github.actor != 'dependabot[bot]'`, or (b) allowlist
+`dependabot/**` in the regex itself + treat a `dependabot[bot]`
+author as bootstrap-exempt for the D-trailer rule. Mirror the
+existing `chore/bootstrap-*` exemption pattern.
+**Verifies by:** Open the next dependabot PR; both checks resolve
+to skipped or green; the only red ✗ left should be substantive
+(typecheck / test / etc.).
+**Status:** Open
+
+### 2026-05-27 — Vitest 4 upgrade requires Vite ≥ 6 + coverage-v8 lockstep + behavior audit
+
+**Source:** smoke test of dependabot PRs #93 (vitest 2 → 4) and
+#92 (`@vitest/coverage-v8` 2 → 4) on branch
+`chore/bootstrap-pr97-rebase`.
+**Why:** Vitest 4 cannot be merged piecemeal. Local install of #93
+alone produces `ERR_PACKAGE_PATH_NOT_EXPORTED: './module-runner'`
+because Vitest 4 needs Vite ≥ 6 and the repo is on Vite 5.
+`packages/workers/src/base-declutr-worker.test.ts` also fails
+typecheck because `ReturnType<typeof vi.spyOn>` no longer infers
+`.mock.calls` element types — the `(call) =>` map callback is now
+implicit `any`. Beyond compile errors, Vitest 3 + 4 ship several
+behavior changes worth a deliberate audit: `vi.spyOn` reuses
+existing mocks, error equality is stricter (`name` + `message` +
+`cause` + prototype), `mockReset` now restores the original
+implementation, `mock.invocationCallOrder` starts at 1, and the
+default exclude list narrowed to just `node_modules` + `.git`.
+**How:** Close #93 + #92 with a comment pointing to this entry.
+When ready to upgrade: open a dedicated branch
+`chore/distill-vitest-v4-upgrade` that bumps Vite to ≥ 6,
+vitest to 4, `@vitest/coverage-v8` to 4 in one PR; fix the spy
+typings (`vi.spyOn<Console, 'log'>` etc.); audit any test that
+relies on `mockReset` returning undefined or `invocationCallOrder`
+starting at 0; verify the default-exclude narrowing doesn't pull
+build artefacts into the test run.
+**Verifies by:** `pnpm typecheck && pnpm test` green across all
+workspaces on the new branch; CI green on the upgrade PR.
+**Status:** Open
+
 ### 2026-05-25 — Ratify Variant D direction for Senders uplift (4 ADRs + 2 follow-up PRs)
 **Source:** session — Senders surface uplift exploration, produced
 `apps/web/prototypes/senders-uplift.html` (Variant D) + 4 draft ADRs
