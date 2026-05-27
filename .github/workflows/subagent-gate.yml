@@ -28,7 +28,7 @@ jobs:
       design: ${{ steps.filter.outputs.design }}
       webhooks: ${{ steps.filter.outputs.webhooks }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: filter
         with:
