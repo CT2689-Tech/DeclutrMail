@@ -10,6 +10,7 @@ import {
   mailMessages,
   mailboxAccounts,
   schema,
+  senderPolicies,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -17,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FollowupCheckWorker } from './followup-check.worker.js';
 import { scheduledAtMinute as followupCheckScheduledAtMinute } from './followup-check.queue.js';
+import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -217,6 +219,149 @@ describe('FollowupCheckWorker', () => {
       FAKE_CTX,
     );
     expect(result.awaitingUpserted).toBe(0);
+  });
+
+  it('D86 — recipient marked Archive in sender_policies is excluded at write boundary', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey: deriveSenderKey('archived@example.com'),
+      policyType: 'archive',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-arc',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['archived@example.com'],
+      subject: 'archived-recipient',
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(result.awaitingUpserted).toBe(0);
+
+    const rows = await db.select({ id: followupTracker.id }).from(followupTracker);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('D86 — recipient marked Unsubscribe in sender_policies is excluded at write boundary', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey: deriveSenderKey('unsub@example.com'),
+      policyType: 'unsubscribe',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-unsub',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['unsub@example.com'],
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(result.awaitingUpserted).toBe(0);
+  });
+
+  it('D86 — Keep / Later policies do NOT exclude (only Archive / Unsubscribe drop the thread)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await db.insert(senderPolicies).values([
+      {
+        mailboxAccountId,
+        senderKey: deriveSenderKey('keep@example.com'),
+        policyType: 'keep',
+      },
+      {
+        mailboxAccountId,
+        senderKey: deriveSenderKey('later@example.com'),
+        policyType: 'later',
+      },
+    ]);
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-keep',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['keep@example.com'],
+      idSuffix: 'keep-out',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-later',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['later@example.com'],
+      idSuffix: 'later-out',
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(result.awaitingUpserted).toBe(2);
+  });
+
+  it('D86 multi-mailbox — Archive policy in mailbox A does NOT exclude mailbox B with the same recipient', async () => {
+    // Cross-mailbox isolation per MISTAKES.md 2026-05-23 — the policy
+    // query must be mailbox-scoped, not global.
+    const db = await freshDb();
+    const a = await seedMailbox(db, 'a@example.com');
+    const b = await seedMailbox(db, 'b@example.com');
+    const recipient = 'shared@example.com';
+
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: a.mailboxAccountId,
+      senderKey: deriveSenderKey(recipient),
+      policyType: 'archive',
+    });
+
+    await seedMessage(db, {
+      mailboxAccountId: a.mailboxAccountId,
+      threadId: 'thread-a',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: [recipient],
+      idSuffix: 'a-out',
+    });
+    await seedMessage(db, {
+      mailboxAccountId: b.mailboxAccountId,
+      threadId: 'thread-b',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: [recipient],
+      idSuffix: 'b-out',
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    // One row created in mailbox B (mailbox A's row dropped).
+    expect(result.awaitingUpserted).toBe(1);
+
+    const aRows = await db
+      .select({ id: followupTracker.id })
+      .from(followupTracker)
+      .where(eq(followupTracker.mailboxAccountId, a.mailboxAccountId));
+    const bRows = await db
+      .select({ id: followupTracker.id })
+      .from(followupTracker)
+      .where(eq(followupTracker.mailboxAccountId, b.mailboxAccountId));
+    expect(aRows).toHaveLength(0);
+    expect(bRows).toHaveLength(1);
   });
 
   it('thread whose latest message is INBOUND (already replied) is excluded', async () => {

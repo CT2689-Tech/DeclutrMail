@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -8,6 +9,7 @@ import {
   followupTracker,
   mailboxAccounts,
   schema,
+  senderPolicies,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -16,6 +18,20 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FollowupReadService } from './followup.read-service.js';
+
+/** Mirror of the read-service's local sender-key derivation. */
+function senderKeyFor(email: string): string {
+  const lowered = email.trim().toLowerCase();
+  const at = lowered.lastIndexOf('@');
+  let normalized = lowered;
+  if (at > 0) {
+    const local = lowered.slice(0, at);
+    const domain = lowered.slice(at);
+    const plus = local.indexOf('+');
+    normalized = plus > 0 ? `${local.slice(0, plus)}${domain}` : lowered;
+  }
+  return createHash('sha256').update(`v1|${normalized}`).digest('hex');
+}
 
 /**
  * FollowupReadService integration tests (D84-D91).
@@ -148,7 +164,7 @@ describe('FollowupReadService', () => {
       expect(list[0]!.status).toBe('awaiting');
     });
 
-    it('orders newest first by sent_at', async () => {
+    it('D85 — orders oldest first by sent_at (longest-overdue surfaces first)', async () => {
       await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
         threadId: 'older',
         sentAt: new Date(NOW_MS - 10 * 24 * 60 * 60 * 1000),
@@ -160,7 +176,10 @@ describe('FollowupReadService', () => {
         subject: 'newer',
       });
       const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
-      expect(list.map((f) => f.subject)).toEqual(['newer', 'older']);
+      // Oldest first — the high-priority overdue thread leads the list.
+      expect(list.map((f) => f.subject)).toEqual(['older', 'newer']);
+      expect(list[0]!.priority).toBe('high');
+      expect(list[1]!.priority).toBe('low');
     });
 
     it('does not leak rows across tenants', async () => {
@@ -224,6 +243,217 @@ describe('FollowupReadService', () => {
         const [row] = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
         expect(row!.priority).toBe('medium');
       });
+    });
+  });
+
+  describe('D86 read-side exclusion via sender_policies', () => {
+    it('excludes followups whose recipient is marked Archive in this mailbox', async () => {
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't-arc',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'archived-recipient',
+        recipientEmail: 'archive-me@example.com',
+      });
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't-keep',
+        sentAt: new Date(NOW_MS - 4 * 24 * 60 * 60 * 1000),
+        subject: 'kept-recipient',
+        recipientEmail: 'boss@example.com',
+      });
+      // User marked archive-me@example.com as Archive in DeclutrMail.
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: senderKeyFor('archive-me@example.com'),
+        policyType: 'archive',
+      });
+
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      expect(list.map((f) => f.subject)).toEqual(['kept-recipient']);
+    });
+
+    it('excludes followups whose recipient is marked Unsubscribe', async () => {
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't-unsub',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'unsub-recipient',
+        recipientEmail: 'unsub-me@example.com',
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: senderKeyFor('unsub-me@example.com'),
+        policyType: 'unsubscribe',
+      });
+
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      expect(list).toHaveLength(0);
+    });
+
+    it('does NOT exclude followups whose recipient is marked Keep or Later', async () => {
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't-keep',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'keep-policy',
+        recipientEmail: 'keep@example.com',
+      });
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't-later',
+        sentAt: new Date(NOW_MS - 4 * 24 * 60 * 60 * 1000),
+        subject: 'later-policy',
+        recipientEmail: 'later@example.com',
+      });
+      await db.insert(senderPolicies).values([
+        {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: senderKeyFor('keep@example.com'),
+          policyType: 'keep',
+        },
+        {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: senderKeyFor('later@example.com'),
+          policyType: 'later',
+        },
+      ]);
+
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      // Both kept — Archive/Unsubscribe is the only exclusion axis for
+      // D86 here; Keep and Later mean the user wants this correspondence.
+      expect(list.map((f) => f.subject).sort()).toEqual(['keep-policy', 'later-policy']);
+    });
+
+    it('multi-mailbox: mailbox A archive policy does NOT exclude mailbox B followup with the same recipient', async () => {
+      // Same recipient address across two mailboxes — A archived them,
+      // B did not. The Drizzle correlated-subquery pitfall would let A's
+      // policy mask B's row (or vice versa) if the join leaked across
+      // mailboxes. This test fails if the per-mailbox scope drops.
+      const recipient = 'shared-contact@example.com';
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'a-thread',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'a-followup',
+        recipientEmail: recipient,
+      });
+      await seedFollowup(db, mailboxB.workspaceId, mailboxB.mailboxAccountId, {
+        threadId: 'b-thread',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'b-followup',
+        recipientEmail: recipient,
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: senderKeyFor(recipient),
+        policyType: 'archive',
+      });
+
+      const a = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      const b = await service.listAwaiting(mailboxB.mailboxAccountId, NOW_MS);
+      // A's archive policy excludes A's row.
+      expect(a).toHaveLength(0);
+      // B has no policy → B's row remains visible.
+      expect(b.map((f) => f.subject)).toEqual(['b-followup']);
+    });
+
+    it('multi-mailbox: mailbox B archive policy does NOT exclude mailbox A followup with the same recipient (reciprocal)', async () => {
+      // Reciprocal of the previous test — the correlated-subquery
+      // pitfall is symmetric, so we cover both directions.
+      const recipient = 'shared-contact@example.com';
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'a-thread',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'a-followup',
+        recipientEmail: recipient,
+      });
+      await seedFollowup(db, mailboxB.workspaceId, mailboxB.mailboxAccountId, {
+        threadId: 'b-thread',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        subject: 'b-followup',
+        recipientEmail: recipient,
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        senderKey: senderKeyFor(recipient),
+        policyType: 'archive',
+      });
+
+      const a = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      const b = await service.listAwaiting(mailboxB.mailboxAccountId, NOW_MS);
+      expect(a.map((f) => f.subject)).toEqual(['a-followup']);
+      expect(b).toHaveLength(0);
+    });
+
+    it('LIMIT-before-filter regression: surfaces eligible rows even when the oldest page is mostly excluded', async () => {
+      // Regression for the [P2] review finding on PR #111: the old impl
+      // applied LIMIT 100 in SQL and THEN filtered Archive/Unsubscribe
+      // recipients in TS. If the oldest 100 awaiting rows happened to be
+      // archived senders, the endpoint returned an empty list even
+      // though eligible followups existed deeper in the backlog.
+      //
+      // Seeding 120 archived + 30 eligible (eligible newer than
+      // archived so they live PAST the LIMIT-100 cutoff under the old
+      // impl). With the new over-fetch loop we must surface all 30.
+      const baseMs = NOW_MS - 30 * 24 * 60 * 60 * 1000;
+
+      // 120 archived-recipient followups, OLDER than the eligible ones.
+      const archivedRecipient = (i: number) => `archived-${i}@example.com`;
+      for (let i = 0; i < 120; i += 1) {
+        await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+          threadId: `arc-${i}`,
+          // i = 0 oldest, i = 119 newest among the archived block.
+          sentAt: new Date(baseMs + i * 1000),
+          recipientEmail: archivedRecipient(i),
+          subject: `archived-${i}`,
+        });
+      }
+      // Archive policy for every one of them — picks up via sender_key.
+      await db.insert(senderPolicies).values(
+        Array.from({ length: 120 }, (_unused, i) => ({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: senderKeyFor(archivedRecipient(i)),
+          policyType: 'archive' as const,
+        })),
+      );
+
+      // 30 eligible-recipient followups, NEWER (so they sort after the
+      // 120 archived ones). Under the old LIMIT-100-then-filter impl,
+      // the first SQL page captured only archived rows (indices 0-99)
+      // and the eligible rows never surfaced — the endpoint returned 0.
+      for (let i = 0; i < 30; i += 1) {
+        await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+          threadId: `elig-${i}`,
+          sentAt: new Date(baseMs + (120 + i) * 1000),
+          recipientEmail: `eligible-${i}@example.com`,
+          subject: `eligible-${i}`,
+        });
+      }
+
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      // Must surface every eligible row even though the first 120
+      // awaiting rows by sent_at ASC are excluded.
+      expect(list).toHaveLength(30);
+      const subjects = list.map((f) => f.subject);
+      // None of the archived recipients leaked through.
+      expect(subjects.every((s) => s.startsWith('eligible-'))).toBe(true);
+      // Ordering preserved — oldest eligible first.
+      expect(subjects[0]).toBe('eligible-0');
+      expect(subjects[29]).toBe('eligible-29');
+    });
+
+    it('handles +suffix alias normalization (recipient with +tag matches base policy)', async () => {
+      // D12 — sender_key normalization strips the local-part +suffix
+      // alias. A policy keyed on `boss@example.com` should match a
+      // followup with `boss+chase@example.com`.
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 't',
+        sentAt: new Date(NOW_MS - 5 * 24 * 60 * 60 * 1000),
+        recipientEmail: 'boss+chase@example.com',
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: senderKeyFor('boss@example.com'),
+        policyType: 'archive',
+      });
+
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      expect(list).toHaveLength(0);
     });
   });
 
