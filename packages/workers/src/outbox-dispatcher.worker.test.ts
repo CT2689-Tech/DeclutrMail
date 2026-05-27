@@ -229,12 +229,7 @@ describe('OutboxDispatcherWorker', () => {
     }
     expect(received).toHaveLength(1);
     expect(received[0]?.aggregateId).toBe('wake-1');
-    // Test-level timeout 15s: PGlite spin-up + migration apply + initial
-    // start() drain eats most of the default 5s budget on CI before the
-    // measured wake-up window even opens. The 2s internal deadline above
-    // is what actually catches a wake-up regression; the test-level
-    // budget just absorbs fixture overhead. See MISTAKES.md 2026-05-26.
-  }, 15_000);
+  });
 
   it('consumer failure increments attempts and records last_error; row stays pending', async () => {
     const { db, pg } = await freshDb();

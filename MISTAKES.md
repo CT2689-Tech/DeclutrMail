@@ -21,30 +21,36 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
-## 2026-05-26 — Outbox dispatcher pg_notify wake-up test flaked CI on main
+## 2026-05-26 — `packages/workers` had no vitest config → CI default 5s timeout flaked PGlite tests
 
-**PR:** chore/fix-outbox-pg-notify-test-flake
-**Caught by:** CI on main (consistently red — masking signal on downstream PRs)
-**What happened:** `OutboxDispatcherWorker > LISTEN handler wakes a tick
-before the polling interval fires` exceeded vitest's default 5000ms
-test timeout (CI run measured 5120ms). The test's internal 2s wake-up
-deadline is correct for catching a real regression, but the per-`it()`
-budget had no margin for the PGlite spin-up + 30+ migration apply +
-initial `start()` drain that runs before the wake-up window even opens.
-Locally the same test completes in ~570ms — the failure is pure CI
-fixture overhead, not a race.
-**Correct approach:** When a test exercises a slow fixture (PGlite +
-all migrations) AND measures a small async signal, the test-level
-timeout must cover **fixture + measurement**, not just the
-measurement. Bump the per-`it()` timeout (third arg to `it()`) high
-enough to absorb fixture overhead with 2–3x CI variance headroom.
-Keep the internal deadline tight so a real wake-up regression still
-trips it. Fix here: `it(..., 15_000)`; internal 2s poll unchanged.
-**Rule:** PGlite + migration-driven integration tests get explicit
-per-`it()` timeouts (≥10s) — the default 5s does not cover fixture
-spin-up on CI.
-**Enforcement update:** none yet — single-test pattern; promote to
-CLAUDE.md if it recurs across other PGlite tests.
+**PR:** [#98](https://github.com/CT2689-Tech/DeclutrMail/pull/98)
+**Caught by:** CI on main (consistently red on `OutboxDispatcherWorker
+> LISTEN handler wakes a tick before the polling interval fires`,
+then on `AFTER INSERT trigger emits pg_notify on the outbox_inserted
+channel` once the first was patched — same root cause, different
+victim test)
+**What happened:** `packages/workers` shipped without a
+`vitest.config.ts`, so its tests ran under vitest's default
+`testTimeout`. Every integration test in that package spins up PGlite
++ applies every migration per `it()` (~3-10s of fixture work on CI
+before the test logic even starts). Sister package `packages/db` —
+same fixture profile — already set `testTimeout: 30_000`; workers
+just never got the same treatment. First attempt fixed only the one
+failing test (`it(..., 15_000)`) which made the next-longest test in
+the file the new flake. Second attempt fixed the package globally
+via config.
+**Correct approach:** When adding a package that runs PGlite +
+migrations per test, copy the vitest config profile from `packages/db`
+(`testTimeout: 30_000`) at the same time. Don't fix flakes test-by-
+test when the timeout budget is package-wide.
+**Rule:** Any package with PGlite + migration-driven integration
+tests MUST have a `vitest.config.ts` with `testTimeout` ≥ 30_000. New
+packages of this shape MUST be onboarded with the config in the same
+PR as the first integration test.
+**Enforcement update:** none yet. Candidates if it recurs: a lint rule
+or CI check that fails when a package contains `*.test.ts` importing
+`@electric-sql/pglite` but no `vitest.config.ts` with `testTimeout`
+set. Hold for now — single recurrence, easy to spot in review.
 
 ## 2026-05-26 — Five reviewable bugs caught by Codex across the Variant D + Autopilot stacks
 
