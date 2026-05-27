@@ -21,6 +21,36 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-27 — `testTimeout: 30s` set but `hookTimeout` left at default 10s — PGlite 0.4 bump tipped CI red
+
+**PR:** [#97](https://github.com/CT2689-Tech/DeclutrMail/pull/97)
+**Caught by:** CI on rebased dependabot minor+patch group bump
+(consistent failure on `apps/api` and `packages/workers`:
+`Hook timed out in 10000ms` inside `beforeEach` migration replay).
+**What happened:** The 2026-05-26 fix to give `packages/workers` a
+`vitest.config.ts` raised `testTimeout` to 30s but did NOT also
+raise `hookTimeout`. Vitest's `hookTimeout` defaults to 10s
+independently of `testTimeout`. PGlite 0.4 (bumped from 0.2 in the
+deps group) made `beforeEach` migration replay slow enough on CI
+runners to blow the default 10s `beforeEach` budget while still
+fitting under the 30s `it()` budget — invisible until the bump
+landed. `apps/api` had no vitest config at all, so it inherited
+both defaults.
+**Correct approach:** Raise `hookTimeout` to match `testTimeout`
+whenever the package uses PGlite + migration-driven `beforeEach`.
+Both knobs travel together, not independently. The "copy the
+config profile from `packages/db`" rule should mean ALL four
+PGlite knobs (`testTimeout`, `hookTimeout`, plus the `include`
+pattern + the comment explaining why), not just the one that
+caught the last regression.
+**Rule:** Any package with PGlite + migration-driven integration
+tests MUST set BOTH `testTimeout: 30_000` AND `hookTimeout: 30_000`
+in its `vitest.config.ts`. Patch the 2026-05-26 entry's rule the
+same way.
+**Enforcement update:** none yet. If this recurs (third PGlite
+package shipped with wrong defaults), promote to a lint rule that
+scans for `pglite` imports + asserts both timeout knobs are set.
+
 ## 2026-05-26 — `packages/workers` had no vitest config → CI default 5s timeout flaked PGlite tests
 
 **PR:** [#98](https://github.com/CT2689-Tech/DeclutrMail/pull/98)
