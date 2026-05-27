@@ -1,0 +1,35 @@
+-- Rollback for 0009_autopilot_rules.sql
+--
+-- Per D152: every forward migration has a companion rollback file.
+-- Reverse order of the forward; `IF EXISTS` keeps the rollback
+-- idempotent. The rollback file uses the `.rollback` (no `.sql`)
+-- extension so Atlas does not pick it up as an additional migration.
+--
+-- Drop tables (rule_match_log first — it references automation_rules
+-- via FK), then enums.
+
+DROP INDEX IF EXISTS "rule_match_log_pending_dedup_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "rule_match_log_mailbox_matched_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "rule_match_log_rule_matched_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "rule_match_log_observe_pending_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "rule_match_log";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "automation_rules_mailbox_enabled_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "automation_rules_mailbox_preset_uniq";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "automation_rules";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."autopilot_match_resolution";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."autopilot_match_mode";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."autopilot_action_kind";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."autopilot_rule_scope";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."autopilot_rule_mode";
