@@ -336,6 +336,75 @@ describe('ScoreWorker — idempotency + upsert', () => {
     expect(key).toBe(`${mailboxAccountId}:${senderKey}:5000`);
   });
 
+  it('out-of-order older finisher does NOT overwrite a newer row (D25 monotonic upsert)', async () => {
+    // Regression for the PR #118 review: BullMQ jobId dedup is exact-
+    // string match, so two score triggers for the same (mailbox,
+    // sender) with different `producedAtMs` produce distinct jobs that
+    // can run concurrently and finish out of order. Without the
+    // `where: produced_at < new.produced_at` clause the older finisher
+    // would overwrite the newer row → stale decision in
+    // `triage_decisions`. With the clause, the older UPDATE is a no-op.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'race@me.test', {
+      gmailCategory: 'promotions',
+    });
+    // Push to Phase C (unsubscribe) so the "later" job has a clear
+    // verdict to write.
+    for (let m = 0; m < 3; m += 1) {
+      await db.insert(senderTimeseries).values({
+        mailboxAccountId,
+        senderKey,
+        yearMonth: `2026-0${3 + m}-01`,
+        volume: 30,
+        readCount: 0,
+        replyCount: 0,
+      });
+    }
+    for (let i = 0; i < 5; i += 1) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `rm${i}`,
+        providerThreadId: `rt${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date('2026-05-22T00:00:00Z'),
+        labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+        isUnread: true,
+      });
+    }
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+
+    // Newer job lands FIRST (T2 = 20_000).
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 20_000 },
+      FAKE_CTX,
+    );
+    const afterNew = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(afterNew.length).toBe(1);
+    const newProducedAt = afterNew[0]!.producedAt;
+
+    // Older job (T1 = 10_000) finishes AFTER the newer one — simulates
+    // out-of-order completion under concurrent BullMQ execution.
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: 10_000 },
+      FAKE_CTX,
+    );
+
+    // The newer row must still be the authoritative one — `produced_at`
+    // unchanged from the T2 write.
+    const final = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(final.length).toBe(1);
+    expect(final[0]!.producedAt.getTime()).toBe(newProducedAt.getTime());
+  });
+
   it('second run for the same sender REPLACES the row (upsert)', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

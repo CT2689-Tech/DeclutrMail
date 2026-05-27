@@ -282,6 +282,24 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     const generatedBy: 'llm_haiku' | 'template' = reasoning ? 'llm_haiku' : 'template';
     const finalReasoning = reasoning ?? renderTemplate(signals.displayName, result);
 
+    // Monotonic upsert (D25 — concurrency-safe re-score).
+    //
+    // BullMQ jobId dedup only fires for IDENTICAL jobIds; the producer
+    // includes `producedAtMs` in the jobId so two rapid score-trigger
+    // events for the same (mailbox, sender) produce DIFFERENT jobIds
+    // and can run concurrently if the consumer has spare slots. With
+    // last-writer-wins semantics an older job that finishes AFTER a
+    // newer one would overwrite the newer row — leaving stale
+    // decisions in `triage_decisions`.
+    //
+    // The `where` clause on `ON CONFLICT DO UPDATE` enforces
+    // monotonicity at the DB layer: the UPDATE only fires when the
+    // existing row's `produced_at` is STRICTLY older than the inserting
+    // row's. An out-of-order older finisher's UPDATE becomes a no-op.
+    // Equal `produced_at` (idempotent retry) is also a no-op — the row
+    // is already authoritative for that producer event. This guarantee
+    // is independent of BullMQ consumer concurrency: even with
+    // unlimited parallelism the row's `produced_at` only advances.
     await this.deps.db
       .insert(triageDecisions)
       .values({
@@ -306,6 +324,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           expiresAt,
           updatedAt: sql`now()`,
         },
+        where: sql`${triageDecisions.producedAt} < ${producedAt}`,
       });
 
     return { verdict: result.verdict, generatedBy, timedOut };
