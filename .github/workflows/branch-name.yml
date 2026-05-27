@@ -43,7 +43,7 @@ jobs:
       # or upper-case). No subjectPattern — allows leading proper nouns
       # ("OAuth", "TypeScript") and abbreviations ("PR", "CI", "API") which
       # the previous `^(?![A-Z]).+$` rule incorrectly rejected.
-      - uses: amannn/action-semantic-pull-request@v5
+      - uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
