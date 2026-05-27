@@ -227,6 +227,15 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
     // Raw SQL because Drizzle doesn't expose DISTINCT ON ergonomically;
     // every column is from `mail_messages` so the privacy boundary is
     // identical to the schema definition.
+    //
+    // `lookbackCutoff.toISOString()` (NOT a raw `Date`): postgres-js
+    // @3.4.9 on Node v24 fails Bind with
+    // `Buffer.byteLength(Date)` → `ERR_INVALID_ARG_TYPE` when a `Date`
+    // is interpolated directly into a `sql\`\`` template. The PGlite
+    // test driver does not reproduce this — production / dev only.
+    // Drizzle's `gte()`/`lt()` builders auto-serialize, but raw `sql`
+    // templates pass the value through verbatim. ISO-string is
+    // unambiguous and round-trips correctly into a `timestamptz`.
     const candidates = await this.deps.db.execute<{
       provider_thread_id: string;
       recipient_email: string;
@@ -243,7 +252,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
           recipient_emails
         FROM mail_messages
         WHERE mailbox_account_id = ${mailboxAccountId}
-          AND internal_date > ${lookbackCutoff}
+          AND internal_date > ${lookbackCutoff.toISOString()}
         ORDER BY provider_thread_id, internal_date DESC, id DESC
       )
       SELECT
