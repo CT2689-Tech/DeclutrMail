@@ -35,15 +35,21 @@ export function PauseConfirmModal({
   isPausing: boolean;
   pauseError: string | null;
 }) {
+  // Mirror the visible "Pause all" CTA's guard rails on the keyboard
+  // path: don't fire the mutation when it would no-op (no affected
+  // rules) or when it's already in flight (mid-mutation re-press would
+  // weaken the D226 single-confirmation contract). The visible button
+  // is `disabled` in both states; the keyboard shortcut must match.
+  const canConfirm = !isPausing && rules.filter((r) => r.mode !== 'paused').length > 0;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm();
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canConfirm) onConfirm();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel, onConfirm]);
+  }, [open, onCancel, onConfirm, canConfirm]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
