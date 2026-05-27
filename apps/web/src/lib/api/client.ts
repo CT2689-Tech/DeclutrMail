@@ -114,17 +114,57 @@ export async function apiGet<T>(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<Envelope<T, unknown>> {
+  return apiRequest<T>('GET', path, undefined, options);
+}
+
+/**
+ * POST a JSON body and return the unwrapped D202 envelope payload.
+ *
+ * Used for the Autopilot pause-all and dismiss-match endpoints (D104,
+ * D105) and any future mutation that does not need PATCH semantics.
+ * Body is JSON-encoded; when `body` is `undefined` the request has no
+ * payload (the Content-Type header is also omitted). Same error / envelope
+ * guard behavior as `apiGet`.
+ */
+export async function apiPost<T>(
+  path: string,
+  body?: unknown,
+  options: ApiRequestOptions = {},
+): Promise<Envelope<T, unknown>> {
+  return apiRequest<T>('POST', path, body, options);
+}
+
+/**
+ * PATCH a JSON body and return the unwrapped D202 envelope payload.
+ *
+ * Used for the Autopilot rule patch endpoint (D104/D105 — flip mode,
+ * toggle enabled). Same shape as `apiPost`.
+ */
+export async function apiPatch<T>(
+  path: string,
+  body?: unknown,
+  options: ApiRequestOptions = {},
+): Promise<Envelope<T, unknown>> {
+  return apiRequest<T>('PATCH', path, body, options);
+}
+
+async function apiRequest<T>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body: unknown,
+  options: ApiRequestOptions,
+): Promise<Envelope<T, unknown>> {
   const url = buildUrl(path, options.query);
-  // Build the `RequestInit` carefully — `exactOptionalPropertyTypes`
-  // rejects `signal: undefined`, so we only attach when defined.
-  const init: RequestInit = {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'x-mailbox-account-id': getMailboxAccountId(),
-      ...(options.headers ?? {}),
-    },
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'x-mailbox-account-id': getMailboxAccountId(),
+    ...(options.headers ?? {}),
   };
+  const init: RequestInit = { method, headers };
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
   if (options.signal != null) init.signal = options.signal;
   const res = await fetch(url, init);
 
@@ -142,7 +182,11 @@ export async function apiGet<T>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, parsed, `GET ${path} failed: ${res.status} ${res.statusText}`);
+    throw new ApiError(
+      res.status,
+      parsed,
+      `${method} ${path} failed: ${res.status} ${res.statusText}`,
+    );
   }
 
   // D202 envelope guard — anything that doesn't carry a `data` field is
@@ -155,7 +199,7 @@ export async function apiGet<T>(
     throw new ApiError(
       res.status,
       parsed,
-      `GET ${path} returned a non-envelope payload — expected { data, meta? }`,
+      `${method} ${path} returned a non-envelope payload — expected { data, meta? }`,
     );
   }
 

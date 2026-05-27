@@ -26,6 +26,18 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
+
+**Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.
+**Why:** The Autopilot UI (PR for D104/D105) currently overrides the BE name client-side via `apps/web/src/features/autopilot/preset-labels.ts` (`'Later for new senders'`) to keep D227 compliant. The override is a forward-compatible shim — once the BE is renamed, the override map can be deleted and the UI will surface whatever name the BE chose.
+**How:**
+1. In `packages/workers/src/autopilot-presets.ts`, change `auto_screen_new_senders.defaultName` from `'Auto-screen new senders'` to a K/A/U/L-compliant name (suggested: `'Later for new senders'`).
+2. Add a one-off migration to rewrite existing rows where `preset_key = 'auto_screen_new_senders' AND name = 'Auto-screen new senders'` (or whatever the seed installed) to the new name.
+3. Delete the `auto_screen_new_senders` entry from `apps/web/src/features/autopilot/preset-labels.ts:PRESET_LABEL_OVERRIDES`. If the map becomes empty, delete the file + its two call-sites' imports.
+4. Drop the comment in `apps/web/src/features/autopilot/fixtures.ts` that documents the workaround; update the fixture name to the new BE name so tests stay aligned with prod.
+**Verifies by:** `pnpm --filter @declutrmail/web test` is still green; running `./scripts/dev-up.sh` + listing rules via `GET /api/autopilot/rules` returns the renamed default; `check-microcopy.sh --rule=canonical-verbs` (the D227 hook, when it lands) passes.
+**Status:** Open
+
 ### 2026-05-26 — ARCH-DRIFT: 3 controllers missing `@RateLimit(...)` on touched routes (D156)
 **Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check G
 **Why:** Three controller routes shipped this week without `@RateLimit(...)` despite D156 requiring per-route limits on all `/v1/**` mutation + polled endpoints. Auth, autopilot, briefs, followups, and senders controllers carry the decorator consistently — these three are the gap:
