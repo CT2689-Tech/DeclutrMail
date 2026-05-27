@@ -10,6 +10,12 @@ export type {
   BriefSenderGroup,
   NewBriefRun,
 } from './schema/brief-runs';
+export { followupStatus, followupTracker } from './schema/followup-tracker';
+export type {
+  FollowupStatus,
+  FollowupTracker,
+  NewFollowupTracker,
+} from './schema/followup-tracker';
 export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
