@@ -29,10 +29,10 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 152
+- ⬜ Not started: 145
 - 🟡 In progress: 0
-- 🔵 Shipped: 50
-- 🟢 Verified: 33
+- 🔵 Shipped: 18
+- 🟢 Verified: 72
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
 - **Total: 235 D-decisions**
@@ -59,47 +59,47 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🟢 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 |  |
 | D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟢 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready |  |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
-| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🔵 | #31 |  |  |
+| D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
 | D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | 🟢 | #48 | packages/workers/src/sender-key.test.ts (all green) |  |
-| D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🔵 | #53 |  |  |
+| D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🟢 | #53 | packages/workers/src/outbox-dispatcher.worker.test.ts |  |
 | D14 | Encryption keys: **Google Cloud KMS envelope (per-record DEK ← KEK) | 🟢 | #16 | apps/api/src/auth/token-crypto.service.spec.ts (4/4 incl tamper + uniqueness) |  |
 | D15 | Runway: **Side-income funded, no monetization-driven phasing | ⬜ |  |  |  |
 | D16 | Doc location: **Move 14 Drive docs into `/docs/` in the repo | ⬜ |  |  |  |
 | D17 | ADR system: **`/docs/adr/` with template; backfill from this grill | 🟢 | #25 | docs/adr/ has template + 6 ADRs |  |
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | ⬜ |  |  |  |
-| D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🔵 | #32 |  |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🔵 | #32 |  |  |
-| D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🔵 | #32 |  |  |
+| D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/workers/src/score-cascade.test.ts |  |
+| D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
-| D24 | LLM role: **Haiku for explanation only, template fallback | 🔵 | #32 |  |  |
-| D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🔵 | #32 |  |  |
+| D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
+| D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | ⬜ |  |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
-| D30 | Queue size: **Adaptive 5–12 based on inbox activity | 🔵 | #112 |  |  |
+| D30 | Queue size: **Adaptive 5–12 based on inbox activity | 🟢 | #112 | apps/api/src/triage/triage.service.spec.ts — D30 adaptive queue sizing |  |
 | D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🟢 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis |  |
 | D32 | No bulk operations in Triage | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted |  |
 | D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge |  |
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show |  |
-| D35 | Undo via persistent action tray (Doc 05 §11) | 🔵 | #33 |  |  |
+| D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #12 |  |  |
-| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🔵 | #30 |  |  |
-| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🔵 | #30 |  |  |
+| D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
+| D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
 | D42 | VIP and Protect: **Two distinct standing policies, both visible in header | 🔵 | #30 |  |  |
 | D43 | VIP and Protect location: **Both as small icons in header, next to sender name | 🔵 | #30 |  |  |
-| D44 | Stats strip: **5 stats, single reflow row | 🔵 | #30 |  |  |
-| D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🔵 | #30 |  |  |
-| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🔵 | #30 |  |  |
-| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🔵 | #115 |  |  |
-| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🔵 | #115 |  |  |
+| D44 | Stats strip: **5 stats, single reflow row | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
+| D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
+| D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🟢 | #30 | apps/api/src/senders/senders.controller.spec.ts — D46 default limit |  |
+| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🟢 | #115 | apps/api/src/senders/senders.controller.spec.ts — Weekly Hero contract |  |
+| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🟢 | #115 | apps/api/src/senders/senders.controller.spec.ts |  |
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
@@ -109,10 +109,10 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | ⬜ |  |  |  |
 | D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | ⬜ |  |  |  |
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | ⬜ |  |  |  |
-| D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🔵 | #33 |  |  |
+| D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
-| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🔵 | #102 |  |  |
+| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | ⬜ |  |  |  |
@@ -120,7 +120,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | VIP in Brief: **Inline ⭐ star on Reply rows | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
 | D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | ⬜ |  |  |  |
-| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🔵 | #74 |  |  |
+| D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | ⬜ |  |  |  |
@@ -135,14 +135,14 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D81 | Snooze trigger surfaces | ⬜ |  |  |  |
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
-| D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🔵 | #105 |  |  |
+| D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts |  |
 | D85 | Priority: **Thread age only | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts — D85 priority-bucket boundary cases (high/medium/low/fresh) |  |
 | D86 | Exclusion rules: **Filter out non-followup-worthy threads | 🟢 | #105 | packages/workers/src/followup-check.worker.test.ts — exclusion rules (bulk recipients/mailing-lists/noreply@) |  |
-| D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
-| D88 | User dismissal: **"Mark resolved" affordance per row | 🔵 | #106 |  |  |
+| D87 | Schema: **followup_tracker denormalized table | 🟢 | #104 | packages/db/tests/followup-tracker.test.ts — D87 defaults |  |
+| D88 | User dismissal: **"Mark resolved" affordance per row | 🟢 | #106 | apps/api/src/followups/followup.read-service.spec.ts |  |
 | D89 | Pro gating | ⬜ |  |  |  |
 | D90 | Followups screen layout | 🔵 | #111 |  |  |
-| D91 | Followups empty state | 🔵 | #111 |  |  |
+| D91 | Followups empty state | 🟢 | #111 | apps/api/src/followups/followup.read-service.spec.ts |  |
 | D92 | Trigger: **Both manual toggle + scheduled recurring windows | ⬜ |  |  |  |
 | D93 | Non-essential rule: **Non-VIP AND not active correspondent (smart) | ⬜ |  |  |  |
 | D94 | Restoration: **Trickle over 10 minutes when quiet ends | ⬜ |  |  |  |
@@ -150,7 +150,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D96 | Held messages screen content | ⬜ |  |  |  |
 | D97 | Brief and Quiet interaction | ⬜ |  |  |  |
 | D98 | Pro gating | ⬜ |  |  |  |
-| D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🔵 | #107 |  |  |
+| D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D100 | Condition vocabulary (sender-layer only per D22) | ⬜ |  |  |  |
 | D101 | Preset library at launch (5 rules) | 🟢 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked |  |
 | D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | 🟢 | #108 | packages/db/tests/autopilot-rules.test.ts — scope default + UNIQUE(mailbox, preset_key) |  |
@@ -207,10 +207,10 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
 | D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
-| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🔵 | #35 |  |  |
+| D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
-| D159 | Observability stack: **Sentry + PostHog | 🔵 | #34 |  |  |
+| D159 | Observability stack: **Sentry + PostHog | 🟢 | #34 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
 | D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | ⬜ |  |  |  |
@@ -218,7 +218,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
 | D165 | Notification preferences: **Per-category toggles in Settings | ⬜ |  |  |  |
 | D166 | Loading patterns: **Skeleton-first with inline action progress | 🔵 | #50 |  |  |
-| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🔵 | #51 |  |  |
+| D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🟢 | #51 | packages/shared/src/edge-states/inventory.test.ts |  |
 | D168 | API error envelope: **Standardized structured format | ⬜ |  |  |  |
 | D169 | Three severity tiers | ⬜ |  |  |  |
 | D170 | Three named critical-trust scenarios | ⬜ |  |  |  |
@@ -249,20 +249,20 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D195 | Worker scaling decoupled from billing webhook (updates D161) | ⬜ |  |  |  |
 | D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | 🟢 | #107 | packages/db/tests/autopilot-rules.test.ts — CHECK gates (is_preset/preset_key) lock custom-rule schema readiness |  |
 | D197 | Custom rule builder UI deferred to V2.1, with full architectural readiness at launch (reverses D196, refines D192) | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule returns null for is_preset=false → 404 (UI deferral enforced at API) |  |
-| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🔵 | #29 |  |  |
+| D198 | Headless hooks for behavior, feature-owned components for rendering (resolves D36/D50/D57 implicit duplication) | 🟢 | #29 | apps/web/src/features/triage/store.test.ts — D198 accordion |  |
 | D199 | Lazy promotion + spec override (component/utility placement rule) | 🔵 | #29 |  |  |
-| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🔵 | #29 |  |  |
-| D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🔵 | #37 |  |  |
-| D202 | API response envelope + cursor pagination | 🔵 | #37 |  |  |
-| D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🔵 | #49 |  |  |
-| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🔵 | #37 |  |  |
+| D200 | Frontend state management: TanStack Query (server state) + Zustand (client state) | 🟢 | #29 | apps/web/src/features/triage/store.test.ts — Zustand client state |  |
+| D201 | API + Worker architecture: Standard NestJS modules + Adapter pattern at external boundaries | 🟢 | #37 | apps/web/src/lib/api/client.test.ts |  |
+| D202 | API response envelope + cursor pagination | 🟢 | #37 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
+| D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
+| D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |
-| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🔵 | #113 |  |  |
+| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
-| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #51 |  |  |
+| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🟢 | #51 | packages/shared/src/edge-states/inventory.test.ts |  |
 | D212 | Empty states as first-class | 🔵 | #51 |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
@@ -275,15 +275,15 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | ⬜ |  |  |  |
-| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🔵 | #38 |  |  |
+| D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | ⬜ |  |  |  |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle |  |
-| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🔵 | #12 |  |  |
+| D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) |  |
-| D229 | Pub/Sub OIDC verification contract | 🔵 | #31 |  |  |
+| D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
-| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33 |  |  |
+| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🟢 | #33 | apps/api/src/account/deletion.service.spec.ts — D232 default window |  |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |
