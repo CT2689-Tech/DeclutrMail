@@ -1718,5 +1718,73 @@ describe('SendersReadService', () => {
       // omitted. A leak would surface mailbox A's data here.
       expect(heroThere.slices.find((s) => s.kind === 'high_confidence')).toBeUndefined();
     });
+
+    it('pre-filters the candidate set at scale (1500 senders, only ~5 qualify)', async () => {
+      // FOUNDER-FOLLOWUPS 2026-05-27 regression. The outer SELECT in
+      // `listWeeklyHero` used to fetch every sender for the mailbox
+      // and run 6 correlated subqueries per row. At 5k-sender
+      // mailboxes that is 30k subquery executions per Monday-morning
+      // hero render. The candidate pre-filter narrows the outer scan
+      // to senders that COULD belong to ANY slice; the correlated
+      // subqueries then only run on the bounded set.
+      //
+      // This test seeds 1500 noise senders that satisfy NO predicate
+      // plus a small qualifying set. The hero must return the
+      // correct slice members AND complete within a reasonable
+      // budget — proxy for "pre-filter actually narrows the scan".
+      const NOISE_COUNT = 1500;
+      const recent = new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1000);
+      for (let i = 0; i < NOISE_COUNT; i += 1) {
+        // Recent first_seen + last_seen so neither the quiet path
+        // (first_seen < 6mo) nor the activity-stale path qualifies.
+        // No triage_decision rows, no current/prior timeseries.
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: `noise-${i}@x.test`,
+          firstSeenAt: recent,
+          lastSeenAt: recent,
+        });
+      }
+
+      // Three qualifying high_confidence senders (verdict +
+      // confidence + a current-month timeseries row for sort).
+      for (const i of [0, 1, 2] as const) {
+        const s = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: `hc-${i}@x.test`,
+          firstSeenAt: recent,
+          lastSeenAt: recent,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-05-01',
+          volume: 100 - i, // 100/99/98
+          readCount: 0,
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          verdict: 'unsubscribe',
+          confidence: '0.95',
+          producedAt: NOW,
+        });
+      }
+
+      const startedAt = Date.now();
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const durationMs = Date.now() - startedAt;
+
+      const hc = hero.slices.find((s) => s.kind === 'high_confidence');
+      expect(hc).toBeDefined();
+      expect(hc!.senders.map((s) => s.monthlyVolume).sort((a, b) => b - a)).toEqual([100, 99, 98]);
+      // PGlite is single-process and slower than postgres-js + a
+      // warm index — at 1500 noise senders the pre-filter brings
+      // this in well under 5s on the dev laptop. The threshold is
+      // generous (won't false-positive on CI variance) but tight
+      // enough that the original "fetch + 6 subqueries per row" code
+      // would visibly miss it.
+      expect(durationMs).toBeLessThan(5_000);
+    }, 30_000);
   });
 });

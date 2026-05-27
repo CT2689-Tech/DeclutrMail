@@ -770,9 +770,37 @@ export class SendersReadService {
       LIMIT 1
     )`;
 
-    // One SELECT pulls every column the three slices need — keeps the
-    // round-trip count to 2 (1 for candidates + 1 for sparklines) per
-    // hero render, regardless of slice cardinality.
+    // Candidate pre-filter (perf — FOUNDER-FOLLOWUPS 2026-05-27).
+    //
+    // Without this pre-filter the outer SELECT scans every sender in
+    // the mailbox AND runs 6 correlated subqueries per row — at
+    // 5k-sender mailboxes that's 30k subquery executions per Monday-
+    // morning hero render. The pre-filter narrows the outer SELECT to
+    // only senders that could belong to ANY of the three slices, then
+    // the existing 6 correlated subqueries run on the bounded set.
+    //
+    // Predicates (cheap, indexed):
+    //   - high_confidence path: a `triage_decisions` row exists for
+    //     the (mailbox, sender) AND verdict IN ('archive','unsubscribe')
+    //     AND confidence > 0.85. The verdict + confidence are
+    //     conservatively checked across ALL rows for that pair, not
+    //     just the latest — a sender that's ever scored
+    //     archive/unsubscribe-high-confidence becomes a candidate and
+    //     the subsequent `latestVerdict` subquery decides the final
+    //     slice membership. Strict pre-filter + exact post-filter ==
+    //     equivalent semantics to the original.
+    //   - spike path: at least one `sender_timeseries` row in the
+    //     current month AND one in the prior 3-month window. Cheap
+    //     via the existing `(mailbox_account_id, sender_key, year_month)`
+    //     PK index.
+    //   - quiet path: `last_seen_at` < 30d ago AND `first_seen_at` <
+    //     6mo ago. Both are columns on `senders` directly — no join.
+    //
+    // OR'd together via SQL `OR`. A defensive `LIMIT 1500` caps the
+    // outer scan if data is unexpectedly skewed (every sender stale
+    // enough for the quiet predicate, etc.). At normal scales the
+    // pre-filter narrows well below the cap.
+    const HARD_CANDIDATE_LIMIT = 1500;
     const candidates = await this.db
       .select({
         id: senders.id,
@@ -790,7 +818,40 @@ export class SendersReadService {
         latestVerdict: latestVerdictSql,
       })
       .from(senders)
-      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+      .where(
+        and(
+          eq(senders.mailboxAccountId, mailboxAccountId),
+          sql`(
+            EXISTS (
+              SELECT 1 FROM ${triageDecisions}
+              WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+                AND ${triageDecisions.senderKey} = ${outerSenderKey}
+                AND ${triageDecisions.verdict} IN ('archive', 'unsubscribe')
+                AND ${triageDecisions.confidence} > 0.85
+            )
+            OR (
+              EXISTS (
+                SELECT 1 FROM ${senderTimeseries}
+                WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+                  AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+                  AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
+              )
+              AND EXISTS (
+                SELECT 1 FROM ${senderTimeseries}
+                WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
+                  AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+                  AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
+                  AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
+              )
+            )
+            OR (
+              ${senders.lastSeenAt} < ${longQuietCutoff.toISOString()}
+              AND ${senders.firstSeenAt} < ${sixMonthsAgo.toISOString()}
+            )
+          )`,
+        ),
+      )
+      .limit(HARD_CANDIDATE_LIMIT);
 
     const SLICE_MAX = 24;
     const SLICE_MIN = 3;

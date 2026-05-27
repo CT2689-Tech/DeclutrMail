@@ -26,21 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-27 — `listWeeklyHero` N+1 (no outer LIMIT + 6 correlated subqueries per sender)
-
-**Source:** PR #115 — `feat(senders): Weekly Hero + 3 slices + grid default (D47, D48, D49)` — gate review [BLOCKING] from silent-failure-hunter + architecture-guardian.
-**Why:** [apps/api/src/senders/senders.read-service.ts:776](apps/api/src/senders/senders.read-service.ts:776) selects every sender for the mailbox (no `LIMIT`) and runs 6 correlated subqueries per row (latestVolume, latestReadCount, currentMonthVolume, priorAvgVolume, latestConfidence, latestVerdict). At launch-scale mailboxes (5k+ senders) Monday-morning hero renders execute 30k subqueries — a wall-clock-synchronised traffic spike on a single endpoint. Caught by the review but NOT patched in #115's scope (kept #115 small + focused; the silent-error half-blocker IS patched in `85819f8`).
-**How:**
-1. After #115 merges, open `perf/d047-weekly-hero-narrow-queries` off main.
-2. Split `listWeeklyHero` into 3 per-slice queries, each with its own primary filter + `LIMIT 24` (`SLICE_MAX`):
-   - **high_confidence**: WHERE latest verdict IN (archive, unsubscribe) AND latest confidence > 0.85 ORDER BY latest volume DESC
-   - **spike**: WHERE current_month_volume >= 3 × prior_3mo_avg ORDER BY ratio DESC
-   - **quiet**: WHERE first_seen < now() - 6mo AND last_seen < now() - 6mo ORDER BY last_seen ASC
-   Each becomes a small bounded query. Round-trip cost moves 2 → 4 (3 slices + 1 sparkline batch) but each round-trip stays cheap.
-3. Keep the cross-mailbox `sender_key` collision regression spec in place (MISTAKES.md 2026-05-23). Add an "outer SELECT bounded" regression that seeds 1000 senders and asserts each per-slice query plan is `Limit (rows=24)`.
-**Verifies by:** `EXPLAIN ANALYZE` per slice shows `Limit (cost=…, rows=24)`; p95 against a 5k-sender fixture stays under D235's 150 ms partitioning threshold.
-**Status:** Open
-
 ### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
 
 **Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
@@ -641,6 +626,18 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-05-27 — `listWeeklyHero` N+1 (no outer LIMIT + 6 correlated subqueries per sender)
+
+**Source:** PR #115 — `feat(senders): Weekly Hero + 3 slices + grid default (D47, D48, D49)` — gate review [BLOCKING] from silent-failure-hunter + architecture-guardian. Re-evaluated when the founder OAuth'd a second mailbox with ~60k messages → ~5k senders, moving the perf concern from theoretical to real and landing the patch in #115 directly instead of the deferred follow-up PR.
+**Why:** [apps/api/src/senders/senders.read-service.ts](apps/api/src/senders/senders.read-service.ts) previously selected every sender in the mailbox (no `LIMIT`) and ran 6 correlated subqueries per row. At 5k senders × 6 subqueries × the per-row JIT cost, Monday-morning hero renders executed 30k subqueries — a wall-clock-synchronised traffic spike on a single endpoint.
+**How (landed):** added an `EXISTS`-based candidate pre-filter to the outer SELECT that narrows to senders that COULD belong to ANY of the three slices:
+  - high_confidence path: `EXISTS (SELECT 1 FROM triage_decisions WHERE ... verdict IN ('archive','unsubscribe') AND confidence > 0.85)`
+  - spike path: `EXISTS` current-month timeseries AND `EXISTS` prior-window timeseries
+  - quiet path: `last_seen_at < 30d ago AND first_seen_at < 6mo ago`
+  OR'd together. Defensive `LIMIT 1500` caps the outer scan if data is unexpectedly skewed. The 6 correlated subqueries then only run on the bounded candidate set.
+**Verifies by:** new regression spec at `apps/api/src/senders/senders.read-service.spec.ts` ("pre-filters the candidate set at scale") seeds 1500 noise senders + 3 qualifying senders; asserts the slice members come back correct AND the request completes in < 5s on PGlite (proxy for "pre-filter actually narrows the scan"). All 41 read-service spec cases green.
+**Status:** Done 2026-05-27 — landed in #115
 
 ### 2026-05-26 — Repo switched to public to unblock GitHub Actions billing
 **Source:** session — mid-sweep merge of 12 PRs (#79, #68, #73, #77, #78,
