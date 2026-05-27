@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { SyncModule } from '../sync/sync.module.js';
 import { GmailWebhookController, PUBSUB_OIDC_VERIFIER } from './gmail-webhook.controller.js';
 import { GmailWebhookService } from './gmail-webhook.service.js';
 import { PubSubOidcVerifier } from './oidc-verifier.js';
@@ -18,6 +19,7 @@ import { PubSubOidcVerifier } from './oidc-verifier.js';
  * header, NOT `x-goog-authenticated-user-email` (D229).
  */
 @Module({
+  imports: [SyncModule],
   controllers: [GmailWebhookController],
   providers: [
     GmailWebhookService,

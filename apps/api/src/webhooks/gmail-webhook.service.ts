@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
-import { mailboxAccounts, providerSyncState, webhookDedup } from '@declutrmail/db';
+import { and, eq } from 'drizzle-orm';
+import { mailboxAccounts, webhookDedup } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { SyncService } from '../sync/sync.service.js';
 
 /**
  * Gmail Pub/Sub webhook service (D8, D229).
@@ -41,22 +42,6 @@ export type ProcessOutcome =
       historyId: bigint;
     };
 
-/**
- * Inner-transaction result of the historyId advance:
- *   - `advanced`: row existed and was updated; previous cursor captured
- *   - `stale`:    row existed but incoming historyId <= last_history_id
- *   - `uninitialized`: no provider_sync_state row exists for this mailbox
- *
- * The transaction never writes a sync-state row itself — bootstrap is
- * the OAuth-connect flow's responsibility (D109, D224). A webhook
- * arriving for an uninitialized mailbox is a no-op; replying 200 stops
- * Pub/Sub retries that the initial sync wouldn't fix anyway.
- */
-type AdvanceResult =
-  | { kind: 'advanced'; previousHistoryId: bigint | null }
-  | { kind: 'stale' }
-  | { kind: 'uninitialized' };
-
 /** TTL for dedup rows — 24h, well beyond Pub/Sub's 10-minute ack deadline. */
 const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -64,7 +49,10 @@ const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 export class GmailWebhookService {
   private readonly logger = new Logger(GmailWebhookService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly sync: SyncService,
+  ) {}
 
   /**
    * Process a successfully-OIDC-verified Pub/Sub push. Encapsulates
@@ -124,40 +112,14 @@ export class GmailWebhookService {
       .set({ mailboxAccountId: mailbox.id })
       .where(eq(webhookDedup.messageId, args.messageId));
 
-    // Step 8: historyId monotonic. Read-modify-write inside a
-    // transaction so concurrent deliveries cannot both advance past
-    // each other's writes. The SELECT takes a row lock; the UPDATE
-    // sets both `last_history_id` and `history_id_updated_at`.
-    //
-    // We deliberately do NOT bootstrap a missing `provider_sync_state`
-    // row from this path. Webhook arrival does not imply initial sync
-    // has completed; creating the row with `readiness_status='ready'`
-    // here would bypass D224's sync gate and let the UI render the
-    // mailbox as "ready to triage" without any real data. Bootstrap
-    // belongs to the OAuth-connect / InitialSyncWorker flow.
-    const advance = await this.db.transaction(async (tx): Promise<AdvanceResult> => {
-      const rows = await tx
-        .select({ lastHistoryId: providerSyncState.lastHistoryId })
-        .from(providerSyncState)
-        .where(eq(providerSyncState.mailboxAccountId, mailbox.id))
-        .for('update')
-        .limit(1);
-      if (rows.length === 0) {
-        return { kind: 'uninitialized' };
-      }
-      const previousHistoryId = rows[0]!.lastHistoryId ?? null;
-      if (previousHistoryId !== null && previousHistoryId >= incomingHistoryId) {
-        return { kind: 'stale' };
-      }
-      await tx
-        .update(providerSyncState)
-        .set({
-          lastHistoryId: incomingHistoryId,
-          historyIdUpdatedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(providerSyncState.mailboxAccountId, mailbox.id));
-      return { kind: 'advanced', previousHistoryId };
+    // Step 8: delegate the monotonic cursor advance to SyncService
+    // (D204 — `provider_sync_state` is owned by the sync feature).
+    // SyncService runs the SELECT-FOR-UPDATE + UPDATE inside its own
+    // transaction. Bootstrap of a missing row stays out of this path —
+    // see `AdvanceHistoryIdResult` and D224's sync gate.
+    const advance = await this.sync.advanceHistoryId({
+      mailboxAccountId: mailbox.id,
+      incomingHistoryId,
     });
 
     if (advance.kind === 'uninitialized') {
@@ -171,13 +133,11 @@ export class GmailWebhookService {
     }
 
     if (advance.kind === 'stale') {
-      const current = await this.db
-        .select({ lastHistoryId: providerSyncState.lastHistoryId })
-        .from(providerSyncState)
-        .where(eq(providerSyncState.mailboxAccountId, mailbox.id))
-        .limit(1);
-      const lastHistoryId = current[0]?.lastHistoryId ?? null;
-      return { kind: 'stale_history_id', lastHistoryId, incomingHistoryId };
+      return {
+        kind: 'stale_history_id',
+        lastHistoryId: advance.lastHistoryId,
+        incomingHistoryId,
+      };
     }
 
     // TODO(D8 follow-up): enqueue an incremental-sync job over

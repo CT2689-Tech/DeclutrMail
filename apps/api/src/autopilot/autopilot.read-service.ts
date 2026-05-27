@@ -218,12 +218,21 @@ export class AutopilotReadService {
 
   /**
    * D104 — dismiss a pending Observe-mode suggestion. Flips
-   * `resolution = 'dismissed'` and sets `resolved_at`. Idempotent on
-   * an already-dismissed row (still returns the terminal state).
+   * `resolution = 'dismissed'` and sets `resolved_at`.
    *
-   * Returns `null` when the match doesn't belong to the mailbox or is
-   * not Observe-mode pending — the controller maps to 404 so the
-   * caller cannot probe match existence across tenants.
+   * Idempotency contract (D202/D207, Phase 1):
+   *
+   *   - First dismiss              → returns `{ alreadyDismissed: false }`
+   *   - Repeat dismiss of the same → returns `{ alreadyDismissed: true }`
+   *                                   (200, terminal state echoed)
+   *   - Cross-tenant / not-observe → returns `null` → controller 404
+   *                                   (cannot probe existence across mailboxes)
+   *
+   * The repeat-dismiss case used to return `null` → 404, which made a
+   * flaky-network retry indistinguishable from "match never existed".
+   * The follow-up query keeps the tenancy boundary intact (it filters
+   * by `mailboxAccountId`) while letting the client render success on
+   * a benign replay.
    */
   async dismissMatch(
     mailboxAccountId: string,
@@ -238,17 +247,46 @@ export class AutopilotReadService {
           eq(ruleMatchLog.id, matchId),
           // Only Observe-mode pending matches can be dismissed. Active
           // matches already auto-approved; dismissed matches are
-          // terminal already.
+          // terminal already and handled by the follow-up SELECT.
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
         ),
       )
       .returning({ resolution: ruleMatchLog.resolution, resolvedAt: ruleMatchLog.resolvedAt });
-    if (!updated) return null;
-    return {
-      resolution: updated.resolution,
-      resolvedAt: updated.resolvedAt?.toISOString() ?? new Date().toISOString(),
-    };
+    if (updated) {
+      return {
+        resolution: updated.resolution,
+        resolvedAt: updated.resolvedAt?.toISOString() ?? new Date().toISOString(),
+        alreadyDismissed: false,
+      };
+    }
+    // The UPDATE missed. It could be: (a) the row is already in the
+    // `dismissed` terminal state for THIS mailbox — benign replay; or
+    // (b) the row doesn't exist for THIS mailbox / is not observe-mode
+    // — caller cannot tell across tenants and we must collapse to 404.
+    const [existing] = await this.db
+      .select({
+        resolution: ruleMatchLog.resolution,
+        resolvedAt: ruleMatchLog.resolvedAt,
+      })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.id, matchId),
+          eq(ruleMatchLog.modeAtMatch, 'observe'),
+          eq(ruleMatchLog.resolution, 'dismissed'),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      return {
+        resolution: existing.resolution,
+        resolvedAt: existing.resolvedAt?.toISOString() ?? new Date().toISOString(),
+        alreadyDismissed: true,
+      };
+    }
+    return null;
   }
 }
 

@@ -31,16 +31,16 @@ const VALID_STATUS: SyncStatus = {
 };
 
 describe('SyncController.getStatus', () => {
-  it('returns the SyncService projection when it parses against SyncStatusSchema', async () => {
+  it('returns the SyncService projection wrapped in the D202 envelope', async () => {
     const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
     const controller = makeController(getStatus);
 
     const result = await controller.getStatus('mailbox-uuid-1');
 
-    expect(result).toEqual(VALID_STATUS);
-    // The response must round-trip through the schema — this is the
-    // contract guarantee the controller makes to the client.
-    expect(SyncStatusSchema.safeParse(result).success).toBe(true);
+    expect(result).toEqual({ data: VALID_STATUS });
+    // The inner `data` must round-trip through the schema — this is
+    // the contract guarantee the controller makes to the client.
+    expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
     expect(getStatus).toHaveBeenCalledWith('mailbox-uuid-1');
   });
 
@@ -86,6 +86,6 @@ describe('SyncController.getStatus', () => {
     const controller = makeController(getStatus);
 
     const result = await controller.getStatus('mailbox-uuid-1');
-    expect(result).toEqual(failed);
+    expect(result).toEqual({ data: failed });
   });
 });

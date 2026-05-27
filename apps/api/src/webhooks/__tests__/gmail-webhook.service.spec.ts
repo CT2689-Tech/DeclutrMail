@@ -15,7 +15,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { Queue } from 'bullmq';
+import type { InitialSyncJobData } from '@declutrmail/workers';
+
 import type { DrizzleDb } from '../../db/db.module.js';
+import { SyncService } from '../../sync/sync.service.js';
 import { GmailWebhookService } from '../gmail-webhook.service.js';
 
 /**
@@ -98,7 +102,12 @@ describe('GmailWebhookService.processVerifiedPush', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new GmailWebhookService(db);
+    // SyncService's `advanceHistoryId` (D204 facade) does not touch the
+    // queue, so a never-called stub is sufficient. `enqueueInitialSync`
+    // / `schedule` are exercised by SyncService's own specs.
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const sync = new SyncService(queueStub, db);
+    service = new GmailWebhookService(db, sync);
   });
 
   it('advances historyId, writes a dedup row, returns enqueued', async () => {

@@ -6,8 +6,14 @@ import {
   NotFoundException,
   Query,
 } from '@nestjs/common';
-import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
+import {
+  ok,
+  SyncStatusSchema,
+  type Envelope,
+  type SyncStatus,
+} from '@declutrmail/shared/contracts';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { SyncService } from './sync.service.js';
 
 /**
@@ -30,10 +36,8 @@ import { SyncService } from './sync.service.js';
  * headers, no message-derived data of any kind. `privacy-auditor`
  * verifies this.
  *
- * TODO(D202): wrap the response in the `{ data, meta }` envelope when
- * the shared envelope helper lands. The route returns the bare payload
- * for now so the client contract is stable; the envelope is a
- * non-breaking outer wrapper.
+ * Response shape: `{ data: SyncStatus }` (D202 envelope via `ok()`).
+ * The FE `useSyncStatus()` hook reads `response.data`.
  *
  * TODO(D109/auth): once session auth lands, the `mailboxAccountId`
  * comes from the authenticated session, not a query parameter. The
@@ -45,8 +49,18 @@ import { SyncService } from './sync.service.js';
 export class SyncController {
   constructor(private readonly sync: SyncService) {}
 
+  /**
+   * Rate-limit (D156): `triage-load` bucket with a per-route override
+   * of 120/min = 2/sec. The FE `useSyncStatus()` hook polls every 3s
+   * (~0.33/sec steady-state) so 2/sec leaves 6× headroom for the
+   * page-load burst + a couple of fast refetches; abusive clients are
+   * still capped well below the worker's Gmail-quota budget.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
   @Get('status')
-  async getStatus(@Query('mailboxAccountId') mailboxAccountId?: string): Promise<SyncStatus> {
+  async getStatus(
+    @Query('mailboxAccountId') mailboxAccountId?: string,
+  ): Promise<Envelope<SyncStatus>> {
     if (!mailboxAccountId) {
       throw new BadRequestException('Missing required query parameter: mailboxAccountId.');
     }
@@ -64,6 +78,6 @@ export class SyncController {
     if (!result.success) {
       throw new InternalServerErrorException('Sync state failed contract validation.');
     }
-    return result.data;
+    return ok(result.data);
   }
 }

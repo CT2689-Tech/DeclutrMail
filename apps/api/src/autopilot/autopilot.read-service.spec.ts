@@ -410,6 +410,7 @@ describe('AutopilotReadService', () => {
       expect(result).not.toBeNull();
       expect(result!.resolution).toBe('dismissed');
       expect(typeof result!.resolvedAt).toBe('string');
+      expect(result!.alreadyDismissed).toBe(false);
     });
 
     it('returns null on cross-tenant dismiss attempts', async () => {
@@ -447,7 +448,12 @@ describe('AutopilotReadService', () => {
       expect(result).toBeNull();
     });
 
-    it('second dismiss of the same match returns null (already terminal)', async () => {
+    it('second dismiss of the same match returns alreadyDismissed:true with the original resolvedAt', async () => {
+      // Phase-1 idempotency contract (D202/D207): a repeat dismiss for
+      // the same (mailbox, match) is a benign replay — it MUST NOT
+      // collapse to 404 (which would be indistinguishable from "match
+      // doesn't exist") and the terminal `resolvedAt` MUST match the
+      // first call so clients can render the original timestamp.
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const [match] = await db
         .insert(ruleMatchLog)
@@ -462,8 +468,34 @@ describe('AutopilotReadService', () => {
         .returning({ id: ruleMatchLog.id });
       const first = await service.dismissMatch(mailboxA, match!.id);
       expect(first).not.toBeNull();
+      expect(first!.alreadyDismissed).toBe(false);
       const second = await service.dismissMatch(mailboxA, match!.id);
-      expect(second).toBeNull();
+      expect(second).not.toBeNull();
+      expect(second!.resolution).toBe('dismissed');
+      expect(second!.alreadyDismissed).toBe(true);
+      expect(second!.resolvedAt).toBe(first!.resolvedAt);
+    });
+
+    it('cross-tenant repeat-dismiss still returns null (404) — alreadyDismissed bypass is per-mailbox', async () => {
+      // Dismiss B's match as B, then attempt the same match as A —
+      // must NOT leak "match exists / is dismissed" via 200.
+      const ruleIdB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      const [matchB] = await db
+        .insert(ruleMatchLog)
+        .values({
+          ruleId: ruleIdB,
+          mailboxAccountId: mailboxB,
+          senderKey: 'a'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'tenant-b',
+        })
+        .returning({ id: ruleMatchLog.id });
+      const dismissedAsB = await service.dismissMatch(mailboxB, matchB!.id);
+      expect(dismissedAsB).not.toBeNull();
+      expect(dismissedAsB!.alreadyDismissed).toBe(false);
+      const crossTenant = await service.dismissMatch(mailboxA, matchB!.id);
+      expect(crossTenant).toBeNull();
     });
   });
 });

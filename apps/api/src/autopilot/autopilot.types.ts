@@ -91,4 +91,13 @@ export interface AutopilotMatchDismissResult {
   /** The match's terminal resolution after this call. Always `'dismissed'` on 200. */
   resolution: AutopilotMatchResolution;
   resolvedAt: string;
+  /**
+   * Phase-1 idempotency hint (D202/D207): `true` when the match was
+   * already in the `dismissed` terminal state — the request was a
+   * no-op replay rather than the first dismiss. Lets a client retrying
+   * a flaky network request render the success state without having
+   * to disambiguate from a 404 "match not found". Phase-2 lands the
+   * full `Idempotency-Key` table; until then this hint is the contract.
+   */
+  alreadyDismissed: boolean;
 }
