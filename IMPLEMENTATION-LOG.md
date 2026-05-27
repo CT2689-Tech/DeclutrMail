@@ -258,7 +258,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🔵 | #37 |  |  |
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |
-| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | ⬜ |  |  |  |
+| D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🔵 | #113 |  |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
