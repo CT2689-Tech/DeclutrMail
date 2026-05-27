@@ -82,7 +82,12 @@ export function computeQueueSize(backlogCount: number): number {
 export class TriageService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
-    @Inject(SCORE_QUEUE_TOKEN) private readonly scoreQueue: Queue<ScoreJobData>,
+    // `Queue | null` — TriageModule's provider fails open when REDIS_URL
+    // is unset (matches RateLimitModule's pattern). `scoreSender` is the
+    // only method that needs the queue and throws a clear error in that
+    // case; read-only methods (`getDecision`, `getQueueSize`) work
+    // without Redis.
+    @Inject(SCORE_QUEUE_TOKEN) private readonly scoreQueue: Queue<ScoreJobData> | null,
   ) {}
 
   /**
@@ -120,6 +125,11 @@ export class TriageService {
     senderKey: string;
     producedAtMs?: number;
   }): Promise<{ idempotencyKey: string }> {
+    if (!this.scoreQueue) {
+      throw new Error(
+        'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
+      );
+    }
     const producedAtMs = input.producedAtMs ?? Date.now();
     const idempotencyKey = `${input.mailboxAccountId}:${input.senderKey}:${producedAtMs}`;
     const payload: ScoreJobData = {
