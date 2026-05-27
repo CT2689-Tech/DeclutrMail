@@ -1719,19 +1719,63 @@ describe('SendersReadService', () => {
       expect(heroThere.slices.find((s) => s.kind === 'high_confidence')).toBeUndefined();
     });
 
-    it('pre-filters the candidate set at scale (1500 senders, only ~5 qualify)', async () => {
-      // FOUNDER-FOLLOWUPS 2026-05-27 regression. The outer SELECT in
-      // `listWeeklyHero` used to fetch every sender for the mailbox
-      // and run 6 correlated subqueries per row. At 5k-sender
-      // mailboxes that is 30k subquery executions per Monday-morning
-      // hero render. The candidate pre-filter narrows the outer scan
-      // to senders that COULD belong to ANY slice; the correlated
-      // subqueries then only run on the bounded set.
+    it('limit-after-rank: 30 qualifying high_confidence senders → top 24 by volume win + totalCount=30', async () => {
+      // PR #115 P1 review regression. A prior version of the service
+      // capped the outer candidate scan with `LIMIT 1500` BEFORE
+      // slice-specific ranking, so mailboxes with more qualifying
+      // candidates than the cap surfaced an arbitrary subset instead
+      // of the top-volume rows. The per-slice refactor lifts the rank
+      // into SQL: each slice runs its own SELECT with `ORDER BY <slice
+      // ranker> ... LIMIT SLICE_MAX`.
       //
-      // This test seeds 1500 noise senders that satisfy NO predicate
-      // plus a small qualifying set. The hero must return the
-      // correct slice members AND complete within a reasonable
-      // budget — proxy for "pre-filter actually narrows the scan".
+      // This test seeds 30 high_confidence-qualifying senders with
+      // distinct monthly volumes 1..30, well over SLICE_MAX (24). The
+      // slice MUST return rows volume=30..7 (top 24 by volume desc),
+      // and `totalCount` MUST equal 30 from the `COUNT(*) OVER ()`
+      // window function.
+      const QUALIFYING = 30;
+      const recent = new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1000);
+      for (let i = 1; i <= QUALIFYING; i += 1) {
+        const s = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: `hc-${i.toString().padStart(2, '0')}@x.test`,
+          firstSeenAt: recent,
+          lastSeenAt: recent,
+        });
+        await seedTimeseries(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          yearMonth: '2026-05-01',
+          volume: i,
+          readCount: 0,
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          verdict: 'unsubscribe',
+          confidence: '0.95',
+          producedAt: NOW,
+        });
+      }
+
+      const hero = await svc.listWeeklyHero({ mailboxAccountId: mailboxId, now: NOW });
+      const hc = hero.slices.find((s) => s.kind === 'high_confidence');
+      expect(hc).toBeDefined();
+      // True qualifying cardinality from the window function.
+      expect(hc!.totalCount).toBe(QUALIFYING);
+      // Cap at SLICE_MAX = 24.
+      expect(hc!.senders.length).toBe(24);
+      // Top 24 by volume (30..7 inclusive) — proves the rank+cap order.
+      const volumes = hc!.senders.map((s) => s.monthlyVolume);
+      expect(volumes).toEqual(Array.from({ length: 24 }, (_, idx) => QUALIFYING - idx));
+    }, 30_000);
+
+    it('runs cleanly at 1500-sender mailbox scale (limit-after-rank)', async () => {
+      // Scale regression — confirms the per-slice queries complete
+      // in a reasonable wall-clock budget when the mailbox carries
+      // mostly noise. The noise senders satisfy NO slice predicate;
+      // the SQL-side `WHERE` keeps them out of the scan entirely. A
+      // small qualifying set proves the right rows still surface.
       const NOISE_COUNT = 1500;
       const recent = new Date(NOW.getTime() - 10 * 24 * 60 * 60 * 1000);
       for (let i = 0; i < NOISE_COUNT; i += 1) {

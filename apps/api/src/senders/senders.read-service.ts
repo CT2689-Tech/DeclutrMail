@@ -712,214 +712,212 @@ export class SendersReadService {
     const longQuietCutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixMonthsAgo = addMonthsUtc(now, -6);
 
-    // Outer-scope identifiers for correlated subqueries (see MISTAKES.md
-    // 2026-05-23 + the matching block in `listSenders`).
-    const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
-    const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
-
-    const latestVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const latestReadCountSql = sql<number | null>`(
-      SELECT ${senderTimeseries.readCount}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const currentMonthVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
-      LIMIT 1
-    )`;
-    const priorAvgVolumeSql = sql<number | null>`(
-      SELECT AVG(${senderTimeseries.volume})::float
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
-        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
-    )`;
-    // Confidence subquery — the most-recent triage decision's
-    // confidence. Stored as `numeric(3,2)`; cast to float for the
-    // > 0.85 comparison in TS (postgres-js + PGlite return numerics as
-    // strings).
-    const latestConfidenceSql = sql<string | null>`(
-      SELECT ${triageDecisions.confidence}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const latestVerdictSql = sql<'keep' | 'archive' | 'unsubscribe' | 'later' | null>`(
-      SELECT ${triageDecisions.verdict}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-
-    // Candidate pre-filter (perf — FOUNDER-FOLLOWUPS 2026-05-27).
-    //
-    // Without this pre-filter the outer SELECT scans every sender in
-    // the mailbox AND runs 6 correlated subqueries per row — at
-    // 5k-sender mailboxes that's 30k subquery executions per Monday-
-    // morning hero render. The pre-filter narrows the outer SELECT to
-    // only senders that could belong to ANY of the three slices, then
-    // the existing 6 correlated subqueries run on the bounded set.
-    //
-    // Predicates (cheap, indexed):
-    //   - high_confidence path: a `triage_decisions` row exists for
-    //     the (mailbox, sender) AND verdict IN ('archive','unsubscribe')
-    //     AND confidence > 0.85. The verdict + confidence are
-    //     conservatively checked across ALL rows for that pair, not
-    //     just the latest — a sender that's ever scored
-    //     archive/unsubscribe-high-confidence becomes a candidate and
-    //     the subsequent `latestVerdict` subquery decides the final
-    //     slice membership. Strict pre-filter + exact post-filter ==
-    //     equivalent semantics to the original.
-    //   - spike path: at least one `sender_timeseries` row in the
-    //     current month AND one in the prior 3-month window. Cheap
-    //     via the existing `(mailbox_account_id, sender_key, year_month)`
-    //     PK index.
-    //   - quiet path: `last_seen_at` < 30d ago AND `first_seen_at` <
-    //     6mo ago. Both are columns on `senders` directly — no join.
-    //
-    // OR'd together via SQL `OR`. A defensive `LIMIT 1500` caps the
-    // outer scan if data is unexpectedly skewed (every sender stale
-    // enough for the quiet predicate, etc.). At normal scales the
-    // pre-filter narrows well below the cap.
-    const HARD_CANDIDATE_LIMIT = 1500;
-    const candidates = await this.db
-      .select({
-        id: senders.id,
-        senderKey: senders.senderKey,
-        displayName: senders.displayName,
-        email: senders.email,
-        domain: senders.domain,
-        firstSeenAt: senders.firstSeenAt,
-        lastSeenAt: senders.lastSeenAt,
-        latestVolume: latestVolumeSql,
-        latestReadCount: latestReadCountSql,
-        currentMonthVolume: currentMonthVolumeSql,
-        priorAvgVolume: priorAvgVolumeSql,
-        latestConfidence: latestConfidenceSql,
-        latestVerdict: latestVerdictSql,
-      })
-      .from(senders)
-      .where(
-        and(
-          eq(senders.mailboxAccountId, mailboxAccountId),
-          sql`(
-            EXISTS (
-              SELECT 1 FROM ${triageDecisions}
-              WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-                AND ${triageDecisions.senderKey} = ${outerSenderKey}
-                AND ${triageDecisions.verdict} IN ('archive', 'unsubscribe')
-                AND ${triageDecisions.confidence} > 0.85
-            )
-            OR (
-              EXISTS (
-                SELECT 1 FROM ${senderTimeseries}
-                WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-                  AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-                  AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
-              )
-              AND EXISTS (
-                SELECT 1 FROM ${senderTimeseries}
-                WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-                  AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-                  AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
-                  AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
-              )
-            )
-            OR (
-              ${senders.lastSeenAt} < ${longQuietCutoff.toISOString()}
-              AND ${senders.firstSeenAt} < ${sixMonthsAgo.toISOString()}
-            )
-          )`,
-        ),
-      )
-      .limit(HARD_CANDIDATE_LIMIT);
-
     const SLICE_MAX = 24;
     const SLICE_MIN = 3;
 
-    // High-confidence slice — engine recommends archive/unsubscribe AND
-    // confidence > 0.85. Sort by latest monthly volume desc (highest
-    // noise first), per D48.
-    const highConfidence = candidates
-      .filter((c) => {
-        if (c.latestVerdict !== 'archive' && c.latestVerdict !== 'unsubscribe') return false;
-        if (c.latestConfidence === null) return false;
-        const conf = Number.parseFloat(c.latestConfidence);
-        if (!Number.isFinite(conf)) return false;
-        return conf > 0.85;
-      })
-      .sort((a, b) => (b.latestVolume ?? 0) - (a.latestVolume ?? 0));
+    // Per-slice queries (PR #115 review P1 — limit-after-rank).
+    //
+    // Previous attempts loaded every sender with 6 correlated subqueries
+    // and ranked / capped in TypeScript. That had two flaws:
+    //   (a) Unbounded outer scan — fine up to ~7k senders but linear
+    //       with the mailbox.
+    //   (b) Worse, the v2 patch that added `LIMIT 1500` to the outer
+    //       SELECT truncated the candidate set BEFORE slice-specific
+    //       ranking, so mailboxes with more than 1500 qualifying rows
+    //       would surface an arbitrary subset and miss the top-volume /
+    //       highest-ratio / sortest-quiet senders.
+    //
+    // Each slice now runs as its own SELECT with:
+    //   - SQL-side predicates so only candidates that actually belong
+    //     to the slice are evaluated,
+    //   - `LATERAL` joins for "latest row per (mailbox, sender)" reads
+    //     (replaces the correlated subquery pattern; same indexes serve
+    //     it),
+    //   - SQL-side `ORDER BY` matching the slice's ranking rule, and
+    //   - `LIMIT ${SLICE_MAX}` AFTER ranking — D48's top-N cap is
+    //     enforced at the DB boundary so the right rows always win.
+    //
+    // `COUNT(*) OVER ()` gives the true qualifying-cardinality on
+    // every row of the limited result; the response uses it for
+    // `totalCount` so callers know "out of N possible, we surfaced 24".
+    //
+    // Tenant boundary (MISTAKES.md 2026-05-23): every LATERAL body
+    // joins on `s.mailbox_account_id = senders.mailbox_account_id`
+    // via the outer `s` alias, so the (mailbox_account_id, sender_key)
+    // index hits cleanly and there is no risk of a tautology.
+    type SliceRow = {
+      id: string;
+      sender_key: string;
+      display_name: string;
+      email: string;
+      domain: string;
+      first_seen_at: Date;
+      last_seen_at: Date;
+      latest_volume: number | null;
+      latest_read_count: number | null;
+      total_count: number | string;
+    };
 
-    // Spike slice — current month ≥ 3× prior 3-month average. Skip
-    // senders with no prior baseline (prevents division-by-zero "new
-    // sender" senders from polluting spike — they belong in their own
-    // cohort, not here).
-    const spike = candidates
-      .map((c) => {
-        const current = c.currentMonthVolume ?? 0;
-        const prior = c.priorAvgVolume ?? 0;
-        const ratio = prior > 0 ? current / prior : 0;
-        return { c, ratio };
-      })
-      .filter((row) => {
-        const prior = row.c.priorAvgVolume ?? 0;
-        // Require non-trivial baseline so a sender jumping 1 → 4 doesn't
-        // surface as a "spike" — a single message is noise, not signal.
-        if (prior < 1) return false;
-        return row.ratio >= 3;
-      })
-      .sort((a, b) => b.ratio - a.ratio)
-      .map((row) => row.c);
+    const longQuietCutoffIso = longQuietCutoff.toISOString();
+    const sixMonthsAgoIso = sixMonthsAgo.toISOString();
+    const nowIso = now.toISOString();
 
-    // Long-quiet slice — last_seen ≥ 30 days ago, read_rate < 30%,
-    // relationship ≥ 6 months (D48 — "only surface senders the user
-    // has had inbox presence with for ≥ 6 months — no surprises").
-    const quiet = candidates
-      .filter((c) => {
-        if (c.lastSeenAt >= longQuietCutoff) return false;
-        if (c.firstSeenAt >= sixMonthsAgo) return false;
-        const vol = c.latestVolume ?? 0;
-        if (vol === 0) return false;
-        const rate = (c.latestReadCount ?? 0) / vol;
-        return rate < 0.3;
-      })
-      .map((c) => {
-        // Sort key per D48: monthly_volume × first_seen_months (target
-        // senders that were noisy when active).
-        const monthsActive = Math.max(
-          1,
-          Math.floor((now.getTime() - c.firstSeenAt.getTime()) / (1000 * 60 * 60 * 24 * 30)),
-        );
-        return { c, sortKey: (c.latestVolume ?? 0) * monthsActive };
-      })
-      .sort((a, b) => b.sortKey - a.sortKey)
-      .map((row) => row.c);
+    const [highConfidenceRes, spikeRes, quietRes] = await Promise.all([
+      // High-confidence slice (D48 §1): latest triage decision says
+      // archive/unsubscribe with confidence > 0.85, ranked by latest
+      // monthly volume desc (noisiest first).
+      this.db.execute<SliceRow>(sql`
+        SELECT
+          s.id, s.sender_key, s.display_name, s.email, s.domain,
+          s.first_seen_at, s.last_seen_at,
+          latest_ts.volume AS latest_volume,
+          latest_ts.read_count AS latest_read_count,
+          COUNT(*) OVER () AS total_count
+        FROM ${senders} s
+        INNER JOIN LATERAL (
+          SELECT verdict, confidence
+          FROM ${triageDecisions}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY produced_at DESC
+          LIMIT 1
+        ) latest_td ON latest_td.verdict IN ('archive', 'unsubscribe')
+                  AND latest_td.confidence > 0.85
+        LEFT JOIN LATERAL (
+          SELECT volume, read_count
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY year_month DESC
+          LIMIT 1
+        ) latest_ts ON true
+        WHERE s.mailbox_account_id = ${mailboxAccountId}
+        ORDER BY latest_ts.volume DESC NULLS LAST, s.sender_key
+        LIMIT ${SLICE_MAX}
+      `),
 
-    // Pick the top N members per slice and build a single de-duped key
-    // set for the batched sparkline read.
+      // Spike slice (D48 §2): current-month volume ≥ 3× prior-3-month
+      // average AND a non-trivial baseline (prior_avg ≥ 1) so a single
+      // message doesn't surface as a "spike". Ranked by ratio desc.
+      this.db.execute<SliceRow>(sql`
+        SELECT
+          s.id, s.sender_key, s.display_name, s.email, s.domain,
+          s.first_seen_at, s.last_seen_at,
+          latest_ts.volume AS latest_volume,
+          latest_ts.read_count AS latest_read_count,
+          COUNT(*) OVER () AS total_count
+        FROM ${senders} s
+        INNER JOIN LATERAL (
+          SELECT volume
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+            AND year_month = ${currentMonthIso}
+        ) current_ts ON true
+        INNER JOIN LATERAL (
+          SELECT AVG(volume)::float AS avg_vol
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+            AND year_month >= ${priorWindowStartIso}
+            AND year_month < ${currentMonthIso}
+        ) prior_ts ON prior_ts.avg_vol >= 1
+        LEFT JOIN LATERAL (
+          SELECT volume, read_count
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY year_month DESC
+          LIMIT 1
+        ) latest_ts ON true
+        WHERE s.mailbox_account_id = ${mailboxAccountId}
+          AND current_ts.volume >= 3 * prior_ts.avg_vol
+        ORDER BY (current_ts.volume::float / prior_ts.avg_vol) DESC, s.sender_key
+        LIMIT ${SLICE_MAX}
+      `),
+
+      // Quiet slice (D48 §3): last_seen ≥ 30d ago AND first_seen ≥ 6mo
+      // ago (D48 — "no surprises"), latest volume > 0, read_rate < 30%.
+      // Ranked by monthly_volume × months_active desc (target senders
+      // that were noisy when active).
+      this.db.execute<SliceRow>(sql`
+        SELECT
+          s.id, s.sender_key, s.display_name, s.email, s.domain,
+          s.first_seen_at, s.last_seen_at,
+          latest_ts.volume AS latest_volume,
+          latest_ts.read_count AS latest_read_count,
+          COUNT(*) OVER () AS total_count
+        FROM ${senders} s
+        INNER JOIN LATERAL (
+          SELECT volume, read_count
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY year_month DESC
+          LIMIT 1
+        ) latest_ts ON latest_ts.volume > 0
+        WHERE s.mailbox_account_id = ${mailboxAccountId}
+          AND s.last_seen_at < ${longQuietCutoffIso}
+          AND s.first_seen_at < ${sixMonthsAgoIso}
+          AND (latest_ts.read_count::float / latest_ts.volume) < 0.30
+        ORDER BY (latest_ts.volume::float
+                   * (EXTRACT(EPOCH FROM (${nowIso}::timestamptz - s.first_seen_at)) / 86400 / 30)) DESC,
+                 s.sender_key
+        LIMIT ${SLICE_MAX}
+      `),
+    ]);
+
+    // postgres-js + PGlite both return execute() results with a
+    // `.rows` array on the result envelope. Drizzle types the call as
+    // an array-like; cast through the envelope to read the rows.
+    const extractRows = (res: unknown): SliceRow[] =>
+      ((res as { rows?: SliceRow[] }).rows ?? (res as SliceRow[])) as SliceRow[];
+
+    const highConfidence = extractRows(highConfidenceRes);
+    const spike = extractRows(spikeRes);
+    const quiet = extractRows(quietRes);
+
+    // Maps a wire-shape SliceRow (snake_case from raw SQL) into the
+    // camelCase shape the response-build loop expects. Keeps the
+    // existing sparkline + slice-render code unchanged.
+    type SliceMember = {
+      id: string;
+      senderKey: string;
+      displayName: string;
+      email: string;
+      domain: string;
+      firstSeenAt: Date;
+      lastSeenAt: Date;
+      latestVolume: number | null;
+      latestReadCount: number | null;
+    };
+    const toMember = (r: SliceRow): SliceMember => ({
+      id: r.id,
+      senderKey: r.sender_key,
+      displayName: r.display_name,
+      email: r.email,
+      domain: r.domain,
+      firstSeenAt:
+        r.first_seen_at instanceof Date ? r.first_seen_at : new Date(r.first_seen_at as string),
+      lastSeenAt:
+        r.last_seen_at instanceof Date ? r.last_seen_at : new Date(r.last_seen_at as string),
+      latestVolume: r.latest_volume,
+      latestReadCount: r.latest_read_count,
+    });
+
+    // Capture per-slice true totalCount from the window function. The
+    // value is identical across every row of a slice; reading the
+    // first row is sufficient. Empty slice ⇒ 0.
+    const totalCounts = {
+      high_confidence: highConfidence.length > 0 ? Number(highConfidence[0]!.total_count ?? 0) : 0,
+      spike: spike.length > 0 ? Number(spike[0]!.total_count ?? 0) : 0,
+      quiet: quiet.length > 0 ? Number(quiet[0]!.total_count ?? 0) : 0,
+    } as const;
+
     const sliceMembers = {
-      high_confidence: highConfidence,
-      spike,
-      quiet,
+      high_confidence: highConfidence.map(toMember),
+      spike: spike.map(toMember),
+      quiet: quiet.map(toMember),
     } as const;
 
     const allSenderKeys = new Set<string>();
@@ -969,9 +967,18 @@ export class SendersReadService {
     const slices: WeeklyHeroSlice[] = [];
     for (const kind of ['high_confidence', 'spike', 'quiet'] as const) {
       const members = sliceMembers[kind];
-      if (members.length < SLICE_MIN) continue;
-      const capped = members.slice(0, SLICE_MAX);
-      const rows: WeeklyHeroSenderRow[] = capped.map((m) => {
+      // D48 — slices with fewer than 3 qualifying senders are omitted
+      // from the response. Cardinality check is against the full
+      // qualifying set (from the COUNT(*) OVER () window function), not
+      // the LIMIT-capped page — otherwise a 24-member slice followed by
+      // 5 more eligibles would render fine while a slice that's already
+      // surfaced 24 of 24 qualifying would be measured the same. The
+      // distinction only matters at the 24-row boundary.
+      const trueTotal = totalCounts[kind];
+      if (trueTotal < SLICE_MIN) continue;
+      // `members` is already SQL-capped at SLICE_MAX and ranked at SQL
+      // level — no further slicing needed.
+      const rows: WeeklyHeroSenderRow[] = members.map((m) => {
         const vol = m.latestVolume ?? 0;
         const reads = m.latestReadCount ?? 0;
         return {
@@ -986,7 +993,7 @@ export class SendersReadService {
       });
       slices.push({
         kind,
-        totalCount: members.length,
+        totalCount: trueTotal,
         senders: rows,
       });
     }
