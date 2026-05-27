@@ -21,6 +21,37 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-05-26 — `packages/workers` had no vitest config → CI default 5s timeout flaked PGlite tests
+
+**PR:** [#98](https://github.com/CT2689-Tech/DeclutrMail/pull/98)
+**Caught by:** CI on main (consistently red on `OutboxDispatcherWorker
+> LISTEN handler wakes a tick before the polling interval fires`,
+then on `AFTER INSERT trigger emits pg_notify on the outbox_inserted
+channel` once the first was patched — same root cause, different
+victim test)
+**What happened:** `packages/workers` shipped without a
+`vitest.config.ts`, so its tests ran under vitest's default
+`testTimeout`. Every integration test in that package spins up PGlite
++ applies every migration per `it()` (~3-10s of fixture work on CI
+before the test logic even starts). Sister package `packages/db` —
+same fixture profile — already set `testTimeout: 30_000`; workers
+just never got the same treatment. First attempt fixed only the one
+failing test (`it(..., 15_000)`) which made the next-longest test in
+the file the new flake. Second attempt fixed the package globally
+via config.
+**Correct approach:** When adding a package that runs PGlite +
+migrations per test, copy the vitest config profile from `packages/db`
+(`testTimeout: 30_000`) at the same time. Don't fix flakes test-by-
+test when the timeout budget is package-wide.
+**Rule:** Any package with PGlite + migration-driven integration
+tests MUST have a `vitest.config.ts` with `testTimeout` ≥ 30_000. New
+packages of this shape MUST be onboarded with the config in the same
+PR as the first integration test.
+**Enforcement update:** none yet. Candidates if it recurs: a lint rule
+or CI check that fails when a package contains `*.test.ts` importing
+`@electric-sql/pglite` but no `vitest.config.ts` with `testTimeout`
+set. Hold for now — single recurrence, easy to spot in review.
+
 ## 2026-05-26 — Five reviewable bugs caught by Codex across the Variant D + Autopilot stacks
 
 **PRs:** #64 (db), #65 (workers), #77 (api adapter), #78 (events),
