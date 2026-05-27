@@ -26,6 +26,21 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-27 — `listWeeklyHero` N+1 (no outer LIMIT + 6 correlated subqueries per sender)
+
+**Source:** PR #115 — `feat(senders): Weekly Hero + 3 slices + grid default (D47, D48, D49)` — gate review [BLOCKING] from silent-failure-hunter + architecture-guardian.
+**Why:** [apps/api/src/senders/senders.read-service.ts:776](apps/api/src/senders/senders.read-service.ts:776) selects every sender for the mailbox (no `LIMIT`) and runs 6 correlated subqueries per row (latestVolume, latestReadCount, currentMonthVolume, priorAvgVolume, latestConfidence, latestVerdict). At launch-scale mailboxes (5k+ senders) Monday-morning hero renders execute 30k subqueries — a wall-clock-synchronised traffic spike on a single endpoint. Caught by the review but NOT patched in #115's scope (kept #115 small + focused; the silent-error half-blocker IS patched in `85819f8`).
+**How:**
+1. After #115 merges, open `perf/d047-weekly-hero-narrow-queries` off main.
+2. Split `listWeeklyHero` into 3 per-slice queries, each with its own primary filter + `LIMIT 24` (`SLICE_MAX`):
+   - **high_confidence**: WHERE latest verdict IN (archive, unsubscribe) AND latest confidence > 0.85 ORDER BY latest volume DESC
+   - **spike**: WHERE current_month_volume >= 3 × prior_3mo_avg ORDER BY ratio DESC
+   - **quiet**: WHERE first_seen < now() - 6mo AND last_seen < now() - 6mo ORDER BY last_seen ASC
+   Each becomes a small bounded query. Round-trip cost moves 2 → 4 (3 slices + 1 sparkline batch) but each round-trip stays cheap.
+3. Keep the cross-mailbox `sender_key` collision regression spec in place (MISTAKES.md 2026-05-23). Add an "outer SELECT bounded" regression that seeds 1000 senders and asserts each per-slice query plan is `Limit (rows=24)`.
+**Verifies by:** `EXPLAIN ANALYZE` per slice shows `Limit (cost=…, rows=24)`; p95 against a 5k-sender fixture stays under D235's 150 ms partitioning threshold.
+**Status:** Open
+
 ### 2026-05-27 — Dependabot branches blocked by CLAUDE.md §6 + D-trailer gates
 
 **Source:** PR #97 / #94 / #93 / #92 / #89 — every open dependabot
