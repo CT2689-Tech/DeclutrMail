@@ -138,30 +138,46 @@ export class SyncService {
     mailboxAccountId: string;
     incomingHistoryId: bigint;
   }): Promise<AdvanceHistoryIdResult> {
-    return this.db.transaction(async (tx): Promise<AdvanceHistoryIdResult> => {
-      const rows = await tx
-        .select({ lastHistoryId: providerSyncState.lastHistoryId })
-        .from(providerSyncState)
-        .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId))
-        .for('update')
-        .limit(1);
-      if (rows.length === 0) {
-        return { kind: 'uninitialized' };
-      }
-      const previousHistoryId = rows[0]!.lastHistoryId ?? null;
-      if (previousHistoryId !== null && previousHistoryId >= args.incomingHistoryId) {
-        return { kind: 'stale', lastHistoryId: previousHistoryId };
-      }
-      await tx
-        .update(providerSyncState)
-        .set({
-          lastHistoryId: args.incomingHistoryId,
-          historyIdUpdatedAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId));
-      return { kind: 'advanced', previousHistoryId };
-    });
+    return this.db.transaction((tx) => this.advanceHistoryIdWithExecutor(tx, args));
+  }
+
+  /**
+   * Same SELECT-FOR-UPDATE + UPDATE as {@link advanceHistoryId} but
+   * runs inside a caller-provided executor (transaction client).
+   *
+   * Exposed so callers that need to fold the cursor advance into a
+   * LARGER atomic unit (e.g. the Gmail webhook's dedup-write + cursor-advance
+   * critical section, P1 fix) can share one transaction. The row lock
+   * acquired by `.for('update')` is held by the caller's transaction
+   * until that transaction commits or rolls back — exactly the semantics
+   * we want when the dedup row + cursor advance must commit together.
+   */
+  async advanceHistoryIdWithExecutor(
+    executor: DrizzleExecutor,
+    args: { mailboxAccountId: string; incomingHistoryId: bigint },
+  ): Promise<AdvanceHistoryIdResult> {
+    const rows = await executor
+      .select({ lastHistoryId: providerSyncState.lastHistoryId })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId))
+      .for('update')
+      .limit(1);
+    if (rows.length === 0) {
+      return { kind: 'uninitialized' };
+    }
+    const previousHistoryId = rows[0]!.lastHistoryId ?? null;
+    if (previousHistoryId !== null && previousHistoryId >= args.incomingHistoryId) {
+      return { kind: 'stale', lastHistoryId: previousHistoryId };
+    }
+    await executor
+      .update(providerSyncState)
+      .set({
+        lastHistoryId: args.incomingHistoryId,
+        historyIdUpdatedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId));
+    return { kind: 'advanced', previousHistoryId };
   }
 
   /**

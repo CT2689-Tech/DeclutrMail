@@ -233,6 +233,69 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(dedup[0]!.mailboxAccountId).toBe(mailboxId);
   });
 
+  it('rolls back dedup row when cursor advance crashes mid-transaction (P1 atomicity)', async () => {
+    // Regression for PR #113 review P1: dedup insert + historyId advance
+    // MUST commit atomically. If the advance throws after the dedup row
+    // is written, the dedup row MUST NOT be visible to a retry — else
+    // Pub/Sub redelivery dedup-skips the work and the cursor never advances.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+
+    // Wire a SyncService whose `advanceHistoryIdWithExecutor` throws
+    // mid-transaction. Subclass so the rest of the surface (and the
+    // service's @Inject contract) stays untouched.
+    class CrashingSync extends SyncService {
+      override async advanceHistoryIdWithExecutor(): Promise<never> {
+        throw new Error('simulated crash mid-advance');
+      }
+    }
+    const crashingService = new GmailWebhookService(db, new CrashingSync(queueStub, db));
+
+    // First push crashes — the transaction must roll back.
+    await expect(
+      crashingService.processVerifiedPush({
+        messageId: 'msg-crash',
+        payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+      }),
+    ).rejects.toThrow(/simulated crash/);
+
+    // Dedup row is NOT visible — the tx rolled back, so the insert was undone.
+    const dedupAfterCrash = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-crash'));
+    expect(dedupAfterCrash.length).toBe(0);
+
+    // Cursor was NOT advanced.
+    let syncState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(syncState[0]!.lastHistoryId).toBe(1000n);
+
+    // A Pub/Sub retry with the SAME messageId re-enters the critical
+    // section (not deduped to no-op) and successfully advances the cursor.
+    const healthyService = new GmailWebhookService(db, new SyncService(queueStub, db));
+    const retry = await healthyService.processVerifiedPush({
+      messageId: 'msg-crash',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(retry.kind).toBe('enqueued');
+
+    // Dedup row now exists from the retry; cursor is advanced.
+    const dedupAfterRetry = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-crash'));
+    expect(dedupAfterRetry.length).toBe(1);
+
+    syncState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(syncState[0]!.lastHistoryId).toBe(1500n);
+  });
+
   it('rejects an oversized messageId at the DB length cap (varchar 512)', async () => {
     // Pub/Sub messageIds are ~16 chars in practice. The schema caps
     // the column at varchar(512) so a pathological publisher (or a
