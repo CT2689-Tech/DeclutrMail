@@ -16,8 +16,9 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import type { BriefLlmPort } from './brief-narrative.js';
 import { BriefSnapshotWorker } from './brief-snapshot.worker.js';
 import { scheduledAtMinute as briefSnapshotScheduledAtMinute } from './brief-snapshot.queue.js';
 import type { WorkerContext } from './worker-context.js';
@@ -125,6 +126,7 @@ interface SeedMessageInput {
   mailboxAccountId: string;
   senderKey: string;
   subject?: string;
+  snippet?: string;
   internalDate: Date;
   isOutbound?: boolean;
   idSuffix?: string;
@@ -138,7 +140,7 @@ async function seedMessage(db: Db, input: SeedMessageInput): Promise<void> {
     providerThreadId: `thr-${suffix}`,
     senderKey: input.senderKey,
     subject: input.subject ?? '',
-    snippet: '',
+    snippet: input.snippet ?? '',
     internalDate: input.internalDate,
     labelIds: input.isOutbound ? ['SENT'] : ['INBOX'],
     isUnread: !input.isOutbound,
@@ -630,5 +632,316 @@ describe('BriefSnapshotWorker', () => {
       .where(eq(briefRuns.mailboxAccountId, b.mailboxAccountId));
     // Exactly one mailbox succeeded; the other one's row is missing.
     expect(aRows.length + bRows.length).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------
+  // D62 — Haiku LLM + deterministic template fallback.
+  // ---------------------------------------------------------------------
+
+  it('D62 — LLM happy path: narrative is the LLM text and generated_by = llm_haiku', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Boss',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Q4 plans',
+      snippet: 'Can we move the Q4 sync to Thursday?',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const llm: BriefLlmPort = {
+      generateNarrative: vi
+        .fn()
+        .mockResolvedValue('Boss needs a reply about Q4 plans. Nothing else urgent.'),
+    };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({
+        generatedBy: briefRuns.generatedBy,
+        briefPayload: briefRuns.briefPayload,
+      })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('llm_haiku');
+    expect(row!.briefPayload.narrative).toBe(
+      'Boss needs a reply about Q4 plans. Nothing else urgent.',
+    );
+
+    // The LLM port received exactly the allowlisted fields — no body,
+    // no message ids, no senderKey. The bounded `BriefNarrativeInput`
+    // contract is the privacy gate; assert here so a future regression
+    // (e.g. someone adds raw `BriefItem` to the input) blows up the test.
+    const generateNarrative = llm.generateNarrative as ReturnType<typeof vi.fn>;
+    expect(generateNarrative).toHaveBeenCalledTimes(1);
+    const arg = generateNarrative.mock.calls[0]![0];
+    expect(arg.reply[0]).toEqual({
+      senderName: 'Boss',
+      senderEmail: 'boss@example.com',
+      subject: 'Q4 plans',
+      snippet: 'Can we move the Q4 sync to Thursday?',
+      isVip: false,
+    });
+    // Defense-in-depth: no `senderKey`, no `messageIds`, no `body`
+    // smuggled through the input.
+    expect(arg.reply[0]).not.toHaveProperty('senderKey');
+    expect(arg.reply[0]).not.toHaveProperty('messageIds');
+    expect(arg.reply[0]).not.toHaveProperty('body');
+  });
+
+  it('D62 — LLM null return falls back to deterministic template', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const llm: BriefLlmPort = {
+      generateNarrative: vi.fn().mockResolvedValue(null),
+    };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({
+        generatedBy: briefRuns.generatedBy,
+        briefPayload: briefRuns.briefPayload,
+      })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+    // Template narrative — single-reply, single-message phrasing.
+    expect(row!.briefPayload.narrative).toBe('1 email needs a reply.');
+  });
+
+  it('D62 — LLM throw is caught and falls back to template (no throws contract)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const llm: BriefLlmPort = {
+      generateNarrative: vi.fn().mockRejectedValue(new Error('ECONNRESET')),
+    };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    // The worker must not propagate the throw — its outer try/catch in
+    // `composeNarrative` is defense-in-depth for a port impl that
+    // violates the "no throws" contract.
+    await expect(
+      worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX),
+    ).resolves.toBeDefined();
+
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+  });
+
+  it('D62 — LLM timeout falls back to template (wall-clock guard)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    // LLM stalls forever — the worker's `llmTimeoutMs` guard must trip.
+    const llm: BriefLlmPort = {
+      generateNarrative: () => new Promise<string | null>(() => undefined),
+    };
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => NOW,
+      llm,
+      llmTimeoutMs: 25,
+    });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+  });
+
+  it('D62 — LLM empty/whitespace-only return falls back to template', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const llm: BriefLlmPort = {
+      generateNarrative: vi.fn().mockResolvedValue('   \n   '),
+    };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+  });
+
+  it('D70 — empty day does NOT call the LLM (no point spending a Haiku request)', async () => {
+    const db = await freshDb();
+    await seedMailbox(db);
+
+    const generateNarrative = vi.fn();
+    const llm: BriefLlmPort = { generateNarrative };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    const result = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(result.emptyBriefs).toBe(1);
+    // Empty-day short-circuit — the LLM port must NEVER be called on a
+    // zero-message Brief. Wasted Haiku request + unstable phrasing for
+    // a calm message that's better delivered verbatim per D70.
+    expect(generateNarrative).not.toHaveBeenCalled();
+  });
+
+  it('D62 — LLM trims surrounding whitespace before storing the narrative', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const llm: BriefLlmPort = {
+      generateNarrative: vi.fn().mockResolvedValue('\n\n  Boss needs a reply.  \n'),
+    };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.briefPayload.narrative).toBe('Boss needs a reply.');
+  });
+
+  it('D7 — snippet is passed to the LLM but NEVER stored on brief_payload (privacy)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Q4',
+      snippet: 'super-secret-snippet-do-not-leak',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const generateNarrative = vi.fn().mockResolvedValue('Boss has a Q4 question.');
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => NOW,
+      llm: { generateNarrative },
+    });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    // The LLM saw the snippet.
+    expect(generateNarrative.mock.calls[0]![0].reply[0].snippet).toBe(
+      'super-secret-snippet-do-not-leak',
+    );
+
+    // The persisted payload did NOT.
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    const payloadJson = JSON.stringify(row!.briefPayload);
+    expect(payloadJson).not.toContain('super-secret-snippet-do-not-leak');
+    // Belt-and-suspenders: explicitly assert the BriefItem has no
+    // `snippet` field.
+    expect(row!.briefPayload.reply[0]).not.toHaveProperty('snippet');
+  });
+
+  it('emits a brief.generated structured log with generatedBy provenance', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+      await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+      // Find the brief.generated line among the structured logs.
+      const briefLines = logSpy.mock.calls
+        .map((args) => args[0])
+        .filter((s): s is string => typeof s === 'string')
+        .map((s) => {
+          try {
+            return JSON.parse(s) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })
+        .filter((o): o is Record<string, unknown> => o !== null && o.kind === 'brief.generated');
+      expect(briefLines).toHaveLength(1);
+      expect(briefLines[0]!.generatedBy).toBe('template');
+      expect(briefLines[0]!.mailboxAccountId).toBe(mailboxAccountId);
+      expect(briefLines[0]!.isEmpty).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

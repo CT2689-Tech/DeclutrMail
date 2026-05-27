@@ -7,16 +7,27 @@ import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
+  BRIEF_SNAPSHOT_INTERVAL_MS,
+  BRIEF_SNAPSHOT_QUEUE,
+  BriefSnapshotWorker,
   createRedisConnection,
   ensureInitialSyncJob,
+  enqueueBriefSnapshotTick,
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
   RateLimiter,
   ValidationError,
 } from '@declutrmail/workers';
-import type { GmailAccess, InitialSyncJobData, InitialSyncResult } from '@declutrmail/workers';
+import type {
+  BriefSnapshotJobData,
+  BriefSnapshotResult,
+  GmailAccess,
+  InitialSyncJobData,
+  InitialSyncResult,
+} from '@declutrmail/workers';
 
+import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
@@ -143,6 +154,51 @@ async function bootstrap(): Promise<void> {
 
   bullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
+  });
+
+  /**
+   * BriefSnapshotWorker consumer + scheduler (D61, D62, D63, D67, D69,
+   * D70). The worker is a `cronPolicy` (D203/D225) — its jobs are
+   * produced by a setInterval driver inside this composition root, not
+   * by user actions or external events. Wiring is split into two parts:
+   *
+   *   1. The BullMQ consumer that runs one snapshot pass per tick.
+   *   2. The setInterval scheduler that calls `enqueueBriefSnapshotTick`
+   *      every `BRIEF_SNAPSHOT_INTERVAL_MS` (1 hour). The queue's
+   *      `jobId = BriefSnapshotWorker:${scheduledAtMinute}` is the D225
+   *      idempotency key — repeated enqueues for the same minute are
+   *      no-ops, so the scheduler is safe to fire on any cadence.
+   *
+   * D62 LLM wiring: `buildBriefLlmAdapter()` returns the Anthropic Haiku
+   * adapter when `ANTHROPIC_API_KEY` is set, `null` otherwise. The
+   * worker accepts `undefined` to mean "no LLM available; always use
+   * the deterministic template". `null → undefined` so the worker
+   * checks `this.deps.llm` rather than `null !== undefined`.
+   */
+  const briefLlm = buildBriefLlmAdapter();
+  const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
+  briefSnapshotWorker.setObserver(observer);
+
+  const briefSnapshotBullWorker = new Worker<BriefSnapshotJobData, BriefSnapshotResult>(
+    BRIEF_SNAPSHOT_QUEUE,
+    (job) => briefSnapshotWorker.run(job),
+    // cronPolicy is global-scope; the worker's internal per-mailbox
+    // fan-out (`BRIEF_SNAPSHOT_CONCURRENCY`) handles parallelism within
+    // a single job. Outer concurrency=1 keeps ticks from overlapping
+    // — D69's per-mailbox UNIQUE makes overlap safe, but skipping
+    // duplicate work is cheaper.
+    { connection, concurrency: 1 },
+  );
+
+  briefSnapshotBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: BRIEF_SNAPSHOT_QUEUE,
+        message: err.message,
+      }),
+    );
   });
 
   // Continuous reconciler (Codex adversarial review iter 5 + 6,
@@ -287,8 +343,60 @@ async function bootstrap(): Promise<void> {
   // BullMQ worker is the foreground loop.
   reconcilerHandle.unref();
 
+  /**
+   * Brief snapshot cron scheduler (D62, D64, D225). Every hour, enqueue
+   * a tick keyed on the current minute. `enqueueBriefSnapshotTick` is
+   * idempotent — repeated enqueues for the same minute resolve to one
+   * BullMQ job via the `jobId` dedup. The hourly cadence is what gives
+   * each UTC offset's local 8am a fair shake (the worker decides
+   * per-mailbox whether yesterday's local-date Brief already exists).
+   *
+   * The driver is `setInterval`-based rather than BullMQ's repeatable-
+   * job feature so the scheduling rule lives in TypeScript (testable,
+   * reviewable) rather than in Redis state. Re-deploys reset the
+   * cadence cleanly; nothing leaks between worker generations.
+   */
+  const briefSchedulerQueue = new Queue<BriefSnapshotJobData>(BRIEF_SNAPSHOT_QUEUE, { connection });
+
+  async function enqueueBriefTick(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueBriefSnapshotTick(briefSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'brief.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      // Background seam — scheduler runs outside the BullMQ loop so the
+      // BaseDeclutrWorker observer wouldn't otherwise see it (D159).
+      observer.captureBackgroundFailure(error, { kind: 'brief.scheduler_failed' });
+    }
+  }
+
+  // Boot enqueue + periodic enqueue. The boot tick covers the case
+  // where the worker has been down across an hourly boundary — D69
+  // makes a same-day re-run a no-op, so an extra boot enqueue costs
+  // nothing.
+  await enqueueBriefTick();
+  const briefSchedulerHandle = setInterval(() => {
+    void enqueueBriefTick();
+  }, BRIEF_SNAPSHOT_INTERVAL_MS);
+  briefSchedulerHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.listening',
+      queue: BRIEF_SNAPSHOT_QUEUE,
+      llmWired: Boolean(briefLlm),
+    }),
   );
 
   // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
@@ -305,11 +413,14 @@ async function bootstrap(): Promise<void> {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
     shuttingDown = true;
     clearInterval(reconcilerHandle);
+    clearInterval(briefSchedulerHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
       }
       await bullWorker.close();
+      await briefSnapshotBullWorker.close();
+      await briefSchedulerQueue.close();
       await reconcilerQueue.close();
       await connection.quit();
       await pg.end();
