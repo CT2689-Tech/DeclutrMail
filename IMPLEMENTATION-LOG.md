@@ -98,9 +98,9 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D44 | Stats strip: **5 stats, single reflow row | 🔵 | #30 |  |  |
 | D45 | Charts: **Volume + open-rate over 12 months, side-by-side | 🔵 | #30 |  |  |
 | D46 | Decision history: **10 most recent inline, all V2 actions, link to full | 🔵 | #30 |  |  |
-| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | ⬜ |  |  |  |
-| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | ⬜ |  |  |  |
-| D49 | Senders default view: **Always grid; table is per-session toggle | ⬜ |  |  |  |
+| D47 | Senders shape: **Weekly Hero (Mondays) + grid/table below + Review Session overlay | 🔵 | #115 |  |  |
+| D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🔵 | #115 |  |  |
+| D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
 | D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | ⬜ |  |  |  |
