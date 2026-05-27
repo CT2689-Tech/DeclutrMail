@@ -56,51 +56,77 @@ export class FollowupReadService {
    * sender_keys from the unfiltered rows and intersect against the
    * mailbox-scoped policies. Cross-tenant lookups are impossible by
    * construction because both queries are mailbox-scoped.
+   *
+   * Over-fetch loop: the exclusion is applied in TS (sha256 hashing
+   * happens here, not in SQL — see D12) so we cannot push it into the
+   * SQL WHERE clause without a hash function call in PG. Instead we
+   * fetch in pages and accumulate until we have PAGE_SIZE eligible rows
+   * OR the underlying awaiting set is exhausted. Bounded at MAX_PAGES
+   * so a pathological mailbox (e.g. 1000s of archived recipients in the
+   * oldest tail) cannot make this endpoint loop unbounded — past the
+   * cap we return what we have. The default cap covers a worst case of
+   * 1000 awaiting rows scanned to surface 100 eligible.
    */
   async listAwaiting(mailboxAccountId: string, nowMs: number = Date.now()): Promise<Followup[]> {
     const PAGE_SIZE = 100;
-    const rows = await this.db
-      .select()
-      .from(followupTracker)
-      .where(
-        and(
-          eq(followupTracker.mailboxAccountId, mailboxAccountId),
-          eq(followupTracker.status, 'awaiting'),
-        ),
-      )
-      .orderBy(asc(followupTracker.sentAt), asc(followupTracker.id))
-      .limit(PAGE_SIZE);
+    const MAX_PAGES = 10;
+    const eligible: Followup[] = [];
+    let offset = 0;
 
-    if (rows.length === 0) return [];
+    for (let page = 0; page < MAX_PAGES && eligible.length < PAGE_SIZE; page += 1) {
+      const rows = await this.db
+        .select()
+        .from(followupTracker)
+        .where(
+          and(
+            eq(followupTracker.mailboxAccountId, mailboxAccountId),
+            eq(followupTracker.status, 'awaiting'),
+          ),
+        )
+        .orderBy(asc(followupTracker.sentAt), asc(followupTracker.id))
+        .limit(PAGE_SIZE)
+        .offset(offset);
 
-    // D86 — filter rows whose recipient is currently marked Archive or
-    // Unsubscribe by the user. Derive the candidate sender_keys in TS
-    // (sha256 hashing happens here, not in SQL — see ADR-0011 / D12),
-    // then run ONE mailbox-scoped policy fetch and post-filter.
-    //
-    // Avoiding a correlated SQL subquery here is deliberate: Drizzle's
-    // `sql` template would emit bare column names on both sides of the
-    // join, silently collapsing the predicate to a tautology (see
-    // MISTAKES.md 2026-05-23). A round-trip-and-filter in TS is
-    // structurally immune.
-    const candidateSenderKeys = Array.from(
-      new Set(rows.map((r) => deriveSenderKey(r.recipientEmail))),
-    );
-    const excludedPolicies = await this.db
-      .select({ senderKey: senderPolicies.senderKey })
-      .from(senderPolicies)
-      .where(
-        and(
-          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-          inArray(senderPolicies.senderKey, candidateSenderKeys),
-          inArray(senderPolicies.policyType, ['archive', 'unsubscribe']),
-        ),
+      if (rows.length === 0) break;
+      offset += rows.length;
+
+      // D86 — filter rows whose recipient is currently marked Archive or
+      // Unsubscribe by the user. Derive the candidate sender_keys in TS
+      // (sha256 hashing happens here, not in SQL — see D12), then run
+      // ONE mailbox-scoped policy fetch and post-filter.
+      //
+      // Avoiding a correlated SQL subquery here is deliberate: Drizzle's
+      // `sql` template would emit bare column names on both sides of the
+      // join, silently collapsing the predicate to a tautology (see
+      // MISTAKES.md 2026-05-23). A round-trip-and-filter in TS is
+      // structurally immune.
+      const candidateSenderKeys = Array.from(
+        new Set(rows.map((r) => deriveSenderKey(r.recipientEmail))),
       );
-    const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
+      const excludedPolicies = await this.db
+        .select({ senderKey: senderPolicies.senderKey })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            inArray(senderPolicies.senderKey, candidateSenderKeys),
+            inArray(senderPolicies.policyType, ['archive', 'unsubscribe']),
+          ),
+        );
+      const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
 
-    return rows
-      .filter((row) => !excluded.has(deriveSenderKey(row.recipientEmail)))
-      .map((row) => projectFollowup(row, nowMs));
+      for (const row of rows) {
+        if (excluded.has(deriveSenderKey(row.recipientEmail))) continue;
+        eligible.push(projectFollowup(row, nowMs));
+        if (eligible.length >= PAGE_SIZE) break;
+      }
+
+      // Underlying set exhausted — short-circuit so we don't issue a
+      // pointless extra query when the last page was a partial.
+      if (rows.length < PAGE_SIZE) break;
+    }
+
+    return eligible;
   }
 
   /**
