@@ -15,7 +15,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { Queue } from 'bullmq';
+import type { InitialSyncJobData } from '@declutrmail/workers';
+
 import type { DrizzleDb } from '../../db/db.module.js';
+import { SyncService } from '../../sync/sync.service.js';
 import { GmailWebhookService } from '../gmail-webhook.service.js';
 
 /**
@@ -98,7 +102,12 @@ describe('GmailWebhookService.processVerifiedPush', () => {
 
   beforeEach(async () => {
     db = await freshDb();
-    service = new GmailWebhookService(db);
+    // SyncService's `advanceHistoryId` (D204 facade) does not touch the
+    // queue, so a never-called stub is sufficient. `enqueueInitialSync`
+    // / `schedule` are exercised by SyncService's own specs.
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const sync = new SyncService(queueStub, db);
+    service = new GmailWebhookService(db, sync);
   });
 
   it('advances historyId, writes a dedup row, returns enqueued', async () => {
@@ -222,6 +231,69 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       .where(eq(webhookDedup.messageId, 'msg-uninitialized'));
     expect(dedup.length).toBe(1);
     expect(dedup[0]!.mailboxAccountId).toBe(mailboxId);
+  });
+
+  it('rolls back dedup row when cursor advance crashes mid-transaction (P1 atomicity)', async () => {
+    // Regression for PR #113 review P1: dedup insert + historyId advance
+    // MUST commit atomically. If the advance throws after the dedup row
+    // is written, the dedup row MUST NOT be visible to a retry — else
+    // Pub/Sub redelivery dedup-skips the work and the cursor never advances.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+
+    // Wire a SyncService whose `advanceHistoryIdWithExecutor` throws
+    // mid-transaction. Subclass so the rest of the surface (and the
+    // service's @Inject contract) stays untouched.
+    class CrashingSync extends SyncService {
+      override async advanceHistoryIdWithExecutor(): Promise<never> {
+        throw new Error('simulated crash mid-advance');
+      }
+    }
+    const crashingService = new GmailWebhookService(db, new CrashingSync(queueStub, db));
+
+    // First push crashes — the transaction must roll back.
+    await expect(
+      crashingService.processVerifiedPush({
+        messageId: 'msg-crash',
+        payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+      }),
+    ).rejects.toThrow(/simulated crash/);
+
+    // Dedup row is NOT visible — the tx rolled back, so the insert was undone.
+    const dedupAfterCrash = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-crash'));
+    expect(dedupAfterCrash.length).toBe(0);
+
+    // Cursor was NOT advanced.
+    let syncState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(syncState[0]!.lastHistoryId).toBe(1000n);
+
+    // A Pub/Sub retry with the SAME messageId re-enters the critical
+    // section (not deduped to no-op) and successfully advances the cursor.
+    const healthyService = new GmailWebhookService(db, new SyncService(queueStub, db));
+    const retry = await healthyService.processVerifiedPush({
+      messageId: 'msg-crash',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(retry.kind).toBe('enqueued');
+
+    // Dedup row now exists from the retry; cursor is advanced.
+    const dedupAfterRetry = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-crash'));
+    expect(dedupAfterRetry.length).toBe(1);
+
+    syncState = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(syncState[0]!.lastHistoryId).toBe(1500n);
   });
 
   it('rejects an oversized messageId at the DB length cap (varchar 512)', async () => {

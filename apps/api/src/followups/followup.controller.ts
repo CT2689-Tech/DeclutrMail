@@ -45,10 +45,13 @@ export class FollowupController {
   }
 
   /**
-   * POST /api/followups/:id/dismiss — D88 "Mark resolved". Cross-tenant
-   * lookups and second-dismiss attempts collapse to 404 (the service
-   * returns null), so caller cannot probe existence across mailboxes
-   * or replay terminal transitions.
+   * POST /api/followups/:id/dismiss — D88 "Mark resolved".
+   *
+   * Idempotency (D202/D207, Phase 1): a repeat dismiss of the same
+   * (mailbox, id) returns 200 with `alreadyDismissed: true` instead of
+   * a 404, so a flaky-network retry can render the success state.
+   * Cross-tenant lookups + non-awaiting rows still collapse to 404 so
+   * caller cannot probe existence across mailboxes.
    */
   @Post(':id/dismiss')
   @RateLimit('triage-load')

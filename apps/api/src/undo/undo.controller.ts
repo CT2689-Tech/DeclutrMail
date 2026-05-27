@@ -9,7 +9,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import {
+  ok,
+  paginated,
+  type Envelope,
+  type PaginatedEnvelope,
+} from '@declutrmail/shared/contracts';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { UndoService } from './undo.service.js';
 import type { UndoActionKind, UndoResult } from './undo.types.js';
 
@@ -43,36 +50,40 @@ export class UndoController {
   /**
    * GET /api/undo — list active undo tokens for the current mailbox
    * (D35 persistent tray data source).
+   *
+   * Rate-limit (D156): `triage-load` bucket with a per-route override
+   * of 300/min = 5/sec. The tray re-fetches after every undo POST + on
+   * page load; 5/sec absorbs both bursts without throttling normal use.
    */
+  @RateLimit({ bucket: 'triage-load', limit: 300, windowSec: 60 })
   @Get()
   async listActive(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Query('limit') rawLimit: string | undefined,
-  ): Promise<{
-    data: Array<{
+  ): Promise<
+    PaginatedEnvelope<{
       token: string;
       actionKind: UndoActionKind;
       createdAt: string;
       expiresAt: string;
-    }>;
-    meta: { pagination: { nextCursor: null; hasMore: false; limit: number } };
-  }> {
+    }>
+  > {
     const accountId = this.requireMailbox(mailboxAccountId);
     const limit = clampLimit(rawLimit);
     const rows = await this.undo.listActive(accountId, limit);
-    return {
-      data: rows.map((row) => ({
-        token: row.token,
-        actionKind: row.actionKind,
-        createdAt: row.createdAt.toISOString(),
-        expiresAt: row.expiresAt.toISOString(),
-      })),
-      // The tray is single-page by design (see controller header). The
-      // envelope still carries `pagination` so the D202 contract
-      // shape is uniform with cursor-paginated endpoints — clients
-      // never have to special-case undo.
-      meta: { pagination: { nextCursor: null, hasMore: false, limit } },
-    };
+    const items = rows.map((row) => ({
+      token: row.token,
+      actionKind: row.actionKind,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: row.expiresAt.toISOString(),
+    }));
+    // The tray is single-page by design (see controller header). We
+    // still emit through `paginated()` with a `null` next-cursor so the
+    // D202 envelope shape stays uniform with cursor-paginated routes
+    // (`hasMore` is derived from `nextCursor !== null`, so single-page
+    // semantics fall out automatically) — clients never have to
+    // special-case undo.
+    return paginated({ items, limit, nextCursor: null });
   }
 
   /**
@@ -90,11 +101,18 @@ export class UndoController {
    * This is documented in the PR body so the founder can audit the
    * staging order.
    */
+  /**
+   * Rate-limit (D156): `gmail-action` bucket with a per-route override
+   * of 30/min = 0.5/sec. Undo is rare; the slow refill caps abuse of
+   * the destructive revert surface well below any reasonable human
+   * pace while still permitting a rapid burst from a confused user.
+   */
+  @RateLimit({ bucket: 'gmail-action', limit: 30, windowSec: 60 })
   @Post(':token')
   async revert(
     @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
     @Param('token') token: string,
-  ): Promise<{ data: UndoResult; meta: Record<string, never> }> {
+  ): Promise<Envelope<UndoResult>> {
     const accountId = this.requireMailbox(mailboxAccountId);
     if (!isUuid(token)) {
       throw new BadRequestException('token must be a UUID.');
@@ -115,10 +133,7 @@ export class UndoController {
       );
     }
     if (claim.outcome === 'already-reverted') {
-      return {
-        data: toResult(claim.entry),
-        meta: {},
-      };
+      return ok(toResult(claim.entry));
     }
     // claim.outcome === 'claimed' — we own the revert. The per-verb
     // reverter dispatch lands with each destructive feature slice; the
@@ -128,10 +143,7 @@ export class UndoController {
     // BEFORE `recordRevertSuccess` so reverted_at stays null and a
     // retry re-claims the work.
     const stamped = await this.undo.recordRevertSuccess(token);
-    return {
-      data: toResult(stamped),
-      meta: {},
-    };
+    return ok(toResult(stamped));
   }
 
   /** Reject requests with no mailbox header — pre-auth-layer minimum. */

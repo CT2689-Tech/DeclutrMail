@@ -1,5 +1,7 @@
 import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import { ok, type Envelope } from '@declutrmail/shared/contracts';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { TriageService } from './triage.service.js';
 
 /**
@@ -24,10 +26,16 @@ import { TriageService } from './triage.service.js';
 export class TriageController {
   constructor(private readonly triage: TriageService) {}
 
+  /**
+   * Rate-limit (D156): `gmail-action` bucket — score-sender enqueues a
+   * worker job that may touch Gmail metadata. 60/min default matches
+   * one new sender/sec, which is far above any plausible human pace.
+   */
+  @RateLimit('gmail-action')
   @Post('score-sender')
   async scoreSender(
     @Body() body: { mailboxAccountId?: unknown; senderKey?: unknown },
-  ): Promise<{ data: { idempotencyKey: string } }> {
+  ): Promise<Envelope<{ idempotencyKey: string }>> {
     const mailboxAccountId =
       typeof body?.mailboxAccountId === 'string' ? body.mailboxAccountId : null;
     const senderKey = typeof body?.senderKey === 'string' ? body.senderKey : null;
@@ -35,6 +43,6 @@ export class TriageController {
       throw new BadRequestException('mailboxAccountId and senderKey are required string fields.');
     }
     const result = await this.triage.scoreSender({ mailboxAccountId, senderKey });
-    return { data: result };
+    return ok(result);
   }
 }

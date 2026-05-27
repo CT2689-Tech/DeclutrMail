@@ -53,20 +53,23 @@ export class FollowupReadService {
   }
 
   /**
-   * D88 — dismiss a single followup row. Idempotent on already-dismissed
-   * rows: a second dismiss returns `null` so the controller maps to 404,
-   * matching the dismiss pattern in `AutopilotReadService`. Cross-tenant
-   * lookups also collapse to `null` so caller cannot probe existence
-   * across mailboxes.
+   * D88 — dismiss a single followup row.
    *
-   * Only `awaiting` rows can transition to `dismissed`. `replied` rows
-   * stay `replied` (the recipient already answered — dismissal would
-   * lose audit signal).
+   * Idempotency contract (D202/D207, Phase 1):
+   *
+   *   - First dismiss              → `{ alreadyDismissed: false }` + audit
+   *   - Repeat dismiss of the same → `{ alreadyDismissed: true }`  (no audit replay)
+   *   - Cross-tenant / not-awaiting → `null` → controller 404
+   *                                   (cannot probe existence across mailboxes)
+   *
+   * `replied` rows stay `replied` (the recipient already answered —
+   * dismissal would lose audit signal); they also collapse to 404.
    *
    * Writes the status flip + the D88 activity_log entry inside one
    * transaction so the audit row cannot diverge from the row state on
-   * partial failure. The activity_log row uses `source='manual'` (user-
-   * initiated) and `action='followup-dismiss'` (added in migration 0013).
+   * partial failure. The audit row is written ONLY on the first
+   * dismiss — a benign replay does not produce a second audit entry,
+   * matching the "stored result" semantics of D207.
    */
   async dismiss(mailboxAccountId: string, id: string): Promise<FollowupDismissResult | null> {
     return this.db.transaction(async (tx) => {
@@ -85,24 +88,54 @@ export class FollowupReadService {
           status: followupTracker.status,
           dismissedAt: followupTracker.dismissedAt,
         });
-      if (!updated) return null;
+      if (updated) {
+        // D88 — audit row. `senderKey=null` because followups are
+        // thread-scoped, not sender-scoped; the audit row stays
+        // mailbox-scoped. `affectedCount=1` (one followup row resolved).
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey: null,
+          source: 'manual',
+          action: 'followup-dismiss',
+          affectedCount: 1,
+        });
 
-      // D88 — audit row. `senderKey=null` because followups are
-      // thread-scoped, not sender-scoped; the audit row stays
-      // mailbox-scoped. `affectedCount=1` (one followup row resolved).
-      await tx.insert(activityLog).values({
-        mailboxAccountId,
-        senderKey: null,
-        source: 'manual',
-        action: 'followup-dismiss',
-        affectedCount: 1,
-      });
+        return {
+          id: updated.id,
+          status: updated.status,
+          dismissedAt: updated.dismissedAt?.toISOString() ?? new Date().toISOString(),
+          alreadyDismissed: false,
+        };
+      }
 
-      return {
-        id: updated.id,
-        status: updated.status,
-        dismissedAt: updated.dismissedAt?.toISOString() ?? new Date().toISOString(),
-      };
+      // The UPDATE missed. Check whether THIS mailbox already has a
+      // `dismissed` row for this id — benign replay → 200 with
+      // alreadyDismissed:true. Anything else (cross-tenant, replied,
+      // missing) collapses to null → 404 so caller cannot probe.
+      const [existing] = await tx
+        .select({
+          id: followupTracker.id,
+          status: followupTracker.status,
+          dismissedAt: followupTracker.dismissedAt,
+        })
+        .from(followupTracker)
+        .where(
+          and(
+            eq(followupTracker.mailboxAccountId, mailboxAccountId),
+            eq(followupTracker.id, id),
+            eq(followupTracker.status, 'dismissed'),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        return {
+          id: existing.id,
+          status: existing.status,
+          dismissedAt: existing.dismissedAt?.toISOString() ?? new Date().toISOString(),
+          alreadyDismissed: true,
+        };
+      }
+      return null;
     });
   }
 }

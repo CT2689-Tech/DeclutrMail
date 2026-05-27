@@ -238,6 +238,7 @@ describe('FollowupReadService', () => {
       expect(result!.id).toBe(id);
       expect(result!.status).toBe('dismissed');
       expect(typeof result!.dismissedAt).toBe('string');
+      expect(result!.alreadyDismissed).toBe(false);
 
       const [row] = await db
         .select({
@@ -309,15 +310,45 @@ describe('FollowupReadService', () => {
       expect(result).toBeNull();
     });
 
-    it('second dismiss of the same row returns null (already terminal)', async () => {
+    it('second dismiss of the same row returns alreadyDismissed:true with the original dismissedAt', async () => {
+      // Phase-1 idempotency contract (D202/D207): repeat dismiss for
+      // the same (mailbox, followup) is a benign replay — it MUST NOT
+      // collapse to 404 (indistinguishable from "missing") and the
+      // terminal `dismissedAt` MUST match the first call.
       const id = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
         threadId: 't',
         sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
       });
       const first = await service.dismiss(mailboxA.mailboxAccountId, id);
       expect(first).not.toBeNull();
+      expect(first!.alreadyDismissed).toBe(false);
       const second = await service.dismiss(mailboxA.mailboxAccountId, id);
-      expect(second).toBeNull();
+      expect(second).not.toBeNull();
+      expect(second!.status).toBe('dismissed');
+      expect(second!.alreadyDismissed).toBe(true);
+      expect(second!.dismissedAt).toBe(first!.dismissedAt);
+
+      // The audit row from the first dismiss must NOT be duplicated by
+      // the replay — D207 stored-result semantics.
+      const audit = await db
+        .select({ id: activityLog.id })
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxA.mailboxAccountId));
+      expect(audit).toHaveLength(1);
+    });
+
+    it('cross-tenant repeat-dismiss still returns null (404) — alreadyDismissed bypass is per-mailbox', async () => {
+      // Dismiss B's row as B, then attempt the same id as A. Must NOT
+      // leak "row exists / is dismissed" via a 200.
+      const id = await seedFollowup(db, mailboxB.workspaceId, mailboxB.mailboxAccountId, {
+        threadId: 't',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+      });
+      const dismissedAsB = await service.dismiss(mailboxB.mailboxAccountId, id);
+      expect(dismissedAsB).not.toBeNull();
+      expect(dismissedAsB!.alreadyDismissed).toBe(false);
+      const crossTenant = await service.dismiss(mailboxA.mailboxAccountId, id);
+      expect(crossTenant).toBeNull();
     });
 
     it('returns null for an unknown id', async () => {

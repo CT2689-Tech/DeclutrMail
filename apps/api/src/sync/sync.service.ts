@@ -16,6 +16,23 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
  */
 type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
+/**
+ * Result of {@link SyncService.advanceHistoryId}.
+ *
+ *   - `advanced`: row existed, incoming > last_history_id, UPDATE applied
+ *   - `stale`:    row existed but incoming <= last_history_id (last value returned)
+ *   - `uninitialized`: no provider_sync_state row exists for this mailbox
+ *
+ * Bootstrap of a missing row is the OAuth-connect / InitialSyncWorker
+ * flow's responsibility (D109, D224) — `advanceHistoryId` never creates
+ * the row. Callers map `uninitialized` to a successful no-op so Pub/Sub
+ * stops retrying a delivery that initial sync wouldn't fix.
+ */
+export type AdvanceHistoryIdResult =
+  | { kind: 'advanced'; previousHistoryId: bigint | null }
+  | { kind: 'stale'; lastHistoryId: bigint | null }
+  | { kind: 'uninitialized' };
+
 /** NestJS DI token for the initial-sync BullMQ queue (D157). */
 export const INITIAL_SYNC_QUEUE_TOKEN = 'INITIAL_SYNC_QUEUE';
 
@@ -101,6 +118,66 @@ export class SyncService {
   async enqueueInitialSync(mailboxAccountId: string): Promise<void> {
     await this.markQueued(this.db, mailboxAccountId);
     await this.schedule(mailboxAccountId);
+  }
+
+  /**
+   * Advance `provider_sync_state.last_history_id` for one mailbox,
+   * inside a SERIALIZABLE-equivalent SELECT-FOR-UPDATE + UPDATE
+   * transaction (D229 step 8 monotonic cursor).
+   *
+   * Cross-feature facade (D204): the webhooks module calls this rather
+   * than touching `provider_sync_state` directly. The sync feature owns
+   * the table and the lock semantics; webhook is just the trigger.
+   *
+   * No `incrementalSync` enqueue here — the BullMQ producer for the
+   * follow-up incremental-sync job lands in the next PR (`processVerifiedPush`
+   * documents the gap). The dedup row + advanced cursor are the atomic
+   * effect for this PR.
+   */
+  async advanceHistoryId(args: {
+    mailboxAccountId: string;
+    incomingHistoryId: bigint;
+  }): Promise<AdvanceHistoryIdResult> {
+    return this.db.transaction((tx) => this.advanceHistoryIdWithExecutor(tx, args));
+  }
+
+  /**
+   * Same SELECT-FOR-UPDATE + UPDATE as {@link advanceHistoryId} but
+   * runs inside a caller-provided executor (transaction client).
+   *
+   * Exposed so callers that need to fold the cursor advance into a
+   * LARGER atomic unit (e.g. the Gmail webhook's dedup-write + cursor-advance
+   * critical section, P1 fix) can share one transaction. The row lock
+   * acquired by `.for('update')` is held by the caller's transaction
+   * until that transaction commits or rolls back — exactly the semantics
+   * we want when the dedup row + cursor advance must commit together.
+   */
+  async advanceHistoryIdWithExecutor(
+    executor: DrizzleExecutor,
+    args: { mailboxAccountId: string; incomingHistoryId: bigint },
+  ): Promise<AdvanceHistoryIdResult> {
+    const rows = await executor
+      .select({ lastHistoryId: providerSyncState.lastHistoryId })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId))
+      .for('update')
+      .limit(1);
+    if (rows.length === 0) {
+      return { kind: 'uninitialized' };
+    }
+    const previousHistoryId = rows[0]!.lastHistoryId ?? null;
+    if (previousHistoryId !== null && previousHistoryId >= args.incomingHistoryId) {
+      return { kind: 'stale', lastHistoryId: previousHistoryId };
+    }
+    await executor
+      .update(providerSyncState)
+      .set({
+        lastHistoryId: args.incomingHistoryId,
+        historyIdUpdatedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, args.mailboxAccountId));
+    return { kind: 'advanced', previousHistoryId };
   }
 
   /**

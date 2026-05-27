@@ -40,4 +40,13 @@ export interface FollowupDismissResult {
   id: string;
   status: FollowupStatus;
   dismissedAt: string;
+  /**
+   * Phase-1 idempotency hint (D202/D207): `true` when the row was
+   * already in the `dismissed` terminal state — request was a no-op
+   * replay rather than the first dismiss. Lets a client retrying a
+   * flaky network request render the success state without having to
+   * disambiguate from a 404 "followup not found". Phase-2 lands the
+   * full `Idempotency-Key` table; until then this hint is the contract.
+   */
+  alreadyDismissed: boolean;
 }
