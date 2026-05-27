@@ -15,7 +15,19 @@ import {
 } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { createLimiter } from './reasoning.js';
+import {
+  BRIEF_FYI_MAX,
+  BRIEF_REPLY_MAX,
+  briefPayloadSchema,
+  EMPTY_BRIEF_PAYLOAD,
+  renderTemplateNarrative,
+  resolveBriefLlmTimeoutMs,
+  type BriefLlmPort,
+  type BriefNarrativeInput,
+  type BriefNarrativeItem,
+  type BriefNarrativeNoiseGroup,
+} from './brief-narrative.js';
+import { createLimiter, runWithTimeout } from './reasoning.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -76,12 +88,27 @@ export interface BriefSnapshotDeps {
    * each in-flight mailbox holds at most one connection at a time.
    */
   concurrency?: number;
+  /**
+   * D62 — Haiku LLM port. `undefined` (or null from the composition
+   * root's `buildBriefLlmAdapter(env)`) means "no LLM available; always
+   * use the template." A wired implementation MUST return `null` on
+   * any failure (network, refusal, max_tokens, malformed response); see
+   * `BriefLlmPort` contract in `brief-narrative.ts`.
+   */
+  llm?: BriefLlmPort;
+  /**
+   * Per-call timeout for `llm.generateNarrative()`. Defaults to
+   * `DEFAULT_BRIEF_LLM_TIMEOUT_MS` (10s) — one Brief call per mailbox
+   * per day, so a generous wall-clock is fine. Tests inject smaller
+   * values for deterministic timing.
+   */
+  llmTimeoutMs?: number;
 }
 
-/** D63 — Reply section cap. */
-const REPLY_MAX = 6;
+/** D63 — Reply section cap (re-export local alias for clarity). */
+const REPLY_MAX = BRIEF_REPLY_MAX;
 /** D63 — FYI section cap. */
-const FYI_MAX = 4;
+const FYI_MAX = BRIEF_FYI_MAX;
 
 /**
  * BriefSnapshotWorker (D61, D62, D63, D67, D69, D70).
@@ -143,8 +170,13 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
   override readonly workerName = 'BriefSnapshotWorker';
   override readonly policy = 'cronPolicy' as const;
 
+  /** Per-call timeout for `llm.generateNarrative()` — D62 wall-clock guard. */
+  private readonly llmTimeoutMs: number;
+
   constructor(private readonly deps: BriefSnapshotDeps) {
     super();
+    this.llmTimeoutMs =
+      deps.llmTimeoutMs ?? resolveBriefLlmTimeoutMs(process.env['BRIEF_LLM_TIMEOUT_MS']);
   }
 
   protected override getIdempotencyKey(payload: BriefSnapshotJobData): string {
@@ -245,7 +277,19 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       .limit(1);
     if (existing) return null;
 
-    const payload = await this.buildPayload(mailboxAccountId, yesterdayStart, todayStart);
+    const { payload, generatedBy } = await this.buildPayload(
+      mailboxAccountId,
+      yesterdayStart,
+      todayStart,
+    );
+
+    // D63 defense-in-depth — Zod validates the EXACT three-section
+    // shape (reply/fyi/noise + narrative + caps) right before insert.
+    // If a future refactor mis-shapes the payload, we fail loudly here
+    // instead of corrupting `brief_runs.brief_payload` and surfacing it
+    // to the FE as broken data. Worker's per-mailbox try/catch upstream
+    // counts the failure and continues to the next mailbox.
+    briefPayloadSchema.parse(payload);
 
     const inserted = await this.deps.db
       .insert(briefRuns)
@@ -253,7 +297,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         workspaceId,
         mailboxAccountId,
         runDateLocal: todayLocal,
-        generatedBy: 'template',
+        generatedBy,
         briefPayload: payload,
         generatedAt: now,
       })
@@ -265,25 +309,61 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
 
     const isEmpty =
       payload.reply.length === 0 && payload.fyi.length === 0 && payload.noise.length === 0;
+
+    // Structured log — picked up by the same collector as every other
+    // worker JSON line. The `kind: 'brief.generated'` selector + the
+    // `generatedBy` tag is what PostHog ingest filters on for the
+    // `brief.generator` counter (template vs llm_haiku). Includes
+    // `isEmpty` so the D70 empty-day rate is observable without an
+    // extra DB query.
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'brief.generated',
+        worker: this.workerName,
+        mailboxAccountId,
+        runDateLocal: todayLocal,
+        generatedBy,
+        isEmpty,
+        replyCount: payload.reply.length,
+        fyiCount: payload.fyi.length,
+        noiseGroupCount: payload.noise.length,
+      }),
+    );
+
     return { isEmpty };
   }
 
   /**
-   * Aggregate yesterday's inbound mail metadata into the D63 sections.
-   * Pure SQL + in-process categorization — no LLM, no clock dependency
-   * past `yesterdayStart` / `todayStart`.
+   * Aggregate yesterday's inbound mail metadata into the D63 sections
+   * + compose the D62 narrative (Haiku LLM if wired, deterministic
+   * template otherwise).
+   *
+   * Returns BOTH the payload AND the `generatedBy` provenance so the
+   * caller can stamp `brief_runs.generated_by` correctly (template vs
+   * llm_haiku, per D62).
+   *
+   * Privacy (D7, D228): the `snippet` column we read here is on the
+   * mail_messages allowlist; it leaves this function only via the
+   * bounded `BriefNarrativeInput` to the LLM port — it is NEVER
+   * persisted into `brief_payload` (the `BriefItem` type has no
+   * snippet field).
    */
   private async buildPayload(
     mailboxAccountId: string,
     yesterdayStart: Date,
     todayStart: Date,
-  ): Promise<BriefPayload> {
+  ): Promise<{ payload: BriefPayload; generatedBy: 'llm_haiku' | 'template' }> {
     // Fetch yesterday's inbound message metadata. One row per message.
+    // `snippet` is D7-allowlisted; the column type (varchar(300)) is
+    // the privacy boundary — a buggy sync worker can't smuggle a body
+    // in here.
     const messages = await this.deps.db
       .select({
         senderKey: mailMessages.senderKey,
         providerMessageId: mailMessages.providerMessageId,
         subject: mailMessages.subject,
+        snippet: mailMessages.snippet,
       })
       .from(mailMessages)
       .where(
@@ -297,7 +377,11 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       .orderBy(mailMessages.internalDate);
 
     if (messages.length === 0) {
-      return EMPTY_PAYLOAD;
+      // D70 short-circuit — no LLM call on an empty day, no point
+      // spending a Haiku request to say "you got 0 emails". The empty
+      // payload is provenance `'template'` (deterministic, no LLM
+      // touched it).
+      return { payload: EMPTY_BRIEF_PAYLOAD, generatedBy: 'template' };
     }
 
     // Bucket messages by sender.
@@ -305,6 +389,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       senderKey: string;
       messageIds: string[];
       representativeSubject: string;
+      /** First snippet seen for this sender — used by the LLM prompt
+       *  only; NEVER persisted into `brief_payload`. */
+      representativeSnippet: string;
     };
     const bySender = new Map<string, SenderBucket>();
     for (const m of messages) {
@@ -316,6 +403,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           senderKey: m.senderKey,
           messageIds: [m.providerMessageId],
           representativeSubject: m.subject,
+          representativeSnippet: m.snippet,
         });
       }
     }
@@ -368,10 +456,14 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     const vipBy = new Map(policyRows.map((r) => [r.senderKey, Boolean(r.isVip)]));
     const verdictBy = new Map(decisionRows.map((r) => [r.senderKey, r.verdict]));
 
-    // D63 + D67 categorization.
+    // D63 + D67 categorization. Snippets are tracked in a parallel
+    // map keyed on senderKey so the BriefItem (which is persisted)
+    // stays snippet-free — snippets travel only through the LLM port
+    // input downstream.
     const replyCandidates: BriefItem[] = [];
     const fyiCandidates: BriefItem[] = [];
     const noise: BriefSenderGroup[] = [];
+    const snippetBySenderKey = new Map<string, string>();
 
     for (const bucket of bySender.values()) {
       const identity = identityBy.get(bucket.senderKey);
@@ -382,6 +474,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       const senderEmail = identity?.email ?? '';
       const isVip = vipBy.get(bucket.senderKey) ?? false;
       const verdict = verdictBy.get(bucket.senderKey) ?? null;
+      snippetBySenderKey.set(bucket.senderKey, bucket.representativeSnippet);
 
       const item: BriefItem = {
         senderKey: bucket.senderKey,
@@ -429,14 +522,130 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     const reply = sortVipFirst(replyCandidates).slice(0, REPLY_MAX);
     const fyi = sortVipFirst(fyiCandidates).slice(0, FYI_MAX);
 
-    const narrative = renderTemplateNarrative({
-      replyCount: reply.length,
-      fyiCount: fyi.length,
-      noiseCount: noise.reduce((sum, g) => sum + g.messageCount, 0),
+    // D62 — narrative composition. The LLM path is preferred when wired
+    // and successful; on any failure (null return, timeout, throw) the
+    // worker falls back to the deterministic template. Provenance is
+    // captured separately so `brief_runs.generated_by` records the path
+    // that actually produced the stored copy.
+    const { narrative, generatedBy } = await this.composeNarrative({
+      mailboxAccountId,
+      reply,
+      fyi,
+      noise,
+      snippetBySenderKey,
     });
 
-    return { reply, fyi, noise, narrative };
+    return {
+      payload: { reply, fyi, noise, narrative },
+      generatedBy,
+    };
   }
+
+  /**
+   * D62 — pick the narrative source for one mailbox's Brief.
+   *
+   * Order of preference:
+   *   1. `deps.llm.generateNarrative()` with a wall-clock timeout. Any
+   *      failure mode (`null` return, timeout, unexpected throw) falls
+   *      through to the template. The Anthropic adapter's contract is
+   *      "no throws" — the `runWithTimeout` + outer try/catch are
+   *      defense-in-depth for a future port impl that doesn't honor it.
+   *   2. `renderTemplateNarrative()` — offline-safe, body-free,
+   *      deterministic. The template path is feature-complete on its
+   *      own (the worker shipped this path first; the LLM is layered
+   *      on top).
+   */
+  private async composeNarrative(input: {
+    mailboxAccountId: string;
+    reply: readonly BriefItem[];
+    fyi: readonly BriefItem[];
+    noise: readonly BriefSenderGroup[];
+    snippetBySenderKey: ReadonlyMap<string, string>;
+  }): Promise<{ narrative: string; generatedBy: 'llm_haiku' | 'template' }> {
+    if (this.deps.llm) {
+      const port = this.deps.llm;
+      const narrativeInput = buildNarrativeInput(input);
+      try {
+        const raced = await runWithTimeout(
+          () => port.generateNarrative(narrativeInput),
+          this.llmTimeoutMs,
+        );
+        if (raced.kind === 'ok' && raced.value !== null) {
+          const trimmed = raced.value.trim();
+          if (trimmed.length > 0) {
+            return { narrative: trimmed, generatedBy: 'llm_haiku' };
+          }
+          // LLM returned an empty/whitespace-only string — treat as
+          // failure and fall through. Empty narrative would be a worse
+          // UX than the template summary.
+        }
+        if (raced.kind === 'timeout') {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'brief.llm_timeout',
+              worker: this.workerName,
+              mailboxAccountId: input.mailboxAccountId,
+              timeoutMs: this.llmTimeoutMs,
+            }),
+          );
+        }
+      } catch (err) {
+        // Defense-in-depth — the port's contract is "no throws", but if a
+        // future impl regresses we still fall back to the template + log
+        // the breach so observability flags it.
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'brief.llm_error',
+            worker: this.workerName,
+            mailboxAccountId: input.mailboxAccountId,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }
+    return {
+      narrative: renderTemplateNarrative({
+        reply: input.reply,
+        fyi: input.fyi,
+        noise: input.noise,
+      }),
+      generatedBy: 'template',
+    };
+  }
+}
+
+/**
+ * Build the bounded `BriefNarrativeInput` from the final sections + the
+ * per-sender snippet map. Pure function — no clock, no I/O — so the
+ * LLM-port adapter sees exactly the same shape on test runs as in prod.
+ *
+ * Snippets are looked up by senderKey; absent snippets fall back to
+ * empty string (the prompt builder handles "(no preview)" rendering).
+ */
+function buildNarrativeInput(input: {
+  reply: readonly BriefItem[];
+  fyi: readonly BriefItem[];
+  noise: readonly BriefSenderGroup[];
+  snippetBySenderKey: ReadonlyMap<string, string>;
+}): BriefNarrativeInput {
+  const toNarrativeItem = (item: BriefItem): BriefNarrativeItem => ({
+    senderName: item.senderName,
+    senderEmail: item.senderEmail,
+    subject: item.subject,
+    snippet: input.snippetBySenderKey.get(item.senderKey) ?? '',
+    isVip: item.isVip,
+  });
+  const toNoiseGroup = (group: BriefSenderGroup): BriefNarrativeNoiseGroup => ({
+    senderName: group.senderName,
+    messageCount: group.messageCount,
+  });
+  return {
+    reply: input.reply.map(toNarrativeItem),
+    fyi: input.fyi.map(toNarrativeItem),
+    noise: input.noise.map(toNoiseGroup),
+  };
 }
 
 /**
@@ -450,43 +659,6 @@ function sortVipFirst<T extends { isVip: boolean }>(items: T[]): T[] {
     return a.isVip ? -1 : 1;
   });
 }
-
-/**
- * Deterministic D62 template fallback. The Haiku narrative replaces
- * this once the Anthropic adapter lands. Empty-day copy is the D70
- * "calm message" verbatim.
- */
-function renderTemplateNarrative(counts: {
-  replyCount: number;
-  fyiCount: number;
-  noiseCount: number;
-}): string {
-  if (counts.replyCount === 0 && counts.fyiCount === 0 && counts.noiseCount === 0) {
-    return `Your inbox was quiet yesterday.\n\nEnjoy the morning — we'll be back tomorrow.`;
-  }
-  const parts: string[] = [];
-  if (counts.replyCount > 0) {
-    parts.push(
-      `${counts.replyCount} ${counts.replyCount === 1 ? 'email needs a reply' : 'emails need replies'}`,
-    );
-  }
-  if (counts.fyiCount > 0) {
-    parts.push(`${counts.fyiCount} FYI${counts.fyiCount === 1 ? '' : 's'}`);
-  }
-  if (counts.noiseCount > 0) {
-    parts.push(
-      `${counts.noiseCount} ${counts.noiseCount === 1 ? 'message' : 'messages'} you can archive`,
-    );
-  }
-  return `${parts.join(', ')}.`;
-}
-
-const EMPTY_PAYLOAD: BriefPayload = {
-  reply: [],
-  fyi: [],
-  noise: [],
-  narrative: `Your inbox was quiet yesterday.\n\nEnjoy the morning — we'll be back tomorrow.`,
-};
 
 /** Render `YYYY-MM-DD` from a Date treating it as UTC. */
 function utcDateString(d: Date): string {

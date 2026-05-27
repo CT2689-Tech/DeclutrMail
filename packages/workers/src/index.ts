@@ -78,6 +78,24 @@ export type {
   BriefSnapshotResult,
 } from './brief-snapshot.worker.js';
 export {
+  BRIEF_FYI_MAX,
+  BRIEF_REPLY_MAX,
+  briefItemSchema,
+  briefPayloadSchema,
+  briefSenderGroupSchema,
+  DEFAULT_BRIEF_LLM_TIMEOUT_MS,
+  EMPTY_BRIEF_NARRATIVE,
+  EMPTY_BRIEF_PAYLOAD,
+  renderTemplateNarrative as renderBriefTemplateNarrative,
+  resolveBriefLlmTimeoutMs,
+} from './brief-narrative.js';
+export type {
+  BriefLlmPort,
+  BriefNarrativeInput,
+  BriefNarrativeItem,
+  BriefNarrativeNoiseGroup,
+} from './brief-narrative.js';
+export {
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_JOB,
   BRIEF_SNAPSHOT_QUEUE,
