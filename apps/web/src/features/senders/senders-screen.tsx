@@ -26,7 +26,7 @@ import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { ReviewSession, type ReviewResult } from './review-session';
 import { useSenders } from './api/use-senders';
 import { useWeeklyHero } from './api/use-weekly-hero';
-import { adaptSenderListRow } from './api/adapters';
+import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
@@ -373,10 +373,21 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
             data={heroQuery.data.data}
             onReview={(kind, sliceSenders) => {
               const reviewKind = mapHeroSliceToReviewKind(kind);
-              const ids = new Set(sliceSenders.map((s) => s.id));
-              const slice = senders.filter((s) => ids.has(s.id));
+              // PR #115 P2: review the full hero slice directly. The
+              // paginated `senders` list only contains the first page
+              // (~50 rows); larger mailboxes have hero slice members
+              // OUTSIDE that page, so the prior `senders.filter(...)`
+              // intersection silently dropped most of the slice. Adapt
+              // the hero DTOs into the `Sender` shape via
+              // `adaptHeroSender` so the review session sees every row
+              // the BE returned for the slice, regardless of pagination.
+              const slice = sliceSenders.map(adaptHeroSender);
               if (slice.length === 0) {
-                toast('Hero slice senders are not in the loaded list yet.', 'info');
+                // Defensive: the BE should never emit an empty slice
+                // (we don't render slices with < SLICE_MIN), but if it
+                // does, fall through with a calm toast rather than
+                // opening an empty review session.
+                toast('No senders to review in this slice.', 'info');
                 return;
               }
               setReview({ slice, kind: reviewKind });
