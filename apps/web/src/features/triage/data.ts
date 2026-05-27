@@ -94,6 +94,31 @@ export interface TriageSessionStats {
   streakDays: number;
   /** Free-tier remaining decisions for the day (D33 upgrade nudge). */
   freeRemaining: number | null;
+  /**
+   * D33 estimated impact — projected from today's decided senders'
+   * monthly volume. The BE computes these so the FE doesn't fake
+   * numbers (no fake completion per CLAUDE.md §10).
+   *
+   *   futureEmailsSkipped — annualised count of inbox messages
+   *     deflected by today's decisions (monthly_volume × 12 for each
+   *     archived / unsubscribed / later-routed sender).
+   *
+   *   minutesSavedPerWeek — coarse triage-time projection from the
+   *     same volume; ~6s per skipped email rounded to the nearest
+   *     minute (cf. D33 worked example: "~12 min/week saved").
+   *
+   * Both fields are `null` when the user has decided nothing today —
+   * the impact card doesn't render in that case so we never show
+   * "0 emails skipped" as a hollow brag.
+   */
+  futureEmailsSkipped: number | null;
+  minutesSavedPerWeek: number | null;
+  /**
+   * D33 tier-gated nudge — surfaces a subtle Plus or Pro link in
+   * the empty state. `null` for Pro users (no nudge; D33: "Hidden
+   * for Pro users"). See D17–D21 for the tier ladder.
+   */
+  tier: 'free' | 'plus' | 'pro';
 }
 
 /** Loading / empty / ready — closed union, no `string` fallback. */
@@ -309,7 +334,11 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   },
 ];
 
-/** Snapshot used by the empty state — fixtures only. */
+/**
+ * Snapshot used by the empty state — fixtures only. Defaults to the
+ * Plus tier so the "Pro could do this for you automatically" link
+ * surfaces in the empty-state Storybook story.
+ */
 export const TRIAGE_SESSION_STATS: TriageSessionStats = {
   decidedToday: 14,
   archivedToday: 6,
@@ -317,6 +346,11 @@ export const TRIAGE_SESSION_STATS: TriageSessionStats = {
   laterToday: 2,
   streakDays: 5,
   freeRemaining: null,
+  // 14 decisions × ~60/mo each × 12 months ≈ 10k — round to the
+  // D33-style number so the fixture reads as believable not contrived.
+  futureEmailsSkipped: 840,
+  minutesSavedPerWeek: 12,
+  tier: 'plus',
 };
 
 /** Free-tier snapshot used by the empty-state upgrade nudge story. */
@@ -327,6 +361,26 @@ export const TRIAGE_SESSION_STATS_FREE: TriageSessionStats = {
   laterToday: 2,
   streakDays: 2,
   freeRemaining: 2,
+  futureEmailsSkipped: 480,
+  minutesSavedPerWeek: 6,
+  tier: 'free',
+};
+
+/**
+ * Pro-tier snapshot — D33 says the upgrade nudge is "Hidden for Pro
+ * users (replaced with a streak/momentum graphic)." This fixture
+ * drives that variant.
+ */
+export const TRIAGE_SESSION_STATS_PRO: TriageSessionStats = {
+  decidedToday: 14,
+  archivedToday: 6,
+  unsubscribedToday: 3,
+  laterToday: 2,
+  streakDays: 12,
+  freeRemaining: null,
+  futureEmailsSkipped: 1240,
+  minutesSavedPerWeek: 18,
+  tier: 'pro',
 };
 
 // ─── Capability gates ─────────────────────────────────────────────

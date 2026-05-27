@@ -8,20 +8,28 @@ const { color, font } = tokens;
 /**
  * The triage empty state (D33).
  *
- * Three pieces, in this order:
+ * Five pieces, in this order:
  *
  *   1. Stats summary — what the user got done today (decided / archived
  *      / unsubscribed / later) plus the streak day count. The number
  *      gives the empty state weight — it isn't "nothing to do, the
  *      app is empty"; it's "you cleared the queue today".
  *
- *   2. "Come back tomorrow" — the engine refills the queue overnight
+ *   2. Estimated impact — D33's "~840 future emails will skip your
+ *      inbox / ~12 min/week saved on email triage." Numbers come from
+ *      the BE (`futureEmailsSkipped`, `minutesSavedPerWeek`) — both
+ *      are `null` when the user has decided nothing today, in which
+ *      case the card is hidden so we never brag "0 emails skipped."
+ *
+ *   3. "Come back tomorrow" — the engine refills the queue overnight
  *      from the next sync sweep + the weekly re-score cron (D25).
  *
- *   3. A subtle upgrade nudge — surfaces only when the user is on the
- *      free tier and has hit the daily-decision cap. `stats.freeRemaining`
- *      controls the visibility; `null` means the user is on Plus/Pro
- *      and the nudge is hidden.
+ *   4. A subtle upgrade nudge — tier-gated per D17–D21:
+ *        free → "See Plus" (removes the 5/day cap)
+ *        plus → "Pro could do this for you automatically" (D33 quote)
+ *        pro  → no nudge; D33 explicitly hides it for Pro users.
+ *      The Plus nudge only renders when `freeRemaining ≤ 5` so a free
+ *      user who hasn't pressed the cap doesn't get pestered.
  *
  * Privacy note (D7): no body content, no message subjects — only the
  * decision counts and the upgrade pitch. The same constraint applies
@@ -34,7 +42,16 @@ export function TriageEmptyState({
   stats: TriageSessionStats;
   onOpenUpgrade?: () => void;
 }) {
-  const showUpgrade = stats.freeRemaining != null && stats.freeRemaining <= 5;
+  const showPlusNudge =
+    stats.tier === 'free' && stats.freeRemaining != null && stats.freeRemaining <= 5;
+  const showProNudge = stats.tier === 'plus';
+  // D33 — only render the impact card when at least one number exists
+  // AND the user actually decided something today. The "decidedToday"
+  // gate prevents "0 emails skipped" copy on a refresh after the user
+  // cleared the queue without any archive/unsub.
+  const showImpact =
+    stats.decidedToday > 0 &&
+    (stats.futureEmailsSkipped != null || stats.minutesSavedPerWeek != null);
 
   return (
     <div
@@ -135,7 +152,60 @@ export function TriageEmptyState({
         </span>
       )}
 
-      {showUpgrade && (
+      {/* D33 — estimated impact ("~840 future emails / ~12 min/week").
+          Hidden when the user decided nothing today, per the rule
+          above. */}
+      {showImpact && (
+        <div
+          aria-label="Estimated impact of today's decisions"
+          style={{
+            width: '100%',
+            maxWidth: 520,
+            padding: '12px 14px',
+            background: color.paper,
+            border: `1px dashed ${color.lineSoft}`,
+            borderRadius: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+            }}
+          >
+            Estimated impact
+          </span>
+          {stats.futureEmailsSkipped != null && (
+            <span style={{ fontSize: 13, color: color.fgSoft }}>
+              ~
+              <strong style={{ color: color.fg, fontWeight: 600 }}>
+                {stats.futureEmailsSkipped.toLocaleString()}
+              </strong>{' '}
+              future emails will skip your inbox
+            </span>
+          )}
+          {stats.minutesSavedPerWeek != null && (
+            <span style={{ fontSize: 13, color: color.fgSoft }}>
+              ~
+              <strong style={{ color: color.fg, fontWeight: 600 }}>
+                {stats.minutesSavedPerWeek}
+              </strong>{' '}
+              min/week saved on email triage
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* D33 Free-tier nudge — "See Plus" surfaces only when the daily
+          cap is in view (≤5 free decisions left). */}
+      {showPlusNudge && (
         <div
           style={{
             marginTop: 6,
@@ -165,6 +235,32 @@ export function TriageEmptyState({
             See Plus
           </Button>
         </div>
+      )}
+
+      {/* D33 Plus-tier nudge — single soft link, not a banner. The
+          copy is the D33 quote verbatim. Hidden for Pro users (no
+          nudge shown). */}
+      {showProNudge && (
+        <button
+          type="button"
+          onClick={onOpenUpgrade ?? (() => {})}
+          style={{
+            marginTop: 4,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            font: 'inherit',
+            fontFamily: font.sans,
+            fontSize: 12.5,
+            color: color.fgSoft,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+            textUnderlineOffset: 3,
+            textDecorationColor: color.lineSoft,
+          }}
+        >
+          Pro could do this for you automatically. Learn more &rarr;
+        </button>
       )}
     </div>
   );

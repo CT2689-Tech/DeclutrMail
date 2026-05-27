@@ -20,7 +20,12 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, TRIAGE_SESSION_STATS_FREE } from './data';
+import {
+  TRIAGE_QUEUE,
+  TRIAGE_SESSION_STATS,
+  TRIAGE_SESSION_STATS_FREE,
+  TRIAGE_SESSION_STATS_PRO,
+} from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
@@ -95,10 +100,23 @@ export const Empty: Story<typeof TriageScreen> = {
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
 };
 
-/** Empty (free tier) — adds the D33 subtle upgrade nudge. */
+/** Empty (free tier) — adds the D33 subtle "See Plus" upgrade nudge. */
 export const EmptyFreeTier: Story<typeof TriageScreen> = {
   args: {
     state: { kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE },
+  },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/**
+ * Empty (Pro tier) — D33: "Hidden for Pro users (replaced with a
+ * streak/momentum graphic)." This story is the contract proof that
+ * neither the Plus banner nor the Pro soft-link surfaces for a Pro
+ * user; the streak chip carries the empty-state weight on its own.
+ */
+export const EmptyProTier: Story<typeof TriageScreen> = {
+  args: {
+    state: { kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO },
   },
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
 };

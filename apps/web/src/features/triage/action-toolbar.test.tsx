@@ -120,13 +120,45 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     expect(html).toContain('color:#FFFFFF');
   });
 
-  it('does NOT highlight when confidence <= 0.85 (strict > per D31)', () => {
-    // Nextdoor: verdict=archive, confidence=0.66 — below threshold,
+  it('does NOT highlight when confidence is far below threshold (0.66)', () => {
+    // Nextdoor: verdict=archive, confidence=0.66 — well below threshold,
     // toolbar renders flat.
     const row = rowById('t-nextdoor');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // No white-text overlay means no highlighted verb chip.
     expect(html).not.toContain('color:#FFFFFF');
+  });
+
+  // D31 says "highlight only when confidence > 0.85". The boundary
+  // tests below pin the strict-greater-than semantics: 0.84 must NOT
+  // emphasise, 0.86 must — and the exact value 0.85 stays flat.
+  describe('boundary — strict > 0.85 (D31)', () => {
+    function withConfidence(c: number): TriageDecisionRow {
+      // Use Groupon as a base — verdict=archive, no protection so the
+      // recommended verb is dispatchable.
+      return { ...rowById('t-groupon'), confidence: c };
+    }
+
+    it('confidence = 0.84 → recommended verb is NOT emphasised', () => {
+      const html = renderToStaticMarkup(
+        <ActionToolbar row={withConfidence(0.84)} onAction={() => {}} />,
+      );
+      expect(html).not.toContain('color:#FFFFFF');
+    });
+
+    it('confidence = 0.85 → recommended verb is NOT emphasised (strict >)', () => {
+      const html = renderToStaticMarkup(
+        <ActionToolbar row={withConfidence(0.85)} onAction={() => {}} />,
+      );
+      expect(html).not.toContain('color:#FFFFFF');
+    });
+
+    it('confidence = 0.86 → recommended verb IS emphasised', () => {
+      const html = renderToStaticMarkup(
+        <ActionToolbar row={withConfidence(0.86)} onAction={() => {}} />,
+      );
+      expect(html).toContain('color:#FFFFFF');
+    });
   });
 });
 
