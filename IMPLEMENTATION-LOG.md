@@ -150,7 +150,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D96 | Held messages screen content | ⬜ |  |  |  |
 | D97 | Brief and Quiet interaction | ⬜ |  |  |  |
 | D98 | Pro gating | ⬜ |  |  |  |
-| D99 | Rule format: **Preset rules + custom rule builder, both at launch | ⬜ |  |  |  |
+| D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🔵 | #107 |  |  |
 | D100 | Condition vocabulary (sender-layer only per D22) | ⬜ |  |  |  |
 | D101 | Preset library at launch (5 rules) | ⬜ |  |  |  |
 | D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | ⬜ |  |  |  |
