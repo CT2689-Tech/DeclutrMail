@@ -1,0 +1,5 @@
+-- Rollback for 0011_mail_messages_thread_index.sql
+--
+-- Index-only drop; `IF EXISTS` keeps the rollback idempotent.
+
+DROP INDEX IF EXISTS "mail_messages_account_thread_date_idx";

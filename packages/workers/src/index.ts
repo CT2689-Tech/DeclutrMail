@@ -67,6 +67,20 @@ export {
   enqueueBriefSnapshotTick,
   scheduledAtMinute as briefSnapshotScheduledAtMinute,
 } from './brief-snapshot.queue.js';
+export { FollowupCheckWorker } from './followup-check.worker.js';
+export type {
+  FollowupCheckDeps,
+  FollowupCheckJobData,
+  FollowupCheckResult,
+} from './followup-check.worker.js';
+export {
+  enqueueFollowupCheckTick,
+  FOLLOWUP_CHECK_INTERVAL_MS,
+  FOLLOWUP_CHECK_JOB,
+  FOLLOWUP_CHECK_QUEUE,
+  followupCheckJobOptions,
+  scheduledAtMinute as followupCheckScheduledAtMinute,
+} from './followup-check.queue.js';
 export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
 export type {
   ScoreJobData,
