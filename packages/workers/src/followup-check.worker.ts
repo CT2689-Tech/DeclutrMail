@@ -1,10 +1,11 @@
-import { sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { followupTracker, mailboxAccounts, type schema } from '@declutrmail/db';
+import { followupTracker, mailboxAccounts, senderPolicies, type schema } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { createLimiter } from './reasoning.js';
+import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -108,6 +109,11 @@ const BULK_RECIPIENT_LIMIT = 5;
  *       - bulk recipients (cardinality > 5)
  *       - mailing-list patterns (`@googlegroups.com`, `@groups.io`,
  *         `noreply@*`, `donotreply@*`, `no-reply@*`, `do-not-reply@*`)
+ *       - recipients the user has marked Archive or Unsubscribe in
+ *         `sender_policies` for the same mailbox — applied at the write
+ *         boundary per the D86 design note. The read service applies
+ *         the same predicate so policies that change AFTER write also
+ *         take effect.
  *   - Upserts into `followup_tracker` with `status='awaiting'`. The
  *     `ON CONFLICT` clause refreshes `sent_at` + `subject` + `last_check_at`
  *     for existing awaiting rows, but never touches rows already in
@@ -117,11 +123,6 @@ const BULK_RECIPIENT_LIMIT = 5;
  *     message has arrived for the same thread.
  *
  * What the worker does NOT do (deferred to follow-up PRs):
- *   - D86 exclusions for senders the user has marked Archive /
- *     Unsubscribe in `sender_policies`. Needs a recipient-email →
- *     sender_key derivation (sha256(normalize(email))) + a JOIN, which
- *     pulls in the sender-key helper from `apps/api`. Tractable but
- *     out of scope for this PR.
  *   - Auto-response detection (Subject starts with "Re:" AND original
  *     inbound is from an automated sender). Low precision heuristic;
  *     V2 ships without it.
@@ -272,7 +273,34 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
     }>;
     if (rows.length === 0) return 0;
 
-    const values = rows.map((r) => ({
+    // D86 — drop candidates whose recipient is marked Archive or
+    // Unsubscribe by the user. Done in TS (rather than a SQL join) for
+    // two reasons:
+    //   1. The recipient_email → sender_key derivation is sha256-based
+    //      (D12 / ADR-0011) and lives in `sender-key.ts`; reproducing it
+    //      in SQL would duplicate the normalization rules in two places.
+    //   2. The candidate set is bounded by per-mailbox 60-day outbound
+    //      cardinality and a single mailbox-scoped policy query keeps
+    //      the worker insulated from the Drizzle correlated-subquery
+    //      pitfall (MISTAKES.md 2026-05-23).
+    const candidateSenderKeys = Array.from(
+      new Set(rows.map((r) => deriveSenderKey(r.recipient_email))),
+    );
+    const excludedPolicies = await this.deps.db
+      .select({ senderKey: senderPolicies.senderKey })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          inArray(senderPolicies.senderKey, candidateSenderKeys),
+          inArray(senderPolicies.policyType, ['archive', 'unsubscribe']),
+        ),
+      );
+    const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
+    const eligible = rows.filter((r) => !excluded.has(deriveSenderKey(r.recipient_email)));
+    if (eligible.length === 0) return 0;
+
+    const values = eligible.map((r) => ({
       workspaceId,
       mailboxAccountId,
       providerThreadId: r.provider_thread_id,
