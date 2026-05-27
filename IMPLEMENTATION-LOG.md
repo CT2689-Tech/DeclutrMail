@@ -139,7 +139,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D85 | Priority: **Thread age only | ⬜ |  |  |  |
 | D86 | Exclusion rules: **Filter out non-followup-worthy threads | ⬜ |  |  |  |
 | D87 | Schema: **followup_tracker denormalized table | 🔵 | #104 |  |  |
-| D88 | User dismissal: **"Mark resolved" affordance per row | ⬜ |  |  |  |
+| D88 | User dismissal: **"Mark resolved" affordance per row | 🔵 | #106 |  |  |
 | D89 | Pro gating | ⬜ |  |  |  |
 | D90 | Followups screen layout | ⬜ |  |  |  |
 | D91 | Followups empty state | ⬜ |  |  |  |
