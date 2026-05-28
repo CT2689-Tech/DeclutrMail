@@ -206,7 +206,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D152 | Migration tooling: **Drizzle Kit + Atlas hybrid | 🟢 | #5 | atlas migrate status OK, 5 executed; drizzle-kit + atlas hybrid |  |
 | D153 | API style: **REST + Zod schemas + Swagger/OpenAPI auto-gen | ⬜ |  |  |  |
 | D154 | API versioning: **URL prefix (`/api/v1/`) | ⬜ |  |  |  |
-| D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | ⬜ |  |  |  |
+| D155 | Auth: **HttpOnly cookies + CSRF + rotating refresh + active_sessions table | 🔵 | #121 |  |  |
 | D156 | Rate limiting: **`@nestjs/throttler` + Redis + per-route limits + global IP ceiling | 🟢 | #35 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D157 | Queue: **BullMQ on Redis (Upstash) | 🟢 | #17 | packages/workers/src/queue.test.ts (within full suite green) |  |
 | D158 | Hosting stack | ⬜ |  |  |  |
@@ -256,7 +256,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D202 | API response envelope + cursor pagination | 🟢 | #37 | apps/api/src/senders/senders.controller.spec.ts — D202 envelope |  |
 | D203 | BaseDeclutrWorker: lifecycle-focused abstraction for all workers | 🟢 | #49 | packages/workers/src/base-declutr-worker.test.ts |  |
 | D204 | Read-only services per feature + events for cross-feature writes (refines D201) | 🟢 | #37 | apps/api/src/triage/triage.service.spec.ts — D204 read-only |  |
-| D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | ⬜ |  |  |  |
+| D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121 |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | ⬜ |  |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation |  |
