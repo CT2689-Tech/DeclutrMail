@@ -169,11 +169,13 @@ export class GoogleOAuthController {
     });
     setSessionCookies(res, result.tokens, result.csrfToken);
     // New signups land on the onboarding sync gate (D6, D109) — it
-    // polls real sync state and auto-advances to /triage once
-    // readiness = ready. Returning users skip straight to /triage
-    // (their sync is already done). The gate route lives at
-    // apps/web/src/app/onboarding/page.tsx.
-    const target = result.isNewSignup ? `${webBase}/onboarding` : `${webBase}/triage`;
+    // polls real sync state and auto-advances to /senders once
+    // readiness = ready. Returning users skip straight to /senders
+    // (their sync is already done). Senders is the post-onboarding
+    // home: it has real data immediately, whereas Triage is empty
+    // until the scoring pipeline (D20/D25) runs. The gate route lives
+    // at apps/web/src/app/onboarding/page.tsx.
+    const target = result.isNewSignup ? `${webBase}/onboarding` : `${webBase}/senders`;
     res.redirect(302, target);
   }
 

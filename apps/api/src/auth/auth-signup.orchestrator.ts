@@ -66,9 +66,35 @@ export class AuthSignupOrchestrator {
     mailbox: { id: string };
     isNewSignup: boolean;
   }> {
-    const existing = await this.users.findByEmail(input.email);
-    const isNewSignup = !existing;
-    const { userId, workspaceId } = existing ?? (await this.bootstrapUser(input.email));
+    // Identity resolution (Option 1 — "login follows mailbox").
+    //
+    //   1. A user already owns this email → use their workspace
+    //      (the normal returning-primary login).
+    //   2. No user, but this Gmail was connected as a SECONDARY
+    //      mailbox under another account → resolve the session into
+    //      that mailbox's HOME workspace + owner. Logging in with a
+    //      secondary email then lands you in the workspace that holds
+    //      all your mailboxes, rather than bootstrapping an orphan
+    //      empty one (the bug Codex/founder smoke surfaced 2026-05-27).
+    //   3. Neither → brand-new signup; bootstrap a workspace + user.
+    const existingUser = await this.users.findByEmail(input.email);
+    let userId: string;
+    let workspaceId: string;
+    let isNewSignup: boolean;
+    if (existingUser) {
+      ({ userId, workspaceId } = existingUser);
+      isNewSignup = false;
+    } else {
+      const existingMailbox = await this.mailboxes.findByProviderEmail(input.email);
+      if (existingMailbox) {
+        userId = existingMailbox.userId;
+        workspaceId = existingMailbox.workspaceId;
+        isNewSignup = false;
+      } else {
+        ({ userId, workspaceId } = await this.bootstrapUser(input.email));
+        isNewSignup = true;
+      }
+    }
 
     const encrypted = await this.tokenCrypto.encrypt(input.refreshToken);
 
@@ -84,6 +110,13 @@ export class AuthSignupOrchestrator {
       await this.sync.markQueued(tx, row.id);
       return row;
     });
+
+    // Land the user on the mailbox they just authenticated with — set
+    // it as the active-mailbox preference so the account switcher +
+    // CurrentMailboxGuard resolve to it. Without this, logging in with
+    // a secondary email would resolve the workspace correctly but show
+    // the primary mailbox as active.
+    await this.users.patchPreferences(userId, { activeMailboxId: mailboxRow.id });
 
     // Best-effort BullMQ enqueue — the durable signal is the `queued`
     // row above. Reconciler picks it up if Redis is unreachable.

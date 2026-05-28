@@ -29,7 +29,11 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (ready) {
-      router.replace('/triage');
+      // Land on Senders, not Triage: post-sync Senders has real data
+      // immediately, whereas Triage is empty until the scoring pipeline
+      // (D20/D25) runs. Matches the root redirect (/senders) + the
+      // OAuth returning-user target.
+      router.replace('/senders');
     }
   }, [ready, router]);
 
