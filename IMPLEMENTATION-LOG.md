@@ -166,7 +166,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D112 | Step 5: First Triage with real senders | ⬜ |  |  |  |
 | D113 | Onboarding completion side effects | ⬜ |  |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | ⬜ |  |  |  |
-| D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | ⬜ |  |  |  |
+| D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | ⬜ |  |  |  |
 | D117 | Billing providers: **Paddle (international) + Razorpay (India) | ⬜ |  |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | ⬜ |  |  |  |
