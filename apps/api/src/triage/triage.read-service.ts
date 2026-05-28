@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 
 import {
   activityLog,
@@ -148,21 +148,32 @@ export class TriageReadService {
     // Aggregate per-sender message stats in a single follow-up query
     // (cheaper than a correlated subquery per row).
     const senderKeys = rows.map((r) => r.senderKey);
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    // Bind the cutoff as an ISO STRING cast to timestamptz, not a JS
+    // Date. The postgres.js driver rejects a raw `Date` interpolated
+    // into a `sql` fragment with "The string argument must be of type
+    // string … Received an instance of Date" (Codex smoke 2026-05-27).
+    // `gte()` in a `.where()` handles Dates fine; only raw `sql`
+    // fragments need the manual ISO + cast.
+    const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const aggRows = await this.db
       .select({
         senderKey: mailMessages.senderKey,
         total: count(),
         unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
-        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgo} THEN 1 ELSE 0 END)`,
-        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgo} AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
+        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)
       .where(
         and(
           eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
-          sql`${mailMessages.senderKey} = ANY(${senderKeys})`,
+          // `inArray` emits `sender_key IN ($2, $3, …)` — the correct
+          // shape. A `sql\`… = ANY(${senderKeys})\`` template expands
+          // the JS array into a ROW expression `($2,$3,…)`, which PG
+          // rejects with "op ANY/ALL (array) requires array on right
+          // side" (Codex smoke 2026-05-27).
+          inArray(mailMessages.senderKey, senderKeys),
         ),
       )
       .groupBy(mailMessages.senderKey);
@@ -324,13 +335,15 @@ export class TriageReadService {
     futureEmailsSkipped: number | null;
     minutesSavedPerWeek: number | null;
   }> {
-    const ninetyDaysAgo = new Date(todayStartUtc.getTime() - 90 * 86_400_000);
+    // ISO string + ::timestamptz cast — postgres.js rejects raw Date
+    // params in `sql` fragments (Codex smoke 2026-05-27).
+    const ninetyDaysAgoIso = new Date(todayStartUtc.getTime() - 90 * 86_400_000).toISOString();
     // Total inbound messages over 90d for senders this user
     // archived/unsubscribed/later'd TODAY → monthly volume × 12.
     const [agg] = await this.db
       .select({
         deflectedSenders: sql<number>`COUNT(DISTINCT ${activityLog.senderKey})`,
-        last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgo} THEN 1 ELSE 0 END), 0)`,
+        last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END), 0)`,
       })
       .from(activityLog)
       .leftJoin(
