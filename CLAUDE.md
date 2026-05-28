@@ -439,15 +439,39 @@ Two invariants this codebase keeps relearning (both shipped green, broke live):
   the FE MUST render a real state (picker / reconnect gate), and reads must
   NOT retry 4xx (the 409-storm class; `makeQueryClient` default).
 
-OAuth/session-gated flows can be smoked locally via the dev test-login
-(D206): `GET /api/auth/dev/login?email=<allowlisted>` (requires
-`DEV_AUTH_ENABLED=true` + `DEV_AUTH_EMAIL_PREFIX` in `.env.local`).
+OAuth/session-gated flows MUST be smoked via the D206 dev test-login —
+"needs the founder's hands / OAuth grant" is NOT an excuse for an authed
+flow that the dev-login can reach. Set `DEV_AUTH_ENABLED=true` +
+`DEV_AUTH_EMAIL_PREFIX=chintan` in `.env.local`, then point the preview
+browser at:
+
+```
+http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com
+```
+
+That workspace has TWO Gmail accounts connected
+(`chintan.a.thakkar@gmail.com` + `chintan.a.thakkar.crypt@gmail.com`), so
+it exercises multi-mailbox states (switch / disconnect / reconnect /
+no-active) out of the box. Force edge states reversibly via SQL
+(`UPDATE mailbox_accounts SET status=…`, `UPDATE users SET preferences=…`)
+and RESTORE afterward. Only the real Google token-revoke disconnect +
+the real OAuth connect genuinely need the founder's hands.
 
 ### Smoke before merge
 
 Green CI is necessary but NOT sufficient. Before recommending a merge,
 the agent (or session) MUST pull the PR branch locally and exercise the
 changed surface. CI cannot catch what wasn't tested in CI.
+
+**Smoke EVERY feature the change touches, end-to-end — and try to break
+it.** Not just the happy path: walk every state the change can reach
+(empty / error / stale / in-flight / edge), switch between the two
+connected mailboxes, and actively attack it (stale/null prefs,
+disconnected and no-active mailboxes, rapid switches, unowned ids). When
+you find a break: find the cause, fix it, re-smoke until it passes. A
+smoke that only confirms the happy path is not a smoke. (This is the bar
+the founder set 2026-05-28 after structural-green features broke in real
+use — see §8 "Flow & state completeness".)
 
 The smoke matches the change type:
 
