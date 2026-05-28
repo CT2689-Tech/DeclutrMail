@@ -1,13 +1,12 @@
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SyncController } from './sync.controller.js';
 import type { SyncService } from './sync.service.js';
+
+/** Stand-in for the `@CurrentMailbox()`-resolved value the guard injects. */
+const MAILBOX = { id: 'mailbox-uuid-1' } as const;
 
 /**
  * SyncController unit tests (D224).
@@ -35,7 +34,7 @@ describe('SyncController.getStatus', () => {
     const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
     const controller = makeController(getStatus);
 
-    const result = await controller.getStatus('mailbox-uuid-1');
+    const result = await controller.getStatus(MAILBOX);
 
     expect(result).toEqual({ data: VALID_STATUS });
     // The inner `data` must round-trip through the schema — this is
@@ -44,19 +43,16 @@ describe('SyncController.getStatus', () => {
     expect(getStatus).toHaveBeenCalledWith('mailbox-uuid-1');
   });
 
-  it('throws BadRequestException when mailboxAccountId is missing', async () => {
-    const getStatus = vi.fn();
-    const controller = makeController(getStatus);
-
-    await expect(controller.getStatus(undefined)).rejects.toBeInstanceOf(BadRequestException);
-    expect(getStatus).not.toHaveBeenCalled();
-  });
+  // Mailbox identity is resolved by `CurrentMailboxGuard` (D155 + D205)
+  // before the controller runs — there is no longer a missing-param
+  // branch to test here; the guard's resolution is covered in
+  // `current-mailbox.guard.spec.ts`.
 
   it('throws NotFoundException when the mailbox has no sync state row', async () => {
     const getStatus = vi.fn().mockResolvedValue(null);
     const controller = makeController(getStatus);
 
-    await expect(controller.getStatus('unknown-mailbox')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.getStatus(MAILBOX)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('throws InternalServerErrorException when the projection fails schema validation', async () => {
@@ -69,7 +65,7 @@ describe('SyncController.getStatus', () => {
     });
     const controller = makeController(getStatus);
 
-    await expect(controller.getStatus('mailbox-uuid-1')).rejects.toBeInstanceOf(
+    await expect(controller.getStatus(MAILBOX)).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
   });
@@ -85,7 +81,7 @@ describe('SyncController.getStatus', () => {
     const getStatus = vi.fn().mockResolvedValue(failed);
     const controller = makeController(getStatus);
 
-    const result = await controller.getStatus('mailbox-uuid-1');
+    const result = await controller.getStatus(MAILBOX);
     expect(result).toEqual({ data: failed });
   });
 });

@@ -1,10 +1,9 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   InternalServerErrorException,
   NotFoundException,
-  Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ok,
@@ -13,18 +12,24 @@ import {
   type SyncStatus,
 } from '@declutrmail/shared/contracts';
 
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SyncService } from './sync.service.js';
 
 /**
- * Sync gate transport (D224).
+ * Sync gate transport (D224, D109).
  *
- *   GET /api/v1/sync/status?mailboxAccountId=<uuid> → SyncStatus
+ *   GET /api/v1/sync/status → SyncStatus  (active mailbox from session)
  *
  * The onboarding sync gate (D6, D109) polls this every 3s via
  * `useSyncStatus()` (D200, TanStack Query). There is no push transport
  * — D6 lifecycle events (`sync.started`, `sync.progress`, …) emit to
  * PostHog/Sentry server-side only (D159), never to the client.
+ *
+ * AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` resolve the
+ * authenticated mailbox; the controller reads it via `@CurrentMailbox()`.
+ * The pre-session `?mailboxAccountId=` query param is gone.
  *
  * The response is validated against `SyncStatusSchema` at the boundary
  * before being returned — a misbehaving worker that writes an
@@ -35,17 +40,9 @@ import { SyncService } from './sync.service.js';
  * numeric percentage, and an allowlisted boolean. No body content, no
  * headers, no message-derived data of any kind. `privacy-auditor`
  * verifies this.
- *
- * Response shape: `{ data: SyncStatus }` (D202 envelope via `ok()`).
- * The FE `useSyncStatus()` hook reads `response.data`.
- *
- * TODO(D109/auth): once session auth lands, the `mailboxAccountId`
- * comes from the authenticated session, not a query parameter. The
- * query-string form is a stop-gap matching the existing connect-route
- * pattern (see `GoogleOAuthController`) and lives behind
- * `GMAIL_CONNECT_ENABLED` for the same reason.
  */
 @Controller('v1/sync')
+@UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SyncController {
   constructor(private readonly sync: SyncService) {}
 
@@ -58,14 +55,8 @@ export class SyncController {
    */
   @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
   @Get('status')
-  async getStatus(
-    @Query('mailboxAccountId') mailboxAccountId?: string,
-  ): Promise<Envelope<SyncStatus>> {
-    if (!mailboxAccountId) {
-      throw new BadRequestException('Missing required query parameter: mailboxAccountId.');
-    }
-
-    const status = await this.sync.getStatus(mailboxAccountId);
+  async getStatus(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<SyncStatus>> {
+    const status = await this.sync.getStatus(mailbox.id);
     if (status === null) {
       throw new NotFoundException('No sync state for the given mailbox.');
     }
