@@ -160,7 +160,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D106 | Onboarding 5-step structure | ⬜ |  |  |  |
 | D107 | Step 1: Promise screen content | ⬜ |  |  |  |
 | D108 | Step 2: Connect (OAuth) | ⬜ |  |  |  |
-| D109 | Step 3: Sync (strict gate, no time promise, no live counters) | ⬜ |  |  |  |
+| D109 | Step 3: Sync (strict gate, no time promise, no live counters) | 🔵 | #122 |  |  |
 | D110 | Step 4: Style preset selection | ⬜ |  |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
 | D112 | Step 5: First Triage with real senders | ⬜ |  |  |  |
