@@ -1,10 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
 import { ensureInitialSyncJob } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -94,9 +94,9 @@ export class SyncService {
    * NOT propagate: the durable intent row is the safety net, and the
    * reconciler will materialize the missing job on its next tick.
    */
-  async schedule(mailboxAccountId: string): Promise<void> {
+  async schedule(mailboxAccountId: string, opts: { force?: boolean } = {}): Promise<void> {
     try {
-      await ensureInitialSyncJob(this.queue, mailboxAccountId);
+      await ensureInitialSyncJob(this.queue, mailboxAccountId, opts);
     } catch (err) {
       console.error(
         JSON.stringify({
@@ -217,5 +217,24 @@ export class SyncService {
     // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,
     // never as `undefined`.
     return row.errorCode === null ? base : { ...base, error_code: row.errorCode };
+  }
+
+  /**
+   * Batch readiness lookup for a set of mailboxes (D116). This is the
+   * sync-feature facade the account switcher reads through, so the
+   * mailboxes feature never joins `provider_sync_state` itself (D204 —
+   * this table is owned here). Mailboxes with no sync row are simply
+   * absent from the returned map; callers default those to `null`.
+   */
+  async getReadinessByMailbox(mailboxAccountIds: string[]): Promise<Map<string, SyncReadiness>> {
+    if (mailboxAccountIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        mailboxAccountId: providerSyncState.mailboxAccountId,
+        readinessStatus: providerSyncState.readinessStatus,
+      })
+      .from(providerSyncState)
+      .where(inArray(providerSyncState.mailboxAccountId, mailboxAccountIds));
+    return new Map(rows.map((r) => [r.mailboxAccountId, r.readinessStatus]));
   }
 }

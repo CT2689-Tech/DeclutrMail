@@ -106,3 +106,30 @@ export const Failed: Story<typeof SyncGate> = {
   args: { status: FAILED },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
+
+/**
+ * Syncing (secondary connect, D116) — same gate, plus the escape hatch:
+ * "Stay here" keeps waiting; "Go back to <primary>" switches the active
+ * mailbox back and leaves. Only renders when another active mailbox
+ * exists; first-run has no escape (strict gate, D6).
+ */
+export const SyncingSecondary: Story<typeof SyncGate> = {
+  args: {
+    status: SYNCING,
+    escape: { returnToEmail: 'primary@example.com', onReturn: () => {} },
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Failed (secondary connect, D116) — a failed scan on a second mailbox
+ * offers "Go back to <primary>" alongside "Try again" so the user is
+ * never stranded on a failed gate with a working primary inbox.
+ */
+export const FailedSecondary: Story<typeof SyncGate> = {
+  args: {
+    status: FAILED,
+    escape: { returnToEmail: 'primary@example.com', onReturn: () => {} },
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};

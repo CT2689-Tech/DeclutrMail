@@ -37,12 +37,17 @@ declare global {
  *      secondary account).
  *   2. `users.preferences.activeMailboxId` — the user's chosen
  *      default, set via `PATCH /api/mailboxes/:id/active`.
- *   3. The single active mailbox if exactly one is connected.
+ *   3. The first active mailbox (by connection order = the primary) —
+ *      whether one OR several are connected with no preference set.
  *
- * If two or more active mailboxes are connected and the user has no
- * preference + no header override, this throws **409 SELECT_MAILBOX**
- * so the FE can present the picker. Routes that need a mailbox MUST
- * use this guard AFTER `JwtGuard`.
+ * Step 3 MUST resolve to the same mailbox `GET /api/auth/me` reports as
+ * `activeMailboxId` (it uses the identical first-active fallback). An
+ * earlier version threw **409 SELECT_MAILBOX** here for ≥2 active
+ * mailboxes, but `me` still resolved one — so the app shell rendered an
+ * active mailbox while every read 409'd (a broken dashboard). There is
+ * no mailbox-picker UI, so resolution is deterministic; the user
+ * switches explicitly via the account menu. Routes that need a mailbox
+ * MUST use this guard AFTER `JwtGuard`.
  *
  * Ownership is enforced: a header value not in the user's workspace
  * is rejected as if it didn't exist.
@@ -96,17 +101,18 @@ export class CurrentMailboxGuard implements CanActivate {
       // Preference points at a stale mailbox — fall through to the single-mailbox or picker branches.
     }
 
-    if (active.length === 1) {
-      req.mailbox = { id: active[0]!.id };
-      return true;
-    }
-
-    throw new ConflictException({
-      code: 'SELECT_MAILBOX',
-      message:
-        'Multiple mailboxes connected — select one via PATCH /api/mailboxes/:id/active or pass X-Active-Mailbox-Id.',
-      mailboxes: active.map((m) => ({ id: m.id, email: m.email })),
-    });
+    // Pref unset or stale + one OR MORE active mailboxes: resolve the
+    // first active mailbox (by connection order = the primary). This
+    // MUST match what `GET /api/auth/me` reports as `activeMailboxId`
+    // (it uses the same first-active fallback). Previously this threw
+    // 409 SELECT_MAILBOX while `me` resolved a mailbox — so the shell
+    // rendered an "active" mailbox but every read 409'd, a broken
+    // dashboard (founder break-test 2026-05-28). There is no
+    // mailbox-picker UI, so deterministic resolution is the correct
+    // behavior; the user switches explicitly via the account menu
+    // (which writes `users.preferences.activeMailboxId`).
+    req.mailbox = { id: active[0]!.id };
+    return true;
   }
 }
 

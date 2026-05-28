@@ -11,7 +11,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
-import { useSyncStatus, syncRefetchInterval, SYNC_POLL_MS } from './use-sync-status';
+import {
+  useSyncStatus,
+  syncRefetchInterval,
+  SYNC_POLL_MS,
+  SYNC_FAILED_POLL_MS,
+} from './use-sync-status';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
@@ -46,14 +51,36 @@ describe('useSyncStatus', () => {
     expect(result.current.data).toEqual(SYNCING);
   });
 
-  it('polls while syncing and stops on a terminal state', () => {
+  it('stamps X-Active-Mailbox-Id when an explicit mailboxId is passed (D116)', async () => {
+    let seenHeader: string | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: (req) => {
+          seenHeader = req.headers.get('X-Active-Mailbox-Id');
+          return jsonOk({ data: SYNCING });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const { result } = renderHook(() => useSyncStatus('mailbox-b'), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(seenHeader).toBe('mailbox-b');
+  });
+
+  it('polls while syncing, stops only on success, keeps polling (slower) on failed', () => {
     // While syncing → keep the cadence.
     expect(syncRefetchInterval(SYNCING)).toBe(SYNC_POLL_MS);
     // No data yet (first paint) → still poll.
     expect(syncRefetchInterval(undefined)).toBe(SYNC_POLL_MS);
-    // Ready → stop.
+    // Ready → stop (the only terminal state for polling).
     expect(syncRefetchInterval(READY)).toBe(false);
-    // Failed → stop.
+    // Failed → keep polling at the slower cadence so a transient/superseded
+    // failure recovers instead of trapping the gate (2026-05-28).
     expect(
       syncRefetchInterval({
         readiness_status: 'failed',
@@ -62,6 +89,6 @@ describe('useSyncStatus', () => {
         is_ready_for_triage: false,
         error_code: 'GMAIL_QUOTA_EXCEEDED',
       }),
-    ).toBe(false);
+    ).toBe(SYNC_FAILED_POLL_MS);
   });
 });

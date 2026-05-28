@@ -606,3 +606,9 @@ fake the test against PGlite — it would pass for the wrong reasons.
 a second multi-connection Postgres feature lands (e.g. advisory locks
 for the AutopilotApplyWorker). Pairs with adding testcontainers to the
 shared test harness rather than per-package.
+
+## 2026-05-28 — Per-query `retry` fn silently overrides the test client's `retry:false`
+**Context:** Adding a "don't retry 4xx" predicate (`retryTransientOnly`) to stop 409s from being retried (the SELECT_MAILBOX storm). First cut set `retry: retryTransientOnly` per-hook on `useSenders` / `useTriageQueue` / `useTriageStats`.
+**Finding:** A per-query `retry` option OVERRIDES the QueryClient default — including the test client's `retry:false` (`createTestQueryClient`). The senders 500-error tests, which rely on `retry:false` to surface the error immediately, started retrying 3× with exponential backoff and timed out (`expected false to be true` on `isError`). Prod `makeQueryClient` set no `retry`, so it was on TanStack's default (3×) — which is exactly why 409s WERE retried in the storm.
+**Rule (provisional):** Put cross-cutting retry policy at the **QueryClient default** (`makeQueryClient`), not per-hook. The test client's `retry:false` then still wins (it's also a client default, not overridden), and prod gets the policy globally. Reserve per-hook `retry` for genuinely hook-specific rules (e.g. `retryUnless404` on sender-detail). Note: a per-hook `retry` fn that returns `failureCount < n` for 5xx will defeat `retry:false` in tests and make 500-error specs slow/flaky.
+**Distillation trigger:** promote to CLAUDE.md §8 (test strategy) if a third query-level policy (e.g. `retryDelay`, `gcTime`) gets mis-placed per-hook.

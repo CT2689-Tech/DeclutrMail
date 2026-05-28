@@ -28,6 +28,7 @@ import { useSenders } from './api/use-senders';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
 import { ApiError } from '@/lib/api/client';
+import { useAuth } from '@/features/auth/auth-provider';
 import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
@@ -101,6 +102,10 @@ const READ_MIN_PER_MSG = 1.6;
 
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({ senders }: { senders: Sender[] }) {
+  const { me } = useAuth();
+  // Which mailbox these senders belong to — makes a multi-mailbox switch
+  // visible in the header instead of a static "default mailbox".
+  const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
   const [query, setQuery] = useState('');
   const [activeIntent, setActiveIntent] = useState<SenderIntent | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -317,7 +322,7 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <Eyebrow>Senders · default mailbox</Eyebrow>
+          <Eyebrow>Senders · {activeEmail}</Eyebrow>
           <h1
             style={{
               fontFamily: font.display,

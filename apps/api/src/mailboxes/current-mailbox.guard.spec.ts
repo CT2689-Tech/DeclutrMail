@@ -65,13 +65,16 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
     expect(req.mailbox).toEqual({ id: 'm1' });
   });
 
-  it('throws SELECT_MAILBOX when multiple mailboxes + no preference', async () => {
+  it('resolves the first active mailbox when multiple active + no preference (matches /me, no 409)', async () => {
+    // Regression: this used to throw 409 SELECT_MAILBOX while /me resolved
+    // first-active, producing a rendered-but-409ing dashboard (founder
+    // break-test 2026-05-28). Guard now agrees with /me: first active wins.
     mailboxes.listByWorkspace.mockResolvedValue([summary('m1'), summary('m2')]);
     users.findById.mockResolvedValue({ preferences: {} });
     const req = makeReq({ user: PRINCIPAL });
-    await expect(guard.canActivate(makeCtx(req))).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'SELECT_MAILBOX' }),
-    });
+    const ok = await guard.canActivate(makeCtx(req));
+    expect(ok).toBe(true);
+    expect(req.mailbox).toEqual({ id: 'm1' });
   });
 
   it('honours user preference activeMailboxId', async () => {
