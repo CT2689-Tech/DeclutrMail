@@ -365,7 +365,7 @@ Actual enforcement lives in:
 
 ## 7. Gate network (subagents)
 
-Pre-merge gates that run on every PR. **5 must-pass + 3 advisory.**
+Pre-merge gates that run on every PR. **5 must-pass + 4 advisory.**
 
 | Agent | Tier | Must pass for PRs touching |
 |---|---|---|
@@ -377,9 +377,14 @@ Pre-merge gates that run on every PR. **5 must-pass + 3 advisory.**
 | `typescript-reviewer` | advisory | All `.ts` / `.tsx` files |
 | `silent-failure-hunter` | advisory | All TS files |
 | `type-design-analyzer` | advisory | Type-heavy files (action intents, undo tokens, etc.) |
+| `flow-completeness-auditor` | advisory | Lifecycle/state-machine flows — `apps/web/src/features/**`, mailbox/sync flows |
 
 Definitions live in `.claude/agents/`. If a gate fires, **fix the issue
 — do not bypass.**
+
+Gates are STRUCTURAL — they do not run the app. Green gates ≠ verified
+behavior; flow/state-machine correctness is on you (§8 "Flow & state
+completeness").
 
 ---
 
@@ -407,6 +412,37 @@ A PR is not complete until ALL of these pass:
 - **No new TODOs** unless linked to a D-decision or GitHub issue
 - **Local smoke test passes** — see "Smoke before merge" below
 
+### Flow & state completeness (the gap structural gates miss)
+
+Gate agents (§7) review STRUCTURE — module boundaries, types, design
+tokens, story coverage. They do NOT run the app, so they never catch a
+stale cache, a missing edge state, a broken transition, or a guard error
+with no UI. Green typecheck + tests + gates ≠ production ready. (Session
+2026-05-28: a 409 storm, stale-screen-on-disconnect, a missing 2nd-account
+gate, a no-active-mailbox break, and a stuck sync gate ALL passed every
+structural gate — the founder caught each by hand.)
+
+Any feature with a lifecycle / state machine — connect · disconnect ·
+switch · reconnect · sync (queued→syncing→ready→failed) · scope = null —
+is not done until EVERY state, transition, and its UI + cache + worker
+consequence is enumerated and handled. Write the table first:
+`| state / transition | UI shows | cache effect | tested? |`. The
+`flow-completeness-auditor` agent (§7) does this enumeration on PRs.
+
+Two invariants this codebase keeps relearning (both shipped green, broke live):
+- **Scope change ⇒ reset scoped cache.** Any mutation changing a
+  server-resolved scope (active mailbox) MUST reset the scoped client
+  cache (`resetMailboxScopedCache`), not just invalidate `me` — feature
+  query keys aren't partitioned by mailbox, so stale data survives a switch.
+- **A read guard's 4xx is a designed state, never a retry.** Reads behind
+  `CurrentMailboxGuard` can 409 (`SELECT_MAILBOX` / `NO_ACTIVE_MAILBOX`);
+  the FE MUST render a real state (picker / reconnect gate), and reads must
+  NOT retry 4xx (the 409-storm class; `makeQueryClient` default).
+
+OAuth/session-gated flows can be smoked locally via the dev test-login
+(D206): `GET /api/auth/dev/login?email=<allowlisted>` (requires
+`DEV_AUTH_ENABLED=true` + `DEV_AUTH_EMAIL_PREFIX` in `.env.local`).
+
 ### Smoke before merge
 
 Green CI is necessary but NOT sufficient. Before recommending a merge,
@@ -417,7 +453,7 @@ The smoke matches the change type:
 
 | PR touches… | Minimum smoke |
 |---|---|
-| `apps/web/**` | `pnpm --filter @declutrmail/web dev` → load the affected route in browser, verify expected render + no console errors |
+| `apps/web/**` | `pnpm --filter @declutrmail/web dev` → walk the full affected FLOW incl. every state transition + edge (empty / error / stale / no-data), not just one route's happy render; verify no console errors. Authed flows: use the D206 dev test-login |
 | `apps/api/**` | `./scripts/dev-up.sh` → hit the affected endpoint with `curl`, verify status code + envelope shape + a downstream log line |
 | `packages/workers/**` | `./scripts/dev-up.sh` → enqueue a real job (or via test harness), verify `worker.succeeded` log line |
 | `packages/db/migrations/**` | `./scripts/db-migrate.sh apply` then revert; verify expected schema with `psql` |

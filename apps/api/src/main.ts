@@ -25,6 +25,13 @@ import { initSentry } from './observability/sentry.js';
  * proxy header is safe in this environment.
  */
 async function bootstrap(): Promise<void> {
+  // Fail-fast guard: the dev test-login (DevAuthController) is an auth
+  // bypass that must NEVER be reachable in production. Refuse to boot if
+  // the prod + enabled combination is ever configured (D206).
+  if (process.env.NODE_ENV === 'production' && process.env.DEV_AUTH_ENABLED === 'true') {
+    throw new Error('DEV_AUTH_ENABLED must never be set when NODE_ENV=production.');
+  }
+
   await initSentry();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

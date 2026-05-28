@@ -9,6 +9,7 @@ import { AuthCryptoModule } from './auth-crypto.module.js';
 import { AuthController } from './auth.controller.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { CsrfService } from './csrf.service.js';
+import { DevAuthController } from './dev-auth.controller.js';
 import { GoogleOAuthController } from './google-oauth.controller.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtGuard } from './jwt.guard.js';
@@ -60,7 +61,10 @@ const sessionsRedisProvider: Provider = {
  */
 @Module({
   imports: [AuthCryptoModule, UsersModule, forwardRef(() => MailboxAccountsModule), SyncModule],
-  controllers: [AuthController, GoogleOAuthController],
+  // DevAuthController is always registered but its handler 404s unless
+  // the dev-login is explicitly enabled in a non-prod env (see the
+  // triple gate in dev-auth.controller.ts + the boot refuse in main.ts).
+  controllers: [AuthController, GoogleOAuthController, DevAuthController],
   providers: [
     GoogleOAuthService,
     AuthSignupOrchestrator,
