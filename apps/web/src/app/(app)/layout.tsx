@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
+import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { useSenders } from '@/features/senders/api/use-senders';
 
 /**
@@ -10,17 +11,14 @@ import { useSenders } from '@/features/senders/api/use-senders';
  * Next.js router — `active` from the path, `onNavigate` to `router.push`.
  *
  * Sender-count chip: derived from the live `useSenders` infinite query
- * (first page). Before the wire-up PR this read `SENDERS.length` from
- * the demo fixture — a noticeable wart against a connected mailbox.
- * We show the first-page row count and append a `+` when
- * `hasMore=true`, because a true total would need either a dedicated
- * `/api/senders/stats` endpoint or eagerly paging the full list — both
- * disproportionate for a nav chip. When the stats endpoint lands, swap
- * this for a `useSenderStats` hook.
+ * (first page) — represents the active mailbox's count + a `+` suffix
+ * when there's more data behind the cursor. Hidden until the first
+ * page returns so we never flash a stale `0`.
  *
- * Pre-fetch state (`isLoading`, no `data`) renders no count at all
- * rather than a `0` flash — the AppShell chip hides cleanly when the
- * `senders` count is undefined.
+ * Account menu (D116 surface — partial): the topbar's right slot
+ * carries the switcher / disconnect / connect-another / sign-out menu.
+ * The menu reads `useAuth` so the AuthProvider must wrap this layout
+ * (it does — see `apps/web/src/app/providers.tsx`).
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -43,6 +41,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         active={active}
         onNavigate={(id) => router.push(`/${id}`)}
         counts={sendersCount === undefined ? {} : { senders: sendersCount }}
+        topbarRight={<AccountMenu />}
       >
         {children}
       </AppShell>

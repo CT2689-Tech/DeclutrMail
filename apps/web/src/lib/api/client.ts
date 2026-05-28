@@ -1,5 +1,5 @@
 /**
- * HTTP API client (D200, D201, D202).
+ * HTTP API client (D155, D200, D201, D202).
  *
  * Thin fetch wrapper that every TanStack Query hook in `apps/web` goes
  * through. Responsibilities:
@@ -7,29 +7,23 @@
  *   1. Resolve the API base URL from `NEXT_PUBLIC_API_URL` (set in
  *      `.env.local`). Path-only requests are joined; absolute URLs pass
  *      through.
- *   2. Stamp the per-mailbox auth header — `x-mailbox-account-id`. This
- *      is the INTERIM mailbox-identity scheme used until D109/D224 land
- *      the proper session layer. Source order:
- *        - `NEXT_PUBLIC_DEMO_MAILBOX_ACCOUNT_ID` env var (build-time),
- *        - then the literal `'demo'` (Storybook + first-run dev),
- *      so a Storybook session that never set the env var still resolves
- *      against fixture-fed MSW handlers.
- *   3. Parse the D202 envelope. Successful responses unwrap to
+ *   2. Cookie auth: every request is `credentials: 'include'` so the
+ *      HttpOnly session cookies (`dm_access`, `dm_refresh`) ride along.
+ *      The client also reads the non-HttpOnly `dm_csrf` cookie and
+ *      attaches it as the `X-CSRF-Token` header on every mutating verb
+ *      — the BE `CsrfGuard` (apps/api/src/auth/csrf.guard.ts) requires
+ *      the double-submit value to match.
+ *   3. Per-request mailbox override: when a hook explicitly passes
+ *      `mailboxId`, the client stamps `X-Active-Mailbox-Id` so the BE
+ *      reads from that mailbox instead of the user's preferred default.
+ *   4. 401 retry-once-via-refresh: a single rotation through
+ *      `POST /api/auth/refresh` is attempted on the first 401; a second
+ *      401 surfaces as an `ApiError` so the caller can route to login.
+ *   5. Parse the D202 envelope. Successful responses unwrap to
  *      `Envelope<T>` so callers receive the raw `data` plus optional
  *      `meta` — never the raw `Response`. Failed responses throw an
  *      `ApiError` carrying the status + parsed body so callers (and
  *      TanStack Query) can branch on `error instanceof ApiError`.
- *
- * Why a single client instead of letting each hook call `fetch` directly?
- * Because the auth header and the envelope unwrap are concerns that
- * recur on every endpoint — inlining them at each call site is exactly
- * the kind of drift D200 + D202 are designed to prevent (see also
- * `packages/shared/src/contracts/envelope.ts`).
- *
- * Auth note (INTERIM). The `x-mailbox-account-id` header is a
- * placeholder for the real session — once D109/D224 land, this client
- * swaps to reading the mailbox id from the session JWT and the header
- * is dropped from the wire. The BE accepts both during the transition.
  */
 
 import type { Envelope } from '@declutrmail/shared/contracts';
@@ -39,13 +33,17 @@ function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? '';
 }
 
-/**
- * Resolves the demo mailbox account id used by `x-mailbox-account-id`
- * during the pre-session-layer interim. Falls back to `'demo'` so
- * Storybook and ad-hoc dev work without env wiring.
- */
-function getMailboxAccountId(): string {
-  return process.env.NEXT_PUBLIC_DEMO_MAILBOX_ACCOUNT_ID ?? 'demo';
+/** Read a cookie by name. Browser-only — returns null in SSR/Node. */
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const target = `${name}=`;
+  const parts = document.cookie.split('; ');
+  for (const part of parts) {
+    if (part.startsWith(target)) {
+      return decodeURIComponent(part.slice(target.length));
+    }
+  }
+  return null;
 }
 
 /**
@@ -81,6 +79,17 @@ export interface ApiRequestOptions {
   headers?: Record<string, string> | undefined;
   /** Abort signal forwarded to `fetch`. */
   signal?: AbortSignal | undefined;
+  /**
+   * Optional per-request mailbox override — stamps `X-Active-Mailbox-Id`.
+   * When omitted, the BE resolves the user's preferred mailbox from
+   * `users.preferences.activeMailboxId` (set via the account switcher).
+   */
+  mailboxId?: string | undefined;
+  /**
+   * Internal: disable the 401-retry path when the call IS the retry.
+   * Library callers leave this unset.
+   */
+  _isRetry?: boolean | undefined;
 }
 
 /** Joins `?k=v` pairs onto a path. Skips entries whose value is null/undefined. */
@@ -97,19 +106,6 @@ function buildUrl(path: string, query: ApiRequestOptions['query']): string {
   return qs.length === 0 ? url : `${url}?${qs}`;
 }
 
-/**
- * GET an endpoint and return the unwrapped D202 envelope payload.
- *
- * Two return paths are mutually exclusive — successful 2xx returns the
- * parsed envelope; anything else throws `ApiError`. We deliberately do
- * NOT throw on a missing `data` field — that's a contract violation
- * worth surfacing to the caller as a runtime error so the BE author
- * sees it during integration.
- *
- * The body parse is forgiving — if the server returns non-JSON on an
- * error response, we attach the raw text to `ApiError.body` so the
- * caller can still log it.
- */
 export async function apiGet<T>(
   path: string,
   options: ApiRequestOptions = {},
@@ -117,15 +113,6 @@ export async function apiGet<T>(
   return apiRequest<T>('GET', path, undefined, options);
 }
 
-/**
- * POST a JSON body and return the unwrapped D202 envelope payload.
- *
- * Used for the Autopilot pause-all and dismiss-match endpoints (D104,
- * D105) and any future mutation that does not need PATCH semantics.
- * Body is JSON-encoded; when `body` is `undefined` the request has no
- * payload (the Content-Type header is also omitted). Same error / envelope
- * guard behavior as `apiGet`.
- */
 export async function apiPost<T>(
   path: string,
   body?: unknown,
@@ -134,12 +121,6 @@ export async function apiPost<T>(
   return apiRequest<T>('POST', path, body, options);
 }
 
-/**
- * PATCH a JSON body and return the unwrapped D202 envelope payload.
- *
- * Used for the Autopilot rule patch endpoint (D104/D105 — flip mode,
- * toggle enabled). Same shape as `apiPost`.
- */
 export async function apiPatch<T>(
   path: string,
   body?: unknown,
@@ -147,6 +128,15 @@ export async function apiPatch<T>(
 ): Promise<Envelope<T, unknown>> {
   return apiRequest<T>('PATCH', path, body, options);
 }
+
+export async function apiDelete<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<Envelope<T, unknown>> {
+  return apiRequest<T>('DELETE', path, undefined, options);
+}
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -157,10 +147,19 @@ async function apiRequest<T>(
   const url = buildUrl(path, options.query);
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'x-mailbox-account-id': getMailboxAccountId(),
     ...(options.headers ?? {}),
   };
-  const init: RequestInit = { method, headers };
+  // CSRF double-submit on every mutating verb (D155 CsrfGuard).
+  if (MUTATING_METHODS.has(method)) {
+    const csrf = readCookie('dm_csrf');
+    if (csrf) {
+      headers['X-CSRF-Token'] = csrf;
+    }
+  }
+  if (options.mailboxId) {
+    headers['X-Active-Mailbox-Id'] = options.mailboxId;
+  }
+  const init: RequestInit = { method, headers, credentials: 'include' };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
@@ -168,9 +167,7 @@ async function apiRequest<T>(
   if (options.signal != null) init.signal = options.signal;
   const res = await fetch(url, init);
 
-  // Read the body once — JSON if possible, raw text otherwise. The two
-  // branches share the same `text` so an error response with malformed
-  // JSON still attaches the original bytes for debugging.
+  // Read the body once — JSON if possible, raw text otherwise.
   const text = await res.text();
   let parsed: unknown = undefined;
   if (text.length > 0) {
@@ -182,6 +179,14 @@ async function apiRequest<T>(
   }
 
   if (!res.ok) {
+    // 401 → attempt refresh once. If the refresh succeeds the caller's
+    // request is replayed; if it fails the original 401 surfaces.
+    if (res.status === 401 && !options._isRetry && path !== '/api/auth/refresh') {
+      const refreshed = await attemptRefresh();
+      if (refreshed) {
+        return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
+      }
+    }
     throw new ApiError(
       res.status,
       parsed,
@@ -189,8 +194,6 @@ async function apiRequest<T>(
     );
   }
 
-  // D202 envelope guard — anything that doesn't carry a `data` field is
-  // a contract bug. Surface it as a runtime error rather than coercing.
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
@@ -204,4 +207,30 @@ async function apiRequest<T>(
   }
 
   return parsed as Envelope<T, unknown>;
+}
+
+/**
+ * Single-flight refresh attempt. Concurrent 401s end up sharing one
+ * outstanding rotation request — the second caller awaits the same
+ * promise instead of racing the BE's rotation lock.
+ */
+let pendingRefresh: Promise<boolean> | null = null;
+
+async function attemptRefresh(): Promise<boolean> {
+  if (pendingRefresh) return pendingRefresh;
+  pendingRefresh = (async () => {
+    try {
+      const res = await fetch(buildUrl('/api/auth/refresh', undefined), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      pendingRefresh = null;
+    }
+  })();
+  return pendingRefresh;
 }

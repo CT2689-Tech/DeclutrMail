@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
+import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { UndoController } from './undo.controller.js';
 import { UndoService } from './undo.service.js';
 
@@ -19,6 +21,7 @@ import { UndoService } from './undo.service.js';
  * which is already provided by the global DbModule.
  */
 @Module({
+  imports: [AuthModule, MailboxAccountsModule],
   controllers: [UndoController],
   providers: [UndoService],
   exports: [UndoService],

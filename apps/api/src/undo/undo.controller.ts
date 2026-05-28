@@ -2,12 +2,12 @@ import {
   BadRequestException,
   Controller,
   Get,
-  Headers,
   HttpException,
   HttpStatus,
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ok,
@@ -16,6 +16,9 @@ import {
   type PaginatedEnvelope,
 } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { UndoService } from './undo.service.js';
 import type { UndoActionKind, UndoResult } from './undo.types.js';
@@ -23,12 +26,10 @@ import type { UndoActionKind, UndoResult } from './undo.types.js';
 /**
  * UndoController — `/undo` endpoints (D35, D58).
  *
- * Auth note (PR-B onwards): the D109/D224 session layer has not landed.
- * Until it does, the mailbox is identified by the `x-mailbox-account-id`
- * header (matches the test-rig pattern used by the OAuth callback's
- * `mailboxAccountId` return). Once the session layer ships, the header
- * is replaced by a guard reading the JWT and rejecting requests that
- * touch a token outside the authenticated mailbox.
+ * Auth (D155 + D205): `JwtGuard` populates `req.user`,
+ * `CurrentMailboxGuard` resolves the active mailbox into
+ * `@CurrentMailbox()`. State-changing `POST :token` also requires
+ * `CsrfGuard` (double-submit cookie).
  *
  * Response shape: D202 envelope (`{ data, meta }`). Pagination is
  * inline-list — the active tray fits comfortably in a single page (see
@@ -44,6 +45,7 @@ import type { UndoActionKind, UndoResult } from './undo.types.js';
  * parameter rather than a header.
  */
 @Controller('undo')
+@UseGuards(JwtGuard, CurrentMailboxGuard)
 export class UndoController {
   constructor(private readonly undo: UndoService) {}
 
@@ -58,7 +60,7 @@ export class UndoController {
   @RateLimit({ bucket: 'triage-load', limit: 300, windowSec: 60 })
   @Get()
   async listActive(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Query('limit') rawLimit: string | undefined,
   ): Promise<
     PaginatedEnvelope<{
@@ -68,9 +70,8 @@ export class UndoController {
       expiresAt: string;
     }>
   > {
-    const accountId = this.requireMailbox(mailboxAccountId);
     const limit = clampLimit(rawLimit);
-    const rows = await this.undo.listActive(accountId, limit);
+    const rows = await this.undo.listActive(mailbox.id, limit);
     const items = rows.map((row) => ({
       token: row.token,
       actionKind: row.actionKind,
@@ -109,15 +110,15 @@ export class UndoController {
    */
   @RateLimit({ bucket: 'gmail-action', limit: 30, windowSec: 60 })
   @Post(':token')
+  @UseGuards(CsrfGuard)
   async revert(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('token') token: string,
   ): Promise<Envelope<UndoResult>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
     if (!isUuid(token)) {
       throw new BadRequestException('token must be a UUID.');
     }
-    const claim = await this.undo.claimForRevert(token, accountId);
+    const claim = await this.undo.claimForRevert(token, mailbox.id);
     if (claim.outcome === 'not-found') {
       throw new HttpException(
         { error: { code: 'NOT_FOUND', message: 'Undo token not found.' } },
@@ -144,14 +145,6 @@ export class UndoController {
     // retry re-claims the work.
     const stamped = await this.undo.recordRevertSuccess(token);
     return ok(toResult(stamped));
-  }
-
-  /** Reject requests with no mailbox header — pre-auth-layer minimum. */
-  private requireMailbox(headerValue: string | undefined): string {
-    if (!headerValue || !isUuid(headerValue)) {
-      throw new BadRequestException('x-mailbox-account-id header is required.');
-    }
-    return headerValue;
   }
 }
 

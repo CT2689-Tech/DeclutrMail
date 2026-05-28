@@ -4,29 +4,30 @@
 // Thin per D201/D204: validates input, delegates to `BriefReadService`,
 // wraps the result in the D202 envelope.
 //
-// AUTH NOTE (until D109/D224 lands): mailbox identified by
-// `x-mailbox-account-id` header — same pattern as Senders, Autopilot,
-// Followups, Undo controllers. When the session layer lands, the
-// header gets replaced by a guard reading the JWT.
+// AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` + `CsrfGuard`.
 
 import {
   BadRequestException,
   Controller,
   Get,
-  Headers,
   HttpException,
   HttpStatus,
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { BriefReadService } from './brief.read-service.js';
 import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
 
 @Controller('briefs')
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
 export class BriefController {
   constructor(private readonly reads: BriefReadService) {}
 
@@ -40,10 +41,8 @@ export class BriefController {
    */
   @Get('today')
   @RateLimit('triage-load')
-  async today(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
-  ): Promise<Envelope<Brief>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+  async today(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<Brief>> {
+    const accountId = mailbox.id;
     const today = new Date().toISOString().slice(0, 10);
     const brief = await this.reads.getForDate(accountId, today);
     if (!brief) {
@@ -59,11 +58,11 @@ export class BriefController {
   @Get()
   @RateLimit('triage-load')
   async list(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
   ): Promise<Envelope<Brief[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!from || !to) {
       throw new BadRequestException('from and to query params are required (YYYY-MM-DD).');
     }
@@ -79,10 +78,10 @@ export class BriefController {
   @Post(':id/mark-opened')
   @RateLimit('triage-load')
   async markOpened(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
   ): Promise<Envelope<BriefMarkOpenedResult>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Brief id must be a UUID.');
     }
@@ -91,13 +90,6 @@ export class BriefController {
       throw notFound('Brief not found.');
     }
     return ok(result);
-  }
-
-  private requireMailbox(headerValue: string | undefined): string {
-    if (!headerValue || !isUuid(headerValue)) {
-      throw new BadRequestException('x-mailbox-account-id header is required.');
-    }
-    return headerValue;
   }
 }
 

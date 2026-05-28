@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
+import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { SendersController } from './senders.controller.js';
 import { SendersReadService } from './senders.read-service.js';
 
@@ -22,6 +24,7 @@ import { SendersReadService } from './senders.read-service.js';
  * via DbModule.
  */
 @Module({
+  imports: [AuthModule, MailboxAccountsModule],
   controllers: [SendersController],
   providers: [SendersReadService],
   exports: [SendersReadService],

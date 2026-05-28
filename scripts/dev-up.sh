@@ -13,11 +13,12 @@
 #   3. apply pending migrations (idempotent)
 #   4. start api on :4000 in background
 #   5. start worker in background
-#   6. tail both logs
+#   6. start web on :3000 in background
+#   7. tail logs
 #
 # Usage:
-#   ./scripts/dev-up.sh           bring redis + api + worker up
-#   ./scripts/dev-up.sh --stop    kill api + worker (leaves redis container running)
+#   ./scripts/dev-up.sh           bring redis + api + worker + web up
+#   ./scripts/dev-up.sh --stop    kill api + worker + web (leaves redis container running)
 #
 set -euo pipefail
 
@@ -27,23 +28,29 @@ cd "$REPO_ROOT"
 LOG_DIR="$REPO_ROOT/.local-logs"
 API_PID="$LOG_DIR/api.pid"
 WORKER_PID="$LOG_DIR/worker.pid"
+WEB_PID="$LOG_DIR/web.pid"
+STUDIO_PID="$LOG_DIR/studio.pid"
 API_LOG="$LOG_DIR/api.log"
 WORKER_LOG="$LOG_DIR/worker.log"
+WEB_LOG="$LOG_DIR/web.log"
+STUDIO_LOG="$LOG_DIR/studio.log"
 
 mkdir -p "$LOG_DIR"
 
 stop() {
-  for f in "$API_PID" "$WORKER_PID"; do
+  for f in "$API_PID" "$WORKER_PID" "$WEB_PID" "$STUDIO_PID"; do
     if [[ -f "$f" ]] && kill -0 "$(cat "$f")" 2>/dev/null; then
       echo "→ stopping pid $(cat "$f")"
       kill "$(cat "$f")" 2>/dev/null || true
     fi
     rm -f "$f"
   done
-  # Belt-and-braces — kill anything still bound to :4000.
-  if lsof -ti:4000 >/dev/null 2>&1; then
-    lsof -ti:4000 | xargs kill -9 2>/dev/null || true
-  fi
+  # Belt-and-braces — kill anything still bound to :4000 / :3000 / :4983 (drizzle studio default).
+  for port in 4000 3000 4983; do
+    if lsof -ti:"$port" >/dev/null 2>&1; then
+      lsof -ti:"$port" | xargs kill -9 2>/dev/null || true
+    fi
+  done
 }
 
 if [[ "${1:-}" == "--stop" ]]; then
@@ -89,7 +96,22 @@ echo "→ starting worker → $WORKER_LOG"
 ( "$REPO_ROOT/scripts/dev-worker.sh" >"$WORKER_LOG" 2>&1 ) &
 echo $! > "$WORKER_PID"
 
+echo "→ starting web → $WEB_LOG"
+( pnpm --filter @declutrmail/web dev >"$WEB_LOG" 2>&1 ) &
+echo $! > "$WEB_PID"
+
+# 7. Drizzle Studio (DB browser) on :4983. Optional — skipped when
+# DEV_UP_NO_STUDIO is set so a constrained machine can opt out.
+if [[ -z "${DEV_UP_NO_STUDIO:-}" ]]; then
+  echo "→ starting drizzle studio → $STUDIO_LOG"
+  ( pnpm --filter @declutrmail/db db:studio >"$STUDIO_LOG" 2>&1 ) &
+  echo $! > "$STUDIO_PID"
+fi
+
 echo ""
-echo "✓ up. tail -f $LOG_DIR/{api,worker}.log"
+echo "✓ up. tail -f $LOG_DIR/{api,worker,web,studio}.log"
 echo "  stop:    ./scripts/dev-up.sh --stop"
+echo "  web:     open http://localhost:3000"
+echo "  api:     http://localhost:4000"
+echo "  studio:  open https://local.drizzle.studio (proxies :4983)"
 echo "  auth:    open http://localhost:4000/api/auth/google/start"

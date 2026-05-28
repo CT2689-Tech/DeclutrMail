@@ -26,6 +26,9 @@ import type {
 const MAILBOX_ID = '11111111-1111-1111-1111-111111111111';
 const SENDER_ID = '22222222-2222-2222-2222-222222222222';
 
+/** Stand-in for the `@CurrentMailbox()`-resolved value the guard injects. */
+const MAILBOX = { id: MAILBOX_ID } as const;
+
 function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
   return {
     id: SENDER_ID,
@@ -103,28 +106,21 @@ describe('SendersController', () => {
     ({ ctrl, reads } = buildController());
   });
 
-  describe('header validation', () => {
-    it('throws 400 when the mailbox header is missing', async () => {
-      await expect(ctrl.list(undefined, undefined, undefined, undefined)).rejects.toThrow(
-        /x-mailbox-account-id/,
-      );
-    });
-
-    it('throws 400 when the mailbox header is not a UUID', async () => {
-      await expect(ctrl.list('not-a-uuid', undefined, undefined, undefined)).rejects.toThrow(
-        /x-mailbox-account-id/,
-      );
-    });
+  describe('input validation', () => {
+    // Mailbox identity is now resolved by `CurrentMailboxGuard` (D155 +
+    // D205) before the controller runs — the controller no longer
+    // validates a header. The guard's resolution behaviour is exercised
+    // in `current-mailbox.guard.spec.ts`.
 
     it('throws 400 when the sender id is not a UUID', async () => {
-      await expect(ctrl.detail(MAILBOX_ID, 'not-a-uuid')).rejects.toThrow(/UUID/);
+      await expect(ctrl.detail(MAILBOX, 'not-a-uuid')).rejects.toThrow(/UUID/);
     });
   });
 
   describe('list — envelope + cursor', () => {
     it('returns the D202 paginated envelope with hasMore=false when the service returns ≤ limit rows', async () => {
       reads.listSenders.mockResolvedValue([makeSenderRow()]);
-      const res = await ctrl.list(MAILBOX_ID, undefined, '10', undefined);
+      const res = await ctrl.list(MAILBOX, undefined, '10', undefined);
       expect(res.meta.pagination).toEqual({
         nextCursor: null,
         hasMore: false,
@@ -152,7 +148,7 @@ describe('SendersController', () => {
       ];
       reads.listSenders.mockResolvedValue(rows);
 
-      const res = await ctrl.list(MAILBOX_ID, undefined, '2', undefined);
+      const res = await ctrl.list(MAILBOX, undefined, '2', undefined);
       expect(res.data).toHaveLength(2);
       expect(res.meta.pagination.hasMore).toBe(true);
       expect(res.meta.pagination.nextCursor).not.toBeNull();
@@ -166,7 +162,7 @@ describe('SendersController', () => {
     });
 
     it('rejects a malformed cursor with 400', async () => {
-      await expect(ctrl.list(MAILBOX_ID, undefined, undefined, 'not-base64!!!')).rejects.toThrow(
+      await expect(ctrl.list(MAILBOX, undefined, undefined, 'not-base64!!!')).rejects.toThrow(
         /cursor/i,
       );
     });
@@ -174,7 +170,7 @@ describe('SendersController', () => {
     it('forwards a valid cursor to the read service as a Date + id', async () => {
       reads.listSenders.mockResolvedValue([]);
       const cursor = encodeCursor({ key: '2026-05-01T00:00:00.000Z', id: SENDER_ID });
-      await ctrl.list(MAILBOX_ID, undefined, undefined, cursor);
+      await ctrl.list(MAILBOX, undefined, undefined, cursor);
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({
           mailboxAccountId: MAILBOX_ID,
@@ -188,7 +184,7 @@ describe('SendersController', () => {
 
     it('passes a parsed category to the read service when valid', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX_ID, 'promotions', undefined, undefined);
+      await ctrl.list(MAILBOX, 'promotions', undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ category: 'promotions' }),
       );
@@ -196,13 +192,13 @@ describe('SendersController', () => {
 
     it('silently drops an unknown category value', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX_ID, 'not-real', undefined, undefined);
+      await ctrl.list(MAILBOX, 'not-real', undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ category: null }));
     });
 
     it('clamps an over-max ?limit= to 100', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX_ID, undefined, '999999', undefined);
+      await ctrl.list(MAILBOX, undefined, '999999', undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
     });
   });
@@ -219,17 +215,17 @@ describe('SendersController', () => {
         },
       };
       reads.getSenderDetail.mockResolvedValue(detail);
-      const res = await ctrl.detail(MAILBOX_ID, SENDER_ID);
+      const res = await ctrl.detail(MAILBOX, SENDER_ID);
       expect(res.data).toEqual(detail);
     });
 
     it('returns 404 when the read service returns null (cross-mailbox or missing)', async () => {
       reads.getSenderDetail.mockResolvedValue(null);
-      await expect(ctrl.detail(MAILBOX_ID, SENDER_ID)).rejects.toMatchObject({
+      await expect(ctrl.detail(MAILBOX, SENDER_ID)).rejects.toMatchObject({
         getStatus: expect.any(Function),
       });
       try {
-        await ctrl.detail(MAILBOX_ID, SENDER_ID);
+        await ctrl.detail(MAILBOX, SENDER_ID);
       } catch (e) {
         expect((e as HttpException).getStatus()).toBe(404);
       }
@@ -240,7 +236,7 @@ describe('SendersController', () => {
     it('returns 404 when the sender is not in this mailbox', async () => {
       reads.listMessagesForSender.mockResolvedValue(null);
       try {
-        await ctrl.messages(MAILBOX_ID, SENDER_ID, undefined, undefined);
+        await ctrl.messages(MAILBOX, SENDER_ID, undefined, undefined);
         throw new Error('expected throw');
       } catch (e) {
         expect((e as HttpException).getStatus()).toBe(404);
@@ -249,7 +245,7 @@ describe('SendersController', () => {
 
     it('honors the D46 default limit of 10', async () => {
       reads.listMessagesForSender.mockResolvedValue([]);
-      await ctrl.messages(MAILBOX_ID, SENDER_ID, undefined, undefined);
+      await ctrl.messages(MAILBOX, SENDER_ID, undefined, undefined);
       expect(reads.listMessagesForSender).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 10 }),
       );
@@ -257,7 +253,7 @@ describe('SendersController', () => {
 
     it('clamps the limit to 50', async () => {
       reads.listMessagesForSender.mockResolvedValue([]);
-      await ctrl.messages(MAILBOX_ID, SENDER_ID, '500', undefined);
+      await ctrl.messages(MAILBOX, SENDER_ID, '500', undefined);
       expect(reads.listMessagesForSender).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 50 }),
       );
@@ -265,7 +261,7 @@ describe('SendersController', () => {
 
     it('returns the envelope with the messages page', async () => {
       reads.listMessagesForSender.mockResolvedValue([makeMessageRow()]);
-      const res = await ctrl.messages(MAILBOX_ID, SENDER_ID, undefined, undefined);
+      const res = await ctrl.messages(MAILBOX, SENDER_ID, undefined, undefined);
       expect(res.data).toHaveLength(1);
       expect(res.meta.pagination.hasMore).toBe(false);
     });
@@ -282,7 +278,7 @@ describe('SendersController', () => {
         }),
       ];
       reads.listMessagesForSender.mockResolvedValue(rows);
-      const res = await ctrl.messages(MAILBOX_ID, SENDER_ID, '1', undefined);
+      const res = await ctrl.messages(MAILBOX, SENDER_ID, '1', undefined);
       expect(res.meta.pagination.hasMore).toBe(true);
       const decoded = decodeCursor(res.meta.pagination.nextCursor);
       expect(decoded).toEqual({
@@ -296,7 +292,7 @@ describe('SendersController', () => {
     it('returns 404 when the sender is not in this mailbox', async () => {
       reads.listTimeseries.mockResolvedValue(null);
       try {
-        await ctrl.timeseries(MAILBOX_ID, SENDER_ID);
+        await ctrl.timeseries(MAILBOX, SENDER_ID);
         throw new Error('expected throw');
       } catch (e) {
         expect((e as HttpException).getStatus()).toBe(404);
@@ -306,7 +302,7 @@ describe('SendersController', () => {
     it('wraps the points array in the simple envelope (no pagination meta)', async () => {
       const points: TimeseriesPoint[] = [{ yearMonth: '2026-05', volume: 10, readCount: 3 }];
       reads.listTimeseries.mockResolvedValue(points);
-      const res = await ctrl.timeseries(MAILBOX_ID, SENDER_ID);
+      const res = await ctrl.timeseries(MAILBOX, SENDER_ID);
       expect(res).toEqual({ data: points });
     });
   });
@@ -315,7 +311,7 @@ describe('SendersController', () => {
     it('returns 404 when the sender is not in this mailbox', async () => {
       reads.listDecisionHistory.mockResolvedValue(null);
       try {
-        await ctrl.history(MAILBOX_ID, SENDER_ID, undefined, undefined);
+        await ctrl.history(MAILBOX, SENDER_ID, undefined, undefined);
         throw new Error('expected throw');
       } catch (e) {
         expect((e as HttpException).getStatus()).toBe(404);
@@ -324,7 +320,7 @@ describe('SendersController', () => {
 
     it('honors the D46 default limit of 10', async () => {
       reads.listDecisionHistory.mockResolvedValue([]);
-      await ctrl.history(MAILBOX_ID, SENDER_ID, undefined, undefined);
+      await ctrl.history(MAILBOX, SENDER_ID, undefined, undefined);
       expect(reads.listDecisionHistory).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 10 }),
       );
@@ -332,7 +328,7 @@ describe('SendersController', () => {
 
     it('clamps the limit to 50', async () => {
       reads.listDecisionHistory.mockResolvedValue([]);
-      await ctrl.history(MAILBOX_ID, SENDER_ID, '500', undefined);
+      await ctrl.history(MAILBOX, SENDER_ID, '500', undefined);
       expect(reads.listDecisionHistory).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 50 }),
       );
@@ -340,7 +336,7 @@ describe('SendersController', () => {
 
     it('returns the envelope with the history page', async () => {
       reads.listDecisionHistory.mockResolvedValue([makeHistoryRow()]);
-      const res = await ctrl.history(MAILBOX_ID, SENDER_ID, undefined, undefined);
+      const res = await ctrl.history(MAILBOX, SENDER_ID, undefined, undefined);
       expect(res.data).toHaveLength(1);
       expect(res.data[0]!.verdict).toBe('archive');
     });
@@ -354,9 +350,9 @@ describe('SendersController', () => {
    * 400 path).
    */
   describe('weeklyHero', () => {
-    it('throws 400 when the mailbox header is missing', async () => {
-      await expect(ctrl.weeklyHero(undefined)).rejects.toThrow(/x-mailbox-account-id/);
-    });
+    // The mailbox-header test was retired with the JwtGuard +
+    // CurrentMailboxGuard split (D155 + D205) — mailbox identity is
+    // resolved by the guard, not validated in the controller.
 
     it('returns the envelope with isMonday + weekOf + slices', async () => {
       reads.listWeeklyHero.mockResolvedValue({
@@ -380,7 +376,7 @@ describe('SendersController', () => {
           },
         ],
       });
-      const res = await ctrl.weeklyHero(MAILBOX_ID);
+      const res = await ctrl.weeklyHero(MAILBOX);
       expect(res.data.isMonday).toBe(true);
       expect(res.data.weekOf).toBe('2026-05-11');
       expect(res.data.slices).toHaveLength(1);

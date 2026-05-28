@@ -9,21 +9,23 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ApiError, apiGet } from './client';
+import { ApiError, apiGet, apiPost } from './client';
 import { installFetchStub, jsonOk, jsonNotFound, resetFetchStub } from '@/test/fetch-stub';
 
 describe('apiGet — request shape', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('stamps the x-mailbox-account-id header on every request', async () => {
-    let observed: Headers | null = null;
+  it('sends credentials: include and the Accept header on every request', async () => {
+    let observedCredentials: RequestCredentials | undefined;
+    let observedHeaders: Headers | null = null;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/echo',
         respond: (req) => {
-          observed = req.headers;
+          observedHeaders = req.headers;
+          observedCredentials = req.credentials;
           return jsonOk({ data: { ok: true } });
         },
       },
@@ -31,10 +33,28 @@ describe('apiGet — request shape', () => {
 
     await apiGet<{ ok: boolean }>('/api/echo');
 
-    expect(observed).not.toBeNull();
-    // Fallback to literal 'demo' since NEXT_PUBLIC_DEMO_MAILBOX_ACCOUNT_ID is unset in tests.
-    expect(observed!.get('x-mailbox-account-id')).toBe('demo');
-    expect(observed!.get('Accept')).toBe('application/json');
+    expect(observedHeaders).not.toBeNull();
+    expect(observedHeaders!.get('Accept')).toBe('application/json');
+    // The legacy `x-mailbox-account-id` header is gone — D155/D205 moved
+    // mailbox identity into the session cookie + user.preferences.
+    expect(observedHeaders!.has('x-mailbox-account-id')).toBe(false);
+    expect(observedCredentials).toBe('include');
+  });
+
+  it('stamps X-Active-Mailbox-Id when the call passes mailboxId', async () => {
+    let observed: Headers | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (req) => {
+          observed = req.headers;
+          return jsonOk({ data: [] });
+        },
+      },
+    ]);
+    await apiGet('/api/senders', { mailboxId: 'mb-7' });
+    expect(observed!.get('X-Active-Mailbox-Id')).toBe('mb-7');
   });
 
   it('serialises a query map onto the URL, skipping undefined values', async () => {
@@ -121,5 +141,52 @@ describe('apiGet — response unwrap', () => {
     ]);
 
     await expect(apiGet('/api/broken')).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('apiPost — CSRF double-submit', () => {
+  beforeEach(() => {
+    installFetchStub([]);
+    // jsdom's `document.cookie` is mutable per test.
+    Object.defineProperty(document, 'cookie', {
+      writable: true,
+      configurable: true,
+      value: 'dm_csrf=token-xyz; other=ignored',
+    });
+  });
+  afterEach(() => {
+    resetFetchStub();
+  });
+
+  it('stamps X-CSRF-Token from the dm_csrf cookie on POST', async () => {
+    let observed: Headers | null = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/triage/score-sender',
+        respond: (req) => {
+          observed = req.headers;
+          return jsonOk({ data: { idempotencyKey: 'k' } });
+        },
+      },
+    ]);
+    await apiPost('/api/triage/score-sender', { senderKey: 'sk_1' });
+    expect(observed!.get('X-CSRF-Token')).toBe('token-xyz');
+  });
+
+  it('omits X-CSRF-Token on GET', async () => {
+    let observed: Headers | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/echo',
+        respond: (req) => {
+          observed = req.headers;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    await apiGet('/api/echo');
+    expect(observed!.has('X-CSRF-Token')).toBe(false);
   });
 });

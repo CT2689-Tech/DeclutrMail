@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
+import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { AutopilotController } from './autopilot.controller.js';
 import { AutopilotReadService } from './autopilot.read-service.js';
 
@@ -25,6 +27,7 @@ import { AutopilotReadService } from './autopilot.read-service.js';
  * via DbModule).
  */
 @Module({
+  imports: [AuthModule, MailboxAccountsModule],
   controllers: [AutopilotController],
   providers: [AutopilotReadService],
   exports: [AutopilotReadService],

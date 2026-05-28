@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
+import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { FollowupController } from './followup.controller.js';
 import { FollowupReadService } from './followup.read-service.js';
 
@@ -16,6 +18,7 @@ import { FollowupReadService } from './followup.read-service.js';
  * via DbModule).
  */
 @Module({
+  imports: [AuthModule, MailboxAccountsModule],
   controllers: [FollowupController],
   providers: [FollowupReadService],
   exports: [FollowupReadService],

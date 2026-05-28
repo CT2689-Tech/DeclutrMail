@@ -49,7 +49,10 @@ function makeContext(opts: {
   userId?: string;
   setHeader: (name: string, value: string) => void;
 }): ExecutionContext {
-  const req = { ip: opts.ip ?? '203.0.113.1', user: opts.userId ? { id: opts.userId } : undefined };
+  const req = {
+    ip: opts.ip ?? '203.0.113.1',
+    user: opts.userId ? { userId: opts.userId } : undefined,
+  };
   const res = { setHeader: opts.setHeader } as unknown as Response;
   return {
     getHandler: () => opts.handler,

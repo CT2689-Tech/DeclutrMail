@@ -30,11 +30,19 @@ export function AppShell({
   active,
   onNavigate,
   counts,
+  topbarRight,
   children,
 }: {
   active: string;
   onNavigate: (id: string) => void;
   counts?: Partial<Record<string, string | number>>;
+  /**
+   * Optional slot rendered at the right edge of the topbar. The web
+   * app uses this for the account menu (switch mailbox, disconnect,
+   * sign out). Shared has no API access so it does not own the menu
+   * implementation.
+   */
+  topbarRight?: ReactNode;
   children: ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -201,6 +209,11 @@ export function AppShell({
               </span>
             ))}
           </div>
+          {topbarRight ? (
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+              {topbarRight}
+            </div>
+          ) : null}
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
