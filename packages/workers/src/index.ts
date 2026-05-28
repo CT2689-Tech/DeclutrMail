@@ -31,6 +31,7 @@ export type {
   GmailMessageMetadata,
   GmailMetadataClient,
 } from './ports.js';
+export type { GmailMutationClient, LabelChange } from './gmail-mutation-client.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';

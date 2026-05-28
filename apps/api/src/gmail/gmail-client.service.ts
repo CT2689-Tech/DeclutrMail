@@ -10,13 +10,16 @@ import type {
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,
+  GmailMutationClient,
+  LabelChange,
 } from '@declutrmail/workers';
 
 /**
  * GmailClientService — the Gmail REST adapter behind the
- * `GmailMetadataClient` port (D201: external integrations sit behind an
- * interface). One instance is bound to one mailbox's `OAuth2Client` and
- * one `RateLimiter`.
+ * `GmailMetadataClient` (read) and `GmailMutationClient` (label-modify)
+ * ports (D201: external integrations sit behind an interface). One
+ * instance is bound to one mailbox's `OAuth2Client` and one
+ * `RateLimiter`.
  *
  * PRIVACY — D7 / D228. `getMessageMetadata` calls `messages.get` with
  * `format=metadata` and the six-header allowlist defined in
@@ -25,15 +28,24 @@ import type {
  * `List-Unsubscribe-Post`). It NEVER uses `format=full` or
  * `format=raw`, so message bodies, attachments, inline images, and
  * raw MIME are never fetched — the "Full bodies fetched: 0"
- * guarantee. `messages.list` returns ids only. Enforced by
- * `privacy-auditor`.
+ * guarantee. `messages.list` returns ids only. The mutation methods
+ * (`modifyLabels` / `batchModify`) send only label ids + message ids and
+ * never read the response body, so they are body-free by construction.
+ * Enforced by `privacy-auditor`.
  *
- * QUOTA — D5. Gmail meters 15,000 quota units / user / minute;
- * `messages.list` and `messages.get` each cost 5 units. Every call goes
- * through `RateLimiter` first so a backfill cannot burst past the
- * ceiling. A 403 "Quota exceeded" (Gmail's rate-limit signal — it is NOT
- * always a 429) is classified as `RateLimitError` so the worker treats
- * it as retryable throttling, not a generic fault.
+ * QUOTA — D5. Gmail meters 15,000 quota units / user / minute. The local
+ * `RateLimiter` is a coarse per-call governor: it already charges the
+ * read rate (`UNITS_PER_CALL = 5`) for every request, and we keep that
+ * same per-call accounting for the mutation POSTs — each `modify` call
+ * and each `batchModify` chunk is one request through the limiter — so
+ * the per-mailbox window paces writes the same way it paces reads. (Gmail
+ * bills `messages.modify` at 5 and `messages.batchModify` at 50 units
+ * server-side; the local governor does not attempt to mirror that finer
+ * billing — the 12,000/60,000ms window already runs 20% under Gmail's
+ * documented ceiling, per ADR-0005.) A 403 "Quota exceeded" (Gmail's
+ * rate-limit signal — it is NOT always a 429) is classified as
+ * `RateLimitError` so the worker treats it as retryable throttling, not
+ * a generic fault.
  */
 
 /** Gmail message-format value — `metadata` ONLY (D7). Never `full`/`raw`. */
@@ -59,8 +71,10 @@ const METADATA_HEADERS = [
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
-/** Quota units for `messages.list` / `messages.get` (D5). */
+/** Quota units charged to the local limiter per request (D5). */
 const UNITS_PER_CALL = 5;
+/** Gmail caps `messages.batchModify` at 1000 ids per request. */
+const BATCH_MODIFY_MAX_IDS = 1000;
 
 /** Shape of a `messages.list` response (the fields we read). */
 interface GmailListResponse {
@@ -83,7 +97,7 @@ interface GmailProfileResponse {
   historyId?: string;
 }
 
-export class GmailClientService implements GmailMetadataClient {
+export class GmailClientService implements GmailMetadataClient, GmailMutationClient {
   constructor(
     private readonly oauth: OAuth2Client,
     private readonly limiter: RateLimiter,
@@ -175,6 +189,50 @@ export class GmailClientService implements GmailMetadataClient {
     if (res.status === 404 && allow404) {
       return null;
     }
+    return this.handleStatus(res);
+  }
+
+  /**
+   * Authenticated POST against the Gmail API — the write sibling of
+   * `get()`. Same `RateLimiter` pacing (D5), same `Authorization: Bearer`
+   * auth, same timeout, and the same typed-error mapping via
+   * `handleStatus`. Sends a JSON body and DELIBERATELY discards the
+   * response body: a label-modify response carries only ids/labels, none
+   * of which we need, and not reading it keeps the call body-free (D7).
+   */
+  private async post(path: string, body: unknown): Promise<void> {
+    await this.limiter.acquire(UNITS_PER_CALL);
+    const token = await this.accessToken();
+
+    let res: Response;
+    try {
+      res = await fetch(`${GMAIL_API_BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // Network failure or request timeout — retryable.
+      throw new TransientError(`Gmail request failed: ${errorMessage(err)}`);
+    }
+
+    if (res.ok) {
+      return;
+    }
+    await this.handleStatus(res);
+  }
+
+  /**
+   * Map a non-OK Gmail `Response` to the typed worker error that drives
+   * `BaseDeclutrWorker`'s retry vs. dead-letter decision. Always throws —
+   * the return type is `never`. Callers handle `res.ok` (and `get`'s
+   * `allow404`) before delegating here, so this only ever sees failures.
+   */
+  private async handleStatus(res: Response): Promise<never> {
     if (res.status === 401) {
       throw new AuthExpiredError('Gmail returned 401 — access token rejected');
     }
@@ -196,6 +254,35 @@ export class GmailClientService implements GmailMetadataClient {
     }
     // Other 4xx — surface the body; the base class treats it as transient.
     throw new TransientError(`Gmail returned ${res.status}: ${await safeBody(res)}`);
+  }
+
+  /**
+   * Apply a label change to a single message — `messages.modify` with
+   * `addLabelIds` / `removeLabelIds`. Only label ids + the message id
+   * cross the wire (D7-safe). Paced through the limiter like every other
+   * call (D5).
+   */
+  async modifyLabels(messageId: string, change: LabelChange): Promise<void> {
+    await this.post(`/messages/${encodeURIComponent(messageId)}/modify`, {
+      addLabelIds: change.addLabelIds ?? [],
+      removeLabelIds: change.removeLabelIds ?? [],
+    });
+  }
+
+  /**
+   * Apply the same label change to many messages — `messages.batchModify`.
+   * Gmail caps a batch at 1000 ids per request, so the input is chunked
+   * into ≤1000-id batches issued sequentially, each through the limiter
+   * (D5). Only message ids + label ids cross the wire (D7-safe). An empty
+   * id list is a no-op — no request, no quota spend.
+   */
+  async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+    const addLabelIds = change.addLabelIds ?? [];
+    const removeLabelIds = change.removeLabelIds ?? [];
+    for (let i = 0; i < messageIds.length; i += BATCH_MODIFY_MAX_IDS) {
+      const ids = messageIds.slice(i, i + BATCH_MODIFY_MAX_IDS);
+      await this.post('/messages/batchModify', { ids, addLabelIds, removeLabelIds });
+    }
   }
 
   /** A fresh access token — `OAuth2Client` refreshes it if expired. */
