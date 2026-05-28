@@ -95,6 +95,7 @@ describe('migration round-trip', () => {
 
     const objects = await listSchemaObjects(db);
     expect(objects).toEqual([
+      'table:active_sessions',
       'table:activity_log',
       'table:automation_rules',
       'table:brief_runs',

@@ -1,16 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { OAuth2Client } from 'google-auth-library';
-import { eq } from 'drizzle-orm';
-import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
-
-import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { SyncService } from '../sync/sync.service.js';
-import { TokenCryptoService } from './token-crypto.service.js';
 
 /**
  * Gmail OAuth scopes (D4).
@@ -27,35 +16,22 @@ const SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
-/** What a completed OAuth connect returns to the controller. */
-export interface ConnectResult {
-  mailboxAccountId: string;
+/** Result of `exchangeCode` — what the orchestrator needs to proceed. */
+export interface OAuthExchangeResult {
   email: string;
+  refreshToken: string;
 }
 
 /**
- * Thrown inside the bootstrap transaction when a concurrent same-email
- * connect won the `users.email` unique constraint. Throwing rolls the
- * transaction back (undoing the orphan workspace insert); the caller
- * catches it and re-selects the winner's user row.
- */
-class EmailRaceLostError extends Error {}
-
-/**
- * GoogleOAuthService — drives the Gmail OAuth connect flow (D4).
- *
- * `getConsentUrl` builds the Google consent URL. `handleCallback`
- * exchanges the authorization code, encrypts the refresh token via
- * envelope encryption (D14), and persists a `mailbox_accounts` row.
+ * GoogleOAuthService — thin wrapper around the Google API surface
+ * (consent URL, code exchange, id_token verify). After the D205
+ * restructure, this service owns NO database writes — those moved to
+ * `AuthSignupOrchestrator`, `UsersService`, and
+ * `MailboxAccountsService`. The split keeps each feature module to
+ * its own table per D204.
  */
 @Injectable()
 export class GoogleOAuthService {
-  constructor(
-    private readonly tokenCrypto: TokenCryptoService,
-    private readonly sync: SyncService,
-    @Inject(DRIZZLE) private readonly db: DrizzleDb,
-  ) {}
-
   /** Build a fresh OAuth2Client from env config. */
   private oauthClient(): OAuth2Client {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
@@ -69,8 +45,8 @@ export class GoogleOAuthService {
   }
 
   /**
-   * The Google consent-screen URL the user is redirected to. `state` is
-   * the CSRF nonce the controller also stores in an httpOnly cookie;
+   * The Google consent-screen URL the user is redirected to. `state`
+   * is the CSRF nonce the controller stores in an httpOnly cookie;
    * Google echoes it back to /callback for verification.
    */
   getConsentUrl(state: string): string {
@@ -83,10 +59,11 @@ export class GoogleOAuthService {
   }
 
   /**
-   * Exchange the authorization code, encrypt the refresh token, and
-   * persist the connected Gmail account.
+   * Exchange the authorization code for tokens, verify the id_token,
+   * and return `{ email, refreshToken }` for the orchestrator. THIS
+   * METHOD WRITES NOTHING — persistence is the orchestrator's job.
    */
-  async handleCallback(code: string): Promise<ConnectResult> {
+  async exchangeCode(code: string): Promise<OAuthExchangeResult> {
     const client = this.oauthClient();
     const { tokens } = await client.getToken(code);
 
@@ -119,123 +96,6 @@ export class GoogleOAuthService {
       );
     }
 
-    const encrypted = await this.tokenCrypto.encrypt(tokens.refresh_token);
-
-    // PR-B bootstrap: real onboarding/session is D109/D224. Until those
-    // land there is no auth layer, so find-or-create a workspace + user
-    // keyed on the connected Gmail address to satisfy the NOT NULL FKs.
-    const { userId, workspaceId } = await this.findOrCreateUser(email);
-
-    // Connect atomicity (Codex adversarial review iter 4 + iter 6,
-    // 2026-05-22).
-    //
-    // The OAuth refresh token is single-use, so "mailbox persisted" and
-    // "durable sync intent recorded" MUST commit or roll back together.
-    // If they were separate transactions and the second crashed, we'd
-    // have a mailbox row with a rotated refresh token but no `queued`
-    // sync_state row for the reconciler to find — a permanent strand.
-    //
-    // The BullMQ enqueue is BEST-EFFORT and runs AFTER the transaction
-    // commits. A Redis outage at this point cannot strand the user:
-    // the `queued` row is already durable, and the worker's continuous
-    // reconciler (every 60s) will materialize the missing job.
-    const row = await this.db.transaction(async (tx) => {
-      const [mb] = await tx
-        .insert(mailboxAccounts)
-        .values({
-          workspaceId,
-          userId,
-          provider: 'gmail',
-          providerAccountId: email,
-          encryptedRefreshToken: encrypted.ciphertext,
-          dekEncrypted: encrypted.wrappedDek,
-          keyVersion: encrypted.keyVersion,
-          connectedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [mailboxAccounts.provider, mailboxAccounts.providerAccountId],
-          set: {
-            encryptedRefreshToken: encrypted.ciphertext,
-            dekEncrypted: encrypted.wrappedDek,
-            keyVersion: encrypted.keyVersion,
-            connectedAt: new Date(),
-            status: 'active',
-          },
-        })
-        .returning({ id: mailboxAccounts.id });
-      if (!mb) {
-        throw new InternalServerErrorException('Failed to persist the mailbox account.');
-      }
-      // SyncService owns provider_sync_state writes (D204). Passing the
-      // tx keeps both writes in one atomic unit without auth touching
-      // sync's table directly.
-      await this.sync.markQueued(tx, mb.id);
-      return mb;
-    });
-
-    // Best-effort enqueue. The durable signal is the `queued` row
-    // committed above; if Redis is unreachable the reconciler picks it
-    // up. `schedule` swallows + logs queue errors itself.
-    await this.sync.schedule(row.id);
-
-    return { mailboxAccountId: row.id, email };
-  }
-
-  /** Find a user by email (citext), or bootstrap a workspace + user. */
-  private async findOrCreateUser(email: string): Promise<{ userId: string; workspaceId: string }> {
-    const existing = await this.lookupUser(email);
-    if (existing) {
-      return existing;
-    }
-
-    // First-time connect. The workspace + user inserts run in ONE
-    // transaction so a lost same-email race leaves NO orphan workspace:
-    // `users.email` has a unique index (`users_email_uniq`); the loser's
-    // onConflictDoNothing insert returns no row, we throw, the tx rolls
-    // back, and the workspace insert is undone with it. Full
-    // Idempotency-Key handling is D205's AuthSignupOrchestrator scope.
-    try {
-      return await this.db.transaction(async (tx) => {
-        const [workspace] = await tx
-          .insert(workspaces)
-          .values({ name: `${email}'s workspace` })
-          .returning({ id: workspaces.id });
-        if (!workspace) {
-          throw new InternalServerErrorException('Failed to bootstrap a workspace.');
-        }
-
-        const [user] = await tx
-          .insert(users)
-          .values({ workspaceId: workspace.id, email })
-          .onConflictDoNothing({ target: users.email })
-          .returning({ id: users.id });
-        if (!user) {
-          // Lost the race — roll the workspace insert back.
-          throw new EmailRaceLostError();
-        }
-        return { userId: user.id, workspaceId: workspace.id };
-      });
-    } catch (err) {
-      if (!(err instanceof EmailRaceLostError)) {
-        throw err;
-      }
-    }
-
-    // Race lost: the winner's user row now exists — re-select it.
-    const winner = await this.lookupUser(email);
-    if (!winner) {
-      throw new InternalServerErrorException('Failed to bootstrap a user.');
-    }
-    return winner;
-  }
-
-  /** Select an existing user + its workspace by email, or null. */
-  private async lookupUser(email: string): Promise<{ userId: string; workspaceId: string } | null> {
-    const [row] = await this.db
-      .select({ id: users.id, workspaceId: users.workspaceId })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-    return row ? { userId: row.id, workspaceId: row.workspaceId } : null;
+    return { email, refreshToken: tokens.refresh_token };
   }
 }

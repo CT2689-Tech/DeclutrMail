@@ -7,10 +7,10 @@
 // shared `AllExceptionsFilter` (apps/api/src/common/all-
 // exceptions.filter.ts) handles the error envelope per D168.
 //
-// AUTH NOTE (until D109/D224 lands): the mailbox is identified by the
-// `x-mailbox-account-id` header — same pattern as `UndoController`
-// and `OAuth callback`. When the session layer ships, the header is
-// replaced by a guard reading the JWT.
+// AUTH (D155 + D205): every route requires `JwtGuard` to populate
+// `req.user`, then `CurrentMailboxGuard` to resolve the active mailbox
+// from session preferences (or the `X-Active-Mailbox-Id` override).
+// The mailbox id arrives via the `@CurrentMailbox()` param decorator.
 //
 // PRIVACY (D7, D228): read-only path. Never fetches from Gmail,
 // never returns body content, never returns non-allowlisted headers.
@@ -21,11 +21,11 @@ import {
   BadRequestException,
   Controller,
   Get,
-  Headers,
   HttpException,
   HttpStatus,
   Param,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   type Envelope,
@@ -37,6 +37,8 @@ import {
   paginated,
 } from '@declutrmail/shared/contracts';
 
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SendersReadService } from './senders.read-service.js';
 import type {
@@ -58,6 +60,7 @@ const MESSAGES_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 defa
 const HISTORY_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 default
 
 @Controller('senders')
+@UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SendersController {
   constructor(private readonly reads: SendersReadService) {}
 
@@ -77,12 +80,12 @@ export class SendersController {
   @Get()
   @RateLimit('triage-load')
   async list(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Query('category') rawCategory: string | undefined,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<PaginatedEnvelope<SenderListRow>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
     const limit = clampLimit(rawLimit, LIST_LIMIT);
 
@@ -128,11 +131,8 @@ export class SendersController {
    */
   @Get('weekly-hero')
   @RateLimit('triage-load')
-  async weeklyHero(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
-  ): Promise<Envelope<WeeklyHero>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
-    const hero = await this.reads.listWeeklyHero({ mailboxAccountId: accountId });
+  async weeklyHero(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<WeeklyHero>> {
+    const hero = await this.reads.listWeeklyHero({ mailboxAccountId: mailbox.id });
     return ok(hero);
   }
 
@@ -146,10 +146,10 @@ export class SendersController {
   @Get(':id')
   @RateLimit('triage-load')
   async detail(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
   ): Promise<Envelope<SenderDetail>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       // A non-UUID id is structurally impossible — bail with 400
       // before hitting the DB.
@@ -173,12 +173,12 @@ export class SendersController {
   @Get(':id/messages')
   @RateLimit('triage-load')
   async messages(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<PaginatedEnvelope<MailMessageRow>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Sender id must be a UUID.');
     }
@@ -220,10 +220,10 @@ export class SendersController {
   @Get(':id/timeseries')
   @RateLimit('triage-load')
   async timeseries(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
   ): Promise<Envelope<TimeseriesPoint[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Sender id must be a UUID.');
     }
@@ -250,12 +250,12 @@ export class SendersController {
   @Get(':id/history')
   @RateLimit('triage-load')
   async history(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<PaginatedEnvelope<DecisionHistoryRow>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Sender id must be a UUID.');
     }
@@ -284,14 +284,6 @@ export class SendersController {
       encodeCursor({ key: row.producedAt, id: row.id }),
     );
     return paginated({ items: page, limit, nextCursor });
-  }
-
-  /** Reject requests with no mailbox header — pre-auth-layer minimum. */
-  private requireMailbox(headerValue: string | undefined): string {
-    if (!headerValue || !isUuid(headerValue)) {
-      throw new BadRequestException('x-mailbox-account-id header is required.');
-    }
-    return headerValue;
   }
 }
 

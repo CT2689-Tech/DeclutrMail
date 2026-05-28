@@ -34,10 +34,22 @@ async function bootstrap(): Promise<void> {
   // GET surfaces as a 503 (network error) in the browser console.
   // Dev default: any localhost origin. Prod: lock to FE origin via
   // CORS_ORIGIN env var.
+  // D155 cookie-auth requires `credentials: true` so the browser
+  // sends the HttpOnly access cookie cross-origin. The allowed headers
+  // include `X-CSRF-Token` for the double-submit CSRF pattern. The
+  // legacy `x-mailbox-account-id` header is gone — mailbox identity
+  // now comes from the session + `users.preferences.activeMailboxId`.
   app.enableCors({
     origin: process.env.CORS_ORIGIN ?? /^http:\/\/localhost(:\d+)?$/,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'x-mailbox-account-id', 'Idempotency-Key'],
+    allowedHeaders: [
+      'Content-Type',
+      'X-CSRF-Token',
+      // Per-request mailbox override (CurrentMailboxGuard, D155 + D205).
+      // The web client stamps it whenever a hook passes `mailboxId`.
+      'X-Active-Mailbox-Id',
+      'Idempotency-Key',
+    ],
   });
   app.setGlobalPrefix('api');
   app.use(cookieParser());

@@ -25,13 +25,12 @@ import {
 export const TOKEN_BUCKET_STORE = 'TOKEN_BUCKET_STORE';
 
 /**
- * Shape an authenticated request may have. Auth middleware is expected
- * to attach `req.user.id` when the request is authenticated; until D109
- * lands the field is absent and the interceptor falls back to client IP.
+ * Authenticated-request alias. The JwtGuard (D155) attaches
+ * `req.user` (SessionPrincipal) on success — declared globally in
+ * `jwt.guard.ts`. The interceptor reads only `userId` so it stays
+ * unaware of the auth feature surface (D204).
  */
-interface AuthenticatedRequest extends Request {
-  user?: { id?: string };
-}
+type AuthenticatedRequest = Request;
 
 /**
  * Global rate-limit interceptor (D156).
@@ -141,7 +140,7 @@ export class RateLimitInterceptor implements NestInterceptor {
    * derivation. D7-clean.
    */
   private identify(req: AuthenticatedRequest): string {
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
     if (typeof userId === 'string' && userId.length > 0) {
       return `user:${userId}`;
     }

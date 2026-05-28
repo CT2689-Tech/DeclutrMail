@@ -1,4 +1,5 @@
 export * from './_custom-types';
+export * from './active-sessions';
 export * from './activity-log';
 export * from './automation-rules';
 export * from './brief-runs';

@@ -1,0 +1,14 @@
+-- 0014_active_sessions.rollback
+--
+-- Drop `active_sessions` and its indexes. Safe to run on a populated
+-- table — logout/revoke flows in the app gracefully reissue sessions
+-- on next request when the table is missing, since the JwtGuard
+-- short-circuits to a 401 that the client interprets as "log in
+-- again". (In practice a rollback would be paired with a tagged app
+-- redeploy that disables JwtGuard while the table is being recreated.)
+
+DROP INDEX IF EXISTS "active_sessions_user_revoked_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "active_sessions_jti_uniq";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "active_sessions";

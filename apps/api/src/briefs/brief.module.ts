@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module.js';
+import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { BriefController } from './brief.controller.js';
 import { BriefReadService } from './brief.read-service.js';
 
@@ -17,6 +19,7 @@ import { BriefReadService } from './brief.read-service.js';
  * via DbModule).
  */
 @Module({
+  imports: [AuthModule, MailboxAccountsModule],
   controllers: [BriefController],
   providers: [BriefReadService],
   exports: [BriefReadService],

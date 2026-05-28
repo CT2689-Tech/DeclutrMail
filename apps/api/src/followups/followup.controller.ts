@@ -4,28 +4,29 @@
 // Thin per D201/D204: validates input, delegates to
 // `FollowupReadService`, wraps the result in the D202 envelope.
 //
-// AUTH NOTE (until D109/D224): mailbox identified by
-// `x-mailbox-account-id` header — same pattern as SendersController,
-// AutopilotController, UndoController. When the session layer lands,
-// the header gets replaced by a guard reading the JWT.
+// AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` + `CsrfGuard`.
 
 import {
   BadRequestException,
   Controller,
   Get,
-  Headers,
   HttpException,
   HttpStatus,
   Param,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { FollowupReadService } from './followup.read-service.js';
 import type { Followup, FollowupDismissResult } from './followup.types.js';
 
 @Controller('followups')
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
 export class FollowupController {
   constructor(private readonly reads: FollowupReadService) {}
 
@@ -36,11 +37,8 @@ export class FollowupController {
    */
   @Get()
   @RateLimit('triage-load')
-  async list(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
-  ): Promise<Envelope<Followup[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
-    const followups = await this.reads.listAwaiting(accountId);
+  async list(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<Followup[]>> {
+    const followups = await this.reads.listAwaiting(mailbox.id);
     return ok(followups);
   }
 
@@ -56,25 +54,17 @@ export class FollowupController {
   @Post(':id/dismiss')
   @RateLimit('triage-load')
   async dismiss(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
   ): Promise<Envelope<FollowupDismissResult>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
     if (!isUuid(id)) {
       throw new BadRequestException('Followup id must be a UUID.');
     }
-    const result = await this.reads.dismiss(accountId, id);
+    const result = await this.reads.dismiss(mailbox.id, id);
     if (!result) {
       throw notFound('Followup not found.');
     }
     return ok(result);
-  }
-
-  private requireMailbox(headerValue: string | undefined): string {
-    if (!headerValue || !isUuid(headerValue)) {
-      throw new BadRequestException('x-mailbox-account-id header is required.');
-    }
-    return headerValue;
   }
 }
 

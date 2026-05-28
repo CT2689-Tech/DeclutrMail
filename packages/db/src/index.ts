@@ -1,4 +1,6 @@
 export * as schema from './schema';
+export { activeSessions } from './schema/active-sessions';
+export type { ActiveSession, NewActiveSession } from './schema/active-sessions';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
 export type { ActivityLogEntry, NewActivityLogEntry } from './schema/activity-log';
 export {

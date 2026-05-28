@@ -4,10 +4,9 @@
 // Thin per D201/D204: validates input, delegates to
 // `AutopilotReadService`, wraps the result in the D202 envelope.
 //
-// AUTH NOTE (until D109/D224 lands): the mailbox is identified by the
-// `x-mailbox-account-id` header — same pattern as `SendersController`,
-// `UndoController`, OAuth callback. When the session layer ships, the
-// header is replaced by a guard reading the JWT.
+// AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` resolve the
+// authenticated mailbox; the controller reads it via `@CurrentMailbox()`.
+// State-changing routes also pass through `CsrfGuard`.
 //
 // PRIVACY (D7, D228): read-only against engine signals + rule
 // metadata; nothing returned contains body content. `sender_key` in
@@ -18,16 +17,19 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpException,
   HttpStatus,
   Param,
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
+import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { AutopilotReadService } from './autopilot.read-service.js';
 import type { AutopilotRuleMode, AutopilotRuleScope } from '@declutrmail/db';
@@ -44,16 +46,15 @@ const ALLOWED_MODES = new Set(['observe', 'active', 'paused']);
 const ALLOWED_SCOPES = new Set(['account', 'all_accounts', 'workspace']);
 
 @Controller('autopilot')
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
 export class AutopilotController {
   constructor(private readonly reads: AutopilotReadService) {}
 
   /** GET /api/autopilot/rules — list all Autopilot rules for the caller's mailbox. */
   @Get('rules')
   @RateLimit('triage-load')
-  async listRules(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
-  ): Promise<Envelope<AutopilotRule[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+  async listRules(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<AutopilotRule[]>> {
+    const accountId = mailbox.id;
     const rules = await this.reads.listRules(accountId);
     return ok(rules);
   }
@@ -62,10 +63,10 @@ export class AutopilotController {
   @Get('rules/:id')
   @RateLimit('triage-load')
   async getRule(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
   ): Promise<Envelope<AutopilotRule>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Rule id must be a UUID.');
     }
@@ -83,11 +84,11 @@ export class AutopilotController {
   @Get('rules/:id/matches')
   @RateLimit('triage-load')
   async listMatchesForRule(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
     @Query('limit') rawLimit: string | undefined,
   ): Promise<Envelope<AutopilotMatch[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Rule id must be a UUID.');
     }
@@ -107,11 +108,11 @@ export class AutopilotController {
   @Patch('rules/:id')
   @RateLimit('triage-load')
   async patchRule(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
     @Body() body: unknown,
   ): Promise<Envelope<AutopilotRule>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Rule id must be a UUID.');
     }
@@ -130,9 +131,9 @@ export class AutopilotController {
   @Post('pause-all')
   @RateLimit('triage-load')
   async pauseAll(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
   ): Promise<Envelope<AutopilotPauseAllResult>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     const result = await this.reads.pauseAll(accountId);
     return ok(result);
   }
@@ -144,9 +145,9 @@ export class AutopilotController {
   @Get('pending-suggestions')
   @RateLimit('triage-load')
   async listPendingSuggestions(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
   ): Promise<Envelope<AutopilotMatch[]>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     const matches = await this.reads.listPendingSuggestions(accountId);
     return ok(matches);
   }
@@ -159,10 +160,10 @@ export class AutopilotController {
   @Post('matches/:matchId/dismiss')
   @RateLimit('triage-load')
   async dismissMatch(
-    @Headers('x-mailbox-account-id') mailboxAccountId: string | undefined,
+    @CurrentMailbox() mailbox: { id: string },
     @Param('matchId') matchId: string,
   ): Promise<Envelope<AutopilotMatchDismissResult>> {
-    const accountId = this.requireMailbox(mailboxAccountId);
+    const accountId = mailbox.id;
     if (!isUuid(matchId)) {
       throw new BadRequestException('Match id must be a UUID.');
     }
@@ -171,13 +172,6 @@ export class AutopilotController {
       throw notFound('Match not found.');
     }
     return ok(result);
-  }
-
-  private requireMailbox(headerValue: string | undefined): string {
-    if (!headerValue || !isUuid(headerValue)) {
-      throw new BadRequestException('x-mailbox-account-id header is required.');
-    }
-    return headerValue;
   }
 }
 

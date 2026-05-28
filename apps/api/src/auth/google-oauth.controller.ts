@@ -1,88 +1,204 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { BadRequestException, Controller, Get, Query, Req, Res } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Logger,
+  Query,
+  Req,
+  Res,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 
 import { RateLimit } from '../common/rate-limit/index.js';
+import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
+import { CurrentUser, JwtGuard } from './jwt.guard.js';
+import type { SessionPrincipal } from './sessions.service.js';
+import { setSessionCookies } from './session-cookies.js';
 
-/** Name of the cookie that binds the OAuth `state` nonce to the caller. */
+/** Cookie carrying the OAuth state — nonce + post-callback intent. */
 const STATE_COOKIE = 'oauth_state';
-
 /** Cookie path — scoped to the connect routes only. */
 const STATE_COOKIE_PATH = '/api/auth/google';
 
 /**
- * Gmail OAuth connect routes (D4). Thin per D201 — each handler calls
- * exactly one service method.
+ * What the state cookie carries between /start and /callback.
  *
- *   GET /api/auth/google/start    → 302 to the Google consent screen
- *   GET /api/auth/google/callback → exchange code, persist, JSON result
+ *   - `mode: 'login'`   — unauthenticated flow. Callback finds or
+ *     creates the user/workspace and issues fresh session cookies.
+ *   - `mode: 'connect'` — authenticated flow. Callback adds the Google
+ *     account to the CURRENT user's workspace without creating a new
+ *     user and without re-issuing cookies. `userId` + `workspaceId`
+ *     are captured at /start time when the JwtGuard ran.
+ */
+interface OAuthState {
+  nonce: string;
+  mode: 'login' | 'connect';
+  userId?: string;
+  workspaceId?: string;
+}
+
+/**
+ * Gmail OAuth connect routes (D4, D205).
  *
- * The whole feature module is imported by AppModule only when
- * `GMAIL_CONNECT_ENABLED=true` — the routes are unauthenticated until
- * the D109/D224 auth layer lands, so they do not exist unless the flag
- * is set.
+ *   GET /api/auth/google/start
+ *     Unauthenticated. Begins signup / login. Callback issues session.
+ *
+ *   GET /api/auth/google/connect-mailbox/start
+ *     Authenticated (JwtGuard). Begins "add another Gmail account to
+ *     this workspace" flow. Callback ONLY upserts the mailbox; no new
+ *     session is issued.
+ *
+ *   GET /api/auth/google/callback
+ *     Single Google redirect target. Reads the state cookie's `mode`
+ *     to branch between the two flows above.
+ *
+ * Thin per D201/D204 — each handler delegates to the orchestrator.
  */
 @Controller('auth/google')
 export class GoogleOAuthController {
-  constructor(private readonly oauth: GoogleOAuthService) {}
+  private readonly logger = new Logger(GoogleOAuthController.name);
+
+  constructor(
+    private readonly oauth: GoogleOAuthService,
+    private readonly orchestrator: AuthSignupOrchestrator,
+  ) {}
 
   @Get('start')
   @RateLimit('auth')
   start(@Res() res: Response): void {
-    // CSRF: bind a random `state` nonce to the caller via an httpOnly
-    // cookie; /callback rejects any code whose state doesn't match.
-    const state = randomBytes(32).toString('base64url');
-    res.cookie(STATE_COOKIE, state, {
-      httpOnly: true,
-      sameSite: 'lax', // Lax so the cookie rides the top-level GET redirect back from Google.
-      secure: process.env.NODE_ENV === 'production', // HTTPS-only in prod; off for local http dev.
-      path: STATE_COOKIE_PATH,
-      maxAge: 600_000, // 10 min — the consent window.
+    this.beginConsent(res, { nonce: randomBytes(32).toString('base64url'), mode: 'login' });
+  }
+
+  /**
+   * Authenticated start: adds another Gmail account to the current
+   * workspace. The state cookie carries `userId` + `workspaceId` so
+   * the callback can verify the same browser still owns the session
+   * AND knows which workspace to add the new mailbox to.
+   */
+  @Get('connect-mailbox/start')
+  @RateLimit('auth')
+  @UseGuards(JwtGuard)
+  connectMailboxStart(@CurrentUser() user: SessionPrincipal, @Res() res: Response): void {
+    this.beginConsent(res, {
+      nonce: randomBytes(32).toString('base64url'),
+      mode: 'connect',
+      userId: user.userId,
+      workspaceId: user.workspaceId,
     });
-    res.redirect(302, this.oauth.getConsentUrl(state));
   }
 
   @Get('callback')
   @RateLimit('auth')
   async callback(
     @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
+    @Res() res: Response,
     @Query('code') code?: string,
     @Query('state') state?: string,
-  ): Promise<{ data: { mailboxAccountId: string; email: string; status: string } }> {
-    // CSRF check FIRST — before the code is exchanged.
-    const cookieState: unknown = (req.cookies as Record<string, unknown> | undefined)?.[
-      STATE_COOKIE
-    ];
-    if (!state || typeof cookieState !== 'string' || !statesMatch(state, cookieState)) {
-      throw new BadRequestException('Invalid or missing OAuth state.');
+  ): Promise<void> {
+    const cookieRaw = (req.cookies as Record<string, unknown> | undefined)?.[STATE_COOKIE];
+    if (typeof cookieRaw !== 'string') {
+      throw new BadRequestException('Missing OAuth state cookie.');
+    }
+    let cookieState: OAuthState;
+    try {
+      cookieState = JSON.parse(cookieRaw) as OAuthState;
+    } catch {
+      throw new BadRequestException('Malformed OAuth state cookie.');
+    }
+    if (!state || !statesMatch(state, cookieState.nonce)) {
+      throw new BadRequestException('Invalid OAuth state.');
     }
     if (!code) {
       throw new BadRequestException('Missing OAuth `code` query parameter.');
     }
 
-    const result = await this.oauth.handleCallback(code);
-
+    const { email, refreshToken } = await this.oauth.exchangeCode(code);
     // State consumed — clear the cookie so it cannot be replayed.
     res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
 
-    // D202 success envelope: { data: ... }.
-    return {
-      data: {
-        mailboxAccountId: result.mailboxAccountId,
-        email: result.email,
-        status: 'connected',
-      },
-    };
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+
+    if (cookieState.mode === 'connect') {
+      // Authenticated connect-mailbox flow. The state cookie was
+      // written by `connect-mailbox/start` which ran JwtGuard, so the
+      // `userId`/`workspaceId` here trace back to a verified session.
+      // We additionally trust the browser still owns the session
+      // because: (a) the state cookie is HttpOnly + Secure + 10-min
+      // TTL + path-scoped, so it cannot be forged from another origin;
+      // (b) the orchestrator's cross-workspace ownership guard refuses
+      // to silently move a Google account between workspaces.
+      if (!cookieState.userId || !cookieState.workspaceId) {
+        throw new UnauthorizedException('Connect-mailbox state cookie is incomplete.');
+      }
+      try {
+        await this.orchestrator.addMailbox({
+          currentUserId: cookieState.userId,
+          currentWorkspaceId: cookieState.workspaceId,
+          email,
+          refreshToken,
+        });
+        res.redirect(302, `${webBase}/triage?connected=${encodeURIComponent(email)}`);
+      } catch (err) {
+        // Cross-workspace ownership refusal — bounce back with a flag
+        // the FE can read into a toast.
+        const message =
+          err instanceof Error ? err.message : 'Failed to connect the additional mailbox.';
+        this.logger.warn(`connect-mailbox failed for ${email}: ${message}`);
+        const code =
+          typeof (err as { response?: { code?: string } }).response?.code === 'string'
+            ? (err as { response: { code: string } }).response.code
+            : 'connect_failed';
+        res.redirect(302, `${webBase}/triage?connect_error=${encodeURIComponent(code)}`);
+      }
+      return;
+    }
+
+    // Unauthenticated login / signup flow.
+    const ipAddress = (req.ip ?? null) as string | null;
+    const userAgent = (req.headers['user-agent'] ?? null) as string | null;
+    const result = await this.orchestrator.connect({
+      email,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    });
+    setSessionCookies(res, result.tokens, result.csrfToken);
+    // Both new and returning users land on /triage. The dedicated
+    // onboarding sync-gate route (D109/D224) is a separate feature
+    // that hasn't shipped yet; until it does, /triage is the real
+    // destination — its loading/empty states already cover the
+    // "sync hasn't finished" window, so a fresh signup sees the
+    // empty-state ("All caught up") rather than a 404. When the sync
+    // gate lands, switch the new-signup branch back to /onboarding.
+    res.redirect(302, `${webBase}/triage`);
+  }
+
+  /**
+   * Write the state cookie + redirect to Google consent. Shared by
+   * both `start` paths.
+   */
+  private beginConsent(res: Response, state: OAuthState): void {
+    res.cookie(STATE_COOKIE, JSON.stringify(state), {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: STATE_COOKIE_PATH,
+      maxAge: 600_000, // 10 min — the consent window.
+    });
+    res.redirect(302, this.oauth.getConsentUrl(state.nonce));
   }
 }
 
-/** Constant-time compare of the query `state` against the cookie value. */
-function statesMatch(queryState: string, cookieState: string): boolean {
-  const a = Buffer.from(queryState);
-  const b = Buffer.from(cookieState);
-  // timingSafeEqual requires equal length — a length mismatch is a reject.
-  return a.length === b.length && timingSafeEqual(a, b);
+/** Constant-time state comparison — same shape as the original. */
+function statesMatch(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
