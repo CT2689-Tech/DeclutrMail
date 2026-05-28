@@ -8,7 +8,6 @@ import {
   senderPolicies,
   senders,
   triageDecisions,
-  users,
   workspaces,
   type TriageVerdict,
 } from '@declutrmail/db';
