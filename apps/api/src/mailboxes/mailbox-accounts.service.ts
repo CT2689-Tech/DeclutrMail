@@ -74,6 +74,36 @@ export class MailboxAccountsService {
   }
 
   /**
+   * Find a mailbox by its `(provider, providerAccountId)` identity —
+   * the home workspace + owner of a Gmail account regardless of which
+   * workspace is asking.
+   *
+   * Powers "login follows mailbox" (Option 1): when someone logs in
+   * with an email that was previously connected as a SECONDARY mailbox
+   * under another account, `AuthSignupOrchestrator.connect` resolves
+   * the session into that mailbox's home workspace instead of
+   * bootstrapping an orphan empty one.
+   *
+   * Returns `null` when the email has never been connected.
+   */
+  async findByProviderEmail(
+    email: string,
+  ): Promise<{ mailboxId: string; workspaceId: string; userId: string } | null> {
+    const [row] = await this.db
+      .select({
+        mailboxId: mailboxAccounts.id,
+        workspaceId: mailboxAccounts.workspaceId,
+        userId: mailboxAccounts.userId,
+      })
+      .from(mailboxAccounts)
+      .where(
+        and(eq(mailboxAccounts.provider, 'gmail'), eq(mailboxAccounts.providerAccountId, email)),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
    * Upsert at OAuth-connect time. MUST be called inside a tx provided
    * by `AuthSignupOrchestrator`. Returns the row id so the orchestrator
    * can wire up sync state in the same transaction.
