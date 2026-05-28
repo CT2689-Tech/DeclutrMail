@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { tokens, toast } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { useLogout } from '@/features/auth/api/use-logout';
@@ -216,6 +216,13 @@ export function AccountMenu() {
                         disconnect.mutate(m.id, {
                           onSuccess: () => {
                             setPendingDisconnect(null);
+                            toast(`Disconnected ${m.email}.`, 'success');
+                          },
+                          onError: () => {
+                            // A terminal 401 redirects to login via the
+                            // apiClient; any other failure surfaces here
+                            // so the click never silently no-ops.
+                            toast(`Could not disconnect ${m.email}. Try again.`, 'danger');
                           },
                         });
                       }}

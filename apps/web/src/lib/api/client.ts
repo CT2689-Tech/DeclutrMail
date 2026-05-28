@@ -180,12 +180,19 @@ async function apiRequest<T>(
 
   if (!res.ok) {
     // 401 → attempt refresh once. If the refresh succeeds the caller's
-    // request is replayed; if it fails the original 401 surfaces.
+    // request is replayed; if it fails the session is truly dead, so
+    // redirect to the OAuth start endpoint rather than failing
+    // silently (a mutation 401 with no UI feedback reads as "the
+    // button did nothing" — Codex smoke 2026-05-27).
     if (res.status === 401 && !options._isRetry && path !== '/api/auth/refresh') {
       const refreshed = await attemptRefresh();
       if (refreshed) {
         return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
       }
+      // Terminal 401: refresh failed → session gone. Hard-redirect to
+      // re-auth. `redirectToLogin` is idempotent within a tick so
+      // concurrent terminal-401s don't stack navigations.
+      redirectToLogin();
     }
     throw new ApiError(
       res.status,
@@ -233,4 +240,19 @@ async function attemptRefresh(): Promise<boolean> {
     }
   })();
   return pendingRefresh;
+}
+
+/** Guards against stacking navigations when several requests 401 at once. */
+let redirecting = false;
+
+/**
+ * Hard-navigate to the OAuth start endpoint. Called on a terminal 401
+ * (access expired AND refresh failed) so a dead session surfaces as a
+ * re-login instead of a silent failure. No-op in SSR.
+ */
+function redirectToLogin(): void {
+  if (redirecting || typeof window === 'undefined') return;
+  redirecting = true;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+  window.location.assign(`${apiBase}/api/auth/google/start`);
 }
