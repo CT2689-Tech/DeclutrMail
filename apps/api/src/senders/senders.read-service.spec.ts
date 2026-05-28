@@ -739,6 +739,7 @@ describe('SendersReadService', () => {
           at: producedAt.toISOString(),
           verdict: 'archive',
           generatedBy: 'llm_haiku',
+          confidence: 0.9,
         });
       });
 
@@ -776,6 +777,96 @@ describe('SendersReadService', () => {
           limit: 10,
         });
         expect(rowsHere.find((r) => r.id === here.id)!.lastReview).toBeNull();
+      });
+    });
+
+    describe('protectionFlags (D42/D43 — now on the list row)', () => {
+      it('surfaces VIP / Protect policy flags on list rows', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'vip@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const protectedAt = new Date('2026-04-10T00:00:00Z');
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          policyType: 'keep',
+          isVip: true,
+          isProtected: true,
+          protectionReason: 'vip',
+          protectionSetAt: protectedAt,
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows.find((r) => r.id === a.id)!.protectionFlags).toEqual({
+          isVip: true,
+          isProtected: true,
+          protectionReason: 'vip',
+          protectionSetAt: protectedAt.toISOString(),
+        });
+      });
+
+      it('defaults protection flags when no sender_policies row exists', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'no-policy-list@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rows.find((r) => r.id === a.id)!.protectionFlags).toEqual({
+          isVip: false,
+          isProtected: false,
+          protectionReason: null,
+          protectionSetAt: null,
+        });
+      });
+
+      it('does not leak a policy from another mailbox when sender_key collides', async () => {
+        const otherMailbox = await seedMailbox(db, 'other-policy-tenant');
+        const here = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'policy-collide@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        const there = await seedSender(db, {
+          mailboxAccountId: otherMailbox,
+          email: 'policy-collide@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        expect(here.senderKey).toBe(there.senderKey);
+        // Only the OTHER mailbox pins the sender as VIP.
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: otherMailbox,
+          senderKey: there.senderKey,
+          policyType: 'keep',
+          isVip: true,
+          isProtected: true,
+          protectionReason: 'vip',
+        });
+
+        const rowsHere = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+        });
+        expect(rowsHere.find((r) => r.id === here.id)!.protectionFlags).toEqual({
+          isVip: false,
+          isProtected: false,
+          protectionReason: null,
+          protectionSetAt: null,
+        });
       });
     });
   });
@@ -976,6 +1067,7 @@ describe('SendersReadService', () => {
         at: producedAt.toISOString(),
         verdict: 'keep',
         generatedBy: 'template',
+        confidence: 0.9,
       });
     });
   });

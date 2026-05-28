@@ -63,6 +63,12 @@ export interface Sender {
   firstSeenMo: number;
   /** Auto-protected (receipts / statements) — never bulk-acted. */
   protected?: boolean;
+  /**
+   * Standing VIP policy (D42/D43). Distinct from `protected`, but both
+   * route a sender into the "Protect" intent bucket (intentOf OR-s
+   * them) — a VIP must never surface as a Cleanup recommendation.
+   */
+  isVip?: boolean;
   /** Volume spike multiplier vs. the sender's usual rate. */
   spike?: number;
   /**
@@ -611,20 +617,31 @@ export const SENDERS: Sender[] = [
 
 // ─── Capability gates ──────────────────────────────────────────
 // Don't show actions the user can't take: no Unsubscribe for real
-// people, nothing destructive for auto-protected senders.
+// people, nothing destructive for a standing-protected sender.
+
+/**
+ * A sender is shielded from destructive / bulk actions when it carries a
+ * standing policy — either Protect OR VIP (D42/D43, independent flags).
+ * The single predicate every "can this be bulk-acted?" surface reads, so
+ * the row chip, the action CTAs, the KPI count, and the intent bucket can
+ * never disagree (the disagreement was the VIP-only-bulk-actionable gap).
+ */
+export function isStandingProtected(s: Pick<Sender, 'protected' | 'isVip'>): boolean {
+  return s.protected === true || s.isVip === true;
+}
 
 export function canUnsubscribe(s: Sender): boolean {
-  return !s.protected && s.group !== 'primary';
+  return !isStandingProtected(s) && s.group !== 'primary';
 }
 
 export function canArchive(s: Sender): boolean {
-  return !s.protected;
+  return !isStandingProtected(s);
 }
 
 /** "Later" routes a sender's future mail to a DeclutrMail/Later label
- * (skips the inbox) — safe for anyone unprotected. */
+ * (skips the inbox) — safe for anyone not standing-protected. */
 export function canLater(s: Sender): boolean {
-  return !s.protected;
+  return !isStandingProtected(s);
 }
 
 /** Approximate lifetime email count — synthesised from monthly cadence. */
@@ -726,7 +743,9 @@ export function sampleSubjects(s: Sender): string[] {
 export type RecommendedVerb = 'Unsubscribe' | 'Later' | null;
 
 export function recommendAction(s: Sender): RecommendedVerb {
-  if (s.protected || s.group === 'primary') return null;
+  // A standing-protected sender (Protect OR VIP) never gets a cleanup
+  // recommendation — same predicate the row chip / CTA / intent bucket use.
+  if (isStandingProtected(s) || s.group === 'primary') return null;
   const { read, monthly } = s;
   if (read === 0 && monthly >= 8) return 'Unsubscribe';
   if (read < 0.2 && s.spike) return 'Unsubscribe';

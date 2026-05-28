@@ -9,6 +9,7 @@ import {
   canUnsubscribe,
   detectCohorts,
   historicCount,
+  isStandingProtected,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
@@ -76,7 +77,11 @@ let receiptSeq = 0;
  * branches handled inline below.
  */
 export function SendersScreen() {
-  const sendersQuery = useSenders();
+  // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
+  // the two share ONE infinite-query cache entry (the query key is keyed
+  // on `category` only, not `limit`) — the page sizes stay uniform as
+  // the user pulls more pages here.
+  const sendersQuery = useSenders({ limit: 50 });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
@@ -88,7 +93,14 @@ export function SendersScreen() {
   if (sendersQuery.isError) {
     return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
   }
-  return <SendersScreenContent senders={allSenders} />;
+  return (
+    <SendersScreenContent
+      senders={allSenders}
+      hasNextPage={sendersQuery.hasNextPage}
+      isFetchingNextPage={sendersQuery.isFetchingNextPage}
+      onLoadMore={() => void sendersQuery.fetchNextPage()}
+    />
+  );
 }
 
 /**
@@ -101,7 +113,17 @@ export function SendersScreen() {
 const READ_MIN_PER_MSG = 1.6;
 
 /** Renders the screen once the senders list is loaded. */
-function SendersScreenContent({ senders }: { senders: Sender[] }) {
+function SendersScreenContent({
+  senders,
+  hasNextPage,
+  isFetchingNextPage,
+  onLoadMore,
+}: {
+  senders: Sender[];
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  onLoadMore: () => void;
+}) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
@@ -528,6 +550,36 @@ function SendersScreenContent({ senders }: { senders: Sender[] }) {
         ))
       )}
 
+      {/*
+        Load more (D202 cursor pagination). The list endpoint returns one
+        page at a time; without this control a mailbox with more senders
+        than a page silently truncated at the first page. Shown only when
+        the server reports another page AND we have senders rendered (so it
+        never appears under the "no senders yet" empty state). When a
+        search / intent filter is active, the caption tells the user the
+        next page is loaded server-side and re-filtered client-side.
+      */}
+      {hasNextPage && senders.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 0 4px',
+          }}
+        >
+          <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
+          </Button>
+          {(query || activeIntent !== null) && (
+            <span style={{ fontSize: 12, color: color.fgMuted }}>
+              Loads the next page, then re-applies your search and filters.
+            </span>
+          )}
+        </div>
+      )}
+
       {selectedSenders.length > 0 && (
         <SelectionBar
           senders={selectedSenders}
@@ -591,7 +643,11 @@ function computeTotals(senders: Sender[]): SenderTotals {
   const cleanupMonthly = cleanupSenders.reduce((a, s) => a + s.monthly, 0);
   const noiseReductionPct =
     totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
-  const protectedCount = senders.filter((s) => s.protected === true).length;
+  // "Protected" KPI counts both Protect and VIP standing policies — the
+  // cell's micro-label is "VIPs · receipts", so VIPs belong in the count
+  // (both ride the list wire via `protectionFlags`). Same `isStandingProtected`
+  // predicate the row chip / CTA / intent bucket use, so they never disagree.
+  const protectedCount = senders.filter(isStandingProtected).length;
   const needsReview = senders.filter((s) => s.lastReview != null).length;
   // Yearly savings = cleanup-sender minutes/year ÷ 60.
   const estSavedHrs = (cleanupMonthly * 12 * READ_MIN_PER_MSG) / 60;

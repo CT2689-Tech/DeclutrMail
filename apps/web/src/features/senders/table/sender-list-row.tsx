@@ -6,6 +6,7 @@ import {
   canArchive,
   canLater,
   canUnsubscribe,
+  isStandingProtected,
   recommendAction,
   type ActionRequest,
   type Sender,
@@ -240,7 +241,7 @@ export function SenderListRow({
             >
               {s.name}
             </span>
-            {s.protected && (
+            {isStandingProtected(s) && (
               <span
                 title="Protected — bulk actions can't touch this sender"
                 style={{
@@ -294,7 +295,7 @@ export function SenderListRow({
           onClick={(e) => e.stopPropagation()}
           style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}
         >
-          {s.protected ? (
+          {isStandingProtected(s) ? (
             <Button tone="ghost" size="sm" disabled>
               Protected
             </Button>

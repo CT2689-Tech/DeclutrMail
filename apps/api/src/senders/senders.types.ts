@@ -55,6 +55,15 @@ export interface LastReview {
   verdict: TriageVerdict;
   /** Provenance — LLM call vs deterministic template fallback. */
   generatedBy: TriageReasoningSource;
+  /**
+   * Engine confidence, 0..1 (mirrors `triage_decisions.confidence`,
+   * `numeric(3,2)`). Drives the FE intent-bucketing confidence gate
+   * (`uplift-d/intent.ts`): a low-confidence verdict stays in the
+   * catch-all bucket rather than surfacing as a recommendation the
+   * engine isn't sure about. Always present when a decision exists —
+   * `confidence` is `NOT NULL` on `triage_decisions`.
+   */
+  confidence: number;
 }
 
 /**
@@ -111,6 +120,16 @@ export interface SenderListRow {
    * (mailbox, sender).
    */
   lastReview: LastReview | null;
+  /**
+   * Standing VIP / Protect policy flags (D42, D43) — mirrors
+   * `sender_policies`. Surfaced on the LIST row (not just detail) so the
+   * Senders screen can render the "Protected" chip, populate the
+   * "Protected" KPI, and route VIPs / protected senders to the "Protect"
+   * intent bucket. Defaults (`isVip: false, isProtected: false,
+   * protectionReason: null, protectionSetAt: null`) when the sender has
+   * no `sender_policies` row — i.e. engine-default, not pinned.
+   */
+  protectionFlags: ProtectionFlags;
 }
 
 /**
