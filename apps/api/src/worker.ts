@@ -18,6 +18,7 @@ import {
   InitialSyncWorker,
   InvalidGrantError,
   RateLimiter,
+  SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
   ValidationError,
@@ -143,12 +144,32 @@ async function bootstrap(): Promise<void> {
     },
   };
 
-  const initialSync = new InitialSyncWorker({ db, gmailAccess });
+  const connection = createRedisConnection(requireEnv('REDIS_URL'));
+
+  // Score-queue PRODUCER (D25 sync_complete trigger). The initial sync
+  // enqueues one all-senders score sweep here once the sender index is
+  // built, so `triage_decisions` populate after a fresh sync. The
+  // CONSUMER (`scoreBullWorker`) is wired further down in this same
+  // process. `jobId = mailbox:*:producedAt` matches ScoreWorker's
+  // idempotency key for the all-senders sweep.
+  const scoreProducerQueue = new Queue<ScoreJobData>(SCORE_QUEUE, { connection });
+
+  const initialSync = new InitialSyncWorker({
+    db,
+    gmailAccess,
+    onSenderIndexBuilt: async (mailboxAccountId) => {
+      const producedAtMs = Date.now();
+      await scoreProducerQueue.add(
+        SCORE_JOB,
+        { mailboxAccountId, trigger: 'sync_complete', producedAtMs },
+        { jobId: `${mailboxAccountId}:*:${producedAtMs}` },
+      );
+    },
+  });
   // D159: install the Sentry seam on every BaseDeclutrWorker BEFORE the
   // BullMQ `Worker` starts pulling jobs, so the very first terminal
   // failure routes through the observer (no warm-up window).
   initialSync.setObserver(observer);
-  const connection = createRedisConnection(requireEnv('REDIS_URL'));
 
   const bullWorker = new Worker<InitialSyncJobData, InitialSyncResult>(
     INITIAL_SYNC_QUEUE,

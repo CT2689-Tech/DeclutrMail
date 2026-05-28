@@ -142,6 +142,11 @@ export function AccountMenu() {
                     alignItems: 'center',
                     gap: 8,
                     padding: '6px 8px',
+                    // Highlight the active mailbox so it reads as the
+                    // current selection (not just a ✓) — the switch
+                    // button is inert on the active row, which otherwise
+                    // looked like "can't select it".
+                    background: isActive ? color.primarySoft : 'transparent',
                   }}
                 >
                   <button
@@ -173,9 +178,29 @@ export function AccountMenu() {
                     <span aria-hidden style={{ width: 14, color: color.primary }}>
                       {isActive ? '✓' : ' '}
                     </span>
-                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        fontWeight: isActive ? 600 : 400,
+                      }}
+                    >
                       {m.email}
                     </span>
+                    {isActive && !isDisconnected && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: color.primary,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        Active
+                      </span>
+                    )}
                     {isDisconnected && (
                       <span style={{ fontSize: 10, color: color.fgMuted }}>disconnected</span>
                     )}

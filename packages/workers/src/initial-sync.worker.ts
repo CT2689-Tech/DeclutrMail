@@ -51,6 +51,18 @@ const SCAN_PAGE = 1000;
 export interface InitialSyncDeps {
   db: WorkerDb;
   gmailAccess: GmailAccess;
+  /**
+   * Optional hook fired once the sender index is built (D25
+   * `sync_complete` trigger). The composition root wires this to
+   * enqueue a score sweep so `triage_decisions` populate after the
+   * first sync — without it a freshly-synced mailbox has senders but
+   * an empty Triage queue.
+   *
+   * Best-effort: a failure here is logged and swallowed (the cron
+   * re-score sweep is the safety net), so a Redis blip at score-enqueue
+   * time never fails an otherwise-successful sync.
+   */
+  onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
 }
 
 /**
@@ -185,11 +197,26 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId);
     lap('building_sender_index');
 
-    // Stage 3 — computing_recommendations. The recommendation engine
-    // lands in a later PR; the worker transitions through this D224
-    // stage as a structural placeholder (the stage value is accurate —
-    // the pipeline is at this ordinal — there is simply no work yet).
+    // Stage 3 — computing_recommendations. The sender index is built,
+    // so fire the `sync_complete` score trigger (D25): the score sweep
+    // runs the cascade over every sender and writes `triage_decisions`.
+    // Best-effort — a score-enqueue failure must not fail the sync; the
+    // cron re-score sweep is the safety net.
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
+    if (this.deps.onSenderIndexBuilt) {
+      try {
+        await this.deps.onSenderIndexBuilt(mailboxAccountId);
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'sync.score_enqueue_failed',
+            mailboxAccountId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }
     lap('computing_recommendations');
 
     // Stage 4 — finalizing.

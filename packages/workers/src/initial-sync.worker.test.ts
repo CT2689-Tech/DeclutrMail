@@ -160,6 +160,43 @@ describe('InitialSyncWorker', () => {
     expect(state!.progressPct).toBe(100);
   });
 
+  it('sync_complete trigger — fires onSenderIndexBuilt once with the mailbox id (D25)', async () => {
+    const client = new FakeGmailClient(makeMessages(12, 3));
+    const fired: string[] = [];
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      onSenderIndexBuilt: async (id) => {
+        fired.push(id);
+      },
+    });
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    expect(result.sendersIndexed).toBe(3);
+    // The score sweep is triggered exactly once, after the index built.
+    expect(fired).toEqual([mailboxAccountId]);
+  });
+
+  it('sync_complete trigger — a score-enqueue failure does NOT fail the sync (best-effort)', async () => {
+    const client = new FakeGmailClient(makeMessages(12, 3));
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      onSenderIndexBuilt: async () => {
+        throw new Error('redis down');
+      },
+    });
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+    expect(result.sendersIndexed).toBe(3);
+    const [state] = await db
+      .select()
+      .from(schema.providerSyncState)
+      .where(eq(schema.providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.readinessStatus).toBe('ready');
+  });
+
   it('resume — a second run re-fetches only the messages not already stored', async () => {
     const first = new FakeGmailClient(makeMessages(30, 6));
     await new InitialSyncWorker({ db, gmailAccess: accessFor(first) }).processJob(
