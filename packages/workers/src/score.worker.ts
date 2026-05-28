@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -324,7 +324,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           expiresAt,
           updatedAt: sql`now()`,
         },
-        where: sql`${triageDecisions.producedAt} < ${producedAt}`,
+        // `lt()` binds the Date through the column's timestamptz type.
+        // A raw `sql\`… < ${producedAt}\`` template passes a bare JS
+        // Date param, which the postgres-js driver rejects at runtime
+        // ("Failed query … Wed May 27 2026 … PDT") — PGlite tolerates
+        // it, so the unit tests passed while the real worker 500'd
+        // (Codex smoke 2026-05-27). See [[drizzle-raw-sql-param-pitfalls]].
+        where: lt(triageDecisions.producedAt, producedAt),
       });
 
     return { verdict: result.verdict, generatedBy, timedOut };
