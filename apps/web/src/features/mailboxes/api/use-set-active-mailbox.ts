@@ -8,7 +8,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPatch } from '@/lib/api/client';
-import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
+import { resetMailboxScopedCache } from './reset-mailbox-cache';
 
 export function useSetActiveMailbox() {
   const qc = useQueryClient();
@@ -17,14 +17,8 @@ export function useSetActiveMailbox() {
       const env = await apiPatch<{ activeMailboxId: string }>(`/api/mailboxes/${mailboxId}/active`);
       return env.data;
     },
-    onSuccess: async () => {
-      // Refresh `me` (active mailbox shifted) and any feature data
-      // bound to the previous mailbox. The blunt approach — drop the
-      // entire query cache — is fine here: switching mailboxes is a
-      // rare, deliberate action where stale-screen-flicker is worse
-      // than a one-time loading state.
-      qc.clear();
-      await qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
-    },
+    // Active mailbox shifted — drop the previous mailbox's feature data
+    // so the screen reloads against the new one (see resetMailboxScopedCache).
+    onSuccess: () => resetMailboxScopedCache(qc),
   });
 }

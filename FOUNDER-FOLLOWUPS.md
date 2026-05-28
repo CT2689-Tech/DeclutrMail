@@ -26,6 +26,17 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-28 — No Playwright e2e harness; multi-mailbox + sync-gate flows are unit-only (D182, D206, D211)
+
+**Source:** `design-system-agent` gate on `feat/d115-secondary-mailbox-gate` flagged that the new edge states (no-active-mailbox gate, secondary-connect sync gate, disconnect → reload) have no Playwright coverage. Investigation found `apps/web` has **no Playwright harness at all** — no config, no e2e dir, no auth fixture. D211 wants a triggering Playwright test per edge state; D182/D206 specify Playwright for affected user flows.
+**Why:** These flows touch session/OAuth state (connect, disconnect, switch, no-active gate) that unit tests mock. The disconnect stale-screen regression is currently guarded only at the unit level (`reset-mailbox-cache.test.ts`, `use-disconnect-mailbox.test.tsx`, `no-active-mailbox.test.tsx`). An integration regression (e.g. a future refactor that drops the cache reset) would pass unit tests if the helper is still called but mis-wired in the layout.
+**How:**
+1. Decide the e2e auth strategy — this is the blocking decision (real Google OAuth in CI is infeasible; options: a seeded session-cookie fixture against a test DB, or a mock-OAuth provider). This is a founder/architecture call, not autonomous.
+2. Scaffold `playwright.config.ts` + an `e2e/` dir + a `loginAs(workspace)` fixture that sets `dm_access`/`dm_refresh`/`dm_csrf` cookies against the dev API.
+3. Add specs: (a) connect 2nd mailbox → land on sync gate, not /triage; (b) disconnect active mailbox → dashboard reloads to the remaining mailbox (no stale data); (c) disconnect last mailbox → no-active gate renders, not a broken shell.
+**Verifies by:** `pnpm --filter @declutrmail/web e2e` (new script) runs green in CI; the three specs above pass; disabling the cache reset in `resetMailboxScopedCache` makes spec (b) fail (the regression is now integration-guarded).
+**Status:** Open
+
 ### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
 
 **Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.

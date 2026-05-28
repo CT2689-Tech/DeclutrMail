@@ -136,13 +136,19 @@ export class GoogleOAuthController {
         throw new UnauthorizedException('Connect-mailbox state cookie is incomplete.');
       }
       try {
-        await this.orchestrator.addMailbox({
+        const { mailboxId } = await this.orchestrator.addMailbox({
           currentUserId: cookieState.userId,
           currentWorkspaceId: cookieState.workspaceId,
           email,
           refreshToken,
         });
-        res.redirect(302, `${webBase}/triage?connected=${encodeURIComponent(email)}`);
+        // Route the freshly-connected mailbox through the sync gate
+        // (D6 strict-gate-everywhere, D109) instead of dumping the user
+        // on an empty /triage. addMailbox set it active, so the gate
+        // resolves it via CurrentMailboxGuard; the `mailbox` param lets
+        // the gate poll THIS mailbox explicitly even if the user later
+        // switches back to their primary (D116 escape hatch).
+        res.redirect(302, `${webBase}/onboarding?mailbox=${encodeURIComponent(mailboxId)}`);
       } catch (err) {
         // Cross-workspace ownership refusal — bounce back with a flag
         // the FE can read into a toast.

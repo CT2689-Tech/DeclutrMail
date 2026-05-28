@@ -10,13 +10,14 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { ok, type Envelope } from '@declutrmail/shared/contracts';
+import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
 
 import { RateLimit } from '../common/rate-limit/index.js';
 import {
   MailboxAccountsService,
   type MailboxSummary,
 } from '../mailboxes/mailbox-accounts.service.js';
+import { SyncService } from '../sync/sync.service.js';
 import { UsersService } from '../users/users.service.js';
 import { CsrfGuard } from './csrf.guard.js';
 import { CsrfService } from './csrf.service.js';
@@ -25,10 +26,20 @@ import { JwtService } from './jwt.service.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { clearSessionCookies, setSessionCookies } from './session-cookies.js';
 
+/**
+ * A mailbox summary plus its initial-sync readiness (D116). Readiness is
+ * composed here from the sync feature's facade (`SyncService`) rather
+ * than joined into the mailboxes query, keeping `provider_sync_state`
+ * owned by the sync module (D204).
+ */
+export interface MailboxView extends MailboxSummary {
+  readiness: SyncReadiness | null;
+}
+
 /** Wire shape for GET /api/auth/me — drives the FE AuthProvider. */
 export interface MeEnvelope {
   user: { id: string; email: string; workspaceId: string };
-  mailboxes: MailboxSummary[];
+  mailboxes: MailboxView[];
   activeMailboxId: string | null;
 }
 
@@ -52,6 +63,7 @@ export class AuthController {
     private readonly csrf: CsrfService,
     private readonly users: UsersService,
     private readonly mailboxes: MailboxAccountsService,
+    private readonly sync: SyncService,
   ) {}
 
   @Get('me')
@@ -70,9 +82,15 @@ export class AuthController {
       stored && mailboxes.some((m) => m.id === stored && m.status === 'active')
         ? stored
         : (mailboxes.find((m) => m.status === 'active')?.id ?? null);
+    // Compose per-mailbox sync readiness via the sync facade (D116, D204).
+    const readiness = await this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id));
+    const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
+      ...m,
+      readiness: readiness.get(m.id) ?? null,
+    }));
     return ok({
       user: { id: user.id, email: user.email, workspaceId: user.workspaceId },
-      mailboxes,
+      mailboxes: mailboxViews,
       activeMailboxId,
     });
   }

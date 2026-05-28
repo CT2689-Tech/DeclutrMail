@@ -6,8 +6,29 @@
  * after a fetched-and-empty response) is also asserted.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+// The screen reads the active mailbox label via `useAuth`; stub it so the
+// test renders without mounting the real AuthProvider (which fetches `me`).
+vi.mock('@/features/auth/auth-provider', () => ({
+  useAuth: () => ({
+    me: {
+      user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
+      activeMailboxId: 'mb-1',
+      mailboxes: [
+        {
+          id: 'mb-1',
+          email: 'me@example.com',
+          status: 'active',
+          connectedAt: null,
+          readiness: 'ready',
+        },
+      ],
+    },
+  }),
+}));
+
 import { SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -141,6 +162,9 @@ describe('SendersScreen — edge states', () => {
     // match the trailing plain text and assert the count separately.
     await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
     expect(screen.getByText('60')).toBeInTheDocument();
+    // Breadcrumb names the active mailbox (D116) — not a static "default
+    // mailbox" — so a multi-mailbox switch is visible.
+    expect(screen.getByText(/Senders · me@example\.com/)).toBeInTheDocument();
     // Hero meta strip — reading time derived from totalMonthly.
     expect(screen.getByText(/Reading time \/ mo/i)).toBeInTheDocument();
     // KPI strip — "Noise reducible" is unique to the strip.

@@ -58,14 +58,41 @@ const ERROR_COPY: Record<string, string> = {
     'Gmail is rate-limiting the scan. We’ll retry automatically — check back shortly.',
 };
 
-export function SyncGate({ status }: { status: SyncStatus }) {
-  if (status.readiness_status === 'failed') {
-    return <SyncFailed status={status} />;
-  }
-  return <SyncProgress status={status} />;
+/**
+ * Escape-hatch wiring for a SECONDARY-mailbox sync (D116). The route
+ * passes this only when there's another active mailbox to return to;
+ * the first-run gate omits it, preserving the strict single-mailbox
+ * gate (D6).
+ */
+export interface SyncGateEscape {
+  /** Email of the mailbox to hop back to (the previously-active one). */
+  returnToEmail: string;
+  /** Switch the active mailbox back to it and leave the gate. */
+  onReturn: () => void;
+  /** True while the switch is in flight — disables the button. */
+  returning?: boolean;
 }
 
-function SyncProgress({ status }: { status: SyncStatus }) {
+export function SyncGate({
+  status,
+  escape,
+}: {
+  status: SyncStatus;
+  escape?: SyncGateEscape | undefined;
+}) {
+  if (status.readiness_status === 'failed') {
+    return <SyncFailed status={status} escape={escape} />;
+  }
+  return <SyncProgress status={status} escape={escape} />;
+}
+
+function SyncProgress({
+  status,
+  escape,
+}: {
+  status: SyncStatus;
+  escape?: SyncGateEscape | undefined;
+}) {
   const active = activeStageIndex(status);
   const pct = Math.min(100, Math.max(0, status.progress_pct));
 
@@ -155,11 +182,56 @@ function SyncProgress({ status }: { status: SyncStatus }) {
 
       <TrustBadge />
       <PushPermissionAsk />
+      {escape && <SyncEscapeHatch escape={escape} />}
     </Shell>
   );
 }
 
-function SyncFailed({ status }: { status: SyncStatus }) {
+/**
+ * "Stay here" keeps waiting on the gate; "Go back" switches the active
+ * mailbox to the primary and leaves — the secondary keeps syncing in
+ * the background, and the account-switcher badge + ready-toast (D116)
+ * announce completion, so the in-background promise is honest.
+ */
+function SyncEscapeHatch({ escape }: { escape: SyncGateEscape }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div
+      role="region"
+      aria-label="Keep waiting or return to your other inbox"
+      style={{
+        marginTop: 26,
+        maxWidth: 460,
+        width: '100%',
+        padding: '14px 16px',
+        border: `1px solid ${color.border}`,
+        borderRadius: 12,
+        background: color.card,
+      }}
+    >
+      <p style={{ margin: '0 0 12px', fontSize: 13, color: color.fgMuted, lineHeight: 1.5 }}>
+        We’ll keep syncing this inbox in the background and let you know when it’s ready.
+      </p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Button tone="primary" onClick={() => setDismissed(true)}>
+          Stay here
+        </Button>
+        <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+          {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SyncFailed({
+  status,
+  escape,
+}: {
+  status: SyncStatus;
+  escape?: SyncGateEscape | undefined;
+}) {
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
     'Something interrupted the scan. We’ll retry automatically — check back shortly.';
@@ -180,9 +252,18 @@ function SyncFailed({ status }: { status: SyncStatus }) {
       <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}>
         {copy}
       </p>
-      <Button tone="primary" onClick={() => window.location.reload()}>
-        Try again
-      </Button>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Button tone="primary" onClick={() => window.location.reload()}>
+          Try again
+        </Button>
+        {/* Don't strand a secondary connect on a failed gate — let them
+            hop back to their (working) primary mailbox (D116). */}
+        {escape && (
+          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+            {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
+          </Button>
+        )}
+      </div>
       <TrustBadge />
     </Shell>
   );

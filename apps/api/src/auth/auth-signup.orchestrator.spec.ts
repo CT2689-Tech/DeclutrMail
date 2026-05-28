@@ -36,7 +36,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
   let tokenCrypto: { encrypt: ReturnType<typeof vi.fn> };
   let sessions: { issue: ReturnType<typeof vi.fn> };
   let csrf: { issue: ReturnType<typeof vi.fn> };
-  let db: { transaction: ReturnType<typeof vi.fn> };
+  let db: { transaction: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
   let orchestrator: AuthSignupOrchestrator;
 
   beforeEach(() => {
@@ -64,8 +64,15 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       issue: vi.fn().mockResolvedValue({ tokens: { accessToken: 'a' }, sessionId: 's' }),
     };
     csrf = { issue: vi.fn().mockReturnValue('csrf-token') };
-    // `transaction(cb)` just runs the callback with a stub tx.
-    db = { transaction: vi.fn(async (cb: (tx: unknown) => unknown) => cb({})) };
+    // `transaction(cb)` just runs the callback with a stub tx. `select`
+    // backs addMailbox's cross-workspace ownership probe — defaults to
+    // "no existing row" (no conflict); individual tests override it.
+    db = {
+      transaction: vi.fn(async (cb: (tx: unknown) => unknown) => cb({})),
+      select: vi.fn(() => ({
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+      })),
+    };
 
     orchestrator = new AuthSignupOrchestrator(
       db as unknown as DrizzleDb,
@@ -142,5 +149,48 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w-new', userId: 'u-new' }),
     );
+  });
+
+  describe('addMailbox — connect a secondary mailbox to the current workspace', () => {
+    const ADD_INPUT = {
+      currentUserId: 'u-owner',
+      currentWorkspaceId: 'w-home',
+      email: 'second@example.com',
+      refreshToken: 'rt2',
+    };
+
+    it('sets the just-connected mailbox active so reads stop 409ing SELECT_MAILBOX', async () => {
+      const result = await orchestrator.addMailbox(ADD_INPUT);
+
+      expect(result).toEqual({ mailboxId: 'mailbox-new' });
+      expect(mailboxes.upsertConnect).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ workspaceId: 'w-home', userId: 'u-owner' }),
+      );
+      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new');
+      // force-replace any stale pre-reconnect job (fresh token just stored).
+      expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
+      // The keystone fix: the new mailbox becomes the active preference,
+      // mirroring `connect`. Without it a second active mailbox with no
+      // preference makes CurrentMailboxGuard throw 409 SELECT_MAILBOX on
+      // every read.
+      expect(users.patchPreferences).toHaveBeenCalledWith('u-owner', {
+        activeMailboxId: 'mailbox-new',
+      });
+    });
+
+    it('rejects a Gmail already owned by a different workspace without touching preferences', async () => {
+      db.select.mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve([{ id: 'mailbox-x', workspaceId: 'w-other' }]),
+          }),
+        }),
+      });
+
+      await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow();
+      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
+      expect(users.patchPreferences).not.toHaveBeenCalled();
+    });
   });
 });

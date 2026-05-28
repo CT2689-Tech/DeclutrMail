@@ -43,6 +43,14 @@ export function AccountMenu() {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  // D205 connect-mailbox flow: adds (or reactivates) a Gmail account on
+  // the CURRENT workspace without re-creating the user or re-issuing
+  // session cookies. Hard navigation to the OAuth start endpoint.
+  function connectAnother() {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
+    window.location.assign(`${apiBase}/api/auth/google/connect-mailbox/start`);
+  }
+
   const activeMailbox =
     me.mailboxes.find((m) => m.id === me.activeMailboxId) ??
     me.mailboxes.find((m) => m.status === 'active');
@@ -204,8 +212,20 @@ export function AccountMenu() {
                     {isDisconnected && (
                       <span style={{ fontSize: 10, color: color.fgMuted }}>disconnected</span>
                     )}
+                    {/* Per-mailbox initial-sync state (D116). `ready`/null
+                        render nothing — they're the steady state. */}
+                    {!isDisconnected && m.readiness && m.readiness !== 'ready' && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          color: m.readiness === 'failed' ? color.red : color.fgMuted,
+                        }}
+                      >
+                        {m.readiness === 'failed' ? 'sync failed' : 'syncing…'}
+                      </span>
+                    )}
                   </button>
-                  {!isDisconnected && (
+                  {!isDisconnected ? (
                     <button
                       type="button"
                       onClick={() => setPendingDisconnect(isPending ? null : m.id)}
@@ -219,6 +239,25 @@ export function AccountMenu() {
                       }}
                     >
                       {isPending ? 'Cancel' : 'Disconnect'}
+                    </button>
+                  ) : (
+                    // Reconnect a disconnected account — same OAuth flow as
+                    // "connect another"; Google's chooser lets the user pick
+                    // this account, which `addMailbox` reactivates (D116).
+                    <button
+                      type="button"
+                      onClick={connectAnother}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: color.primary,
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      Reconnect
                     </button>
                   )}
                 </div>
@@ -278,19 +317,7 @@ export function AccountMenu() {
               gap: 2,
             }}
           >
-            <button
-              type="button"
-              onClick={() => {
-                // D205 connect-mailbox flow: this adds the new Gmail
-                // account to the CURRENT workspace without re-creating
-                // the user or re-issuing session cookies. See
-                // apps/api/src/auth/google-oauth.controller.ts /
-                // connect-mailbox/start.
-                const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-                window.location.assign(`${apiBase}/api/auth/google/connect-mailbox/start`);
-              }}
-              style={menuItemStyle()}
-            >
+            <button type="button" onClick={connectAnother} style={menuItemStyle()}>
               + Connect another Gmail account
             </button>
             <button

@@ -10,6 +10,8 @@
 
 import { QueryClient } from '@tanstack/react-query';
 
+import { retryTransientOnly } from './api/retry';
+
 const DEFAULT_STALE_TIME_MS = 30_000;
 
 export function makeQueryClient(): QueryClient {
@@ -18,6 +20,11 @@ export function makeQueryClient(): QueryClient {
       queries: {
         staleTime: DEFAULT_STALE_TIME_MS,
         refetchOnWindowFocus: false,
+        // Don't retry client errors (4xx) — a 409 means the active
+        // mailbox can't be resolved, which retrying only amplifies (the
+        // 409 storm, logs 2026-05-27). Transient 5xx/network still back
+        // off 3×. Tests override this with `retry: false`.
+        retry: retryTransientOnly,
       },
     },
   });

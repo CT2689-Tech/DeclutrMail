@@ -71,19 +71,33 @@ export function initialSyncJobOptions(mailboxAccountId: string): JobsOptions {
  *                                    treating it as replaceable a
  *                                    `queued` durable intent could
  *                                    never materialize (Codex iter 6).
- *   - `waiting` / `active` /
- *     `delayed` / `prioritized` /
- *     `waiting-children` ........... live job — no-op (`'noop'`); do
- *                                    NOT double-enqueue.
+ *   - `waiting` / `delayed` /
+ *     `prioritized` /
+ *     `waiting-children` ........... live, NOT active — `'noop'` by
+ *                                    default; with `force`, reaped +
+ *                                    re-added (`'replaced'`) since its
+ *                                    token is now stale.
+ *   - `active` ..................... worker-locked — always `'noop'`
+ *                                    (even with `force`); cannot be
+ *                                    safely removed.
  *
  * Idempotent — safe to call from the connect path AND a periodic
  * reconciler concurrently. The reconciler's job is to add jobs the
  * connect path failed to enqueue (e.g. Redis was down at connect time)
  * AND to recover from Redis evictions.
+ *
+ * `force` (set by the (re)connect path, which has just stored a FRESH
+ * OAuth token) additionally reaps a PENDING-but-not-active job so a
+ * stale-token attempt — e.g. a leftover queued/delayed job from before a
+ * disconnect — can't run, fail on the old token, and spuriously flip
+ * readiness to `failed` (logs 2026-05-28). An `active` job is locked by
+ * a worker and cannot be safely removed, so `force` never touches it —
+ * it will finish/fail and the durable intent + gate recover.
  */
 export async function ensureInitialSyncJob(
   queue: Queue<InitialSyncJobData>,
   mailboxAccountId: string,
+  opts: { force?: boolean } = {},
 ): Promise<'added' | 'replaced' | 'noop'> {
   const existing = await queue.getJob(mailboxAccountId);
   if (existing) {
@@ -92,10 +106,22 @@ export async function ensureInitialSyncJob(
     // TTL expiry, cluster failover) — `getJob` returned a thin handle
     // but BullMQ can no longer schedule it. Treating it as live would
     // permanently strand a `queued` durable intent (Codex iter 6).
-    if (state === 'completed' || state === 'failed' || state === 'unknown') {
-      // `remove()` is a no-op when there's no hash to remove; safe to
-      // call before adding the replacement.
-      await existing.remove();
+    const nonLive = state === 'completed' || state === 'failed' || state === 'unknown';
+    // With `force`, also reap a live-but-not-active pending job (waiting/
+    // delayed/prioritized/waiting-children) — its token is now stale.
+    const forceReap = opts.force === true && state !== 'active';
+    if (nonLive || forceReap) {
+      // `remove()` is a no-op when there's no hash to remove (evicted),
+      // but it REJECTS if a worker locked the job between `getState()`
+      // and here (a `waiting` job picked up into `active`). Treat that
+      // lost race as a no-op: the now-active attempt runs/fails and the
+      // durable `queued` intent + reconciler recover — don't surface it
+      // as an enqueue failure or double-add under a half-removed hash.
+      try {
+        await existing.remove();
+      } catch {
+        return 'noop';
+      }
       await queue.add(
         INITIAL_SYNC_JOB,
         { mailboxAccountId },
@@ -103,7 +129,7 @@ export async function ensureInitialSyncJob(
       );
       return 'replaced';
     }
-    // waiting / active / delayed / prioritized / waiting-children — live.
+    // active (locked) — or any other live state without `force` — leave it.
     return 'noop';
   }
   await queue.add(INITIAL_SYNC_JOB, { mailboxAccountId }, initialSyncJobOptions(mailboxAccountId));

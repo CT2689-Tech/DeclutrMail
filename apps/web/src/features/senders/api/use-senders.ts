@@ -25,6 +25,12 @@ export interface UseSendersOptions {
   category?: GmailCategory | undefined;
   /** Page size — clamped by the server to a route-specific max. */
   limit?: number | undefined;
+  /**
+   * Gate the query. Pass `false` when there's no active mailbox so the
+   * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders
+   * the no-active gate instead). Defaults to enabled.
+   */
+  enabled?: boolean | undefined;
 }
 
 export function useSenders(options: UseSendersOptions = {}) {
@@ -41,5 +47,6 @@ export function useSenders(options: UseSendersOptions = {}) {
       ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
+    enabled: options.enabled ?? true,
   });
 }

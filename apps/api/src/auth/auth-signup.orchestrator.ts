@@ -120,7 +120,10 @@ export class AuthSignupOrchestrator {
 
     // Best-effort BullMQ enqueue — the durable signal is the `queued`
     // row above. Reconciler picks it up if Redis is unreachable.
-    await this.sync.schedule(mailboxRow.id);
+    // `force`: we just stored a fresh OAuth token, so supersede any
+    // stale pending job (e.g. a reconnect's pre-disconnect leftover)
+    // that would fail on the old token and flip readiness to `failed`.
+    await this.sync.schedule(mailboxRow.id, { force: true });
 
     const { tokens } = await this.sessions.issue({
       userId,
@@ -201,7 +204,20 @@ export class AuthSignupOrchestrator {
       return row;
     });
 
-    await this.sync.schedule(mailboxRow.id);
+    // Switch-and-gate (D115, D109): make the just-connected mailbox the
+    // active one so `CurrentMailboxGuard` resolves to it and the user
+    // lands on ITS sync gate. Mirrors the login flow (`connect`), which
+    // sets the authenticated mailbox active for the same reason — without
+    // it a second connected mailbox leaves two active mailboxes with no
+    // preference, so every read throws 409 SELECT_MAILBOX.
+    await this.users.patchPreferences(input.currentUserId, {
+      activeMailboxId: mailboxRow.id,
+    });
+
+    // `force`: we just stored a fresh OAuth token, so supersede any
+    // stale pending job (e.g. a reconnect's pre-disconnect leftover)
+    // that would fail on the old token and flip readiness to `failed`.
+    await this.sync.schedule(mailboxRow.id, { force: true });
     return { mailboxId: mailboxRow.id };
   }
 
