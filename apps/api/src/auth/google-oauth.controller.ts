@@ -168,8 +168,14 @@ export class GoogleOAuthController {
       userAgent,
     });
     setSessionCookies(res, result.tokens, result.csrfToken);
-    const target = result.isNewSignup ? `${webBase}/onboarding` : `${webBase}/triage`;
-    res.redirect(302, target);
+    // Both new and returning users land on /triage. The dedicated
+    // onboarding sync-gate route (D109/D224) is a separate feature
+    // that hasn't shipped yet; until it does, /triage is the real
+    // destination — its loading/empty states already cover the
+    // "sync hasn't finished" window, so a fresh signup sees the
+    // empty-state ("All caught up") rather than a 404. When the sync
+    // gate lands, switch the new-signup branch back to /onboarding.
+    res.redirect(302, `${webBase}/triage`);
   }
 
   /**
