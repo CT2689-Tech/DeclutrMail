@@ -40,8 +40,6 @@ declare global {
   }
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Extract the trace-id from a W3C `traceparent` header
  * (`version-traceid-spanid-flags`). Returns null for a missing or
@@ -63,8 +61,13 @@ function headerValue(raw: string | string[] | undefined): string | undefined {
 }
 
 export function correlationMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const inbound = headerValue(req.headers['x-request-id'] ?? req.headers['x-correlation-id']);
-  const correlationId = inbound && UUID_RE.test(inbound) ? inbound.toLowerCase() : randomUUID();
+  // Always mint the correlationId server-side. We deliberately do NOT
+  // reuse a client-supplied X-Request-Id / X-Correlation-Id: those
+  // headers are unauthenticated (no trusted-proxy gate, unlike req.ip),
+  // so honoring them would let a caller pin or collide the join key and
+  // the support-quotable displayId. Cross-service trace continuity is
+  // handled separately via the W3C `traceparent` (parseTraceId below).
+  const correlationId = randomUUID();
   const displayId = deriveDisplayId(correlationId);
 
   req.correlationId = correlationId;

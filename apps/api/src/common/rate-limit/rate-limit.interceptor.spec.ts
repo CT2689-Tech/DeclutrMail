@@ -47,11 +47,13 @@ function makeContext(opts: {
   controller: new () => unknown;
   ip?: string;
   userId?: string;
+  userAgent?: string;
   setHeader: (name: string, value: string) => void;
 }): ExecutionContext {
   const req = {
     ip: opts.ip ?? '203.0.113.1',
     user: opts.userId ? { userId: opts.userId } : undefined,
+    headers: opts.userAgent ? { 'user-agent': opts.userAgent } : {},
   };
   const res = { setHeader: opts.setHeader } as unknown as Response;
   return {
@@ -251,6 +253,7 @@ describe('RateLimitInterceptor (D156)', () => {
         setHeader,
         ip: '203.0.113.9',
         userId: 'user_x',
+        userAgent: 'curl/8.0',
       });
 
     // Exhaust the limit (2), then the 3rd breaches.
@@ -267,6 +270,7 @@ describe('RateLimitInterceptor (D156)', () => {
       severity: 'warning',
       userId: 'user_x',
       sourceIp: '203.0.113.9',
+      userAgent: 'curl/8.0',
       payload: { bucket: 'auth' },
     });
   });

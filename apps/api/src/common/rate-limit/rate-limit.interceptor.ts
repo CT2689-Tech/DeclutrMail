@@ -105,6 +105,7 @@ export class RateLimitInterceptor implements NestInterceptor {
         severity: 'warning',
         userId: req.user?.userId ?? null,
         sourceIp: req.ip ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
         payload: { bucket: resolved.bucket },
       });
 

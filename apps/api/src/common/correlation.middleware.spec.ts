@@ -38,18 +38,13 @@ describe('correlationMiddleware (D168)', () => {
     expect(nextCalled).toBe(true);
   });
 
-  it('reuses a well-formed inbound X-Request-Id', () => {
+  it('ignores client-supplied X-Request-Id and always mints server-side', () => {
     const inbound = '7f2a91d4-1111-4000-8000-000000000000';
-    const { req } = run({ 'x-request-id': inbound });
+    const { req } = run({ 'x-request-id': inbound, 'x-correlation-id': inbound });
 
-    expect(req.correlationId).toBe(inbound);
-    expect(req.displayId).toBe('DM-7F2A91');
-  });
-
-  it('ignores a malformed inbound id and mints a fresh one', () => {
-    const { req } = run({ 'x-request-id': 'not-a-uuid' });
+    // The unauthenticated inbound header must NOT become the join key.
     expect(req.correlationId).toMatch(UUID_RE);
-    expect(req.correlationId).not.toBe('not-a-uuid');
+    expect(req.correlationId).not.toBe(inbound);
   });
 
   it('propagates a W3C traceparent trace-id', () => {
