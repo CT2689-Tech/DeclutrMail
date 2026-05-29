@@ -26,6 +26,20 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
+**Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
+**Why:** Automated coverage is exhaustive (unit + PGlite integration: forward sender/messages, idempotency, forged-id drop, undo reverse, terminal-failure, migration round-trip). The ONE thing not exercised is a REAL Gmail mutation through the worker — and it mutates your real inbox + needs your running dev env (the agent must not kill the live redesign session on :4000 / shared dev DB + Redis). This is the §8/§9 founder-hands step.
+**How:** From a checkout of this branch (stacked on `feat/d005-gmail-modify-primitive`):
+  1. `./scripts/db-migrate.sh` — applies migration `0015_action_jobs` to the dev DB (additive; tested rollback exists).
+  2. `./scripts/dev-up.sh` — redis + api(:4000) + worker.
+  3. Dev-login: `http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com` (save the cookie).
+  4. Pick a small sender id from Sender Detail (or DB). `POST /api/actions/archive` with header `Idempotency-Key: <uuid>` + body `{"selector":{"type":"sender","senderId":"<id>"}}` → expect `{actionId, requestedCount, status:"queued"}`.
+  5. Poll `GET /api/actions/<actionId>` until `status:"done"` + capture `undoToken`. Verify in Gmail those messages LEFT the inbox + locally (`label_ids` no longer has INBOX).
+  6. `POST /api/undo/<undoToken>` → poll the returned `actionId` to `done` → verify messages RETURNED to the inbox.
+  7. Break-tests: missing `Idempotency-Key` → 400; `GET /api/actions/<random-uuid>` → 404; messages selector with the OTHER mailbox's id → dropped (requestedCount excludes it); a Protected/VIP sender without `override:true` → 409 `PROTECTED_SENDER`; switch the active mailbox (account menu) and confirm scoping.
+**Verifies by:** real messages move out of / back into the Gmail inbox; `action_jobs` rows reach `done`; `undo_journal` + `activity_log` + `outbox_events` rows written; `worker.succeeded` log lines for forward + reverse.
+**Status:** Open
+
 ### 2026-05-28 — No Playwright e2e harness; multi-mailbox + sync-gate flows are unit-only (D182, D206, D211)
 
 **Source:** `design-system-agent` gate on `feat/d115-secondary-mailbox-gate` flagged that the new edge states (no-active-mailbox gate, secondary-connect sync gate, disconnect → reload) have no Playwright coverage. Investigation found `apps/web` has **no Playwright harness at all** — no config, no e2e dir, no auth fixture. D211 wants a triggering Playwright test per edge state; D182/D206 specify Playwright for affected user flows.

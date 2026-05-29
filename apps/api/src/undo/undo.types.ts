@@ -70,4 +70,11 @@ export interface UndoResult {
   expired: boolean;
   /** ISO timestamp of the revert (first-success time when idempotent). */
   revertedAt: string | null;
+  /**
+   * The reverse action job enqueued for this revert (D226 — undo runs
+   * async in the worker). Poll `GET /api/actions/:actionId` for `done`.
+   * Null when the token was already reverted (no new job) — `reverted`
+   * is then already true.
+   */
+  actionId: string | null;
 }

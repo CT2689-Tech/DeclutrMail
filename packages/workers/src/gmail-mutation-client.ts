@@ -34,3 +34,15 @@ export interface GmailMutationClient {
    */
   batchModify(messageIds: string[], change: LabelChange): Promise<void>;
 }
+
+/**
+ * Resolves a per-mailbox label-mutation client (the write sibling of
+ * `GmailAccess`). The implementation (`apps/api`) loads the mailbox row,
+ * decrypts the OAuth refresh token (D14 `TokenCryptoService`), and
+ * returns a token-bound client — the SAME composition-root factory the
+ * read path uses, since `GmailClientService` implements both ports.
+ * Dependency direction: `apps/api → packages/workers`, never reverse.
+ */
+export interface GmailMutationAccess {
+  getClient(mailboxAccountId: string): Promise<GmailMutationClient>;
+}

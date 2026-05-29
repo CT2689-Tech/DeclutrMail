@@ -47,6 +47,17 @@ export const TOPICS = {
   TRIAGE_VERDICT_APPLIED: 'triage.verdict_applied',
 
   /**
+   * The async action pipeline (D226) applied a label-modify verb
+   * (archive now; trash later) to a resolved message set. Generic over
+   * the selector: unlike `triage.verdict_applied` (single sender_key),
+   * this fits both sender- and message-scoped actions — `senderKey` is
+   * present for a sender selector, null for a message selector that may
+   * span senders. Carries the issued undo token. Consumers (none yet):
+   * audit pipelines, future cross-feature projections.
+   */
+  ACTION_LABEL_APPLIED: 'actions.label_action_applied',
+
+  /**
    * AutopilotApplyWorker (D99, D104) wrote a `rule_match_log` row.
    * Active-mode matches set `intent_applied=false`; the future action
    * consumer subscribes here to read those and emit the Gmail

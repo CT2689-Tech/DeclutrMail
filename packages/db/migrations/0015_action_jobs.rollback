@@ -1,0 +1,25 @@
+-- Rollback for 0015_action_jobs.sql
+--
+-- Per D152: forward migrations have a companion rollback file. Reverse
+-- order of the forward. `IF EXISTS` keeps the rollback idempotent.
+--
+-- Drops the indexes, then the FK constraints, then the table, then the
+-- three enums — FK + type dependency order.
+
+DROP INDEX IF EXISTS "action_jobs_undo_token_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_jobs_account_status_created_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_jobs_idempotency_key_uniq";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_undo_token_undo_journal_token_fk";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_mailbox_account_id_mailbox_accounts_id_fk";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "action_jobs";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."action_job_status";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."action_verb";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."action_direction";

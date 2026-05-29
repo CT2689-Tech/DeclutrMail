@@ -31,7 +31,26 @@ export type {
   GmailMessageMetadata,
   GmailMetadataClient,
 } from './ports.js';
-export type { GmailMutationClient, LabelChange } from './gmail-mutation-client.js';
+export type {
+  GmailMutationAccess,
+  GmailMutationClient,
+  LabelChange,
+} from './gmail-mutation-client.js';
+export {
+  LABEL_ACTION_JOB,
+  LABEL_ACTION_QUEUE,
+  LabelActionWorker,
+  labelActionJobOptions,
+  PASSTHROUGH_MAILBOX_LOCK,
+  VERB_LABEL_CHANGES,
+} from './label-action.worker.js';
+export type {
+  LabelActionDeps,
+  LabelActionJobData,
+  LabelActionResult,
+  LabelActionVerb,
+  MailboxActionLock,
+} from './label-action.worker.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';

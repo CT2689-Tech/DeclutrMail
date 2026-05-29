@@ -258,6 +258,9 @@ importers:
       '@declutrmail/db':
         specifier: workspace:*
         version: link:../db
+      '@declutrmail/events':
+        specifier: workspace:*
+        version: link:../events
       bullmq:
         specifier: ^5.34.0
         version: 5.77.0

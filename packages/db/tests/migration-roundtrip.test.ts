@@ -95,6 +95,7 @@ describe('migration round-trip', () => {
 
     const objects = await listSchemaObjects(db);
     expect(objects).toEqual([
+      'table:action_jobs',
       'table:active_sessions',
       'table:activity_log',
       'table:automation_rules',
@@ -113,6 +114,9 @@ describe('migration round-trip', () => {
       'table:users',
       'table:webhook_dedup',
       'table:workspaces',
+      'enum:action_direction',
+      'enum:action_job_status',
+      'enum:action_verb',
       'enum:activity_action',
       'enum:activity_source',
       'enum:autopilot_action_kind',
