@@ -15,6 +15,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -232,10 +233,11 @@ describe('SendersReadService', () => {
       });
 
       // Page 1 — limit 2; +1 sentinel from the service tells the
-      // caller "more rows exist". Newest first: c, b.
+      // caller "more rows exist". Sort=last_seen DESC. Newest first: c, b.
       const page1 = await svc.listSenders({
         mailboxAccountId: mailboxId,
         category: null,
+        sort: 'last_seen',
         cursor: null,
         limit: 2,
       });
@@ -246,7 +248,8 @@ describe('SendersReadService', () => {
       const page2 = await svc.listSenders({
         mailboxAccountId: mailboxId,
         category: null,
-        cursor: { lastSeenAt: new Date('2026-02-01T00:00:00Z'), id: b.id },
+        sort: 'last_seen',
+        cursor: { key: '2026-02-01T00:00:00.000Z', id: b.id },
         limit: 2,
       });
       // Only `a` is left — no sentinel.
@@ -322,6 +325,241 @@ describe('SendersReadService', () => {
       });
       expect(rows.map((r) => r.id)).toEqual([yes.id]);
       expect(rows[0]!.protectionFlags.isProtected).toBe(true);
+    });
+
+    describe('Slice 1 sort + meta.query (ADR-0014, senders list contract)', () => {
+      it('default sort is total DESC + id DESC with totalReceived on every row', async () => {
+        // Seed three senders with distinct totals so ordering is
+        // deterministic without the id tie-break.
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'small@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'mid@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'big@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        // Inject distinct counts via direct UPDATE (the production
+        // path writes via Path A; this fixture seeds the column shape
+        // directly so the read-side ORDER BY is the only thing tested).
+        await db.update(senders).set({ totalReceived: 5 }).where(eq(senders.email, 'small@x.com'));
+        await db.update(senders).set({ totalReceived: 50 }).where(eq(senders.email, 'mid@x.com'));
+        await db.update(senders).set({ totalReceived: 500 }).where(eq(senders.email, 'big@x.com'));
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 25,
+        });
+
+        expect(rows.map((r) => r.email)).toEqual(['big@x.com', 'mid@x.com', 'small@x.com']);
+        // bigint mode 'number' assertion — wire shape contract
+        // (ADR-0014 + senders list contract). A future driver swap
+        // that hands back a string would silently render "0" / "NaN"
+        // downstream; this asserts the boundary.
+        for (const r of rows) {
+          expect(typeof r.totalReceived).toBe('number');
+          expect(Number.isSafeInteger(r.totalReceived)).toBe(true);
+        }
+      });
+
+      it('keyset cursor on sort=total round-trips page 1 → page 2', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'a@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'b@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'c@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await db.update(senders).set({ totalReceived: 30 }).where(eq(senders.email, 'a@x.com'));
+        await db.update(senders).set({ totalReceived: 20 }).where(eq(senders.email, 'b@x.com'));
+        await db.update(senders).set({ totalReceived: 10 }).where(eq(senders.email, 'c@x.com'));
+
+        const page1 = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          sort: 'total',
+          cursor: null,
+          limit: 2,
+        });
+        expect(page1.length).toBe(3); // limit + sentinel
+        const lastVisible = page1[1]!;
+        expect(lastVisible.email).toBe('b@x.com');
+
+        const page2 = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          sort: 'total',
+          cursor: { key: String(lastVisible.totalReceived), id: lastVisible.id },
+          limit: 2,
+        });
+        expect(page2.length).toBe(1);
+        expect(page2[0]!.email).toBe('c@x.com');
+      });
+
+      it('sort=name ASC orders alphabetically by displayName', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'zebra@x.com',
+          displayName: 'Zebra',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'alpha@x.com',
+          displayName: 'Alpha',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'mid@x.com',
+          displayName: 'Mid',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          sort: 'name',
+          direction: 'asc',
+          cursor: null,
+          limit: 25,
+        });
+        expect(rows.map((r) => r.displayName)).toEqual(['Alpha', 'Mid', 'Zebra']);
+      });
+
+      it('sort=first_seen ASC orders by firstSeenAt oldest-first', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'newest@x.com',
+          firstSeenAt: new Date('2026-03-01T00:00:00Z'),
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'oldest@x.com',
+          firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'middle@x.com',
+          firstSeenAt: new Date('2026-02-01T00:00:00Z'),
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          sort: 'first_seen',
+          direction: 'asc',
+          cursor: null,
+          limit: 25,
+        });
+        expect(rows.map((r) => r.email)).toEqual(['oldest@x.com', 'middle@x.com', 'newest@x.com']);
+      });
+
+      it('rejects an unsupported sort with 400', async () => {
+        await expect(
+          svc.listSenders({
+            mailboxAccountId: mailboxId,
+            category: null,
+            sort: 'recommended',
+            cursor: null,
+            limit: 25,
+          }),
+        ).rejects.toThrow(/Unsupported sort/);
+      });
+
+      it('getSenderListQueryMeta — totalMatching honors filter; globalMaxTotal mailbox-wide unfiltered', async () => {
+        // Three senders: two in primary (one protected), one in promotions.
+        // globalMaxTotal must reflect the mailbox-wide MAX(total_received)
+        // even when the query filters to a subset that excludes it.
+        const big = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'big@x.com',
+          category: 'promotions', // outside the filter below
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        const protect = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'pro@x.com',
+          category: 'primary',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        const plain = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'pln@x.com',
+          category: 'primary',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await db.update(senders).set({ totalReceived: 999 }).where(eq(senders.id, big.id));
+        await db.update(senders).set({ totalReceived: 5 }).where(eq(senders.id, protect.id));
+        await db.update(senders).set({ totalReceived: 3 }).where(eq(senders.id, plain.id));
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: mailboxId,
+          senderKey: protect.senderKey,
+          policyType: 'keep',
+          isVip: false,
+          isProtected: true,
+        });
+
+        const meta = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: 'primary',
+          isProtected: true,
+        });
+        // Only the protected primary sender matches.
+        expect(meta.totalMatching).toBe(1);
+        // The 999-count promotions sender is the mailbox-wide max — must
+        // be reflected even though the filter excludes it.
+        expect(meta.globalMaxTotal).toBe(999);
+        expect(typeof meta.asOf).toBe('string');
+        expect(Number.isNaN(new Date(meta.asOf).getTime())).toBe(false);
+      });
+
+      it('getSenderListQueryMeta — globalMaxTotal does NOT leak across mailboxes', async () => {
+        // A sender in another mailbox with a huge count must not appear
+        // in this mailbox's globalMaxTotal (tenant-isolation regression
+        // — same shape as MISTAKES.md 2026-05-23).
+        const otherMb = await seedMailbox(db, 'other');
+        const sneaky = await seedSender(db, {
+          mailboxAccountId: otherMb,
+          email: 'sneaky@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await db.update(senders).set({ totalReceived: 100_000 }).where(eq(senders.id, sneaky.id));
+
+        const mine = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'mine@x.com',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await db.update(senders).set({ totalReceived: 7 }).where(eq(senders.id, mine.id));
+
+        const meta = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: null,
+        });
+        expect(meta.globalMaxTotal).toBe(7);
+        expect(meta.totalMatching).toBe(1);
+      });
     });
 
     it('isolates senders by mailbox (tenant safety)', async () => {

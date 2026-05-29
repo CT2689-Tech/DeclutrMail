@@ -76,6 +76,14 @@ export interface SenderListRow {
   lastSeenAt: string;
   /** ISO-8601 — first message received. */
   firstSeenAt: string;
+  /**
+   * Lifetime inbound message count for this sender, within retention
+   * (ADR-0014). Powers the headline "Total" column + the magnitude bar
+   * + the default `Total ↓` sort. Bigint on storage, JSON number on
+   * the wire (bounded ≪ `Number.MAX_SAFE_INTEGER`). Maintained by Path
+   * A on every full rebuild and reconciled nightly.
+   */
+  totalReceived: number;
   /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
   monthlyVolume: number | null;
   /**
@@ -241,6 +249,17 @@ export interface DecisionHistoryRowDto {
 
 // ── Fetchers ────────────────────────────────────────────────────────
 
+/**
+ * Sortable column for `GET /api/senders` (ADR-0014, senders list
+ * contract). Slice 1 BE implements `total | last_seen | first_seen |
+ * name`; `read | recommended` are reserved but deferred (the BE
+ * returns 400 for either). When omitted, the BE defaults to `total`.
+ */
+export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 'read' | 'recommended';
+
+/** Sort direction. When omitted, the BE picks a sane default per sort. */
+export type SenderListDirection = 'asc' | 'desc';
+
 export interface ListSendersParams {
   category?: GmailCategory | undefined;
   limit?: number | undefined;
@@ -252,13 +271,52 @@ export interface ListSendersParams {
    * the wire param `?protected=true`. ADR-0014 + senders list contract.
    */
   isProtected?: boolean | undefined;
+  /** Sortable column. Omit to take the BE default (`total`). */
+  sort?: SenderListSort | undefined;
+  /** Sort direction. Omit to take the BE's sane per-sort default. */
+  direction?: SenderListDirection | undefined;
 }
 
-/** GET /api/senders — paginated sender list (D39). */
+/**
+ * `meta.query` block returned on every page of `GET /api/senders`
+ * (ADR-0014, senders list contract). Page 1's value is authoritative
+ * for the duration of a scroll — the FE preserves page-1's snapshot
+ * client-side and does NOT animate counts on subsequent pages.
+ */
+export interface SenderListQueryMeta {
+  /** Rows matching the active filter + search (query-wide; NOT cursor-scoped). */
+  totalMatching: number;
+  /**
+   * `MAX(total_received)` for the active mailbox, UNFILTERED. Drives
+   * the magnitude-bar denominator — a filtered view does NOT rescale
+   * to its own max, so bars stay comparable across filters.
+   */
+  globalMaxTotal: number;
+  /** Optional per-chip counts for the filter UI (Slice 3); omitted today. */
+  counts?: Record<string, number>;
+  /** ISO-8601 — when the meta was computed server-side (observational). */
+  asOf: string;
+}
+
+/**
+ * Paginated envelope variant that also carries the `meta.query` block —
+ * the senders list contract's wider shape. The shared
+ * `PaginatedEnvelope` doesn't accept extra meta keys, so the senders
+ * surface declares its own envelope here.
+ */
+export interface SenderListEnvelope {
+  data: SenderListRow[];
+  meta: {
+    pagination: PaginatedEnvelope<SenderListRow>['meta']['pagination'];
+    query: SenderListQueryMeta;
+  };
+}
+
+/** GET /api/senders — paginated sender list (D39, ADR-0014). */
 export function fetchSenders(
   params: ListSendersParams = {},
   signal?: AbortSignal,
-): Promise<PaginatedEnvelope<SenderListRow>> {
+): Promise<SenderListEnvelope> {
   return apiGet<SenderListRow[]>('/api/senders', {
     query: {
       category: params.category,
@@ -268,9 +326,11 @@ export function fetchSenders(
       // BE silently drops anything else. We map an undefined `isProtected`
       // to an omitted param so cache keys for "no filter" stay stable.
       protected: params.isProtected === true ? 'true' : undefined,
+      sort: params.sort,
+      direction: params.direction,
     },
     signal,
-  }) as Promise<PaginatedEnvelope<SenderListRow>>;
+  }) as Promise<SenderListEnvelope>;
 }
 
 /** GET /api/senders/:id — single sender detail (D40). */
