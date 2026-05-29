@@ -4,7 +4,7 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "/Users/chintant/projects/wt-feat-d156-rl-severity-and-admin-read/apps/web", "dev"],
+      "runtimeArgs": ["--dir", "/Users/chintant/projects/DeclutrMail/apps/web", "dev"],
       "port": 3000
     }
   ]

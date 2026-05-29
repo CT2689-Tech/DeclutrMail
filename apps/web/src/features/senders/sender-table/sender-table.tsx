@@ -447,8 +447,14 @@ function SenderRow({
 
 /** Total + magnitude bar — bar suppressed when `max === 0`. */
 function TotalCell({ value, max }: { value: number; max: number }) {
+  // Defense in depth: a malformed wire payload that drops
+  // `totalReceived` would otherwise crash `toLocaleString()`. ADR-0014
+  // guarantees this is a JS number on the wire; we coerce here so a
+  // regression surfaces as a "0" cell rather than a render crash that
+  // takes the whole table down.
+  const safeValue = typeof value === 'number' && Number.isFinite(value) ? value : 0;
   const safeMax = max > 0 ? max : 1;
-  const pct = Math.min(100, Math.round((value / safeMax) * 100));
+  const pct = Math.min(100, Math.round((safeValue / safeMax) * 100));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
       <span
@@ -458,7 +464,7 @@ function TotalCell({ value, max }: { value: number; max: number }) {
           fontWeight: 600,
         }}
       >
-        {value.toLocaleString()}
+        {safeValue.toLocaleString()}
       </span>
       {max > 0 ? (
         <span
