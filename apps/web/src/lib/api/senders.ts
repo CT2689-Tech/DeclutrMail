@@ -245,6 +245,13 @@ export interface ListSendersParams {
   category?: GmailCategory | undefined;
   limit?: number | undefined;
   cursor?: string | undefined;
+  /**
+   * When `true`, request only standing-protected senders (D42/D43) —
+   * the BE filters server-side instead of the FE fetching the whole
+   * mailbox and filtering in JS (which storms at 5k+ senders). Maps to
+   * the wire param `?protected=true`. ADR-0014 + senders list contract.
+   */
+  isProtected?: boolean | undefined;
 }
 
 /** GET /api/senders — paginated sender list (D39). */
@@ -257,6 +264,10 @@ export function fetchSenders(
       category: params.category,
       limit: params.limit,
       cursor: params.cursor,
+      // Only the literal `'true'` enables the filter on the wire; the
+      // BE silently drops anything else. We map an undefined `isProtected`
+      // to an omitted param so cache keys for "no filter" stay stable.
+      protected: params.isProtected === true ? 'true' : undefined,
     },
     signal,
   }) as Promise<PaginatedEnvelope<SenderListRow>>;

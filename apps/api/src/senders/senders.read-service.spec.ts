@@ -279,6 +279,51 @@ describe('SendersReadService', () => {
       expect(rows[0]!.gmailCategory).toBe('primary');
     });
 
+    it('filters to standing-protected senders when isProtected=true', async () => {
+      // Three senders: one with a protected policy, one with an
+      // explicitly non-protected policy, and one with no policy row at
+      // all (engine-default). Only the first should survive the filter
+      // — the no-policy sender's left-joined `is_protected` is NULL,
+      // which is correctly excluded by `eq(... true)`.
+      const yes = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'protected@x.com',
+        lastSeenAt: new Date('2026-03-01T00:00:00Z'),
+      });
+      const no = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'not-protected@x.com',
+        lastSeenAt: new Date('2026-02-01T00:00:00Z'),
+      });
+      await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'no-policy@x.com',
+        lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: yes.senderKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: new Date('2026-03-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: no.senderKey,
+        isProtected: false,
+      });
+
+      const rows = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        isProtected: true,
+        cursor: null,
+        limit: 25,
+      });
+      expect(rows.map((r) => r.id)).toEqual([yes.id]);
+      expect(rows[0]!.protectionFlags.isProtected).toBe(true);
+    });
+
     it('isolates senders by mailbox (tenant safety)', async () => {
       const otherMailbox = await seedMailbox(db, 'other');
       await seedSender(db, {
