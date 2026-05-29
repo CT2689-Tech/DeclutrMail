@@ -18,9 +18,27 @@ import type { GmailCategory } from '@/lib/api/senders';
 
 export const sendersKeys = {
   all: ['senders'] as const,
-  /** List page — keyed by category filter so each filter caches independently. */
-  list: (params: { category?: GmailCategory | undefined } = {}) =>
-    ['senders', 'list', params] as const,
+  /**
+   * List page — keyed by every parameter that changes what the BE
+   * returns, so distinct queries cache independently.
+   *
+   * Why `limit` AND `isProtected` are in the key: the Settings → Standing
+   * Policies surface previously called `useSenders({ limit: 100 })`
+   * while the shell + main screen called `useSenders({ limit: 50 })` —
+   * both keyed by category only, so they collided in the same cache
+   * entry with mixed page sizes. Slice 0 of the senders redesign fixes
+   * this by promoting `limit` and the new `isProtected` filter into the
+   * key. Mailbox scope is still handled by `resetMailboxScopedCache` on
+   * mailbox switch (§8 invariant) — promoting mailbox into the key
+   * itself is a later cleanup.
+   */
+  list: (
+    params: {
+      category?: GmailCategory | undefined;
+      limit?: number | undefined;
+      isProtected?: boolean | undefined;
+    } = {},
+  ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */
   weeklyHero: () => ['senders', 'weekly-hero'] as const,
   /** Single sender — the umbrella the per-id child queries hang off. */

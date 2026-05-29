@@ -26,6 +26,13 @@ export interface UseSendersOptions {
   /** Page size — clamped by the server to a route-specific max. */
   limit?: number | undefined;
   /**
+   * When `true`, request only standing-protected senders (D42/D43).
+   * Backs the Settings → Standing Policies surface so it pages server-
+   * side instead of fetching the whole mailbox. ADR-0014 + senders list
+   * contract.
+   */
+  isProtected?: boolean | undefined;
+  /**
    * Gate the query. Pass `false` when there's no active mailbox so the
    * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders
    * the no-active gate instead). Defaults to enabled.
@@ -35,12 +42,17 @@ export interface UseSendersOptions {
 
 export function useSenders(options: UseSendersOptions = {}) {
   return useInfiniteQuery({
-    queryKey: sendersKeys.list({ category: options.category }),
+    queryKey: sendersKeys.list({
+      category: options.category,
+      limit: options.limit,
+      isProtected: options.isProtected,
+    }),
     queryFn: ({ pageParam, signal }) =>
       fetchSenders(
         {
           category: options.category,
           limit: options.limit,
+          isProtected: options.isProtected,
           cursor: pageParam ?? undefined,
         },
         signal,

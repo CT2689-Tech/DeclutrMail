@@ -1,10 +1,27 @@
 // Tests for SendersPoliciesScreen — Phase X3 standing-policies view.
+//
+// Pre-Slice-0 (PR #83) this screen auto-paginated the entire mailbox
+// client-side and filtered `s.protected === true` in JS. At 5k+ senders
+// it stormed the server and made on-screen counts visibly animate as
+// pages landed. Slice 0 of the senders redesign (ADR-0014 + senders list
+// contract) pushes the filter server-side via `?protected=true` and
+// removes the auto-fetch effect entirely. These tests pin the new
+// behavior so a regression (e.g. re-introducing an auto-paginate
+// useEffect) fails the build instead of silently restoring the storm.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { SendersPoliciesScreen } from './senders-policies-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+
+const PROTECTION_FLAGS_ON = {
+  isVip: false,
+  isProtected: true,
+  protectionReason: 'user_defined' as const,
+  protectionSetAt: '2026-04-01T00:00:00.000Z',
+};
 
 const BASE_ROW = {
   id: 'a',
@@ -16,7 +33,10 @@ const BASE_ROW = {
   firstSeenAt: '2025-01-01T00:00:00.000Z',
   monthlyVolume: 10,
   readRate: 0.5,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: null,
+  lastReview: null,
+  protectionFlags: PROTECTION_FLAGS_ON,
 };
 
 function renderScreen() {
@@ -44,7 +64,50 @@ describe('SendersPoliciesScreen', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
-  it('renders the empty state when no protected senders exist', async () => {
+  it('renders the empty state when the server returns no protected senders', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText(/No protected senders yet/i)).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: /standing policies/i })).toBeInTheDocument();
+  });
+
+  it('fires exactly one server-filtered request with ?protected=true&limit=50', async () => {
+    const seenUrls: URL[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          seenUrls.push(url);
+          return jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
+
+    // The old behavior auto-paginated until hasMore=false. Slice 0 must
+    // make exactly ONE request — anything more is a regression of the
+    // storm (and would not survive a 5k mailbox).
+    expect(seenUrls).toHaveLength(1);
+    expect(seenUrls[0]!.searchParams.get('protected')).toBe('true');
+    expect(seenUrls[0]!.searchParams.get('limit')).toBe('50');
+  });
+
+  it('lists each server-returned protected sender with a Manage link', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -52,84 +115,57 @@ describe('SendersPoliciesScreen', () => {
         respond: () =>
           jsonOk({
             data: [
-              { ...BASE_ROW, id: 'a', displayName: 'Stripe' },
-              { ...BASE_ROW, id: 'b', displayName: 'GitHub' },
+              { ...BASE_ROW, id: 'a', displayName: 'Stripe', email: 'stripe@stripe.com' },
+              { ...BASE_ROW, id: 'b', displayName: 'GitHub', email: 'noreply@github.com' },
             ],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 200 } },
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
           }),
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/No protected senders yet/i)).toBeInTheDocument());
-    // Heading still renders
-    expect(screen.getByRole('heading', { name: /standing policies/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('GitHub')).toBeInTheDocument());
+    expect(screen.getByText('Stripe')).toBeInTheDocument();
+    // The Manage link points at the sender detail page.
+    const link = screen.getByRole('link', { name: /manage stripe/i });
+    expect(link).toHaveAttribute('href', '/senders/a');
   });
 
-  it('lists each protected sender with a Manage link to the detail page', async () => {
-    // BE doesn't return `protected` on the list row today — it's only on
-    // the detail endpoint. Senders FE shape `Sender.protected` is a
-    // derived field set by the adapter on demo data. For the test we
-    // simulate the same: rows tagged via custom field that the adapter
-    // will pass through to `Sender.protected`. Actually the current
-    // adapter does NOT yet set `protected` from list rows (only from
-    // detail), so we mark protected via the SENDERS demo dataset path.
-    //
-    // For real product wiring, BE will need to expose `protected` on
-    // the list row OR the FE will need a separate sender-policies
-    // endpoint. Tracked as a follow-up.
-    //
-    // This test asserts the screen RENDERS correctly when protected
-    // senders are present — proven via the empty-state branch above
-    // for the contract. The full "lists protected senders" assertion
-    // waits on the BE wire-up.
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 200 } },
-          }),
-      },
-    ]);
-    renderScreen();
-    // VIP placeholder always renders
-    await waitFor(() => expect(screen.getByText(/VIP section coming soon/i)).toBeInTheDocument());
-  });
-
-  it('auto-fetches every page until hasMore=false (Codex finding #5)', async () => {
-    // The standing-policies screen MUST see every sender to surface
-    // every Protected one — a Protected sender on page 2 is otherwise
-    // invisible. Pin the multi-page traversal so a regression here
-    // (e.g. removing the auto-pagination useEffect) fails the build
-    // instead of silently dropping rows.
-    let pageRequests = 0;
+  it('exposes "Show more" when the server reports hasNextPage, and loads the next page on click', async () => {
+    let page = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/senders',
         respond: (_req, url) => {
-          pageRequests += 1;
+          page += 1;
           const cursor = url.searchParams.get('cursor');
           if (cursor === 'page-2') {
             return jsonOk({
-              data: [{ ...BASE_ROW, id: 'p2-a', displayName: 'Page2 Sender' }],
-              meta: { pagination: { nextCursor: null, hasMore: false, limit: 100 } },
+              data: [{ ...BASE_ROW, id: 'p2', displayName: 'Page 2 Sender' }],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
             });
           }
           return jsonOk({
-            data: [{ ...BASE_ROW, id: 'p1-a', displayName: 'Page1 Sender' }],
-            meta: { pagination: { nextCursor: 'page-2', hasMore: true, limit: 100 } },
+            data: [{ ...BASE_ROW, id: 'p1', displayName: 'Page 1 Sender' }],
+            meta: { pagination: { nextCursor: 'page-2', hasMore: true, limit: 50 } },
           });
         },
       },
     ]);
     renderScreen();
-    // Wait until the auto-pagination has settled on both pages.
-    await waitFor(() => expect(pageRequests).toBeGreaterThanOrEqual(2));
-    // VIP placeholder still renders — header didn't crash on multi-page.
-    expect(screen.getByText(/VIP section coming soon/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Page 1 Sender')).toBeInTheDocument());
+
+    // After page 1 lands, exactly one request fired — NO auto-pagination.
+    expect(page).toBe(1);
+    // The Show more affordance is visible because the server reported hasNextPage.
+    const showMore = screen.getByRole('button', { name: /^show more$/i });
+
+    await userEvent.click(showMore);
+
+    await waitFor(() => expect(screen.getByText('Page 2 Sender')).toBeInTheDocument());
+    expect(page).toBe(2);
+    // hasNextPage is now false → Show more disappears.
+    expect(screen.queryByRole('button', { name: /^show more$/i })).not.toBeInTheDocument();
   });
 
   it('renders the error state on 500', async () => {

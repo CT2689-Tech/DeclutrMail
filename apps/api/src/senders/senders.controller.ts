@@ -68,11 +68,17 @@ export class SendersController {
    * GET /api/senders — list senders for the caller's mailbox (D39).
    *
    * Query params:
-   *   - `category` — optional `primary|promotions|social|updates|forums`
-   *     to scope to one Gmail category.
-   *   - `limit`    — page size (default 25, max 100).
-   *   - `cursor`   — opaque continuation token from a prior page's
-   *                  `meta.pagination.nextCursor`.
+   *   - `category`  — optional `primary|promotions|social|updates|forums`
+   *                   to scope to one Gmail category.
+   *   - `protected` — optional `true` to return only standing-protected
+   *                   senders (D42/D43). Backs the Settings → Standing
+   *                   Policies surface so it no longer needs to fetch the
+   *                   whole mailbox client-side and filter (see ADR-0014
+   *                   + the senders list contract). Any value other than
+   *                   `true` (including `false`, missing) → no filter.
+   *   - `limit`     — page size (default 25, max 100).
+   *   - `cursor`    — opaque continuation token from a prior page's
+   *                   `meta.pagination.nextCursor`.
    *
    * Returns the D202 paginated envelope. Ordering: `last_seen_at DESC,
    * id DESC` — most-recently-active senders first.
@@ -84,9 +90,11 @@ export class SendersController {
     @Query('category') rawCategory: string | undefined,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
+    @Query('protected') rawProtected: string | undefined,
   ): Promise<PaginatedEnvelope<SenderListRow>> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
+    const isProtected = parseProtectedFlag(rawProtected);
     const limit = clampLimit(rawLimit, LIST_LIMIT);
 
     const cursorRaw = decodeCursor(rawCursor);
@@ -103,6 +111,7 @@ export class SendersController {
     const rows = await this.reads.listSenders({
       mailboxAccountId: accountId,
       category,
+      isProtected,
       cursor,
       limit,
     });
@@ -315,6 +324,19 @@ function takePage<T>(
 function parseCategory(raw: string | undefined): GmailCategory | null {
   if (!raw) return null;
   return CATEGORIES.has(raw as GmailCategory) ? (raw as GmailCategory) : null;
+}
+
+/**
+ * Coerce a raw `?protected=` to a boolean filter or `null` (no filter).
+ *
+ * Only the literal string `'true'` enables the protected filter. Any other
+ * value — missing, `'false'`, or garbage — returns `null` so the read
+ * service applies no `is_protected` predicate. The "false" case is not yet
+ * a product surface (no "show only non-protected" UI), so we don't expose
+ * it on the wire and instead leave that bit to a later slice.
+ */
+function parseProtectedFlag(raw: string | undefined): boolean | null {
+  return raw === 'true' ? true : null;
 }
 
 /**

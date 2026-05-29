@@ -98,6 +98,15 @@ export class SendersReadService {
   async listSenders(args: {
     mailboxAccountId: string;
     category: GmailCategory | null;
+    /**
+     * When `true`, return only senders with a standing Protect policy
+     * (`sender_policies.is_protected = true`). When `null`/omitted, no
+     * filter. Backs the Settings → Standing Policies surface so it can
+     * page protected senders server-side instead of fetching the whole
+     * mailbox client-side and filtering. See ADR-0014 + the senders list
+     * contract.
+     */
+    isProtected?: boolean | null;
     cursor: SenderListCursor | null;
     /** Honored limit (already clamped by the controller). */
     limit: number;
@@ -108,7 +117,7 @@ export class SendersReadService {
      */
     now?: Date;
   }): Promise<SenderListRow[]> {
-    const { mailboxAccountId, category, cursor, limit } = args;
+    const { mailboxAccountId, category, isProtected, cursor, limit } = args;
     const now = args.now ?? new Date();
     const currentMonthIso = startOfMonthIso(now);
     const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
@@ -246,6 +255,13 @@ export class SendersReadService {
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
+    }
+    if (isProtected === true) {
+      // Standing-protected filter — the same `sender_policies` join below
+      // exposes `is_protected`, so the predicate rides the existing left
+      // join (NULL for senders without a policy row → excluded, which is
+      // the correct default for a "show only protected" surface).
+      conditions.push(eq(senderPolicies.isProtected, true));
     }
     if (cursor) {
       conditions.push(
