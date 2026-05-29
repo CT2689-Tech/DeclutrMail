@@ -47,11 +47,13 @@ function makeContext(opts: {
   controller: new () => unknown;
   ip?: string;
   userId?: string;
+  userAgent?: string;
   setHeader: (name: string, value: string) => void;
 }): ExecutionContext {
   const req = {
     ip: opts.ip ?? '203.0.113.1',
     user: opts.userId ? { userId: opts.userId } : undefined,
+    headers: opts.userAgent ? { 'user-agent': opts.userAgent } : {},
   };
   const res = { setHeader: opts.setHeader } as unknown as Response;
   return {
@@ -236,6 +238,41 @@ describe('RateLimitInterceptor (D156)', () => {
     const obs = await failOpenInterceptor.intercept(ctx, makeHandler());
     await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
     expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  it('records a security event on breach (D181), metadata only', async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const withAudit = new RateLimitInterceptor(new Reflector(), store, {
+      record,
+    } as unknown as ConstructorParameters<typeof RateLimitInterceptor>[2]);
+    const controller = new TestController();
+    const ctx = (): ExecutionContext =>
+      makeContext({
+        handler: controller.limited,
+        controller: TestController,
+        setHeader,
+        ip: '203.0.113.9',
+        userId: 'user_x',
+        userAgent: 'curl/8.0',
+      });
+
+    // Exhaust the limit (2), then the 3rd breaches.
+    for (let i = 0; i < 2; i++) {
+      const obs = await withAudit.intercept(ctx(), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+    }
+    expect(record).not.toHaveBeenCalled();
+
+    await expect(withAudit.intercept(ctx(), makeHandler())).rejects.toMatchObject({ status: 429 });
+
+    expect(record).toHaveBeenCalledWith({
+      eventType: 'rate_limit.breach',
+      severity: 'warning',
+      userId: 'user_x',
+      sourceIp: '203.0.113.9',
+      userAgent: 'curl/8.0',
+      payload: { bucket: 'auth' },
+    });
   });
 
   it('fails open when no store is provided (REDIS_URL missing in dev)', async () => {

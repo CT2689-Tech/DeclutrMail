@@ -7,6 +7,8 @@ import {
 import { and, eq } from 'drizzle-orm';
 
 import { mailboxAccounts } from '@declutrmail/db';
+import type { ErrorCode } from '@declutrmail/shared/contracts';
+
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import { SyncService } from '../sync/sync.service.js';
@@ -183,7 +185,7 @@ export class AuthSignupOrchestrator {
       .limit(1);
     if (existing && existing.workspaceId !== input.currentWorkspaceId) {
       throw new ConflictException({
-        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE',
+        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
         message:
           'This Google account is already connected to a different DeclutrMail workspace. ' +
           'Sign in with that account or disconnect it from the other workspace first.',

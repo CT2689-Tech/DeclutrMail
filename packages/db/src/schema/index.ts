@@ -10,6 +10,7 @@ export * from './mailbox-accounts';
 export * from './outbox-events';
 export * from './provider-sync-state';
 export * from './rule-match-log';
+export * from './security-events';
 export * from './sender-policies';
 export * from './sender-timeseries';
 export * from './senders';

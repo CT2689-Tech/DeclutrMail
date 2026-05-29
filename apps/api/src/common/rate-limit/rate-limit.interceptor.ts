@@ -20,6 +20,7 @@ import {
   type TokenBucketStore,
   RATE_LIMIT_METADATA,
 } from './rate-limit.types.js';
+import { SecurityEventsService } from '../../security-events/security-events.service.js';
 
 /** DI token for the store. Optional — fail-open if absent. */
 export const TOKEN_BUCKET_STORE = 'TOKEN_BUCKET_STORE';
@@ -53,6 +54,10 @@ export class RateLimitInterceptor implements NestInterceptor {
   constructor(
     private readonly reflector: Reflector,
     @Optional() @Inject(TOKEN_BUCKET_STORE) private readonly store: TokenBucketStore | null,
+    // Optional so the rate-limit feature stays decoupled (and unit tests
+    // can construct the interceptor without DI). When wired (D181), a
+    // breach is recorded to the security audit log fire-and-forget.
+    @Optional() private readonly securityEvents: SecurityEventsService | null = null,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
@@ -92,6 +97,18 @@ export class RateLimitInterceptor implements NestInterceptor {
     }
 
     if (!result.allowed) {
+      // D181: record the breach to the security audit log, fire-and-forget
+      // (record() never throws). Metadata only — bucket + caller IP +
+      // user id — never request body or query (D7).
+      void this.securityEvents?.record({
+        eventType: 'rate_limit.breach',
+        severity: 'warning',
+        userId: req.user?.userId ?? null,
+        sourceIp: req.ip ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
+        payload: { bucket: resolved.bucket },
+      });
+
       res.setHeader('Retry-After', String(result.retryAfterSec));
       // Throw a 429; AllExceptionsFilter formats the D168/D202 envelope
       // as `{ error: { code: 'RATE_LIMITED', message } }` (the filter's

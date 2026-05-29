@@ -26,6 +26,49 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-29 — Confirm the §9-sensitive D181 security-event emit points before wiring
+**Source:** PR for D181 (security events log) — branch `claude/pending-ds-backend-KIv38`
+**Why:** D181 names 7 emit categories. This PR shipped the table + service + the
+one clearly-safe producer (`rate_limit.breach`). The remaining producers edit
+§9 stop-condition paths (token-crypto, webhook auth) and need your explicit
+sign-off before I add log calls into those control-flow branches:
+- **login attempts** (success + failure) — auth/session path (not crypto, but
+  touches the login flow; cleanest chokepoint TBD: `sessions.service` issue vs.
+  the OAuth callback).
+- **failed OAuth refresh** — token-refresh path (§9 token-encryption-adjacent).
+- **webhook signature verification failures** — Pub/Sub OIDC path (§9 webhook
+  auth); only active when `PUBSUB_WEBHOOK_ENABLED=true`.
+- **KMS access errors** — `token-crypto` / KMS adapter (§9 token crypto).
+- **CSP violation reports** — needs CSP (D175, not built) + a `Report-To`/
+  reporting endpoint first; defer until D175.
+- **role/permission changes** — no roles model exists yet; defer.
+**How:** Reply on the PR (or here) confirming which of the above to wire now and
+that I may add additive (no behavior change) `securityEvents.record(...)` calls
+in those files. I will keep each emit fire-and-forget and metadata-only (D7).
+**Verifies by:** follow-up PR(s) wiring the approved emit points, each with a row
+appearing in `security_events` under the matching `event_type`.
+**Status:** Open
+
+### 2026-05-29 — PR #131 needs `atlas migrate hash` run for migration 0016 (I can't, no Atlas CLI here)
+**Source:** PR #131 (D181) — adding migration 0016; `atlas migrate lint` red
+**Why:** `atlas.sum`'s per-file hashes come from Atlas's SQL-canonicalizing hash,
+which is NOT reproducible from file bytes offline (confirmed: only 0000 happens to
+match a raw hash; 0003 etc. don't). The Atlas CLI can't be installed in this
+remote environment (network policy blocks the download), so I cannot generate a
+valid `atlas.sum` entry for 0016. I've restored the 0000–0015 lines to main's
+exact (atlas-valid) values and appended a best-effort 0016 line + recomputed
+total, so the only thing left is a real rehash of the new entry.
+**How (1 command, on a machine with Atlas):**
+```
+atlas migrate hash --dir 'file://packages/db/migrations'
+git add packages/db/migrations/atlas.sum && git commit -m "chore(db): atlas migrate hash for 0016 (D181)" && git push
+```
+Then PR #131's `atlas migrate lint` goes green. (Alternatively: merge past the red
+check as this repo already does for the red branch-name check, and rehash in a
+follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
+**Verifies by:** PR #131's `atlas migrate lint` check turns green after the rehash.
+**Status:** Open — needs founder/CI `atlas migrate hash`.
+
 ### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
 **Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
 **Why:** Automated coverage is exhaustive (unit + PGlite integration: forward sender/messages, idempotency, forged-id drop, undo reverse, terminal-failure, migration round-trip). The ONE thing not exercised is a REAL Gmail mutation through the worker — and it mutates your real inbox + needs your running dev env (the agent must not kill the live redesign session on :4000 / shared dev DB + Redis). This is the §8/§9 founder-hands step.
