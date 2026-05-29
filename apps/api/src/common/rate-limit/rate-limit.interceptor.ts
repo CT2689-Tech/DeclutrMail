@@ -84,7 +84,20 @@ export class RateLimitInterceptor implements NestInterceptor {
     // Optional so the rate-limit feature stays decoupled (and unit tests
     // can construct the interceptor without DI). When wired (D181), a
     // breach is recorded to the security audit log fire-and-forget.
-    @Optional() private readonly securityEvents: SecurityEventsService | null = null,
+    //
+    // Why `@Inject(SecurityEventsService)` is mandatory here even though
+    // the type annotation IS the class: a union type like
+    // `SecurityEventsService | null` collapses Nest's `design:paramtypes`
+    // reflect metadata to `Object`, so without an explicit `@Inject(...)`
+    // token Nest would try to resolve `Object` (no provider), `@Optional()`
+    // would default this to `null`, and the breach emit would silently
+    // no-op in production — observed live on main 2026-05-29 (smoke run:
+    // 429 fired, NO `rate_limit.breach` row landed because the recorder
+    // was null). Constructor smell tests for any DI-injected service
+    // typed as `T | null`: add `@Inject(T)` or drop the `| null`.
+    @Optional()
+    @Inject(SecurityEventsService)
+    private readonly securityEvents: SecurityEventsService | null = null,
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
