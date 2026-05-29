@@ -15,6 +15,11 @@ export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from 
 export type { ApiError, ErrorEnvelope, ErrorSeverityTier } from './error-envelope';
 export { classifyHttpError, deriveDisplayId } from './error-envelope';
 
+// Error-code registry (ADR-0014) — the single source of truth for domain
+// error codes + their default status/tier/retryable/message.
+export type { ErrorCode, ErrorCodeSpec } from './error-codes';
+export { ERROR_CODES, isErrorCode } from './error-codes';
+
 // D224 sync status transport — Zod schema + types for /api/v1/sync/status.
 export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
 export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';

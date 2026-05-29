@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 
+import type { ErrorCode } from '@declutrmail/shared/contracts';
+
 import { UsersService } from '../users/users.service.js';
 import { MailboxAccountsService } from './mailbox-accounts.service.js';
 
@@ -70,7 +72,7 @@ export class CurrentMailboxGuard implements CanActivate {
     const active = summaries.filter((m) => m.status === 'active');
     if (active.length === 0) {
       throw new ConflictException({
-        code: 'NO_ACTIVE_MAILBOX',
+        code: 'NO_ACTIVE_MAILBOX' satisfies ErrorCode,
         message: 'No active Gmail account is connected. Connect one to continue.',
       });
     }
@@ -81,7 +83,7 @@ export class CurrentMailboxGuard implements CanActivate {
       const owned = active.find((m) => m.id === headerValue);
       if (!owned) {
         throw new ConflictException({
-          code: 'MAILBOX_NOT_OWNED',
+          code: 'MAILBOX_NOT_OWNED' satisfies ErrorCode,
           message: 'Selected mailbox is not connected to your workspace.',
         });
       }

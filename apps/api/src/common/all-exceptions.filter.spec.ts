@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, HttpStatus } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
@@ -110,6 +110,37 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
       severityTier: 'critical_trust',
       retryable: false,
     });
+  });
+
+  it('preserves a registered domain code from the exception body (ADR-0014)', () => {
+    // The mailbox guard throws `new ConflictException({ code, message })`.
+    // The filter must surface that domain code, not flatten it to CONFLICT.
+    const { status, body } = invoke(
+      new AllExceptionsFilter(),
+      new ConflictException({
+        code: 'NO_ACTIVE_MAILBOX',
+        message: 'No active Gmail account is connected. Connect one to continue.',
+      }),
+      REQ_WITH_CORRELATION,
+    );
+
+    expect(status).toBe(409);
+    expect(body.error).toMatchObject({
+      code: 'NO_ACTIVE_MAILBOX',
+      message: 'No active Gmail account is connected. Connect one to continue.',
+      severityTier: 'inline_recoverable',
+      retryable: false,
+    });
+  });
+
+  it('falls back to the status code when the body code is unregistered', () => {
+    const { body } = invoke(
+      new AllExceptionsFilter(),
+      new ConflictException({ code: 'NOT_A_REAL_CODE', message: 'nope' }),
+      REQ_WITH_CORRELATION,
+    );
+
+    expect(body.error.code).toBe('CONFLICT');
   });
 
   it('treats an unknown thrown value as a 500 INTERNAL_ERROR', () => {

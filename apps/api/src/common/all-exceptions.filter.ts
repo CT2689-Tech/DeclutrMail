@@ -12,9 +12,12 @@ import type { Request, Response } from 'express';
 
 import {
   type ApiError,
+  type ErrorCode,
   type ErrorSeverityTier,
+  ERROR_CODES,
   classifyHttpError,
   deriveDisplayId,
+  isErrorCode,
 } from '@declutrmail/shared/contracts';
 
 import { AppException } from './app-exception.js';
@@ -90,6 +93,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
+      // A throw can carry a registered domain code in its response body
+      // (e.g. `new ConflictException({ code: 'NO_ACTIVE_MAILBOX', ... })`).
+      // Preserve it + its registry tier/retryable, so the domain code
+      // reaches the client instead of being flattened to the status code.
+      const bodyCode = this.registeredBodyCode(exception);
+      if (bodyCode) {
+        const spec = ERROR_CODES[bodyCode];
+        return {
+          status,
+          code: bodyCode,
+          message: this.safeHttpMessage(exception),
+          retryable: spec.retryable,
+          severityTier: spec.severityTier,
+        };
+      }
       return {
         status,
         code: this.codeForStatus(status),
@@ -127,6 +145,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return message.join(', ');
     }
     return exception.message;
+  }
+
+  /**
+   * Extract a registered `ErrorCode` from an HttpException's response
+   * body, if it carries one (e.g. `throw new ConflictException({ code,
+   * message })`). Returns null when the body has no code or an
+   * unregistered one — the caller then falls back to the status-derived
+   * code, so an unknown string can never leak through as a "code".
+   */
+  private registeredBodyCode(exception: HttpException): ErrorCode | null {
+    const body = exception.getResponse();
+    if (body && typeof body === 'object' && 'code' in body) {
+      const code = (body as { code?: unknown }).code;
+      if (isErrorCode(code)) {
+        return code;
+      }
+    }
+    return null;
   }
 
   /** A stable envelope `code` derived from the HTTP status. */
