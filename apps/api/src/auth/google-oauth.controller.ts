@@ -14,6 +14,7 @@ import {
 import type { Request, Response } from 'express';
 
 import { RateLimit } from '../common/rate-limit/index.js';
+import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { CurrentUser, JwtGuard } from './jwt.guard.js';
@@ -66,6 +67,7 @@ export class GoogleOAuthController {
   constructor(
     private readonly oauth: GoogleOAuthService,
     private readonly orchestrator: AuthSignupOrchestrator,
+    private readonly securityEvents: SecurityEventsService,
   ) {}
 
   @Get('start')
@@ -100,24 +102,77 @@ export class GoogleOAuthController {
     @Query('code') code?: string,
     @Query('state') state?: string,
   ): Promise<void> {
+    // Request metadata shared by every D181 emit in this handler. Captured
+    // up-front because the failure emits below run before any per-flow
+    // (login vs connect) branching.
+    const ipAddress = (req.ip ?? null) as string | null;
+    const userAgent = (req.headers['user-agent'] ?? null) as string | null;
+
     const cookieRaw = (req.cookies as Record<string, unknown> | undefined)?.[STATE_COOKIE];
     if (typeof cookieRaw !== 'string') {
+      // D181: pre-orchestrator validation failure — no user/workspace
+      // context yet, so the audit row is identified by ip/UA only.
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'missing_state_cookie' },
+      });
       throw new BadRequestException('Missing OAuth state cookie.');
     }
     let cookieState: OAuthState;
     try {
       cookieState = JSON.parse(cookieRaw) as OAuthState;
     } catch {
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'malformed_state_cookie' },
+      });
       throw new BadRequestException('Malformed OAuth state cookie.');
     }
     if (!state || !statesMatch(state, cookieState.nonce)) {
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'invalid_state' },
+      });
       throw new BadRequestException('Invalid OAuth state.');
     }
     if (!code) {
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'missing_code' },
+      });
       throw new BadRequestException('Missing OAuth `code` query parameter.');
     }
 
-    const { email, refreshToken } = await this.oauth.exchangeCode(code);
+    let email: string;
+    let refreshToken: string;
+    try {
+      ({ email, refreshToken } = await this.oauth.exchangeCode(code));
+    } catch (err) {
+      // Google rejected the exchange — wrong/expired code, mis-configured
+      // OAuth client, or no refresh_token (already-consented account).
+      // Reason is a closed enum; the underlying error message is never
+      // copied into the payload (it can carry Google response detail).
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'token_exchange_failed' },
+      });
+      throw err;
+    }
     // State consumed — clear the cookie so it cannot be replayed.
     res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
 
@@ -133,6 +188,13 @@ export class GoogleOAuthController {
       // (b) the orchestrator's cross-workspace ownership guard refuses
       // to silently move a Google account between workspaces.
       if (!cookieState.userId || !cookieState.workspaceId) {
+        void this.securityEvents.record({
+          eventType: 'login.failure',
+          severity: 'warning',
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', reason: 'connect_state_incomplete' },
+        });
         throw new UnauthorizedException('Connect-mailbox state cookie is incomplete.');
       }
       try {
@@ -141,6 +203,17 @@ export class GoogleOAuthController {
           currentWorkspaceId: cookieState.workspaceId,
           email,
           refreshToken,
+        });
+        // D181 success emit — connect-mode adds a mailbox to an existing
+        // session, so userId/workspaceId come from the verified cookie.
+        void this.securityEvents.record({
+          eventType: 'login.success',
+          severity: 'info',
+          userId: cookieState.userId,
+          workspaceId: cookieState.workspaceId,
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', mode: 'connect' },
         });
         // Route the freshly-connected mailbox through the sync gate
         // (D6 strict-gate-everywhere, D109) instead of dumping the user
@@ -159,21 +232,64 @@ export class GoogleOAuthController {
           typeof (err as { response?: { code?: string } }).response?.code === 'string'
             ? (err as { response: { code: string } }).response.code
             : 'connect_failed';
+        // D181 emit — the only payload field we trust is the controlled
+        // `code` string extracted from the orchestrator's structured
+        // error response (a closed `ErrorCode` enum); never the raw
+        // `err.message`, which could carry caller-controlled data.
+        void this.securityEvents.record({
+          eventType: 'login.failure',
+          severity: 'warning',
+          userId: cookieState.userId,
+          workspaceId: cookieState.workspaceId,
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', mode: 'connect', reason: code },
+        });
         res.redirect(302, `${webBase}/triage?connect_error=${encodeURIComponent(code)}`);
       }
       return;
     }
 
     // Unauthenticated login / signup flow.
-    const ipAddress = (req.ip ?? null) as string | null;
-    const userAgent = (req.headers['user-agent'] ?? null) as string | null;
-    const result = await this.orchestrator.connect({
-      email,
-      refreshToken,
-      ipAddress,
-      userAgent,
-    });
+    let result: Awaited<ReturnType<AuthSignupOrchestrator['connect']>>;
+    try {
+      result = await this.orchestrator.connect({
+        email,
+        refreshToken,
+        ipAddress,
+        userAgent,
+      });
+    } catch (err) {
+      // D181 emit — the orchestrator itself failed (DB outage during
+      // user/workspace bootstrap, KMS unavailable, sync enqueue race
+      // recovery exhausted, …). No verified userId/workspaceId to
+      // attach; the reason enum is fixed.
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason: 'orchestrator_failed' },
+      });
+      throw err;
+    }
     setSessionCookies(res, result.tokens, result.csrfToken);
+    // D181 emit — the orchestrator resolved the user; the audit row can
+    // carry the verified userId/workspaceId and whether this was a new
+    // signup vs returning user (a useful operator filter).
+    void this.securityEvents.record({
+      eventType: 'login.success',
+      severity: 'info',
+      userId: result.user.id,
+      workspaceId: result.user.workspaceId,
+      sourceIp: ipAddress,
+      userAgent,
+      payload: {
+        provider: 'google',
+        mode: 'login',
+        isNewSignup: result.isNewSignup,
+      },
+    });
     // New signups land on the onboarding sync gate (D6, D109) — it
     // polls real sync state and auto-advances to /senders once
     // readiness = ready. Returning users skip straight to /senders
