@@ -49,6 +49,29 @@ function pickUnsubscribeMethod(s: Sender): UnsubscribeMethod | null {
   return 'none';
 }
 
+/**
+ * Project a fixture `Sender`'s standing-policy flags to the wire shape.
+ * Shared by the list + detail projections so both agree (the BE now
+ * carries `protectionFlags` on the list row too). VIP is honored when the
+ * fixture sets `isVip`; auto-protected senders project to
+ * `engagement_based` (closest BE bucket for "system-pinned"), VIPs to
+ * `vip`. Non-protected senders carry null reason + null timestamp.
+ */
+function fixtureProtectionFlags(s: Sender, now: number): SenderListRow['protectionFlags'] {
+  // VIP and Protect are INDEPENDENT on the real BE wire (D42/D43) — keep
+  // them decoupled here so a fixture can produce the `isVip && !isProtected`
+  // row the BE can send (the case the VIP-only bulk-action gap turned on).
+  const isVip = s.isVip === true;
+  const isProtected = s.protected === true;
+  const hasPolicy = isVip || isProtected;
+  return {
+    isVip,
+    isProtected,
+    protectionReason: isProtected ? 'engagement_based' : isVip ? 'vip' : null,
+    protectionSetAt: hasPolicy ? new Date(now).toISOString() : null,
+  };
+}
+
 /** Project a fixture `Sender` to the wire `SenderListRow`. */
 export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): SenderListRow {
   const dayMs = 1000 * 60 * 60 * 24;
@@ -75,26 +98,16 @@ export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): Sen
     // reviewed" so the detail header's eyebrow defaults to that copy.
     // Stress-case stories can override with `lastReview` on the seed.
     lastReview: s.lastReview ?? null,
+    protectionFlags: fixtureProtectionFlags(s, now),
   };
 }
 
 /** Project a fixture `Sender` to the wire `SenderDetailDto` (list row + protection flags). */
 export function fixtureToSenderDetailDto(s: Sender, now: number = Date.now()): SenderDetailDto {
-  const isProtected = s.protected === true;
-  return {
-    ...fixtureToSenderListRow(s, now),
-    protectionFlags: {
-      isVip: false,
-      isProtected,
-      // Fixtures don't carry a richer reason today; auto-protected
-      // senders project to `engagement_based` (the closest BE bucket for
-      // "system-pinned"). Founder-toggled protection projects to
-      // `user_defined`. Non-protected senders carry null reason + null
-      // timestamp, matching the BE invariant.
-      protectionReason: isProtected ? 'engagement_based' : null,
-      protectionSetAt: isProtected ? new Date(now).toISOString() : null,
-    },
-  };
+  // `protectionFlags` now rides the list row — the detail shape is the
+  // list row (the extends is identical). Kept as a distinct builder so
+  // call sites that want "the detail DTO" read intentionally.
+  return fixtureToSenderListRow(s, now);
 }
 
 /**

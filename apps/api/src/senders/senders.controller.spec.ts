@@ -43,6 +43,12 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     volumeTrend: 'steady',
     unsubscribeMethod: 'one_click',
     lastReview: null,
+    protectionFlags: {
+      isVip: false,
+      isProtected: false,
+      protectionReason: null,
+      protectionSetAt: null,
+    },
     ...overrides,
   };
 }

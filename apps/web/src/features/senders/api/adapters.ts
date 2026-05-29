@@ -151,6 +151,14 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     firstSeenMo: monthsSince(row.firstSeenAt, now),
     volumeTrend: row.volumeTrend,
     lastReview: row.lastReview,
+    // Standing policy flags now ride the list row (BE
+    // `SenderListRow.protectionFlags`). `protected` drives the row's
+    // "Protected" chip + the "Protected" KPI; `isVip` is OR-ed into the
+    // "Protect" intent bucket (intentOf) so VIPs never land in Cleanup.
+    // Optional-chained so a malformed / older response that omits the
+    // block degrades to "not protected" rather than crashing the list.
+    protected: row.protectionFlags?.isProtected ?? false,
+    isVip: row.protectionFlags?.isVip ?? false,
   };
   return sender;
 }
@@ -269,7 +277,7 @@ const VERDICT_TO_ACTION: Record<DecisionHistoryRowDto['verdict'], DecisionAction
 };
 
 const GENERATED_BY_TO_SOURCE: Record<DecisionHistoryRowDto['generatedBy'], DecisionSource> = {
-  llm: 'Triage',
+  llm_haiku: 'Triage',
   template: 'System',
 };
 

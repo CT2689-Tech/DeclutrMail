@@ -45,6 +45,12 @@ const ROW = {
   monthlyVolume: 30,
   readRate: 0,
   unsubscribeMethod: 'one_click' as const,
+  protectionFlags: {
+    isVip: false,
+    isProtected: false,
+    protectionReason: null,
+    protectionSetAt: null,
+  },
 };
 
 function renderScreen() {
@@ -256,6 +262,62 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     // Wait for the senders list to settle, then assert the hero is absent.
     await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
     expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
+  });
+
+  it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
+    const ROW_B = {
+      ...ROW,
+      id: 'page2',
+      displayName: 'Second Page Sender',
+      email: 'b@example.com',
+    };
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          url.searchParams.get('cursor')
+            ? jsonOk({
+                data: [ROW_B],
+                meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+              })
+            : jsonOk({
+                data: [ROW],
+                meta: { pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 } },
+              }),
+      },
+    ]);
+
+    renderScreen();
+    // Page 1 row present; page 2 row not yet fetched.
+    await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
+    expect(screen.queryByText('Second Page Sender')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /load more senders/i }));
+
+    // Page 2 row appears AND page 1 stays (infinite query accumulates).
+    await waitFor(() => expect(screen.getByText('Second Page Sender')).toBeInTheDocument());
+    expect(screen.getByText('Sender A')).toBeInTheDocument();
+  });
+
+  it('does not render "Load more" when the first page is the last (hasMore=false)', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /load more senders/i })).not.toBeInTheDocument();
   });
 
   it('hides the Hero on Monday when every slice has < 3 senders (D48 empty-card guard)', async () => {

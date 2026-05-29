@@ -224,6 +224,17 @@ export class SendersReadService {
       ORDER BY ${triageDecisions.producedAt} DESC
       LIMIT 1
     )`;
+    // `numeric(3,2)` confidence of that same most-recent decision —
+    // surfaced on the list `lastReview` so the FE confidence gate
+    // (`uplift-d/intent.ts`) suppresses low-confidence recommendations.
+    const lastDecisionConfidenceSql = sql<string | null>`(
+      SELECT ${triageDecisions.confidence}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
 
     // Keyset predicate — `(last_seen_at, id) < (cursor.lastSeenAt,
     // cursor.id)` expressed as the equivalent OR-chain so PG can use
@@ -263,8 +274,24 @@ export class SendersReadService {
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
+        lastDecisionConfidence: lastDecisionConfidenceSql,
+        // Standing-policy flags — left-joined so a sender with no
+        // `sender_policies` row reads null (engine default). Mirrors the
+        // join in `getSenderDetail`; `sender_policies` is unique on
+        // `(mailbox_account_id, sender_key)` so no row multiplication.
+        isVip: senderPolicies.isVip,
+        isProtected: senderPolicies.isProtected,
+        protectionReason: senderPolicies.protectionReason,
+        protectionSetAt: senderPolicies.protectionSetAt,
       })
       .from(senders)
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, senders.mailboxAccountId),
+          eq(senderPolicies.senderKey, senders.senderKey),
+        ),
+      )
       .where(and(...conditions))
       // Two-column DESC ordering matches the cursor predicate so the
       // page boundary is deterministic even when multiple senders
@@ -295,7 +322,14 @@ export class SendersReadService {
         row.lastDecisionAt,
         row.lastDecisionVerdict,
         row.lastDecisionGeneratedBy,
+        row.lastDecisionConfidence,
       ),
+      protectionFlags: {
+        isVip: row.isVip ?? false,
+        isProtected: row.isProtected ?? false,
+        protectionReason: row.protectionReason ?? null,
+        protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
+      },
     }));
   }
 
@@ -389,6 +423,14 @@ export class SendersReadService {
       ORDER BY ${triageDecisions.producedAt} DESC
       LIMIT 1
     )`;
+    const lastDecisionConfidenceSql = sql<string | null>`(
+      SELECT ${triageDecisions.confidence}
+      FROM ${triageDecisions}
+      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+        AND ${triageDecisions.senderKey} = ${outerSenderKey}
+      ORDER BY ${triageDecisions.producedAt} DESC
+      LIMIT 1
+    )`;
 
     const [row] = await this.db
       .select({
@@ -409,6 +451,7 @@ export class SendersReadService {
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
+        lastDecisionConfidence: lastDecisionConfidenceSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
         isVip: senderPolicies.isVip,
@@ -458,6 +501,7 @@ export class SendersReadService {
         row.lastDecisionAt,
         row.lastDecisionVerdict,
         row.lastDecisionGeneratedBy,
+        row.lastDecisionConfidence,
       ),
       protectionFlags,
     };
@@ -1166,8 +1210,9 @@ function buildLastReview(
   at: Date | string | null,
   verdict: TriageVerdict | null,
   generatedBy: TriageReasoningSource | null,
+  confidence: number | string | null,
 ): LastReview | null {
-  if (at === null || verdict === null || generatedBy === null) {
+  if (at === null || verdict === null || generatedBy === null || confidence === null) {
     return null;
   }
   // Scalar correlated subqueries on a `timestamptz` column come back
@@ -1176,9 +1221,20 @@ function buildLastReview(
   // type promises `Date`. Normalise via `new Date(...)` so a future
   // driver change that DOES coerce to `Date` doesn't break us either.
   const asDate = at instanceof Date ? at : new Date(at);
+  // `confidence` is `numeric(3,2)` — postgres-js + PGlite hand it back
+  // as a string. Coerce at the boundary so the wire is a plain number
+  // (matching the FE `SenderLastReview.confidence`). A decision row
+  // always has a non-null confidence, so a non-finite parse here is a
+  // contract violation — drop to null rather than ship NaN, so the FE
+  // confidence gate defaults to its safe full-confidence fallback.
+  const confidenceNum = typeof confidence === 'number' ? confidence : Number.parseFloat(confidence);
+  if (!Number.isFinite(confidenceNum)) {
+    return null;
+  }
   return {
     at: asDate.toISOString(),
     verdict,
     generatedBy,
+    confidence: confidenceNum,
   };
 }

@@ -11,18 +11,17 @@
 // Bucketing rules (derived from existing Sender fields — NO ML, no new
 // schema, no new wire data; D222 is honored):
 //
-//   - cleanup  = lastReview.verdict === 'unsubscribe'
-//   - later    = lastReview.verdict === 'archive'
-//   - protect  = sender.protected === true  (VIP signal not yet on the
-//               list wire shape; when D200 surfaces protectionFlags.isVip
-//               on the list endpoint, extend this branch to OR-in isVip)
-//   - people   = everything else (no recommendation, not protected)
+//   - cleanup  = lastReview.verdict === 'unsubscribe' (above confidence gate)
+//   - later    = lastReview.verdict === 'archive'     (above confidence gate)
+//   - protect  = sender.protected === true OR sender.isVip === true
+//               (both ride the list wire via protectionFlags — D42/D43)
+//   - people   = everything else (no recommendation, not protected/VIP)
 //
 // Group ordering is fixed; see INTENT_ORDER below. The Senders list
 // renders groups in this order with the first group (cleanup) auto-
 // expanded.
 
-import type { Sender } from '../data';
+import { isStandingProtected, type Sender } from '../data';
 
 export type SenderIntent = 'cleanup' | 'later' | 'protect' | 'people';
 
@@ -115,10 +114,13 @@ export const ENGINE_CONFIDENCE_GATE = 0.75;
  * default to 1.0 = full confidence, preserving the prior behavior. BE
  * follow-up will populate the field from `triage_decisions.confidence`.
  */
-export function intentOf(s: Pick<Sender, 'lastReview' | 'protected'>): SenderIntent {
-  // Protected always wins — user-pinned standing policy beats any
-  // engine recommendation.
-  if (s.protected === true) return 'protect';
+export function intentOf(s: Pick<Sender, 'lastReview' | 'protected' | 'isVip'>): SenderIntent {
+  // A standing policy (Protect OR VIP) always wins — it beats any engine
+  // recommendation, so a VIP / protected sender never surfaces as a
+  // Cleanup / Move-later recommendation. `isStandingProtected` is the
+  // single predicate shared with the row chip / CTA / KPI so the Protect
+  // surfaces can't disagree (VIP now rides the list wire — D42/D43).
+  if (isStandingProtected(s)) return 'protect';
 
   // Confidence gate: low-confidence verdicts are NOT surfaced as
   // action buckets. Sender stays in catch-all so user decides cold.

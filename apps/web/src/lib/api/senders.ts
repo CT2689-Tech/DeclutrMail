@@ -91,6 +91,20 @@ export interface SenderListRow {
   unsubscribeMethod: UnsubscribeMethod | null;
   /** Most-recent triage decision summary. `null` when never reviewed. */
   lastReview: LastReviewWire | null;
+  /**
+   * Standing VIP / Protect policy flags (D42, D43) — mirrors the BE
+   * `SenderListRow.protectionFlags`. Present on every list row (not just
+   * detail) so the Senders screen can render the "Protected" chip,
+   * populate the "Protected" KPI, and route VIPs / protected senders to
+   * the "Protect" intent bucket. Defaults to all-false / null when the
+   * sender has no `sender_policies` row (engine default).
+   */
+  protectionFlags: {
+    isVip: boolean;
+    isProtected: boolean;
+    protectionReason: ProtectionReasonWire | null;
+    protectionSetAt: string | null;
+  };
 }
 
 /**
@@ -215,8 +229,14 @@ export interface DecisionHistoryRowDto {
   producedAt: string;
   /** One-sentence rationale. */
   reasoning: string;
-  /** How the decision was produced — LLM vs deterministic template. */
-  generatedBy: 'llm' | 'template';
+  /**
+   * How the decision was produced — LLM (Haiku) vs deterministic
+   * template. Mirrors the BE `triage_reasoning_source` enum: the value
+   * is `'llm_haiku'`, NOT `'llm'`. (An earlier `'llm'` literal here
+   * never matched the wire — the decision-timeline source label rendered
+   * blank for every LLM-generated decision.)
+   */
+  generatedBy: 'llm_haiku' | 'template';
 }
 
 // ── Fetchers ────────────────────────────────────────────────────────
