@@ -97,11 +97,52 @@ interface GmailProfileResponse {
   historyId?: string;
 }
 
+/**
+ * Reason enum for the D181 `oauth.refresh_failed` audit emit. A closed
+ * set so the audit payload never carries raw upstream error text.
+ *
+ *   - `invalid_grant`     — Google rejected the stored refresh token
+ *     (revoked, password changed, account suspended, app un-trusted).
+ *     Surfaces as `InvalidGrantError`; the mailbox needs reconnect.
+ *   - `no_access_token`   — `getAccessToken()` returned no token but
+ *     did not throw. Treated as `InvalidGrantError` upstream.
+ *   - `transient_failure` — any non-`invalid_grant` token-swap error
+ *     (network blip, Google 5xx, timeout). Surfaces as `TransientError`
+ *     and the worker retries the job.
+ */
+export type OauthRefreshFailureReason = 'invalid_grant' | 'no_access_token' | 'transient_failure';
+
+/**
+ * Optional fire-and-forget audit callback (D181). Invoked by
+ * {@link GmailClientService} on each token-swap failure — the worker
+ * supplies a closure that records the event with the mailbox context
+ * it knows about (`workspaceId` / `userId` / `mailboxAccountId`); the
+ * service itself stays oblivious to those identifiers and to the
+ * SecurityEventsService class entirely.
+ *
+ * Implementations MUST NOT throw and MUST NOT delay the caller —
+ * the recorder runs alongside the original throw and never replaces
+ * or alters it. Constructed callers are expected to wrap with
+ * `void`.
+ */
+export type OauthRefreshFailureRecorder = (failure: { reason: OauthRefreshFailureReason }) => void;
+
 export class GmailClientService implements GmailMetadataClient, GmailMutationClient {
+  /**
+   * Optional D181 audit recorder — set on construction by the worker
+   * (which closes over the mailbox/workspace context). Absent in test
+   * setups + any future API-context construction that doesn't need
+   * the audit emit.
+   */
+  private readonly onRefreshFailed: OauthRefreshFailureRecorder | undefined;
+
   constructor(
     private readonly oauth: OAuth2Client,
     private readonly limiter: RateLimiter,
-  ) {}
+    onRefreshFailed?: OauthRefreshFailureRecorder,
+  ) {
+    this.onRefreshFailed = onRefreshFailed;
+  }
 
   /** Page through every message id in the mailbox (ids only — no bodies). */
   async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
@@ -292,14 +333,38 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
       ({ token } = await this.oauth.getAccessToken());
     } catch (err) {
       if (errorMessage(err).includes('invalid_grant')) {
+        // D181: emit BEFORE the throw so a recorder failure (which the
+        // recorder is contracted to swallow) never alters the existing
+        // `InvalidGrantError`. The reason is a closed enum — the raw
+        // upstream message is never copied into the audit payload.
+        this.emitRefreshFailure('invalid_grant');
         throw new InvalidGrantError('Gmail OAuth grant is no longer valid — reconnect required');
       }
+      this.emitRefreshFailure('transient_failure');
       throw new TransientError(`Gmail token refresh failed: ${errorMessage(err)}`);
     }
     if (!token) {
+      this.emitRefreshFailure('no_access_token');
       throw new InvalidGrantError('Gmail OAuth client returned no access token');
     }
     return token;
+  }
+
+  /**
+   * Run the D181 refresh-failure recorder if one was wired. Wrapped in
+   * try/catch so a buggy recorder cannot mutate the original throw's
+   * control flow — the recorder is documented as fire-and-forget, this
+   * is defense in depth.
+   */
+  private emitRefreshFailure(reason: OauthRefreshFailureReason): void {
+    if (!this.onRefreshFailed) {
+      return;
+    }
+    try {
+      this.onRefreshFailed({ reason });
+    } catch {
+      // Swallow — the recorder must never break the token-swap path.
+    }
   }
 }
 

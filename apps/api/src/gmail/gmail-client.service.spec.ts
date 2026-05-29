@@ -251,3 +251,112 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 });
+
+/**
+ * D181 — `oauth.refresh_failed` audit emit. The recorder is wired by
+ * the worker; the service invokes it BEFORE the existing throw on each
+ * of the three token-swap failure branches:
+ *
+ *   - upstream `invalid_grant`     → reason `invalid_grant`     + still throws InvalidGrantError
+ *   - any other upstream failure   → reason `transient_failure` + still throws TransientError
+ *   - `getAccessToken` resolves no token → reason `no_access_token` + still throws InvalidGrantError
+ *
+ * The recorder is fire-and-forget — a recorder that throws must not
+ * mutate the original error type or alter control flow.
+ */
+describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
+  let oauth: OAuth2Client;
+  let limiter: RateLimiter;
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    oauth = makeOauth();
+    limiter = makeLimiter().limiter;
+    fetchMock = vi.fn<(url: string, init: FetchInit) => Promise<Response>>();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('records reason=invalid_grant before throwing InvalidGrantError', async () => {
+    (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('invalid_grant: token revoked'),
+    );
+    const recorder = vi.fn();
+    const client = new GmailClientService(oauth, limiter, recorder);
+
+    await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
+      InvalidGrantError,
+    );
+    expect(recorder).toHaveBeenCalledTimes(1);
+    expect(recorder).toHaveBeenCalledWith({ reason: 'invalid_grant' });
+  });
+
+  it('records reason=transient_failure on a non-invalid_grant refresh error', async () => {
+    (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('socket hang up'),
+    );
+    const recorder = vi.fn();
+    const client = new GmailClientService(oauth, limiter, recorder);
+
+    await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
+      TransientError,
+    );
+    expect(recorder).toHaveBeenCalledWith({ reason: 'transient_failure' });
+  });
+
+  it('records reason=no_access_token when getAccessToken resolves null', async () => {
+    (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ token: null });
+    const recorder = vi.fn();
+    const client = new GmailClientService(oauth, limiter, recorder);
+
+    await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
+      InvalidGrantError,
+    );
+    expect(recorder).toHaveBeenCalledWith({ reason: 'no_access_token' });
+  });
+
+  it('never records on a successful token swap', async () => {
+    fetchMock.mockResolvedValueOnce(jsonOk({ id: 'm1' }));
+    const recorder = vi.fn();
+    const client = new GmailClientService(oauth, limiter, recorder);
+
+    await client.modifyLabels('m1', { addLabelIds: ['X'] });
+
+    expect(recorder).not.toHaveBeenCalled();
+  });
+
+  it('still throws the original error when the recorder itself throws (fire-and-forget)', async () => {
+    (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('invalid_grant'),
+    );
+    const recorder = vi.fn().mockImplementation(() => {
+      throw new Error('audit pipe burst');
+    });
+    const client = new GmailClientService(oauth, limiter, recorder);
+
+    // The InvalidGrantError reaches the caller; the recorder's throw is
+    // swallowed so the worker still sees the same error type it would
+    // see without the recorder wired.
+    await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
+      InvalidGrantError,
+    );
+    expect(recorder).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves existing behavior when no recorder is wired', async () => {
+    // Backwards-compat sanity — the recorder param is optional; the
+    // current worker construction path and any future API-context
+    // construction that omits it must continue to throw exactly the
+    // same error.
+    (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('invalid_grant'),
+    );
+    const client = new GmailClientService(oauth, limiter);
+    await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
+      InvalidGrantError,
+    );
+  });
+});
