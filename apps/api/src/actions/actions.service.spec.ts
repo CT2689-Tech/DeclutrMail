@@ -106,12 +106,20 @@ async function seedMessage(
   });
 }
 
-/** Fake BullMQ queue — records enqueues. */
+/**
+ * Fake BullMQ queue — records enqueues AND mirrors BullMQ's real jobId
+ * validation: a custom id containing `:` is rejected (BullMQ reserves it
+ * as its Redis key separator). Without this the fake would let a colon
+ * jobId through and the bug only surfaces against a live Redis.
+ */
 function fakeQueue() {
   const q = {
     count: 0,
     jobIds: [] as string[],
     add: async (_job: unknown, _data: unknown, opts: { jobId?: string }) => {
+      if (opts?.jobId && opts.jobId.includes(':')) {
+        throw new Error('Custom Id cannot contain :');
+      }
       q.count += 1;
       if (opts?.jobId) q.jobIds.push(opts.jobId);
     },
@@ -149,7 +157,7 @@ describe('ActionsService', () => {
     expect(res.requestedCount).toBe(2); // inbox-only
     expect(res.status).toBe('queued');
     expect(queue.count).toBe(1);
-    expect(queue.jobIds).toEqual(['archive:click-0001']); // verb-namespaced key
+    expect(queue.jobIds).toEqual(['archive-click-0001']); // verb-namespaced, colon-free (BullMQ jobId)
 
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect(row!.selector).toEqual({ type: 'sender', senderId, senderKey: SENDER_KEY });
@@ -237,7 +245,7 @@ describe('ActionsService', () => {
       messageIds: ['m1', 'm2'],
     });
     expect(res.status).toBe('queued');
-    expect(queue.jobIds).toEqual([`revert:${token}`]);
+    expect(queue.jobIds).toEqual([`revert-${token}`]);
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect(row!.direction).toBe('reverse');
     expect(row!.undoToken).toBe(token);

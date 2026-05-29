@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-28 — LANDMINE: score/sync trigger enqueues use colon jobIds → break on clean BullMQ 5.77 install
+**Source:** Live smoke of D226 (found the class in my own code, then checked the existing code)
+**Why:** BullMQ 5.77.0 (pinned in `pnpm-lock.yaml` on `origin/main`) rejects custom jobIds containing `:`. Existing enqueues use them: `apps/api/src/worker.ts` `onSenderIndexBuilt` (`${mailboxAccountId}:*:${producedAtMs}`) and `apps/api/src/triage/triage.service.ts` `scoreSender` (`${mailbox}:${sender}:${producedAt}`). The running stack "works" only because its on-disk `node_modules` predates the 5.77 pin — **any clean install (CI, prod deploy, fresh worktree) makes score-trigger enqueues throw**, so `triage_decisions` never populate after sync. CI can't catch it (PGlite tests use a fake queue with no jobId validation; nothing enqueues against real Redis in CI).
+**How:** Replace `:` with `-` in those jobIds; audit all `queue.add({ jobId })` call sites; add the colon-rejecting fake-queue guard (as the D226 actions spec now has). High severity — silently breaks core triage on next clean deploy.
+**Verifies by:** fresh `pnpm install` + dev-up + a sync → `triage_decisions` populate; no `Custom Id cannot contain :` in worker logs.
+**Status:** Open
+
 ### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
 **Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
 **Why:** Automated coverage is exhaustive (unit + PGlite integration: forward sender/messages, idempotency, forged-id drop, undo reverse, terminal-failure, migration round-trip). The ONE thing not exercised is a REAL Gmail mutation through the worker — and it mutates your real inbox + needs your running dev env (the agent must not kill the live redesign session on :4000 / shared dev DB + Redis). This is the §8/§9 founder-hands step.
@@ -38,7 +45,7 @@ section to the Done section. Do not delete entries — the trail matters.
   6. `POST /api/undo/<undoToken>` → poll the returned `actionId` to `done` → verify messages RETURNED to the inbox.
   7. Break-tests: missing `Idempotency-Key` → 400; `GET /api/actions/<random-uuid>` → 404; messages selector with the OTHER mailbox's id → dropped (requestedCount excludes it); a Protected/VIP sender without `override:true` → 409 `PROTECTED_SENDER`; switch the active mailbox (account menu) and confirm scoping.
 **Verifies by:** real messages move out of / back into the Gmail inbox; `action_jobs` rows reach `done`; `undo_journal` + `activity_log` + `outbox_events` rows written; `worker.succeeded` log lines for forward + reverse.
-**Status:** Open
+**Status:** Done 2026-05-28 — forward + undo verified on chintan.a.thakkar@gmail.com ("Melt Massage For Couples", 57 msgs): archived → INBOX 0/57 → undo → INBOX 57/57, `undo_journal.reverted_at` set, 7d window (Free). Surfaced + fixed the colon-jobId enqueue bug en route. Remaining break-tests (400/404/protected-409/cross-mailbox-drop) are covered by automated specs; optional to re-run live.
 
 ### 2026-05-28 — No Playwright e2e harness; multi-mailbox + sync-gate flows are unit-only (D182, D206, D211)
 

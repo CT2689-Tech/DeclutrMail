@@ -140,8 +140,13 @@ export class ActionsService {
     // Namespace the stored key by verb so the same client key reused for a
     // different verb (archive vs a future trash) is a DISTINCT action, not
     // a silent dedup against the prior one. The reverse path uses
-    // `revert:<token>` for the same reason.
-    const storageKey = `archive:${idempotencyKey}`;
+    // `revert-<token>` for the same reason.
+    //
+    // The key doubles as the BullMQ `jobId`, which MUST NOT contain `:`
+    // (BullMQ reserves `:` as its Redis key separator and rejects custom
+    // ids containing it). So the separator is `-` and any `:` in the
+    // client-supplied key is normalized out.
+    const storageKey = `archive-${idempotencyKey.replace(/:/g, '-')}`;
     const inserted = await this.insertJob({
       mailboxAccountId,
       direction: 'forward',
@@ -170,8 +175,9 @@ export class ActionsService {
   /**
    * Enqueue the reverse (undo) of a label action. Called by the undo
    * controller after it has validated the token. The reverse is its own
-   * `action_jobs` row (`direction='reverse'`) keyed `revert:<token>` so a
+   * `action_jobs` row (`direction='reverse'`) keyed `revert-<token>` so a
    * double-POST is idempotent at both the row and the BullMQ layers.
+   * (`-` not `:` — BullMQ forbids `:` in a custom jobId.)
    */
   async enqueueRevert(input: {
     mailboxAccountId: string;
@@ -185,7 +191,7 @@ export class ActionsService {
         message: 'Action queue unavailable — REDIS_URL is not set.',
       });
     }
-    const idempotencyKey = `revert:${input.token}`;
+    const idempotencyKey = `revert-${input.token}`;
     const inserted = await this.insertJob({
       mailboxAccountId: input.mailboxAccountId,
       direction: 'reverse',
