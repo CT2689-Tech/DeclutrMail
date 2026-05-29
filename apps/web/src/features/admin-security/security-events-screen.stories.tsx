@@ -11,6 +11,8 @@
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { ApiError } from '@/lib/api/client';
+
 import { securityEventsKeys } from './api/query-keys';
 import { AdminSecurityEventsScreen } from './security-events-screen';
 
@@ -160,6 +162,69 @@ export const Empty: Story<typeof AdminSecurityEventsScreen> = {
   render: () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     client.setQueryData(securityEventsKeys.list({}), infiniteEntry(EMPTY_ROWS));
+    return wrap(client);
+  },
+};
+
+/**
+ * Loading variant — the hook never resolves. We achieve this by NOT
+ * priming the cache AND giving the `queryFn` a never-resolving promise
+ * via a fetch stub the QueryClient never sees the response for. Simpler:
+ * we override the `queryFn` itself via a fresh QueryClient whose default
+ * `queryFn` hangs.
+ */
+export const Loading: Story<typeof AdminSecurityEventsScreen> = {
+  render: () => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          // Pending forever — renders the LoadingState branch.
+          queryFn: () => new Promise(() => undefined),
+        },
+      },
+    });
+    return wrap(client);
+  },
+};
+
+/**
+ * 404 variant — the BE returns 404 for non-allowlisted users. The
+ * screen renders the generic "Not found" surface without revealing
+ * the route's admin nature. Story uses an `ApiError`-shaped reject so
+ * the screen's `error instanceof ApiError && error.status === 404`
+ * branch trips.
+ */
+export const NotFound: Story<typeof AdminSecurityEventsScreen> = {
+  render: () => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          queryFn: () =>
+            Promise.reject(new ApiError(404, { error: { code: 'NOT_FOUND' } }, 'Not found.')),
+        },
+      },
+    });
+    return wrap(client);
+  },
+};
+
+/**
+ * Generic error variant — a 500 from the BE renders the
+ * "Couldn't load events" surface (distinct from the 404-as-not-found
+ * surface above).
+ */
+export const GenericError: Story<typeof AdminSecurityEventsScreen> = {
+  render: () => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          queryFn: () => Promise.reject(new Error('Upstream timed out.')),
+        },
+      },
+    });
     return wrap(client);
   },
 };

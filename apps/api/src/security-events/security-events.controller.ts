@@ -8,6 +8,7 @@ import {
   type PaginatedEnvelope,
 } from '@declutrmail/shared/contracts';
 
+import { RateLimit } from '../common/rate-limit/index.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { AdminAllowlistGuard } from './admin-allowlist.guard.js';
 import {
@@ -55,6 +56,7 @@ export class SecurityEventsController {
   constructor(private readonly reads: SecurityEventsReadService) {}
 
   @Get()
+  @RateLimit({ bucket: 'triage-load' })
   async list(
     @Query('severity') severity?: string,
     @Query('event_type') eventType?: string,
