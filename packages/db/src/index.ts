@@ -54,6 +54,8 @@ export type {
   NewRuleMatchLog,
   RuleMatchLog,
 } from './schema/rule-match-log';
+export { securityEvents } from './schema/security-events';
+export type { NewSecurityEvent, SecurityEvent } from './schema/security-events';
 export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
 export { senderTimeseries } from './schema/sender-timeseries';

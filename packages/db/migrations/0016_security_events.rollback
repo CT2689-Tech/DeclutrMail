@@ -1,0 +1,12 @@
+-- 0016_security_events.rollback
+--
+-- Drop `security_events` and its indexes. Safe on a populated table:
+-- the security log is append-mostly and read only by operator tooling,
+-- so dropping it loses audit history but breaks no user-facing flow.
+-- (A real rollback would export the rows first if the history matters.)
+
+DROP INDEX IF EXISTS "security_events_severity_occurred_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "security_events_occurred_at_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "security_events";

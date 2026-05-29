@@ -10,6 +10,7 @@ import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
+import { SecurityEventsModule } from './security-events/security-events.module.js';
 import { SendersModule } from './senders/senders.module.js';
 import { TriageModule } from './triage/triage.module.js';
 import { UndoModule } from './undo/undo.module.js';
@@ -46,6 +47,8 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
   imports: [
     ConfigModule.forRoot(),
     DbModule,
+    // Global so any feature can record to the D181 security audit log.
+    SecurityEventsModule,
     // RateLimitModule is global (D156) — registered on every boot so
     // any `@RateLimit(...)` annotation is enforced. Fails open when
     // REDIS_URL is absent so local dev without Redis still works.

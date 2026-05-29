@@ -106,6 +106,7 @@ describe('migration round-trip', () => {
       'table:outbox_events',
       'table:provider_sync_state',
       'table:rule_match_log',
+      'table:security_events',
       'table:sender_policies',
       'table:sender_timeseries',
       'table:senders',

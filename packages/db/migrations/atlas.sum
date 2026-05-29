@@ -1,4 +1,4 @@
-h1:grN89+6qnMiBDHWURNYP6JByGhEkj3lmwaQTYGLE7kU=
+h1:4iDW1BrIff0bm+8pKMXdmMA1pSDk3CiNqEegWeXLlnk=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:COE1cnXSzGmexAp7l9JwAYLVhPilqOD4Vo6roD/D5To=
 0002_mailbox_oauth_tokens.sql h1:1sPxNFc73SsT9MSMW+4KYw96x/5KT47gSpz6ysoOa7E=
@@ -15,3 +15,4 @@ h1:grN89+6qnMiBDHWURNYP6JByGhEkj3lmwaQTYGLE7kU=
 0013_activity_action_followup_dismiss.sql h1:73lacs/BEPVSMCH3PRErHAN2alqQUcS7T6acV/xr3kM=
 0014_active_sessions.sql h1:swrtNMVeHiG2BF6XE0Rl0MrUdDA2Q631d5IYyScWbA4=
 0015_action_jobs.sql h1:rRpBNXZy06ieivRJNJ/EzGmpU9z2QtopNx/lgI3a4Gk=
+0016_security_events.sql h1:WDgnlgA9ACoNdn89kZUCsf/GMiMUmeD5u7BxzE8KGKI=
