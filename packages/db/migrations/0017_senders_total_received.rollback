@@ -1,0 +1,12 @@
+-- 0017_senders_total_received.rollback
+--
+-- Reverses 0017. Safe — `total_received` is a denormalised cache of
+-- `COUNT(*) FILTER (WHERE is_outbound = false)` over `mail_messages`,
+-- so dropping the column loses the cache but the source-of-truth
+-- counts remain queryable from `mail_messages` and a subsequent
+-- forward apply (followed by `InitialSyncWorker.buildSenderIndex`)
+-- rebuilds the column from authoritative data.
+
+DROP INDEX IF EXISTS "senders_account_total_received_idx";
+--> statement-breakpoint
+ALTER TABLE "senders" DROP COLUMN IF EXISTS "total_received";
