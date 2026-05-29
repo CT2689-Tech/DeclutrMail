@@ -14,6 +14,8 @@ import {
   createRedisConnection,
   ensureInitialSyncJob,
   enqueueBriefSnapshotTick,
+  enqueueSendersCounterReconciliationTick,
+  enqueueUndoExpiryTick,
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
@@ -24,6 +26,12 @@ import {
   SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
+  SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
+  SENDERS_COUNTER_RECONCILIATION_QUEUE,
+  SendersCounterReconciliationWorker,
+  UNDO_EXPIRY_INTERVAL_MS,
+  UNDO_EXPIRY_QUEUE,
+  UndoExpiryWorker,
   ValidationError,
 } from '@declutrmail/workers';
 import type {
@@ -38,6 +46,10 @@ import type {
   MailboxActionLock,
   ScoreJobData,
   ScoreJobResult,
+  SendersCounterReconciliationJobData,
+  SendersCounterReconciliationResult,
+  UndoExpiryJobData,
+  UndoExpiryResult,
 } from '@declutrmail/workers';
 
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
@@ -565,6 +577,142 @@ async function bootstrap(): Promise<void> {
   }, BRIEF_SNAPSHOT_INTERVAL_MS);
   briefSchedulerHandle.unref();
 
+  /**
+   * UndoExpiryWorker consumer + scheduler (D35, D58, D232 — cronPolicy).
+   *
+   * The worker hard-deletes `undo_journal` rows whose `expires_at` is
+   * more than 1 day in the past (the 1-day lag gives the controller a
+   * clean 410 boundary for just-expired tokens; see the worker class
+   * header). Scheduler ticks every `UNDO_EXPIRY_INTERVAL_MS` (5 min)
+   * — `enqueueUndoExpiryTick` is idempotent on `scheduledAtMinute` via
+   * the BullMQ jobId, so cadence overlap collapses to one job per
+   * minute.
+   *
+   * Wiring split out from the original PR that introduced the worker
+   * class; ungated cron is fake completion (CLAUDE.md §10). Bundled
+   * with the senders-counter reconciliation wiring below — both
+   * cronPolicy workers had the same gap.
+   */
+  const undoExpiryWorker = new UndoExpiryWorker({ db });
+  undoExpiryWorker.setObserver(observer);
+
+  const undoExpiryBullWorker = new Worker<UndoExpiryJobData, UndoExpiryResult>(
+    UNDO_EXPIRY_QUEUE,
+    (job) => undoExpiryWorker.run(job),
+    // cronPolicy is global-scope; one DELETE per tick is cheap, so
+    // concurrency=1 prevents overlapping ticks from racing the same
+    // jobId-deduped pass.
+    { connection, concurrency: 1 },
+  );
+
+  undoExpiryBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: UNDO_EXPIRY_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * SendersCounterReconciliationWorker consumer + scheduler (ADR-0014,
+   * D159 — cronPolicy). Nightly recount of `senders.total_received`
+   * against the source of truth in `mail_messages`. The metric
+   * (corrected / maxAbsDelta / totalSenders) surfaces on the
+   * `worker.succeeded` structured log via the D159 seam; downstream
+   * dashboards read from there. See ADR-0014 §"Reconciliation & drift".
+   */
+  const sendersCounterReconciliationWorker = new SendersCounterReconciliationWorker({ db });
+  sendersCounterReconciliationWorker.setObserver(observer);
+
+  const sendersCounterReconciliationBullWorker = new Worker<
+    SendersCounterReconciliationJobData,
+    SendersCounterReconciliationResult
+  >(SENDERS_COUNTER_RECONCILIATION_QUEUE, (job) => sendersCounterReconciliationWorker.run(job), {
+    connection,
+    concurrency: 1,
+  });
+
+  sendersCounterReconciliationBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SENDERS_COUNTER_RECONCILIATION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * UndoExpiry + senders-counter reconciliation cron schedulers. Same
+   * setInterval-based pattern as the Brief snapshot scheduler above —
+   * scheduling rule lives in TypeScript (testable, reviewable) rather
+   * than in BullMQ's repeatable-job Redis state. Each tick is
+   * idempotent on `scheduledAtMinute` via the worker's `jobId`, so
+   * redeploys + boot-time enqueues never produce duplicates.
+   *
+   * Boot enqueue + periodic enqueue mirror the Brief scheduler: the
+   * boot tick covers the case where the worker was down across an
+   * interval boundary; the worker's own logic (cron idempotency key +
+   * deterministic recount) makes a same-minute re-run a no-op.
+   */
+  const undoExpirySchedulerQueue = new Queue<UndoExpiryJobData>(UNDO_EXPIRY_QUEUE, { connection });
+  const sendersCounterReconciliationSchedulerQueue = new Queue<SendersCounterReconciliationJobData>(
+    SENDERS_COUNTER_RECONCILIATION_QUEUE,
+    { connection },
+  );
+
+  async function enqueueUndoExpiry(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueUndoExpiryTick(undoExpirySchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'undo_expiry.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'undo_expiry.scheduler_failed' });
+    }
+  }
+
+  async function enqueueSendersCounterReconciliation(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueSendersCounterReconciliationTick(sendersCounterReconciliationSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'senders_counter_reconciliation.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, {
+        kind: 'senders_counter_reconciliation.scheduler_failed',
+      });
+    }
+  }
+
+  await enqueueUndoExpiry();
+  const undoExpirySchedulerHandle = setInterval(() => {
+    void enqueueUndoExpiry();
+  }, UNDO_EXPIRY_INTERVAL_MS);
+  undoExpirySchedulerHandle.unref();
+
+  await enqueueSendersCounterReconciliation();
+  const sendersCounterReconciliationSchedulerHandle = setInterval(() => {
+    void enqueueSendersCounterReconciliation();
+  }, SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS);
+  sendersCounterReconciliationSchedulerHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
@@ -574,6 +722,16 @@ async function bootstrap(): Promise<void> {
       kind: 'worker.listening',
       queue: BRIEF_SNAPSHOT_QUEUE,
       llmWired: Boolean(briefLlm),
+    }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: UNDO_EXPIRY_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.listening',
+      queue: SENDERS_COUNTER_RECONCILIATION_QUEUE,
     }),
   );
 
@@ -592,6 +750,8 @@ async function bootstrap(): Promise<void> {
     shuttingDown = true;
     clearInterval(reconcilerHandle);
     clearInterval(briefSchedulerHandle);
+    clearInterval(undoExpirySchedulerHandle);
+    clearInterval(sendersCounterReconciliationSchedulerHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -601,6 +761,10 @@ async function bootstrap(): Promise<void> {
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
       await labelActionBullWorker.close();
+      await undoExpiryBullWorker.close();
+      await undoExpirySchedulerQueue.close();
+      await sendersCounterReconciliationBullWorker.close();
+      await sendersCounterReconciliationSchedulerQueue.close();
       await reconcilerQueue.close();
       await connection.quit();
       await lockPg.end();
