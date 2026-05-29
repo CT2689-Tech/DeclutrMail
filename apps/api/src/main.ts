@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
+import { correlationMiddleware } from './common/correlation.middleware.js';
 import { initSentry } from './observability/sentry.js';
 
 /**
@@ -59,6 +60,10 @@ async function bootstrap(): Promise<void> {
     ],
   });
   app.setGlobalPrefix('api');
+  // Correlation IDs (D168) must be stamped before any handler or the
+  // exception filter runs, so every request — success or error — carries
+  // a correlationId / displayId the response, logs, and Sentry join on.
+  app.use(correlationMiddleware);
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
 

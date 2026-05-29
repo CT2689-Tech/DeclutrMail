@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import {
   type ArgumentsHost,
   Catch,
@@ -8,17 +10,37 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import {
+  type ApiError,
+  type ErrorSeverityTier,
+  classifyHttpError,
+  deriveDisplayId,
+} from '@declutrmail/shared/contracts';
+
+import { AppException } from './app-exception.js';
+
 /**
- * AllExceptionsFilter — maps every thrown exception to the D202 error
- * envelope: `{ error: { code, message } }`.
+ * AllExceptionsFilter — maps every thrown exception to the D168 error
+ * envelope: `{ error: { code, message, correlationId, traceId,
+ * displayId, retryable, severityTier } }`.
  *
- * `HttpException` subclasses (BadRequestException, etc.) surface their
- * status + a safe message. Everything else is treated as a 500 with a
- * generic message — a raw exception message, stack, request body, or
- * the OAuth `code` query param must never reach the response.
+ * Classification (D169):
+ *   - `AppException` carries its own `code` / `retryable` / `severityTier`
+ *     (use it for domain codes and D170 critical-trust banners).
+ *   - Plain `HttpException` subclasses (BadRequestException, etc.) surface
+ *     their status + a safe message; `retryable` + `severityTier` are
+ *     derived from the status via `classifyHttpError`.
+ *   - Everything else is a 500 with a generic message.
  *
- * Logging is deliberately minimal: `<METHOD> <path> -> <status>
- * <ErrorClassName>`. The exception message and request params are NOT
+ * The correlation identifiers are read off `req` (set by
+ * `correlationMiddleware`). They are regenerated defensively here if a
+ * request ever reaches the filter without them, so the envelope is
+ * never missing its join key.
+ *
+ * Privacy (D7, D228): a raw exception message, stack, request body, or
+ * the OAuth `code` query param must never reach the response. Logging is
+ * deliberately minimal: `<METHOD> <path> -> <status> <ErrorClassName>
+ * cid=<correlationId>`. The exception message and request params are NOT
  * logged — they can carry the OAuth `code` or token-exchange detail.
  */
 @Catch()
@@ -30,27 +52,56 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const res = http.getResponse<Response>();
     const req = http.getRequest<Request>();
 
-    const { status, code, message } = this.resolve(exception);
+    const correlationId = req.correlationId ?? randomUUID();
+    const traceId = req.traceId ?? null;
+    const displayId = req.displayId ?? deriveDisplayId(correlationId);
 
-    this.logger.error(`${req.method} ${req.path} -> ${status} ${this.errorName(exception)}`);
+    const { status, ...rest } = this.resolve(exception);
 
-    res.status(status).json({ error: { code, message } });
+    this.logger.error(
+      `${req.method} ${req.path} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,
+    );
+
+    const error: ApiError = { ...rest, correlationId, traceId, displayId };
+    res.status(status).json({ error });
   }
 
-  /** HTTP status + a safe envelope code/message for the response. */
-  private resolve(exception: unknown): { status: number; code: string; message: string } {
+  /**
+   * HTTP status + the status-independent envelope fields (code, message,
+   * retryable, severityTier). The correlation identifiers are merged in
+   * by `catch` since they come from the request, not the exception.
+   */
+  private resolve(exception: unknown): {
+    status: number;
+    code: string;
+    message: string;
+    retryable: boolean;
+    severityTier: ErrorSeverityTier;
+  } {
+    if (exception instanceof AppException) {
+      const status = exception.getStatus();
+      return {
+        status,
+        code: exception.code,
+        message: this.safeHttpMessage(exception),
+        retryable: exception.retryable,
+        severityTier: exception.severityTier,
+      };
+    }
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       return {
         status,
         code: this.codeForStatus(status),
         message: this.safeHttpMessage(exception),
+        ...classifyHttpError(status),
       };
     }
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_ERROR',
       message: 'Internal server error',
+      ...classifyHttpError(HttpStatus.INTERNAL_SERVER_ERROR),
     };
   }
 
