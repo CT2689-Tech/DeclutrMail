@@ -10,6 +10,7 @@ import {
   Post,
 } from '@nestjs/common';
 
+import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { PubSubOidcVerifier, type OidcVerifyFailure } from './oidc-verifier.js';
 import {
   GmailWebhookService,
@@ -69,6 +70,7 @@ export class GmailWebhookController {
   constructor(
     @Inject(PUBSUB_OIDC_VERIFIER) private readonly verifier: PubSubOidcVerifier,
     private readonly service: GmailWebhookService,
+    private readonly securityEvents: SecurityEventsService,
   ) {}
 
   @Post('pubsub')
@@ -82,6 +84,24 @@ export class GmailWebhookController {
     const verifyResult = await this.verifier.verify(authorization);
     if (verifyResult.ok === false) {
       this.logVerifyFailure(verifyResult);
+      // D181: emit a `webhook.signature_failure` row BEFORE the 401
+      // throws so the audit always reflects the rejection. Severity is
+      // `warning` because a single failure is routine (network blips,
+      // Google key rotations, malformed-token probes); operator
+      // dashboards aggregate to spot true anomalies. Payload carries
+      // the controlled `step` + `reason` discriminator the verifier
+      // already produces — never the raw token bytes or the request
+      // body, neither of which is consulted before this point.
+      void this.securityEvents.record({
+        eventType: 'webhook.signature_failure',
+        severity: 'warning',
+        payload: {
+          source: 'pubsub.gmail',
+          reason: 'oidc_verify_failed',
+          step: verifyResult.step,
+          subReason: verifyResult.reason,
+        },
+      });
       // D229 contract: every OIDC failure is 401 (NOT 403, 200, or 204).
       throw new HttpException(
         { error: { code: 'UNAUTHORIZED', message: 'OIDC verification failed.' } },

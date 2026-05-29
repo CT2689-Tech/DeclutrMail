@@ -47,6 +47,7 @@ import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
+import { SecurityEventsService } from './security-events/security-events.service.js';
 
 /**
  * Worker process composition root (D157).
@@ -109,7 +110,27 @@ async function bootstrap(): Promise<void> {
   const lockPg = postgres(requireEnv('DATABASE_URL'), { max: LABEL_ACTION_CONCURRENCY });
   /** Advisory-lock namespace (first key) — isolates label-action locks. */
   const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
-  const tokenCrypto = new TokenCryptoService(createKmsProvider());
+  // D181 audit writer. The worker is standalone (no Nest DI), so the
+  // service is constructed directly against the worker's own `db`. The
+  // service swallows its own insert failures so audit downtime never
+  // breaks job processing.
+  const securityEvents = new SecurityEventsService(db);
+
+  // D181: wire the KMS provider with an access-error recorder so wrap /
+  // unwrap failures on the worker's `tokenCrypto.decrypt(...)` path
+  // (every getGmailClient call) surface as `kms.access_error` rows —
+  // matches the Nest auth-crypto module's recorder for symmetry.
+  const tokenCrypto = new TokenCryptoService(
+    createKmsProvider(process.env, {
+      onAccessError: ({ operation, reason, keyResource }) => {
+        void securityEvents.record({
+          eventType: 'kms.access_error',
+          severity: 'critical',
+          payload: { provider: 'gcp', operation, reason, keyResource },
+        });
+      },
+    }),
+  );
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
 
@@ -169,7 +190,25 @@ async function bootstrap(): Promise<void> {
       limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
-    return new GmailClientService(oauth, limiter);
+    // D181: close over the mailbox row's workspace/user so the audit
+    // emit carries the operator-useful identifiers. Fire-and-forget —
+    // a failed insert never alters the original token-swap throw.
+    return new GmailClientService(oauth, limiter, ({ reason }) => {
+      void securityEvents.record({
+        eventType: 'oauth.refresh_failed',
+        // `invalid_grant` means the mailbox needs reconnect (a real
+        // operator signal); transient failures are routine retries and
+        // stay at `info`.
+        severity: reason === 'invalid_grant' ? 'warning' : 'info',
+        workspaceId: account.workspaceId,
+        userId: account.userId,
+        payload: {
+          provider: 'google',
+          reason,
+          mailboxAccountId,
+        },
+      });
+    });
   };
   const gmailAccess: GmailAccess = { getClient: getGmailClient };
   const gmailMutationAccess: GmailMutationAccess = { getClient: getGmailClient };
