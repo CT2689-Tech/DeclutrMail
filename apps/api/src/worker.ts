@@ -110,15 +110,29 @@ async function bootstrap(): Promise<void> {
   const lockPg = postgres(requireEnv('DATABASE_URL'), { max: LABEL_ACTION_CONCURRENCY });
   /** Advisory-lock namespace (first key) — isolates label-action locks. */
   const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
-  const tokenCrypto = new TokenCryptoService(createKmsProvider());
-  const clientId = requireEnv('GOOGLE_CLIENT_ID');
-  const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
-
   // D181 audit writer. The worker is standalone (no Nest DI), so the
   // service is constructed directly against the worker's own `db`. The
   // service swallows its own insert failures so audit downtime never
   // breaks job processing.
   const securityEvents = new SecurityEventsService(db);
+
+  // D181: wire the KMS provider with an access-error recorder so wrap /
+  // unwrap failures on the worker's `tokenCrypto.decrypt(...)` path
+  // (every getGmailClient call) surface as `kms.access_error` rows —
+  // matches the Nest auth-crypto module's recorder for symmetry.
+  const tokenCrypto = new TokenCryptoService(
+    createKmsProvider(process.env, {
+      onAccessError: ({ operation, reason, keyResource }) => {
+        void securityEvents.record({
+          eventType: 'kms.access_error',
+          severity: 'critical',
+          payload: { provider: 'gcp', operation, reason, keyResource },
+        });
+      },
+    }),
+  );
+  const clientId = requireEnv('GOOGLE_CLIENT_ID');
+  const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
 
   /**
    * Per-mailbox `RateLimiter`s, cached by `mailboxAccountId` for the
