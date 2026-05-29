@@ -240,7 +240,10 @@ describe('RateLimitInterceptor (D156)', () => {
     expect(setHeader).not.toHaveBeenCalled();
   });
 
-  it('records a security event on breach (D181), metadata only', async () => {
+  it('records a security event on breach (D181), metadata only — auth bucket emits severity=critical', async () => {
+    // The `auth` bucket maps to `critical` per BUCKET_BREACH_SEVERITY:
+    // a brute-force login signal must surface above scraper noise at
+    // operator-read time.
     const record = vi.fn().mockResolvedValue(undefined);
     const withAudit = new RateLimitInterceptor(new Reflector(), store, {
       record,
@@ -267,12 +270,75 @@ describe('RateLimitInterceptor (D156)', () => {
 
     expect(record).toHaveBeenCalledWith({
       eventType: 'rate_limit.breach',
-      severity: 'warning',
+      severity: 'critical',
       userId: 'user_x',
       sourceIp: '203.0.113.9',
       userAgent: 'curl/8.0',
       payload: { bucket: 'auth' },
     });
+  });
+
+  it('emits per-bucket severity per BUCKET_BREACH_SEVERITY (D181)', async () => {
+    // Drive each bucket through one breach + assert the recorded
+    // severity matches the per-bucket map. A controller per bucket so
+    // the @RateLimit metadata is read off the right handler.
+    @Controller('test-buckets')
+    class BucketController {
+      @Get('a')
+      @RateLimit({ bucket: 'gmail-action', limit: 1, windowSec: 60 })
+      a(): { ok: true } {
+        return { ok: true };
+      }
+      @Get('b')
+      @RateLimit({ bucket: 'triage-load', limit: 1, windowSec: 60 })
+      b(): { ok: true } {
+        return { ok: true };
+      }
+      @Get('c')
+      @RateLimit({ bucket: 'default', limit: 1, windowSec: 60 })
+      c(): { ok: true } {
+        return { ok: true };
+      }
+    }
+    const c = new BucketController();
+    const cases: Array<{
+      bucket: 'gmail-action' | 'triage-load' | 'default';
+      severity: 'warning' | 'info';
+      handler: () => { ok: true };
+    }> = [
+      { bucket: 'gmail-action', severity: 'warning', handler: c.a },
+      { bucket: 'triage-load', severity: 'info', handler: c.b },
+      { bucket: 'default', severity: 'warning', handler: c.c },
+    ];
+
+    for (const tc of cases) {
+      const freshStore = new InMemoryTokenBucketStore();
+      const record = vi.fn().mockResolvedValue(undefined);
+      const interceptor = new RateLimitInterceptor(new Reflector(), freshStore, {
+        record,
+      } as unknown as ConstructorParameters<typeof RateLimitInterceptor>[2]);
+      const ctx = (): ExecutionContext =>
+        makeContext({
+          handler: tc.handler,
+          controller: BucketController,
+          setHeader,
+          ip: `203.0.113.${tc.bucket.length}`,
+        });
+
+      // limit=1 — first request succeeds, second breaches.
+      const obs = await interceptor.intercept(ctx(), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+      await expect(interceptor.intercept(ctx(), makeHandler())).rejects.toMatchObject({
+        status: 429,
+      });
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'rate_limit.breach',
+          severity: tc.severity,
+          payload: { bucket: tc.bucket },
+        }),
+      );
+    }
   });
 
   it('fails open when no store is provided (REDIS_URL missing in dev)', async () => {
