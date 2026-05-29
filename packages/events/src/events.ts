@@ -113,6 +113,34 @@ export const TriageVerdictAppliedPayloadSchema = z
 export type TriageVerdictAppliedPayload = z.infer<typeof TriageVerdictAppliedPayloadSchema>;
 
 // ──────────────────────────────────────────────────────────────────────
+// actions.label_action_applied
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Emitted by the action-consumer worker after a label-modify verb (D226)
+ * commits. Generic over the selector — `senderKey` is present for a
+ * sender-scoped action, null for a message-scoped one (which may span
+ * senders). Carries the action job id + the issued undo token so audit
+ * consumers can join back to `action_jobs` and `undo_journal`.
+ */
+export const ActionLabelAppliedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    /** `action_jobs.id` — the aggregate this event is about. */
+    actionId: UuidSchema,
+    /** Label-modify verb that applied. */
+    verb: z.enum(['archive']),
+    /** Present for a sender selector; null for a message selector. */
+    senderKey: SenderKeySchema.nullable(),
+    /** Undo token issued for this action (always set — archive is undoable). */
+    undoToken: UuidSchema,
+    /** Messages the action moved. */
+    affectedCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ActionLabelAppliedPayload = z.infer<typeof ActionLabelAppliedPayloadSchema>;
+
+// ──────────────────────────────────────────────────────────────────────
 // autopilot.match_recorded
 // ──────────────────────────────────────────────────────────────────────
 
@@ -245,6 +273,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.TRIAGE_SCORE_RUN_COMPLETED]: TriageScoreRunCompletedPayloadSchema,
   [TOPICS.TRIAGE_DECISION_RECOMPUTED]: TriageDecisionRecomputedPayloadSchema,
   [TOPICS.TRIAGE_VERDICT_APPLIED]: TriageVerdictAppliedPayloadSchema,
+  [TOPICS.ACTION_LABEL_APPLIED]: ActionLabelAppliedPayloadSchema,
   [TOPICS.AUTOPILOT_MATCH_RECORDED]: AutopilotMatchRecordedPayloadSchema,
   [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayloadSchema,
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
@@ -260,6 +289,7 @@ export type EventPayloadByTopic = {
   [TOPICS.TRIAGE_SCORE_RUN_COMPLETED]: TriageScoreRunCompletedPayload;
   [TOPICS.TRIAGE_DECISION_RECOMPUTED]: TriageDecisionRecomputedPayload;
   [TOPICS.TRIAGE_VERDICT_APPLIED]: TriageVerdictAppliedPayload;
+  [TOPICS.ACTION_LABEL_APPLIED]: ActionLabelAppliedPayload;
   [TOPICS.AUTOPILOT_MATCH_RECORDED]: AutopilotMatchRecordedPayload;
   [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayload;
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;

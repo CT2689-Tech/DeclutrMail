@@ -12,6 +12,7 @@
  */
 
 export {
+  ActionLabelAppliedPayloadSchema,
   AutopilotActionIntentEmittedPayloadSchema,
   AutopilotMatchRecordedPayloadSchema,
   EVENT_SCHEMAS,
@@ -23,6 +24,7 @@ export {
   TriageVerdictAppliedPayloadSchema,
 } from './events.js';
 export type {
+  ActionLabelAppliedPayload,
   AutopilotActionIntentEmittedPayload,
   AutopilotMatchRecordedPayload,
   EventPayloadByTopic,

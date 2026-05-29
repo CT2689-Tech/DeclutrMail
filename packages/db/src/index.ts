@@ -1,4 +1,6 @@
 export * as schema from './schema';
+export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
+export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
 export { activeSessions } from './schema/active-sessions';
 export type { ActiveSession, NewActiveSession } from './schema/active-sessions';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';

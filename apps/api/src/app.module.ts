@@ -2,6 +2,7 @@ import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
 
 import { AccountModule } from './account/account.module.js';
+import { ActionsModule } from './actions/actions.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AutopilotModule } from './autopilot/autopilot.module.js';
 import { BriefModule } from './briefs/brief.module.js';
@@ -53,6 +54,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     MailboxAccountsModule,
     AuthModule,
     UndoModule,
+    ActionsModule,
     SendersModule,
     TriageModule,
     AutopilotModule,

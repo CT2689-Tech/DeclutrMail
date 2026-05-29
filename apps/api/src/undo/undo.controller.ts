@@ -16,12 +16,13 @@ import {
   type PaginatedEnvelope,
 } from '@declutrmail/shared/contracts';
 
+import { ActionsService } from '../actions/actions.service.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { UndoService } from './undo.service.js';
-import type { UndoActionKind, UndoResult } from './undo.types.js';
+import type { UndoActionKind, UndoPayload, UndoResult } from './undo.types.js';
 
 /**
  * UndoController — `/undo` endpoints (D35, D58).
@@ -47,7 +48,10 @@ import type { UndoActionKind, UndoResult } from './undo.types.js';
 @Controller('undo')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class UndoController {
-  constructor(private readonly undo: UndoService) {}
+  constructor(
+    private readonly undo: UndoService,
+    private readonly actions: ActionsService,
+  ) {}
 
   /**
    * GET /api/undo — list active undo tokens for the current mailbox
@@ -90,23 +94,21 @@ export class UndoController {
   /**
    * POST /api/undo/:token — revert the action recorded for `token`.
    *
-   * Idempotent: second call returns the same `UndoResult` without
-   * re-executing the revert.
+   * Async (D226): the forward action ran in a worker, so the revert does
+   * too. This validates the token, then enqueues a reverse `action_jobs`
+   * row and returns its `actionId` + `status:'queued'`; the FE polls
+   * `GET /api/actions/:actionId` for `done`. Idempotency is the reverse
+   * row's `revert:<token>` key + the BullMQ `jobId` + the worker's
+   * `reverted_at IS NULL` guard — NOT the old `claimForRevert`
+   * `executed_at` lock (which stranded tokens whose async revert failed).
    *
-   * NOTE: this PR ships the journal lifecycle + idempotent claim. The
-   * per-verb reverters (archive-reverter, unsubscribe-reverter, etc.)
-   * land with each destructive feature slice; this handler claims the
-   * token and immediately records success because the per-verb revert
-   * surface is empty at this point. When a reverter lands, it will be
-   * injected and the line marked below replaces the immediate success.
-   * This is documented in the PR body so the founder can audit the
-   * staging order.
-   */
-  /**
-   * Rate-limit (D156): `gmail-action` bucket with a per-route override
-   * of 30/min = 0.5/sec. Undo is rare; the slow refill caps abuse of
-   * the destructive revert surface well below any reasonable human
-   * pace while still permitting a rapid burst from a confused user.
+   * A second POST while the revert is in flight returns the SAME reverse
+   * `actionId` (idempotent). A POST after it completed returns
+   * `reverted:true` without enqueueing.
+   *
+   * Rate-limit (D156): `gmail-action` bucket, 30/min — the slow refill
+   * caps abuse of the destructive revert surface while permitting a
+   * confused user's rapid burst.
    */
   @RateLimit({ bucket: 'gmail-action', limit: 30, windowSec: 60 })
   @Post(':token')
@@ -118,14 +120,14 @@ export class UndoController {
     if (!isUuid(token)) {
       throw new BadRequestException('token must be a UUID.');
     }
-    const claim = await this.undo.claimForRevert(token, mailbox.id);
-    if (claim.outcome === 'not-found') {
+    const found = await this.undo.findRevertable(token, mailbox.id);
+    if (found.outcome === 'not-found') {
       throw new HttpException(
         { error: { code: 'NOT_FOUND', message: 'Undo token not found.' } },
         HttpStatus.NOT_FOUND,
       );
     }
-    if (claim.outcome === 'expired') {
+    if (found.outcome === 'expired') {
       // D58 — "Undo expired" path. The tooltip copy lives client-side
       // (D210); the server signals via HTTP 410.
       throw new HttpException(
@@ -133,38 +135,51 @@ export class UndoController {
         HttpStatus.GONE,
       );
     }
-    if (claim.outcome === 'already-reverted') {
-      return ok(toResult(claim.entry));
+    if (found.outcome === 'already-reverted') {
+      // Recorded success — no new reverse job.
+      return ok({
+        token: found.entry.token,
+        actionKind: found.entry.actionKind,
+        reverted: true,
+        expired: false,
+        revertedAt: found.entry.revertedAt ? found.entry.revertedAt.toISOString() : null,
+        actionId: null,
+      });
     }
-    // claim.outcome === 'claimed' — we own the revert. The per-verb
-    // reverter dispatch lands with each destructive feature slice; the
-    // immediate `recordRevertSuccess` here closes the loop for the
-    // journal-only PR. Once a reverter is wired, it runs between
-    // `claimForRevert` and `recordRevertSuccess`; a failure rethrows
-    // BEFORE `recordRevertSuccess` so reverted_at stays null and a
-    // retry re-claims the work.
-    const stamped = await this.undo.recordRevertSuccess(token);
-    return ok(toResult(stamped));
-  }
-}
 
-/**
- * Format a journal row as the API result. `revertedAt` is always set
- * here because every code path that calls this is after a successful
- * (or already-recorded) revert.
- */
-function toResult(row: {
-  token: string;
-  actionKind: UndoActionKind;
-  revertedAt: Date | null;
-}): UndoResult {
-  return {
-    token: row.token,
-    actionKind: row.actionKind,
-    reverted: row.revertedAt !== null,
-    expired: false,
-    revertedAt: row.revertedAt ? row.revertedAt.toISOString() : null,
-  };
+    // 'ready' — enqueue the reverse job for the verb's label change.
+    // Only label-modify verbs have an async reverter today (archive).
+    if (found.entry.actionKind !== 'archive') {
+      throw new HttpException(
+        {
+          error: {
+            code: 'UNSUPPORTED_UNDO',
+            message: `Undo for "${found.entry.actionKind}" is not available yet.`,
+          },
+        },
+        HttpStatus.NOT_IMPLEMENTED,
+      );
+    }
+    const payload = found.entry.payload as UndoPayload;
+    const messageIds = payload.kind === 'archive' ? payload.messageIds : [];
+    const { actionId, status } = await this.actions.enqueueRevert({
+      mailboxAccountId: mailbox.id,
+      token,
+      verb: 'archive',
+      messageIds,
+    });
+    // A repeat POST may return an existing reverse row that already
+    // completed — reflect that rather than always reporting in-flight
+    // (the FE still polls `GET /api/actions/:actionId` for the truth).
+    return ok({
+      token,
+      actionKind: found.entry.actionKind,
+      reverted: status === 'done',
+      expired: false,
+      revertedAt: null,
+      actionId,
+    });
+  }
 }
 
 /** Clamp the requested limit to the server-side max for the tray. */

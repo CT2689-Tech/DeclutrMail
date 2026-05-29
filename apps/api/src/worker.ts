@@ -17,6 +17,9 @@ import {
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
+  LABEL_ACTION_QUEUE,
+  LabelActionWorker,
+  OutboxPublisher,
   RateLimiter,
   SCORE_JOB,
   SCORE_QUEUE,
@@ -27,8 +30,12 @@ import type {
   BriefSnapshotJobData,
   BriefSnapshotResult,
   GmailAccess,
+  GmailMutationAccess,
   InitialSyncJobData,
   InitialSyncResult,
+  LabelActionJobData,
+  LabelActionResult,
+  MailboxActionLock,
   ScoreJobData,
   ScoreJobResult,
 } from '@declutrmail/workers';
@@ -81,6 +88,27 @@ async function bootstrap(): Promise<void> {
 
   const pg = postgres(requireEnv('DATABASE_URL'));
   const db = drizzle(pg, { schema });
+
+  /**
+   * Concurrency cap for the destructive label-action worker. Modest by
+   * design — destructive mutations are not a throughput path, and each
+   * job holds a per-mailbox advisory lock (below) for its full duration.
+   */
+  const LABEL_ACTION_CONCURRENCY = 10;
+  /**
+   * DEDICATED connection pool for the per-mailbox advisory lock, sized to
+   * the label-action concurrency. This is the deadlock fix: the lock
+   * holder pins a connection for the whole resolve→mutate→commit (incl.
+   * the multi-second Gmail call), while the inner DB work draws from the
+   * MAIN pool (`pg`). If the lock reserved from `pg`, a job holding a
+   * reserved connection AND needing a second pool connection for its
+   * queries would deadlock once ≥`pg.max` jobs ran (N holders each
+   * needing the N+1th). Separate pools = no hold-and-wait, regardless of
+   * any concurrency number.
+   */
+  const lockPg = postgres(requireEnv('DATABASE_URL'), { max: LABEL_ACTION_CONCURRENCY });
+  /** Advisory-lock namespace (first key) — isolates label-action locks. */
+  const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
   const tokenCrypto = new TokenCryptoService(createKmsProvider());
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
@@ -111,36 +139,70 @@ async function bootstrap(): Promise<void> {
    * refresh token (D14 envelope decryption — reuses `TokenCryptoService`
    * unchanged), and return a token-bound Gmail client.
    */
-  const gmailAccess: GmailAccess = {
-    async getClient(mailboxAccountId) {
-      const [account] = await db
-        .select()
-        .from(mailboxAccounts)
-        .where(eq(mailboxAccounts.id, mailboxAccountId))
-        .limit(1);
-      if (!account) {
-        throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
-      }
-      if (!account.encryptedRefreshToken || !account.dekEncrypted) {
-        throw new InvalidGrantError(
-          `mailbox account ${mailboxAccountId} has no stored OAuth token`,
-        );
-      }
-      const refreshToken = await tokenCrypto.decrypt(
-        account.encryptedRefreshToken,
-        account.dekEncrypted,
-      );
-      const oauth = new OAuth2Client(clientId, clientSecret);
-      oauth.setCredentials({ refresh_token: refreshToken });
+  // One token-bound client builder, shared by the read port (`GmailAccess`)
+  // and the mutation port (`GmailMutationAccess`) — `GmailClientService`
+  // implements both, so the SAME factory (and the same decrypt path —
+  // §9 reuse-only) serves the metadata sync and the label-action worker.
+  const getGmailClient = async (mailboxAccountId: string): Promise<GmailClientService> => {
+    const [account] = await db
+      .select()
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId))
+      .limit(1);
+    if (!account) {
+      throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
+    }
+    if (!account.encryptedRefreshToken || !account.dekEncrypted) {
+      throw new InvalidGrantError(`mailbox account ${mailboxAccountId} has no stored OAuth token`);
+    }
+    const refreshToken = await tokenCrypto.decrypt(
+      account.encryptedRefreshToken,
+      account.dekEncrypted,
+    );
+    const oauth = new OAuth2Client(clientId, clientSecret);
+    oauth.setCredentials({ refresh_token: refreshToken });
 
-      // Reuse the limiter across attempts so its sliding-window state
-      // outlives a single `processJob` call (D5 / Codex iter 3).
-      let limiter = limiterByMailbox.get(mailboxAccountId);
-      if (!limiter) {
-        limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
-        limiterByMailbox.set(mailboxAccountId, limiter);
+    // Reuse the limiter across attempts so its sliding-window state
+    // outlives a single `processJob` call (D5 / Codex iter 3).
+    let limiter = limiterByMailbox.get(mailboxAccountId);
+    if (!limiter) {
+      limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+      limiterByMailbox.set(mailboxAccountId, limiter);
+    }
+    return new GmailClientService(oauth, limiter);
+  };
+  const gmailAccess: GmailAccess = { getClient: getGmailClient };
+  const gmailMutationAccess: GmailMutationAccess = { getClient: getGmailClient };
+
+  /**
+   * Per-mailbox advisory lock for destructive actions (D226, Codex
+   * review). `perMailboxPolicy` does NOT actually serialize per mailbox
+   * (BullMQ runs `concurrency` jobs across mailboxes), and destructive
+   * mutations are the wrong place to bet on benign races. A connection
+   * reserved from the DEDICATED `lockPg` pool holds the advisory lock for
+   * the whole resolve→mutate→commit; the lock is a keyed mutex, so the
+   * inner work runs on the MAIN pool. Released in `finally`; on connection
+   * loss Postgres drops the session lock automatically.
+   *
+   * Two-key form `pg_advisory_lock(ns, hashtext(mailbox))` isolates these
+   * locks under a label-action namespace. `hashtext` is 32-bit, so two
+   * distinct mailboxes can collide and over-serialize — harmless (extra
+   * mutual exclusion, never incorrect), and rare.
+   */
+  const mailboxLock: MailboxActionLock = {
+    async run(mailboxAccountId, fn) {
+      const reserved = await lockPg.reserve();
+      try {
+        await reserved`SELECT pg_advisory_lock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+        return await fn();
+      } finally {
+        try {
+          await reserved`SELECT pg_advisory_unlock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+        } catch {
+          // Best-effort unlock; the session ending releases it regardless.
+        }
+        reserved.release();
       }
-      return new GmailClientService(oauth, limiter);
     },
   };
 
@@ -276,6 +338,42 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: SCORE_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * LabelActionWorker consumer (D226). The action-consumer for the async
+   * destructive-action pipeline — applies a label-modify verb (archive
+   * now) forward + reverse (undo), then issues the undo token + activity
+   * row + outbox event in one terminal tx. Producer side lives in
+   * `ActionsModule` (POST /api/actions/archive) and `UndoController`
+   * (POST /api/undo/:token enqueues the reverse). Policy `perMailboxPolicy`
+   * + the per-mailbox advisory lock serialize destructive mutations.
+   */
+  const labelActionWorker = new LabelActionWorker({
+    db,
+    gmailMutation: gmailMutationAccess,
+    outbox: new OutboxPublisher(),
+    lock: mailboxLock,
+  });
+  labelActionWorker.setObserver(observer);
+
+  const labelActionBullWorker = new Worker<LabelActionJobData, LabelActionResult>(
+    LABEL_ACTION_QUEUE,
+    (job) => labelActionWorker.run(job),
+    // Bounded to the dedicated `lockPg` pool size — every job holds one
+    // advisory-lock connection for its full duration.
+    { connection, concurrency: LABEL_ACTION_CONCURRENCY },
+  );
+
+  labelActionBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: LABEL_ACTION_QUEUE,
         message: err.message,
       }),
     );
@@ -502,8 +600,10 @@ async function bootstrap(): Promise<void> {
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
+      await labelActionBullWorker.close();
       await reconcilerQueue.close();
       await connection.quit();
+      await lockPg.end();
       await pg.end();
       process.exit(0);
     })().catch((err: unknown) => {

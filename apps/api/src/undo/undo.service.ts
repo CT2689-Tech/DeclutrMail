@@ -68,6 +68,49 @@ export class UndoService {
   }
 
   /**
+   * Read-only revertability check for the ASYNC undo path (D226).
+   *
+   * The forward action runs in a worker, so the revert does too: the
+   * controller validates here, then enqueues a reverse `action_jobs`
+   * row. We do NOT set `executed_at` (the old sync `claimForRevert`
+   * lock) — that timestamp filter stranded tokens whose async revert
+   * failed (executed_at set, reverted_at null, no way to re-claim).
+   * Idempotency now lives where it belongs: the reverse job's
+   * `UPDATE undo_journal SET reverted_at=now() WHERE reverted_at IS NULL`
+   * guard + the BullMQ `jobId=revert:<token>` dedup. Re-adding a label
+   * is itself idempotent, so a duplicate runner is harmless.
+   *
+   * `'already-reverted'` → the controller returns the recorded success
+   * without enqueueing. `'expired'` → HTTP 410 (D58). `'not-found'` →
+   * HTTP 404 (unknown token or wrong mailbox).
+   */
+  async findRevertable(
+    token: string,
+    mailboxAccountId: string,
+  ): Promise<
+    | { outcome: 'ready'; entry: UndoJournalEntry }
+    | { outcome: 'already-reverted'; entry: UndoJournalEntry }
+    | { outcome: 'expired'; entry: UndoJournalEntry }
+    | { outcome: 'not-found' }
+  > {
+    const [entry] = await this.db
+      .select()
+      .from(undoJournal)
+      .where(and(eq(undoJournal.token, token), eq(undoJournal.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!entry) {
+      return { outcome: 'not-found' };
+    }
+    if (entry.revertedAt !== null) {
+      return { outcome: 'already-reverted', entry };
+    }
+    if (entry.expiresAt.getTime() <= Date.now()) {
+      return { outcome: 'expired', entry };
+    }
+    return { outcome: 'ready', entry };
+  }
+
+  /**
    * Mark a token as executed AND atomically claim the idempotency lock.
    *
    * Returns `'claimed'` on the first call (the caller now owns the
