@@ -219,8 +219,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D165 | Notification preferences: **Per-category toggles in Settings | ⬜ |  |  |  |
 | D166 | Loading patterns: **Skeleton-first with inline action progress | 🔵 | #50 |  |  |
 | D167 | 404 / 500 pages: **Custom calm branded + auto-Sentry log | 🟢 | #51 | packages/shared/src/edge-states/inventory.test.ts |  |
-| D168 | API error envelope: **Standardized structured format | ⬜ |  |  |  |
-| D169 | Three severity tiers | ⬜ |  |  |  |
+| D168 | API error envelope: **Standardized structured format | 🔵 | #131 |  |  |
+| D169 | Three severity tiers | 🔵 | #131 |  |  |
 | D170 | Three named critical-trust scenarios | ⬜ |  |  |  |
 | D171 | Offline / poor-network UX | ⬜ |  |  |  |
 | D172 | Monorepo with pnpm + Turborepo; 3 apps + 3 packages | ⬜ |  |  |  |
@@ -232,7 +232,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D178 | Dependency scanning: **Dependabot + Snyk free tier | ⬜ |  |  |  |
 | D179 | CORS configuration (derived) | 🔵 | #46 |  |  |
 | D180 | Webhook signature verification (derived) | ⬜ |  |  |  |
-| D181 | Security events log (distinct from Activity log) | ⬜ |  |  |  |
+| D181 | Security events log (distinct from Activity log) | 🔵 | #131 |  |  |
 | D182 | Test framework stack: **Vitest + testcontainers + Playwright | ⬜ |  |  |  |
 | D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | ⬜ |  |  |  |
 | D184 | Coverage strategy: **Risk-weighted with 70% floor on `packages/shared` + `packages/db` | ⬜ |  |  |  |
