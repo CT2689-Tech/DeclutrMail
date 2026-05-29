@@ -49,25 +49,25 @@ in those files. I will keep each emit fire-and-forget and metadata-only (D7).
 appearing in `security_events` under the matching `event_type`.
 **Status:** Open
 
-### 2026-05-29 — `atlas.sum` was stale for migrations 0001–0015 (corrected in this PR)
-**Source:** PR #131 (D181) — discovered while adding the 0016 sum entry; surfaced by CI
-**Why:** The committed `atlas.sum` per-file hashes for 0001–0015 did not match the
-committed `.sql` content (only 0000 matched). I first tried to be surgical —
-append only 0016 + recompute the total, leaving the stale lines — but CI's
-`atlas migrate lint` **rejected it on checksum mismatch** (it DOES enforce dir
-integrity, contrary to my initial assumption). So this PR now contains a full
-`atlas migrate hash`-equivalent regeneration: all 16 per-file hashes recomputed
-from current file bytes + a correct total. This corrects the pre-existing drift
-as a side effect of making CI green.
-**Root cause (still worth your eyes):** something edited the bytes of 0001–0015
-after their last hash without re-running `atlas migrate hash`, and it merged
-without a migration-touching PR (so `migration-lint.yml` didn't run on it).
-Worth a glance at history to confirm no migration *content* changed unexpectedly.
-**How:** No action needed to fix the sum (done here). Optional hardening: ensure
-`migration-lint.yml` (or a pre-commit hook) runs on every push that touches
-`packages/db/**`, so a future desync fails fast rather than silently.
-**Verifies by:** PR #131's `atlas migrate lint` check is green.
-**Status:** Open — resolution (the rehash) is in PR #131; close once merged.
+### 2026-05-29 — PR #131 needs `atlas migrate hash` run for migration 0016 (I can't, no Atlas CLI here)
+**Source:** PR #131 (D181) — adding migration 0016; `atlas migrate lint` red
+**Why:** `atlas.sum`'s per-file hashes come from Atlas's SQL-canonicalizing hash,
+which is NOT reproducible from file bytes offline (confirmed: only 0000 happens to
+match a raw hash; 0003 etc. don't). The Atlas CLI can't be installed in this
+remote environment (network policy blocks the download), so I cannot generate a
+valid `atlas.sum` entry for 0016. I've restored the 0000–0015 lines to main's
+exact (atlas-valid) values and appended a best-effort 0016 line + recomputed
+total, so the only thing left is a real rehash of the new entry.
+**How (1 command, on a machine with Atlas):**
+```
+atlas migrate hash --dir 'file://packages/db/migrations'
+git add packages/db/migrations/atlas.sum && git commit -m "chore(db): atlas migrate hash for 0016 (D181)" && git push
+```
+Then PR #131's `atlas migrate lint` goes green. (Alternatively: merge past the red
+check as this repo already does for the red branch-name check, and rehash in a
+follow-up.) The migration SQL itself is validated by the PGlite roundtrip test.
+**Verifies by:** PR #131's `atlas migrate lint` check turns green after the rehash.
+**Status:** Open — needs founder/CI `atlas migrate hash`.
 
 ### 2026-05-28 — Live smoke the archive action pipeline on the 2 Gmail accounts (D226)
 **Source:** PR — async destructive-action pipeline (`feat/d226-archive-action-executor`)
