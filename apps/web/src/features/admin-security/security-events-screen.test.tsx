@@ -117,10 +117,13 @@ describe('AdminSecurityEventsScreen — render states', () => {
     });
   });
 
-  it('renders the 404-as-not-found surface for non-allowlisted users', async () => {
+  it('renders the 404-as-not-found surface for non-allowlisted users, with NO ScreenIntro/filters above', async () => {
     // AdminAllowlistGuard returns 404 (never 403/401) so the FE
     // mirrors that posture — no message that confirms the route's
-    // existence to a non-admin.
+    // existence to a non-admin. Crucially this means the ScreenIntro
+    // ("Security events" title) AND the filter bar must NOT render
+    // above the not-found surface; their presence would imply real
+    // data exists behind the gate.
     installFetchStub([
       { method: 'GET', path: '/api/security-events', respond: () => jsonNotFound() },
     ]);
@@ -131,8 +134,13 @@ describe('AdminSecurityEventsScreen — render states', () => {
     expect(
       screen.getByText(/This page does not exist or is not available for your account/i),
     ).toBeInTheDocument();
-    // Crucially: the 404 surface must NOT confirm the route exists —
-    // no "permission denied" / "not authorized" / "admin only" copy
+    // The screen title MUST NOT be present — it would hint that the
+    // "Security events" page exists behind the gate.
+    expect(screen.queryByText('Security events')).not.toBeInTheDocument();
+    // The filter region MUST NOT mount — would imply real data exists.
+    expect(screen.queryByRole('region', { name: /filters/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/filter by severity/i)).not.toBeInTheDocument();
+    // No "permission denied" / "not authorized" / "admin only" copy
     // that would reveal the surface to a non-admin enumerator.
     expect(document.body.textContent ?? '').not.toMatch(/permission denied/i);
     expect(document.body.textContent ?? '').not.toMatch(/not authorized/i);

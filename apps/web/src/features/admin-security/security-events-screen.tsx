@@ -49,6 +49,24 @@ export function AdminSecurityEventsScreen(): ReactElement {
   const query = useSecurityEvents(filters);
   const rows = query.data?.rows ?? [];
 
+  // A 404 from the BE means `AdminAllowlistGuard` refused this caller
+  // (env-allowlist miss). The intentional posture is "indistinguishable
+  // from a non-existent route" — so we render JUST the not-found
+  // surface, WITHOUT the ScreenIntro (which would name the page
+  // "Security events") or the filter bar (which would imply real data
+  // exists behind the gate). The early-return prevents both from
+  // mounting at all. See `admin-allowlist.guard.ts` for the rationale.
+  if (query.error instanceof ApiError && query.error.status === 404) {
+    return (
+      <main style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
+        <EmptyState
+          title="Not found"
+          description="This page does not exist or is not available for your account."
+        />
+      </main>
+    );
+  }
+
   return (
     <main style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
       <ScreenIntro
@@ -258,19 +276,11 @@ function LoadingState(): ReactElement {
 }
 
 function ErrorState({ error }: { error: unknown }): ReactElement {
-  // A 404 here means the BE's AdminAllowlistGuard refused the request.
-  // The BE intentionally returns 404 (never 403) so the route is
-  // indistinguishable from a non-existent one — the FE mirrors that
-  // posture with a generic not-found surface rather than a "you don't
-  // have access" message that would confirm the route's existence.
-  if (error instanceof ApiError && error.status === 404) {
-    return (
-      <EmptyState
-        title="Not found"
-        description="This page does not exist or is not available for your account."
-      />
-    );
-  }
+  // 404 is handled by the top-level early-return in
+  // `AdminSecurityEventsScreen` (it suppresses BOTH the ScreenIntro
+  // and the filter bar so the surface is indistinguishable from a
+  // non-existent route). Anything reaching this branch is a non-404
+  // failure (5xx, network, etc.) and gets the generic error card.
   const message =
     error instanceof Error ? error.message : 'Something went wrong loading security events.';
   return <EmptyState title="Couldn't load events" description={message} />;
