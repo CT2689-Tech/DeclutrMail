@@ -246,6 +246,72 @@ describe('InitialSyncWorker', () => {
     expect(result.messagesSynced).toBe(11);
   });
 
+  it('total_received — Path A writes inbound count per sender + outbound excluded (ADR-0014)', async () => {
+    // 30 inbound messages spread across 6 senders → 5 per sender.
+    // 4 outbound messages must NOT contribute to any inbound counter
+    // (they have no sender row, but the assertion guards against a
+    // future bug where an outbound row is mis-attributed inbound).
+    const inbound = makeMessages(30, 6);
+    const outbound: GmailMessageMetadata[] = Array.from({ length: 4 }, (_, i) => ({
+      id: `sent-${i}`,
+      threadId: `thread-sent-${i}`,
+      labelIds: ['SENT', 'INBOX'],
+      snippet: `sent ${i}`,
+      internalDate: String(Date.UTC(2026, 1, 1) + i * 86_400_000),
+      from: 'Owner <owner@declutrmail.ai>',
+      subject: `Sent ${i}`,
+      to: `r${i}@example.com`,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    }));
+    const client = new FakeGmailClient([...inbound, ...outbound]);
+
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    const senderRows = await db.select().from(senders);
+    expect(senderRows.length).toBe(6);
+    expect(senderRows.every((s) => s.totalReceived === 5)).toBe(true);
+  });
+
+  it('total_received — rebuild restores authoritative count after a deliberately-skewed value', async () => {
+    // ADR-0014 §"Reconciliation & drift": the full rebuild IS the
+    // authoritative reconciliation — whatever drift Path B accumulated
+    // between rebuilds is closed atomically by the delete+reinsert
+    // transaction. Simulate that by manually skewing the counter, then
+    // re-running the worker (which re-runs `buildSenderIndex` over the
+    // same persisted `mail_messages`) and asserting the value is reset.
+    const client = new FakeGmailClient(makeMessages(12, 3));
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const before = await db.select().from(senders);
+    expect(before.length).toBe(3);
+    expect(before.every((s) => s.totalReceived === 4)).toBe(true);
+
+    // Skew every counter to a wildly wrong value. A real drift would
+    // only be off by a few; the test uses a large delta so a stale
+    // assertion can't pass by coincidence.
+    await db
+      .update(senders)
+      .set({ totalReceived: 9999 })
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+
+    // Re-run the worker. With every Gmail message already stored, the
+    // fetch loop is a no-op; `buildSenderIndex` still re-aggregates
+    // from the persisted `mail_messages` and the rebuild txn rewrites
+    // every senders row.
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const after = await db.select().from(senders);
+    expect(after.length).toBe(3);
+    expect(after.every((s) => s.totalReceived === 4)).toBe(true);
+  });
+
   it('outbound exclusion — SENT messages land in mail_messages but never index a sender', async () => {
     // 5 inbound messages (3 distinct senders) + 4 outbound (user → 4 recipients).
     const inbound = makeMessages(5, 3);
