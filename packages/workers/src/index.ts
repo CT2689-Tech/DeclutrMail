@@ -164,3 +164,16 @@ export {
   UNDO_EXPIRY_QUEUE,
   undoExpiryJobOptions,
 } from './undo-expiry.queue.js';
+export { SendersCounterReconciliationWorker } from './senders-counter-reconciliation.worker.js';
+export type {
+  SendersCounterReconciliationJobData,
+  SendersCounterReconciliationResult,
+} from './senders-counter-reconciliation.worker.js';
+export {
+  enqueueSendersCounterReconciliationTick,
+  scheduledAtMinute as sendersCounterReconciliationScheduledAtMinute,
+  SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
+  SENDERS_COUNTER_RECONCILIATION_JOB,
+  SENDERS_COUNTER_RECONCILIATION_QUEUE,
+  sendersCounterReconciliationJobOptions,
+} from './senders-counter-reconciliation.queue.js';
