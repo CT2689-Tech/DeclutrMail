@@ -81,6 +81,25 @@ describe('intentOf — ADR-0012 bucketing rules', () => {
     });
     expect(intentOf(s)).toBe('protect');
   });
+
+  it('buckets VIP senders into protect when no recommendation (isVip now on the list wire)', () => {
+    const s = senderFixture({ isVip: true, protected: false });
+    expect(intentOf(s)).toBe('protect');
+  });
+
+  it('VIP wins over a high-confidence cleanup recommendation (never auto-clean a VIP)', () => {
+    const s = senderFixture({
+      isVip: true,
+      protected: false,
+      lastReview: {
+        at: '2026-05-25T00:00:00Z',
+        verdict: 'unsubscribe',
+        generatedBy: 'llm_haiku',
+        confidence: 0.99,
+      },
+    });
+    expect(intentOf(s)).toBe('protect');
+  });
 });
 
 describe('intentOf — confidence gate (X2)', () => {

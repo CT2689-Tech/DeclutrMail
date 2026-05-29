@@ -7,6 +7,7 @@ import {
   canUnsubscribe,
   gmailSearchUrl,
   historicCount,
+  isStandingProtected,
   recommendAction,
   relTimeLabel,
   sampleSubjects,
@@ -53,7 +54,7 @@ export function SenderRowDetail({
     if (rec === 'Later') {
       return `${s.monthly}/mo at ${read}% read. "Later" keeps the mail in Gmail but stops surfacing it in the daily queue.`;
     }
-    if (s.protected) {
+    if (isStandingProtected(s)) {
       return "Protected — bulk actions can't touch this sender. Remove protection from its detail page to change that.";
     }
     if (s.read >= 0.7) return `You read ${read}% of ${s.name}'s mail. No action recommended.`;
