@@ -1,30 +1,28 @@
-// /activity — Activity log (D55–D60).
+// /activity — Activity feed surface (D55-D60, tracer-bullet).
 //
-// Undo affordance (D58) is shipped via the persistent action tray;
-// the standalone activity-log view that lets you scrub by filter and
-// time window lands in its own PR. Stub keeps the sidebar honest in
-// the meantime.
+// Backend ActivityModule shipped in this PR; the screen reads from
+// `GET /api/activity?window=&source=&cursor=`. D57 row expansion + D60
+// mobile-specific layout + per-sender feed + D58 undo wire-up land in
+// follow-up PRs — see PR body for the deferred scope.
 
-import { RoutePlaceholder } from '@/features/route-placeholder/route-placeholder';
+import { Suspense } from 'react';
+
+import { ActivityScreen } from '@/features/activity/activity-screen';
 
 export const metadata = {
   title: 'Activity — DeclutrMail',
 };
 
+/**
+ * Suspense boundary required because `ActivityScreen` reads URL state
+ * via `useSearchParams()`, which Next.js requires to be wrapped at the
+ * route boundary in app-router. The fallback is intentionally minimal
+ * (the screen itself ships a richer loading skeleton).
+ */
 export default function ActivityPage() {
   return (
-    <RoutePlaceholder
-      status="Planned for V2.1"
-      title="Activity"
-      description={
-        <>
-          Every decision you&rsquo;ve made — Keep, Archive, Unsubscribe, Later — in one filterable
-          timeline. Undo is available inline while the window is open.
-        </>
-      }
-      decisions={['D55', 'D56', 'D57', 'D58', 'D59', 'D60']}
-      primaryCta={{ href: '/triage', label: 'Open Triage' }}
-      secondaryCta={{ href: '/senders', label: 'Browse senders' }}
-    />
+    <Suspense fallback={null}>
+      <ActivityScreen />
+    </Suspense>
   );
 }
