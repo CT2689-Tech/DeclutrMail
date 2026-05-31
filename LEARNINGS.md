@@ -639,3 +639,15 @@ shared test harness rather than per-package.
   - Fix: restore main's exact 16 hash lines; the new migration's entry + the total genuinely require `atlas migrate hash` (real CLI) — run it in an env that has Atlas, or in CI.
 **Rule:** Do NOT hand-edit `atlas.sum`. If you add a migration and can't run `atlas migrate hash`, leave the sum for a human/CI step and say so — never recompute hashes from bytes (you'll corrupt valid entries). The `h1:` total algo `sha256(Σ name+h)` IS reproducible, but the per-file hashes are not.
 **Distillation trigger:** promote to CLAUDE.md §4 (migration workflow) — "never hand-edit atlas.sum" — given this burned a full CI cycle.
+
+## 2026-05-30 — Verb registries belong before the second verb, not after the sixth
+**Context:** Designing PR #135 → PR #144 bulk-action sequence. Today's verb plumbing (archive only) lives across ~10 files (db enum, undo enum, worker label-change map, FE button arrays, microcopy maps, eligibility predicates, K/A/U/L shortcut binding). Codex review of `docs/handoffs/2026-05-30-bulk-actions-architecture-codex-review.md` validated the consolidation at 4 verbs.
+**Finding:** A verb registry / action manifest pattern (single typed descriptor per verb in `packages/shared/actions/`) is justified at 4 verbs, not at 6+. Net LOC is roughly flat at 4 verbs (~200 LOC manifest replaces ~150 LOC scattered) but compounds aggressively per-verb: adding `mark_read` afterwards is 1 entry + 2 migrations (~20 LOC) vs. ~80 LOC across 10 files in the scattered shape.
+**Rule (provisional):** Build a verb/action registry when you have ≥2 verbs that share a UI surface or worker pipeline. Earlier than that = speculative; later = paying retrofit cost on every screen that shipped verb-hardcoded.
+**Distillation trigger:** promote to CLAUDE.md §1 (behavioral principles, simplicity-first qualifier) if pattern recurs across triage/brief/screener consolidations as expected.
+
+## 2026-05-30 — DB enum values are append-only; never derive from a JS object
+**Context:** Initial Action Manifest sketch had `pgEnum('action_verb', Object.keys(ACTION_MANIFEST) as ActionVerb[])` — DB enum derived from manifest keys at codegen.
+**Finding:** Codex flagged: a manifest deletion (refactor, accidental, or mid-refactor partial commit) silently DROPS pg_enum values. Postgres rejects `DROP VALUE` on most enums; even where it doesn't, downstream rows referencing the dropped value break. Migrations must be explicit, append-only, version-controlled, hand-reviewed.
+**Rule (provisional):** Pure constants module (`packages/shared/contracts/verb-constants.ts`) owns the agreement. DB schema imports the constants ONLY to write the explicit migration; manifest descriptor imports the constants for typing. Constants array is append-only; type tests assert union coverage; pg_enum migration tracks separately.
+**Distillation trigger:** promote to CLAUDE.md §10 ("Do NOT" list — "Do NOT derive pg_enum values from a JS structure"). Codex correction here aligns with broader migration discipline.

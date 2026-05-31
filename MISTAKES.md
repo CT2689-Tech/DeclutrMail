@@ -439,3 +439,11 @@ collision case").
 **Correct approach:** Never hand-edit `atlas.sum`. Restore main's exact hash lines; the new migration's entry needs the real `atlas migrate hash` (run in an env with Atlas, or CI). Don't assert a diagnosis ("stale") as fact in artifacts before it's verified — I should have read the CI log first instead of inferring "checksum mismatch" from job duration.
 **Rule:** (1) `atlas.sum` is Atlas-CLI-owned; if you can't run `atlas migrate hash`, leave it and flag a follow-up — recomputing from bytes corrupts valid entries. (2) Read the actual CI log before diagnosing a failure; never infer the failure class from timing. (3) Don't write a hypothesis into PR/docs as established fact.
 **Enforcement update:** LEARNINGS + FOUNDER-FOLLOWUPS corrected; candidate CLAUDE.md §4 line "never hand-edit atlas.sum."
+
+## 2026-05-30 — Cited D232 when the invariant was D35/D58
+**PR:** N/A (caught in `docs/handoffs/2026-05-30-bulk-actions-architecture-codex-review.md` before any code landed)
+**Caught by:** Codex review (Concerns §4: "D232 is account deletion respecting undo windows")
+**What happened:** Architecture proposal repeatedly cited D232 as the authority for "atomic undo per action_job, partial undo NOT supported." D232 is actually about account deletion respecting `max(now+7d, latest_undo_expires_at)` — adjacent topic, not the atomicity invariant. Atomic undo lives in D35 (persistent undo tray) + D58 (Activity row "Undo") + the `undo_journal.reverted_at IS NULL` atomic-lock pattern in the existing schema. I leaned on D232 because it FELT proximate ("undo windows!") without re-reading what D232 actually decides.
+**Correct approach:** Re-read the D-body before citing. Cite the D that decides the rule, not the D that mentions the term. When unsure, search the plan (`rg "atomic"`, `rg "partial undo"`) and read the matched bodies.
+**Rule:** Citation discipline — when invoking a D-number, the D's BODY must actually decide the rule you're invoking it for. "D-number adjacency by topic" is not citation; it's pattern-matching on keywords.
+**Enforcement update:** None automated (citations are judgment calls). LEARNINGS already captures the pattern. Watch for repeat occurrences in PR-review and ADR PRs; if it happens twice more, distill into CLAUDE.md §3 ("Source-of-truth precedence") as an explicit citation rule.
