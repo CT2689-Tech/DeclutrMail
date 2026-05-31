@@ -1,0 +1,42 @@
+-- 0018_action_verb_later.sql
+--
+-- ADR-0015 (Action Registry) P4 — append `later` to the `action_verb`
+-- pg_enum so the label-modify pipeline recognizes the new cleanup verb
+-- the registry now models (drop INBOX + tag DeclutrMail/Later; undo
+-- restores). `later` is already a valid `undo_action_kind` +
+-- `activity_action` value, so the worker can write a `later` job's verb
+-- straight into the undo journal + activity log with no further enum
+-- change.
+--
+-- Scope note: only `later` is added here. `keep` (policy-only) and
+-- `unsubscribe` (its own pipeline, P9/D230) never produce an
+-- `action_jobs` row. `unarchive` IS a label-modify verb in the registry
+-- but is deliberately deferred from this enum — the worker writes the
+-- verb into `undo_action_kind` + `activity_action`, neither of which
+-- includes `unarchive`; adding it is the restore-pipeline change (those
+-- two enums + worker support) and has no producer yet. No producer
+-- enqueues `later` jobs at this stage either; this keeps the enum ahead
+-- of the registry's wired label-modify verbs so the eventual single-
+-- sender wire (P6) is a code change, not a migration.
+--
+-- The `ADD VALUE` form is forward-only-friendly: Postgres supports it
+-- without recreating the type, and the new value is usable immediately
+-- after commit. The `.rollback` companion drops + recreates the type so
+-- the round-trip test can prove the schema returns to the prior state;
+-- if any row carries the new value the rollback fails on the USING cast
+-- (correct semantics — you cannot rollback if data depends on the value).
+--
+-- `IF NOT EXISTS` makes the forward statement idempotent so re-applying
+-- this migration on an environment that already ran it is a no-op rather
+-- than an error.
+--
+-- atlas:nolint incompatible — `ALTER TYPE ... ADD VALUE` is forward-
+-- compatible (existing consumers still recognize the old values); the
+-- "incompatible" lint flags type changes generally. The new value is
+-- additive and not used by any existing code path until the action API
+-- enqueues it.
+--
+-- Privacy (D7, D228): metadata only — `action_jobs` rows carry ids/keys,
+-- never message content.
+
+ALTER TYPE "public"."action_verb" ADD VALUE IF NOT EXISTS 'later';
