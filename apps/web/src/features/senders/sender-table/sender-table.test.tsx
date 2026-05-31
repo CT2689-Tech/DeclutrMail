@@ -131,6 +131,22 @@ describe('SenderTable', () => {
     );
   });
 
+  it('sources verb label + shortcut tooltip from the Action Registry (D227)', () => {
+    render(<Harness {...{}} />);
+    // Label is the registry copy; the shortcut is invisible inline but
+    // surfaced via the title tooltip (§3.1).
+    const archive = screen.getByRole('button', { name: /^archive bank of america/i });
+    expect(archive).toHaveAttribute('title', 'Archive (A)');
+    expect(screen.getByRole('button', { name: /^later bank of america/i })).toHaveAttribute(
+      'title',
+      'Later (L)',
+    );
+    expect(screen.getByRole('button', { name: /^unsubscribe bank of america/i })).toHaveAttribute(
+      'title',
+      'Unsubscribe (U)',
+    );
+  });
+
   it('checkbox toggles the selection set without mutating the input', () => {
     render(<Harness {...{}} />);
     const checkbox = screen.getByRole('checkbox', { name: /select bank of america/i });

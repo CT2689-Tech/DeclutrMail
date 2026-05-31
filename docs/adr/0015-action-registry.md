@@ -74,8 +74,25 @@ multi-sender, sender-filter }`, each `{ tier, countsAsCleanup, cap? }` or
 - `execution` — a discriminated union on `kind` (correction B). Each variant
   carries a **pure** builder (no IO, no DB) that returns the mutation:
   `label-modify` → `buildLabelChange(params) → { forward, reverse }`;
-  `policy-only` → `buildPolicyWrite(params) → PolicyDelta`. `unsubscribe`,
-  `snooze`, and `send` append as their verbs land.
+  `policy-only` → `buildPolicyWrite(params) → PolicyDelta`;
+  `unsubscribe` → a static `sideEffect: LabelChange` (P4; the one-click vs
+  mailto `resolveMethod` is deferred to P9, see below). `snooze` and `send`
+  append as their verbs land.
+
+### Verb execution-kind decisions (P4 — appended ahead of P5)
+
+P4 appended `later`, `unsubscribe`, and `unarchive` to the vocabulary +
+descriptors so the web surfaces can read their `copy`/`shortcut`/`preview`.
+Their `execution.kind` is a forward-looking commitment, pinned by the
+`routes each verb to its decided execution.kind` invariant test:
+
+| Verb          | `execution.kind` | Rationale                                                                                                                                                                                                                                                                                                                                                                         | In `action_verb` pg_enum?                                                                                                                                                                                                   |
+| ------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `later`       | `label-modify`   | DeclutrMail "Later" routes a sender's mail out of the inbox into a `DeclutrMail/Later` label — a label delta with a clean inverse. Modeled as the mutation that moves _existing_ mail; the future-mail standing rule is a separate policy concern (like `keep`), wired later, not bundled.                                                                                        | **Yes** (0018). Also a valid `undo_action_kind` + `activity_action`, so the worker writes it with no further enum change.                                                                                                   |
+| `unsubscribe` | `unsubscribe`    | Its OWN kind (Codex §4 — never misclassified as `label-modify`, so it never reaches the LabelActionWorker). At V2 it carries only the standing `sideEffect` label (`DeclutrMail/Unsubscribed`); the per-sender one-click vs mailto `resolveMethod` is deferred to P9 (mailto is manual at launch, D230) and needs `List-Unsubscribe` sender data the registry does not yet carry. | **No** — separate pipeline, not label-modify family.                                                                                                                                                                        |
+| `unarchive`   | `label-modify`   | The inverse of `archive` (re-add INBOX); the Q3 single-sender "Restore from bulk" forward verb. No canonical K/A/U/L shortcut.                                                                                                                                                                                                                                                    | **Deferred** — the worker writes the verb into `undo_action_kind` + `activity_action`, neither of which includes `unarchive`. Adding it is the restore-pipeline change (those two enums + worker support); no producer yet. |
+
+This is why P4's pg_enum migration (`0018`) adds only `later`.
 
 The registry type is a mapped type — `{ [V in ActionVerb]: ActionDescriptor<V> }`
 — so a verb in the vocabulary without a descriptor (or vice versa) is a
@@ -127,13 +144,13 @@ compile error, backed by a runtime bijection test.
 
 ## Implementation notes (rollout)
 
-| Phase             | Registry work                                                                                                                                                                                      |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **P2 (this ADR)** | `verb-constants` (`keep`, `archive`) + `manifest-entries` + 5 invariant tests. Zero consumers.                                                                                                     |
-| **P3**            | `LabelActionWorker` switches on `execution.kind`; `PolicyActionWorker` added; `VERB_LABEL_CHANGES` deleted; per-verb `buildLabelChange`/`buildPolicyWrite` invoked.                                |
-| **P4**            | Web surfaces (SelectionBar / ConfirmActionModal / SenderTable / senders-screen) read `copy` + `shortcut` + `preview`; letter-strip; KeyboardCheatsheet.                                            |
-| **P5**            | Append `later` / `unsubscribe` / `unarchive` to the vocabulary + descriptors + explicit pg_enum migration; `unsubscribe` / `snooze` execution kinds; `archive` historic-scope param (Codex §10.3). |
-| **P6–P9**         | Real single-sender wire, multi-sender bulk + capability gate, sender-filter Pro + two-phase preview snapshot, mailto batch CTA (D230 strict).                                                      |
+| Phase             | Registry work                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **P2 (this ADR)** | `verb-constants` (`keep`, `archive`) + `manifest-entries` + 5 invariant tests. Zero consumers.                                                                                                                                                                                                                                                                                                                                                                          |
+| **P3**            | `LabelActionWorker` switches on `execution.kind`; `PolicyActionWorker` added; `VERB_LABEL_CHANGES` deleted; per-verb `buildLabelChange`/`buildPolicyWrite` invoked.                                                                                                                                                                                                                                                                                                     |
+| **P4**            | Web surfaces (SelectionBar / ConfirmActionModal / SenderTable / senders-screen) read `copy` + `shortcut` + `preview`; per-button shortcut tooltips + `aria-keyshortcuts`; selection-scoped K/A/U/L handler; KeyboardCheatsheet. **Also** appends `later` / `unsubscribe` / `unarchive` to the vocabulary + descriptors (folded forward from P5) + the `unsubscribe` execution kind + the `later` pg_enum migration (`0018`). See "Verb execution-kind decisions" above. |
+| **P5**            | Bulk SELECTORS (`multi-sender`, `sender-filter`) + capability gate + reservation table; `archive` historic-scope param (Codex §10.3); `unarchive` pg_enum + restore-pipeline enums when a producer lands.                                                                                                                                                                                                                                                               |
+| **P6–P9**         | Real single-sender wire, multi-sender bulk + capability gate, sender-filter Pro + two-phase preview snapshot, mailto batch CTA (D230 strict).                                                                                                                                                                                                                                                                                                                           |
 
 ## References
 

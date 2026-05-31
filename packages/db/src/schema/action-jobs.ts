@@ -54,8 +54,22 @@ import { undoJournal } from './undo-journal';
  * represent a body field; the column type is the privacy boundary.
  */
 
-/** Destructive verbs the pipeline can apply (label-modify family). Extend per verb. */
-export const actionVerb = pgEnum('action_verb', ['archive']);
+/**
+ * Verbs the label-modify pipeline can apply. Append-only. `archive`
+ * drops INBOX; `later` swaps INBOX for the DeclutrMail/Later label —
+ * both are also valid `undo_action_kind` + `activity_action` values, so
+ * the worker can write a job's verb straight into the undo journal +
+ * activity log.
+ *
+ * `keep` (policy-only) and `unsubscribe` (its own pipeline) never produce
+ * an `action_jobs` row, so they are not here. `unarchive` is in the
+ * Action Registry (ADR-0015) as a label-modify verb but is intentionally
+ * NOT added to this enum yet: the worker writes the verb into
+ * `undo_action_kind` + `activity_action`, which do not include
+ * `unarchive`. Adding it is the restore-pipeline change (those two enums
+ * + worker support) and has no producer at this stage.
+ */
+export const actionVerb = pgEnum('action_verb', ['archive', 'later']);
 
 /** Forward action vs. its reverse (undo). */
 export const actionDirection = pgEnum('action_direction', ['forward', 'reverse']);

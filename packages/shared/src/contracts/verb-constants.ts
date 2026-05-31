@@ -18,10 +18,25 @@
  *
  * Append-only (LEARNINGS 2026-05-30 — enum values are never reordered
  * or removed; the DB enum mirrors this order). `later` / `unsubscribe`
- * / `unarchive` append here at P5 alongside their pg_enum migration +
- * manifest entries.
+ * / `unarchive` are the cleanup + restore verbs the senders surface
+ * renders (P4 web consumers) and the bulk pipeline grows into (P5+):
+ *
+ *   - `later`      — route a sender's mail out of the inbox into a
+ *                    DeclutrMail/Later label (label-modify).
+ *   - `unsubscribe`— stop future mail (its own `execution.kind`; the
+ *                    one-click vs mailto resolver lands at P9, D230).
+ *   - `unarchive`  — restore archived mail back to the inbox; the
+ *                    Q3 single-sender "Restore from bulk" forward verb
+ *                    (label-modify, no canonical K/A/U/L shortcut).
+ *
+ * The label-modify family is `archive` / `later` / `unarchive`, but only
+ * `archive` + `later` mirror into the `action_jobs.action_verb` pg_enum
+ * today — `unarchive` is deferred there until its restore pipeline lands
+ * (the worker writes the verb into `undo_action_kind` + `activity_action`,
+ * which do not yet include it). `unsubscribe` routes through a separate
+ * pipeline and `keep` is policy-only.
  */
-export const ACTION_VERBS = ['keep', 'archive'] as const;
+export const ACTION_VERBS = ['keep', 'archive', 'later', 'unsubscribe', 'unarchive'] as const;
 export type ActionVerb = (typeof ACTION_VERBS)[number];
 
 /**
@@ -60,9 +75,16 @@ export type PreviewMode = (typeof PREVIEW_MODES)[number];
 /**
  * Pipeline routing discriminant (Codex correction B). The execution
  * kind selects which worker + builder the registry hands a verb to.
- * `unsubscribe` / `snooze` / `send` append here as their verbs land.
+ * `snooze` / `send` append here as their verbs land.
+ *
+ *   - `label-modify` — archive / later / unarchive: a Gmail label-set
+ *                      delta with a forward + reverse (the undo).
+ *   - `policy-only`  — keep: a standing sender-policy write, no labels.
+ *   - `unsubscribe`  — its own kind (Codex §4 — never label-modify). At
+ *                      V2 it carries the standing side-effect label only;
+ *                      the one-click vs mailto resolver lands at P9 (D230).
  */
-export const EXECUTION_KINDS = ['label-modify', 'policy-only'] as const;
+export const EXECUTION_KINDS = ['label-modify', 'policy-only', 'unsubscribe'] as const;
 export type ExecutionKind = (typeof EXECUTION_KINDS)[number];
 
 /**

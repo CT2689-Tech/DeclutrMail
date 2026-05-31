@@ -30,6 +30,8 @@ import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
 import { ReviewSession, type ReviewResult } from './review-session';
+import { KeyboardCheatsheet } from './keyboard-cheatsheet';
+import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
@@ -57,6 +59,18 @@ const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boole
   Archive: canArchive,
   Later: canLater,
   Unsubscribe: canUnsubscribe,
+};
+
+/**
+ * Selection-scoped bulk-action shortcuts (D227 K/A/U/L). These mirror the
+ * SelectionBar buttons exactly — a press routes through the SAME
+ * `requestAction` (the mandatory D226 preview), never a direct mutation.
+ * Keep (K) has no bulk affordance on this surface, so only A/L/U bind.
+ */
+const VERB_BY_KEY: Record<string, 'Archive' | 'Later' | 'Unsubscribe'> = {
+  a: 'Archive',
+  l: 'Later',
+  u: 'Unsubscribe',
 };
 
 let receiptSeq = 0;
@@ -313,6 +327,26 @@ function SendersScreenContent({
     },
     [pendingAction, performAction],
   );
+
+  // Selection-scoped K/A/U/L shortcuts (D227). A press acts on the current
+  // selection exactly like the SelectionBar — through the mandatory D226
+  // preview, never a direct mutation. Guarded so the keys are inert while
+  // typing in a field or while any modal (preview / cheatsheet / review)
+  // is open, and only when at least one sender is selected.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isTypingTarget(e.target)) return;
+      if (selectedSenders.length === 0) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const verb = VERB_BY_KEY[e.key.toLowerCase()];
+      if (!verb) return;
+      e.preventDefault();
+      requestAction({ verb, senders: selectedSenders.filter(ELIGIBLE[verb]) });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedSenders, requestAction]);
 
   const closeReview = useCallback(() => setReview(null), []);
   const applyReview = useCallback(
@@ -663,6 +697,9 @@ function SendersScreenContent({
         onApply={applyReview}
         onCancel={closeReview}
       />
+
+      {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
+      <KeyboardCheatsheet />
     </div>
   );
 }
