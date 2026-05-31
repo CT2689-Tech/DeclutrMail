@@ -23,3 +23,25 @@ export { ERROR_CODES, isErrorCode } from './error-codes';
 // D224 sync status transport — Zod schema + types for /api/v1/sync/status.
 export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
 export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
+
+// ADR-0015 verb vocabulary — the shared SoT for the action verb enum,
+// imported by the DB pg_enum (P5) and the Action Registry descriptors.
+export {
+  ACTION_TIER_RANK,
+  ACTION_TIERS,
+  ACTION_VERBS,
+  CANONICAL_SHORTCUTS,
+  EXECUTION_KINDS,
+  isActionVerb,
+  PREVIEW_MODES,
+  SELECTOR_TYPES,
+} from './verb-constants';
+export type {
+  ActionTier,
+  ActionVerb,
+  CanonicalShortcut,
+  CanonicalVerb,
+  ExecutionKind,
+  PreviewMode,
+  SelectorType,
+} from './verb-constants';

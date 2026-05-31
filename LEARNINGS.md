@@ -651,3 +651,29 @@ shared test harness rather than per-package.
 **Finding:** Codex flagged: a manifest deletion (refactor, accidental, or mid-refactor partial commit) silently DROPS pg_enum values. Postgres rejects `DROP VALUE` on most enums; even where it doesn't, downstream rows referencing the dropped value break. Migrations must be explicit, append-only, version-controlled, hand-reviewed.
 **Rule (provisional):** Pure constants module (`packages/shared/contracts/verb-constants.ts`) owns the agreement. DB schema imports the constants ONLY to write the explicit migration; manifest descriptor imports the constants for typing. Constants array is append-only; type tests assert union coverage; pg_enum migration tracks separately.
 **Distillation trigger:** promote to CLAUDE.md §10 ("Do NOT" list — "Do NOT derive pg_enum values from a JS structure"). Codex correction here aligns with broader migration discipline.
+
+## 2026-05-31 — A verb-generic descriptor is invariant; iterating its mapped registry won't widen
+
+**Context:** P2 Action Registry. `ActionDescriptor<V>` carries
+`execution: ActionExecution<V>` whose builders take `(params:
+ParamsForVerb<V>)`. `ACTION_REGISTRY` is the mapped type `{ [V in
+ActionVerb]: ActionDescriptor<V> }`.
+
+**Finding:** `ACTION_VERBS.map((v) => ACTION_REGISTRY[v])` yields the
+DISTRIBUTED union `ActionDescriptor<'keep'> | ActionDescriptor<'archive'>`,
+which is NOT assignable to `ActionDescriptor<'keep' | 'archive'>` (the
+default `ActionDescriptor`). Because `V` appears in a contravariant
+position (builder param), the generic is invariant in `V`, so the union
+of per-verb descriptors does not widen to the base descriptor. An inline
+`(v): ActionDescriptor =>` annotation does NOT rescue it — `tsc` fails
+`TS2322`. Both gate agents flagged this independently.
+
+**Rule (provisional):** When exposing "all descriptors as a list" from a
+verb-generic mapped registry, widen with an explicit array assertion
+(`... as readonly ActionDescriptor[]`) at the boundary — the per-verb
+element shapes ARE structurally identical at the base type; only the
+deferred `ParamsForVerb<V>` index differs. Expect this again at P5 when
+`archive` gains a real historic-scope param (the params stop being a
+uniform empty type, but the iteration widening is unchanged).
+
+**Distillation trigger:** promote to CLAUDE.md §X if pattern recurs ≥3 times.
