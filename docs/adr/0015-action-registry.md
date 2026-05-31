@@ -55,8 +55,8 @@ packages/shared/src/actions/manifest-entries.ts   # rich descriptors (the regist
 
 `verb-constants.ts` is pure TypeScript — no Zod, no logic, no cross-package
 imports — so the DB package can adopt the vocabulary without pulling the
-React/contract tree. The DB pg*enum lists its values explicitly and is
-_verified* against the constants by an invariant test; it is never generated
+React/contract tree. The DB `pg_enum` lists its values explicitly and is
+verified against the constants by an invariant test; it is never generated
 from them.
 
 Each descriptor (`ActionDescriptor<V>`) carries:
