@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { historicCount, type ActionRequest } from './data';
+import { historicCount, verbDisplay, type ActionRequest } from './data';
 
 const { color, font } = tokens;
 
@@ -257,7 +257,14 @@ export function ConfirmActionModal({
             Reversible for 7 days from Activity.
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Button tone="default" onClick={onCancel}>
+            <Button
+              tone="default"
+              onClick={onCancel}
+              // Subtle secondary hint — the key this modal actually cancels
+              // on is Escape (see the keydown handler above), so the chip
+              // reads `Esc`, not the looser `⌫` notation from the brief.
+              iconRight={<Kbd style={{ fontSize: 9, color: color.fgMuted }}>Esc</Kbd>}
+            >
               Cancel
             </Button>
             <Button
@@ -271,7 +278,8 @@ export function ConfirmActionModal({
                 </Kbd>
               }
             >
-              {verb}
+              {/* Confirm label = the verb's registry copy (ADR-0015). */}
+              {verbDisplay(verb).label}
             </Button>
           </div>
         </div>
