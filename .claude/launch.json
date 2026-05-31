@@ -4,18 +4,8 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@declutrmail/web", "dev"],
-      "port": 3000,
-      "autoPort": false,
-      "reuseExisting": true
-    },
-    {
-      "name": "senders-uplift-prototype",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4123", "--directory", "apps/web/prototypes"],
-      "port": 4123,
-      "autoPort": false,
-      "reuseExisting": true
+      "runtimeArgs": ["--dir", "/Users/chintant/projects/DeclutrMail/apps/web", "dev"],
+      "port": 3000
     }
   ]
 }

@@ -103,6 +103,20 @@ export interface SenderListRow {
   firstSeenAt: string;
   /** ISO-8601 — latest `internal_date` we've seen for this sender. */
   lastSeenAt: string;
+  /**
+   * Lifetime inbound message count for this sender, within retention
+   * (ADR-0014). Powers the headline "Total" column + the magnitude bar
+   * + the default `Total ↓` sort. Stored as `bigint`, serialised on the
+   * wire as a JSON `number` (the column's value is bounded far below
+   * `Number.MAX_SAFE_INTEGER`).
+   *
+   * Maintained authoritatively on every full rebuild (Path A —
+   * `InitialSyncWorker.buildSenderIndex`) and reconciled nightly by
+   * `SendersCounterReconciliationWorker`. Inbox state (archive / read /
+   * label) never changes the value — counts are "how many has this
+   * sender ever sent me", not "how many are in inbox right now".
+   */
+  totalReceived: number;
   monthlyVolume: number | null;
   readRate: number | null;
   /**
@@ -159,6 +173,48 @@ export interface ProtectionFlags {
  */
 export interface SenderDetail extends SenderListRow {
   protectionFlags: ProtectionFlags;
+}
+
+/**
+ * Sortable column for `GET /api/senders` (ADR-0014, senders list
+ * contract). The default at Slice 1 is `total` (server-side default
+ * sort by inbound-message count desc) — the new "flood" headline.
+ *
+ * Slice 1 implements `total` + `last_seen` + `first_seen` + `name`.
+ * `read` and `recommended` are reserved in the contract for later
+ * slices: `read` requires explicit nullable-column cursor handling
+ * (NULLS LAST + boundary marker) and `recommended` needs a
+ * recommendation-engine integration that does not exist yet. Sending
+ * either today returns a 400 from the controller.
+ */
+export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 'read' | 'recommended';
+
+/** Sort direction — server applies a sane default per `sort` if omitted. */
+export type SenderListDirection = 'asc' | 'desc';
+
+/**
+ * `meta.query` on `GET /api/senders` (senders list contract — returned
+ * on every page; the client should treat **page 1's value as
+ * authoritative** for the duration of a scroll).
+ *
+ * - `totalMatching`  — rows matching the active filter + search, query-wide
+ *                      (NOT cursor-scoped). Drives the "X of N senders" copy
+ *                      and the bulk select-all banner.
+ * - `globalMaxTotal` — `MAX(total_received)` for the **active mailbox**,
+ *                      **UNFILTERED**. The magnitude-bar denominator —
+ *                      a filtered view does NOT rescale to its own max,
+ *                      so bars stay comparable across filters.
+ * - `asOf`           — ISO-8601 timestamp the meta was computed (purely
+ *                      observational; lets the client see how stale a
+ *                      mid-scroll page's meta is relative to page 1).
+ * - `counts`         — optional per-chip counts for the future filter
+ *                      UI; reserved for Slice 3, omitted at Slice 1.
+ */
+export interface SenderListQueryMeta {
+  totalMatching: number;
+  globalMaxTotal: number;
+  asOf: string;
+  counts?: Record<string, number>;
 }
 
 /**

@@ -86,6 +86,11 @@ export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): Sen
     gmailCategory: GROUP_TO_CATEGORY[s.group],
     lastSeenAt,
     firstSeenAt,
+    // Fixtures derive totalReceived from `monthly × firstSeenMo` so the
+    // synthetic data tells a coherent "this sender has been around N
+    // months at M/mo" story (ADR-0014). Stress-case stories can override
+    // via `totalReceived` on the seed.
+    totalReceived: s.totalReceived ?? Math.max(s.monthly * Math.max(s.firstSeenMo, 1), 0),
     monthlyVolume: s.monthly,
     readRate: s.read,
     // Fixtures don't carry a real trend signal; default to `steady` so

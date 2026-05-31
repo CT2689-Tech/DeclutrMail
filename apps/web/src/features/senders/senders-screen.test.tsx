@@ -42,9 +42,12 @@ const ROW = {
   gmailCategory: 'promotions' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2025-01-01T00:00:00.000Z',
+  totalReceived: 120,
   monthlyVolume: 30,
   readRate: 0,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: 'one_click' as const,
+  lastReview: null,
   protectionFlags: {
     isVip: false,
     isProtected: false,
@@ -136,7 +139,10 @@ describe('SendersScreen — edge states', () => {
         respond: () =>
           jsonOk({
             data: [],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -157,7 +163,10 @@ describe('SendersScreen — edge states', () => {
         respond: () =>
           jsonOk({
             data: [ROW, { ...ROW, id: 'b', displayName: 'Sender B' }],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -225,7 +234,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -249,7 +261,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -280,11 +295,17 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
           url.searchParams.get('cursor')
             ? jsonOk({
                 data: [ROW_B],
-                meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+                meta: {
+                  pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                  query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+                },
               })
             : jsonOk({
                 data: [ROW],
-                meta: { pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 } },
+                meta: {
+                  pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 },
+                  query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+                },
               }),
       },
     ]);
@@ -310,7 +331,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -331,7 +355,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -354,7 +381,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);

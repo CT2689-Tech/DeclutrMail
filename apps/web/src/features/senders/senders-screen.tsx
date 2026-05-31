@@ -1,8 +1,15 @@
 'use client';
 
-import type { MouseEvent } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  EmptyState,
+  Eyebrow,
+  ScreenIntro,
+  tokens,
+  toast,
+  useIsAtMost,
+} from '@declutrmail/shared';
 import {
   canArchive,
   canLater,
@@ -14,13 +21,11 @@ import {
   type ActionRequest,
   type ActionVerb,
   type Cohort,
-  type GroupMeta,
   type ReviewKind,
   type Sender,
 } from './data';
 import { CohortRail } from './cohort-rail';
 import { SenderSearch } from './sender-search';
-import { SenderGroup } from './table/sender-group';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
@@ -34,7 +39,8 @@ import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { WeeklyHeroSliceKind } from '@/lib/api/senders';
+import type { SenderListRow, WeeklyHeroSliceKind } from '@/lib/api/senders';
+import { SenderTable, type SenderTableVerb } from './sender-table';
 import {
   InboxStoryHero,
   KpiStrip,
@@ -77,15 +83,34 @@ let receiptSeq = 0;
  * branches handled inline below.
  */
 export function SendersScreen() {
+  // Sort + direction come from the Zustand store (D200 client-state)
+  // so the new SenderTable's header click and a future
+  // sort-shortcut/keyboard surface both write through one seam.
+  const sort = useSendersStore((s) => s.sort);
+  const direction = useSendersStore((s) => s.direction);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
-  // the two share ONE infinite-query cache entry (the query key is keyed
-  // on `category` only, not `limit`) — the page sizes stay uniform as
-  // the user pulls more pages here.
-  const sendersQuery = useSenders({ limit: 50 });
+  // the two share ONE infinite-query cache entry per (category, limit,
+  // isProtected, sort, direction) — page sizes stay uniform across the
+  // surface as the user pulls more pages here.
+  const sendersQuery = useSenders({ limit: 50, sort, direction });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
   }, [sendersQuery.data]);
+  // Carry the wire rows through verbatim for the flat-table view — the
+  // SenderTable consumes the wire `SenderListRow` directly (it needs
+  // `totalReceived` and `lastReview`, which the FE `Sender` adapter
+  // drops for legacy reasons).
+  const allWireRows = useMemo<SenderListRow[]>(() => {
+    const pages = sendersQuery.data?.pages ?? [];
+    return pages.flatMap((p) => p.data);
+  }, [sendersQuery.data]);
+  // Page-1 meta.query.globalMaxTotal — the magnitude-bar denominator
+  // (ADR-0014 + senders list contract). Page-1's value is
+  // authoritative for the duration of a scroll: subsequent pages
+  // recompute server-side but the client preserves the page-1 number
+  // so bars do not animate / replace counts as the user pages.
+  const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
 
   if (sendersQuery.isLoading) {
     return <LoadingState />;
@@ -96,6 +121,8 @@ export function SendersScreen() {
   return (
     <SendersScreenContent
       senders={allSenders}
+      wireRows={allWireRows}
+      globalMaxTotal={globalMaxTotal}
       hasNextPage={sendersQuery.hasNextPage}
       isFetchingNextPage={sendersQuery.isFetchingNextPage}
       onLoadMore={() => void sendersQuery.fetchNextPage()}
@@ -115,11 +142,15 @@ const READ_MIN_PER_MSG = 1.6;
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders,
+  wireRows,
+  globalMaxTotal,
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
 }: {
   senders: Sender[];
+  wireRows: SenderListRow[];
+  globalMaxTotal: number;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
@@ -136,7 +167,18 @@ function SendersScreenContent({
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
   const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
   const [heroDismissed, setHeroDismissed] = useState(false);
-  const view = useSendersStore((s) => s.view);
+  const storeView = useSendersStore((s) => s.view);
+  const tableSort = useSendersStore((s) => s.sort);
+  const tableDirection = useSendersStore((s) => s.direction);
+  const setTableSort = useSendersStore((s) => s.setSort);
+  // Mobile = Grid-only (handoff). On viewports below the `sm` breakpoint
+  // the screen forces Grid even if the store says Table; the table's
+  // 9-column layout does not fit a phone-width viewport and the
+  // existing Grid view scrolls cleanly. The override is presentation-
+  // only — the store value is preserved so re-entering on desktop
+  // returns to Table without a re-click.
+  const isMobile = useIsAtMost('sm');
+  const view = isMobile ? 'grid' : storeView;
   // Weekly Hero (D47, D48). Always fetched; only RENDERED when
   // `data.isMonday=true` per D47 ("refreshes Monday morning per user
   // timezone"). The single in-flight fetch is cheap and keeps the
@@ -209,15 +251,6 @@ function SendersScreenContent({
   // Hero / KPI numbers — derived from the unfiltered list so the hero
   // reflects the whole mailbox, not the active filter slice.
   const totals = useMemo(() => computeTotals(senders), [senders]);
-
-  const toggleSelect = (id: string, _evt: MouseEvent) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const applyCohort = (cohort: Cohort) => {
     setActiveIntent(null);
@@ -537,17 +570,46 @@ function SendersScreenContent({
           onAction={requestAction}
         />
       ) : (
-        // D49 toggle path — intent-grouped tables (preserved as-is).
-        visibleGroups.map((bucket) => (
-          <SenderGroup
-            key={bucket.intent}
-            group={intentToGroupMeta(bucket.intent, bucket.meta)}
-            items={bucket.items}
-            selectedIds={selected}
-            onToggleSelect={toggleSelect}
-            onAction={requestAction}
-          />
-        ))
+        // Slice 1 Step 7a — flat-sortable SenderTable (ADR-0014,
+        // senders list contract). Replaces the intent-grouped tables
+        // that previously lived behind the Table toggle; that pattern
+        // is preserved in `./table/sender-group.tsx` for the in-Grid
+        // intent rails but is no longer the toggle target.
+        //
+        // Visible-set semantics for Table mode:
+        //   - The BE sort order (sort + direction) is the canonical row
+        //     order — the table does NOT intent-bucket. The intent
+        //     chips above still apply as a client-side filter when one
+        //     is active.
+        //   - Search restricts to senders whose name/email/domain
+        //     matches the query (same as Grid mode's `queryBase`).
+        // We re-derive the visible set from `wireRows` so the table
+        // gets BE-order rows with the full `SenderListRow` shape
+        // (including `totalReceived`, which the FE adapter drops).
+        <SenderTable
+          rows={filterTableRows(wireRows, queryBase, activeIntent, senders)}
+          globalMaxTotal={globalMaxTotal}
+          sort={tableSort}
+          direction={tableDirection}
+          onSortChange={(next) => setTableSort(next)}
+          selectedIds={selected}
+          onSelectionChange={(next) => setSelected(new Set(next))}
+          onAction={({ verb, sender }) => {
+            // Bridge wire-row verbs into the existing
+            // `requestAction({ verb, senders: Sender[] })` shape so
+            // ConfirmActionModal / receipt / undo wiring stay shared
+            // with Grid mode (D226).
+            const adapted = adaptSenderListRow(sender);
+            requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
+          }}
+          emptyKind={
+            query.trim() !== ''
+              ? 'no-search-match'
+              : activeIntent !== null
+                ? 'no-filter-match'
+                : 'no-senders'
+          }
+        />
       )}
 
       {/*
@@ -606,6 +668,45 @@ function SendersScreenContent({
 }
 
 /* ────────────────── HELPERS ────────────────── */
+
+/**
+ * Map the SenderTable's K/A/U/L vocabulary (D227) to the legacy
+ * `ActionVerb` shape `ConfirmActionModal` consumes. Keeps the table
+ * decoupled from the older verb labels while preserving the
+ * single-modal preview wiring.
+ */
+const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
+  keep: 'Protect',
+  archive: 'Archive',
+  unsubscribe: 'Unsubscribe',
+  later: 'Later',
+};
+
+/**
+ * Filter the wire-shape rows for the flat-table view.
+ *
+ * The table consumes `SenderListRow` directly (so it sees
+ * `totalReceived` + `lastReview` + `protectionFlags` verbatim from the
+ * wire), but the screen still owns the active client filters — search
+ * query and intent chip. We index the adapted senders by id and walk
+ * the wire rows in BE-sort order so the table's row order mirrors the
+ * server's `sort=total DESC` (or whichever sort is active).
+ */
+function filterTableRows(
+  wireRows: readonly SenderListRow[],
+  searched: readonly Sender[],
+  activeIntent: SenderIntent | null,
+  allAdapted: readonly Sender[],
+): SenderListRow[] {
+  const searchedIds = new Set(searched.map((s) => s.id));
+  const adaptedById = new Map(allAdapted.map((s) => [s.id, s] as const));
+  return wireRows.filter((row) => {
+    if (!searchedIds.has(row.id)) return false;
+    if (activeIntent === null) return true;
+    const adapted = adaptedById.get(row.id);
+    return adapted !== undefined && intentOf(adapted) === activeIntent;
+  });
+}
 
 interface SenderTotals {
   totalMonthly: number;
@@ -717,26 +818,6 @@ function mapHeroSliceToReviewKind(kind: WeeklyHeroSliceKind): ReviewKind {
     case 'quiet':
       return 'quiet';
   }
-}
-
-/**
- * Adapt an intent bucket to the legacy `GroupMeta` shape so `SenderGroup`
- * — which still types `key: SenderGroup` (Gmail-cat enum) — accepts our
- * intent-derived groups. The key is widened via cast at the boundary; a
- * future refactor can broaden `GroupMeta.key` to `string` so the cast
- * goes away.
- */
-function intentToGroupMeta(
-  intent: SenderIntent,
-  meta: (typeof INTENT_META)[SenderIntent],
-): GroupMeta {
-  return {
-    // Cast required until `GroupMeta.key` is broadened from `SenderGroup`
-    // (Gmail-cat enum) to `string`. Tracked as a follow-up; not blocking.
-    key: intent as unknown as GroupMeta['key'],
-    label: meta.label,
-    hint: meta.description,
-  };
 }
 
 interface IntentChipProps {

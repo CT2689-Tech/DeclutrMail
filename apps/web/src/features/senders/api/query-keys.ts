@@ -14,7 +14,7 @@
  * `hashKey` produces consistent hashes.
  */
 
-import type { GmailCategory } from '@/lib/api/senders';
+import type { GmailCategory, SenderListDirection, SenderListSort } from '@/lib/api/senders';
 
 export const sendersKeys = {
   all: ['senders'] as const,
@@ -37,6 +37,8 @@ export const sendersKeys = {
       category?: GmailCategory | undefined;
       limit?: number | undefined;
       isProtected?: boolean | undefined;
+      sort?: SenderListSort | undefined;
+      direction?: SenderListDirection | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */

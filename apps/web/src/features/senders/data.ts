@@ -82,6 +82,15 @@ export interface Sender {
    * — the detail header surfaces "Never reviewed" in that case.
    */
   lastReview?: SenderLastReview | null;
+  /**
+   * Lifetime inbound count override for fixture stories (ADR-0014).
+   * When omitted, `fixtureToSenderListRow` derives a synthetic count
+   * from `monthly × firstSeenMo` so the story renders a coherent
+   * "this sender at this cadence for this long" total. Stress-case
+   * stories that need a specific value (e.g. a 5,000-message hero
+   * card) set this directly.
+   */
+  totalReceived?: number;
 }
 
 export interface GroupMeta {

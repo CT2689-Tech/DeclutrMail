@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
 import { mailboxAccounts } from './mailbox-accounts';
@@ -80,6 +89,24 @@ export const senders = pgTable(
      * `List-Unsubscribe` header.
      */
     unsubscribeUrl: text('unsubscribe_url'),
+    /**
+     * Denormalised count of inbound (`is_outbound = false`) messages
+     * synced from this sender, lifetime within retention (ADR-0014).
+     * Maintained on two write paths:
+     *   A. authoritatively on `InitialSyncWorker.buildSenderIndex`
+     *      (full rebuild — closes drift atomically), and
+     *   B. idempotently on incremental ingest via the message upsert's
+     *      `(xmax = 0) AS inserted` signal (Slice 1 follow-up).
+     * Reconciled nightly by `senders-counter-reconciliation` which emits
+     * the `senders.counter_drift` metric (D159).
+     *
+     * Inbox state (archive / read / label) never changes this — counts
+     * are "how many has this sender ever sent me", not "how many are
+     * in inbox right now". `mode: 'number'` because counts are bounded
+     * far below `Number.MAX_SAFE_INTEGER` (2^53) and the wire shape per
+     * the senders list contract is a JSON number, not a `bigint` string.
+     */
+    totalReceived: bigint('total_received', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -95,6 +122,17 @@ export const senders = pgTable(
     categoryIdx: index('senders_account_category_idx').on(
       table.mailboxAccountId,
       table.gmailCategory,
+    ),
+    /**
+     * Keyset index for the default `Total ↓` sort on the Senders list
+     * (ADR-0014 + `docs/api/senders-list-contract.md`). Direction
+     * matches the cursor comparison `(total_received, id) <
+     * (cursor.total, cursor.id)` so the planner stays on the index.
+     */
+    totalReceivedIdx: index('senders_account_total_received_idx').on(
+      table.mailboxAccountId,
+      table.totalReceived.desc(),
+      table.id.desc(),
     ),
   }),
 );
