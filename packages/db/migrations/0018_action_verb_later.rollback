@@ -1,0 +1,21 @@
+-- Rollback for 0018_action_verb_later.sql
+--
+-- Postgres has no `ALTER TYPE DROP VALUE`, so the rollback recreates the
+-- enum without `'later'`. Procedure:
+--
+--   1. Switch `action_jobs.verb` to plain text so the enum type can be
+--      dropped (`DROP TYPE` with an in-use type errors).
+--   2. Drop the enum type.
+--   3. Recreate the type with the original single-value set.
+--   4. Switch the column back, casting through text. The cast FAILS if
+--      any row carries `'later'` — the correct safety: you cannot
+--      rollback if data depends on a removed value. Operators clean up
+--      the rows (DELETE or UPDATE to 'archive') before retrying.
+
+ALTER TABLE "action_jobs" ALTER COLUMN "verb" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."action_verb";
+--> statement-breakpoint
+CREATE TYPE "public"."action_verb" AS ENUM('archive');
+--> statement-breakpoint
+ALTER TABLE "action_jobs" ALTER COLUMN "verb" TYPE "public"."action_verb" USING verb::"public"."action_verb";

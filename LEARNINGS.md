@@ -677,3 +677,45 @@ deferred `ParamsForVerb<V>` index differs. Expect this again at P5 when
 uniform empty type, but the iteration widening is unchanged).
 
 **Distillation trigger:** promote to CLAUDE.md §X if pattern recurs ≥3 times.
+
+## 2026-05-31 — Atlas `atlas.sum` is reproducible offline (no atlas binary needed)
+**Context:** Adding migration `0018` (an `ALTER TYPE … ADD VALUE`) needed
+`packages/db/migrations/atlas.sum` updated, but `atlas` is uninstallable
+in the web-execution env (ariga.io egress returns 403; `go install` proxy
+likewise blocked). CI's `migration-lint` runs `atlas migrate lint`, which
+verifies `atlas.sum` integrity — a stale/missing entry breaks CI.
+**Finding:** The `atlas.sum` hashing is reproducible with Node `crypto`
+alone. Verified to byte-reproduce all 18 existing entries:
+- **Per-file line** = a *cumulative* SHA-256 over `(name + content)` for
+  every `.sql` in sorted order, emitting the running digest at each file
+  (a single hash object, never reset — so the LAST file's hash covers the
+  whole dir, and the FIRST file's is just its own). Encoded base64, prefixed `h1:`.
+- **Header line** = `h1:` + base64(SHA-256 over the concatenation of
+  `(name + rawBase64HashWithoutPrefix)` for every file, in order).
+- File order is the sorted `.sql` list; `.rollback` files are excluded.
+**Rule (provisional):** When `atlas` is unavailable, regenerate
+`atlas.sum` with a Node script using the algorithm above, and ALWAYS
+assert it byte-reproduces every pre-existing entry before writing (a
+single mismatch means the algorithm or a source file drifted — abort).
+The PGlite `migration-roundtrip` test (`packages/db/tests`) then smokes
+the SQL itself (apply → rollback → re-apply) without atlas or a local PG.
+**Distillation trigger:** promote to CLAUDE.md §X if a 2nd migration PR
+hits the same atlas-unavailable wall.
+
+## 2026-05-31 — A new `action_verb` must be writable into the downstream enums
+**Context:** P4 tried to append `later` + `unarchive` to the `action_verb`
+pg_enum. `later` typechecked; `unarchive` failed the workers build.
+**Finding:** `LabelActionWorker` writes a job's `verb` straight into
+`undo_journal.actionKind` (`undo_action_kind`) and `activity_log.action`
+(`activity_action`). So `action_verb` is effectively a SUBSET of both of
+those enums. `later` is a member of all three; `unarchive` is in neither
+downstream enum, so widening `action_verb` to include it broke the
+worker's insert types (`TS2769`). The registry can model `unarchive` as a
+`label-modify` verb (for FE copy) without it being a valid `action_verb`.
+**Rule (provisional):** Before adding a verb to `action_verb`, confirm it
+already exists in `undo_action_kind` AND `activity_action` (or migrate all
+three together + teach the worker). Registry membership ≠ pg_enum
+membership — `keep`, `unsubscribe`, and now `unarchive` are in the
+registry but not in `action_verb`, each for a documented reason.
+**Distillation trigger:** promote to CLAUDE.md §2 (DB invariants) if a
+verb-add breaks a downstream enum a 2nd time.
