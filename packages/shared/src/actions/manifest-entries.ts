@@ -3,9 +3,11 @@
 // ONE typed descriptor per verb: the source of truth for the button
 // label + microcopy, the preview surface, the per-selector tier
 // capabilities, and the pipeline routing (which worker + how to build
-// the mutation). P2 ships the foundation with ZERO consumers — P3 wires
-// the worker to `execution`, P4 wires the web surfaces to `copy` +
-// `shortcut` + `preview`, P5 appends the bulk verbs.
+// the mutation). P2 shipped the foundation with ZERO consumers — P3
+// wired the worker to `execution`; P4 (this change) appends the
+// `later` / `unsubscribe` / `unarchive` verbs AND wires the web surfaces
+// to `copy` + `shortcut` + `preview`. The bulk SELECTORS + reservation
+// table remain deferred (P5+).
 //
 // Design contract (Codex review, consensus 2026-05-30):
 //   A. Verb vocabulary lives in contracts/verb-constants — the DB enum
@@ -67,6 +69,9 @@ export interface PolicyDelta {
 export interface VerbParams {
   readonly keep: Record<string, never>;
   readonly archive: Record<string, never>;
+  readonly later: Record<string, never>;
+  readonly unsubscribe: Record<string, never>;
+  readonly unarchive: Record<string, never>;
 }
 export type ParamsForVerb<V extends ActionVerb> = VerbParams[V];
 
@@ -82,6 +87,24 @@ export type ActionExecution<V extends ActionVerb> =
   | {
       readonly kind: 'policy-only';
       readonly buildPolicyWrite: (params: ParamsForVerb<V>) => PolicyDelta;
+    }
+  | {
+      readonly kind: 'unsubscribe';
+      /**
+       * The standing side-effect label applied when a sender is
+       * unsubscribed (`DeclutrMail/Unsubscribed`). Static — no params.
+       *
+       * The per-sender one-click vs mailto RESOLUTION (`resolveMethod`,
+       * Codex §4 sketch) is deliberately NOT modeled here: it needs the
+       * `List-Unsubscribe` sender data this registry does not carry, and
+       * at launch mailto unsubscribe is manual (D230). It lands with the
+       * mailto-batch CTA work (P9). Until then `unsubscribe` carries only
+       * the routing discriminant + this side-effect so the FE can read
+       * its copy/shortcut/preview without a half-built resolver.
+       *
+       * PRIVACY (D7): label ids only, never body.
+       */
+      readonly sideEffect: LabelChange;
     };
 
 /** Letter-free user-facing copy (§3.1 — shortcuts are not shown inline). */
@@ -179,6 +202,89 @@ export const ACTION_REGISTRY: ActionRegistry = {
       buildLabelChange: () => ({
         forward: { removeLabelIds: ['INBOX'] },
         reverse: { addLabelIds: ['INBOX'] },
+      }),
+    },
+  },
+  later: {
+    verb: 'later',
+    copy: {
+      primary: 'Later',
+      description:
+        "Move this sender's mail out of the inbox into a DeclutrMail/Later label. You can undo this.",
+    },
+    shortcut: CANONICAL_SHORTCUTS.later,
+    preview: 'modal',
+    capabilities: {
+      sender: { tier: 'free', countsAsCleanup: true },
+      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
+      'sender-filter': { tier: 'pro', countsAsCleanup: true },
+    },
+    execution: {
+      kind: 'label-modify',
+      // Later = drop INBOX + tag DeclutrMail/Later; undo restores the
+      // inbox + clears the tag. Modeled as the label mutation that moves
+      // EXISTING mail — the future-mail standing rule is a separate
+      // policy concern (like keep's policy-only), wired later, NOT bundled
+      // into this label delta. A label-modify verb, so it shares the
+      // LabelActionWorker + the action_verb pg_enum (P5).
+      buildLabelChange: () => ({
+        forward: { removeLabelIds: ['INBOX'], addLabelIds: ['DeclutrMail/Later'] },
+        reverse: { addLabelIds: ['INBOX'], removeLabelIds: ['DeclutrMail/Later'] },
+      }),
+    },
+  },
+  unsubscribe: {
+    verb: 'unsubscribe',
+    copy: {
+      primary: 'Unsubscribe',
+      description: 'Stop future mail from this sender. Nothing already in your inbox moves.',
+    },
+    shortcut: CANONICAL_SHORTCUTS.unsubscribe,
+    preview: 'modal',
+    capabilities: {
+      sender: { tier: 'free', countsAsCleanup: true },
+      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
+      'sender-filter': { tier: 'pro', countsAsCleanup: true },
+    },
+    execution: {
+      kind: 'unsubscribe',
+      // Its OWN kind (Codex §4 — never misclassified as label-modify, so
+      // it never reaches the LabelActionWorker). Carries only the standing
+      // side-effect label at V2; the one-click vs mailto resolver lands at
+      // P9 (D230). NOT in the label-modify pg_enum.
+      sideEffect: { addLabelIds: ['DeclutrMail/Unsubscribed'] },
+    },
+  },
+  unarchive: {
+    verb: 'unarchive',
+    copy: {
+      // Not a K/A/U/L triage verb — a restore op (Q3 "Restore from bulk"),
+      // so its label is descriptive, not one of the four canonical verbs.
+      primary: 'Restore to inbox',
+      description: 'Bring this sender’s archived mail back into the inbox.',
+    },
+    // No canonical single-key shortcut — unarchive is not part of K/A/U/L.
+    shortcut: null,
+    preview: 'modal',
+    capabilities: {
+      // Single-sender restore only (Q3). Bulk restore is not a launch
+      // surface — no multi-sender / sender-filter selector.
+      sender: { tier: 'free', countsAsCleanup: false },
+      'multi-sender': null,
+      'sender-filter': null,
+    },
+    execution: {
+      kind: 'label-modify',
+      // The inverse of archive — re-add INBOX; undo drops it again. A
+      // label-modify verb (so it would ride the shared LabelActionWorker),
+      // but it is NOT in the `action_verb` pg_enum yet: the worker writes
+      // the verb into `undo_action_kind` + `activity_action`, neither of
+      // which includes `unarchive`. Wiring it is the restore-pipeline
+      // change (those two enums + worker support), deferred until there is
+      // a producer.
+      buildLabelChange: () => ({
+        forward: { addLabelIds: ['INBOX'] },
+        reverse: { removeLabelIds: ['INBOX'] },
       }),
     },
   },

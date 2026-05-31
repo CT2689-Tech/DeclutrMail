@@ -54,6 +54,53 @@ describe('Action Registry (ADR-0015)', () => {
     }
   });
 
+  // 4b. Each verb routes to its DECIDED execution.kind (P4 decision —
+  //     documented for founder review). Pinned so a future edit that
+  //     re-routes `later` to a snooze kind or misclassifies `unsubscribe`
+  //     as label-modify (the Codex §4 error) is a failing test, not a
+  //     silent drift.
+  it('routes each verb to its decided execution.kind', () => {
+    const byVerb = Object.fromEntries(
+      listActionDescriptors().map((d) => [d.verb, d.execution.kind]),
+    );
+    expect(byVerb).toEqual({
+      keep: 'policy-only',
+      archive: 'label-modify',
+      later: 'label-modify',
+      unsubscribe: 'unsubscribe',
+      unarchive: 'label-modify',
+    });
+  });
+
+  // 4c. `unsubscribe` carries its standing side-effect label and nothing
+  //     that could leak a body (D7) — label ids only.
+  it('gives unsubscribe a label-only side-effect', () => {
+    const d = ACTION_REGISTRY.unsubscribe;
+    expect(d.execution.kind).toBe('unsubscribe');
+    if (d.execution.kind === 'unsubscribe') {
+      expect(d.execution.sideEffect).toEqual({ addLabelIds: ['DeclutrMail/Unsubscribed'] });
+    }
+  });
+
+  // 4d. The label-modify verbs build a forward/reverse INBOX delta that
+  //     round-trips (undo is the inverse). Catches a reverse that does
+  //     not actually undo the forward.
+  it('builds invertible INBOX deltas for label-modify verbs', () => {
+    for (const d of listActionDescriptors()) {
+      if (d.execution.kind !== 'label-modify') continue;
+      const { forward, reverse } = d.execution.buildLabelChange({});
+      // INBOX appears on exactly one side of the forward delta and the
+      // opposite side of the reverse — the move is undoable.
+      const fwdRemovesInbox = forward.removeLabelIds?.includes('INBOX') ?? false;
+      const fwdAddsInbox = forward.addLabelIds?.includes('INBOX') ?? false;
+      const revRemovesInbox = reverse.removeLabelIds?.includes('INBOX') ?? false;
+      const revAddsInbox = reverse.addLabelIds?.includes('INBOX') ?? false;
+      expect(fwdRemovesInbox || fwdAddsInbox, `${d.verb}: forward touches INBOX`).toBe(true);
+      expect(fwdRemovesInbox, `${d.verb}: reverse inverts INBOX`).toBe(revAddsInbox);
+      expect(fwdAddsInbox, `${d.verb}: reverse inverts INBOX`).toBe(revRemovesInbox);
+    }
+  });
+
   // 5. capabilitiesBySelector tier is monotonic across the selector funnel:
   //    sender ≤ multi-sender ≤ sender-filter (Free funnel coherence).
   it('keeps capability tiers non-decreasing across selectors (free ≤ plus ≤ pro)', () => {
