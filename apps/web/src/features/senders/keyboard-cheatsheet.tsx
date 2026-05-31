@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { getActionDescriptor, type ActionVerb } from '@declutrmail/shared/actions';
+import {
+  CANONICAL_SHORTCUTS,
+  getActionDescriptor,
+  type ActionVerb,
+} from '@declutrmail/shared/actions';
+
+import { isTypingTarget } from './keyboard';
 
 const { color, font } = tokens;
 
@@ -18,15 +24,12 @@ const { color, font } = tokens;
  * screen that exposes the shortcuts.
  */
 
-/** The four canonical verbs, in D227 K/A/U/L order. */
-const CANONICAL_VERBS: readonly ActionVerb[] = ['keep', 'archive', 'unsubscribe', 'later'];
-
-/** True when focus sits in a text-entry surface — `?` is a literal there. */
-export function isTypingTarget(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
-}
+/**
+ * The four canonical verbs, in D227 K/A/U/L order — derived from
+ * `CANONICAL_SHORTCUTS` (whose insertion order IS K/A/U/L) so there is no
+ * parallel hand-maintained list to drift.
+ */
+const CANONICAL_VERBS = Object.keys(CANONICAL_SHORTCUTS) as ActionVerb[];
 
 export function KeyboardCheatsheet() {
   const [open, setOpen] = useState(false);
