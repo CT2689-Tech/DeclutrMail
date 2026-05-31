@@ -55,6 +55,7 @@
 import type { CSSProperties } from 'react';
 import { useState } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { getActionDescriptor } from '@declutrmail/shared/actions';
 
 import type {
   SenderListDirection,
@@ -612,12 +613,13 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
   );
 }
 
-const VERB_DEFS: ReadonlyArray<{ verb: SenderTableVerb; label: string; shortcut: string }> = [
-  { verb: 'keep', label: 'Keep', shortcut: 'K' },
-  { verb: 'archive', label: 'Archive', shortcut: 'A' },
-  { verb: 'unsubscribe', label: 'Unsubscribe', shortcut: 'U' },
-  { verb: 'later', label: 'Later', shortcut: 'L' },
-];
+/**
+ * Row verbs in canonical K/A/U/L order (D227). The label + shortcut are
+ * read from the Action Registry (ADR-0015) at render time, not hardcoded
+ * here — one registry descriptor is the source of truth shared with the
+ * SelectionBar, the confirm modal, and the keyboard cheatsheet.
+ */
+const VERB_ORDER: readonly SenderTableVerb[] = ['keep', 'archive', 'unsubscribe', 'later'];
 
 function VerbButtons({
   sender,
@@ -628,35 +630,39 @@ function VerbButtons({
 }) {
   return (
     <div style={{ display: 'inline-flex', gap: 4 }}>
-      {VERB_DEFS.map((v) => (
-        <button
-          key={v.verb}
-          type="button"
-          onClick={(e) => {
-            // Defense in depth — stop the click bubbling to any future
-            // row-level handler. Today there is none; this keeps a
-            // future regression caller from accidentally double-firing.
-            e.stopPropagation();
-            onAction({ verb: v.verb, sender });
-          }}
-          aria-label={`${v.label} ${displayLabel(sender)}`}
-          title={`${v.label} (${v.shortcut})`}
-          style={{
-            all: 'unset',
-            cursor: 'pointer',
-            padding: '4px 10px',
-            borderRadius: radius.sm,
-            border: `1px solid ${color.line}`,
-            background: color.card,
-            fontFamily: font.sans,
-            fontSize: text.sm,
-            fontWeight: 500,
-            color: color.fg,
-          }}
-        >
-          {v.label}
-        </button>
-      ))}
+      {VERB_ORDER.map((verb) => {
+        const { copy, shortcut } = getActionDescriptor(verb);
+        const label = copy.primary;
+        return (
+          <button
+            key={verb}
+            type="button"
+            onClick={(e) => {
+              // Defense in depth — stop the click bubbling to any future
+              // row-level handler. Today there is none; this keeps a
+              // future regression caller from accidentally double-firing.
+              e.stopPropagation();
+              onAction({ verb, sender });
+            }}
+            aria-label={`${label} ${displayLabel(sender)}`}
+            title={shortcut ? `${label} (${shortcut})` : label}
+            style={{
+              all: 'unset',
+              cursor: 'pointer',
+              padding: '4px 10px',
+              borderRadius: radius.sm,
+              border: `1px solid ${color.line}`,
+              background: color.card,
+              fontFamily: font.sans,
+              fontSize: text.sm,
+              fontWeight: 500,
+              color: color.fg,
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

@@ -6,6 +6,11 @@
  * switcher; the rebuild ships one fixed, realistic mailbox instead.
  */
 
+import {
+  getActionDescriptor,
+  type ActionVerb as RegistryActionVerb,
+} from '@declutrmail/shared/actions';
+
 export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
 /**
@@ -699,6 +704,33 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Later: 'Moved to Later',
   Protect: 'Protected',
 };
+
+/**
+ * Bridge the senders-feature's capitalized verb labels to the lowercase
+ * Action Registry verbs (ADR-0015) so every action surface sources its
+ * button label + shortcut from the ONE registry instead of a local
+ * hardcode (P4). `Protect` is a VIP/lock op with no registry verb.
+ */
+const VERB_TO_REGISTRY: Partial<Record<ActionVerb, RegistryActionVerb>> = {
+  Keep: 'keep',
+  Archive: 'archive',
+  Unsubscribe: 'unsubscribe',
+  Later: 'later',
+};
+
+/**
+ * Registry-sourced display copy for a senders verb: the canonical button
+ * label + its single-key shortcut (D227 K/A/U/L; `null` for verbs with
+ * no canonical letter, e.g. `Protect`). The single seam the SelectionBar,
+ * ConfirmActionModal, and cheatsheet read so the verb label/shortcut can
+ * never drift between surfaces.
+ */
+export function verbDisplay(verb: ActionVerb): { label: string; shortcut: string | null } {
+  const registryVerb = VERB_TO_REGISTRY[verb];
+  if (registryVerb === undefined) return { label: verb, shortcut: null };
+  const descriptor = getActionDescriptor(registryVerb);
+  return { label: descriptor.copy.primary, shortcut: descriptor.shortcut };
+}
 
 export interface ActionRequest {
   verb: ActionVerb;

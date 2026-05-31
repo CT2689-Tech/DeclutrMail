@@ -1,7 +1,14 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { canArchive, canLater, canUnsubscribe, type ActionVerb, type Sender } from './data';
+import {
+  canArchive,
+  canLater,
+  canUnsubscribe,
+  verbDisplay,
+  type ActionVerb,
+  type Sender,
+} from './data';
 
 const { color, font } = tokens;
 
@@ -75,11 +82,18 @@ export function SelectionBar({
         const n = eligible[verb];
         const disabled = n === 0;
         const primary = verb === 'Unsubscribe';
+        // Label + shortcut from the Action Registry (ADR-0015) — the
+        // shortcut stays invisible inline (§3.1), surfaced only via the
+        // hover tooltip + the `?` cheatsheet. `aria-keyshortcuts` advertises
+        // the binding the senders-screen handler honors for the selection.
+        const { label, shortcut } = verbDisplay(verb);
         return (
           <button
             key={verb}
             onClick={() => !disabled && onAct(verb)}
             disabled={disabled}
+            title={shortcut ? `${label} (${shortcut})` : label}
+            aria-keyshortcuts={shortcut ?? undefined}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -97,7 +111,7 @@ export function SelectionBar({
               opacity: disabled ? 0.4 : 1,
             }}
           >
-            {verb}
+            {label}
             <span style={{ fontFamily: font.mono, fontSize: 11, opacity: 0.8 }}>{n}</span>
           </button>
         );
