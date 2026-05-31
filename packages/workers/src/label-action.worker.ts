@@ -12,6 +12,8 @@ import {
 } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
+import { getActionDescriptor } from '@declutrmail/shared/actions';
+import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { GmailMutationAccess, LabelChange } from './gmail-mutation-client.js';
@@ -25,11 +27,13 @@ import type { WorkerContext } from './worker-context.js';
  * destructive-action pipeline. ONE worker for every label-modify verb
  * (archive now; trash later) and BOTH directions (forward + undo).
  *
- * The verb varies only in its `LabelChange` (see `VERB_LABEL_CHANGES`),
- * so a new verb is one map entry, not a new worker. The execution
- * plumbing — resolve the durable id set, mutate Gmail, then the terminal
- * transaction (issue undo + activity + outbox event + local label update
- * + job done) — is shared.
+ * The verb varies only in its `LabelChange`, which the worker reads from
+ * the Action Registry (ADR-0015, via `labelChangeForVerb`) — the single
+ * source of truth shared with the API + web — so a new label verb is one
+ * registry descriptor, not a new worker. The execution plumbing — resolve
+ * the durable id set, mutate Gmail, then the terminal transaction (issue
+ * undo + activity + outbox event + local label update + job done) — is
+ * shared.
  *
  * Correctness invariants (Codex review 2026-05-28):
  *   - DURABLE EXECUTION SET. The `provider_message_id`s are resolved
@@ -56,19 +60,28 @@ export const LABEL_ACTION_QUEUE = 'label-action';
 export const LABEL_ACTION_JOB = 'label-action';
 
 /**
- * Forward + reverse `LabelChange` per verb. Archive = drop INBOX;
- * its inverse re-adds INBOX. Trash (future) = add TRASH / remove INBOX,
- * inverse remove TRASH / add INBOX — one new entry, no new worker.
+ * Resolve a verb's forward/reverse `LabelChange` from the Action Registry
+ * (ADR-0015) — the single source of truth that replaces the worker-local
+ * `VERB_LABEL_CHANGES` map (P3). Adding a label verb is one registry
+ * descriptor, not an edit here.
+ *
+ * Pipeline isolation (consensus §5): a `policy-only` verb (keep/protect)
+ * must NEVER reach the label worker. The discriminated `execution.kind`
+ * makes the guard type-required — `buildLabelChange` exists only on the
+ * `label-modify` arm — so a mis-routed verb throws a non-retryable
+ * `ValidationError`. The guard is unreachable today (the `action_verb`
+ * pg_enum is label-modify-only) and becomes live the moment keep/protect
+ * join the enum (P5).
  */
-export const VERB_LABEL_CHANGES = {
-  archive: {
-    forward: { removeLabelIds: ['INBOX'] },
-    reverse: { addLabelIds: ['INBOX'] },
-  },
-} as const satisfies Record<string, { forward: LabelChange; reverse: LabelChange }>;
-
-/** A verb the pipeline knows how to apply. */
-export type LabelActionVerb = keyof typeof VERB_LABEL_CHANGES;
+export function labelChangeForVerb(verb: ActionVerb): LabelChangePair {
+  const { execution } = getActionDescriptor(verb);
+  if (execution.kind !== 'label-modify') {
+    throw new ValidationError(
+      `verb "${verb}" routes to ${execution.kind}; LabelActionWorker applies label-modify verbs only`,
+    );
+  }
+  return execution.buildLabelChange({});
+}
 
 /**
  * One label-action job. Minimal — the worker loads the durable
@@ -162,10 +175,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       return { affectedCount: job.affectedCount, undoToken: job.undoToken, alreadyDone: true };
     }
 
-    const change = VERB_LABEL_CHANGES[job.verb as LabelActionVerb];
-    if (!change) {
-      throw new ValidationError(`unknown action verb ${job.verb}`);
-    }
+    const change = labelChangeForVerb(job.verb);
 
     return job.direction === 'reverse'
       ? this.executeReverse(job, change.reverse)

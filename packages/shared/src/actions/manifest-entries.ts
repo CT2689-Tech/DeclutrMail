@@ -28,9 +28,11 @@ import { ACTION_VERBS, CANONICAL_SHORTCUTS } from '../contracts/verb-constants';
 /**
  * A Gmail label-set delta — structurally identical to the worker's
  * `LabelChange` port (packages/workers/gmail-mutation-client). Mirrored
- * here so the registry can type its builders without shared depending on
- * workers; P3 reconciles the two to one source when the worker consumes
- * the registry. PRIVACY (D7): label ids only, never body.
+ * here (not imported) so `@declutrmail/shared` stays a leaf and the
+ * worker's Gmail port stays self-contained. P3 reconciled the data SOURCE
+ * — the worker reads `buildLabelChange` from this registry — while
+ * deliberately keeping the two structurally-identical type definitions
+ * independent. PRIVACY (D7): label ids only, never body.
  */
 export interface LabelChange {
   addLabelIds?: string[];
@@ -172,8 +174,8 @@ export const ACTION_REGISTRY: ActionRegistry = {
     },
     execution: {
       kind: 'label-modify',
-      // Archive = drop INBOX; undo re-adds it (mirrors the worker's
-      // VERB_LABEL_CHANGES, which P3 deletes in favour of this builder).
+      // Archive = drop INBOX; undo re-adds it. The LabelActionWorker reads
+      // this builder as its single source of truth (P3, `labelChangeForVerb`).
       buildLabelChange: () => ({
         forward: { removeLabelIds: ['INBOX'] },
         reverse: { addLabelIds: ['INBOX'] },
