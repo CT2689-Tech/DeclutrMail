@@ -52,3 +52,10 @@ function frame(child: React.ReactNode) {
 export const Open: Story<typeof CheatsheetPanel> = {
   render: () => frame(<CheatsheetPanel onClose={() => undefined} />),
 };
+
+// Locks the `width: min(440px, calc(100vw - 32px))` clamp on a phone-width
+// viewport — the panel should hug the 16px side gutters, not overflow.
+export const NarrowViewport: Story<typeof CheatsheetPanel> = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  render: () => frame(<CheatsheetPanel onClose={() => undefined} />),
+};
