@@ -26,7 +26,53 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-05-29 — Confirm the §9-sensitive D181 security-event emit points before wiring
+### 2026-05-29 — Activity feed schema gaps (D55-D60 tracer-bullet follow-ups)
+**Source:** Activity tracer-bullet PR (D55-D60)
+**Why:** The Activity tracer ships the BE + FE that reads `activity_log`,
+but the *log itself* is sparse — only manual-archive (label-action.worker)
+and followup-dismiss (followup.read-service) currently write rows. The
+plan's D56 chip set ("All / Triage / Senders / Autopilot / Brief / Screener /
+Manual") references sources that have NO writers + 2 chips ("Senders",
+"Brief") that have no matching `activity_source` enum value.
+**How:**
+  1. **Add writers** for the missing sources so the feed surfaces real activity:
+     - Triage K/A/U/L applies → write `source='triage'` (`apps/api/src/triage/triage.controller.ts`)
+     - Autopilot rule fires → write `source='autopilot'` (`packages/workers/src/autopilot-evaluate.worker.ts`)
+     - Screener verdict → write `source='screener'` (paths TBD until D71-D77 land)
+  2. **Extend `activity_source` enum** (`packages/db/src/schema/activity-log.ts`) with
+     `'senders'` (for Sender Detail bulk actions) and `'brief'` (for D65 noise
+     bulk-archive once that mutation lands). Atlas migration via the schema
+     change; the read service auto-supports new enum values via type widening.
+  3. **Update FE chip set** in `apps/web/src/features/activity/activity-screen.tsx`
+     `SOURCE_CHIPS` constant to add the two new chips once the BE enum is shipped.
+**Verifies by:** Per-source seeded smoke shows each source bucket has rows; the
+5-chip set + 2 new chips all filter rows distinct subsets.
+**Status:** Open
+
+### 2026-05-29 — Activity D56 status filter + D57 row accordion + D58 undo wire + per-sender feed
+**Source:** Activity tracer-bullet PR (D55-D60)
+**Why:** The tracer ships the load-bearing surface (D55 window + D56 source
+chips + D58 undo *state rendering* + D59 stats). What it does NOT ship:
+  - **D56 status filter** (In progress / Failed / Undone) — requires a join from
+    `activity_log → undo_journal → action_jobs` that hits the schema gap noted
+    in [the gap map](FOUNDER-FOLLOWUPS.md). Either denormalize `action_jobs.activity_log_id`
+    onto activity_log, OR add a read-time join.
+  - **D57 row accordion** — collapsed-row only in the tracer. Expanded shape per
+    D57 ("Why this happened" / Operation ID / Connected inbox label /
+    Affected message count breakdown) needs a service-side extension to
+    include the `undo_journal.payload` shape + `rule_match_log` references.
+  - **D58 undo button wire-up** — the FE button shows the right state but
+    clicks do nothing. The mutation needs to land alongside the action-pipeline
+    spec (ADR-0013) once the executor is real.
+  - **`GET /senders/:senderKey/activity`** — per-sender feed mentioned in the
+    plan at line 3994; the current sender-detail page reads `triage_decisions`,
+    not `activity_log`.
+  - **D60 mobile-specific layout** — swipe-to-undo + bottom-sheet drawer.
+**How:** Each gap above is its own follow-up PR; sequence is up to founder.
+**Verifies by:** Each PR's smoke + a chip-by-chip walk of the Activity screen.
+**Status:** Open
+
+### 2026-05-29 — Brief D68 Pro-tier gate deferred until billing ships
 **Source:** PR for D181 (security events log) — branch `claude/pending-ds-backend-KIv38`
 **Why:** D181 names 7 emit categories. This PR shipped the table + service + the
 one clearly-safe producer (`rate_limit.breach`). The remaining producers edit

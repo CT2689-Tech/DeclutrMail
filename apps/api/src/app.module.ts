@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 
 import { AccountModule } from './account/account.module.js';
 import { ActionsModule } from './actions/actions.module.js';
+import { ActivityModule } from './activity/activity.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AutopilotModule } from './autopilot/autopilot.module.js';
 import { BriefModule } from './briefs/brief.module.js';
@@ -63,6 +64,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     AutopilotModule,
     BriefModule,
     FollowupModule,
+    ActivityModule,
     AccountModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
