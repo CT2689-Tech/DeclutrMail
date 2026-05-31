@@ -24,9 +24,13 @@ import type {
   GmailMutationClient,
   LabelChange,
 } from './gmail-mutation-client.js';
-import { LabelActionWorker, PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import {
+  LabelActionWorker,
+  labelChangeForVerb,
+  PASSTHROUGH_MAILBOX_LOCK,
+} from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
-import { InvalidGrantError } from './worker-errors.js';
+import { InvalidGrantError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -368,5 +372,26 @@ describe('LabelActionWorker', () => {
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
     expect(row!.status).toBe('failed');
     expect(row!.errorCode).toBe('InvalidGrantError');
+  });
+});
+
+/**
+ * `labelChangeForVerb` reads the Action Registry (ADR-0015) as the single
+ * source of truth — P3 deleted the worker-local `VERB_LABEL_CHANGES` map.
+ * Tested directly because the policy-only branch is unreachable through
+ * the worker's DB path (the `action_verb` pg_enum is label-modify-only,
+ * so a `keep` row can't be inserted).
+ */
+describe('labelChangeForVerb (registry-routed, ADR-0015)', () => {
+  it('returns the archive forward/reverse INBOX delta from the registry', () => {
+    expect(labelChangeForVerb('archive')).toEqual({
+      forward: { removeLabelIds: ['INBOX'] },
+      reverse: { addLabelIds: ['INBOX'] },
+    });
+  });
+
+  it('refuses a policy-only verb (pipeline isolation, consensus §5)', () => {
+    // `keep` is policy-only — it must never reach the label worker.
+    expect(() => labelChangeForVerb('keep')).toThrow(ValidationError);
   });
 });

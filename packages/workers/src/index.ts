@@ -41,14 +41,13 @@ export {
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
   labelActionJobOptions,
+  labelChangeForVerb,
   PASSTHROUGH_MAILBOX_LOCK,
-  VERB_LABEL_CHANGES,
 } from './label-action.worker.js';
 export type {
   LabelActionDeps,
   LabelActionJobData,
   LabelActionResult,
-  LabelActionVerb,
   MailboxActionLock,
 } from './label-action.worker.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
