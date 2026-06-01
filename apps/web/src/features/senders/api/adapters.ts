@@ -139,6 +139,9 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     name: row.displayName || row.email,
     domain: row.domain,
     monthly,
+    // Real all-time received count (`senders.total_received`) — carried
+    // through verbatim. Replaces the former `monthly × 12` fabrication.
+    total: row.totalReceived,
     group: CATEGORY_TO_GROUP[row.gmailCategory],
     read,
     // 4-week sparkline placeholder — wire doesn't carry per-week buckets

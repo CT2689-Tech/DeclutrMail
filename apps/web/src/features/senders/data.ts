@@ -55,6 +55,13 @@ export interface Sender {
   domain: string;
   /** Emails per month (recent cadence). */
   monthly: number;
+  /**
+   * Total emails EVER received from this sender — the real
+   * `senders.total_received` aggregate (D7-safe count). Optional because
+   * the Weekly-Hero wire doesn't carry it; absent ⇒ render "—", never a
+   * fabricated figure.
+   */
+  total?: number;
   group: SenderGroup;
   /** Read rate, 0–1. */
   read: number;
@@ -656,11 +663,6 @@ export function canArchive(s: Sender): boolean {
  * (skips the inbox) — safe for anyone not standing-protected. */
 export function canLater(s: Sender): boolean {
   return !isStandingProtected(s);
-}
-
-/** Approximate lifetime email count — synthesised from monthly cadence. */
-export function historicCount(s: Sender): number {
-  return Math.max(0, Math.round(s.monthly * 12));
 }
 
 /** Compact large-number display: 12480 → "12.5k". */

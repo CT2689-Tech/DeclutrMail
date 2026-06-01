@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { historicCount, verbDisplay, type ActionRequest } from './data';
+import { verbDisplay, type ActionRequest } from './data';
 
 const { color, font } = tokens;
 
@@ -76,7 +76,13 @@ export function ConfirmActionModal({
   if (!request) return null;
 
   const { verb, senders } = request;
-  const historic = senders.reduce((sum, s) => sum + historicCount(s), 0);
+  // Real all-time received total (sum of `total_received`). Null if ANY
+  // sender lacks it — we show qualitative copy rather than a partial /
+  // fabricated number (the former `monthly × 12`).
+  const senderTotals = senders.map((s) => s.total);
+  const historic = senderTotals.every((t) => t != null)
+    ? senderTotals.reduce((sum, t) => sum + (t as number), 0)
+    : null;
   const n = senders.length;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
@@ -233,15 +239,20 @@ export function ConfirmActionModal({
                   </span>
                 </>
               )
-            ) : (
+            ) : historic != null ? (
               <>
                 <strong style={numberStyle}>{historic.toLocaleString()}</strong>
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  historic email{historic === 1 ? '' : 's'} from{' '}
-                  {senders.length === 1 ? 'this sender' : 'these senders'} sit in your mailbox
-                  today.
+                  email{historic === 1 ? '' : 's'} received from{' '}
+                  {senders.length === 1 ? 'this sender' : 'these senders'} in total. We archive only
+                  what’s in your inbox now.
                 </span>
               </>
+            ) : (
+              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                We archive only what’s currently in your inbox from{' '}
+                {senders.length === 1 ? 'this sender' : 'these senders'}.
+              </span>
             )}
           </div>
 
@@ -290,8 +301,8 @@ export function ConfirmActionModal({
                 )}
               </span>
               <span style={{ fontSize: 12.5, color: color.fg }}>
-                Also archive the {historic.toLocaleString()} historic email
-                {historic === 1 ? '' : 's'} already in the inbox
+                Also archive everything from{' '}
+                {senders.length === 1 ? 'this sender' : 'these senders'} currently in the inbox
               </span>
             </button>
           )}
