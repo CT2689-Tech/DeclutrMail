@@ -442,6 +442,71 @@ describe('SendersScreen — edge states', () => {
     expect(archivePosted).toBe(false);
   });
 
+  it('degrades gracefully when the preview count fetch fails (confirm still works)', async () => {
+    // A failed count check must say so honestly — never a fabricated number —
+    // and still let the user proceed (the worker resolves the real set).
+    let archivePosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonServerError(),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 3, status: 'queued' } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              status: 'done',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: 'tok-1',
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // Count check failed → honest fallback copy, confirm NOT gated.
+    await screen.findByText(/check how much is in your inbox/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /archive/i })).not.toBeDisabled();
+
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    const receipt = await screen.findByRole('status');
+    expect(archivePosted).toBe(true);
+    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+  });
+
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
       weeklyHeroHandler(),

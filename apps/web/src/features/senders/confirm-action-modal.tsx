@@ -19,6 +19,8 @@ export interface ConfirmOptions {
 export interface ArchivePreviewState {
   inboxCount: number | undefined;
   loading: boolean;
+  /** The count fetch failed — the modal says so rather than showing a number. */
+  error: boolean;
 }
 
 /**
@@ -213,9 +215,10 @@ export function ConfirmActionModal({
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                   Checking how much of this sender’s mail is in your inbox…
                 </span>
-              ) : archivePreview.inboxCount === undefined ? (
+              ) : archivePreview.error || archivePreview.inboxCount === undefined ? (
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  We’ll archive whatever mail from this sender is in your inbox.
+                  Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
+                  this sender.
                 </span>
               ) : archivePreview.inboxCount === 0 ? (
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>

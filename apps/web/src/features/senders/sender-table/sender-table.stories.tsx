@@ -324,3 +324,46 @@ export const HighlyProtected: Story<typeof SenderTable> = {
 export const SingleRow: Story<typeof SenderTable> = {
   render: () => <ControlledTable rows={[DEFAULT_ROWS[0]!]} />,
 };
+
+/**
+ * D227 verb-row de-confliction (F3). The action row is Archive / Later /
+ * Unsubscribe ONLY — Keep lives in the Triage ritual, never here — and
+ * Protect is a read-only ⭐ status on the name cell (rendered on the VIP +
+ * Protected rows below), not a verb button. Pins the row's verb set + the
+ * status indicator against regression now that design is frozen.
+ */
+export const ProtectStatusAndMoveVerbs: Story<typeof SenderTable> = {
+  render: () => (
+    <ControlledTable
+      rows={[
+        row({
+          id: 'v-1',
+          displayName: 'Spouse (VIP ⭐)',
+          domain: 'gmail.com',
+          protectionFlags: {
+            isVip: true,
+            isProtected: false,
+            protectionReason: 'vip',
+            protectionSetAt: '2025-12-01T00:00:00.000Z',
+          },
+        }),
+        row({
+          id: 'v-2',
+          displayName: 'Bank (Protected ⭐)',
+          domain: 'bank.example',
+          protectionFlags: {
+            isVip: false,
+            isProtected: true,
+            protectionReason: 'user_defined',
+            protectionSetAt: '2025-12-01T00:00:00.000Z',
+          },
+        }),
+        row({
+          id: 'v-3',
+          displayName: 'Newsletter (no status)',
+          domain: 'news.example',
+        }),
+      ]}
+    />
+  ),
+};
