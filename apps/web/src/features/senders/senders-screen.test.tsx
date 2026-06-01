@@ -232,6 +232,89 @@ describe('SendersScreen — edge states', () => {
     expect(await screen.findByText(/archive all mail from 1 sender/i)).toBeInTheDocument();
   });
 
+  it('archives a single sender for real (enqueue → poll → receipt → working undo) (D226, P6)', async () => {
+    let archivePosted = false;
+    let undoPosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+        },
+      },
+      {
+        // Both the forward action (act-1) and the reverse job (rev-1) poll
+        // here; the first poll already reports `done` so no timers needed.
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: (_req, url) =>
+          jsonOk({
+            data: {
+              actionId: url.pathname.endsWith('rev-1') ? 'rev-1' : 'act-1',
+              status: 'done',
+              requestedCount: 12,
+              affectedCount: 12,
+              undoToken: url.pathname.endsWith('rev-1') ? null : 'tok-1',
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-1',
+        respond: () => {
+          undoPosted = true;
+          return jsonOk({
+            data: {
+              token: 'tok-1',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+
+    // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // The real endpoint was hit, and the REAL receipt appears only after the
+    // worker reports `done` (never optimistically).
+    const receipt = await screen.findByRole('status');
+    expect(archivePosted).toBe(true);
+    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    const undoBtn = screen.getByRole('button', { name: /^undo$/i });
+
+    // Undo reverses for real (token → reverse job → poll) and clears the receipt.
+    fireEvent.click(undoBtn);
+    await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
+    expect(undoPosted).toBe(true);
+  });
+
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
       weeklyHeroHandler(),
