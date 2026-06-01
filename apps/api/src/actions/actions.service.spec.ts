@@ -165,6 +165,34 @@ describe('ActionsService', () => {
     expect(row!.status).toBe('queued');
   });
 
+  it('previewArchive returns the REAL inbox-only count (no mutation)', async () => {
+    await seedMessage(db, mailboxId, 'm1', ['INBOX']);
+    await seedMessage(db, mailboxId, 'm2', ['INBOX']);
+    await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // not in inbox
+
+    const res = await svc.previewArchive({ mailboxAccountId: mailboxId, senderId });
+
+    expect(res).toEqual({ senderId, inboxCount: 2 });
+    // Preview never enqueues — it's a read.
+    expect(queue.count).toBe(0);
+  });
+
+  it('previewArchive returns 0 for a sender with nothing in the inbox', async () => {
+    await seedMessage(db, mailboxId, 'm1', ['CATEGORY_PROMOTIONS']);
+
+    const res = await svc.previewArchive({ mailboxAccountId: mailboxId, senderId });
+    expect(res.inboxCount).toBe(0);
+  });
+
+  it('previewArchive 404s a sender not in the current mailbox', async () => {
+    await expect(
+      svc.previewArchive({
+        mailboxAccountId: mailboxId,
+        senderId: '00000000-0000-4000-8000-000000000000',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
+  });
+
   it('blocks a Protected sender unless override is set', async () => {
     await db
       .insert(senderPolicies)

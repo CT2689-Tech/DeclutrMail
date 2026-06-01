@@ -43,6 +43,12 @@ export interface ActionStatusResult {
   errorCode: string | null;
 }
 
+/** Returned by `GET /api/actions/archive/preview` — the REAL inbox count. */
+export interface ArchivePreviewResult {
+  senderId: string;
+  inboxCount: number;
+}
+
 /** Returned by `POST /api/undo/:token` — the reverse handle to poll. */
 export interface UndoRevertResult {
   token: string;
@@ -88,6 +94,22 @@ export async function enqueueArchiveSender(
       ...(args.mailboxId ? { mailboxId: args.mailboxId } : {}),
     },
   );
+  return env.data;
+}
+
+/**
+ * Non-mutating preview: the REAL count of a sender's inbox mail (the exact
+ * set the archive will move). Feeds the D226 confirm modal so it states
+ * what actually changes, not an estimate. 404s an unowned sender.
+ */
+export async function getArchivePreview(
+  senderId: string,
+  options: ActionRequestOptions = {},
+): Promise<ArchivePreviewResult> {
+  const env = await apiGet<ArchivePreviewResult>('/api/actions/archive/preview', {
+    query: { senderId },
+    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+  });
   return env.data;
 }
 

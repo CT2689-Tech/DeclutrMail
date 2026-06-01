@@ -35,7 +35,12 @@ import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
-import { useEnqueueAction, useActionStatus, useRevertUndo } from './api/use-action';
+import {
+  useEnqueueAction,
+  useActionStatus,
+  useRevertUndo,
+  useArchivePreview,
+} from './api/use-action';
 import { sendersKeys } from './api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
@@ -200,6 +205,23 @@ function SendersScreenContent({
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
+
+  // Real-archive preview (D226): fetch the actual inbox count for the
+  // single sender being archived so the confirm modal states what will move
+  // — never the FE estimate. Only the single-sender Archive path is real;
+  // bulk + other verbs keep the estimate (archivePreview = undefined).
+  const archivePreviewSenderId =
+    pendingAction?.verb === 'Archive' && pendingAction.senders.length === 1
+      ? pendingAction.senders[0]!.id
+      : null;
+  const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
+  const archivePreview =
+    archivePreviewSenderId != null
+      ? {
+          inboxCount: archivePreviewQuery.data?.inboxCount,
+          loading: archivePreviewQuery.isLoading,
+        }
+      : undefined;
   const storeView = useSendersStore((s) => s.view);
   const tableSort = useSendersStore((s) => s.sort);
   const tableDirection = useSendersStore((s) => s.direction);
@@ -320,7 +342,9 @@ function SendersScreenContent({
               setActiveAction({ actionId: res.actionId, senderName: sender.name }),
             onError: (err) =>
               toast(
-                err instanceof ApiError && err.status === 403
+                // Protected/VIP senders return 409 PROTECTED_SENDER (a
+                // ConflictException), not 403.
+                err instanceof ApiError && err.status === 409
                   ? `${sender.name} is protected — unprotect it first`
                   : `Couldn't archive ${sender.name}`,
                 'warn',
@@ -818,6 +842,7 @@ function SendersScreenContent({
         request={pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
+        archivePreview={archivePreview}
       />
 
       <ReviewSession

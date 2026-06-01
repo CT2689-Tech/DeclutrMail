@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { historicCount, verbDisplay, type ActionRequest } from './data';
 
@@ -8,6 +8,17 @@ const { color, font } = tokens;
 
 export interface ConfirmOptions {
   archiveHistoric: boolean;
+}
+
+/**
+ * Real archive preview (D226): the actual count of the sender's mail
+ * currently in the inbox — the exact set that will move. Replaces the FE
+ * `monthlyVolume × 12` estimate for the single-sender Archive path.
+ * `inboxCount` is undefined while loading or on a fetch error.
+ */
+export interface ArchivePreviewState {
+  inboxCount: number | undefined;
+  loading: boolean;
 }
 
 /**
@@ -19,10 +30,13 @@ export function ConfirmActionModal({
   request,
   onCancel,
   onConfirm,
+  archivePreview,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
+  /** Real inbox count for the single-sender Archive path; absent on estimate paths. */
+  archivePreview?: ArchivePreviewState | undefined;
 }) {
   // Unsubscribe defaults to also clearing the backlog (the common
   // intent when cutting a sender off). Later defaults OFF — Later is
@@ -34,15 +48,26 @@ export function ConfirmActionModal({
     setArchiveHistoric(request?.verb === 'Unsubscribe');
   }, [request]);
 
+  // Real-archive gating: while the count is loading, block confirm; when
+  // the sender has nothing in the inbox, block it entirely — so the user
+  // never confirms a no-op (the dealskhoj.in smoke case). Estimate paths
+  // (no `archivePreview`) are never gated.
+  const previewLoading = archivePreview?.loading ?? false;
+  const nothingToArchive =
+    archivePreview != null && !previewLoading && archivePreview.inboxCount === 0;
+  const confirmDisabled = previewLoading || nothingToArchive;
+
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm({ archiveHistoric });
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
+        onConfirm({ archiveHistoric });
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [request, archiveHistoric, onCancel, onConfirm]);
+  }, [request, archiveHistoric, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
@@ -71,6 +96,15 @@ export function ConfirmActionModal({
       : verb === 'Later'
         ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
         : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
+
+  const numberStyle: CSSProperties = {
+    fontFamily: font.display,
+    fontSize: 22,
+    fontWeight: 600,
+    letterSpacing: '-0.02em',
+    color: color.fg,
+    fontVariantNumeric: 'tabular-nums',
+  };
 
   return (
     <>
@@ -161,7 +195,8 @@ export function ConfirmActionModal({
             )}
           </div>
 
-          {/* Impact figure */}
+          {/* Impact figure — the REAL inbox count on the single-sender
+              Archive path, the FE estimate everywhere else (D226). */}
           <div
             style={{
               display: 'flex',
@@ -173,22 +208,38 @@ export function ConfirmActionModal({
               borderRadius: 9,
             }}
           >
-            <strong
-              style={{
-                fontFamily: font.display,
-                fontSize: 22,
-                fontWeight: 600,
-                letterSpacing: '-0.02em',
-                color: color.fg,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {historic.toLocaleString()}
-            </strong>
-            <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-              historic email{historic === 1 ? '' : 's'} from{' '}
-              {senders.length === 1 ? 'this sender' : 'these senders'} sit in your mailbox today.
-            </span>
+            {archivePreview != null ? (
+              previewLoading ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  Checking how much of this sender’s mail is in your inbox…
+                </span>
+              ) : archivePreview.inboxCount === undefined ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  We’ll archive whatever mail from this sender is in your inbox.
+                </span>
+              ) : archivePreview.inboxCount === 0 ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  No mail from this sender is in your inbox right now — nothing to archive.
+                </span>
+              ) : (
+                <>
+                  <strong style={numberStyle}>{archivePreview.inboxCount.toLocaleString()}</strong>
+                  <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                    email{archivePreview.inboxCount === 1 ? '' : 's'} from this sender{' '}
+                    {archivePreview.inboxCount === 1 ? 'is' : 'are'} in your inbox now.
+                  </span>
+                </>
+              )
+            ) : (
+              <>
+                <strong style={numberStyle}>{historic.toLocaleString()}</strong>
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  historic email{historic === 1 ? '' : 's'} from{' '}
+                  {senders.length === 1 ? 'this sender' : 'these senders'} sit in your mailbox
+                  today.
+                </span>
+              </>
+            )}
           </div>
 
           {showHistoricToggle && (
@@ -269,6 +320,7 @@ export function ConfirmActionModal({
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
+              disabled={confirmDisabled}
               onClick={() => onConfirm({ archiveHistoric })}
               iconRight={
                 <Kbd

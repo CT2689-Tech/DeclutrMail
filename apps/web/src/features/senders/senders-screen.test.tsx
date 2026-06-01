@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
@@ -250,6 +250,12 @@ describe('SendersScreen — edge states', () => {
           }),
       },
       {
+        // Real inbox count for the preview (D226) — >0 so confirm enables.
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+      },
+      {
         method: 'POST',
         path: '/api/actions/archive',
         respond: () => {
@@ -300,6 +306,8 @@ describe('SendersScreen — edge states', () => {
     // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
+    // Wait for the REAL inbox count to load so confirm is no longer gated.
+    await screen.findByText(/in your inbox now/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
@@ -315,11 +323,11 @@ describe('SendersScreen — edge states', () => {
     expect(undoPosted).toBe(true);
   });
 
-  it('reports a no-op archive (0 affected) with no reversible receipt (P6)', async () => {
-    // The senders directory is keyed on LIFETIME volume, so a sender can be
-    // listed yet have nothing in the inbox now → the worker archives 0 and
-    // issues no undo token. The screen must NOT show a "reversible" receipt
-    // with a dead Undo (the dealskhoj.in smoke case).
+  it('reports a no-op archive (0 affected at execution) with no reversible receipt (P6)', async () => {
+    // Defense in depth: even if the preview counted >0, the inbox can empty
+    // before the worker runs (a race), so the worker archives 0 and issues
+    // no undo token. The screen must NOT show a "reversible" receipt with a
+    // dead Undo (the dealskhoj.in class of bug).
     let statusPolled = false;
     installFetchStub([
       weeklyHeroHandler(),
@@ -334,6 +342,12 @@ describe('SendersScreen — edge states', () => {
               query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
             },
           }),
+      },
+      {
+        // Preview counts >0 so confirm enables; the race empties it by execution.
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 5 } }),
       },
       {
         method: 'POST',
@@ -364,6 +378,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/in your inbox now/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -372,6 +387,59 @@ describe('SendersScreen — edge states', () => {
       await new Promise((r) => setTimeout(r, 0));
     });
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
+    // The real preview now gates the no-op UPFRONT: a 0 count tells the user
+    // there's nothing to archive and blocks confirm, so they never enqueue
+    // a no-op (the primary dealskhoj.in fix; the execution guard is backup).
+    let archivePosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'x', requestedCount: 0, status: 'queued' } });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // Preview resolves to 0 → "nothing to archive" + the confirm is disabled.
+    await screen.findByText(/nothing to archive/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
+
+    // ⌘⏎ must NOT enqueue while gated.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(archivePosted).toBe(false);
   });
 
   it('ignores the verb shortcut while a modal is already open', async () => {
