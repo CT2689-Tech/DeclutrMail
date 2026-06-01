@@ -364,19 +364,27 @@ function SendersScreenContent({
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      setReceipt({
-        id: `r${++receiptSeq}`,
-        verb: 'Archive',
-        count: 1,
-        historicTotal: data.affectedCount,
-        timeLeft: '',
-        undoToken: data.undoToken,
-      });
-      toast(
-        `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
-        'success',
-      );
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      if (data.affectedCount === 0 || !data.undoToken) {
+        // No-op: the sender is in the directory by LIFETIME volume but has
+        // no mail in the inbox right now, so the worker archived nothing and
+        // issued no undo token. Never show a "reversible" receipt with a
+        // dead Undo — say plainly that there was nothing to archive.
+        toast(`No inbox mail from ${activeAction.senderName} to archive`, 'info');
+      } else {
+        setReceipt({
+          id: `r${++receiptSeq}`,
+          verb: 'Archive',
+          count: 1,
+          historicTotal: data.affectedCount,
+          timeLeft: '',
+          undoToken: data.undoToken,
+        });
+        toast(
+          `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          'success',
+        );
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      }
     } else {
       toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
     }

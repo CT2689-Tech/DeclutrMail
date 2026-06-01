@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
@@ -313,6 +313,65 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(undoBtn);
     await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
     expect(undoPosted).toBe(true);
+  });
+
+  it('reports a no-op archive (0 affected) with no reversible receipt (P6)', async () => {
+    // The senders directory is keyed on LIFETIME volume, so a sender can be
+    // listed yet have nothing in the inbox now → the worker archives 0 and
+    // issues no undo token. The screen must NOT show a "reversible" receipt
+    // with a dead Undo (the dealskhoj.in smoke case).
+    let statusPolled = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => jsonOk({ data: { actionId: 'act-0', requestedCount: 0, status: 'queued' } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => {
+          statusPolled = true;
+          return jsonOk({
+            data: {
+              actionId: 'act-0',
+              status: 'done',
+              requestedCount: 0,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(statusPolled).toBe(true));
+    // Let the terminal-status effect run, then assert no receipt was shown.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('ignores the verb shortcut while a modal is already open', async () => {
