@@ -26,7 +26,20 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, getTableName, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableName,
+  gt,
+  gte,
+  ilike,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   mailMessages,
   senderPolicies,
@@ -77,6 +90,32 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
   read: 'desc',
   recommended: 'desc',
 };
+
+/**
+ * Build the server-side search predicate for the senders list (#145).
+ * Matches the query case-insensitively (substring) against the three
+ * metadata fields the list shows — display name, email, domain — so a
+ * search resolves across the WHOLE mailbox, not just the loaded page the
+ * FE used to filter client-side. D7-safe: metadata only.
+ *
+ * User input is treated literally — LIKE wildcards (`%` `_`) and the
+ * escape char (`\`) are escaped so a query like `50%` can't become a
+ * match-all. PG's default LIKE escape is backslash, so no ESCAPE clause
+ * is needed (and PGlite honors the same default in tests).
+ */
+function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
+  const term = (q ?? '').trim();
+  if (term.length === 0) return null;
+  const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  const pattern = `%${escaped}%`;
+  return (
+    or(
+      ilike(senders.displayName, pattern),
+      ilike(senders.email, pattern),
+      ilike(senders.domain, pattern),
+    ) ?? null
+  );
+}
 
 /**
  * Service-internal cursor shape — keyset on `(sort_col, id)` per D202.
@@ -156,6 +195,12 @@ export class SendersReadService {
     cursor: SenderListCursor | null;
     /** Honored limit (already clamped by the controller). */
     limit: number;
+    /**
+     * Server-side search (#145). Case-insensitive substring over display
+     * name / email / domain, mailbox-scoped, combined with the other
+     * filters + cursor. `null`/omitted = no search.
+     */
+    q?: string | null;
     /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
@@ -316,6 +361,10 @@ export class SendersReadService {
     if (cursorPredicate) {
       conditions.push(cursorPredicate);
     }
+    const searchCondition = buildSenderSearchCondition(args.q);
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
 
     const rows = await this.db
       .select({
@@ -424,6 +473,10 @@ export class SendersReadService {
     mailboxAccountId: string;
     category: GmailCategory | null;
     isProtected?: boolean | null;
+    /** Search term (#145) — `totalMatching` must reflect the same filter
+     *  the list scan uses, so "All N" counts the search hits, not the
+     *  whole mailbox. */
+    q?: string | null;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -433,6 +486,10 @@ export class SendersReadService {
     }
     if (isProtected === true) {
       totalMatchingConditions.push(eq(senderPolicies.isProtected, true));
+    }
+    const searchCondition = buildSenderSearchCondition(args.q);
+    if (searchCondition) {
+      totalMatchingConditions.push(searchCondition);
     }
 
     // `totalMatching` mirrors the list query's filter chain. Joins the

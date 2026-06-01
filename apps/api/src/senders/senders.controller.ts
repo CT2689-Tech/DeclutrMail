@@ -123,6 +123,7 @@ export class SendersController {
     @Query('protected') rawProtected: string | undefined,
     @Query('sort') rawSort: string | undefined,
     @Query('direction') rawDirection: string | undefined,
+    @Query('q') rawQ: string | undefined,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -130,6 +131,7 @@ export class SendersController {
     const limit = clampLimit(rawLimit, LIST_LIMIT);
     const sort = parseSort(rawSort);
     const direction = parseDirection(rawDirection);
+    const q = parseSearch(rawQ);
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -153,11 +155,13 @@ export class SendersController {
         direction,
         cursor,
         limit,
+        q,
       }),
       this.reads.getSenderListQueryMeta({
         mailboxAccountId: accountId,
         category,
         isProtected,
+        q,
       }),
     ]);
 
@@ -374,6 +378,18 @@ function takePage<T>(
 function parseCategory(raw: string | undefined): GmailCategory | null {
   if (!raw) return null;
   return CATEGORIES.has(raw as GmailCategory) ? (raw as GmailCategory) : null;
+}
+
+/**
+ * Coerce a raw `?q=` search term: trim, cap length (bounds the ILIKE
+ * scan + a hostile query), and collapse empty to `null` (no search). The
+ * service escapes LIKE wildcards — no sanitization needed here beyond the
+ * length cap.
+ */
+function parseSearch(raw: string | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim().slice(0, 200);
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**

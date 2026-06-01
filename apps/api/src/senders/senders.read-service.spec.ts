@@ -327,6 +327,94 @@ describe('SendersReadService', () => {
       expect(rows[0]!.protectionFlags.isProtected).toBe(true);
     });
 
+    describe('q search (#145)', () => {
+      async function seedSearchFixture() {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          displayName: 'Exclusive Deals',
+          email: 'emailer@dealskhoj.in',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          displayName: 'Dealskhoj Newsletter',
+          email: 'news@newsletter.dealskhoj.in',
+          lastSeenAt: new Date('2026-01-02T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          displayName: 'GitHub',
+          email: 'noreply@github.com',
+          lastSeenAt: new Date('2026-01-03T00:00:00Z'),
+        });
+      }
+
+      it('matches across name, email, and domain (the whole mailbox, not a page)', async () => {
+        await seedSearchFixture();
+        // `dealskhoj` is in neither display name nor local-part of sender 1,
+        // only its domain — yet it must match (the founder's bug: searching
+        // dealskhoj found nothing because only the loaded page was filtered).
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 25,
+          q: 'dealskhoj',
+        });
+        expect(rows.map((r) => r.email).sort()).toEqual([
+          'emailer@dealskhoj.in',
+          'news@newsletter.dealskhoj.in',
+        ]);
+      });
+
+      it('is case-insensitive and matches the display name', async () => {
+        await seedSearchFixture();
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 25,
+          q: 'EXCLUSIVE',
+        });
+        expect(rows.map((r) => r.email)).toEqual(['emailer@dealskhoj.in']);
+      });
+
+      it('treats LIKE wildcards literally (a "%" query is not match-all)', async () => {
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          displayName: '100% Off Today',
+          email: 'promo@x.test',
+          lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          displayName: 'Plain Sender',
+          email: 'plain@x.test',
+          lastSeenAt: new Date('2026-01-02T00:00:00Z'),
+        });
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 25,
+          q: '%',
+        });
+        // Only the sender whose name literally contains '%' matches; an
+        // unescaped '%' would (wrongly) return both.
+        expect(rows.map((r) => r.email)).toEqual(['promo@x.test']);
+      });
+
+      it('getSenderListQueryMeta.totalMatching honors the same q', async () => {
+        await seedSearchFixture();
+        const meta = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: null,
+          q: 'dealskhoj',
+        });
+        expect(meta.totalMatching).toBe(2);
+      });
+    });
+
     describe('Slice 1 sort + meta.query (ADR-0014, senders list contract)', () => {
       it('default sort is total DESC + id DESC with totalReceived on every row', async () => {
         // Seed three senders with distinct totals so ordering is
