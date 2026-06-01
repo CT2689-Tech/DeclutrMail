@@ -15,7 +15,6 @@ import {
   canLater,
   canUnsubscribe,
   detectCohorts,
-  historicCount,
   isStandingProtected,
   VERB_PAST,
   type ActionRequest,
@@ -321,7 +320,7 @@ function SendersScreenContent({
   }, []);
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
 
       // P6 — real single-sender Archive (D226). The preview already ran
@@ -355,12 +354,9 @@ function SendersScreenContent({
         return;
       }
 
-      // Tracer path — toast + fake receipt until the verb's BE lands.
-      const historicTotal =
-        verb === 'Archive' ||
-        ((verb === 'Unsubscribe' || verb === 'Later') && opts?.archiveHistoric)
-          ? senders.reduce((a, s) => a + historicCount(s), 0)
-          : 0;
+      // Tracer path — toast + fake receipt until the verb's BE lands. No
+      // email count is shown here: the true number is only known once the
+      // verb's worker runs (P6 wired that for single-sender Archive).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         verb === 'Unsubscribe' ? 'warn' : 'success',
@@ -370,7 +366,7 @@ function SendersScreenContent({
           id: `r${++receiptSeq}`,
           verb,
           count: senders.length,
-          historicTotal,
+          historicTotal: 0,
           timeLeft: '6d 23h',
         });
       }

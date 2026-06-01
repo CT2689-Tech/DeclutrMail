@@ -6,7 +6,6 @@ import {
   canLater,
   canUnsubscribe,
   gmailSearchUrl,
-  historicCount,
   isStandingProtected,
   recommendAction,
   relTimeLabel,
@@ -77,7 +76,7 @@ export function SenderRowDetail({
     recTone === 'warn' ? color.amber : recTone === 'dark' ? color.fg : color.primary;
 
   const stats: { k: string; v: string; small?: string; valueColor?: string }[] = [
-    { k: 'Total ever', v: historicCount(s).toLocaleString(), small: 'emails' },
+    { k: 'Total ever', v: s.total != null ? s.total.toLocaleString() : '—', small: 'emails' },
     { k: 'Last opened', v: relTimeLabel(s.lastDays) },
     {
       k: 'Read rate',
