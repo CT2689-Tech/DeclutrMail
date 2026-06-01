@@ -193,6 +193,57 @@ export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 're
 export type SenderListDirection = 'asc' | 'desc';
 
 /**
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145 — real-
+ * data counts mandate).
+ *
+ * Every field is an aggregate over the WHOLE mailbox (optionally narrowed
+ * by `?q=`), NOT the ≤50-row page the FE has loaded. The Senders screen's
+ * hero, KPI strip, and intent chips all read this so the headline numbers
+ * are one server-resolved truth instead of per-page sums.
+ *
+ * Intent bucketing MUST match `apps/web/.../uplift-d/intent.ts:intentOf`
+ * byte-for-byte:
+ *   - `protect` = `sender_policies.is_protected OR is_vip`
+ *   - else `cleanup` = latest `triage_decisions.verdict='unsubscribe' AND
+ *                       confidence >= 0.75`
+ *   - else `later`   = latest `verdict='archive'     AND confidence >= 0.75`
+ *   - else `people`
+ *
+ * The 0.75 gate is the FE's `ENGINE_CONFIDENCE_GATE`. If either side
+ * changes the threshold, the chip counts disagree with the rendered rows
+ * (CLAUDE.md §8 — row/chip/KPI must never disagree).
+ *
+ * `noiseReducible` is `cleanupMonthly / totalMonthly × 100` (rounded
+ * integer percent) — mirrors `computeTotals.noiseReductionPct` in
+ * `senders-screen.tsx`. Zero when `totalMonthly === 0`.
+ *
+ * `needsReview` is the count of senders with ANY `triage_decisions` row —
+ * matches `senders.filter(s => s.lastReview != null)` in
+ * `computeTotals.needsReview`.
+ */
+export interface SenderSummary {
+  totalSenders: number;
+  byIntent: {
+    cleanup: number;
+    later: number;
+    protect: number;
+    people: number;
+  };
+  /** SUM of latest-month volume across all senders in scope. */
+  totalMonthly: number;
+  /** 0..100 integer percent. `cleanupMonthly / totalMonthly × 100`, rounded. */
+  noiseReducible: number;
+  /** Alias for `byIntent.protect` — kept on the wire because the KPI cell
+   *  reads `totals.protectedCount` and we want the field name to match the
+   *  FE intent. */
+  protected: number;
+  /** Senders with at least one `triage_decisions` row. */
+  needsReview: number;
+  /** ISO-8601 — server time at compute (observability). */
+  asOf: string;
+}
+
+/**
  * `meta.query` on `GET /api/senders` (senders list contract — returned
  * on every page; the client should treat **page 1's value as
  * authoritative** for the duration of a scroll).

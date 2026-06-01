@@ -87,6 +87,7 @@ interface MockReadService {
   listTimeseries: ReturnType<typeof vi.fn>;
   listDecisionHistory: ReturnType<typeof vi.fn>;
   listWeeklyHero: ReturnType<typeof vi.fn>;
+  getSenderSummary: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -114,6 +115,7 @@ function buildController(): { ctrl: SendersController; reads: MockReadService } 
     listTimeseries: vi.fn(),
     listDecisionHistory: vi.fn(),
     listWeeklyHero: vi.fn(),
+    getSenderSummary: vi.fn(),
   };
   const ctrl = new SendersController(reads as unknown as SendersReadService);
   return { ctrl, reads };
@@ -593,6 +595,48 @@ describe('SendersController', () => {
       expect(res.data.weekOf).toBe('2026-05-11');
       expect(res.data.slices).toHaveLength(1);
       expect(res.data.slices[0]!.kind).toBe('high_confidence');
+    });
+  });
+
+  /**
+   * Summary aggregates (#145) — controller-level contract. The service
+   * spec covers the SQL bucketing; here we verify the envelope, mailbox
+   * threading, the `?q=` pass-through, and the route precedence (the
+   * literal `summary` path must not fall into the `:id` UUID 400 path).
+   */
+  describe('summary', () => {
+    const SAMPLE_SUMMARY = {
+      totalSenders: 6,
+      byIntent: { cleanup: 1, later: 1, protect: 2, people: 2 },
+      totalMonthly: 115,
+      noiseReducible: 43,
+      protected: 2,
+      needsReview: 4,
+      asOf: '2026-06-01T00:00:00.000Z',
+    } as const;
+
+    it('returns the summary envelope and forwards mailbox + q to the service', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      const res = await ctrl.summary(MAILBOX, 'promo');
+      expect(reads.getSenderSummary).toHaveBeenCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: 'promo',
+      });
+      expect(res.data).toEqual(SAMPLE_SUMMARY);
+    });
+
+    it('passes q=null to the service when the query string is missing or blank', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      await ctrl.summary(MAILBOX, undefined);
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+      });
+      await ctrl.summary(MAILBOX, '   ');
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+      });
     });
   });
 });

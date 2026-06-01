@@ -85,6 +85,43 @@ function weeklyHeroHandler(
   };
 }
 
+/**
+ * Stock /api/senders/summary response (#145, real-data counts). Defaults
+ * match a small, single-sender mailbox so tests that don't care about
+ * the summary don't need to override; per-test overrides shape the
+ * aggregates when the summary IS what's under test.
+ */
+function sendersSummaryHandler(
+  overrides: Partial<{
+    totalSenders: number;
+    byIntent: { cleanup: number; later: number; protect: number; people: number };
+    totalMonthly: number;
+    noiseReducible: number;
+    protected: number;
+    needsReview: number;
+    qCapture: { value: string | null };
+  }> = {},
+) {
+  return {
+    method: 'GET' as const,
+    path: '/api/senders/summary',
+    respond: (_req: Request, url: URL) => {
+      if (overrides.qCapture) overrides.qCapture.value = url.searchParams.get('q');
+      return jsonOk({
+        data: {
+          totalSenders: overrides.totalSenders ?? 1,
+          byIntent: overrides.byIntent ?? { cleanup: 0, later: 0, protect: 0, people: 1 },
+          totalMonthly: overrides.totalMonthly ?? 30,
+          noiseReducible: overrides.noiseReducible ?? 0,
+          protected: overrides.protected ?? 0,
+          needsReview: overrides.needsReview ?? 0,
+          asOf: '2026-06-01T00:00:00.000Z',
+        },
+      });
+    },
+  };
+}
+
 /** A populated /api/senders page with a single eligible sender (`ROW`). */
 function oneSenderHandler() {
   return {
@@ -936,5 +973,186 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     await waitFor(() => expect(useSendersStore.getState().view).toBe('table'));
     // After flipping, the grid is gone.
     expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Real-data counts mandate (#145) — the hero, KPI strip, and intent chips
+ * MUST reflect mailbox-wide aggregates from `/api/senders/summary`, NOT
+ * the ≤50-row loaded page. Each test installs ONE eligible sender on the
+ * list but a much larger summary; if a number under test reads the loaded
+ * page, it'll show 1 / 30 instead of the summary's larger figure and the
+ * assertion will fail.
+ */
+describe('SendersScreen — summary-driven aggregates (#145)', () => {
+  beforeEach(() => {
+    installFetchStub([weeklyHeroHandler()]);
+    useSendersStore.setState({ view: 'grid' });
+  });
+  afterEach(() => resetFetchStub());
+
+  it('KPI "Senders" reflects mailbox-wide totals (NOT loaded page length)', async () => {
+    // List returns ONE row on the loaded page but advertises a
+    // 7748-sender mailbox via `meta.query.totalMatching` (the BE's
+    // canonical "matching senders" count). Summary mirrors the same
+    // mailbox-wide totals. The pre-#145 code rendered `senders.length`
+    // → 1; the wired-up code reads either source and shows 7748.
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: 7748,
+                globalMaxTotal: 6471,
+                asOf: '2026-06-01T00:00:00.000Z',
+              },
+            },
+          }),
+      },
+      sendersSummaryHandler({
+        totalSenders: 7748,
+        byIntent: { cleanup: 1200, later: 800, protect: 50, people: 5698 },
+        totalMonthly: 12345,
+        noiseReducible: 32,
+        protected: 50,
+        needsReview: 1500,
+      }),
+    ]);
+
+    renderScreen();
+    // The mailbox-wide total 7748 renders in both the "All" chip and the
+    // "Senders" KPI cell — both sources route to summary / totalMatching.
+    // Asserting `length >= 2` proves BOTH surfaces re-bound to the
+    // mailbox-wide source, not the loaded-page count.
+    await waitFor(() => expect(screen.getAllByText('7748').length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('intent chips count summary.byIntent across the whole mailbox', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      sendersSummaryHandler({
+        totalSenders: 1050,
+        byIntent: { cleanup: 234, later: 156, protect: 42, people: 618 },
+        totalMonthly: 5000,
+        noiseReducible: 28,
+        protected: 42,
+        needsReview: 500,
+      }),
+    ]);
+
+    renderScreen();
+    // Intent chips render as `<label>` followed by the count. The chip
+    // button's accessible name combines both, so a regex check across
+    // the chip labels asserts each bucket carries the summary number.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /Clean up\s+234/ })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: /Move later\s+156/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Protect\s+42/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /People\s+618/ })).toBeInTheDocument();
+    // "All" chip — `meta.query.totalMatching` from the list page-1 (also 1
+    // in `oneSenderHandler`); make sure it's not silently overridden by
+    // `summary.totalSenders` when the list's totalMatching is canonical.
+    expect(screen.getByRole('button', { name: /^All\s+1$/ })).toBeInTheDocument();
+  });
+
+  it('hero "N emails reached you" uses summary.totalMonthly, not the loaded-page sum', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      sendersSummaryHandler({
+        totalSenders: 100,
+        byIntent: { cleanup: 20, later: 10, protect: 5, people: 65 },
+        // Loaded page has ONE sender at monthlyVolume=30 (ROW). A pre-#145
+        // hero would show "30 emails reached you" from `sum(loaded.monthly)`.
+        // After #145 the hero reads `summary.totalMonthly`.
+        totalMonthly: 99999,
+        noiseReducible: 40,
+        protected: 5,
+        needsReview: 25,
+      }),
+    ]);
+
+    renderScreen();
+    // Hero renders the totalMonthly inside a styled `<span>` — assert by text.
+    await waitFor(() => expect(screen.getByText('99999')).toBeInTheDocument());
+    // The hero "emails reached you" string is the anchor — make sure it
+    // renders alongside (no orphan number).
+    expect(screen.getByText(/emails reached you/i)).toBeInTheDocument();
+  });
+
+  it('typed search forwards ?q= to both the list AND the summary endpoint', async () => {
+    const summaryQ = { value: null as string | null };
+    let listQ: string | null = null;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          listQ = url.searchParams.get('q');
+          return jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: listQ === 'foo' ? 3 : 1,
+                globalMaxTotal: 120,
+                asOf: '2026-06-01T00:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+      sendersSummaryHandler({
+        totalSenders: 1,
+        byIntent: { cleanup: 0, later: 0, protect: 0, people: 1 },
+        totalMonthly: 30,
+        noiseReducible: 0,
+        protected: 0,
+        needsReview: 0,
+        qCapture: summaryQ,
+      }),
+    ]);
+
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    // Type into the search box; both endpoints must receive the debounced `q`.
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'foo' },
+    });
+    await waitFor(() => expect(summaryQ.value).toBe('foo'), { timeout: 2000 });
+    expect(listQ).toBe('foo');
+  });
+
+  it('falls back to loaded-page derivation while the summary is in flight', async () => {
+    // Summary never resolves — the screen MUST still render with loaded-page
+    // numbers, never blank. Edge state coverage per D211/D212.
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders/summary',
+        respond: () => new Promise<Response>(() => {}),
+      },
+    ]);
+
+    renderScreen();
+    // Hero renders with the loaded-page derivation — `30` from ROW.monthly
+    // appears in the hero story alongside "emails reached you". Multiple
+    // `30` text nodes can exist on the screen (e.g. the sender card's
+    // per-month volume), so just assert the hero anchor renders and the
+    // number appears at least once — both prove the fallback path runs
+    // without blanking the screen.
+    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
+    expect(screen.getAllByText('30').length).toBeGreaterThan(0);
   });
 });

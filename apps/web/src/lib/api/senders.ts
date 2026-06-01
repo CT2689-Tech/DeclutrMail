@@ -221,6 +221,55 @@ export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHe
   return apiGet<WeeklyHeroDto>('/api/senders/weekly-hero', { signal });
 }
 
+/**
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, "real-
+ * data counts" mandate). Returns the totals the Senders screen's hero,
+ * KPI strip, and intent chips read so headline numbers track the WHOLE
+ * mailbox, not the ≤50-row page the FE has loaded.
+ *
+ * Intent classification mirrors `uplift-d/intent.ts:intentOf` byte-for-
+ * byte (protect > confidence-gated cleanup > confidence-gated later >
+ * people, with the 0.75 confidence gate). The two predicates MUST agree
+ * or the row's bucket disagrees with the chip count (CLAUDE.md §8).
+ */
+export interface SenderSummaryDto {
+  totalSenders: number;
+  byIntent: {
+    cleanup: number;
+    later: number;
+    protect: number;
+    people: number;
+  };
+  /** SUM of latest-month volume across all senders in scope. */
+  totalMonthly: number;
+  /** 0..100 integer percent. `cleanupMonthly / totalMonthly × 100`, rounded. */
+  noiseReducible: number;
+  /** Alias of `byIntent.protect` — kept to match the KPI cell label. */
+  protected: number;
+  /** Senders with at least one `triage_decisions` row. */
+  needsReview: number;
+  /** ISO-8601 — server time at compute. */
+  asOf: string;
+}
+
+/**
+ * GET /api/senders/summary — mailbox-wide aggregates (#145).
+ *
+ * `q` honors the active search so the chip / KPI / hero counts narrow
+ * in lockstep with the visible rows. Empty/missing q ⇒ no search.
+ */
+export function fetchSendersSummary(
+  params: { q?: string | undefined } = {},
+  signal?: AbortSignal,
+): Promise<Envelope<SenderSummaryDto, unknown>> {
+  return apiGet<SenderSummaryDto>('/api/senders/summary', {
+    // Empty string collapses to omitted so a cleared search keys the
+    // same cache entry as "no search".
+    query: { q: params.q ? params.q : undefined },
+    signal,
+  });
+}
+
 /** Row shape on `GET /api/senders/:id/history` — decision-history rows. */
 export interface DecisionHistoryRowDto {
   id: string;

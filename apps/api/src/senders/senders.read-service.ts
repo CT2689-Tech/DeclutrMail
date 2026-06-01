@@ -60,6 +60,7 @@ import type {
   SenderListQueryMeta,
   SenderListRow,
   SenderListSort,
+  SenderSummary,
   TimeseriesPoint,
   VolumeTrendBucket,
   WeeklyHero,
@@ -104,10 +105,8 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
  * is needed (and PGlite honors the same default in tests).
  */
 function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
-  const term = (q ?? '').trim();
-  if (term.length === 0) return null;
-  const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
-  const pattern = `%${escaped}%`;
+  const pattern = buildSenderSearchPattern(q);
+  if (pattern === null) return null;
   return (
     or(
       ilike(senders.displayName, pattern),
@@ -115,6 +114,25 @@ function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
       ilike(senders.domain, pattern),
     ) ?? null
   );
+}
+
+/**
+ * Shared escape + wrap step used by both `buildSenderSearchCondition`
+ * (Drizzle query-builder form, references `"senders"."col"`) and the
+ * raw-SQL aggregate in `getSenderSummary` (which uses a `senders s`
+ * alias). Returns the escaped `%term%` pattern, or `null` if the input
+ * is empty.
+ *
+ * PG's default LIKE escape char is backslash, so no ESCAPE clause is
+ * needed (PGlite honors the same default in tests). Centralising the
+ * escape here keeps the two call sites in lockstep — a future tweak
+ * (e.g. enabling underscore-as-wildcard) edits one helper, not two.
+ */
+function buildSenderSearchPattern(q: string | null | undefined): string | null {
+  const term = (q ?? '').trim();
+  if (term.length === 0) return null;
+  const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return `%${escaped}%`;
 }
 
 /**
@@ -525,6 +543,171 @@ export class SendersReadService {
       totalMatching,
       globalMaxTotal,
       asOf: (args as { now?: Date }).now?.toISOString() ?? new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Mailbox-wide aggregates for `GET /api/senders/summary` (#145 —
+   * "real-data counts" mandate).
+   *
+   * The Senders screen's hero, KPI strip, and intent chips previously
+   * derived their totals from the loaded ≤50-row page. This endpoint
+   * serves the same numbers from a single SQL aggregate over the WHOLE
+   * mailbox (optionally narrowed by `?q=`), so headline figures match a
+   * server-resolved truth instead of a per-page sum.
+   *
+   * Intent classification MUST match `apps/web/.../uplift-d/intent.ts`
+   * byte-for-byte — the chip count and the row's bucket are evaluated by
+   * the SAME predicate or they would disagree (CLAUDE.md §8 row/chip/KPI
+   * invariant):
+   *
+   *   - `protect` ← `sender_policies.is_protected = true OR is_vip = true`
+   *   - else `cleanup` ← latest `triage_decisions.verdict='unsubscribe'`
+   *                       AND `confidence >= 0.75`
+   *   - else `later`   ← latest `verdict='archive'` AND `confidence >= 0.75`
+   *   - else `people`
+   *
+   * The 0.75 gate is the FE's `ENGINE_CONFIDENCE_GATE`. Hardcoded here
+   * deliberately — a config indirection that lives in two repos drifts;
+   * a single literal with a pointer comment fails loudly if either side
+   * changes.
+   *
+   * `noiseReducible` = `cleanupMonthly / totalMonthly × 100`, rounded.
+   * Matches `computeTotals.noiseReductionPct` in `senders-screen.tsx`.
+   *
+   * `needsReview` counts senders with ANY `triage_decisions` row — matches
+   * `senders.filter(s => s.lastReview != null)` on the FE side.
+   *
+   * One SQL round-trip — a CTE that LATERAL-joins the latest decision +
+   * latest timeseries row per sender, then aggregates with `FILTER`
+   * clauses for per-intent counts. The same `(mailbox_account_id,
+   * sender_key)` indexes that serve `listSenders` serve this exactly.
+   *
+   * Tenant isolation: every LATERAL body equates `mailbox_account_id` +
+   * `sender_key` to the outer `s` alias (the MISTAKES.md 2026-05-23
+   * tautology trap is structurally impossible inside raw SQL — the
+   * column references are qualified by table alias, not Drizzle
+   * template interpolation). The outer WHERE adds the `?q=` predicate
+   * via the existing `buildSenderSearchCondition` helper.
+   */
+  async getSenderSummary(args: {
+    mailboxAccountId: string;
+    q?: string | null;
+    /** Anchor for `asOf` — injectable for tests; defaults to `new Date()`. */
+    now?: Date;
+  }): Promise<SenderSummary> {
+    const { mailboxAccountId } = args;
+    // Build the search predicate inline against the `s` alias used in
+    // the raw aggregate below. We CAN'T reuse `buildSenderSearchCondition`
+    // here — it interpolates Drizzle `Column` objects, which render as
+    // `"senders"."col"` (the unaliased table name) and PG rejects that
+    // reference against `FROM senders s`. Sharing the LIKE-escape via
+    // `buildSenderSearchPattern` keeps the two predicates in lockstep
+    // without coupling the alias scopes.
+    const pattern = buildSenderSearchPattern(args.q);
+    const searchClause =
+      pattern === null
+        ? sql``
+        : sql` AND (s.display_name ILIKE ${pattern} OR s.email ILIKE ${pattern} OR s.domain ILIKE ${pattern})`;
+
+    type SummaryRow = {
+      total_senders: number | string;
+      cleanup_count: number | string;
+      later_count: number | string;
+      protect_count: number | string;
+      people_count: number | string;
+      total_monthly: number | string;
+      cleanup_monthly: number | string;
+      needs_review: number | string;
+    };
+
+    const result = await this.db.execute<SummaryRow>(sql`
+      WITH per_sender AS (
+        SELECT
+          CASE
+            WHEN COALESCE(sp.is_protected, false) = true
+              OR COALESCE(sp.is_vip, false) = true
+              THEN 'protect'
+            WHEN ltd.verdict = 'unsubscribe' AND ltd.confidence >= 0.75
+              THEN 'cleanup'
+            WHEN ltd.verdict = 'archive'     AND ltd.confidence >= 0.75
+              THEN 'later'
+            ELSE 'people'
+          END AS intent,
+          COALESCE(lts.volume, 0) AS latest_volume,
+          (ltd.id IS NOT NULL) AS has_decision
+        FROM ${senders} s
+        LEFT JOIN ${senderPolicies} sp
+          ON sp.mailbox_account_id = s.mailbox_account_id
+         AND sp.sender_key = s.sender_key
+        LEFT JOIN LATERAL (
+          SELECT id, verdict, confidence
+          FROM ${triageDecisions}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY produced_at DESC
+          LIMIT 1
+        ) ltd ON true
+        LEFT JOIN LATERAL (
+          SELECT volume
+          FROM ${senderTimeseries}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY year_month DESC
+          LIMIT 1
+        ) lts ON true
+        WHERE s.mailbox_account_id = ${mailboxAccountId}${searchClause}
+      )
+      SELECT
+        COUNT(*)::bigint                                              AS total_senders,
+        COUNT(*) FILTER (WHERE intent = 'cleanup')::bigint            AS cleanup_count,
+        COUNT(*) FILTER (WHERE intent = 'later')::bigint              AS later_count,
+        COUNT(*) FILTER (WHERE intent = 'protect')::bigint            AS protect_count,
+        COUNT(*) FILTER (WHERE intent = 'people')::bigint             AS people_count,
+        COALESCE(SUM(latest_volume), 0)::bigint                        AS total_monthly,
+        COALESCE(SUM(latest_volume) FILTER (WHERE intent = 'cleanup'), 0)::bigint
+                                                                       AS cleanup_monthly,
+        COUNT(*) FILTER (WHERE has_decision)::bigint                  AS needs_review
+      FROM per_sender
+    `);
+
+    // postgres-js + PGlite both wrap `execute()` results in a `{ rows }`
+    // envelope. `weekly-hero` uses the same dual-shape unwrap.
+    const rows =
+      ((result as { rows?: SummaryRow[] }).rows ?? (result as unknown as SummaryRow[])) || [];
+    const row = rows[0];
+    if (!row) {
+      // An empty mailbox still aggregates to one row with zeroes from PG;
+      // a missing row is a contract violation. Fail loudly so a future
+      // driver change that swallows the empty result surfaces here.
+      throw new InternalServerErrorException('Senders summary returned no aggregate row.');
+    }
+
+    const totalSenders = ensureSafeIntegerNumber(row.total_senders, 'totalSenders');
+    const cleanupCount = ensureSafeIntegerNumber(row.cleanup_count, 'byIntent.cleanup');
+    const laterCount = ensureSafeIntegerNumber(row.later_count, 'byIntent.later');
+    const protectCount = ensureSafeIntegerNumber(row.protect_count, 'byIntent.protect');
+    const peopleCount = ensureSafeIntegerNumber(row.people_count, 'byIntent.people');
+    const totalMonthly = ensureSafeIntegerNumber(row.total_monthly, 'totalMonthly');
+    const cleanupMonthly = ensureSafeIntegerNumber(row.cleanup_monthly, 'cleanupMonthly');
+    const needsReview = ensureSafeIntegerNumber(row.needs_review, 'needsReview');
+
+    const noiseReducible =
+      totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
+
+    return {
+      totalSenders,
+      byIntent: {
+        cleanup: cleanupCount,
+        later: laterCount,
+        protect: protectCount,
+        people: peopleCount,
+      },
+      totalMonthly,
+      noiseReducible,
+      protected: protectCount,
+      needsReview,
+      asOf: (args.now ?? new Date()).toISOString(),
     };
   }
 

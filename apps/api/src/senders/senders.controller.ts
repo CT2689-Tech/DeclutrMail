@@ -51,6 +51,7 @@ import type {
   SenderListQueryMeta,
   SenderListRow,
   SenderListSort,
+  SenderSummary,
   TimeseriesPoint,
   WeeklyHero,
 } from './senders.types.js';
@@ -174,6 +175,33 @@ export class SendersController {
       limit,
     };
     return { data: page, meta: { pagination, query } };
+  }
+
+  /**
+   * GET /api/senders/summary — mailbox-wide aggregates (#145, real-data
+   * counts mandate).
+   *
+   * Returns the totals the Senders screen's hero, KPI strip, and intent
+   * chips read so headline numbers reflect the whole mailbox — not the
+   * ≤50-row page the FE has loaded. Honors `?q=` so search narrows the
+   * chip + KPI counts in lockstep with the list rows.
+   *
+   * NOTE on route ORDER (mirrors `weekly-hero`). Declared BEFORE
+   * `GET :id` — NestJS matches in declaration order, so `summary` must
+   * not fall into the UUID-validation 400 path.
+   */
+  @Get('summary')
+  @RateLimit('triage-load')
+  async summary(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('q') rawQ: string | undefined,
+  ): Promise<Envelope<SenderSummary>> {
+    const q = parseSearch(rawQ);
+    const data = await this.reads.getSenderSummary({
+      mailboxAccountId: mailbox.id,
+      q,
+    });
+    return ok(data);
   }
 
   /**

@@ -2294,4 +2294,260 @@ describe('SendersReadService', () => {
       expect(durationMs).toBeLessThan(5_000);
     }, 30_000);
   });
+
+  describe('getSenderSummary (#145 real-data counts)', () => {
+    /**
+     * Seed a 6-sender fixture covering every intent bucket and the
+     * 0.75-confidence boundary so the same data exercises:
+     *   - the four `byIntent` buckets,
+     *   - the gate ordering (protect wins over a verdict),
+     *   - the confidence gate (>= 0.75 surfaces; below stays in `people`),
+     *   - the monthly-volume aggregates that feed `noiseReducible`,
+     *   - `needsReview` (any decision row, regardless of confidence).
+     */
+    async function seedSummaryFixture(targetMailbox: string) {
+      // s1 — Protect via explicit `is_protected` (beats any decision verdict).
+      const s1 = await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'Protected Inc.',
+        email: 'protect@example.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: targetMailbox,
+        senderKey: s1.senderKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      // Even with a high-confidence unsubscribe verdict, the policy wins.
+      await seedTriageDecision(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s1.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.95',
+        producedAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s1.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 10,
+        readCount: 1,
+      });
+
+      // s2 — Protect via VIP only (no `is_protected`). isVip alone must
+      // route the sender into `protect`, matching the FE's
+      // `isStandingProtected` predicate.
+      const s2 = await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'VIP Friend',
+        email: 'vip@friend.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: targetMailbox,
+        senderKey: s2.senderKey,
+        isVip: true,
+        isProtected: false,
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s2.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 5,
+        readCount: 5,
+      });
+
+      // s3 — Cleanup (unsubscribe verdict at confidence = 0.75, the
+      // exact boundary; the FE's gate is `>= 0.75`, so this must count).
+      const s3 = await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'Promo Daily',
+        email: 'noreply@promo.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s3.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.75',
+        producedAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s3.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 50,
+        readCount: 1,
+      });
+
+      // s4 — Later (archive verdict, confidence well above the gate).
+      const s4 = await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'Newsletter Weekly',
+        email: 'news@weekly.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s4.senderKey,
+        verdict: 'archive',
+        confidence: '0.90',
+        producedAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s4.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 20,
+        readCount: 4,
+      });
+
+      // s5 — People: an unsubscribe verdict at confidence 0.74 (just
+      // below the gate). The FE drops this to `people`; the BE must too.
+      // Also exercises `needsReview` (a decision row exists even though
+      // it doesn't surface as a recommendation).
+      const s5 = await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'Maybe Cleanup',
+        email: 'maybe@cleanup.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s5.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.74',
+        producedAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: targetMailbox,
+        senderKey: s5.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 30,
+        readCount: 6,
+      });
+
+      // s6 — People: no decision, no policy, no timeseries. Touches
+      // every `null` / `0` fallback in the SQL.
+      await seedSender(db, {
+        mailboxAccountId: targetMailbox,
+        displayName: 'Plain Sender',
+        email: 'plain@nopolicy.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+
+      return { s1, s2, s3, s4, s5 };
+    }
+
+    it('buckets every intent per intentOf, gating confidence at >= 0.75', async () => {
+      await seedSummaryFixture(mailboxId);
+
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+
+      expect(summary.totalSenders).toBe(6);
+      // s1 (protect/is_protected, overrides unsubscribe verdict) + s2 (VIP)
+      expect(summary.byIntent.protect).toBe(2);
+      // s3 (boundary confidence = 0.75)
+      expect(summary.byIntent.cleanup).toBe(1);
+      // s4 (archive at 0.90)
+      expect(summary.byIntent.later).toBe(1);
+      // s5 (sub-gate decision) + s6 (no decision)
+      expect(summary.byIntent.people).toBe(2);
+      // Mirror of byIntent.protect — the KPI cell reads `summary.protected`.
+      expect(summary.protected).toBe(2);
+    });
+
+    it('totalMonthly sums latest-month volume across every sender; missing timeseries reads as 0', async () => {
+      await seedSummaryFixture(mailboxId);
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      // 10 + 5 + 50 + 20 + 30 + 0 = 115
+      expect(summary.totalMonthly).toBe(115);
+    });
+
+    it('noiseReducible = cleanupMonthly / totalMonthly × 100 (rounded), 0 when totalMonthly is 0', async () => {
+      await seedSummaryFixture(mailboxId);
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      // Only s3 is cleanup, volume 50. 50 / 115 ≈ 43.4783 → rounded 43.
+      expect(summary.noiseReducible).toBe(43);
+
+      // Fresh mailbox with no senders → noiseReducible MUST be 0 (not NaN
+      // from a 0/0 division).
+      const otherMailbox = await seedMailbox(db, 'b-empty');
+      const empty = await svc.getSenderSummary({ mailboxAccountId: otherMailbox });
+      expect(empty.totalMonthly).toBe(0);
+      expect(empty.noiseReducible).toBe(0);
+      expect(empty.totalSenders).toBe(0);
+    });
+
+    it('needsReview counts senders with ANY decision row, regardless of confidence gate', async () => {
+      await seedSummaryFixture(mailboxId);
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      // s1, s3, s4, s5 each have a decision row. s2 (VIP-only) and s6
+      // (plain) do not. Matches `senders.filter(s => s.lastReview != null)`.
+      expect(summary.needsReview).toBe(4);
+    });
+
+    it('q narrows every aggregate in lockstep (chips + KPI + hero stay synchronised with the rows)', async () => {
+      await seedSummaryFixture(mailboxId);
+      // Search "promo" matches only s3 (email `noreply@promo.com`).
+      const filtered = await svc.getSenderSummary({
+        mailboxAccountId: mailboxId,
+        q: 'promo',
+      });
+      expect(filtered.totalSenders).toBe(1);
+      expect(filtered.byIntent).toEqual({ cleanup: 1, later: 0, protect: 0, people: 0 });
+      expect(filtered.totalMonthly).toBe(50);
+      // 50 / 50 × 100 = 100% noise-reducible (the only sender in scope is cleanup).
+      expect(filtered.noiseReducible).toBe(100);
+      expect(filtered.needsReview).toBe(1);
+    });
+
+    it('isolates summary by mailbox (tenant safety — two mailboxes with overlapping sender_keys)', async () => {
+      // Mailbox A — the standard 6-sender fixture.
+      await seedSummaryFixture(mailboxId);
+
+      // Mailbox B — same `sender_key` collisions (the SHA256 is content-
+      // addressed by email), plus one extra sender. Without the tenant
+      // boundary in the LATERAL joins, the summary would mis-attribute
+      // rows across mailboxes (the MISTAKES.md 2026-05-23 tautology trap).
+      const mailboxB = await seedMailbox(db, 'b');
+      await seedSummaryFixture(mailboxB);
+      // Extra solo cleanup sender in B only.
+      const extra = await seedSender(db, {
+        mailboxAccountId: mailboxB,
+        displayName: 'Extra Cleanup',
+        email: 'extra@cleanup.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxB,
+        senderKey: extra.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.90',
+        producedAt: new Date('2026-05-02T00:00:00Z'),
+      });
+      await seedTimeseries(db, {
+        mailboxAccountId: mailboxB,
+        senderKey: extra.senderKey,
+        yearMonth: '2026-05-01',
+        volume: 100,
+        readCount: 0,
+      });
+
+      const a = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      const b = await svc.getSenderSummary({ mailboxAccountId: mailboxB });
+
+      // A is the original 6-sender fixture — UNCHANGED by B's existence.
+      expect(a.totalSenders).toBe(6);
+      expect(a.byIntent.cleanup).toBe(1);
+      expect(a.totalMonthly).toBe(115);
+
+      // B carries the same fixture (6) PLUS the extra cleanup sender (1).
+      expect(b.totalSenders).toBe(7);
+      expect(b.byIntent.cleanup).toBe(2);
+      expect(b.totalMonthly).toBe(215); // 115 + 100
+    });
+  });
 });

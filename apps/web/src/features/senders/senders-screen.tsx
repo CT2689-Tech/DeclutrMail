@@ -32,6 +32,7 @@ import { ReviewSession, type ReviewResult } from './review-session';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
+import { useSendersSummary } from './api/use-senders-summary';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
 import {
@@ -49,7 +50,7 @@ import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { SenderListRow, WeeklyHeroSliceKind } from '@/lib/api/senders';
+import type { SenderListRow, SenderSummaryDto, WeeklyHeroSliceKind } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import {
   InboxStoryHero,
@@ -152,6 +153,19 @@ export function SendersScreen() {
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
   const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
+  // KPI strip, and intent chips so headline numbers reflect the WHOLE
+  // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
+  // as the list so chips/KPI narrow in lockstep with visible rows. Loads
+  // in parallel with the list (TanStack will not block the screen on it);
+  // a missing/in-flight summary falls back to loaded-page derivations.
+  const summaryQuery = useSendersSummary({ q: debouncedQuery });
+  const summary = summaryQuery.data?.data;
+  // The page-1 `totalMatching` is the canonical "All N" chip count —
+  // already on the wire and search-aware. Prefer it over the summary's
+  // `totalSenders` so the chip stays consistent with the list pagination
+  // banner (`X of N senders`).
+  const totalMatchingFromList = sendersQuery.data?.pages[0]?.meta.query?.totalMatching;
 
   if (sendersQuery.isLoading) {
     return <LoadingState />;
@@ -169,6 +183,8 @@ export function SendersScreen() {
       onLoadMore={() => void sendersQuery.fetchNextPage()}
       query={query}
       onQueryChange={setQuery}
+      summary={summary}
+      totalMatchingFromList={totalMatchingFromList}
     />
   );
 }
@@ -192,6 +208,8 @@ function SendersScreenContent({
   onLoadMore,
   query,
   onQueryChange: setQuery,
+  summary,
+  totalMatchingFromList,
 }: {
   senders: Sender[];
   wireRows: SenderListRow[];
@@ -203,6 +221,15 @@ function SendersScreenContent({
    *  (#145). `senders` already arrives search-filtered from the BE. */
   query: string;
   onQueryChange: (next: string) => void;
+  /**
+   * Mailbox-wide aggregates (#145). When present, drives the hero, KPI
+   * strip, and intent chips. When undefined (initial load / refetch),
+   * the loaded-page derivation is used as a fallback so the screen does
+   * not blank — the summary populates within milliseconds of the list.
+   */
+  summary: SenderSummaryDto | undefined;
+  /** Page-1 `meta.query.totalMatching` — the canonical "All N" chip count. */
+  totalMatchingFromList: number | undefined;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
@@ -303,7 +330,15 @@ function SendersScreenContent({
   // the filter chips show real counts even for empty intents.
   const intentBuckets = useMemo(() => groupByIntent(queryBase), [queryBase]);
 
-  const intentCounts = useMemo(() => {
+  // Intent chip counts. PREFER the mailbox-wide summary (#145) so the
+  // chips count every matching sender, not just the loaded ≤50-row page;
+  // fall back to the loaded-page derivation only until the summary
+  // populates (initial load) so the chips never blank to zero. The
+  // summary's `byIntent` mirrors `intentOf` byte-for-byte (the same
+  // 0.75 confidence gate, the same protect/VIP precedence), so the
+  // chip and the rendered row always agree.
+  const intentCounts = useMemo<Record<SenderIntent, number>>(() => {
+    if (summary) return { ...summary.byIntent };
     const counts: Record<SenderIntent, number> = {
       cleanup: 0,
       later: 0,
@@ -312,7 +347,7 @@ function SendersScreenContent({
     };
     for (const b of intentBuckets) counts[b.intent] = b.items.length;
     return counts;
-  }, [intentBuckets]);
+  }, [summary, intentBuckets]);
 
   // Visible groups after the active-intent filter. When `activeIntent` is
   // null ('All' chip), every non-empty group renders; when set, only that
@@ -330,9 +365,14 @@ function SendersScreenContent({
     [selected, senders],
   );
 
-  // Hero / KPI numbers — derived from the unfiltered list so the hero
-  // reflects the whole mailbox, not the active filter slice.
-  const totals = useMemo(() => computeTotals(senders), [senders]);
+  // Hero / KPI numbers. The server-side summary (#145) IS the source of
+  // truth for headline figures — `totalMonthly`, `noiseReducible`,
+  // `protectedCount`, `needsReview`, and `cleanupCount` (= byIntent.cleanup)
+  // are all mailbox-wide aggregates. The loaded-page derivation
+  // remains the fallback for the milliseconds before the summary
+  // populates AND for the time-cost / avg-read / estSaved fields, which
+  // still need per-sender read-rate (not on the summary wire).
+  const totals = useMemo(() => computeTotals(senders, summary), [senders, summary]);
 
   const applyCohort = (cohort: Cohort) => {
     setActiveIntent(null);
@@ -694,7 +734,13 @@ function SendersScreenContent({
       {senders.length > 0 && (
         <KpiStrip
           cells={[
-            { label: 'Senders', value: senders.length },
+            // "Senders" KPI is mailbox-wide — `summary.totalSenders` (or
+            // page-1 `totalMatching`, the same number narrowed by `?q=`),
+            // NOT `senders.length` (which is the loaded-page slice).
+            {
+              label: 'Senders',
+              value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
+            },
             {
               label: 'Noise reducible',
               value: `~${totals.noiseReductionPct}`,
@@ -720,9 +766,16 @@ function SendersScreenContent({
       {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
       {senders.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {/*
+            "All" chip counts every matching sender (mailbox-wide, search-
+            aware). Sourced from the list's page-1 `meta.query.totalMatching`
+            (already on the wire) — falls back to the loaded-page length only
+            while page 1 is in flight. Loaded `queryBase.length` would
+            understate the count on mailboxes larger than one page.
+          */}
           <IntentChip
             label="All"
-            count={queryBase.length}
+            count={totalMatchingFromList ?? summary?.totalSenders ?? queryBase.length}
             active={activeIntent === null}
             onClick={() => setActiveIntent(null)}
           />
@@ -936,8 +989,22 @@ interface SenderTotals {
   estSavedHrs: number;
 }
 
-function computeTotals(senders: Sender[]): SenderTotals {
-  if (senders.length === 0) {
+/**
+ * Compute hero / KPI / progress totals.
+ *
+ * Mailbox-wide aggregates (`totalMonthly`, `noiseReductionPct`,
+ * `protectedCount`, `needsReview`, `cleanupCount`) come from the
+ * server-side summary (#145) when present — the loaded-page derivation
+ * is the fallback only until the summary populates (initial load).
+ *
+ * Read-rate and reading-time fields still ride the loaded page: the
+ * summary does not carry per-sender read counts on the wire today
+ * (privacy posture — counts only, no per-sender opens). These values
+ * approximate the mailbox from the loaded slice; promoting them to the
+ * summary is a follow-up if the approximation drifts at large scale.
+ */
+function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTotals {
+  if (senders.length === 0 && !summary) {
     return {
       totalMonthly: 0,
       avgReadPct: 0,
@@ -949,32 +1016,51 @@ function computeTotals(senders: Sender[]): SenderTotals {
       estSavedHrs: 0,
     };
   }
-  const totalMonthly = senders.reduce((a, s) => a + s.monthly, 0);
+  // Loaded-page sums — feed the read-rate-derived KPIs and act as the
+  // fallback for the mailbox-wide ones until the summary populates.
+  const loadedMonthly = senders.reduce((a, s) => a + s.monthly, 0);
   const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
-  const avgReadPct = totalMonthly === 0 ? 0 : Math.round((totalRead / totalMonthly) * 100);
-  const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
+  const avgReadPct = loadedMonthly === 0 ? 0 : Math.round((totalRead / loadedMonthly) * 100);
+
   // `intentOf()` honors the X2 confidence gate (and protect-wins) — the
   // raw `verdict === 'unsubscribe'` check would surface low-confidence
   // recommendations the user shouldn't act on, contradicting the
   // Cleanup-bucket suppression. Codex finding #4 on PR #82.
-  const cleanupSenders = senders.filter((s) => intentOf(s) === 'cleanup');
-  const cleanupMonthly = cleanupSenders.reduce((a, s) => a + s.monthly, 0);
+  const loadedCleanup = senders.filter((s) => intentOf(s) === 'cleanup');
+  const loadedCleanupMonthly = loadedCleanup.reduce((a, s) => a + s.monthly, 0);
+  const loadedProtectedCount = senders.filter(isStandingProtected).length;
+  const loadedNeedsReview = senders.filter((s) => s.lastReview != null).length;
+
+  // Mailbox-wide values — prefer the summary; fall back to loaded sums.
+  // The summary's `byIntent.cleanup` is the same predicate as `intentOf`
+  // (same 0.75 gate, same protect/VIP precedence — see SQL CASE in
+  // `getSenderSummary`), so the cleanupCount stays consistent with the
+  // rendered rows after the summary arrives.
+  const totalMonthly = summary?.totalMonthly ?? loadedMonthly;
   const noiseReductionPct =
-    totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
-  // "Protected" KPI counts both Protect and VIP standing policies — the
-  // cell's micro-label is "VIPs · receipts", so VIPs belong in the count
-  // (both ride the list wire via `protectionFlags`). Same `isStandingProtected`
-  // predicate the row chip / CTA / intent bucket use, so they never disagree.
-  const protectedCount = senders.filter(isStandingProtected).length;
-  const needsReview = senders.filter((s) => s.lastReview != null).length;
-  // Yearly savings = cleanup-sender minutes/year ÷ 60.
-  const estSavedHrs = (cleanupMonthly * 12 * READ_MIN_PER_MSG) / 60;
+    summary?.noiseReducible ??
+    (loadedMonthly === 0 ? 0 : Math.round((loadedCleanupMonthly / loadedMonthly) * 100));
+  const cleanupCount = summary?.byIntent.cleanup ?? loadedCleanup.length;
+  const protectedCount = summary?.protected ?? loadedProtectedCount;
+  const needsReview = summary?.needsReview ?? loadedNeedsReview;
+
+  // Reading-time and est-saved approximate from the loaded slice (the
+  // summary doesn't carry per-sender read rate today — D7-safe metadata
+  // only). totalMonthly stays mailbox-wide; readingHrs uses it directly.
+  const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
+  // Yearly savings = cleanup-volume × 12 × READ_MIN_PER_MSG ÷ 60. When
+  // the summary is present, scale loadedCleanupMonthly by the ratio of
+  // mailbox-wide cleanupCount to loadedCleanup.length so the estimate
+  // tracks the true cleanup population, not the page slice.
+  const cleanupScale =
+    summary && loadedCleanup.length > 0 ? summary.byIntent.cleanup / loadedCleanup.length : 1;
+  const estSavedHrs = (loadedCleanupMonthly * cleanupScale * 12 * READ_MIN_PER_MSG) / 60;
   return {
     totalMonthly,
     avgReadPct,
     readingHrs,
     noiseReductionPct,
-    cleanupCount: cleanupSenders.length,
+    cleanupCount,
     protectedCount,
     needsReview,
     estSavedHrs,
