@@ -15,6 +15,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   enqueueArchiveSender,
   getActionStatus,
+  getArchivePreview,
   isTerminalStatus,
   newIdempotencyKey,
   revertUndo,
@@ -64,6 +65,23 @@ export function useActionStatus(actionId: string | null) {
     enabled: actionId !== null,
     refetchInterval: (query) => actionRefetchInterval(query.state.data),
     retry: false,
+  });
+}
+
+/**
+ * Fetch the REAL inbox count for a sender so the confirm modal previews
+ * what will actually be archived (D226). Enabled only while a single-sender
+ * Archive preview is open. `retry: false` — a read 4xx (404 unowned) is a
+ * designed state; `staleTime: 0` so reopening the modal re-counts (the
+ * inbox moves under us).
+ */
+export function useArchivePreview(senderId: string | null) {
+  return useQuery({
+    queryKey: ['archive-preview', senderId] as const,
+    queryFn: () => getArchivePreview(senderId as string),
+    enabled: senderId !== null,
+    retry: false,
+    staleTime: 0,
   });
 }
 

@@ -52,3 +52,14 @@ export interface ActionStatusResult {
   undoToken: string | null;
   errorCode: string | null;
 }
+
+/**
+ * Non-mutating archive preview (D226). `inboxCount` is the REAL number of
+ * the sender's messages currently labelled INBOX — the exact set the
+ * archive will move — so the confirm modal states what actually changes
+ * instead of a client-side estimate.
+ */
+export interface ArchivePreviewResult {
+  senderId: string;
+  inboxCount: number;
+}
