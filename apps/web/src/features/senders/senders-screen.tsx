@@ -35,6 +35,10 @@ import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
+import { useEnqueueAction, useActionStatus, useRevertUndo } from './api/use-action';
+import { sendersKeys } from './api/query-keys';
+import { isTerminalStatus } from '@/lib/api/actions';
+import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
@@ -181,6 +185,21 @@ function SendersScreenContent({
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
   const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
   const [heroDismissed, setHeroDismissed] = useState(false);
+
+  // P6 — real single-sender Archive (D226). `enqueue` fires the action;
+  // `activeAction` holds the in-flight handle that `actionStatus` polls to
+  // a terminal state; `revert` + `revertActionId` drive the undo loop. One
+  // in-flight action at a time is sufficient for the single-sender wire.
+  const qc = useQueryClient();
+  const enqueue = useEnqueueAction();
+  const revert = useRevertUndo();
+  const [activeAction, setActiveAction] = useState<{
+    actionId: string;
+    senderName: string;
+  } | null>(null);
+  const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  const revertStatus = useActionStatus(revertActionId);
   const storeView = useSendersStore((s) => s.view);
   const tableSort = useSendersStore((s) => s.sort);
   const tableDirection = useSendersStore((s) => s.direction);
@@ -281,6 +300,37 @@ function SendersScreenContent({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+
+      // P6 — real single-sender Archive (D226). The preview already ran
+      // (this fires post-confirm), so enqueue the action, then poll its
+      // handle to a terminal state in the effect below. The real receipt
+      // (with the real undo token) appears on `done`, never optimistically.
+      // Other verbs + multi-sender bulk stay on the tracer path: their BE
+      // pipeline isn't built (the worker rejects them fail-closed) and the
+      // multi-sender selector is P7.
+      if (verb === 'Archive' && senders.length === 1) {
+        const sender = senders[0]!;
+        setPendingAction(null);
+        setSelected(new Set());
+        toast(`Archiving mail from ${sender.name}…`, 'info');
+        enqueue.mutate(
+          { senderId: sender.id },
+          {
+            onSuccess: (res) =>
+              setActiveAction({ actionId: res.actionId, senderName: sender.name }),
+            onError: (err) =>
+              toast(
+                err instanceof ApiError && err.status === 403
+                  ? `${sender.name} is protected — unprotect it first`
+                  : `Couldn't archive ${sender.name}`,
+                'warn',
+              ),
+          },
+        );
+        return;
+      }
+
+      // Tracer path — toast + fake receipt until the verb's BE lands.
       const historicTotal =
         verb === 'Archive' ||
         ((verb === 'Unsubscribe' || verb === 'Later') && opts?.archiveHistoric)
@@ -302,8 +352,87 @@ function SendersScreenContent({
       setPendingAction(null);
       setSelected(new Set());
     },
-    [],
+    [enqueue],
   );
+
+  // P6 — drive the Archive lifecycle off the polled status. On `done`,
+  // surface the REAL receipt (carrying the real undo token) and refresh the
+  // senders list so counts reflect the archived mail; on `failed`, a warn
+  // toast. The poll stops itself (refetchInterval → false on terminal).
+  useEffect(() => {
+    if (!activeAction) return;
+    const data = actionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      setReceipt({
+        id: `r${++receiptSeq}`,
+        verb: 'Archive',
+        count: 1,
+        historicTotal: data.affectedCount,
+        timeLeft: '',
+        undoToken: data.undoToken,
+      });
+      toast(
+        `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+        'success',
+      );
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    } else {
+      toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
+    }
+    setActiveAction(null);
+  }, [actionStatus.data, activeAction, qc]);
+
+  // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
+  // refresh; on `failed`, a warn toast.
+  useEffect(() => {
+    if (!revertActionId) return;
+    const data = revertStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      toast('Restored to your inbox', 'success');
+      setReceipt(null);
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    } else {
+      toast("Couldn't undo — see Activity", 'warn');
+    }
+    setRevertActionId(null);
+  }, [revertStatus.data, revertActionId, qc]);
+
+  // Receipt Undo — reverse the real action by token (D226 undo loop). The
+  // reverse is itself async: a fresh token enqueues a reverse job we poll;
+  // an already-reverted token resolves immediately. Tracer receipts (no
+  // token) keep the old log-only behavior.
+  const onUndo = useCallback(() => {
+    const token = receipt?.undoToken;
+    if (!token) {
+      toast('Reverted — see Activity for the full log', 'info');
+      setReceipt(null);
+      return;
+    }
+    toast('Restoring…', 'info');
+    revert.mutate(
+      { token },
+      {
+        onSuccess: (res) => {
+          if (res.reverted) {
+            toast('Restored to your inbox', 'success');
+            setReceipt(null);
+            void qc.invalidateQueries({ queryKey: sendersKeys.all });
+          } else if (res.actionId) {
+            setRevertActionId(res.actionId);
+          }
+        },
+        onError: (err) =>
+          toast(
+            err instanceof ApiError && err.status === 410
+              ? 'Undo window has expired'
+              : "Couldn't undo — see Activity",
+            'warn',
+          ),
+      },
+    );
+  }, [receipt, revert, qc]);
 
   // Archive / Unsubscribe / Later move mail, so they route through the
   // mandatory preview (D226). Keep / Protect change nothing and fire
@@ -441,14 +570,7 @@ function SendersScreenContent({
         tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
       />
 
-      <ReceiptStrip
-        receipt={receipt}
-        onUndo={() => {
-          toast('Reverted — see Activity for the full log', 'info');
-          setReceipt(null);
-        }}
-        onDismiss={() => setReceipt(null)}
-      />
+      <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
 
       {/*
         Weekly Hero (D47, D48) — visible ONLY on Mondays per D47.

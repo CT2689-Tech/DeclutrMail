@@ -11,6 +11,13 @@ export interface ActionReceipt {
   count: number;
   historicTotal: number;
   timeLeft: string;
+  /**
+   * Real undo token from a completed action (D226). Present for the
+   * server-wired Archive path; null/undefined for tracer receipts whose
+   * Undo has no BE token yet. When set, the strip's Undo reverses for real
+   * via `POST /api/undo/:token`.
+   */
+  undoToken?: string | null;
 }
 
 /**
@@ -94,7 +101,7 @@ export function ReceiptStrip({
             letterSpacing: '0.08em',
           }}
         >
-          reversible {timeLeft}
+          reversible{timeLeft ? ` ${timeLeft}` : ''}
         </span>
       </span>
 
