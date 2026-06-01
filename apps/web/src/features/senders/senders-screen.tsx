@@ -220,6 +220,7 @@ function SendersScreenContent({
       ? {
           inboxCount: archivePreviewQuery.data?.inboxCount,
           loading: archivePreviewQuery.isLoading,
+          error: archivePreviewQuery.isError,
         }
       : undefined;
   const storeView = useSendersStore((s) => s.view);
