@@ -41,14 +41,13 @@ export {
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
   labelActionJobOptions,
+  labelChangeForVerb,
   PASSTHROUGH_MAILBOX_LOCK,
-  VERB_LABEL_CHANGES,
 } from './label-action.worker.js';
 export type {
   LabelActionDeps,
   LabelActionJobData,
   LabelActionResult,
-  LabelActionVerb,
   MailboxActionLock,
 } from './label-action.worker.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
@@ -164,3 +163,16 @@ export {
   UNDO_EXPIRY_QUEUE,
   undoExpiryJobOptions,
 } from './undo-expiry.queue.js';
+export { SendersCounterReconciliationWorker } from './senders-counter-reconciliation.worker.js';
+export type {
+  SendersCounterReconciliationJobData,
+  SendersCounterReconciliationResult,
+} from './senders-counter-reconciliation.worker.js';
+export {
+  enqueueSendersCounterReconciliationTick,
+  scheduledAtMinute as sendersCounterReconciliationScheduledAtMinute,
+  SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
+  SENDERS_COUNTER_RECONCILIATION_JOB,
+  SENDERS_COUNTER_RECONCILIATION_QUEUE,
+  sendersCounterReconciliationJobOptions,
+} from './senders-counter-reconciliation.queue.js';

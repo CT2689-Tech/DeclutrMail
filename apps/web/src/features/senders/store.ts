@@ -24,6 +24,8 @@
 
 import { create } from 'zustand';
 
+import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
+
 /** Two-value view enum — grid is the default; table is the opt-in (D49). */
 export type SendersView = 'grid' | 'table';
 
@@ -32,9 +34,24 @@ export interface SendersState {
   view: SendersView;
   /** Imperative setter — toggle and direct-set both go through here. */
   setView: (view: SendersView) => void;
+  /**
+   * Active sort column for the flat-table view (ADR-0014). Mirrors the
+   * server contract: `'total'` is the Slice 1 product default. Stored
+   * here so a sibling surface (header dropdown, future keyboard
+   * shortcut) can read/set it without prop-drilling through the screen
+   * tree.
+   */
+  sort: SenderListSort;
+  /** Active sort direction — `'desc'` for total (default). */
+  direction: SenderListDirection;
+  /** Imperative setter — wires the SenderTable's onSortChange. */
+  setSort: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
 }
 
 export const useSendersStore = create<SendersState>((set) => ({
   view: 'grid',
   setView: (view) => set({ view }),
+  sort: 'total',
+  direction: 'desc',
+  setSort: ({ sort, direction }) => set({ sort, direction }),
 }));

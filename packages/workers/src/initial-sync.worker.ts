@@ -115,6 +115,15 @@ interface SenderAggregate {
   mailtoUrl: string | null;
   /** True iff any message supports RFC 8058 one-click (needs HTTPS). */
   hasOneClick: boolean;
+  /**
+   * Lifetime inbound count for this sender within retention — Path A of
+   * ADR-0014. Incremented once per fold; the fold loop only sees rows
+   * where `is_outbound = false` (filtered upstream in the page query),
+   * so every increment is correctly inbound. This is the authoritative
+   * value that closes any drift the incremental Path B accumulated
+   * since the last rebuild — the rebuild IS the reconciliation.
+   */
+  totalReceived: number;
 }
 
 /**
@@ -525,6 +534,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         lastSeenAt: agg.lastSeen,
         unsubscribeMethod,
         unsubscribeUrl,
+        // Path A authoritative count — ADR-0014. The rebuild's
+        // delete+reinsert IS the reconciliation: whatever drift the
+        // incremental Path B accumulated between rebuilds is closed
+        // atomically here.
+        totalReceived: agg.totalReceived,
       });
       for (const [yearMonth, month] of agg.months) {
         timeseriesRows.push({
@@ -707,6 +721,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         httpsUrl: null,
         mailtoUrl: null,
         hasOneClick: false,
+        totalReceived: 0,
       };
       aggregates.set(row.senderKey, agg);
     }
@@ -716,6 +731,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     if (row.internalDate > agg.lastSeen) {
       agg.lastSeen = row.internalDate;
     }
+    // Inbound-only: the page query filters `is_outbound = false`, so
+    // every fold here contributes +1 to the sender's lifetime received
+    // count. The rebuild writes this value into `senders.total_received`
+    // in the same transaction that re-inserts the row — authoritatively
+    // closing any drift the incremental Path B accumulated.
+    agg.totalReceived += 1;
     const category = this.toGmailCategory(row.labelIds);
     agg.categoryCounts.set(category, (agg.categoryCounts.get(category) ?? 0) + 1);
 

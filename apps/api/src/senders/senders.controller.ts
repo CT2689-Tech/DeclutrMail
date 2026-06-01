@@ -30,6 +30,7 @@ import {
 import {
   type Envelope,
   type PaginatedEnvelope,
+  type PaginationMeta,
   clampLimit,
   decodeCursor,
   encodeCursor,
@@ -46,13 +47,42 @@ import type {
   DecisionHistoryRow,
   MailMessageRow,
   SenderDetail,
+  SenderListDirection,
+  SenderListQueryMeta,
   SenderListRow,
+  SenderListSort,
   TimeseriesPoint,
   WeeklyHero,
 } from './senders.types.js';
 
 /** Allowed `?category=` values — mirrors the `gmail_category` enum. */
 const CATEGORIES = new Set<GmailCategory>(['primary', 'promotions', 'social', 'updates', 'forums']);
+
+/**
+ * `?sort=` values implemented at Slice 1 (ADR-0014). `read` and
+ * `recommended` are reserved in the contract but deferred — the
+ * service throws if they ever slip past this allowlist; controllers
+ * return 400 directly so the wire never sees a 5xx for a known-
+ * unimplemented sort.
+ */
+const SUPPORTED_SORTS = new Set<SenderListSort>(['total', 'last_seen', 'first_seen', 'name']);
+const SORT_DIRECTIONS = new Set<SenderListDirection>(['asc', 'desc']);
+
+/**
+ * Paginated envelope with an additional `meta.query` block. Mirrors the
+ * shape in `docs/api/senders-list-contract.md` — page 1's value is
+ * authoritative for the duration of a scroll; subsequent pages return
+ * the same shape but the client preserves page-1.
+ */
+interface SenderListEnvelope extends Envelope<
+  SenderListRow[],
+  {
+    pagination: PaginationMeta;
+    query: SenderListQueryMeta;
+  }
+> {
+  meta: { pagination: PaginationMeta; query: SenderListQueryMeta };
+}
 
 /** Page-size bounds — see each route's clamp call for the route-specific defaults. */
 const LIST_LIMIT = { def: 25, min: 1, max: 100 } as const;
@@ -91,11 +121,15 @@ export class SendersController {
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
     @Query('protected') rawProtected: string | undefined,
-  ): Promise<PaginatedEnvelope<SenderListRow>> {
+    @Query('sort') rawSort: string | undefined,
+    @Query('direction') rawDirection: string | undefined,
+  ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
     const isProtected = parseProtectedFlag(rawProtected);
     const limit = clampLimit(rawLimit, LIST_LIMIT);
+    const sort = parseSort(rawSort);
+    const direction = parseDirection(rawDirection);
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -103,23 +137,39 @@ export class SendersController {
       // the decoder returns `null` for every flavor of bad input.
       throw new BadRequestException('Invalid cursor.');
     }
-    const cursor = cursorRaw ? { lastSeenAt: new Date(cursorRaw.key), id: cursorRaw.id } : null;
-    if (cursor && Number.isNaN(cursor.lastSeenAt.getTime())) {
-      throw new BadRequestException('Invalid cursor.');
-    }
+    // The service parses the cursor's `key` per the active sort — a
+    // Date string for time columns, an integer string for `total`,
+    // etc. We pass the wire shape through untouched; the validation
+    // failure surfaces as a `400 Invalid cursor` from the service's
+    // per-sort parser.
+    const cursor = cursorRaw ? { key: cursorRaw.key, id: cursorRaw.id } : null;
 
-    const rows = await this.reads.listSenders({
-      mailboxAccountId: accountId,
-      category,
-      isProtected,
-      cursor,
-      limit,
-    });
+    const [rows, query] = await Promise.all([
+      this.reads.listSenders({
+        mailboxAccountId: accountId,
+        category,
+        isProtected,
+        sort,
+        direction,
+        cursor,
+        limit,
+      }),
+      this.reads.getSenderListQueryMeta({
+        mailboxAccountId: accountId,
+        category,
+        isProtected,
+      }),
+    ]);
 
     const { page, nextCursor } = takePage(rows, limit, (row) =>
-      encodeCursor({ key: row.lastSeenAt, id: row.id }),
+      encodeCursor({ key: encodeCursorKey(sort, row), id: row.id }),
     );
-    return paginated({ items: page, limit, nextCursor });
+    const pagination: PaginationMeta = {
+      nextCursor,
+      hasMore: nextCursor !== null,
+      limit,
+    };
+    return { data: page, meta: { pagination, query } };
   }
 
   /**
@@ -324,6 +374,56 @@ function takePage<T>(
 function parseCategory(raw: string | undefined): GmailCategory | null {
   if (!raw) return null;
   return CATEGORIES.has(raw as GmailCategory) ? (raw as GmailCategory) : null;
+}
+
+/**
+ * Coerce a raw `?sort=` to a supported `SenderListSort`. Defaults to
+ * `'total'` (the new Slice 1 contract default — `Total ↓`). Throws
+ * `BadRequestException` for an unknown sort so the wire surfaces a
+ * 400 with the offending value rather than silently coercing to the
+ * default (which would hide client bugs).
+ */
+function parseSort(raw: string | undefined): SenderListSort {
+  if (!raw) return 'total';
+  if (!SUPPORTED_SORTS.has(raw as SenderListSort)) {
+    throw new BadRequestException(`Unsupported sort: ${raw}`);
+  }
+  return raw as SenderListSort;
+}
+
+/**
+ * Coerce a raw `?direction=` to `asc | desc | null` (no direction → the
+ * service picks a sane default per sort). 400 on an unknown value —
+ * same posture as `parseSort`.
+ */
+function parseDirection(raw: string | undefined): SenderListDirection | null {
+  if (!raw) return null;
+  if (!SORT_DIRECTIONS.has(raw as SenderListDirection)) {
+    throw new BadRequestException(`Unsupported direction: ${raw}`);
+  }
+  return raw as SenderListDirection;
+}
+
+/**
+ * Encode a row's sort-column value into the cursor's opaque `key`.
+ * The service's `buildCursorPredicate` decodes the same per-sort shape
+ * on the next request — keep both in lockstep when adding new sorts.
+ */
+function encodeCursorKey(sort: SenderListSort, row: SenderListRow): string {
+  switch (sort) {
+    case 'total':
+      return String(row.totalReceived);
+    case 'last_seen':
+      return row.lastSeenAt;
+    case 'first_seen':
+      return row.firstSeenAt;
+    case 'name':
+      return row.displayName;
+    case 'read':
+    case 'recommended':
+      // Filtered upstream by SUPPORTED_SORTS; defense in depth.
+      throw new BadRequestException(`Unsupported sort: ${sort}`);
+  }
 }
 
 /**

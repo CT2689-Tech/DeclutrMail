@@ -20,8 +20,13 @@
 // `mail_messages.snippet` column IS allowlisted (and capped at
 // varchar(300) at the schema level) — it can flow through.
 
-import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { and, asc, desc, eq, getTableName, gte, lt, or, sql } from 'drizzle-orm';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+import { and, asc, desc, eq, getTableName, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
 import {
   mailMessages,
   senderPolicies,
@@ -38,7 +43,10 @@ import type {
   MailMessageRow,
   ProtectionFlags,
   SenderDetail,
+  SenderListDirection,
+  SenderListQueryMeta,
   SenderListRow,
+  SenderListSort,
   TimeseriesPoint,
   VolumeTrendBucket,
   WeeklyHero,
@@ -48,16 +56,41 @@ import type {
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
 /**
+ * Sorts the service implements at Slice 1. `read` and `recommended` are
+ * advertised by the contract but deferred — see `SenderListSort` doc
+ * in `senders.types.ts`. The controller maps an unsupported sort to
+ * `400`; the service throws if the controller's filter slipped.
+ */
+const SUPPORTED_SORTS: ReadonlySet<SenderListSort> = new Set([
+  'total',
+  'last_seen',
+  'first_seen',
+  'name',
+]);
+
+/** Default direction per sort when the caller omits `direction`. */
+const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
+  total: 'desc',
+  last_seen: 'desc',
+  first_seen: 'desc',
+  name: 'asc',
+  read: 'desc',
+  recommended: 'desc',
+};
+
+/**
  * Service-internal cursor shape — keyset on `(sort_col, id)` per D202.
  *
- * Kept distinct from the wire `DecodedCursor` (which is `{key, id}`
- * strings) so callers can pass typed Date / number boundaries
- * without re-parsing inside the SELECT builder. The controller
- * encodes/decodes between this and the opaque wire token.
+ * The wire `DecodedCursor` is `{ key: string; id: string }`; the
+ * service parses `key` per the active `sort` (ISO date for time
+ * columns, numeric string for total, plain string for name). Carrying
+ * the raw string through keeps the controller's encode/decode logic
+ * uniform across columns — each sort's expected `key` shape is
+ * documented at the call site in `buildCursorPredicate`.
  */
 export interface SenderListCursor {
-  /** ISO-8601 boundary `last_seen_at` of the last item on the prior page. */
-  lastSeenAt: Date;
+  /** Sort-column value at the page boundary, opaque string per `sort`. */
+  key: string;
   /** Tie-breaker — sender id of that same boundary row. */
   id: string;
 }
@@ -107,6 +140,19 @@ export class SendersReadService {
      * contract.
      */
     isProtected?: boolean | null;
+    /**
+     * Sortable column — Slice 1 supports `total` | `last_seen` |
+     * `first_seen` | `name`. Defaults to `'total'` per the senders
+     * list contract — the new "flood" headline. `read` / `recommended`
+     * are reserved in the contract but deferred (see SUPPORTED_SORTS).
+     */
+    sort?: SenderListSort | null;
+    /**
+     * Sort direction. When omitted, falls back to
+     * `DEFAULT_DIRECTION_BY_SORT[sort]` — desc for the time + total
+     * columns, asc for `name`.
+     */
+    direction?: SenderListDirection | null;
     cursor: SenderListCursor | null;
     /** Honored limit (already clamped by the controller). */
     limit: number;
@@ -118,6 +164,11 @@ export class SendersReadService {
     now?: Date;
   }): Promise<SenderListRow[]> {
     const { mailboxAccountId, category, isProtected, cursor, limit } = args;
+    const sort: SenderListSort = args.sort ?? 'total';
+    if (!SUPPORTED_SORTS.has(sort)) {
+      throw new BadRequestException(`Unsupported sort: ${sort}`);
+    }
+    const direction: SenderListDirection = args.direction ?? DEFAULT_DIRECTION_BY_SORT[sort];
     const now = args.now ?? new Date();
     const currentMonthIso = startOfMonthIso(now);
     const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
@@ -245,13 +296,11 @@ export class SendersReadService {
       LIMIT 1
     )`;
 
-    // Keyset predicate — `(last_seen_at, id) < (cursor.lastSeenAt,
-    // cursor.id)` expressed as the equivalent OR-chain so PG can use
-    // the `(mailbox_account_id, last_seen_at, id)` candidate index.
-    // The senders table doesn't carry that exact composite today
-    // (only `(mailbox_account_id, category)` is explicit), but the
-    // mailbox-equality predicate keeps the scan bounded; a future
-    // index migration is straightforward when we see a slow page.
+    // Keyset predicate — `(sort_col, id) < (cursor.key, cursor.id)`
+    // (or `>` for ASC) expressed as the equivalent OR-chain so PG can
+    // use the per-column composite index. The active sort's predicate
+    // + the `ORDER BY` clause below are built together so direction
+    // never drifts between them.
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
@@ -263,13 +312,9 @@ export class SendersReadService {
       // the correct default for a "show only protected" surface).
       conditions.push(eq(senderPolicies.isProtected, true));
     }
-    if (cursor) {
-      conditions.push(
-        or(
-          lt(senders.lastSeenAt, cursor.lastSeenAt),
-          and(eq(senders.lastSeenAt, cursor.lastSeenAt), lt(senders.id, cursor.id)),
-        )!,
-      );
+    const cursorPredicate = cursor ? buildCursorPredicate(sort, direction, cursor) : null;
+    if (cursorPredicate) {
+      conditions.push(cursorPredicate);
     }
 
     const rows = await this.db
@@ -281,6 +326,7 @@ export class SendersReadService {
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
+        totalReceived: senders.totalReceived,
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
@@ -309,11 +355,11 @@ export class SendersReadService {
         ),
       )
       .where(and(...conditions))
-      // Two-column DESC ordering matches the cursor predicate so the
-      // page boundary is deterministic even when multiple senders
-      // share `last_seen_at` to the second (rare but possible at
-      // first-sync time).
-      .orderBy(desc(senders.lastSeenAt), desc(senders.id))
+      // ORDER BY matches the cursor predicate + per-column index
+      // direction (see `buildSortOrderBy`). The id tie-breaker rides
+      // the same direction so a page boundary at equal `sortVal`
+      // tracks the index, not a sort-engine fallback.
+      .orderBy(...buildSortOrderBy(sort, direction))
       // +1 sentinel — the controller pops the extra row to set
       // `hasMore` without a count query.
       .limit(limit + 1);
@@ -326,6 +372,12 @@ export class SendersReadService {
       gmailCategory: row.gmailCategory,
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
+      // `total_received` is `bigint` in the column but Drizzle's
+      // `mode: 'number'` coerces to a JS number at the boundary. We
+      // assert the runtime type so a future driver swap that hands
+      // back a string surfaces here as a clear contract violation
+      // rather than a misrendered "0" downstream.
+      totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
       volumeTrend: computeTrendBucket(
@@ -347,6 +399,76 @@ export class SendersReadService {
         protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
       },
     }));
+  }
+
+  /**
+   * Compute the `meta.query` block for `GET /api/senders` (senders
+   * list contract). Returned on every page; clients should treat
+   * **page 1's value as authoritative** through a scroll.
+   *
+   * - `totalMatching`  — `COUNT(*)` over the active filter (mailbox +
+   *                      `category` + `isProtected`); NOT cursor-scoped.
+   *                      Drives "X of N senders" copy + the bulk
+   *                      select-all banner.
+   * - `globalMaxTotal` — `MAX(total_received)` for the mailbox,
+   *                      UNFILTERED (per contract). Magnitude-bar
+   *                      denominator — a filtered view must NOT rescale
+   *                      to its own max, so bars stay comparable.
+   * - `asOf`           — server time at compute (observability).
+   *
+   * Two separate SELECTs because the predicates differ: `totalMatching`
+   * honors filters; `globalMaxTotal` does not. Each is a single
+   * indexed scan; cheaper than a CTE that joins them.
+   */
+  async getSenderListQueryMeta(args: {
+    mailboxAccountId: string;
+    category: GmailCategory | null;
+    isProtected?: boolean | null;
+  }): Promise<SenderListQueryMeta> {
+    const { mailboxAccountId, category, isProtected } = args;
+
+    const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
+    if (category) {
+      totalMatchingConditions.push(eq(senders.gmailCategory, category));
+    }
+    if (isProtected === true) {
+      totalMatchingConditions.push(eq(senderPolicies.isProtected, true));
+    }
+
+    // `totalMatching` mirrors the list query's filter chain. Joins the
+    // same `sender_policies` so the `isProtected` predicate resolves
+    // against the same nullable column the list scan sees.
+    const totalMatchingQuery = this.db
+      .select({ count: sql<string | number>`COUNT(*)::bigint` })
+      .from(senders)
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, senders.mailboxAccountId),
+          eq(senderPolicies.senderKey, senders.senderKey),
+        ),
+      )
+      .where(and(...totalMatchingConditions));
+
+    // `globalMaxTotal` is mailbox-wide unfiltered — the magnitude-bar
+    // denominator must stay constant across filter changes (a
+    // filtered view does NOT rescale to its own max).
+    const globalMaxQuery = this.db
+      .select({
+        max: sql<string | number>`COALESCE(MAX(${senders.totalReceived}), 0)::bigint`,
+      })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+
+    const [totalRow, maxRow] = await Promise.all([totalMatchingQuery, globalMaxQuery]);
+    const totalMatching = ensureSafeIntegerNumber(totalRow[0]?.count ?? 0, 'totalMatching');
+    const globalMaxTotal = ensureSafeIntegerNumber(maxRow[0]?.max ?? 0, 'globalMaxTotal');
+
+    return {
+      totalMatching,
+      globalMaxTotal,
+      asOf: (args as { now?: Date }).now?.toISOString() ?? new Date().toISOString(),
+    };
   }
 
   /**
@@ -458,6 +580,7 @@ export class SendersReadService {
         gmailCategory: senders.gmailCategory,
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
+        totalReceived: senders.totalReceived,
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
@@ -505,6 +628,7 @@ export class SendersReadService {
       gmailCategory: row.gmailCategory,
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
+      totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
       volumeTrend: computeTrendBucket(
@@ -1253,4 +1377,125 @@ function buildLastReview(
     generatedBy,
     confidence: confidenceNum,
   };
+}
+
+/**
+ * Build the `ORDER BY` clause for one of the Slice 1 sortable columns.
+ * Direction applies to BOTH the sort column AND the `id` tie-breaker
+ * so the index walk and the cursor predicate move in lockstep.
+ *
+ * Index alignment per ADR-0014 + senders list contract:
+ *   - `total`       → `(mailbox, total_received DESC, id DESC)`
+ *   - `last_seen`   → no explicit composite today; planner falls back
+ *                     to the mailbox-equality prefix + sort on heap.
+ *                     Cheap at <5k senders; sister index documented as
+ *                     a per-slice add when traffic warrants it.
+ *   - `first_seen`  → same fallback as `last_seen`.
+ *   - `name`        → same fallback; PG sorts `text` lexicographically.
+ *                     For very large mailboxes a `(mailbox, lower(name))`
+ *                     covering index becomes worth adding.
+ */
+function buildSortOrderBy(sort: SenderListSort, direction: SenderListDirection): SQL[] {
+  const orient = direction === 'asc' ? asc : desc;
+  const column = (() => {
+    switch (sort) {
+      case 'total':
+        return senders.totalReceived;
+      case 'last_seen':
+        return senders.lastSeenAt;
+      case 'first_seen':
+        return senders.firstSeenAt;
+      case 'name':
+        return senders.displayName;
+      default:
+        // `read` and `recommended` are screened off by SUPPORTED_SORTS
+        // upstream; throwing here is the defense-in-depth.
+        throw new Error(`Unsupported sort in buildSortOrderBy: ${sort as string}`);
+    }
+  })();
+  return [orient(column) as SQL, orient(senders.id) as SQL];
+}
+
+/**
+ * Build the keyset cursor predicate for one of the Slice 1 sortable
+ * columns. The shape is the canonical OR-chain:
+ *
+ *   (sort_col, id) <op> (cursor.sortVal, cursor.id)
+ *
+ * which Postgres recognises as an index-aligned keyset scan when
+ * expressed as `sort_col <op> ? OR (sort_col = ? AND id <op> ?)`.
+ *
+ * `direction` picks the comparison operator (DESC → `<`, ASC → `>`).
+ * The cursor.key is the column's value at the boundary, parsed per
+ * sort:
+ *   - `total`       → number (decimal string accepted, asserted safe)
+ *   - `last_seen`   → ISO-8601 Date string
+ *   - `first_seen`  → ISO-8601 Date string
+ *   - `name`        → opaque string (PG sorts lexicographically)
+ */
+function buildCursorPredicate(
+  sort: SenderListSort,
+  direction: SenderListDirection,
+  cursor: SenderListCursor,
+): SQL {
+  const op = direction === 'asc' ? gt : lt;
+  switch (sort) {
+    case 'total': {
+      const sortVal = Number.parseInt(cursor.key, 10);
+      if (!Number.isFinite(sortVal)) {
+        throw new BadRequestException('Invalid cursor: total must be an integer.');
+      }
+      return or(
+        op(senders.totalReceived, sortVal),
+        and(eq(senders.totalReceived, sortVal), op(senders.id, cursor.id)),
+      )!;
+    }
+    case 'last_seen': {
+      const sortVal = new Date(cursor.key);
+      if (Number.isNaN(sortVal.getTime())) {
+        throw new BadRequestException('Invalid cursor: last_seen must be an ISO-8601 date.');
+      }
+      return or(
+        op(senders.lastSeenAt, sortVal),
+        and(eq(senders.lastSeenAt, sortVal), op(senders.id, cursor.id)),
+      )!;
+    }
+    case 'first_seen': {
+      const sortVal = new Date(cursor.key);
+      if (Number.isNaN(sortVal.getTime())) {
+        throw new BadRequestException('Invalid cursor: first_seen must be an ISO-8601 date.');
+      }
+      return or(
+        op(senders.firstSeenAt, sortVal),
+        and(eq(senders.firstSeenAt, sortVal), op(senders.id, cursor.id)),
+      )!;
+    }
+    case 'name': {
+      return or(
+        op(senders.displayName, cursor.key),
+        and(eq(senders.displayName, cursor.key), op(senders.id, cursor.id)),
+      )!;
+    }
+    default:
+      throw new Error(`Unsupported sort in buildCursorPredicate: ${sort as string}`);
+  }
+}
+
+/**
+ * Coerce a `bigint`-shaped scalar (Drizzle's `mode: 'number'` should
+ * already coerce, but PGlite + raw `sql<bigint>` paths can hand back
+ * strings) into a JS `number`, asserting safe-integer bounds.
+ *
+ * ADR-0014: `total_received` is bounded far below
+ * `Number.MAX_SAFE_INTEGER`; the assertion makes a violation explicit
+ * at the wire boundary rather than allowing precision loss to ripple
+ * into the FE. `label` is included in the error so a future regression
+ * shows up grep-able at the call site.
+ */
+function ensureSafeIntegerNumber(value: string | number, label: string): number {
+  const n = typeof value === 'number' ? value : Number.parseInt(value, 10);
+  if (!Number.isFinite(n) || !Number.isSafeInteger(n) || n < 0) {
+    throw new InternalServerErrorException(`${label} out of safe-integer range: ${value}`);
+  }
+  return n;
 }

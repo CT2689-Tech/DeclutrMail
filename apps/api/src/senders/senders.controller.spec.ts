@@ -38,6 +38,7 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     gmailCategory: 'updates',
     firstSeenAt: '2024-01-01T00:00:00.000Z',
     lastSeenAt: '2026-05-01T00:00:00.000Z',
+    totalReceived: 42,
     monthlyVolume: 10,
     readRate: 0.5,
     volumeTrend: 'steady',
@@ -80,12 +81,25 @@ function makeHistoryRow(overrides: Partial<DecisionHistoryRow> = {}): DecisionHi
 
 interface MockReadService {
   listSenders: ReturnType<typeof vi.fn>;
+  getSenderListQueryMeta: ReturnType<typeof vi.fn>;
   getSenderDetail: ReturnType<typeof vi.fn>;
   listMessagesForSender: ReturnType<typeof vi.fn>;
   listTimeseries: ReturnType<typeof vi.fn>;
   listDecisionHistory: ReturnType<typeof vi.fn>;
   listWeeklyHero: ReturnType<typeof vi.fn>;
 }
+
+/**
+ * Default `meta.query` shape used by every list test — the controller
+ * fans out `listSenders` + `getSenderListQueryMeta` in parallel, so the
+ * meta mock has to return a sensible default. Individual tests override
+ * via `.mockResolvedValueOnce(...)` when they assert on the meta itself.
+ */
+const DEFAULT_QUERY_META = {
+  totalMatching: 0,
+  globalMaxTotal: 0,
+  asOf: '2026-05-29T12:00:00.000Z',
+} as const;
 
 function buildController(): { ctrl: SendersController; reads: MockReadService } {
   // Direct construction bypasses NestJS DI — `swc-node` does not
@@ -94,6 +108,7 @@ function buildController(): { ctrl: SendersController; reads: MockReadService } 
   // pattern (see `undo.service.spec.ts`).
   const reads: MockReadService = {
     listSenders: vi.fn(),
+    getSenderListQueryMeta: vi.fn().mockResolvedValue(DEFAULT_QUERY_META),
     getSenderDetail: vi.fn(),
     listMessagesForSender: vi.fn(),
     listTimeseries: vi.fn(),
@@ -126,7 +141,15 @@ describe('SendersController', () => {
   describe('list — envelope + cursor', () => {
     it('returns the D202 paginated envelope with hasMore=false when the service returns ≤ limit rows', async () => {
       reads.listSenders.mockResolvedValue([makeSenderRow()]);
-      const res = await ctrl.list(MAILBOX, undefined, '10', undefined, undefined);
+      const res = await ctrl.list(
+        MAILBOX,
+        undefined,
+        '10',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(res.meta.pagination).toEqual({
         nextCursor: null,
         hasMore: false,
@@ -135,9 +158,47 @@ describe('SendersController', () => {
       expect(res.data).toHaveLength(1);
     });
 
-    it('emits a nextCursor that round-trips back to a (lastSeenAt, id) boundary', async () => {
-      // Service returns limit+1 rows — the controller pops the sentinel
-      // and derives the cursor from the LAST returned row (page[limit-1]).
+    it('emits a nextCursor that encodes the active sort column (default Total ↓)', async () => {
+      // Default sort is `total` (ADR-0014). Service returns limit+1
+      // rows — the controller pops the sentinel and derives the
+      // cursor from the LAST returned row (page[limit-1]).
+      const rows: SenderListRow[] = [
+        makeSenderRow({
+          id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          totalReceived: 300,
+        }),
+        makeSenderRow({
+          id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+          totalReceived: 200,
+        }),
+        makeSenderRow({
+          id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+          totalReceived: 100,
+        }),
+      ];
+      reads.listSenders.mockResolvedValue(rows);
+
+      const res = await ctrl.list(
+        MAILBOX,
+        undefined,
+        '2',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(res.data).toHaveLength(2);
+      expect(res.meta.pagination.hasMore).toBe(true);
+      expect(res.meta.pagination.nextCursor).not.toBeNull();
+
+      const decoded = decodeCursor(res.meta.pagination.nextCursor);
+      expect(decoded).toEqual({
+        key: '200',
+        id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      });
+    });
+
+    it('emits a last_seen cursor when ?sort=last_seen is passed', async () => {
       const rows: SenderListRow[] = [
         makeSenderRow({
           id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -154,13 +215,16 @@ describe('SendersController', () => {
       ];
       reads.listSenders.mockResolvedValue(rows);
 
-      const res = await ctrl.list(MAILBOX, undefined, '2', undefined, undefined);
-      expect(res.data).toHaveLength(2);
-      expect(res.meta.pagination.hasMore).toBe(true);
-      expect(res.meta.pagination.nextCursor).not.toBeNull();
-
+      const res = await ctrl.list(
+        MAILBOX,
+        undefined,
+        '2',
+        undefined,
+        undefined,
+        'last_seen',
+        undefined,
+      );
       const decoded = decodeCursor(res.meta.pagination.nextCursor);
-      // Boundary is the LAST returned row (page[1]).
       expect(decoded).toEqual({
         key: '2026-05-02T00:00:00.000Z',
         id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -169,19 +233,32 @@ describe('SendersController', () => {
 
     it('rejects a malformed cursor with 400', async () => {
       await expect(
-        ctrl.list(MAILBOX, undefined, undefined, 'not-base64!!!', undefined),
+        ctrl.list(MAILBOX, undefined, undefined, 'not-base64!!!', undefined, undefined, undefined),
       ).rejects.toThrow(/cursor/i);
     });
 
-    it('forwards a valid cursor to the read service as a Date + id', async () => {
+    it('rejects an unsupported sort with 400', async () => {
+      await expect(
+        ctrl.list(MAILBOX, undefined, undefined, undefined, undefined, 'bogus', undefined),
+      ).rejects.toThrow(/sort/i);
+    });
+
+    it('rejects an unsupported direction with 400', async () => {
+      await expect(
+        ctrl.list(MAILBOX, undefined, undefined, undefined, undefined, 'total', 'sideways'),
+      ).rejects.toThrow(/direction/i);
+    });
+
+    it('forwards a valid cursor + sort to the read service untouched', async () => {
       reads.listSenders.mockResolvedValue([]);
       const cursor = encodeCursor({ key: '2026-05-01T00:00:00.000Z', id: SENDER_ID });
-      await ctrl.list(MAILBOX, undefined, undefined, cursor, undefined);
+      await ctrl.list(MAILBOX, undefined, undefined, cursor, undefined, 'last_seen', undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({
           mailboxAccountId: MAILBOX_ID,
+          sort: 'last_seen',
           cursor: {
-            lastSeenAt: new Date('2026-05-01T00:00:00.000Z'),
+            key: '2026-05-01T00:00:00.000Z',
             id: SENDER_ID,
           },
         }),
@@ -190,7 +267,7 @@ describe('SendersController', () => {
 
     it('passes a parsed category to the read service when valid', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, 'promotions', undefined, undefined, undefined);
+      await ctrl.list(MAILBOX, 'promotions', undefined, undefined, undefined, undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ category: 'promotions' }),
       );
@@ -198,22 +275,45 @@ describe('SendersController', () => {
 
     it('silently drops an unknown category value', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, 'not-real', undefined, undefined, undefined);
+      await ctrl.list(MAILBOX, 'not-real', undefined, undefined, undefined, undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ category: null }));
     });
 
     it('clamps an over-max ?limit= to 100', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, undefined, '999999', undefined, undefined);
+      await ctrl.list(MAILBOX, undefined, '999999', undefined, undefined, undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
     });
 
     it('passes isProtected:true to the read service when ?protected=true', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, undefined, undefined, undefined, 'true');
+      await ctrl.list(MAILBOX, undefined, undefined, undefined, 'true', undefined, undefined);
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ isProtected: true }),
       );
+    });
+
+    it('surfaces meta.query alongside the page rows', async () => {
+      reads.listSenders.mockResolvedValue([makeSenderRow()]);
+      reads.getSenderListQueryMeta.mockResolvedValue({
+        totalMatching: 1852,
+        globalMaxTotal: 2030,
+        asOf: '2026-05-29T12:34:56.000Z',
+      });
+      const res = await ctrl.list(
+        MAILBOX,
+        undefined,
+        '10',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(res.meta.query).toEqual({
+        totalMatching: 1852,
+        globalMaxTotal: 2030,
+        asOf: '2026-05-29T12:34:56.000Z',
+      });
     });
 
     it('treats every non-"true" ?protected= value as no filter', async () => {
@@ -222,7 +322,7 @@ describe('SendersController', () => {
       // controller deliberately does NOT expose a "false" filter (no UI
       // surface needs "show only non-protected" yet).
       for (const raw of ['false', '1', 'garbage']) {
-        await ctrl.list(MAILBOX, undefined, undefined, undefined, raw);
+        await ctrl.list(MAILBOX, undefined, undefined, undefined, raw, undefined, undefined);
         expect(reads.listSenders).toHaveBeenLastCalledWith(
           expect.objectContaining({ isProtected: null }),
         );

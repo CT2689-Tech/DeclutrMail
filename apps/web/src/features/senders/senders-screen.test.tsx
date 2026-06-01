@@ -42,9 +42,12 @@ const ROW = {
   gmailCategory: 'promotions' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2025-01-01T00:00:00.000Z',
+  totalReceived: 120,
   monthlyVolume: 30,
   readRate: 0,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: 'one_click' as const,
+  lastReview: null,
   protectionFlags: {
     isVip: false,
     isProtected: false,
@@ -77,6 +80,22 @@ function weeklyHeroHandler(
           isMonday: overrides.isMonday ?? false,
           weekOf: overrides.weekOf ?? '2026-05-25',
           slices: overrides.slices ?? [],
+        },
+      }),
+  };
+}
+
+/** A populated /api/senders page with a single eligible sender (`ROW`). */
+function oneSenderHandler() {
+  return {
+    method: 'GET' as const,
+    path: '/api/senders',
+    respond: () =>
+      jsonOk({
+        data: [ROW],
+        meta: {
+          pagination: { nextCursor: null, hasMore: false, limit: 25 },
+          query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
         },
       }),
   };
@@ -136,7 +155,10 @@ describe('SendersScreen — edge states', () => {
         respond: () =>
           jsonOk({
             data: [],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -157,7 +179,10 @@ describe('SendersScreen — edge states', () => {
         respond: () =>
           jsonOk({
             data: [ROW, { ...ROW, id: 'b', displayName: 'Sender B' }],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -178,6 +203,146 @@ describe('SendersScreen — edge states', () => {
     // Intent filter chips replaced the Gmail-category chips.
     expect(screen.getByRole('button', { name: /^All\b/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
+  });
+
+  it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    // Select the sender so the bulk-action surface is live.
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+
+    // Pressing `A` opens the mandatory preview — never a direct mutation.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(await screen.findByText(/archive all mail from 1 sender/i)).toBeInTheDocument();
+  });
+
+  it('ignores the verb shortcut while a modal is already open', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // A second verb key with the preview open must not stack a new modal.
+    fireEvent.keyDown(document.body, { key: 'u' });
+    expect(screen.queryByText(/unsubscribe from 1 sender/i)).toBeNull();
+  });
+
+  it('honors L and U shortcuts too (advertised aria-keyshortcuts are truthful)', async () => {
+    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'l' });
+    expect(await screen.findByText(/move 1 sender to later/i)).toBeInTheDocument();
+    // Cancel the preview, then verify U routes to the unsubscribe preview.
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByText(/move 1 sender to later/i)).toBeNull());
+    fireEvent.keyDown(document.body, { key: 'u' });
+    expect(await screen.findByText(/unsubscribe from 1 sender/i)).toBeInTheDocument();
+  });
+
+  it('does not fire a verb shortcut while typing in the search field', async () => {
+    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    const search = screen.getByRole('combobox', { name: /search senders/i });
+    search.focus();
+    fireEvent.keyDown(search, { key: 'a' });
+    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+  });
+
+  it('does not fire a verb shortcut while the cheatsheet is open', async () => {
+    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: '?' }); // open cheatsheet
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+  });
+
+  it('does not stack the cheatsheet on top of an open preview', async () => {
+    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' }); // open the preview
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // `?` while the preview is open must not pop a second modal over it.
+    fireEvent.keyDown(document.body, { key: '?' });
+    expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  });
+
+  it('no-ops a verb shortcut when the selection has no eligible senders', async () => {
+    // A standing-protected sender is ineligible for every bulk verb, so
+    // the eligible filter is empty and no preview opens.
+    const PROTECTED = {
+      ...ROW,
+      id: 'p',
+      displayName: 'Protected Co',
+      protectionFlags: { ...ROW.protectionFlags, isProtected: true, protectionReason: 'manual' },
+    };
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [PROTECTED],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const checkbox = await screen.findByRole('checkbox', { name: /select protected co/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'u' });
+    expect(screen.queryByText(/unsubscribe from/i)).toBeNull();
   });
 });
 
@@ -225,7 +390,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -249,7 +417,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -280,11 +451,17 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
           url.searchParams.get('cursor')
             ? jsonOk({
                 data: [ROW_B],
-                meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+                meta: {
+                  pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                  query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+                },
               })
             : jsonOk({
                 data: [ROW],
-                meta: { pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 } },
+                meta: {
+                  pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 },
+                  query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+                },
               }),
       },
     ]);
@@ -310,7 +487,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -331,7 +511,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);
@@ -354,7 +537,10 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         respond: () =>
           jsonOk({
             data: [ROW],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
           }),
       },
     ]);

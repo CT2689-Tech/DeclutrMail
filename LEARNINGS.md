@@ -639,3 +639,83 @@ shared test harness rather than per-package.
   - Fix: restore main's exact 16 hash lines; the new migration's entry + the total genuinely require `atlas migrate hash` (real CLI) — run it in an env that has Atlas, or in CI.
 **Rule:** Do NOT hand-edit `atlas.sum`. If you add a migration and can't run `atlas migrate hash`, leave the sum for a human/CI step and say so — never recompute hashes from bytes (you'll corrupt valid entries). The `h1:` total algo `sha256(Σ name+h)` IS reproducible, but the per-file hashes are not.
 **Distillation trigger:** promote to CLAUDE.md §4 (migration workflow) — "never hand-edit atlas.sum" — given this burned a full CI cycle.
+
+## 2026-05-30 — Verb registries belong before the second verb, not after the sixth
+**Context:** Designing PR #135 → PR #144 bulk-action sequence. Today's verb plumbing (archive only) lives across ~10 files (db enum, undo enum, worker label-change map, FE button arrays, microcopy maps, eligibility predicates, K/A/U/L shortcut binding). Codex review of `docs/handoffs/2026-05-30-bulk-actions-architecture-codex-review.md` validated the consolidation at 4 verbs.
+**Finding:** A verb registry / action manifest pattern (single typed descriptor per verb in `packages/shared/actions/`) is justified at 4 verbs, not at 6+. Net LOC is roughly flat at 4 verbs (~200 LOC manifest replaces ~150 LOC scattered) but compounds aggressively per-verb: adding `mark_read` afterwards is 1 entry + 2 migrations (~20 LOC) vs. ~80 LOC across 10 files in the scattered shape.
+**Rule (provisional):** Build a verb/action registry when you have ≥2 verbs that share a UI surface or worker pipeline. Earlier than that = speculative; later = paying retrofit cost on every screen that shipped verb-hardcoded.
+**Distillation trigger:** promote to CLAUDE.md §1 (behavioral principles, simplicity-first qualifier) if pattern recurs across triage/brief/screener consolidations as expected.
+
+## 2026-05-30 — DB enum values are append-only; never derive from a JS object
+**Context:** Initial Action Manifest sketch had `pgEnum('action_verb', Object.keys(ACTION_MANIFEST) as ActionVerb[])` — DB enum derived from manifest keys at codegen.
+**Finding:** Codex flagged: a manifest deletion (refactor, accidental, or mid-refactor partial commit) silently DROPS pg_enum values. Postgres rejects `DROP VALUE` on most enums; even where it doesn't, downstream rows referencing the dropped value break. Migrations must be explicit, append-only, version-controlled, hand-reviewed.
+**Rule (provisional):** Pure constants module (`packages/shared/contracts/verb-constants.ts`) owns the agreement. DB schema imports the constants ONLY to write the explicit migration; manifest descriptor imports the constants for typing. Constants array is append-only; type tests assert union coverage; pg_enum migration tracks separately.
+**Distillation trigger:** promote to CLAUDE.md §10 ("Do NOT" list — "Do NOT derive pg_enum values from a JS structure"). Codex correction here aligns with broader migration discipline.
+
+## 2026-05-31 — A verb-generic descriptor is invariant; iterating its mapped registry won't widen
+
+**Context:** P2 Action Registry. `ActionDescriptor<V>` carries
+`execution: ActionExecution<V>` whose builders take `(params:
+ParamsForVerb<V>)`. `ACTION_REGISTRY` is the mapped type `{ [V in
+ActionVerb]: ActionDescriptor<V> }`.
+
+**Finding:** `ACTION_VERBS.map((v) => ACTION_REGISTRY[v])` yields the
+DISTRIBUTED union `ActionDescriptor<'keep'> | ActionDescriptor<'archive'>`,
+which is NOT assignable to `ActionDescriptor<'keep' | 'archive'>` (the
+default `ActionDescriptor`). Because `V` appears in a contravariant
+position (builder param), the generic is invariant in `V`, so the union
+of per-verb descriptors does not widen to the base descriptor. An inline
+`(v): ActionDescriptor =>` annotation does NOT rescue it — `tsc` fails
+`TS2322`. Both gate agents flagged this independently.
+
+**Rule (provisional):** When exposing "all descriptors as a list" from a
+verb-generic mapped registry, widen with an explicit array assertion
+(`... as readonly ActionDescriptor[]`) at the boundary — the per-verb
+element shapes ARE structurally identical at the base type; only the
+deferred `ParamsForVerb<V>` index differs. Expect this again at P5 when
+`archive` gains a real historic-scope param (the params stop being a
+uniform empty type, but the iteration widening is unchanged).
+
+**Distillation trigger:** promote to CLAUDE.md §X if pattern recurs ≥3 times.
+
+## 2026-05-31 — Atlas `atlas.sum` is reproducible offline (no atlas binary needed)
+**Context:** Adding migration `0018` (an `ALTER TYPE … ADD VALUE`) needed
+`packages/db/migrations/atlas.sum` updated, but `atlas` is uninstallable
+in the web-execution env (ariga.io egress returns 403; `go install` proxy
+likewise blocked). CI's `migration-lint` runs `atlas migrate lint`, which
+verifies `atlas.sum` integrity — a stale/missing entry breaks CI.
+**Finding:** The `atlas.sum` hashing is reproducible with Node `crypto`
+alone. Verified to byte-reproduce all 18 existing entries:
+- **Per-file line** = a *cumulative* SHA-256 over `(name + content)` for
+  every `.sql` in sorted order, emitting the running digest at each file
+  (a single hash object, never reset — so the LAST file's hash covers the
+  whole dir, and the FIRST file's is just its own). Encoded base64, prefixed `h1:`.
+- **Header line** = `h1:` + base64(SHA-256 over the concatenation of
+  `(name + rawBase64HashWithoutPrefix)` for every file, in order).
+- File order is the sorted `.sql` list; `.rollback` files are excluded.
+**Rule (provisional):** When `atlas` is unavailable, regenerate
+`atlas.sum` with a Node script using the algorithm above, and ALWAYS
+assert it byte-reproduces every pre-existing entry before writing (a
+single mismatch means the algorithm or a source file drifted — abort).
+The PGlite `migration-roundtrip` test (`packages/db/tests`) then smokes
+the SQL itself (apply → rollback → re-apply) without atlas or a local PG.
+**Distillation trigger:** promote to CLAUDE.md §X if a 2nd migration PR
+hits the same atlas-unavailable wall.
+
+## 2026-05-31 — A new `action_verb` must be writable into the downstream enums
+**Context:** P4 tried to append `later` + `unarchive` to the `action_verb`
+pg_enum. `later` typechecked; `unarchive` failed the workers build.
+**Finding:** `LabelActionWorker` writes a job's `verb` straight into
+`undo_journal.actionKind` (`undo_action_kind`) and `activity_log.action`
+(`activity_action`). So `action_verb` is effectively a SUBSET of both of
+those enums. `later` is a member of all three; `unarchive` is in neither
+downstream enum, so widening `action_verb` to include it broke the
+worker's insert types (`TS2769`). The registry can model `unarchive` as a
+`label-modify` verb (for FE copy) without it being a valid `action_verb`.
+**Rule (provisional):** Before adding a verb to `action_verb`, confirm it
+already exists in `undo_action_kind` AND `activity_action` (or migrate all
+three together + teach the worker). Registry membership ≠ pg_enum
+membership — `keep`, `unsubscribe`, and now `unarchive` are in the
+registry but not in `action_verb`, each for a documented reason.
+**Distillation trigger:** promote to CLAUDE.md §2 (DB invariants) if a
+verb-add breaks a downstream enum a 2nd time.
