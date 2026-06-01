@@ -50,26 +50,49 @@ export function ConfirmActionModal({
     setArchiveHistoric(request?.verb === 'Unsubscribe');
   }, [request]);
 
-  // Real-archive gating: while the count is loading, block confirm; when
-  // the sender has nothing in the inbox, block it entirely — so the user
-  // never confirms a no-op (the dealskhoj.in smoke case). Estimate paths
-  // (no `archivePreview`) are never gated.
+  // The real inbox-now count (undefined while loading / on error / on the
+  // estimate path). Governs both the Archive headline figure and the
+  // "also archive the backlog" toggle on Unsubscribe/Later.
   const previewLoading = archivePreview?.loading ?? false;
-  const nothingToArchive =
-    archivePreview != null && !previewLoading && archivePreview.inboxCount === 0;
-  const confirmDisabled = previewLoading || nothingToArchive;
+  const inboxNow =
+    archivePreview != null && !previewLoading && !archivePreview.error
+      ? archivePreview.inboxCount
+      : undefined;
+
+  // Archive is the only verb whose ENTIRE effect is moving inbox mail, so an
+  // empty inbox makes it a pure no-op → block confirm (the dealskhoj.in smoke
+  // case). Unsubscribe/Later are future-only by definition and stay valid
+  // with an empty inbox — for them the count only governs the backlog toggle,
+  // never the confirm button.
+  const isArchiveVerb = request?.verb === 'Archive';
+  const nothingToArchive = isArchiveVerb && inboxNow === 0;
+  const confirmDisabled = isArchiveVerb && (previewLoading || nothingToArchive);
+
+  // The headline figure shows the real count only for Archive; Unsubscribe/
+  // Later keep the lifetime-total framing (their headline isn't "what moves
+  // now" — it's how much this sender has ever sent).
+  const realArchiveFigure = isArchiveVerb && archivePreview != null;
+
+  // Unsubscribe/Later offer the "also archive the backlog" toggle — but never
+  // when we KNOW the inbox holds nothing from this sender (offering, let alone
+  // pre-checking, a no-op contradicts the Archive preview's own "nothing to
+  // archive"). Unknown count (loading / bulk / estimate) keeps the toggle.
+  const showHistoricToggle =
+    (request?.verb === 'Unsubscribe' || request?.verb === 'Later') && inboxNow !== 0;
+  // Never carry archiveHistoric when its toggle isn't shown.
+  const effectiveArchiveHistoric = showHistoricToggle && archiveHistoric;
 
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
-        onConfirm({ archiveHistoric });
+        onConfirm({ archiveHistoric: effectiveArchiveHistoric });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [request, archiveHistoric, onCancel, onConfirm, confirmDisabled]);
+  }, [request, effectiveArchiveHistoric, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
@@ -86,10 +109,8 @@ export function ConfirmActionModal({
   const n = senders.length;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
-  // Unsubscribe and Later touch only future mail by default, so both
-  // offer the "also clear the historic backlog" toggle. Archive moves
-  // every message by definition. Only Unsubscribe reads as destructive.
-  const showHistoricToggle = verb === 'Unsubscribe' || verb === 'Later';
+  // Only Unsubscribe reads as destructive. (Whether the historic-backlog
+  // toggle shows is decided above — it depends on the real inbox count.)
   const danger = verb === 'Unsubscribe';
 
   const title =
@@ -216,7 +237,7 @@ export function ConfirmActionModal({
               borderRadius: 9,
             }}
           >
-            {archivePreview != null ? (
+            {realArchiveFigure ? (
               previewLoading ? (
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                   Checking how much of this sender’s mail is in your inbox…
@@ -301,8 +322,9 @@ export function ConfirmActionModal({
                 )}
               </span>
               <span style={{ fontSize: 12.5, color: color.fg }}>
-                Also archive everything from{' '}
-                {senders.length === 1 ? 'this sender' : 'these senders'} currently in the inbox
+                {inboxNow != null && inboxNow > 0
+                  ? `Also archive the ${inboxNow.toLocaleString()} email${inboxNow === 1 ? '' : 's'} from this sender currently in the inbox`
+                  : `Also archive everything from ${subject} currently in the inbox`}
               </span>
             </button>
           )}
@@ -335,7 +357,7 @@ export function ConfirmActionModal({
             <Button
               tone={danger ? 'warn' : 'primary'}
               disabled={confirmDisabled}
-              onClick={() => onConfirm({ archiveHistoric })}
+              onClick={() => onConfirm({ archiveHistoric: effectiveArchiveHistoric })}
               iconRight={
                 <Kbd
                   style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}

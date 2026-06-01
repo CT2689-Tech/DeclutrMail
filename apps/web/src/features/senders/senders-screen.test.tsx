@@ -507,6 +507,60 @@ describe('SendersScreen — edge states', () => {
     expect(receipt).toHaveTextContent(/archived 1 sender/i);
   });
 
+  it('Unsubscribe with 0 inbox mail hides the "also archive" toggle but still confirms (D226)', async () => {
+    // The bug: Unsubscribe offered (and pre-checked) "also archive everything
+    // currently in the inbox" using the LIFETIME total, with no idea the inbox
+    // held nothing — contradicting the Archive preview's "nothing to archive"
+    // for the same sender. The real inbox count must gate the toggle. But
+    // Unsubscribe is future-only, so a 0 count must NOT block its confirm.
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'u' });
+    await screen.findByText(/unsubscribe from 1 sender/i);
+
+    // Once the count resolves to 0, the backlog toggle disappears — no offer
+    // to archive mail that isn't there.
+    await waitFor(() => expect(screen.queryByText(/currently in the inbox/i)).toBeNull());
+    // ...and the confirm stays enabled (unsubscribe stops FUTURE mail; an empty
+    // inbox doesn't make it a no-op the way it does for Archive).
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
+  });
+
+  it('Unsubscribe with inbox mail shows the backlog toggle with the real count', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'u' });
+    await screen.findByText(/unsubscribe from 1 sender/i);
+
+    // The toggle names the real inbox count, not the lifetime total.
+    await screen.findByText(/also archive the 3 emails from this sender currently in the inbox/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
+  });
+
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
       weeklyHeroHandler(),

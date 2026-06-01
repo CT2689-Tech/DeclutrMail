@@ -205,12 +205,17 @@ function SendersScreenContent({
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
 
-  // Real-archive preview (D226): fetch the actual inbox count for the
-  // single sender being archived so the confirm modal states what will move
-  // — never the FE estimate. Only the single-sender Archive path is real;
-  // bulk + other verbs keep the estimate (archivePreview = undefined).
+  // Real inbox-count preview (D226): fetch the actual inbox count for any
+  // single-sender verb whose preview depends on it — Archive (the headline
+  // figure: exactly what moves) AND Unsubscribe/Later (the optional "also
+  // archive the backlog" toggle, which must not offer a no-op). Bulk + other
+  // verbs keep the estimate (archivePreview = undefined).
   const archivePreviewSenderId =
-    pendingAction?.verb === 'Archive' && pendingAction.senders.length === 1
+    pendingAction != null &&
+    pendingAction.senders.length === 1 &&
+    (pendingAction.verb === 'Archive' ||
+      pendingAction.verb === 'Unsubscribe' ||
+      pendingAction.verb === 'Later')
       ? pendingAction.senders[0]!.id
       : null;
   const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
