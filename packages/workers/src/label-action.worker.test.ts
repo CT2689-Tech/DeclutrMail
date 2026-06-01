@@ -394,4 +394,13 @@ describe('labelChangeForVerb (registry-routed, ADR-0015)', () => {
     // `keep` is policy-only — it must never reach the label worker.
     expect(() => labelChangeForVerb('keep')).toThrow(ValidationError);
   });
+
+  it('refuses a label-modify verb whose pipeline is incomplete (F1)', () => {
+    // `later` IS label-modify and joined the `action_verb` enum in P4, so
+    // (unlike `keep`) a `later` row CAN be inserted and reach this chokepoint.
+    // Its local mirror / undo / event-schema support is archive-only, so the
+    // guard must refuse it fail-closed before any Gmail mutation.
+    expect(() => labelChangeForVerb('later')).toThrow(ValidationError);
+    expect(() => labelChangeForVerb('later')).toThrow(/archive-only/);
+  });
 });
