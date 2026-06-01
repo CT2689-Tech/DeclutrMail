@@ -26,6 +26,28 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-05-29 — Brief D68 Pro-tier gate deferred until billing ships
+**Source:** Brief render PR (D61, D63, D67, D69, D70)
+**Why:** D68 specifies a "Your Morning Brief — Upgrade to Pro" placeholder for
+Free/Plus users visiting `/brief`. The tier signal is absent from BOTH layers
+today — `apps/api/src/auth/me` has no tier field and there is no
+`users.tier` / `workspaces.tier` column anywhere in `packages/db/src/schema/**`.
+Wiring a placeholder for a tier that does not exist is fake completion. The
+right pairing is with the billing slice (D17-D21, D77, D81) which has to land
+the tier column + Stripe sync first.
+**How:** When billing lands:
+  1. Surface the tier on `GET /api/auth/me` (extend `Me` in `apps/web/src/features/auth/api/use-me.ts:32`).
+  2. In `apps/web/src/features/brief/brief-screen.tsx:BriefScreen`, early-return
+     a `<UpgradeToProPlaceholder />` when `me.tier !== 'pro'` (similar shape to
+     the existing D33 tier-aware EmptyState pattern in `packages/shared/src/components/empty-state/empty-state.tsx`).
+  3. Mirror the gate in `apps/api/src/briefs/brief.controller.ts` — 403 (not
+     404) when tier !== 'pro', with `code: 'tier_gate'` per the
+     `packages/shared/src/contracts/error-codes.ts` registry.
+**Verifies by:** Free user hitting `/brief` sees upgrade card, not the screen;
+Pro user sees real Brief; integration test in `brief-screen.test.tsx` covers
+both branches.
+**Status:** Open
+
 ### 2026-05-29 — Confirm the §9-sensitive D181 security-event emit points before wiring
 **Source:** PR for D181 (security events log) — branch `claude/pending-ds-backend-KIv38`
 **Why:** D181 names 7 emit categories. This PR shipped the table + service + the
