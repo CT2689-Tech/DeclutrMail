@@ -131,6 +131,42 @@ describe('SenderTable', () => {
     );
   });
 
+  it('surfaces only the three move verbs — Keep is NOT a row action (D227, F3)', () => {
+    render(<Harness {...{}} />);
+    // Archive / Later / Unsubscribe render…
+    expect(screen.getByRole('button', { name: /^archive bank of america/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^later bank of america/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^unsubscribe bank of america/i })).toBeTruthy();
+    // …Keep does not. On the management table, not-acting already means
+    // "keep"; the explicit Keep verb lives in Triage, and it must never
+    // re-appear here mapped to Protect (the bug Codex flagged on #142).
+    expect(screen.queryByRole('button', { name: /^keep bank of america/i })).toBeNull();
+  });
+
+  it('renders the read-only Protect ⭐ status for standing-protected / VIP rows only', () => {
+    // Unprotected row (the default) → no star.
+    const { unmount } = render(<Harness {...{}} />);
+    expect(screen.queryByRole('img', { name: /protected/i })).toBeNull();
+    unmount();
+
+    // Protected (non-VIP) row → "Protected" star.
+    render(
+      <Harness
+        rows={[
+          row({
+            protectionFlags: {
+              isVip: false,
+              isProtected: true,
+              protectionReason: null,
+              protectionSetAt: null,
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByRole('img', { name: /^protected$/i })).toBeTruthy();
+  });
+
   it('sources verb label + shortcut tooltip from the Action Registry (D227)', () => {
     render(<Harness {...{}} />);
     // Label is the registry copy; the shortcut is invisible inline but
