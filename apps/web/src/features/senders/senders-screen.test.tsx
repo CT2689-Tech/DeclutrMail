@@ -205,6 +205,55 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
   });
 
+  it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
+    // The founder's bug: searching "dealskhoj" returned nothing because the
+    // FE filtered only the loaded ≤50-row page. With server-side search the
+    // term goes to the BE, which returns the match even though it isn't on
+    // page 1. The stub returns the dealskhoj sender ONLY when ?q=dealskhoj —
+    // so its appearance proves the term reached the server.
+    const DEALS_ROW = {
+      ...ROW,
+      id: 'deals',
+      displayName: 'Exclusive Deals',
+      email: 'emailer@dealskhoj.in',
+      domain: 'dealskhoj.in',
+    };
+    let lastQ: string | null = null;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          lastQ = url.searchParams.get('q');
+          const match = lastQ === 'dealskhoj';
+          return jsonOk({
+            data: match ? [DEALS_ROW] : [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    // Initial page (no q) shows Sender A; dealskhoj is not on it.
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByText(/Exclusive Deals/)).toBeNull();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'dealskhoj' },
+    });
+
+    // After the debounce, the server gets q and returns the off-page match.
+    await waitFor(() => expect(screen.getAllByText(/Exclusive Deals/).length).toBeGreaterThan(0), {
+      timeout: 2000,
+    });
+    expect(lastQ).toBe('dealskhoj');
+  });
+
   it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
     installFetchStub([
       weeklyHeroHandler(),

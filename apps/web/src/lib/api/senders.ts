@@ -275,6 +275,11 @@ export interface ListSendersParams {
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
   direction?: SenderListDirection | undefined;
+  /**
+   * Server-side search (#145) — case-insensitive substring over name /
+   * email / domain, mailbox-wide. Maps to `?q=`. Omit/empty = no search.
+   */
+  q?: string | undefined;
 }
 
 /**
@@ -328,6 +333,9 @@ export function fetchSenders(
       protected: params.isProtected === true ? 'true' : undefined,
       sort: params.sort,
       direction: params.direction,
+      // Empty string collapses to omitted so a cleared search keys the
+      // same cache entry as "no search".
+      q: params.q ? params.q : undefined,
     },
     signal,
   }) as Promise<SenderListEnvelope>;

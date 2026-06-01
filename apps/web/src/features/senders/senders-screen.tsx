@@ -104,17 +104,36 @@ let receiptSeq = 0;
  * Edge states (D211/D212): loading / error / empty are first-class
  * branches handled inline below.
  */
+/**
+ * Debounce a fast-changing value (e.g. the search box) so a derived
+ * server query fires only after the user pauses — not on every keystroke.
+ */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export function SendersScreen() {
   // Sort + direction come from the Zustand store (D200 client-state)
   // so the new SenderTable's header click and a future
   // sort-shortcut/keyboard surface both write through one seam.
   const sort = useSendersStore((s) => s.sort);
   const direction = useSendersStore((s) => s.direction);
+  // Search lives here (above the fetch) so it drives the server query
+  // (#145) — debounced so typing doesn't fire a request per keystroke.
+  // `keepPreviousData` (in useSenders) holds the list while the new term
+  // resolves, so the screen never blanks to a skeleton mid-search.
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
   // the two share ONE infinite-query cache entry per (category, limit,
-  // isProtected, sort, direction) — page sizes stay uniform across the
+  // isProtected, sort, direction, q) — page sizes stay uniform across the
   // surface as the user pulls more pages here.
-  const sendersQuery = useSenders({ limit: 50, sort, direction });
+  const sendersQuery = useSenders({ limit: 50, sort, direction, q: debouncedQuery });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
@@ -148,6 +167,8 @@ export function SendersScreen() {
       hasNextPage={sendersQuery.hasNextPage}
       isFetchingNextPage={sendersQuery.isFetchingNextPage}
       onLoadMore={() => void sendersQuery.fetchNextPage()}
+      query={query}
+      onQueryChange={setQuery}
     />
   );
 }
@@ -169,6 +190,8 @@ function SendersScreenContent({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  query,
+  onQueryChange: setQuery,
 }: {
   senders: Sender[];
   wireRows: SenderListRow[];
@@ -176,12 +199,15 @@ function SendersScreenContent({
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  /** Search box value, lifted to the parent so it drives the server query
+   *  (#145). `senders` already arrives search-filtered from the BE. */
+  query: string;
+  onQueryChange: (next: string) => void;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
   const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
-  const [query, setQuery] = useState('');
   const [activeIntent, setActiveIntent] = useState<SenderIntent | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
@@ -267,14 +293,10 @@ function SendersScreenContent({
 
   const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
-  // Search-filtered base. Used by every downstream count + grouping.
-  const queryBase = useMemo(() => {
-    if (!query) return senders;
-    const q = query.toLowerCase();
-    return senders.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q),
-    );
-  }, [query, senders]);
+  // Search is now server-side (#145) — `senders` already arrives filtered
+  // by the active `q`, so the base for downstream counts + grouping is
+  // just the loaded set (no client-side re-filtering of a single page).
+  const queryBase = senders;
 
   // Intent-grouped buckets — replaces the prior Gmail-category groups
   // per ADR-0012. INTENT_ORDER is honored; empty buckets are kept so

@@ -39,6 +39,9 @@ export const sendersKeys = {
       isProtected?: boolean | undefined;
       sort?: SenderListSort | undefined;
       direction?: SenderListDirection | undefined;
+      /** Search term (#145) — in the key so each query caches separately
+       *  and a new search resets to page 1 (cursor is search-scoped). */
+      q?: string | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */
