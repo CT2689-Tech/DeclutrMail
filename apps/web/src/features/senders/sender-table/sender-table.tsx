@@ -71,7 +71,7 @@ const { color, font, radius, text } = tokens;
 export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search-match';
 
 /** Row-level verb the table emits up to the consumer. K/A/U/L (D227). */
-export type SenderTableVerb = 'keep' | 'archive' | 'unsubscribe' | 'later';
+export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe';
 
 export interface SenderTableProps {
   /** Page rows in the order the wire returned them (BE-sorted). */
@@ -370,15 +370,18 @@ function SenderRow({
               minWidth: 0,
             }}
           >
-            <span
-              style={{
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {displayLabel(sender)}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+              <ProtectStar flags={sender.protectionFlags} />
+              <span
+                style={{
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {displayLabel(sender)}
+              </span>
             </span>
             <span style={{ color: color.fgMuted, fontSize: text.sm }}>{sender.domain}</span>
           </div>
@@ -614,12 +617,40 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
 }
 
 /**
- * Row verbs in canonical K/A/U/L order (D227). The label + shortcut are
- * read from the Action Registry (ADR-0015) at render time, not hardcoded
- * here — one registry descriptor is the source of truth shared with the
- * SelectionBar, the confirm modal, and the keyboard cheatsheet.
+ * Row action verbs on the Senders surface: Archive / Later / Unsubscribe.
+ * Keep is deliberately NOT a row action here — on the management table,
+ * *not acting* already means "keep it for now"; the explicit Keep verb (K)
+ * belongs to the Triage ritual (D227). Protect is a standing *status*, not
+ * a verb — it renders as the ⭐ indicator on the name cell, never a button.
+ * Labels + shortcuts are read from the Action Registry (ADR-0015) at render
+ * time — the single source of truth shared with the SelectionBar, the
+ * confirm modal, and the keyboard cheatsheet.
  */
-const VERB_ORDER: readonly SenderTableVerb[] = ['keep', 'archive', 'unsubscribe', 'later'];
+const VERB_ORDER: readonly SenderTableVerb[] = ['archive', 'later', 'unsubscribe'];
+
+/**
+ * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
+ * not a triage verb (D227), so it renders as a ⭐ on protected / VIP rows —
+ * never a verb button. It is intentionally non-interactive here: flipping
+ * protection needs a Protect write endpoint that does not exist yet (the
+ * same BE gap that keeps Later / Unsubscribe at tracer fidelity on this
+ * surface), so toggling stays on the Sender Detail page until that lands.
+ * Renders nothing for unprotected rows so the name column stays quiet.
+ */
+function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
+  if (!flags.isVip && !flags.isProtected) return null;
+  const label = flags.isVip ? 'VIP — protected' : 'Protected';
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{ color: color.amber, fontSize: text.sm, flexShrink: 0, lineHeight: 1 }}
+    >
+      ★
+    </span>
+  );
+}
 
 function VerbButtons({
   sender,

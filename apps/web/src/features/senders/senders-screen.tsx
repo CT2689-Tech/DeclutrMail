@@ -707,13 +707,14 @@ function SendersScreenContent({
 /* ────────────────── HELPERS ────────────────── */
 
 /**
- * Map the SenderTable's K/A/U/L vocabulary (D227) to the legacy
- * `ActionVerb` shape `ConfirmActionModal` consumes. Keeps the table
- * decoupled from the older verb labels while preserving the
- * single-modal preview wiring.
+ * Map the SenderTable's action vocabulary to the `ActionVerb` shape
+ * `ConfirmActionModal` consumes. The table surfaces only the three move
+ * verbs (Archive / Later / Unsubscribe) — Keep lives in Triage and Protect
+ * is a status star, not a row verb (D227) — so this map no longer carries a
+ * `keep` entry, which previously mis-routed the "Keep" button to Protect
+ * (Codex review of #142, F3).
  */
 const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
-  keep: 'Protect',
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
