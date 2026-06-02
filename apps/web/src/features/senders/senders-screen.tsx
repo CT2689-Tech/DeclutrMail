@@ -189,14 +189,11 @@ export function SendersScreen() {
   );
 }
 
-/**
- * Reading-cost coefficient — average minutes per email scanned. Empirical
- * placeholder used for the "Time cost" KPI cell and the hero meta-strip;
- * matches the figure used in the Variant D detail page (37min/mo for a
- * sender at 23 msg/mo). When the analytics team produces a per-user
- * calibrated coefficient (FOUNDER-FOLLOWUPS candidate), thread it in here.
- */
-const READ_MIN_PER_MSG = 1.6;
+// READ_MIN_PER_MSG (the 1.6 min/email coefficient) removed alongside the
+// dropped "Time cost h/mo" KPI cell + WeeklyProgress "Estimated savings"
+// caption. Both rode an uncalibrated placeholder on top of the broken
+// per-sender-latest-year_month sum. Restore when the analytics team
+// produces a per-user calibration — track in FOUNDER-FOLLOWUPS.
 
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({

@@ -291,9 +291,9 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
           size="sm"
           onClick={() => onAction({ verb: tone.leadVerb, senders: [sender] })}
           iconRight={ARROW}
-          style={{ flex: 1, justifyContent: 'space-between' }}
+          style={{ flex: 1, justifyContent: 'space-between', minWidth: 0 }}
         >
-          {leadButtonCopy(tone.leadVerb, sender.monthly)}
+          {leadButtonCopy(tone.leadVerb)}
         </Button>
         {SECONDARY.map(({ verb, ok }) => (
           <Button
@@ -356,14 +356,17 @@ function leadButtonTone(
   return 'default';
 }
 
-function leadButtonCopy(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive', vol: number): string {
+function leadButtonCopy(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'): string {
+  // Single-word labels so the lead CTA never truncates in narrow grid
+  // columns. The recommendation context lives in the tone wash + the
+  // primary numeric — the button doesn't need to re-state the volume.
   switch (verb) {
     case 'Unsubscribe':
-      return vol > 0 ? `Unsubscribe · ${vol}/30d` : 'Unsubscribe';
+      return 'Unsubscribe';
     case 'Later':
-      return 'Move to later';
+      return 'Later';
     case 'Keep':
-      return 'Keep in inbox';
+      return 'Keep';
     case 'Archive':
       return 'Archive';
   }

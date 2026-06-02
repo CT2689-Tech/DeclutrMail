@@ -938,11 +938,5 @@ function relativeDate(iso: string): string {
   return `${Math.floor(days / 365)}y ago`;
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toISOString().slice(0, 10);
-}
-
 /** Re-exported for tests. */
 export const __internals = { nextSortFor, toggleSelection, displayLabel, relativeDate };
