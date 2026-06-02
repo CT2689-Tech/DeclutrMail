@@ -195,11 +195,16 @@ export class SendersController {
   async summary(
     @CurrentMailbox() mailbox: { id: string },
     @Query('q') rawQ: string | undefined,
+    @Query('includeOneTime') rawIncludeOneTime: string | undefined,
   ): Promise<Envelope<SenderSummary>> {
     const q = parseSearch(rawQ);
+    // Default true — match the list endpoint default. Pivots the whole
+    // summary in lockstep w/ the FE "show one-time" toggle.
+    const includeOneTime = rawIncludeOneTime !== 'false';
     const data = await this.reads.getSenderSummary({
       mailboxAccountId: mailbox.id,
       q,
+      includeOneTime,
     });
     return ok(data);
   }

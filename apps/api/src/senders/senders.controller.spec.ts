@@ -606,36 +606,59 @@ describe('SendersController', () => {
    */
   describe('summary', () => {
     const SAMPLE_SUMMARY = {
-      totalSenders: 6,
-      byIntent: { cleanup: 1, later: 1, protect: 2, people: 2 },
-      totalMonthly: 115,
-      noiseReducible: 43,
-      protected: 2,
-      needsReview: 4,
+      totalSenders: 8,
+      activeSenders: 3,
+      last30dVolume: 3,
+      noiseReducible: 33,
+      protected: 1,
+      needsReview: 1,
+      byBucket: {
+        one_time: 1,
+        protect: 1,
+        people: 1,
+        needs_review: 1,
+        quiet: 1,
+        dormant: 1,
+        bulk: 1,
+        other: 1,
+      },
       asOf: '2026-06-01T00:00:00.000Z',
     } as const;
 
-    it('returns the summary envelope and forwards mailbox + q to the service', async () => {
+    it('returns the summary envelope and forwards mailbox + q + includeOneTime to the service', async () => {
       reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
-      const res = await ctrl.summary(MAILBOX, 'promo');
+      const res = await ctrl.summary(MAILBOX, 'promo', undefined);
       expect(reads.getSenderSummary).toHaveBeenCalledWith({
         mailboxAccountId: MAILBOX_ID,
         q: 'promo',
+        includeOneTime: true,
       });
       expect(res.data).toEqual(SAMPLE_SUMMARY);
     });
 
     it('passes q=null to the service when the query string is missing or blank', async () => {
       reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
-      await ctrl.summary(MAILBOX, undefined);
+      await ctrl.summary(MAILBOX, undefined, undefined);
       expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
         mailboxAccountId: MAILBOX_ID,
         q: null,
+        includeOneTime: true,
       });
-      await ctrl.summary(MAILBOX, '   ');
+      await ctrl.summary(MAILBOX, '   ', undefined);
       expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
         mailboxAccountId: MAILBOX_ID,
         q: null,
+        includeOneTime: true,
+      });
+    });
+
+    it('respects includeOneTime=false from the query string', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      await ctrl.summary(MAILBOX, undefined, 'false');
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+        includeOneTime: false,
       });
     });
   });

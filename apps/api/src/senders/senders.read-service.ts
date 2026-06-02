@@ -47,6 +47,14 @@ import {
   senders,
   triageDecisions,
 } from '@declutrmail/db';
+import {
+  CONFIDENCE,
+  FREE_MAIL_DOMAINS,
+  PATTERNS,
+  SCORE,
+  VOLUMES,
+  WINDOWS,
+} from '@declutrmail/shared/senders';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -548,165 +556,244 @@ export class SendersReadService {
 
   /**
    * Mailbox-wide aggregates for `GET /api/senders/summary` (#145 —
-   * "real-data counts" mandate).
+   * "real-data counts" mandate, rewrite for rolling-window honesty).
    *
-   * The Senders screen's hero, KPI strip, and intent chips previously
-   * derived their totals from the loaded ≤50-row page. This endpoint
-   * serves the same numbers from a single SQL aggregate over the WHOLE
-   * mailbox (optionally narrowed by `?q=`), so headline figures match a
-   * server-resolved truth instead of a per-page sum.
+   * REWRITE PRINCIPLES:
+   *   1. ROLLING WINDOWS — every "per month" sum uses `now - 30 days`
+   *      (and 60/90/180 day cutoffs) rather than per-sender latest
+   *      year_month. Eliminates the union-of-disjoint-time-windows
+   *      bug where a sender's Aug-2025 volume contributed to "this
+   *      week".
+   *   2. EIGHT MUTUALLY-EXCLUSIVE BUCKETS in priority order — a sender
+   *      belongs to exactly one. Priority enumerated in
+   *      `BUCKET_PRIORITY` (shared module); the SQL CASE here uses
+   *      the same ordering so FE chip counts agree with rendered rows
+   *      (CLAUDE.md §8 row/chip/KPI invariant).
+   *   3. CONFIG-DRIVEN — every threshold (window days, confidence
+   *      gate, score weights, free-mail domain list, regex patterns)
+   *      comes from `@declutrmail/shared/senders`. FE bucketing
+   *      reads the SAME constants. Edit one file → both sides update.
    *
-   * Intent classification MUST match `apps/web/.../uplift-d/intent.ts`
-   * byte-for-byte — the chip count and the row's bucket are evaluated by
-   * the SAME predicate or they would disagree (CLAUDE.md §8 row/chip/KPI
-   * invariant):
+   * The eight buckets (priority order):
+   *   1. one_time     — lifetime ≤ ONE_TIME_MAX_TOTAL (noise floor,
+   *                     hidden by default in the FE)
+   *   2. protect      — explicit user marking (is_protected OR is_vip)
+   *   3. people       — additive score ≥ PERSON_SCORE_THRESHOLD
+   *                     (replied/free-mail/own-domain minus bulk signals)
+   *   4. needs_review — engine recommends cleanup/later at conf ≥ gate
+   *                     AND active in last 30d (don't surface stale recs)
+   *   5. quiet        — silent QUIET_DAYS-DORMANT_DAYS, recurring
+   *   6. dormant      — silent ≥ DORMANT_DAYS, recurring
+   *   7. bulk         — any bulk signal (unsub header / role LP /
+   *                     bulk subdomain) but no engine recommendation
+   *   8. other        — uncategorised, needs manual look
    *
-   *   - `protect` ← `sender_policies.is_protected = true OR is_vip = true`
-   *   - else `cleanup` ← latest `triage_decisions.verdict='unsubscribe'`
-   *                       AND `confidence >= 0.75`
-   *   - else `later`   ← latest `verdict='archive'` AND `confidence >= 0.75`
-   *   - else `people`
+   * PERSON SCORE — additive weights from SCORE constants. The
+   * "user has replied" check joins `mail_messages` filtered by
+   * `is_outbound = true` and `recipient_emails @> ARRAY[lower(email)]`
+   * via a `replied` CTE materialised once per request.
    *
-   * The 0.75 gate is the FE's `ENGINE_CONFIDENCE_GATE`. Hardcoded here
-   * deliberately — a config indirection that lives in two repos drifts;
-   * a single literal with a pointer comment fails loudly if either side
-   * changes.
+   * AGGREGATES — `totalSenders`, `activeSenders`, `last30dVolume`,
+   * `noiseReducible`, `protected`, `needsReview`, and `byBucket{...}`
+   * all derive from the same CTE in one SQL round-trip.
    *
-   * `noiseReducible` = `cleanupMonthly / totalMonthly × 100`, rounded.
-   * Matches `computeTotals.noiseReductionPct` in `senders-screen.tsx`.
+   * Tenant isolation: every join equates `mailbox_account_id` +
+   * `sender_key` (or `email`) to the outer `s` alias. The MISTAKES.md
+   * 2026-05-23 tautology trap is structurally impossible inside raw
+   * SQL since the column references are alias-qualified.
    *
-   * `needsReview` counts senders with ANY `triage_decisions` row — matches
-   * `senders.filter(s => s.lastReview != null)` on the FE side.
-   *
-   * One SQL round-trip — a CTE that LATERAL-joins the latest decision +
-   * latest timeseries row per sender, then aggregates with `FILTER`
-   * clauses for per-intent counts. The same `(mailbox_account_id,
-   * sender_key)` indexes that serve `listSenders` serve this exactly.
-   *
-   * Tenant isolation: every LATERAL body equates `mailbox_account_id` +
-   * `sender_key` to the outer `s` alias (the MISTAKES.md 2026-05-23
-   * tautology trap is structurally impossible inside raw SQL — the
-   * column references are qualified by table alias, not Drizzle
-   * template interpolation). The outer WHERE adds the `?q=` predicate
-   * via the existing `buildSenderSearchCondition` helper.
+   * `?q=` honors the same search predicate as the list endpoint so
+   * chip/KPI/hero narrow in lockstep with visible rows.
    */
   async getSenderSummary(args: {
     mailboxAccountId: string;
     q?: string | null;
+    /** When `false`, exclude one-time senders (lifetime ≤ ONE_TIME_MAX_TOTAL)
+     *  from EVERY aggregate so the FE "show one-time" toggle pivots the
+     *  whole summary in lockstep with the list. Default `true` — every
+     *  bucket count includes the full population. */
+    includeOneTime?: boolean;
     /** Anchor for `asOf` — injectable for tests; defaults to `new Date()`. */
     now?: Date;
   }): Promise<SenderSummary> {
     const { mailboxAccountId } = args;
-    // Build the search predicate inline against the `s` alias used in
-    // the raw aggregate below. We CAN'T reuse `buildSenderSearchCondition`
-    // here — it interpolates Drizzle `Column` objects, which render as
-    // `"senders"."col"` (the unaliased table name) and PG rejects that
-    // reference against `FROM senders s`. Sharing the LIKE-escape via
-    // `buildSenderSearchPattern` keeps the two predicates in lockstep
-    // without coupling the alias scopes.
+    const includeOneTime = args.includeOneTime ?? true;
+    // Search predicate against the outer `s` alias (raw SQL — see the
+    // alias-scope note above `buildSenderSearchPattern`).
     const pattern = buildSenderSearchPattern(args.q);
     const searchClause =
       pattern === null
         ? sql``
         : sql` AND (s.display_name ILIKE ${pattern} OR s.email ILIKE ${pattern} OR s.domain ILIKE ${pattern})`;
+    // One-time exclusion clause — applied at the per_sender CTE so it
+    // narrows every downstream aggregate uniformly.
+    const oneTimeClause = includeOneTime
+      ? sql``
+      : sql` AND s.total_received > ${VOLUMES.ONE_TIME_MAX_TOTAL}`;
+
+    // Free-mail domain list interpolated as a PG array — `ANY(ARRAY[...])`
+    // gives the same index hit as `IN (...)` with one bound parameter list.
+    const freeMailArray = sql`ARRAY[${sql.join(
+      FREE_MAIL_DOMAINS.map((d) => sql`${d}`),
+      sql`, `,
+    )}]::text[]`;
 
     type SummaryRow = {
       total_senders: number | string;
-      cleanup_count: number | string;
-      later_count: number | string;
+      active_senders: number | string;
+      last30d_volume: number | string;
+      cleanup_recent_volume: number | string;
+      one_time_count: number | string;
       protect_count: number | string;
       people_count: number | string;
-      total_monthly: number | string;
-      cleanup_monthly: number | string;
-      needs_review: number | string;
+      needs_review_count: number | string;
+      quiet_count: number | string;
+      dormant_count: number | string;
+      bulk_count: number | string;
+      other_count: number | string;
     };
 
     const result = await this.db.execute<SummaryRow>(sql`
-      WITH per_sender AS (
+      WITH
+      -- CTE 1: every distinct email the user has sent to (outbound).
+      -- Materialised once per request so the per-sender membership check
+      -- below is an O(1) hash lookup, not an N×M scan.
+      replied AS (
+        SELECT DISTINCT lower(recip) AS email
+        FROM ${mailMessages}, unnest(recipient_emails) AS recip
+        WHERE mailbox_account_id = ${mailboxAccountId}
+          AND is_outbound = true
+          AND recip IS NOT NULL
+      ),
+      -- CTE 2: per-sender msg count over the rolling 30-day window.
+      -- Index hit on (mailbox_account_id, internal_date) — cheap.
+      last30 AS (
+        SELECT sender_key, COUNT(*) AS msgs30
+        FROM ${mailMessages}
+        WHERE mailbox_account_id = ${mailboxAccountId}
+          AND internal_date >= now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval
+          AND NOT is_outbound
+        GROUP BY sender_key
+      ),
+      -- CTE 3: enrich every in-scope sender with signals + score +
+      -- bucket. Single pass — every downstream aggregate scans this.
+      bucketed AS (
         SELECT
+          s.sender_key,
+          s.last_seen_at,
+          s.total_received,
+          COALESCE(l30.msgs30, 0)                                    AS msgs30,
           CASE
-            WHEN COALESCE(sp.is_protected, false) = true
-              OR COALESCE(sp.is_vip, false) = true
-              THEN 'protect'
-            WHEN ltd.verdict = 'unsubscribe' AND ltd.confidence >= 0.75
-              THEN 'cleanup'
-            WHEN ltd.verdict = 'archive'     AND ltd.confidence >= 0.75
-              THEN 'later'
-            ELSE 'people'
-          END AS intent,
-          COALESCE(lts.volume, 0) AS latest_volume,
-          (ltd.id IS NOT NULL) AS has_decision
+            -- Priority 1: one-time (lifetime ≤ N msgs)
+            WHEN s.total_received <= ${VOLUMES.ONE_TIME_MAX_TOTAL} THEN 'one_time'
+            -- Priority 2: explicit protect
+            WHEN COALESCE(sp.is_protected, false) OR COALESCE(sp.is_vip, false) THEN 'protect'
+            -- Priority 3: people score
+            WHEN (
+                  (CASE WHEN lower(s.email) IN (SELECT email FROM replied) THEN ${SCORE.REPLIED_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.domain = ANY(${freeMailArray}) THEN ${SCORE.FREE_MAIL_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.unsubscribe_method IN ('one_click','mailto') THEN ${SCORE.HAS_UNSUB_HEADER_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.email ~* ${PATTERNS.ROLE_PREFIX_LP_REGEX} THEN ${SCORE.ROLE_PREFIX_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.email ~* ${PATTERNS.BULK_SUBDOMAIN_REGEX} THEN ${SCORE.BULK_SUBDOMAIN_WEIGHT} ELSE 0 END)
+              ) >= ${SCORE.PERSON_SCORE_THRESHOLD} THEN 'people'
+            -- Priority 4: engine recommendation, gated by confidence + recent activity
+            WHEN ltd.verdict IN ('unsubscribe','archive')
+              AND ltd.confidence >= ${CONFIDENCE.NEEDS_REVIEW_GATE}
+              AND COALESCE(l30.msgs30, 0) >= ${VOLUMES.NEEDS_REVIEW_MIN_RECENT_MSGS}
+              THEN 'needs_review'
+            -- Priority 5: dormant before quiet (the longer-silent wins)
+            WHEN s.last_seen_at < now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval
+              AND s.total_received >= ${VOLUMES.RECURRING_MIN_TOTAL} THEN 'dormant'
+            WHEN s.last_seen_at < now() - (${WINDOWS.QUIET_DAYS} || ' days')::interval
+              AND s.total_received >= ${VOLUMES.RECURRING_MIN_TOTAL} THEN 'quiet'
+            -- Priority 7: bulk signals (any one is enough)
+            WHEN s.unsubscribe_method IN ('one_click','mailto')
+              OR s.email ~* ${PATTERNS.ROLE_PREFIX_LP_REGEX}
+              OR s.email ~* ${PATTERNS.BULK_SUBDOMAIN_REGEX}
+              THEN 'bulk'
+            ELSE 'other'
+          END AS bucket
         FROM ${senders} s
         LEFT JOIN ${senderPolicies} sp
           ON sp.mailbox_account_id = s.mailbox_account_id
          AND sp.sender_key = s.sender_key
         LEFT JOIN LATERAL (
-          SELECT id, verdict, confidence
+          SELECT verdict, confidence
           FROM ${triageDecisions}
           WHERE mailbox_account_id = s.mailbox_account_id
             AND sender_key = s.sender_key
           ORDER BY produced_at DESC
           LIMIT 1
         ) ltd ON true
-        LEFT JOIN LATERAL (
-          SELECT volume
-          FROM ${senderTimeseries}
-          WHERE mailbox_account_id = s.mailbox_account_id
-            AND sender_key = s.sender_key
-          ORDER BY year_month DESC
-          LIMIT 1
-        ) lts ON true
-        WHERE s.mailbox_account_id = ${mailboxAccountId}${searchClause}
+        LEFT JOIN last30 l30 ON l30.sender_key = s.sender_key
+        WHERE s.mailbox_account_id = ${mailboxAccountId}${oneTimeClause}${searchClause}
       )
       SELECT
-        COUNT(*)::bigint                                              AS total_senders,
-        COUNT(*) FILTER (WHERE intent = 'cleanup')::bigint            AS cleanup_count,
-        COUNT(*) FILTER (WHERE intent = 'later')::bigint              AS later_count,
-        COUNT(*) FILTER (WHERE intent = 'protect')::bigint            AS protect_count,
-        COUNT(*) FILTER (WHERE intent = 'people')::bigint             AS people_count,
-        COALESCE(SUM(latest_volume), 0)::bigint                        AS total_monthly,
-        COALESCE(SUM(latest_volume) FILTER (WHERE intent = 'cleanup'), 0)::bigint
-                                                                       AS cleanup_monthly,
-        COUNT(*) FILTER (WHERE has_decision)::bigint                  AS needs_review
-      FROM per_sender
+        COUNT(*)::bigint                                                              AS total_senders,
+        COUNT(*) FILTER (WHERE msgs30 >= 1)::bigint                                   AS active_senders,
+        COALESCE(SUM(msgs30), 0)::bigint                                              AS last30d_volume,
+        COALESCE(SUM(msgs30) FILTER (WHERE bucket = 'needs_review'), 0)::bigint       AS cleanup_recent_volume,
+        COUNT(*) FILTER (WHERE bucket = 'one_time')::bigint                           AS one_time_count,
+        COUNT(*) FILTER (WHERE bucket = 'protect')::bigint                            AS protect_count,
+        COUNT(*) FILTER (WHERE bucket = 'people')::bigint                             AS people_count,
+        COUNT(*) FILTER (WHERE bucket = 'needs_review')::bigint                       AS needs_review_count,
+        COUNT(*) FILTER (WHERE bucket = 'quiet')::bigint                              AS quiet_count,
+        COUNT(*) FILTER (WHERE bucket = 'dormant')::bigint                            AS dormant_count,
+        COUNT(*) FILTER (WHERE bucket = 'bulk')::bigint                               AS bulk_count,
+        COUNT(*) FILTER (WHERE bucket = 'other')::bigint                              AS other_count
+      FROM bucketed
     `);
 
-    // postgres-js + PGlite both wrap `execute()` results in a `{ rows }`
-    // envelope. `weekly-hero` uses the same dual-shape unwrap.
+    // postgres-js + PGlite both wrap `execute()` in a `{ rows }` envelope.
     const rows =
       ((result as { rows?: SummaryRow[] }).rows ?? (result as unknown as SummaryRow[])) || [];
     const row = rows[0];
     if (!row) {
-      // An empty mailbox still aggregates to one row with zeroes from PG;
-      // a missing row is a contract violation. Fail loudly so a future
-      // driver change that swallows the empty result surfaces here.
       throw new InternalServerErrorException('Senders summary returned no aggregate row.');
     }
 
     const totalSenders = ensureSafeIntegerNumber(row.total_senders, 'totalSenders');
-    const cleanupCount = ensureSafeIntegerNumber(row.cleanup_count, 'byIntent.cleanup');
-    const laterCount = ensureSafeIntegerNumber(row.later_count, 'byIntent.later');
-    const protectCount = ensureSafeIntegerNumber(row.protect_count, 'byIntent.protect');
-    const peopleCount = ensureSafeIntegerNumber(row.people_count, 'byIntent.people');
-    const totalMonthly = ensureSafeIntegerNumber(row.total_monthly, 'totalMonthly');
-    const cleanupMonthly = ensureSafeIntegerNumber(row.cleanup_monthly, 'cleanupMonthly');
-    const needsReview = ensureSafeIntegerNumber(row.needs_review, 'needsReview');
+    const activeSenders = ensureSafeIntegerNumber(row.active_senders, 'activeSenders');
+    const last30dVolume = ensureSafeIntegerNumber(row.last30d_volume, 'last30dVolume');
+    const cleanupRecentVolume = ensureSafeIntegerNumber(
+      row.cleanup_recent_volume,
+      'cleanupRecentVolume',
+    );
+    const oneTimeCount = ensureSafeIntegerNumber(row.one_time_count, 'byBucket.one_time');
+    const protectCount = ensureSafeIntegerNumber(row.protect_count, 'byBucket.protect');
+    const peopleCount = ensureSafeIntegerNumber(row.people_count, 'byBucket.people');
+    const needsReviewCount = ensureSafeIntegerNumber(
+      row.needs_review_count,
+      'byBucket.needs_review',
+    );
+    const quietCount = ensureSafeIntegerNumber(row.quiet_count, 'byBucket.quiet');
+    const dormantCount = ensureSafeIntegerNumber(row.dormant_count, 'byBucket.dormant');
+    const bulkCount = ensureSafeIntegerNumber(row.bulk_count, 'byBucket.bulk');
+    const otherCount = ensureSafeIntegerNumber(row.other_count, 'byBucket.other');
 
+    // `noiseReducible` — share of last-30d volume coming from the
+    // `needs_review` bucket (high-confidence engine recommendations the
+    // user could act on). 0 when there's no recent volume to reduce.
     const noiseReducible =
-      totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
+      last30dVolume === 0 ? 0 : Math.round((cleanupRecentVolume / last30dVolume) * 100);
 
     return {
       totalSenders,
-      byIntent: {
-        cleanup: cleanupCount,
-        later: laterCount,
-        protect: protectCount,
-        people: peopleCount,
-      },
-      totalMonthly,
+      activeSenders,
+      last30dVolume,
       noiseReducible,
       protected: protectCount,
-      needsReview,
+      needsReview: needsReviewCount,
+      byBucket: {
+        one_time: oneTimeCount,
+        protect: protectCount,
+        people: peopleCount,
+        needs_review: needsReviewCount,
+        quiet: quietCount,
+        dormant: dormantCount,
+        bulk: bulkCount,
+        other: otherCount,
+      },
       asOf: (args.now ?? new Date()).toISOString(),
     };
   }

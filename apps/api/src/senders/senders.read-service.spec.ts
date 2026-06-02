@@ -2295,17 +2295,44 @@ describe('SendersReadService', () => {
     }, 30_000);
   });
 
-  describe('getSenderSummary (#145 real-data counts)', () => {
+  describe('getSenderSummary (rolling 30d + 8 buckets)', () => {
     /**
-     * Seed a 6-sender fixture covering every intent bucket and the
-     * 0.75-confidence boundary so the same data exercises:
-     *   - the four `byIntent` buckets,
-     *   - the gate ordering (protect wins over a verdict),
-     *   - the confidence gate (>= 0.75 surfaces; below stays in `people`),
-     *   - the monthly-volume aggregates that feed `noiseReducible`,
-     *   - `needsReview` (any decision row, regardless of confidence).
+     * Seed an inbound message dated `daysAgo` ago so it falls in (or
+     * out of) the rolling 30/60/90/180-day windows the SQL uses.
      */
-    async function seedSummaryFixture(targetMailbox: string) {
+    async function seedRecentMessage(
+      target: string,
+      senderKey: string,
+      daysAgo: number,
+    ): Promise<void> {
+      await seedMessage(db, {
+        mailboxAccountId: target,
+        senderKey,
+        internalDate: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
+      });
+    }
+
+    /**
+     * Seed an OUTBOUND msg (user replied) carrying `recipientEmail` in
+     * the `recipient_emails` array. The summary's `replied` CTE picks
+     * this up and the personScore gets the +5 REPLIED_WEIGHT.
+     */
+    async function seedReply(target: string, recipientEmail: string): Promise<void> {
+      await db.insert(mailMessages).values({
+        mailboxAccountId: target,
+        providerMessageId: `out-${randomUUID()}`,
+        providerThreadId: `thr-${randomUUID()}`,
+        senderKey: senderKeyFor(`self-${target}@user.local`),
+        subject: 'Re: hi',
+        snippet: '',
+        internalDate: new Date(),
+        isUnread: false,
+        isOutbound: true,
+        recipientEmails: [recipientEmail],
+      });
+    }
+
+    async function _legacy_seedSummaryFixture(targetMailbox: string) {
       // s1 — Protect via explicit `is_protected` (beats any decision verdict).
       const s1 = await seedSender(db, {
         mailboxAccountId: targetMailbox,
@@ -2441,113 +2468,274 @@ describe('SendersReadService', () => {
       return { s1, s2, s3, s4, s5 };
     }
 
-    it('buckets every intent per intentOf, gating confidence at >= 0.75', async () => {
-      await seedSummaryFixture(mailboxId);
+    /**
+     * The new contract — eight mutually-exclusive buckets in priority
+     * order. We seed one sender per bucket against `mailboxId`, then
+     * assert each lands in exactly the expected bucket.
+     */
+    async function seedAllBuckets(target: string) {
+      const RECENT = 5; // days ago — within the 30-day active window
+      const QUIETD = 90; // days ago — within QUIET_DAYS..DORMANT_DAYS
+      const DORMD = 365; // days ago — past DORMANT_DAYS
 
+      // 1) ONE-TIME — total ≤ 2 lifetime, even if otherwise looks personal.
+      const oneTime = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'One Shot',
+        email: 'oneshot@gmail.com',
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+      });
+      // total_received default is 0; only 1 msg.
+      await db.update(senders).set({ totalReceived: 2 }).where(eq(senders.id, oneTime.id));
+      await seedRecentMessage(target, oneTime.senderKey, RECENT);
+
+      // 2) PROTECT — is_protected wins regardless of other signals.
+      const protectSender = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Boss',
+        email: 'boss@company.com',
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+      });
+      await db.update(senders).set({ totalReceived: 50 }).where(eq(senders.id, protectSender.id));
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: target,
+        senderKey: protectSender.senderKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+        protectionSetAt: new Date(),
+      });
+      // Even with a high-confidence unsub, protect wins:
+      await seedTriageDecision(db, {
+        mailboxAccountId: target,
+        senderKey: protectSender.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.95',
+        producedAt: new Date(),
+      });
+
+      // 3) PEOPLE — score ≥ 3 via REPLIED + FREE_MAIL (>= 5 + 3 = 8).
+      const person = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Friend',
+        email: 'friend@gmail.com',
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+      });
+      await db.update(senders).set({ totalReceived: 30 }).where(eq(senders.id, person.id));
+      await seedReply(target, 'friend@gmail.com');
+      await seedRecentMessage(target, person.senderKey, RECENT);
+
+      // 4) NEEDS_REVIEW — engine recommendation, conf ≥ 0.75, active 30d,
+      //    score < 3 (so not people).
+      const needsReview = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Promo Daily',
+        email: 'noreply@promo.com', // role-prefix LP → -4 score, no replied → still not people
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+        unsubscribeMethod: 'one_click',
+      });
+      await db.update(senders).set({ totalReceived: 50 }).where(eq(senders.id, needsReview.id));
+      await seedTriageDecision(db, {
+        mailboxAccountId: target,
+        senderKey: needsReview.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.75',
+        producedAt: new Date(),
+      });
+      await seedRecentMessage(target, needsReview.senderKey, RECENT);
+
+      // 5) QUIET — silent 60-180d, recurring (≥3 total), no recommendation.
+      const quietSender = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Tapered Brand',
+        email: 'newsletter@tapered.org',
+        lastSeenAt: new Date(Date.now() - QUIETD * 86400_000),
+      });
+      await db.update(senders).set({ totalReceived: 20 }).where(eq(senders.id, quietSender.id));
+
+      // 6) DORMANT — silent ≥180d, recurring.
+      const dormantSender = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Long Gone',
+        email: 'someone@oldco.com',
+        firstSeenAt: new Date(Date.now() - 2 * DORMD * 86400_000),
+        lastSeenAt: new Date(Date.now() - DORMD * 86400_000),
+      });
+      await db.update(senders).set({ totalReceived: 40 }).where(eq(senders.id, dormantSender.id));
+
+      // 7) BULK — has unsub signal, no engine recommendation, not active enough for needs_review.
+      const bulkSender = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Bulk Brand',
+        email: 'mail@bulk.brand.com',
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+        unsubscribeMethod: 'one_click',
+      });
+      await db.update(senders).set({ totalReceived: 15 }).where(eq(senders.id, bulkSender.id));
+      // No triage decision row.
+
+      // 8) OTHER — recurring, recent, no policy, no engine rec, no bulk
+      //    signals, no replied/free-mail/own-domain. Plain corp domain.
+      const otherSender = await seedSender(db, {
+        mailboxAccountId: target,
+        displayName: 'Mystery Corp',
+        email: 'hello@mystery-corp.io',
+        lastSeenAt: new Date(Date.now() - RECENT * 86400_000),
+      });
+      await db.update(senders).set({ totalReceived: 10 }).where(eq(senders.id, otherSender.id));
+
+      return {
+        oneTime,
+        protectSender,
+        person,
+        needsReview,
+        quietSender,
+        dormantSender,
+        bulkSender,
+        otherSender,
+      };
+    }
+
+    it('assigns each of the 8 buckets exactly once for the canonical fixture', async () => {
+      await seedAllBuckets(mailboxId);
       const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
 
-      expect(summary.totalSenders).toBe(6);
-      // s1 (protect/is_protected, overrides unsubscribe verdict) + s2 (VIP)
-      expect(summary.byIntent.protect).toBe(2);
-      // s3 (boundary confidence = 0.75)
-      expect(summary.byIntent.cleanup).toBe(1);
-      // s4 (archive at 0.90)
-      expect(summary.byIntent.later).toBe(1);
-      // s5 (sub-gate decision) + s6 (no decision)
-      expect(summary.byIntent.people).toBe(2);
-      // Mirror of byIntent.protect — the KPI cell reads `summary.protected`.
-      expect(summary.protected).toBe(2);
+      expect(summary.totalSenders).toBe(8);
+      // Each bucket should contain exactly one sender from the fixture.
+      expect(summary.byBucket).toEqual({
+        one_time: 1,
+        protect: 1,
+        people: 1,
+        needs_review: 1,
+        quiet: 1,
+        dormant: 1,
+        bulk: 1,
+        other: 1,
+      });
+      // Aliases for KPI cells must match the bucket counts.
+      expect(summary.protected).toBe(1);
+      expect(summary.needsReview).toBe(1);
     });
 
-    it('totalMonthly sums latest-month volume across every sender; missing timeseries reads as 0', async () => {
-      await seedSummaryFixture(mailboxId);
+    it('priority: PROTECT wins over engine recommendation (sender has high-conf unsub but is_protected)', async () => {
+      await seedAllBuckets(mailboxId);
       const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
-      // 10 + 5 + 50 + 20 + 30 + 0 = 115
-      expect(summary.totalMonthly).toBe(115);
+      // The protect sender has a 0.95-confidence unsubscribe verdict + is
+      // active in last 30d → would otherwise be needs_review. Protect wins.
+      // needs_review still counts the OTHER sender (noreply@promo.com), so total is 1.
+      expect(summary.byBucket.protect).toBe(1);
+      expect(summary.byBucket.needs_review).toBe(1);
     });
 
-    it('noiseReducible = cleanupMonthly / totalMonthly × 100 (rounded), 0 when totalMonthly is 0', async () => {
-      await seedSummaryFixture(mailboxId);
+    it('PEOPLE: reply (+5) + free-mail (+3) beats threshold, even without other signals', async () => {
+      await seedAllBuckets(mailboxId);
       const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
-      // Only s3 is cleanup, volume 50. 50 / 115 ≈ 43.4783 → rounded 43.
-      expect(summary.noiseReducible).toBe(43);
-
-      // Fresh mailbox with no senders → noiseReducible MUST be 0 (not NaN
-      // from a 0/0 division).
-      const otherMailbox = await seedMailbox(db, 'b-empty');
-      const empty = await svc.getSenderSummary({ mailboxAccountId: otherMailbox });
-      expect(empty.totalMonthly).toBe(0);
-      expect(empty.noiseReducible).toBe(0);
-      expect(empty.totalSenders).toBe(0);
+      expect(summary.byBucket.people).toBe(1);
     });
 
-    it('needsReview counts senders with ANY decision row, regardless of confidence gate', async () => {
-      await seedSummaryFixture(mailboxId);
+    it('NEEDS_REVIEW requires recent activity — a dormant high-conf cleanup falls through to dormant', async () => {
+      // Standalone fixture — sender with strong unsub verdict but silent
+      // >180d. Without the active-30d gate this would surface as
+      // needs_review; with the gate it falls through to dormant.
+      const s = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        displayName: 'Stale Promo',
+        email: 'noreply@stale-promo.com',
+        firstSeenAt: new Date(Date.now() - 2 * 365 * 86400_000),
+        lastSeenAt: new Date(Date.now() - 365 * 86400_000), // 1y ago
+        unsubscribeMethod: 'one_click',
+      });
+      await db.update(senders).set({ totalReceived: 20 }).where(eq(senders.id, s.id));
+      await seedTriageDecision(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: s.senderKey,
+        verdict: 'unsubscribe',
+        confidence: '0.95',
+        producedAt: new Date(),
+      });
       const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
-      // s1, s3, s4, s5 each have a decision row. s2 (VIP-only) and s6
-      // (plain) do not. Matches `senders.filter(s => s.lastReview != null)`.
-      expect(summary.needsReview).toBe(4);
+      expect(summary.byBucket.needs_review).toBe(0);
+      expect(summary.byBucket.dormant).toBe(1);
     });
 
-    it('q narrows every aggregate in lockstep (chips + KPI + hero stay synchronised with the rows)', async () => {
-      await seedSummaryFixture(mailboxId);
-      // Search "promo" matches only s3 (email `noreply@promo.com`).
+    it('aggregates: totalSenders + activeSenders + last30dVolume + noiseReducible', async () => {
+      await seedAllBuckets(mailboxId);
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      expect(summary.totalSenders).toBe(8);
+      // active = senders with ≥1 msg in last 30d. We seeded recent msgs for
+      // one_time (1), person (1), needs_review (1). Others have no last30 msgs.
+      expect(summary.activeSenders).toBe(3);
+      // last30dVolume = sum of msgs30 across all in-scope senders = 3.
+      expect(summary.last30dVolume).toBe(3);
+      // cleanup_recent_volume = msgs30 of needs_review sender only = 1.
+      // noiseReducible = round(1 / 3 * 100) = 33.
+      expect(summary.noiseReducible).toBe(33);
+    });
+
+    it('includeOneTime=false drops one-time senders from EVERY aggregate', async () => {
+      await seedAllBuckets(mailboxId);
+      const withOne = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      const withoutOne = await svc.getSenderSummary({
+        mailboxAccountId: mailboxId,
+        includeOneTime: false,
+      });
+      expect(withOne.totalSenders).toBe(8);
+      expect(withoutOne.totalSenders).toBe(7);
+      expect(withoutOne.byBucket.one_time).toBe(0);
+      // Other buckets remain stable — only one_time is excluded.
+      expect(withoutOne.byBucket.protect).toBe(1);
+      expect(withoutOne.byBucket.people).toBe(1);
+      expect(withoutOne.byBucket.needs_review).toBe(1);
+    });
+
+    it('q narrows every aggregate in lockstep (chips + KPI + hero stay synchronised with rows)', async () => {
+      await seedAllBuckets(mailboxId);
+      // "promo" matches the noreply@promo.com sender (needs_review bucket).
       const filtered = await svc.getSenderSummary({
         mailboxAccountId: mailboxId,
         q: 'promo',
       });
       expect(filtered.totalSenders).toBe(1);
-      expect(filtered.byIntent).toEqual({ cleanup: 1, later: 0, protect: 0, people: 0 });
-      expect(filtered.totalMonthly).toBe(50);
-      // 50 / 50 × 100 = 100% noise-reducible (the only sender in scope is cleanup).
-      expect(filtered.noiseReducible).toBe(100);
-      expect(filtered.needsReview).toBe(1);
+      expect(filtered.byBucket.needs_review).toBe(1);
+      expect(filtered.byBucket).toMatchObject({
+        one_time: 0,
+        protect: 0,
+        people: 0,
+        quiet: 0,
+        dormant: 0,
+        bulk: 0,
+        other: 0,
+      });
     });
 
-    it('isolates summary by mailbox (tenant safety — two mailboxes with overlapping sender_keys)', async () => {
-      // Mailbox A — the standard 6-sender fixture.
-      await seedSummaryFixture(mailboxId);
+    it('empty mailbox aggregates safely (no NaN, all zeros)', async () => {
+      const empty = await seedMailbox(db, 'b-empty');
+      const summary = await svc.getSenderSummary({ mailboxAccountId: empty });
+      expect(summary.totalSenders).toBe(0);
+      expect(summary.activeSenders).toBe(0);
+      expect(summary.last30dVolume).toBe(0);
+      expect(summary.noiseReducible).toBe(0);
+      expect(summary.byBucket).toEqual({
+        one_time: 0,
+        protect: 0,
+        people: 0,
+        needs_review: 0,
+        quiet: 0,
+        dormant: 0,
+        bulk: 0,
+        other: 0,
+      });
+    });
 
-      // Mailbox B — same `sender_key` collisions (the SHA256 is content-
-      // addressed by email), plus one extra sender. Without the tenant
-      // boundary in the LATERAL joins, the summary would mis-attribute
-      // rows across mailboxes (the MISTAKES.md 2026-05-23 tautology trap).
-      const mailboxB = await seedMailbox(db, 'b');
-      await seedSummaryFixture(mailboxB);
-      // Extra solo cleanup sender in B only.
-      const extra = await seedSender(db, {
-        mailboxAccountId: mailboxB,
-        displayName: 'Extra Cleanup',
-        email: 'extra@cleanup.com',
-        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
-      });
-      await seedTriageDecision(db, {
-        mailboxAccountId: mailboxB,
-        senderKey: extra.senderKey,
-        verdict: 'unsubscribe',
-        confidence: '0.90',
-        producedAt: new Date('2026-05-02T00:00:00Z'),
-      });
-      await seedTimeseries(db, {
-        mailboxAccountId: mailboxB,
-        senderKey: extra.senderKey,
-        yearMonth: '2026-05-01',
-        volume: 100,
-        readCount: 0,
-      });
-
+    it('isolates summary by mailbox (tenant safety — overlapping sender_keys)', async () => {
+      await seedAllBuckets(mailboxId);
+      const otherMailbox = await seedMailbox(db, 'b');
+      await seedAllBuckets(otherMailbox);
       const a = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
-      const b = await svc.getSenderSummary({ mailboxAccountId: mailboxB });
-
-      // A is the original 6-sender fixture — UNCHANGED by B's existence.
-      expect(a.totalSenders).toBe(6);
-      expect(a.byIntent.cleanup).toBe(1);
-      expect(a.totalMonthly).toBe(115);
-
-      // B carries the same fixture (6) PLUS the extra cleanup sender (1).
-      expect(b.totalSenders).toBe(7);
-      expect(b.byIntent.cleanup).toBe(2);
-      expect(b.totalMonthly).toBe(215); // 115 + 100
+      const b = await svc.getSenderSummary({ mailboxAccountId: otherMailbox });
+      // Both fixtures have 8 senders; counts MUST be independent.
+      expect(a.totalSenders).toBe(8);
+      expect(b.totalSenders).toBe(8);
+      expect(a.byBucket).toEqual(b.byBucket);
     });
   });
 });

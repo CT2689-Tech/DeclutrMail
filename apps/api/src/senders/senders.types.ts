@@ -193,52 +193,48 @@ export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 're
 export type SenderListDirection = 'asc' | 'desc';
 
 /**
- * Mailbox-wide aggregates for `GET /api/senders/summary` (#145 — real-
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, real-
  * data counts mandate).
  *
- * Every field is an aggregate over the WHOLE mailbox (optionally narrowed
- * by `?q=`), NOT the ≤50-row page the FE has loaded. The Senders screen's
- * hero, KPI strip, and intent chips all read this so the headline numbers
- * are one server-resolved truth instead of per-page sums.
+ * REWRITE — all "per month" sums use a rolling 30-day window
+ * (`mail_messages.internal_date >= now() - 30d`) instead of per-sender
+ * latest year_month, eliminating the union-of-disjoint-time-windows
+ * inflation. Eight mutually-exclusive buckets with explicit priority —
+ * a sender belongs to exactly one. See
+ * `packages/shared/src/senders/thresholds.ts:BUCKET_PRIORITY` for the
+ * ordering; the SQL CASE in `getSenderSummary` enumerates the same
+ * clauses in the same order so chip/KPI/row counts never disagree
+ * (CLAUDE.md §8 invariant).
  *
- * Intent bucketing MUST match `apps/web/.../uplift-d/intent.ts:intentOf`
- * byte-for-byte:
- *   - `protect` = `sender_policies.is_protected OR is_vip`
- *   - else `cleanup` = latest `triage_decisions.verdict='unsubscribe' AND
- *                       confidence >= 0.75`
- *   - else `later`   = latest `verdict='archive'     AND confidence >= 0.75`
- *   - else `people`
- *
- * The 0.75 gate is the FE's `ENGINE_CONFIDENCE_GATE`. If either side
- * changes the threshold, the chip counts disagree with the rendered rows
- * (CLAUDE.md §8 — row/chip/KPI must never disagree).
- *
- * `noiseReducible` is `cleanupMonthly / totalMonthly × 100` (rounded
- * integer percent) — mirrors `computeTotals.noiseReductionPct` in
- * `senders-screen.tsx`. Zero when `totalMonthly === 0`.
- *
- * `needsReview` is the count of senders with ANY `triage_decisions` row —
- * matches `senders.filter(s => s.lastReview != null)` in
- * `computeTotals.needsReview`.
+ * `byBucket` totals MUST sum to `totalSenders`. The 8 fields cover
+ * everything in scope; `one_time` carries the noise-floor (≤2 lifetime
+ * msgs) which the FE hides behind an explicit toggle.
  */
 export interface SenderSummary {
+  /** Lifetime distinct senders within retention. */
   totalSenders: number;
-  byIntent: {
-    cleanup: number;
-    later: number;
+  /** Senders with ≥1 inbound msg in last `WINDOWS.ACTIVE_DAYS`. */
+  activeSenders: number;
+  /** Inbound msg count in last `WINDOWS.VOLUME_DAYS`. */
+  last30dVolume: number;
+  /** 0..100 integer percent — share of `last30dVolume` from senders in
+   *  the `needs_review` bucket. */
+  noiseReducible: number;
+  /** Alias of `byBucket.protect` (kept because the KPI cell label is "Protected"). */
+  protected: number;
+  /** Alias of `byBucket.needs_review`. */
+  needsReview: number;
+  /** Per-bucket sender counts. Sum equals `totalSenders`. */
+  byBucket: {
+    one_time: number;
     protect: number;
     people: number;
+    needs_review: number;
+    quiet: number;
+    dormant: number;
+    bulk: number;
+    other: number;
   };
-  /** SUM of latest-month volume across all senders in scope. */
-  totalMonthly: number;
-  /** 0..100 integer percent. `cleanupMonthly / totalMonthly × 100`, rounded. */
-  noiseReducible: number;
-  /** Alias for `byIntent.protect` — kept on the wire because the KPI cell
-   *  reads `totals.protectedCount` and we want the field name to match the
-   *  FE intent. */
-  protected: number;
-  /** Senders with at least one `triage_decisions` row. */
-  needsReview: number;
   /** ISO-8601 — server time at compute (observability). */
   asOf: string;
 }
