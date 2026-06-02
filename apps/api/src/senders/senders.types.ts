@@ -31,7 +31,7 @@ import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
  * `null` indicates no timeseries data at all (sync hasn't run); the FE
  * surfaces this as a quiet "—" rather than picking a misleading bucket.
  */
-export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 
 /**
  * Summary of the most-recent triage decision for a sender. Surfaces on

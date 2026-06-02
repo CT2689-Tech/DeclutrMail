@@ -52,6 +52,7 @@ import {
   FREE_MAIL_DOMAINS,
   PATTERNS,
   SCORE,
+  TREND,
   VOLUMES,
   WINDOWS,
 } from '@declutrmail/shared/senders';
@@ -241,85 +242,55 @@ export class SendersReadService {
     }
     const direction: SenderListDirection = args.direction ?? DEFAULT_DIRECTION_BY_SORT[sort];
     const now = args.now ?? new Date();
-    const currentMonthIso = startOfMonthIso(now);
-    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
 
-    // Correlated subquery — most-recent timeseries row per sender. We
-    // can't LATERAL-join with Drizzle's current builder cleanly, so
-    // two scalar subqueries keep the SQL portable across PGlite (test)
-    // and postgres-js (prod). Indexed by the timeseries PK
-    // `(mailbox_account_id, sender_key, year_month)`, so the
-    // `ORDER BY year_month DESC LIMIT 1` is a range-scan tail-read.
+    // ROLLING-WINDOW per-row stats (replaces the old per-sender-latest-
+    // year_month sums that summed across decades and inflated totals).
+    // Every per-row count below comes from `mail_messages` filtered by
+    // `internal_date >= now - N days` — same source the summary
+    // endpoint aggregates from, so the row's "47 in last 30d" agrees
+    // with the chip count.
     //
-    // CORRELATION QUOTE-TRAP. Drizzle's `sql` template emits BARE
-    // column names when a `Column` object is interpolated (e.g.
-    // `${senders.mailboxAccountId}` renders as `"mailbox_account_id"`,
-    // with no table qualifier). Inside this subquery PG's name
-    // resolution then binds BOTH sides of the predicate to the inner
-    // `sender_timeseries` scope, the WHERE collapses to a tautology,
-    // and every outer row gets the same constant timeseries row.
-    // Caught in PR #43 → see MISTAKES.md 2026-05-23. The fix is to
-    // qualify the outer-scope identifiers explicitly so the
-    // correlated reference survives template expansion. We use
-    // `getTableName(senders)` + `sql.identifier(...)` rather than a
-    // hardcoded `'senders.mailbox_account_id'` string so a future
-    // schema rename surfaces as a compile-time miss in this helper
-    // instead of a silent re-introduction of the tautology bug.
+    // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
+    // refs use `sql.identifier(getTableName(senders))` so a Drizzle
+    // template can't degenerate to a tautology that silently joins
+    // every row to the same inner result.
     const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
     const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
-    const latestVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const latestReadCountSql = sql<number | null>`(
-      SELECT ${senderTimeseries.readCount}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
 
-    // Trend inputs — pulled in their own indexed subqueries so the
-    // bucket computation happens in TypeScript (`computeTrendBucket`)
-    // rather than in SQL. Easier to test, easier to extend with new
-    // buckets later, and keeps the SQL legible. Each subquery hits
-    // the same `(mailbox_account_id, sender_key, year_month)` PK as
-    // the latest-month reads above, so the extra cost is one indexed
-    // tail-read per subquery per row.
-    const currentMonthVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
-      LIMIT 1
-    )`;
-    // Prior-window average — the 3 complete calendar months immediately
-    // before the current one. Cast AVG to float because PG returns it
-    // as `numeric` which postgres-js + PGlite hand back as a string;
-    // float keeps the TS side type-clean and the rounding harmless
-    // (the bucket thresholds are 1.3× / 0.7×, not precision-sensitive).
-    const priorAvgVolumeSql = sql<number | null>`(
-      SELECT AVG(${senderTimeseries.volume})::float
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
-        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
-    )`;
-    // History depth — drives the `new` bucket (fewer than 2 complete
-    // months of data). Cast to int for the same string-vs-number
-    // reason as the AVG.
-    const historyMonthCountSql = sql<number>`(
+    // `last30dMsgs` — count of inbound msgs in last 30d. Drives the
+    // row's "47 in last 30d" label + the trend bucket "recent" half.
+    const last30dMsgsSql = sql<number>`(
       SELECT COUNT(*)::int
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`;
+    // `last30dReadCount` — same window, only msgs the user has read
+    // (Gmail removed the UNREAD label). Drives the row's read-rate.
+    const last30dReadCountSql = sql<number>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+        AND ${mailMessages.isUnread} = false
+    )`;
+    // `baselineMsgs` — count in the prior 30-90 day window (60-day
+    // baseline span). Used by the trend bucket: recent / (baseline / 2)
+    // ratio compared against UP/DOWN multipliers. The window size is
+    // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
+    // in TS so the "recent vs baseline" rate comparison is fair.
+    const baselineMsgsSql = sql<number>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
     )`;
 
     // Last-reviewed inputs — three scalar subqueries against
@@ -403,11 +374,9 @@ export class SendersReadService {
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
         unsubscribeMethod: senders.unsubscribeMethod,
-        latestVolume: latestVolumeSql,
-        latestReadCount: latestReadCountSql,
-        currentMonthVolume: currentMonthVolumeSql,
-        priorAvgVolume: priorAvgVolumeSql,
-        historyMonthCount: historyMonthCountSql,
+        last30dMsgs: last30dMsgsSql,
+        last30dReadCount: last30dReadCountSql,
+        baselineMsgs: baselineMsgsSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -448,18 +417,22 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       // `total_received` is `bigint` in the column but Drizzle's
-      // `mode: 'number'` coerces to a JS number at the boundary. We
-      // assert the runtime type so a future driver swap that hands
-      // back a string surfaces here as a clear contract violation
-      // rather than a misrendered "0" downstream.
+      // `mode: 'number'` coerces to a JS number at the boundary. The
+      // assertion makes a violation explicit at the wire boundary.
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-      monthlyVolume: row.latestVolume,
-      readRate: computeReadRate(row.latestVolume, row.latestReadCount),
-      volumeTrend: computeTrendBucket(
-        row.currentMonthVolume,
-        row.priorAvgVolume,
-        row.historyMonthCount,
-      ),
+      // `monthlyVolume` wire field now carries last-30-days msg count
+      // (rolling). Replaces the per-sender-latest-year_month sum that
+      // varied across decades. FE renders as "47 in last 30d".
+      monthlyVolume: row.last30dMsgs,
+      readRate: computeReadRate(row.last30dMsgs, row.last30dReadCount),
+      volumeTrend: computeRollingTrendBucket({
+        last30dMsgs: row.last30dMsgs,
+        baselineMsgs: row.baselineMsgs,
+        firstSeenAt: row.firstSeenAt,
+        lastSeenAt: row.lastSeenAt,
+        totalReceived: row.totalReceived,
+        now,
+      }),
       unsubscribeMethod: row.unsubscribeMethod,
       lastReview: buildLastReview(
         row.lastDecisionAt,
@@ -1628,24 +1601,9 @@ function mondayOfWeekIso(d: Date): string {
 
 /**
  * Pure helper — map the raw timeseries inputs to one of the bucketed
- * trend labels (`VolumeTrendBucket`) the FE renders. Centralising the
- * thresholds here keeps the SQL clean and gives the bucket logic a
- * single unit-tested home.
- *
- * Bucket order matters — the early returns encode the precedence:
- *
- *   1. No history at all                 → null   ("—" on FE)
- *   2. < 2 months of history             → 'new'
- *   3. Prior average is zero (gap)       → 'up' if current > 0 else null
- *   4. Current is zero, prior > 0        → 'dormant'
- *   5. current ≥ prior × 1.3             → 'up'
- *   6. current ≤ prior × 0.7             → 'down'
- *   7. otherwise                         → 'steady'
- *
- * The 1.3× / 0.7× thresholds are placeholders pending ratification
- * against real mailbox variance (flagged in MISTAKES.md / brief).
- * They are deliberately centralised so a single edit re-buckets every
- * surface.
+ * trend labels (`VolumeTrendBucket`) the FE renders. LEGACY — used by
+ * `getSenderDetail` until its read path migrates to rolling windows.
+ * New code should use `computeRollingTrendBucket` below.
  */
 function computeTrendBucket(
   currentVolume: number | null,
@@ -1662,6 +1620,77 @@ function computeTrendBucket(
   if (current === 0) return 'dormant';
   if (current >= prior * 1.3) return 'up';
   if (current <= prior * 0.7) return 'down';
+  return 'steady';
+}
+
+/**
+ * Pure helper — rolling-window trend bucket (replaces calendar-month
+ * `computeTrendBucket`). Drives the per-row trend chip.
+ *
+ * Inputs come from per-request `mail_messages` aggregates so the
+ * bucket reflects what's actually in the user's inbox right now, NOT
+ * what the `sender_timeseries` worker had rolled up at last run.
+ * Eliminates the "mass-Dormant on day 1 of new month" bug (the
+ * timeseries rollup hadn't run yet → currentVolume looked zero for
+ * everyone) and the "11y-old 1-shot sender = 'new'" bug (history
+ * count rule didn't gate on recency).
+ *
+ * Priority order (first match wins):
+ *
+ *   1. `new` — `first_seen_at >= now - NEW_DAYS`. Sender just
+ *      appeared in the user's life regardless of msg count.
+ *   2. `dormant` — `last_seen_at < now - DORMANT_DAYS` AND recurring
+ *      (`total_received >= RECURRING_MIN_TOTAL`). True silence.
+ *   3. `quiet` — `last_seen_at < now - QUIET_DAYS` AND recurring.
+ *      Trailing off — not silent yet but slowing.
+ *   4. `up` / `down` / `steady` — rate comparison. recent rate per
+ *      day = `last30dMsgs / VOLUME_DAYS`; baseline rate per day =
+ *      `baselineMsgs / (TREND_BASELINE_END - TREND_BASELINE_START)`.
+ *      Normalising both to per-day rates lets us compare 30d vs 60d
+ *      windows fairly.
+ *      - up      : recent ≥ TREND.UP_MULTIPLIER × baseline
+ *      - down    : recent ≤ TREND.DOWN_MULTIPLIER × baseline
+ *      - steady  : in-between
+ *
+ *      A sender with zero baseline AND positive recent → `up` (new
+ *      activity from an otherwise-quiet sender). Zero recent AND
+ *      positive baseline doesn't trigger here — the `dormant`/`quiet`
+ *      rules above catch it via `last_seen_at`.
+ *   5. `null` — one-shot, ancient, nothing to show.
+ */
+function computeRollingTrendBucket(args: {
+  last30dMsgs: number;
+  baselineMsgs: number;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  totalReceived: number;
+  now: Date;
+}): VolumeTrendBucket | null {
+  const { last30dMsgs, baselineMsgs, firstSeenAt, lastSeenAt, totalReceived, now } = args;
+  const nowMs = now.getTime();
+  const ageDays = (ms: number) => (nowMs - ms) / 86_400_000;
+
+  // 1. New — first seen recently. Wins over everything.
+  if (ageDays(firstSeenAt.getTime()) <= WINDOWS.NEW_DAYS) return 'new';
+
+  // 2/3. Dormant / Quiet — silent for long enough AND recurring.
+  if (totalReceived >= VOLUMES.RECURRING_MIN_TOTAL) {
+    const silentFor = ageDays(lastSeenAt.getTime());
+    if (silentFor >= WINDOWS.DORMANT_DAYS) return 'dormant';
+    if (silentFor >= WINDOWS.QUIET_DAYS) return 'quiet';
+  }
+
+  // 4. Velocity buckets — per-day rate comparison.
+  const recentRate = last30dMsgs / WINDOWS.TREND_RECENT_DAYS;
+  const baselineSpanDays = WINDOWS.TREND_BASELINE_END_DAYS - WINDOWS.TREND_BASELINE_START_DAYS;
+  const baselineRate = baselineMsgs / baselineSpanDays;
+
+  if (baselineRate === 0) {
+    return recentRate > 0 ? 'up' : null;
+  }
+  if (recentRate >= baselineRate * TREND.UP_MULTIPLIER) return 'up';
+  if (recentRate <= baselineRate * TREND.DOWN_MULTIPLIER) return 'down';
+  if (recentRate === 0 && baselineRate === 0) return null;
   return 'steady';
 }
 
