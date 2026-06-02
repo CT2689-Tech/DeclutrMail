@@ -19,7 +19,7 @@ export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'for
  * trend cell on the detail stats strip. Bucketed (not raw %) to avoid
  * false precision on small baselines.
  */
-export type VolumeTrend = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+export type VolumeTrend = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 
 /**
  * Last-review summary surfaced on the detail header eyebrow. The

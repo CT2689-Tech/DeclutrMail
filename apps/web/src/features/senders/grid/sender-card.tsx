@@ -151,7 +151,7 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
         }}
       >
         <span>
-          <strong style={{ color: color.fg, fontWeight: 600 }}>{sender.monthly}</strong>/mo
+          <strong style={{ color: color.fg, fontWeight: 600 }}>{sender.monthly}</strong> in last 30d
         </span>
         <span>
           <strong style={{ color: color.fg, fontWeight: 600 }}>

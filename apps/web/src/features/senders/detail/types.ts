@@ -147,7 +147,7 @@ export interface SenderStats {
    * — the stats strip renders a quiet "—" cell rather than a
    * misleading bucket. Mirrors `Sender.volumeTrend`.
    */
-  volumeTrend: 'new' | 'up' | 'down' | 'steady' | 'dormant' | null;
+  volumeTrend: 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant' | null;
 }
 
 /**

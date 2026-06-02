@@ -330,15 +330,15 @@ function SendersScreenContent({
   // the filter chips show real counts even for empty intents.
   const intentBuckets = useMemo(() => groupByIntent(queryBase), [queryBase]);
 
-  // Intent chip counts. PREFER the mailbox-wide summary (#145) so the
-  // chips count every matching sender, not just the loaded ≤50-row page;
-  // fall back to the loaded-page derivation only until the summary
-  // populates (initial load) so the chips never blank to zero. The
-  // summary's `byIntent` mirrors `intentOf` byte-for-byte (the same
-  // 0.75 confidence gate, the same protect/VIP precedence), so the
-  // chip and the rendered row always agree.
+  // Intent chip counts. The chip row currently shows the legacy
+  // 4-intent grouping (Clean up / Move later / Protect / People) for
+  // row-level filtering — that grouping comes from the loaded-page
+  // `groupByIntent` and is used for visual filtering only. Mailbox-wide
+  // chip totals come from `summary.byBucket` (8 buckets) and surface
+  // via the KPI strip + new bucket chips below. The two are coexisting
+  // until the chip-click-to-filter wiring is rewritten to honor the
+  // 8-bucket priority server-side.
   const intentCounts = useMemo<Record<SenderIntent, number>>(() => {
-    if (summary) return { ...summary.byIntent };
     const counts: Record<SenderIntent, number> = {
       cleanup: 0,
       later: 0,
@@ -347,7 +347,7 @@ function SendersScreenContent({
     };
     for (const b of intentBuckets) counts[b.intent] = b.items.length;
     return counts;
-  }, [summary, intentBuckets]);
+  }, [intentBuckets]);
 
   // Visible groups after the active-intent filter. When `activeIntent` is
   // null ('All' chip), every non-empty group renders; when set, only that
@@ -711,9 +711,14 @@ function SendersScreenContent({
 
       {senders.length > 0 && (
         <InboxStoryHero
-          eyebrow="Your inbox this week"
+          eyebrow="Your senders, last 30 days"
           story={renderHeroStory(totals)}
-          meta={[{ value: `${totals.readingHrs.toFixed(1)}h`, label: 'Reading time / mo' }]}
+          meta={[
+            {
+              value: `${summary?.activeSenders ?? 0}`,
+              label: 'Active senders',
+            },
+          ]}
           ctaCopy={renderCtaCopy(totals)}
           ctaLabel="Start review"
           onCtaClick={onStartReview}
@@ -724,39 +729,42 @@ function SendersScreenContent({
         label="This week"
         done={doneThisWeek}
         total={totals.cleanupCount}
-        caption={
-          totals.cleanupCount > 0
-            ? `Estimated savings so far: ${totals.estSavedHrs.toFixed(1)}h/year`
-            : undefined
-        }
+        // "Estimated savings" copy DROPPED — rode the placeholder
+        // 1.6 min/msg coefficient + the broken monthlyVolume sum.
+        // Will return when a calibrated coefficient lands.
+        caption={undefined}
       />
 
       {senders.length > 0 && (
         <KpiStrip
           cells={[
-            // "Senders" KPI is mailbox-wide — `summary.totalSenders` (or
-            // page-1 `totalMatching`, the same number narrowed by `?q=`),
-            // NOT `senders.length` (which is the loaded-page slice).
+            // KPI strip — 5 mailbox-wide cells from the rolling-window
+            // summary. Time-cost cell DROPPED (rode a placeholder
+            // 1.6-min/msg coefficient on top of the broken monthlyVolume
+            // sum — would render fiction). Restore when calibrated.
             {
               label: 'Senders',
               value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
             },
             {
-              label: 'Noise reducible',
-              value: `~${totals.noiseReductionPct}`,
-              unit: '%',
+              label: 'Active',
+              value: summary?.activeSenders ?? 0,
+              micro: summary?.activeSenders ? 'last 30 days' : undefined,
             },
             {
-              label: 'Time cost',
-              value: totals.readingHrs.toFixed(1),
-              unit: 'h/mo',
+              label: 'Needs review',
+              value: totals.needsReview,
             },
             {
               label: 'Protected',
               value: totals.protectedCount,
               micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
             },
-            { label: 'Needs review', value: totals.needsReview },
+            {
+              label: 'Noise reducible',
+              value: `~${totals.noiseReductionPct}`,
+              unit: '%',
+            },
           ]}
         />
       )}
@@ -1031,30 +1039,29 @@ function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTot
   const loadedProtectedCount = senders.filter(isStandingProtected).length;
   const loadedNeedsReview = senders.filter((s) => s.lastReview != null).length;
 
-  // Mailbox-wide values — prefer the summary; fall back to loaded sums.
-  // The summary's `byIntent.cleanup` is the same predicate as `intentOf`
-  // (same 0.75 gate, same protect/VIP precedence — see SQL CASE in
-  // `getSenderSummary`), so the cleanupCount stays consistent with the
-  // rendered rows after the summary arrives.
-  const totalMonthly = summary?.totalMonthly ?? loadedMonthly;
+  // Mailbox-wide values — read from the rolling-window summary; fall
+  // back to loaded sums only until the summary populates. The summary's
+  // `byBucket.needs_review` is the same predicate the per-row bucket
+  // computation will use server-side, so chip / KPI / row stay
+  // consistent (CLAUDE.md §8 invariant).
+  const totalMonthly = summary?.last30dVolume ?? loadedMonthly;
   const noiseReductionPct =
     summary?.noiseReducible ??
     (loadedMonthly === 0 ? 0 : Math.round((loadedCleanupMonthly / loadedMonthly) * 100));
-  const cleanupCount = summary?.byIntent.cleanup ?? loadedCleanup.length;
+  // `cleanupCount` displayed as "decisions to act on" — maps to the
+  // mailbox-wide `needs_review` bucket (engine recs at conf ≥ 0.75 AND
+  // active in last 30d). Falls back to loaded-page cleanup-intent count.
+  const cleanupCount = summary?.byBucket.needs_review ?? loadedCleanup.length;
   const protectedCount = summary?.protected ?? loadedProtectedCount;
   const needsReview = summary?.needsReview ?? loadedNeedsReview;
 
-  // Reading-time and est-saved approximate from the loaded slice (the
-  // summary doesn't carry per-sender read rate today — D7-safe metadata
-  // only). totalMonthly stays mailbox-wide; readingHrs uses it directly.
-  const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
-  // Yearly savings = cleanup-volume × 12 × READ_MIN_PER_MSG ÷ 60. When
-  // the summary is present, scale loadedCleanupMonthly by the ratio of
-  // mailbox-wide cleanupCount to loadedCleanup.length so the estimate
-  // tracks the true cleanup population, not the page slice.
-  const cleanupScale =
-    summary && loadedCleanup.length > 0 ? summary.byIntent.cleanup / loadedCleanup.length : 1;
-  const estSavedHrs = (loadedCleanupMonthly * cleanupScale * 12 * READ_MIN_PER_MSG) / 60;
+  // Reading-time and est-saved — RETURN ZERO. Both rode a placeholder
+  // 1.6 min/msg coefficient that was never calibrated against real user
+  // data, AND were built on top of the previously-broken monthlyVolume
+  // sum. Returning 0 silences downstream UI that would otherwise render
+  // fiction; the KPI cells that consumed these get dropped in this PR.
+  const readingHrs = 0;
+  const estSavedHrs = 0;
   return {
     totalMonthly,
     avgReadPct,
@@ -1076,12 +1083,17 @@ function renderHeroStory(totals: SenderTotals) {
   return [
     <>
       <span style={{ color: color.amber, fontWeight: 600 }}>{totals.totalMonthly}</span> emails
-      reached you.
+      reached you in the last 30 days.
     </>,
-    <>
-      Only <span style={{ color: color.primary, fontWeight: 600 }}>{totals.avgReadPct}%</span> were
-      worth reading.
-    </>,
+    totals.noiseReductionPct > 0 ? (
+      <>
+        About{' '}
+        <span style={{ color: color.primary, fontWeight: 600 }}>{totals.noiseReductionPct}%</span>{' '}
+        of that was noise you could let go.
+      </>
+    ) : (
+      <>You&rsquo;re mostly receiving signal — nice.</>
+    ),
   ];
 }
 

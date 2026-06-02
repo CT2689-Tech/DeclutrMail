@@ -94,11 +94,21 @@ function weeklyHeroHandler(
 function sendersSummaryHandler(
   overrides: Partial<{
     totalSenders: number;
-    byIntent: { cleanup: number; later: number; protect: number; people: number };
-    totalMonthly: number;
+    activeSenders: number;
+    last30dVolume: number;
     noiseReducible: number;
     protected: number;
     needsReview: number;
+    byBucket: {
+      one_time: number;
+      protect: number;
+      people: number;
+      needs_review: number;
+      quiet: number;
+      dormant: number;
+      bulk: number;
+      other: number;
+    };
     qCapture: { value: string | null };
   }> = {},
 ) {
@@ -110,11 +120,21 @@ function sendersSummaryHandler(
       return jsonOk({
         data: {
           totalSenders: overrides.totalSenders ?? 1,
-          byIntent: overrides.byIntent ?? { cleanup: 0, later: 0, protect: 0, people: 1 },
-          totalMonthly: overrides.totalMonthly ?? 30,
+          activeSenders: overrides.activeSenders ?? 1,
+          last30dVolume: overrides.last30dVolume ?? 30,
           noiseReducible: overrides.noiseReducible ?? 0,
           protected: overrides.protected ?? 0,
           needsReview: overrides.needsReview ?? 0,
+          byBucket: overrides.byBucket ?? {
+            one_time: 0,
+            protect: 0,
+            people: 0,
+            needs_review: 0,
+            quiet: 0,
+            dormant: 0,
+            bulk: 0,
+            other: 1,
+          },
           asOf: '2026-06-01T00:00:00.000Z',
         },
       });
@@ -233,8 +253,10 @@ describe('SendersScreen — edge states', () => {
     // Breadcrumb names the active mailbox (D116) — not a static "default
     // mailbox" — so a multi-mailbox switch is visible.
     expect(screen.getByText(/Senders · me@example\.com/)).toBeInTheDocument();
-    // Hero meta strip — reading time derived from totalMonthly.
-    expect(screen.getByText(/Reading time \/ mo/i)).toBeInTheDocument();
+    // Hero meta strip — "Active senders" replaces the dropped "Reading time / mo"
+    // (that cell rode an uncalibrated coefficient on top of the broken
+    // per-sender-latest-month sum and was dropped in the D38 rewrite).
+    expect(screen.getByText(/Active senders/i)).toBeInTheDocument();
     // KPI strip — "Noise reducible" is unique to the strip.
     expect(screen.getByText(/Noise reducible/i)).toBeInTheDocument();
     // Intent filter chips replaced the Gmail-category chips.
@@ -1017,11 +1039,21 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
       },
       sendersSummaryHandler({
         totalSenders: 7748,
-        byIntent: { cleanup: 1200, later: 800, protect: 50, people: 5698 },
-        totalMonthly: 12345,
+        activeSenders: 493,
+        last30dVolume: 12345,
         noiseReducible: 32,
         protected: 50,
         needsReview: 1500,
+        byBucket: {
+          one_time: 4817,
+          protect: 50,
+          people: 520,
+          needs_review: 172,
+          quiet: 246,
+          dormant: 1624,
+          bulk: 312,
+          other: 7,
+        },
       }),
     ]);
 
@@ -1033,59 +1065,68 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
     await waitFor(() => expect(screen.getAllByText('7748').length).toBeGreaterThanOrEqual(2));
   });
 
-  it('intent chips count summary.byIntent across the whole mailbox', async () => {
+  it('KPI strip surfaces summary.activeSenders + summary.needsReview', async () => {
+    // The 8-bucket chip filtering is deferred; the legacy 4-intent chips
+    // remain for visual filtering. Assert the new KPI strip cells route
+    // through the summary instead.
     installFetchStub([
       weeklyHeroHandler(),
       oneSenderHandler(),
       sendersSummaryHandler({
         totalSenders: 1050,
-        byIntent: { cleanup: 234, later: 156, protect: 42, people: 618 },
-        totalMonthly: 5000,
+        activeSenders: 433,
+        last30dVolume: 5000,
         noiseReducible: 28,
         protected: 42,
-        needsReview: 500,
+        needsReview: 234,
+        byBucket: {
+          one_time: 100,
+          protect: 42,
+          people: 200,
+          needs_review: 234,
+          quiet: 100,
+          dormant: 250,
+          bulk: 100,
+          other: 24,
+        },
       }),
     ]);
 
     renderScreen();
-    // Intent chips render as `<label>` followed by the count. The chip
-    // button's accessible name combines both, so a regex check across
-    // the chip labels asserts each bucket carries the summary number.
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /Clean up\s+234/ })).toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: /Move later\s+156/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Protect\s+42/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /People\s+618/ })).toBeInTheDocument();
-    // "All" chip — `meta.query.totalMatching` from the list page-1 (also 1
-    // in `oneSenderHandler`); make sure it's not silently overridden by
-    // `summary.totalSenders` when the list's totalMatching is canonical.
-    expect(screen.getByRole('button', { name: /^All\s+1$/ })).toBeInTheDocument();
+    // 433 active senders + 234 needs review — both come ONLY from the summary.
+    await waitFor(() => expect(screen.getAllByText('433').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('234').length).toBeGreaterThan(0);
   });
 
-  it('hero "N emails reached you" uses summary.totalMonthly, not the loaded-page sum', async () => {
+  it('hero "N emails reached you in the last 30 days" uses summary.last30dVolume', async () => {
     installFetchStub([
       weeklyHeroHandler(),
       oneSenderHandler(),
       sendersSummaryHandler({
         totalSenders: 100,
-        byIntent: { cleanup: 20, later: 10, protect: 5, people: 65 },
-        // Loaded page has ONE sender at monthlyVolume=30 (ROW). A pre-#145
-        // hero would show "30 emails reached you" from `sum(loaded.monthly)`.
-        // After #145 the hero reads `summary.totalMonthly`.
-        totalMonthly: 99999,
+        activeSenders: 50,
+        // Loaded page sums to monthly=30 (ROW). Pre-rewrite the hero
+        // would show 30. After rewrite the hero reads `summary.last30dVolume`.
+        last30dVolume: 99999,
         noiseReducible: 40,
         protected: 5,
         needsReview: 25,
+        byBucket: {
+          one_time: 0,
+          protect: 5,
+          people: 60,
+          needs_review: 25,
+          quiet: 5,
+          dormant: 5,
+          bulk: 0,
+          other: 0,
+        },
       }),
     ]);
 
     renderScreen();
-    // Hero renders the totalMonthly inside a styled `<span>` — assert by text.
     await waitFor(() => expect(screen.getByText('99999')).toBeInTheDocument());
-    // The hero "emails reached you" string is the anchor — make sure it
-    // renders alongside (no orphan number).
-    expect(screen.getByText(/emails reached you/i)).toBeInTheDocument();
+    expect(screen.getByText(/emails reached you in the last 30 days/i)).toBeInTheDocument();
   });
 
   it('typed search forwards ?q= to both the list AND the summary endpoint', async () => {

@@ -37,7 +37,7 @@ export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
  * (rather than raw %) to avoid false precision on small baselines —
  * see the senders-tightening brief + Codex review for context.
  */
-export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 
 /**
  * Last-review summary mirrored from `senders.types.ts:LastReview`.
@@ -222,32 +222,41 @@ export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHe
 }
 
 /**
- * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, "real-
- * data counts" mandate). Returns the totals the Senders screen's hero,
- * KPI strip, and intent chips read so headline numbers track the WHOLE
- * mailbox, not the ≤50-row page the FE has loaded.
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, rolling-
+ * window rewrite). Returns the totals the Senders screen's hero, KPI
+ * strip, and chips read so every headline number is a server-resolved
+ * truth over the WHOLE mailbox — never a per-page sum.
  *
- * Intent classification mirrors `uplift-d/intent.ts:intentOf` byte-for-
- * byte (protect > confidence-gated cleanup > confidence-gated later >
- * people, with the 0.75 confidence gate). The two predicates MUST agree
- * or the row's bucket disagrees with the chip count (CLAUDE.md §8).
+ * Eight mutually-exclusive buckets in priority order; the SQL CASE in
+ * the BE service and the FE bucketing logic both consume the SAME
+ * `BUCKET_PRIORITY` from `@declutrmail/shared/senders`, so chip / row /
+ * KPI counts cannot disagree (CLAUDE.md §8 invariant).
  */
 export interface SenderSummaryDto {
+  /** Lifetime distinct senders within retention. */
   totalSenders: number;
-  byIntent: {
-    cleanup: number;
-    later: number;
+  /** Senders with ≥1 inbound msg in last 30 days. */
+  activeSenders: number;
+  /** Inbound msg count in last 30 days (mailbox-wide). */
+  last30dVolume: number;
+  /** 0..100 integer percent — share of `last30dVolume` from senders in
+   *  the `needs_review` bucket. */
+  noiseReducible: number;
+  /** Alias of `byBucket.protect` (matches the KPI cell label). */
+  protected: number;
+  /** Alias of `byBucket.needs_review`. */
+  needsReview: number;
+  /** Per-bucket sender counts. Sum equals `totalSenders`. */
+  byBucket: {
+    one_time: number;
     protect: number;
     people: number;
+    needs_review: number;
+    quiet: number;
+    dormant: number;
+    bulk: number;
+    other: number;
   };
-  /** SUM of latest-month volume across all senders in scope. */
-  totalMonthly: number;
-  /** 0..100 integer percent. `cleanupMonthly / totalMonthly × 100`, rounded. */
-  noiseReducible: number;
-  /** Alias of `byIntent.protect` — kept to match the KPI cell label. */
-  protected: number;
-  /** Senders with at least one `triage_decisions` row. */
-  needsReview: number;
   /** ISO-8601 — server time at compute. */
   asOf: string;
 }
@@ -255,17 +264,19 @@ export interface SenderSummaryDto {
 /**
  * GET /api/senders/summary — mailbox-wide aggregates (#145).
  *
- * `q` honors the active search so the chip / KPI / hero counts narrow
- * in lockstep with the visible rows. Empty/missing q ⇒ no search.
+ * `q` honors the active search; `includeOneTime` pivots the whole
+ * summary so the FE one-time toggle hides ~62% of typical noise without
+ * the chip counts going out of sync with the visible rows.
  */
 export function fetchSendersSummary(
-  params: { q?: string | undefined } = {},
+  params: { q?: string | undefined; includeOneTime?: boolean | undefined } = {},
   signal?: AbortSignal,
 ): Promise<Envelope<SenderSummaryDto, unknown>> {
   return apiGet<SenderSummaryDto>('/api/senders/summary', {
-    // Empty string collapses to omitted so a cleared search keys the
-    // same cache entry as "no search".
-    query: { q: params.q ? params.q : undefined },
+    query: {
+      q: params.q ? params.q : undefined,
+      includeOneTime: params.includeOneTime === false ? 'false' : undefined,
+    },
     signal,
   });
 }

@@ -53,9 +53,12 @@
  */
 
 import type { CSSProperties } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
+import { adaptSenderListRow } from '../api/adapters';
+import type { ActionVerb, Sender } from '../data';
+import { SenderRowDetail } from '../table/sender-row-detail';
 
 import type {
   SenderListDirection,
@@ -444,7 +447,7 @@ function SenderRow({
           </button>
         </td>
       </tr>
-      {expanded ? <ExpandedRow sender={sender} /> : null}
+      {expanded ? <ExpandedRow sender={sender} onAction={onAction} /> : null}
     </>
   );
 }
@@ -500,6 +503,7 @@ const TREND_LABEL: Record<VolumeTrendBucket, string> = {
   up: '↑ Up',
   down: '↓ Down',
   steady: '— Steady',
+  quiet: '◐ Quiet',
   dormant: '○ Dormant',
   new: '• New',
 };
@@ -508,6 +512,7 @@ const TREND_COLOR: Record<VolumeTrendBucket, string> = {
   up: color.amber,
   down: color.emerald,
   steady: color.fgMuted,
+  quiet: color.fgMuted,
   dormant: color.fgMuted,
   new: color.primary,
 };
@@ -698,40 +703,50 @@ function VerbButtons({
   );
 }
 
-/** Expand row — slot for the future Sender Detail mini-card. */
-function ExpandedRow({ sender }: { sender: SenderListRow }) {
+/**
+ * Expand row — rich SenderRowDetail panel (#146 restoration).
+ *
+ * Pre-ce00ad1, the grid-table expand showed a recommendation callout +
+ * sparkline + sample subjects + verb buttons. The Slice 1 flat-sortable
+ * table shipped with a stub (3 metadata lines) by accident. This wires
+ * the existing rich `SenderRowDetail` component back in. Adapts the
+ * wire `SenderListRow` to the FE `Sender` shape via the same adapter
+ * the grid view uses, so the two surfaces stay visually consistent.
+ *
+ * `onAction` threads the parent's D226 preview path so the inline
+ * verbs from the expand panel route through the same mandatory
+ * action-preview as the row's main verb buttons.
+ */
+function ExpandedRow({
+  sender,
+  onAction,
+}: {
+  sender: SenderListRow;
+  onAction: SenderTableProps['onAction'];
+}) {
+  // Adapt the wire row to the FE `Sender` shape SenderRowDetail expects.
+  // Memoised on the row id since adaptation is identity-stable per row.
+  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  // Bridge — SenderRowDetail emits canonical-cased verbs (Archive /
+  // Unsubscribe / Later / Keep / Protect). The parent's `onAction`
+  // expects lowercase `SenderTableVerb`. Map + filter (Keep/Protect
+  // aren't in the table's verb union).
+  const VERB_MAP: Record<ActionVerb, SenderTableVerb | null> = {
+    Archive: 'archive',
+    Unsubscribe: 'unsubscribe',
+    Later: 'later',
+    Keep: null,
+    Protect: null,
+  };
+  const bridgedAction = (req: { verb: ActionVerb; senders: Sender[] }) => {
+    const mapped = VERB_MAP[req.verb];
+    if (mapped === null) return;
+    onAction({ verb: mapped, sender });
+  };
   return (
     <tr data-dm-expanded-for={sender.id}>
       <td colSpan={COLUMNS.length} style={{ padding: '12px 12px 16px 48px', background: color.bg }}>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            color: color.fgMuted,
-            fontSize: text.sm,
-          }}
-        >
-          <div>
-            <span style={{ fontWeight: 600, color: color.fg }}>{displayLabel(sender)}</span>
-            {' · '}
-            <span>{sender.email}</span>
-          </div>
-          <div>
-            First seen: {formatDate(sender.firstSeenAt)} · Last seen:{' '}
-            {formatDate(sender.lastSeenAt)}
-          </div>
-          {sender.lastReview ? (
-            <div>
-              Last review: {sender.lastReview.verdict}
-              {sender.lastReview.confidence !== undefined
-                ? ` (${Math.round(sender.lastReview.confidence * 100)}%)`
-                : ''}
-              {' · '}
-              {formatDate(sender.lastReview.at)}
-            </div>
-          ) : null}
-        </div>
+        <SenderRowDetail s={adapted} onAction={bridgedAction} />
       </td>
     </tr>
   );
