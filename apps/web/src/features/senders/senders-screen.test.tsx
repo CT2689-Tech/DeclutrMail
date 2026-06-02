@@ -845,7 +845,12 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     await waitFor(() => expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument());
   });
 
-  it('hides the Weekly Hero when isMonday=false (D47 — non-Monday branch)', async () => {
+  it('shows the suggestions rail every day when slices exist (was Monday-only per D47)', async () => {
+    // The Monday-only gate was dropped — the suggestions rail is the
+    // founder-validated premium surface and BE recomputes slices on
+    // every request, so it makes more sense to always surface when
+    // slices >= MIN. Only an empty slices array OR a session-level
+    // `Not now` dismissal hides it now.
     installFetchStub([
       weeklyHeroHandler({ isMonday: false, slices: [HERO_SLICE] }),
       {
@@ -867,9 +872,8 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         <SendersScreen />
       </QueryWrapper>,
     );
-    // Wait for the senders list to settle, then assert the hero is absent.
     await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
+    expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument();
   });
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
@@ -1154,8 +1158,8 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
       },
       sendersSummaryHandler({
         totalSenders: 1,
-        byIntent: { cleanup: 0, later: 0, protect: 0, people: 1 },
-        totalMonthly: 30,
+        activeSenders: 1,
+        last30dVolume: 30,
         noiseReducible: 0,
         protected: 0,
         needsReview: 0,
