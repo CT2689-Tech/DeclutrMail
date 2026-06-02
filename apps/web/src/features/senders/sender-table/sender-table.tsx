@@ -59,6 +59,7 @@ import { getActionDescriptor } from '@declutrmail/shared/actions';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
 import { SenderRowDetail } from '../table/sender-row-detail';
+import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
 import type {
   SenderListDirection,
@@ -346,6 +347,14 @@ function SenderRow({
 }) {
   const [expanded, setExpanded] = useState(false);
 
+  // Intent tone — drives the left-edge tone stripe + magnitude-bar
+  // accent so the table row visually rhymes with the grid SenderCard
+  // and the Hero Bloc cards. Same predicate (`intentOf`) feeds the
+  // chip count, so row tone and chip count cannot disagree.
+  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  const intent = intentOf(adapted);
+  const toneAccent = ROW_TONE_ACCENT[intent];
+
   const cellStyle: CSSProperties = {
     padding: pad,
     borderBottom: `1px solid ${color.lineSoft}`,
@@ -355,7 +364,27 @@ function SenderRow({
   return (
     <>
       <tr data-dm-sender-id={sender.id} data-dm-selected={selected || undefined}>
-        <td style={{ ...cellStyle, width: 28 }}>
+        <td
+          style={{
+            ...cellStyle,
+            width: 28,
+            position: 'relative',
+            paddingLeft: pad,
+          }}
+        >
+          {/* Tone stripe — 3px left edge, intent-colored. Subtle but
+              makes every row instantly readable by bucket. */}
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              background: toneAccent,
+            }}
+          />
           <input
             type="checkbox"
             aria-label={`Select ${displayLabel(sender)}`}
@@ -381,17 +410,27 @@ function SenderRow({
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
+                  letterSpacing: '-0.005em',
                 }}
               >
                 {displayLabel(sender)}
               </span>
             </span>
-            <span style={{ color: color.fgMuted, fontSize: text.sm }}>{sender.domain}</span>
+            <span
+              style={{
+                color: color.fgMuted,
+                fontSize: text.sm,
+                fontFamily: font.mono,
+                letterSpacing: '0.005em',
+              }}
+            >
+              {sender.domain}
+            </span>
           </div>
         </td>
 
         <td style={{ ...cellStyle, textAlign: 'right', width: 180 }}>
-          <TotalCell value={sender.totalReceived} max={globalMaxTotal} />
+          <TotalCell value={sender.totalReceived} max={globalMaxTotal} accent={toneAccent} />
         </td>
 
         <td style={{ ...cellStyle, width: 90 }}>
@@ -453,7 +492,7 @@ function SenderRow({
 }
 
 /** Total + magnitude bar — bar suppressed when `max === 0`. */
-function TotalCell({ value, max }: { value: number; max: number }) {
+function TotalCell({ value, max, accent }: { value: number; max: number; accent?: string }) {
   // Defense in depth: a malformed wire payload that drops
   // `totalReceived` would otherwise crash `toLocaleString()`. ADR-0014
   // guarantees this is a JS number on the wire; we coerce here so a
@@ -463,12 +502,16 @@ function TotalCell({ value, max }: { value: number; max: number }) {
   const safeMax = max > 0 ? max : 1;
   const pct = Math.min(100, Math.round((safeValue / safeMax) * 100));
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
       <span
         style={{
-          fontFamily: font.mono,
-          fontVariantNumeric: 'tabular-nums',
+          fontFamily: font.display,
+          fontSize: 18,
           fontWeight: 600,
+          letterSpacing: '-0.015em',
+          fontVariantNumeric: 'tabular-nums',
+          color: color.fg,
+          lineHeight: 1,
         }}
       >
         {safeValue.toLocaleString()}
@@ -490,7 +533,7 @@ function TotalCell({ value, max }: { value: number; max: number }) {
               display: 'block',
               width: `${pct}%`,
               height: '100%',
-              background: color.primary,
+              background: accent ?? color.primary,
             }}
           />
         </span>
@@ -498,6 +541,18 @@ function TotalCell({ value, max }: { value: number; max: number }) {
     </div>
   );
 }
+
+/**
+ * Per-row tone-stripe accent — same intent-to-tone mapping the grid
+ * `SenderCard` and Hero `Bloc` use. Cleanup = amber, Protect = primary,
+ * Later = subtle neutral, People = transparent (no stripe).
+ */
+const ROW_TONE_ACCENT: Record<SenderIntent, string> = {
+  cleanup: color.amber,
+  later: color.fgMuted,
+  protect: color.primary,
+  people: 'transparent',
+};
 
 const TREND_LABEL: Record<VolumeTrendBucket, string> = {
   up: '↑ Up',

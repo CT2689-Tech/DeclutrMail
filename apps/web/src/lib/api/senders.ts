@@ -96,6 +96,12 @@ export interface SenderListRow {
   readRate: number | null;
   /** Bucketed MoM trend. `null` when there's no timeseries history. */
   volumeTrend: VolumeTrendBucket | null;
+  /**
+   * 12-week volume series, oldest → newest. Null when no recent
+   * `mail_messages` (very old one-shot senders). Drives the per-row
+   * mini-sparkline.
+   */
+  sparkline?: number[] | null;
   unsubscribeMethod: UnsubscribeMethod | null;
   /** Most-recent triage decision summary. `null` when never reviewed. */
   lastReview: LastReviewWire | null;

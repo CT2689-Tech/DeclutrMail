@@ -120,6 +120,13 @@ export interface SenderListRow {
   monthlyVolume: number | null;
   readRate: number | null;
   /**
+   * 12-week volume series (rolling, oldest → newest). Always 12 numbers
+   * when present; missing weeks fill with 0. Drives the per-row mini-
+   * sparkline in the grid card. Null when the sender has no recent
+   * `mail_messages` rows (very old one-shots).
+   */
+  sparkline: number[] | null;
+  /**
    * Bucketed month-over-month volume trend — see `VolumeTrendBucket`.
    * `null` when there's no timeseries data at all (sync hasn't run).
    * Drives the trend chip on the Senders row evidence line.

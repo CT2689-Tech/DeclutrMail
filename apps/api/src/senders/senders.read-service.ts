@@ -292,6 +292,32 @@ export class SendersReadService {
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
         AND ${mailMessages.isOutbound} = false
     )`;
+    // `sparkline` — 12 weekly buckets ending at the current week (oldest
+    // bucket is index 0 in the returned array). Bucket size = 7 days;
+    // window = 84 days. Drives the per-row mini-sparkline in the grid
+    // SenderCard so each card carries a real volume shape, not a flat
+    // line. Uses a CTE over `mail_messages` grouped by integer week
+    // offset, LEFT JOIN'd against `generate_series(0,11)` so missing
+    // weeks fill with 0 (sparkline length is always 12).
+    const sparklineSql = sql<number[]>`(
+      WITH weekly AS (
+        SELECT
+          FLOOR(EXTRACT(EPOCH FROM (now() - ${mailMessages.internalDate})) / 604800)::int AS wk,
+          COUNT(*)::int AS cnt
+        FROM ${mailMessages}
+        WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+          AND ${mailMessages.senderKey} = ${outerSenderKey}
+          AND ${mailMessages.internalDate} >= now() - interval '84 days'
+          AND ${mailMessages.isOutbound} = false
+        GROUP BY 1
+      )
+      SELECT COALESCE(
+        array_agg(COALESCE(w.cnt, 0) ORDER BY g.idx DESC),
+        ARRAY[]::int[]
+      )
+      FROM generate_series(0, 11) AS g(idx)
+      LEFT JOIN weekly w ON w.wk = g.idx
+    )`;
 
     // Last-reviewed inputs — three scalar subqueries against
     // `triage_decisions` for the most-recent (mailbox, sender) row.
@@ -377,6 +403,7 @@ export class SendersReadService {
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
         baselineMsgs: baselineMsgsSql,
+        sparkline: sparklineSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -425,6 +452,7 @@ export class SendersReadService {
       // varied across decades. FE renders as "47 in last 30d".
       monthlyVolume: row.last30dMsgs,
       readRate: computeReadRate(row.last30dMsgs, row.last30dReadCount),
+      sparkline: row.sparkline ?? null,
       volumeTrend: computeRollingTrendBucket({
         last30dMsgs: row.last30dMsgs,
         baselineMsgs: row.baselineMsgs,
@@ -931,6 +959,9 @@ export class SendersReadService {
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
+      // Detail endpoint still rides the legacy timeseries shape; sparkline
+      // not yet wired on this path. Null so the contract holds.
+      sparkline: null,
       volumeTrend: computeTrendBucket(
         row.currentMonthVolume,
         row.priorAvgVolume,

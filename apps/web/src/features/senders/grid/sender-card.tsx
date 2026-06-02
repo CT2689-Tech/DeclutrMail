@@ -304,8 +304,9 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
             onClick={() => onAction({ verb, senders: [sender] })}
             iconLeft={VERB_ICONS[verb]}
             aria-label={verb}
+            title={verb}
           >
-            {/* Icon-only — keep the lead verb the focal point */}
+            {verb}
           </Button>
         ))}
       </div>

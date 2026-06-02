@@ -42,6 +42,7 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     monthlyVolume: 10,
     readRate: 0.5,
     volumeTrend: 'steady',
+    sparkline: null,
     unsubscribeMethod: 'one_click',
     lastReview: null,
     protectionFlags: {
