@@ -161,6 +161,19 @@ export function SendersScreen() {
   // a missing/in-flight summary falls back to loaded-page derivations.
   const summaryQuery = useSendersSummary({ q: debouncedQuery });
   const summary = summaryQuery.data?.data;
+  // Surface a sustained summary fetch failure so headline KPIs/hero/chips
+  // do NOT silently fall back to the loaded-page derivation — the very
+  // bug #145 set out to fix. Boolean flag drives a small "approximate"
+  // badge in the KPI strip; the underlying error is breadcrumbed to the
+  // console (Sentry FE wiring queued separately — FOUNDER-FOLLOWUPS).
+  const summaryFailed = summaryQuery.isError;
+  useEffect(() => {
+    if (!summaryQuery.isError) return;
+    const err = summaryQuery.error;
+    console.warn('[senders] summary fetch failed; KPI/hero fall back to loaded page', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }, [summaryQuery.isError, summaryQuery.error]);
   // The page-1 `totalMatching` is the canonical "All N" chip count —
   // already on the wire and search-aware. Prefer it over the summary's
   // `totalSenders` so the chip stays consistent with the list pagination
@@ -184,6 +197,7 @@ export function SendersScreen() {
       query={query}
       onQueryChange={setQuery}
       summary={summary}
+      summaryFailed={summaryFailed}
       totalMatchingFromList={totalMatchingFromList}
     />
   );
@@ -206,6 +220,7 @@ function SendersScreenContent({
   query,
   onQueryChange: setQuery,
   summary,
+  summaryFailed,
   totalMatchingFromList,
 }: {
   senders: Sender[];
@@ -225,6 +240,13 @@ function SendersScreenContent({
    * not blank — the summary populates within milliseconds of the list.
    */
   summary: SenderSummaryDto | undefined;
+  /**
+   * True when the summary fetch has failed and we are running on the
+   * loaded-page derivation. Drives a small "Live totals approximate"
+   * badge in the KPI strip so the user is not silently shown numbers
+   * derived from ≤50 loaded rows when the mailbox is bigger.
+   */
+  summaryFailed: boolean;
   /** Page-1 `meta.query.totalMatching` — the canonical "All N" chip count. */
   totalMatchingFromList: number | undefined;
 }) {
@@ -260,15 +282,33 @@ function SendersScreenContent({
   // figure: exactly what moves) AND Unsubscribe/Later (the optional "also
   // archive the backlog" toggle, which must not offer a no-op). Bulk + other
   // verbs keep the estimate (archivePreview = undefined).
-  const archivePreviewSenderId =
+  // Resolve the preview sender via an explicit narrow rather than a
+  // bang on `senders[0]` — keeps the guarantee local to the call site so
+  // a future refactor that loosens the length check can't silently
+  // crash on `undefined.id`.
+  const previewVerb = pendingAction?.verb;
+  const previewFirstSender =
     pendingAction != null &&
     pendingAction.senders.length === 1 &&
-    (pendingAction.verb === 'Archive' ||
-      pendingAction.verb === 'Unsubscribe' ||
-      pendingAction.verb === 'Later')
-      ? pendingAction.senders[0]!.id
+    (previewVerb === 'Archive' || previewVerb === 'Unsubscribe' || previewVerb === 'Later')
+      ? (pendingAction.senders[0] ?? null)
       : null;
+  const archivePreviewSenderId = previewFirstSender?.id ?? null;
   const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
+  // Breadcrumb the underlying error before we collapse it to a boolean
+  // for the modal — preview is D226-mandatory, so a sustained 5xx that
+  // forces the modal into "we'll archive whatever's there" copy without
+  // any observability would invisibly sidestep the mandate. The boolean
+  // still flows to the UI; the error message goes to the console
+  // (Sentry FE wiring is queued in FOUNDER-FOLLOWUPS).
+  useEffect(() => {
+    if (!archivePreviewQuery.isError || archivePreviewSenderId == null) return;
+    const err = archivePreviewQuery.error;
+    console.warn('[senders] archive preview fetch failed', {
+      senderId: archivePreviewSenderId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }, [archivePreviewQuery.isError, archivePreviewQuery.error, archivePreviewSenderId]);
   const archivePreview =
     archivePreviewSenderId != null
       ? {
@@ -444,8 +484,26 @@ function SendersScreenContent({
   // surface the REAL receipt (carrying the real undo token) and refresh the
   // senders list so counts reflect the archived mail; on `failed`, a warn
   // toast. The poll stops itself (refetchInterval → false on terminal).
+  //
+  // Error surfacing — `useActionStatus` runs with `retry: false` (the
+  // 4xx-as-designed-state invariant per CLAUDE.md §8), so a sustained
+  // 5xx during the poll keeps `data` undefined forever. Without this
+  // branch the optimistic "Archiving…" toast would never resolve and
+  // `activeAction` would never clear. Surface the error, clear state,
+  // breadcrumb to the console (Sentry FE wiring is queued separately —
+  // FOUNDER-FOLLOWUPS).
   useEffect(() => {
     if (!activeAction) return;
+    if (actionStatus.isError) {
+      const err = actionStatus.error;
+      console.warn('[senders] actionStatus poll failed', {
+        actionId: activeAction.actionId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      setActiveAction(null);
+      return;
+    }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
@@ -474,12 +532,25 @@ function SendersScreenContent({
       toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
     }
     setActiveAction(null);
-  }, [actionStatus.data, activeAction, qc]);
+  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
 
   // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
-  // refresh; on `failed`, a warn toast.
+  // refresh; on `failed`, a warn toast. Same retry-false / sustained-5xx
+  // hazard as the archive lifecycle above — surface the poll error
+  // explicitly so the receipt UI does not get stuck on the
+  // "Restoring…" toast forever.
   useEffect(() => {
     if (!revertActionId) return;
+    if (revertStatus.isError) {
+      const err = revertStatus.error;
+      console.warn('[senders] revertStatus poll failed', {
+        revertActionId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      toast("Couldn't confirm undo — see Activity", 'warn');
+      setRevertActionId(null);
+      return;
+    }
     const data = revertStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
@@ -490,7 +561,7 @@ function SendersScreenContent({
       toast("Couldn't undo — see Activity", 'warn');
     }
     setRevertActionId(null);
-  }, [revertStatus.data, revertActionId, qc]);
+  }, [revertStatus.data, revertStatus.isError, revertStatus.error, revertActionId, qc]);
 
   // Receipt Undo — reverse the real action by token (D226 undo loop). The
   // reverse is itself async: a fresh token enqueues a reverse job we poll;
@@ -733,6 +804,39 @@ function SendersScreenContent({
         // Will return when a calibrated coefficient lands.
         caption={undefined}
       />
+
+      {/*
+        Honest-failure banner — appears only when the mailbox-wide summary
+        endpoint is failing AND the user is silently being shown
+        loaded-page derivations (the bug #145 fixed). Tiny, non-blocking,
+        warn-toned so the user can act if KPIs look off.
+      */}
+      {summaryFailed && senders.length > 0 && (
+        // No `role="status"` here — that role is already taken by the
+        // receipt strip / toast and our tests resolve it by role. This
+        // banner is a non-interactive visual flag; `aria-label` + an
+        // explicit data-testid keeps it discoverable for tests + screen
+        // readers without colliding with the receipt's live-region role.
+        <div
+          aria-label="Live totals unavailable"
+          data-testid="senders-summary-fallback-banner"
+          style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: 11.5,
+            color: 'var(--color-amber)',
+            background: 'var(--color-amber-bg)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <span aria-hidden>⚠︎</span>
+          Live totals unavailable — showing approximation from loaded rows.
+        </div>
+      )}
 
       {senders.length > 0 && (
         <KpiStrip

@@ -345,6 +345,13 @@ function intentLabel(i: SenderIntent): string {
       return 'Protected';
     case 'people':
       return 'Keep';
+    default: {
+      // Forces a compile error if `SenderIntent` grows a new variant —
+      // without this, the function silently returns `undefined` and
+      // ships the literal string "undefined" to the DOM.
+      const _exhaustive: never = i;
+      return _exhaustive;
+    }
   }
 }
 
@@ -369,5 +376,9 @@ function leadButtonCopy(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'): str
       return 'Keep';
     case 'Archive':
       return 'Archive';
+    default: {
+      const _exhaustive: never = verb;
+      return _exhaustive;
+    }
   }
 }

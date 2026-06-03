@@ -22,14 +22,20 @@ import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
  * brief) — `+47%` from a baseline of 2 messages is noise; `up` after
  * a sustained 3-month average is signal.
  *
- *   - `up`      — current month ≥ prior-3-month average × 1.3
- *   - `down`    — current month ≤ prior-3-month average × 0.7
- *   - `steady`  — otherwise (within ±30% of prior average)
- *   - `dormant` — current month is 0 and prior average > 0
- *   - `new`     — fewer than 2 completed months of history
+ *   - `new`     — `first_seen_at >= now - NEW_DAYS`; wins over all
+ *                  other buckets (no prior period to compare against)
+ *   - `up`      — recent-window rate ≥ baseline rate × `UP_MULTIPLIER`
+ *   - `down`    — recent-window rate ≤ baseline rate × `DOWN_MULTIPLIER`
+ *   - `steady`  — otherwise (within multipliers, both rates non-zero)
+ *   - `quiet`   — silent ≥ `QUIET_DAYS` but < `DORMANT_DAYS` AND
+ *                  recurring (`totalReceived ≥ RECURRING_MIN_TOTAL`)
+ *   - `dormant` — silent ≥ `DORMANT_DAYS` AND recurring
  *
- * `null` indicates no timeseries data at all (sync hasn't run); the FE
- * surfaces this as a quiet "—" rather than picking a misleading bucket.
+ * `null` indicates a one-shot ancient sender with nothing meaningful
+ * to show; the FE surfaces this as a quiet "—" rather than picking a
+ * misleading bucket. All thresholds live in `@declutrmail/shared/senders`
+ * (`WINDOWS`, `VOLUMES`, `TREND`) — see `computeRollingTrendBucket` for
+ * the priority order this enum is sorted by.
  */
 export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 

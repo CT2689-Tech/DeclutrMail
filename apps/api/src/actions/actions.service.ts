@@ -330,10 +330,16 @@ export class ActionsService {
         labelActionJobOptions(idempotencyKey),
       );
     } catch (err) {
+      // Defense in depth: scope the failure UPDATE by mailbox even
+      // though `actionId` was just minted by `insertJob` and is
+      // unique. Every other touch on `action_jobs` in this service
+      // includes `mailbox_account_id` in the predicate — keeping that
+      // invariant uniform so a future refactor reusing `enqueueJob`
+      // can't quietly cross tenants.
       await this.db
         .update(actionJobs)
         .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-        .where(eq(actionJobs.id, actionId));
+        .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)));
       throw new ServiceUnavailableException({
         code: 'ENQUEUE_FAILED',
         message: `Could not enqueue the action: ${err instanceof Error ? err.message : String(err)}`,

@@ -36,6 +36,15 @@ export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
  * Surfaces as a chip on the Senders row evidence line. Bucketed
  * (rather than raw %) to avoid false precision on small baselines —
  * see the senders-tightening brief + Codex review for context.
+ *
+ * Variants — see BE `VolumeTrendBucket` for the full bucket-priority
+ * rules; this enum MUST stay in lock-step with the BE union:
+ *   - `new`     — sender is freshly seen (wins over all other buckets)
+ *   - `up`      — recent rate ≥ baseline × `UP_MULTIPLIER`
+ *   - `down`    — recent rate ≤ baseline × `DOWN_MULTIPLIER`
+ *   - `steady`  — within multipliers, both rates non-zero
+ *   - `quiet`   — silent QUIET_DAYS..DORMANT_DAYS AND recurring
+ *   - `dormant` — silent ≥ DORMANT_DAYS AND recurring
  */
 export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 

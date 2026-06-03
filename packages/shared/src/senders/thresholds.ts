@@ -74,6 +74,10 @@ export const CONFIDENCE = {
   /** Bar for the "Needs review" KPI/chip. May diverge from GATE later
    *  if we want a stricter actionability bar. Keep equal at launch. */
   NEEDS_REVIEW_GATE: 0.75,
+  /** Bar for the Weekly Hero "high confidence" slice — stricter than
+   *  the per-row gate. Only the cleanest engine recommendations surface
+   *  in the hero so a one-glance review can be trusted. */
+  WEEKLY_HERO_HIGH_GATE: 0.85,
 } as const;
 
 /**
@@ -103,6 +107,13 @@ export const VOLUMES = {
 export const TREND = {
   UP_MULTIPLIER: 1.3,
   DOWN_MULTIPLIER: 0.7,
+  /** Weekly Hero "spike" slice — current-month volume ≥ N × prior 3-month
+   *  average (with a non-trivial baseline). Stricter than UP_MULTIPLIER
+   *  so the hero surfaces only true spikes, not gentle upticks. */
+  WEEKLY_HERO_SPIKE_RATIO: 3,
+  /** Weekly Hero "quiet" slice — read-rate cutoff. Below this rate, the
+   *  sender is treated as low-engagement noise even if still active. */
+  WEEKLY_HERO_QUIET_READ_RATE_MAX: 0.3,
 } as const;
 
 /**

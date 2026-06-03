@@ -259,7 +259,12 @@ export class SendersReadService {
 
     // `last30dMsgs` — count of inbound msgs in last 30d. Drives the
     // row's "47 in last 30d" label + the trend bucket "recent" half.
-    const last30dMsgsSql = sql<number>`(
+    //
+    // sql<number | string> reflects the runtime: postgres-js returns
+    // scalar subquery columns as strings even with `::int` (the cast
+    // affects the wire encoding, not the driver decoding). Callers MUST
+    // coerce at the map site (see `Number(row.last30dMsgs)` below).
+    const last30dMsgsSql = sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
@@ -269,7 +274,8 @@ export class SendersReadService {
     )`;
     // `last30dReadCount` — same window, only msgs the user has read
     // (Gmail removed the UNREAD label). Drives the row's read-rate.
-    const last30dReadCountSql = sql<number>`(
+    // Same string-coercion caveat as `last30dMsgs` above.
+    const last30dReadCountSql = sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
@@ -283,7 +289,8 @@ export class SendersReadService {
     // ratio compared against UP/DOWN multipliers. The window size is
     // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
     // in TS so the "recent vs baseline" rate comparison is fair.
-    const baselineMsgsSql = sql<number>`(
+    // Same string-coercion caveat as `last30dMsgs` above.
+    const baselineMsgsSql = sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
@@ -325,10 +332,18 @@ export class SendersReadService {
     // a unique index, but the ORDER BY + LIMIT 1 keeps us forward-
     // compatible with the planned `triage_decision_history` table
     // (referenced in the triage-decisions schema header). Per
-    // ADR-0008 §3 the senders read service is allowed to touch
-    // `triage_decisions` directly until the triage feature outgrows
-    // its single-table footprint.
-    const lastDecisionAtSql = sql<Date | null>`(
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker
+    // to find them all when ratifying the ADR). The current schema
+    // allows it until the triage feature outgrows its single-table
+    // footprint.
+    // sql<Date | string | null> reflects driver reality: postgres-js
+    // returns scalar subquery `timestamptz` columns as `Date` under
+    // some configs and as ISO strings under others (PGlite returns
+    // `Date`). `buildLastReview` accepts both shapes — keep that
+    // contract explicit on the template type so the next reader
+    // doesn't write `.toISOString()` on what may already be a string.
+    const lastDecisionAtSql = sql<Date | string | null>`(
       SELECT ${triageDecisions.producedAt}
       FROM ${triageDecisions}
       WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
@@ -435,46 +450,61 @@ export class SendersReadService {
       // `hasMore` without a count query.
       .limit(limit + 1);
 
-    return rows.map((row) => ({
-      id: row.id,
-      displayName: row.displayName,
-      email: row.email,
-      domain: row.domain,
-      gmailCategory: row.gmailCategory,
-      firstSeenAt: row.firstSeenAt.toISOString(),
-      lastSeenAt: row.lastSeenAt.toISOString(),
-      // `total_received` is `bigint` in the column but Drizzle's
-      // `mode: 'number'` coerces to a JS number at the boundary. The
-      // assertion makes a violation explicit at the wire boundary.
-      totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-      // `monthlyVolume` wire field now carries last-30-days msg count
-      // (rolling). Replaces the per-sender-latest-year_month sum that
-      // varied across decades. FE renders as "47 in last 30d".
-      monthlyVolume: row.last30dMsgs,
-      readRate: computeReadRate(row.last30dMsgs, row.last30dReadCount),
-      sparkline: row.sparkline ?? null,
-      volumeTrend: computeRollingTrendBucket({
-        last30dMsgs: row.last30dMsgs,
-        baselineMsgs: row.baselineMsgs,
-        firstSeenAt: row.firstSeenAt,
-        lastSeenAt: row.lastSeenAt,
-        totalReceived: row.totalReceived,
-        now,
-      }),
-      unsubscribeMethod: row.unsubscribeMethod,
-      lastReview: buildLastReview(
-        row.lastDecisionAt,
-        row.lastDecisionVerdict,
-        row.lastDecisionGeneratedBy,
-        row.lastDecisionConfidence,
-      ),
-      protectionFlags: {
-        isVip: row.isVip ?? false,
-        isProtected: row.isProtected ?? false,
-        protectionReason: row.protectionReason ?? null,
-        protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
-      },
-    }));
+    return rows.map((row) => {
+      // Scalar `sql<number | string>` subqueries (last30dMsgs,
+      // last30dReadCount, baselineMsgs) come back from postgres-js +
+      // PGlite as STRINGS even with `::int` casts in the SQL — the
+      // cast affects the wire encoding, not the driver decoding.
+      // Coerce at the map boundary via `ensureSafeIntegerNumber` so
+      // every downstream consumer (`computeReadRate`,
+      // `computeRollingTrendBucket`, FE wire) sees a real `number`.
+      const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
+      const last30dReadCount = ensureSafeIntegerNumber(
+        row.last30dReadCount,
+        'senders.last30dReadCount',
+      );
+      const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
+      return {
+        id: row.id,
+        displayName: row.displayName,
+        email: row.email,
+        domain: row.domain,
+        gmailCategory: row.gmailCategory,
+        firstSeenAt: row.firstSeenAt.toISOString(),
+        lastSeenAt: row.lastSeenAt.toISOString(),
+        // `total_received` is `bigint` in the column but Drizzle's
+        // `mode: 'number'` coerces to a JS number at the boundary. The
+        // assertion makes a violation explicit at the wire boundary.
+        totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+        // `monthlyVolume` wire field now carries last-30-days msg count
+        // (rolling). Replaces the per-sender-latest-year_month sum that
+        // varied across decades. FE renders as "47 in last 30d".
+        monthlyVolume: last30dMsgs,
+        readRate: computeReadRate(last30dMsgs, last30dReadCount),
+        sparkline: row.sparkline ?? null,
+        volumeTrend: computeRollingTrendBucket({
+          last30dMsgs,
+          baselineMsgs,
+          firstSeenAt: row.firstSeenAt,
+          lastSeenAt: row.lastSeenAt,
+          totalReceived: row.totalReceived,
+          now,
+        }),
+        unsubscribeMethod: row.unsubscribeMethod,
+        lastReview: buildLastReview(
+          row.lastDecisionAt,
+          row.lastDecisionVerdict,
+          row.lastDecisionGeneratedBy,
+          row.lastDecisionConfidence,
+        ),
+        protectionFlags: {
+          isVip: row.isVip ?? false,
+          isProtected: row.isProtected ?? false,
+          protectionReason: row.protectionReason ?? null,
+          protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
+        },
+      };
+    });
   }
 
   /**
@@ -659,6 +689,16 @@ export class SendersReadService {
       -- CTE 1: every distinct email the user has sent to (outbound).
       -- Materialised once per request so the per-sender membership check
       -- below is an O(1) hash lookup, not an N×M scan.
+      --
+      -- PRIVACY (D7/D228) — DO NOT project the email column to the wire.
+      -- This set IS the user's personal outbound address book (a sensitive
+      -- derived artifact) and is allowed only because the outer SELECT
+      -- projects ONLY integer aggregates (it never leaves the SQL boundary).
+      -- Any future caller that JOINs this CTE into a wire projection — or
+      -- adds a debug log of the replied set mid-debugging — must instead
+      -- store only the BOOLEAN "did this sender appear in the replied set"
+      -- predicate. A guard test on GET /api/senders/summary asserts no
+      -- email-shaped string ever appears in the response body.
       replied AS (
         SELECT DISTINCT lower(recip) AS email
         FROM ${mailMessages}, unnest(recipient_emails) AS recip
@@ -718,6 +758,9 @@ export class SendersReadService {
         LEFT JOIN ${senderPolicies} sp
           ON sp.mailbox_account_id = s.mailbox_account_id
          AND sp.sender_key = s.sender_key
+        -- ADR-0008 §3 ratification: direct triage_decisions read in
+        -- the senders read service (one of several sites — grep this
+        -- marker to find them all when ratifying the ADR).
         LEFT JOIN LATERAL (
           SELECT verdict, confidence
           FROM ${triageDecisions}
@@ -865,7 +908,16 @@ export class SendersReadService {
       WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
         AND ${senderTimeseries.senderKey} = ${outerSenderKey}
     )`;
-    const lastDecisionAtSql = sql<Date | null>`(
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker to
+    // find them all when ratifying the ADR).
+    // sql<Date | string | null> reflects driver reality: postgres-js
+    // returns scalar subquery `timestamptz` columns as `Date` under
+    // some configs and as ISO strings under others (PGlite returns
+    // `Date`). `buildLastReview` accepts both shapes — keep that
+    // contract explicit on the template type so the next reader
+    // doesn't write `.toISOString()` on what may already be a string.
+    const lastDecisionAtSql = sql<Date | string | null>`(
       SELECT ${triageDecisions.producedAt}
       FROM ${triageDecisions}
       WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
@@ -1127,6 +1179,9 @@ export class SendersReadService {
       return null;
     }
 
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker
+    // to find them all when ratifying the ADR).
     const conditions = [
       eq(triageDecisions.mailboxAccountId, mailboxAccountId),
       eq(triageDecisions.senderKey, senderKey),
@@ -1277,6 +1332,9 @@ export class SendersReadService {
     const sixMonthsAgoIso = sixMonthsAgo.toISOString();
     const nowIso = now.toISOString();
 
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker to
+    // find them all when ratifying the ADR).
     const [highConfidenceRes, spikeRes, quietRes] = await Promise.all([
       // High-confidence slice (D48 §1): latest triage decision says
       // archive/unsubscribe with confidence > 0.85, ranked by latest
@@ -1297,7 +1355,7 @@ export class SendersReadService {
           ORDER BY produced_at DESC
           LIMIT 1
         ) latest_td ON latest_td.verdict IN ('archive', 'unsubscribe')
-                  AND latest_td.confidence > 0.85
+                  AND latest_td.confidence > ${CONFIDENCE.WEEKLY_HERO_HIGH_GATE}
         LEFT JOIN LATERAL (
           SELECT volume, read_count
           FROM ${senderTimeseries}
@@ -1346,7 +1404,7 @@ export class SendersReadService {
           LIMIT 1
         ) latest_ts ON true
         WHERE s.mailbox_account_id = ${mailboxAccountId}
-          AND current_ts.volume >= 3 * prior_ts.avg_vol
+          AND current_ts.volume >= ${TREND.WEEKLY_HERO_SPIKE_RATIO} * prior_ts.avg_vol
         ORDER BY (current_ts.volume::float / prior_ts.avg_vol) DESC, s.sender_key
         LIMIT ${SLICE_MAX}
       `),
@@ -1374,7 +1432,7 @@ export class SendersReadService {
         WHERE s.mailbox_account_id = ${mailboxAccountId}
           AND s.last_seen_at < ${longQuietCutoffIso}
           AND s.first_seen_at < ${sixMonthsAgoIso}
-          AND (latest_ts.read_count::float / latest_ts.volume) < 0.30
+          AND (latest_ts.read_count::float / latest_ts.volume) < ${TREND.WEEKLY_HERO_QUIET_READ_RATE_MAX}
         ORDER BY (latest_ts.volume::float
                    * (EXTRACT(EPOCH FROM (${nowIso}::timestamptz - s.first_seen_at)) / 86400 / 30)) DESC,
                  s.sender_key
@@ -1423,10 +1481,27 @@ export class SendersReadService {
     // Capture per-slice true totalCount from the window function. The
     // value is identical across every row of a slice; reading the
     // first row is sufficient. Empty slice ⇒ 0.
+    // `total_count` is a Postgres `bigint` (via `COUNT(*) OVER ()`) which
+    // postgres-js delivers as a string. Route through
+    // `ensureSafeIntegerNumber` (same guard the summary path uses) so a
+    // value past `Number.MAX_SAFE_INTEGER` throws a clear contract
+    // violation instead of silently coercing to a lossy float.
     const totalCounts = {
-      high_confidence: highConfidence.length > 0 ? Number(highConfidence[0]!.total_count ?? 0) : 0,
-      spike: spike.length > 0 ? Number(spike[0]!.total_count ?? 0) : 0,
-      quiet: quiet.length > 0 ? Number(quiet[0]!.total_count ?? 0) : 0,
+      high_confidence:
+        highConfidence.length > 0
+          ? ensureSafeIntegerNumber(
+              highConfidence[0]!.total_count ?? 0,
+              'weeklyHero.high_confidence.totalCount',
+            )
+          : 0,
+      spike:
+        spike.length > 0
+          ? ensureSafeIntegerNumber(spike[0]!.total_count ?? 0, 'weeklyHero.spike.totalCount')
+          : 0,
+      quiet:
+        quiet.length > 0
+          ? ensureSafeIntegerNumber(quiet[0]!.total_count ?? 0, 'weeklyHero.quiet.totalCount')
+          : 0,
     } as const;
 
     const sliceMembers = {

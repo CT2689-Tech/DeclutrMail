@@ -2744,5 +2744,25 @@ describe('SendersReadService', () => {
       expect(b.totalSenders).toBe(8);
       expect(a.byBucket).toEqual(b.byBucket);
     });
+
+    it('does NOT leak email addresses from the replied CTE (D7/D228 privacy)', async () => {
+      // The `replied` CTE inside `getSenderSummary` materialises every
+      // outbound recipient address (the user's personal address book).
+      // The outer SELECT projects only integer aggregates so the set
+      // never crosses the SQL boundary today — but a future regression
+      // that JOINs the CTE into a wire field (or adds a debug log)
+      // would silently exfiltrate it. This guard locks the contract:
+      // the JSON-stringified summary response MUST NOT contain any
+      // email-shaped strings. Tightly scoped to summary so the test is
+      // cheap and cannot pick up email-like strings from elsewhere.
+      await seedAllBuckets(mailboxId);
+      const summary = await svc.getSenderSummary({ mailboxAccountId: mailboxId });
+      const serialised = JSON.stringify(summary);
+      // Generic email shape — `local@domain.tld`. The fixture seeds
+      // recipients like `chintan@example.com` via the outbound msgs,
+      // so this catches any leak from those into the response body.
+      const EMAIL_SHAPE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+      expect(serialised).not.toMatch(EMAIL_SHAPE);
+    });
   });
 });

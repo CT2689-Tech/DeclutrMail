@@ -40,6 +40,24 @@ export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
 
 export interface ActionEnqueueResult {
   actionId: string;
+  /**
+   * The number of messages the BE RESOLVED at enqueue time — not the
+   * caller's raw `messageIds.length` ask. Semantic differs by selector:
+   *
+   *   - `selector.kind === 'sender'`   → count of the sender's inbox
+   *      messages at this instant (whatever the worker is about to
+   *      archive). Equal to `ArchivePreviewResult.inboxCount` from a
+   *      preview taken in the same instant.
+   *   - `selector.kind === 'messages'` → length of the messageIds
+   *      array AFTER ownership filtering (forged or cross-mailbox ids
+   *      are dropped silently); may be strictly less than the caller's
+   *      `messageIds.length`.
+   *
+   * Surfaces in the FE receipt strip ("Archived X of Y") and the
+   * confirm modal. The FE should treat this as the authoritative
+   * "what we're about to do" number — it survives until `affectedCount`
+   * lands in the terminal `ActionStatusResult`.
+   */
   requestedCount: number;
   status: ActionJobStatus;
 }
@@ -47,6 +65,7 @@ export interface ActionEnqueueResult {
 export interface ActionStatusResult {
   actionId: string;
   status: ActionJobStatus;
+  /** Same semantics as `ActionEnqueueResult.requestedCount` — see above. */
   requestedCount: number;
   affectedCount: number;
   undoToken: string | null;
