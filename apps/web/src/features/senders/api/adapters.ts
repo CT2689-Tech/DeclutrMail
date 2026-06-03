@@ -139,11 +139,18 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     name: row.displayName || row.email,
     domain: row.domain,
     monthly,
+    // Real all-time received count (`senders.total_received`) — carried
+    // through verbatim. Replaces the former `monthly × 12` fabrication.
+    total: row.totalReceived,
     group: CATEGORY_TO_GROUP[row.gmailCategory],
     read,
-    // 4-week sparkline placeholder — wire doesn't carry per-week buckets
-    // yet; render a flat line at the recent monthly cadence quarter.
-    spark: [monthly, monthly, monthly, monthly].map((v) => Math.round(v / 4)),
+    // Real 12-week sparkline from BE (oldest → newest). Falls back to a
+    // flat 4-bucket line at the recent cadence when the BE omits it (very
+    // old senders with no recent mail_messages rows).
+    spark:
+      row.sparkline && row.sparkline.length > 0
+        ? row.sparkline
+        : [monthly, monthly, monthly, monthly].map((v) => Math.round(v / 4)),
     lastDays: daysSince(row.lastSeenAt, now),
     // Wire doesn't return current-unread-from-sender yet. Surfaces as 0
     // in the row badge until BE adds the field — non-blocking.

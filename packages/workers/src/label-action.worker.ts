@@ -60,24 +60,48 @@ export const LABEL_ACTION_QUEUE = 'label-action';
 export const LABEL_ACTION_JOB = 'label-action';
 
 /**
+ * Verbs whose FULL action pipeline is complete end-to-end: the worker
+ * forward mutation, the local label mirror, the undo/reverse path, and the
+ * `actions.label_action_applied` event schema. Only `archive` qualifies
+ * today.
+ *
+ * A verb can resolve a valid `LabelChange` from the registry yet still be
+ * half-supported here. `later` is the live example: it is `label-modify`
+ * and joined the `action_verb` enum in P4, but the local mirror only
+ * strips `INBOX` (never adds the Later label), undo is archive-shaped, and
+ * the event schema is `z.enum(['archive'])`. Executing it would mutate
+ * Gmail and then fail or leave undo/local state wrong. Refuse it
+ * fail-closed BEFORE any mutation until its pipeline lands (Codex review
+ * of #142, F1). Add a verb here only once all four surfaces support it.
+ */
+const PIPELINE_COMPLETE_VERBS: ReadonlySet<ActionVerb> = new Set<ActionVerb>(['archive']);
+
+/**
  * Resolve a verb's forward/reverse `LabelChange` from the Action Registry
  * (ADR-0015) — the single source of truth that replaces the worker-local
  * `VERB_LABEL_CHANGES` map (P3). Adding a label verb is one registry
  * descriptor, not an edit here.
  *
- * Pipeline isolation (consensus §5): a `policy-only` verb (keep/protect)
- * must NEVER reach the label worker. The discriminated `execution.kind`
- * makes the guard type-required — `buildLabelChange` exists only on the
- * `label-modify` arm — so a mis-routed verb throws a non-retryable
- * `ValidationError`. The guard is unreachable today (the `action_verb`
- * pg_enum is label-modify-only) and becomes live the moment keep/protect
- * join the enum (P5).
+ * Two fail-closed guards, both reached before any mutation (this is the
+ * shared chokepoint for forward + reverse, called in `execute()`):
+ *   1. Pipeline isolation (consensus §5): a `policy-only` verb
+ *      (keep/protect) must NEVER reach the label worker. `buildLabelChange`
+ *      exists only on the `label-modify` arm, so a mis-routed verb throws a
+ *      non-retryable `ValidationError`.
+ *   2. Pipeline completeness (F1): a `label-modify` verb whose downstream
+ *      pipeline is not finished (see `PIPELINE_COMPLETE_VERBS`) is rejected
+ *      even though its `LabelChange` resolves — `later` is the live case.
  */
 export function labelChangeForVerb(verb: ActionVerb): LabelChangePair {
   const { execution } = getActionDescriptor(verb);
   if (execution.kind !== 'label-modify') {
     throw new ValidationError(
       `verb "${verb}" routes to ${execution.kind}; LabelActionWorker applies label-modify verbs only`,
+    );
+  }
+  if (!PIPELINE_COMPLETE_VERBS.has(verb)) {
+    throw new ValidationError(
+      `verb "${verb}" is label-modify but its action pipeline (local mirror + undo + event schema) is archive-only today; refusing to mutate Gmail until it lands`,
     );
   }
   return execution.buildLabelChange({});

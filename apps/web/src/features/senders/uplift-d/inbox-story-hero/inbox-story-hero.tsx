@@ -31,6 +31,25 @@ import { tokens } from '@declutrmail/shared';
 
 const { color, font, radius, shadow, text, space } = tokens;
 
+/** Inline arrow glyph matching the Bloc CTA arrow weight. */
+function ArrowRight() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14M12 5l7 7-7 7" />
+    </svg>
+  );
+}
+
 export interface InboxStoryHeroProps {
   /**
    * Small uppercase eyebrow above the headline — e.g. "Your inbox this
@@ -228,24 +247,37 @@ export function InboxStoryHero({
           type="button"
           onClick={onCtaClick}
           style={{
-            background: color.primary,
+            background: `linear-gradient(180deg, ${color.primary}, ${color.primaryDeep})`,
             color: 'white',
-            padding: `${space[3]}px ${space[5]}px`,
+            padding: `${space[4]}px ${space[6]}px`,
             borderRadius: radius.md,
-            fontSize: text.md,
-            fontWeight: 500,
+            fontFamily: font.display,
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: '-0.005em',
             border: `1px solid ${color.primaryDeep}`,
-            boxShadow: '0 6px 16px rgba(0,107,95,0.25)',
+            boxShadow:
+              '0 1px 0 rgba(255,255,255,0.18) inset, 0 10px 24px -8px rgba(0,107,95,0.45), 0 2px 4px rgba(0,107,95,0.18)',
             whiteSpace: 'nowrap',
             display: 'inline-flex',
             alignItems: 'center',
-            gap: space[2],
+            gap: space[3],
             cursor: 'pointer',
-            transition: 'background 150ms',
+            transition: 'transform 120ms ease-out, box-shadow 120ms ease-out',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow =
+              '0 1px 0 rgba(255,255,255,0.22) inset, 0 14px 28px -10px rgba(0,107,95,0.55), 0 3px 6px rgba(0,107,95,0.22)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = '';
+            e.currentTarget.style.boxShadow =
+              '0 1px 0 rgba(255,255,255,0.18) inset, 0 10px 24px -8px rgba(0,107,95,0.45), 0 2px 4px rgba(0,107,95,0.18)';
           }}
         >
           {ctaLabel}
-          <span style={{ opacity: 0.7 }}>→</span>
+          <ArrowRight />
         </button>
       </div>
       <div

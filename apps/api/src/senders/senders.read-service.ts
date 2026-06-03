@@ -26,7 +26,20 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { and, asc, desc, eq, getTableName, gt, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableName,
+  gt,
+  gte,
+  ilike,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   mailMessages,
   senderPolicies,
@@ -34,6 +47,15 @@ import {
   senders,
   triageDecisions,
 } from '@declutrmail/db';
+import {
+  CONFIDENCE,
+  FREE_MAIL_DOMAINS,
+  PATTERNS,
+  SCORE,
+  TREND,
+  VOLUMES,
+  WINDOWS,
+} from '@declutrmail/shared/senders';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -47,6 +69,7 @@ import type {
   SenderListQueryMeta,
   SenderListRow,
   SenderListSort,
+  SenderSummary,
   TimeseriesPoint,
   VolumeTrendBucket,
   WeeklyHero,
@@ -77,6 +100,49 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
   read: 'desc',
   recommended: 'desc',
 };
+
+/**
+ * Build the server-side search predicate for the senders list (#145).
+ * Matches the query case-insensitively (substring) against the three
+ * metadata fields the list shows — display name, email, domain — so a
+ * search resolves across the WHOLE mailbox, not just the loaded page the
+ * FE used to filter client-side. D7-safe: metadata only.
+ *
+ * User input is treated literally — LIKE wildcards (`%` `_`) and the
+ * escape char (`\`) are escaped so a query like `50%` can't become a
+ * match-all. PG's default LIKE escape is backslash, so no ESCAPE clause
+ * is needed (and PGlite honors the same default in tests).
+ */
+function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
+  const pattern = buildSenderSearchPattern(q);
+  if (pattern === null) return null;
+  return (
+    or(
+      ilike(senders.displayName, pattern),
+      ilike(senders.email, pattern),
+      ilike(senders.domain, pattern),
+    ) ?? null
+  );
+}
+
+/**
+ * Shared escape + wrap step used by both `buildSenderSearchCondition`
+ * (Drizzle query-builder form, references `"senders"."col"`) and the
+ * raw-SQL aggregate in `getSenderSummary` (which uses a `senders s`
+ * alias). Returns the escaped `%term%` pattern, or `null` if the input
+ * is empty.
+ *
+ * PG's default LIKE escape char is backslash, so no ESCAPE clause is
+ * needed (PGlite honors the same default in tests). Centralising the
+ * escape here keeps the two call sites in lockstep — a future tweak
+ * (e.g. enabling underscore-as-wildcard) edits one helper, not two.
+ */
+function buildSenderSearchPattern(q: string | null | undefined): string | null {
+  const term = (q ?? '').trim();
+  if (term.length === 0) return null;
+  const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
+  return `%${escaped}%`;
+}
 
 /**
  * Service-internal cursor shape — keyset on `(sort_col, id)` per D202.
@@ -157,6 +223,12 @@ export class SendersReadService {
     /** Honored limit (already clamped by the controller). */
     limit: number;
     /**
+     * Server-side search (#145). Case-insensitive substring over display
+     * name / email / domain, mailbox-scoped, combined with the other
+     * filters + cursor. `null`/omitted = no search.
+     */
+    q?: string | null;
+    /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
      * controllers don't have to thread the clock through.
@@ -170,85 +242,88 @@ export class SendersReadService {
     }
     const direction: SenderListDirection = args.direction ?? DEFAULT_DIRECTION_BY_SORT[sort];
     const now = args.now ?? new Date();
-    const currentMonthIso = startOfMonthIso(now);
-    const priorWindowStartIso = startOfMonthIso(addMonthsUtc(now, -3));
 
-    // Correlated subquery — most-recent timeseries row per sender. We
-    // can't LATERAL-join with Drizzle's current builder cleanly, so
-    // two scalar subqueries keep the SQL portable across PGlite (test)
-    // and postgres-js (prod). Indexed by the timeseries PK
-    // `(mailbox_account_id, sender_key, year_month)`, so the
-    // `ORDER BY year_month DESC LIMIT 1` is a range-scan tail-read.
+    // ROLLING-WINDOW per-row stats (replaces the old per-sender-latest-
+    // year_month sums that summed across decades and inflated totals).
+    // Every per-row count below comes from `mail_messages` filtered by
+    // `internal_date >= now - N days` — same source the summary
+    // endpoint aggregates from, so the row's "47 in last 30d" agrees
+    // with the chip count.
     //
-    // CORRELATION QUOTE-TRAP. Drizzle's `sql` template emits BARE
-    // column names when a `Column` object is interpolated (e.g.
-    // `${senders.mailboxAccountId}` renders as `"mailbox_account_id"`,
-    // with no table qualifier). Inside this subquery PG's name
-    // resolution then binds BOTH sides of the predicate to the inner
-    // `sender_timeseries` scope, the WHERE collapses to a tautology,
-    // and every outer row gets the same constant timeseries row.
-    // Caught in PR #43 → see MISTAKES.md 2026-05-23. The fix is to
-    // qualify the outer-scope identifiers explicitly so the
-    // correlated reference survives template expansion. We use
-    // `getTableName(senders)` + `sql.identifier(...)` rather than a
-    // hardcoded `'senders.mailbox_account_id'` string so a future
-    // schema rename surfaces as a compile-time miss in this helper
-    // instead of a silent re-introduction of the tautology bug.
+    // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
+    // refs use `sql.identifier(getTableName(senders))` so a Drizzle
+    // template can't degenerate to a tautology that silently joins
+    // every row to the same inner result.
     const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
     const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
-    const latestVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
-    const latestReadCountSql = sql<number | null>`(
-      SELECT ${senderTimeseries.readCount}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-      ORDER BY ${senderTimeseries.yearMonth} DESC
-      LIMIT 1
-    )`;
 
-    // Trend inputs — pulled in their own indexed subqueries so the
-    // bucket computation happens in TypeScript (`computeTrendBucket`)
-    // rather than in SQL. Easier to test, easier to extend with new
-    // buckets later, and keeps the SQL legible. Each subquery hits
-    // the same `(mailbox_account_id, sender_key, year_month)` PK as
-    // the latest-month reads above, so the extra cost is one indexed
-    // tail-read per subquery per row.
-    const currentMonthVolumeSql = sql<number | null>`(
-      SELECT ${senderTimeseries.volume}
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} = ${currentMonthIso}
-      LIMIT 1
-    )`;
-    // Prior-window average — the 3 complete calendar months immediately
-    // before the current one. Cast AVG to float because PG returns it
-    // as `numeric` which postgres-js + PGlite hand back as a string;
-    // float keeps the TS side type-clean and the rounding harmless
-    // (the bucket thresholds are 1.3× / 0.7×, not precision-sensitive).
-    const priorAvgVolumeSql = sql<number | null>`(
-      SELECT AVG(${senderTimeseries.volume})::float
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
-        AND ${senderTimeseries.yearMonth} >= ${priorWindowStartIso}
-        AND ${senderTimeseries.yearMonth} < ${currentMonthIso}
-    )`;
-    // History depth — drives the `new` bucket (fewer than 2 complete
-    // months of data). Cast to int for the same string-vs-number
-    // reason as the AVG.
-    const historyMonthCountSql = sql<number>`(
+    // `last30dMsgs` — count of inbound msgs in last 30d. Drives the
+    // row's "47 in last 30d" label + the trend bucket "recent" half.
+    //
+    // sql<number | string> reflects the runtime: postgres-js returns
+    // scalar subquery columns as strings even with `::int` (the cast
+    // affects the wire encoding, not the driver decoding). Callers MUST
+    // coerce at the map site (see `Number(row.last30dMsgs)` below).
+    const last30dMsgsSql = sql<number | string>`(
       SELECT COUNT(*)::int
-      FROM ${senderTimeseries}
-      WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
-        AND ${senderTimeseries.senderKey} = ${outerSenderKey}
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`;
+    // `last30dReadCount` — same window, only msgs the user has read
+    // (Gmail removed the UNREAD label). Drives the row's read-rate.
+    // Same string-coercion caveat as `last30dMsgs` above.
+    const last30dReadCountSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+        AND ${mailMessages.isUnread} = false
+    )`;
+    // `baselineMsgs` — count in the prior 30-90 day window (60-day
+    // baseline span). Used by the trend bucket: recent / (baseline / 2)
+    // ratio compared against UP/DOWN multipliers. The window size is
+    // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
+    // in TS so the "recent vs baseline" rate comparison is fair.
+    // Same string-coercion caveat as `last30dMsgs` above.
+    const baselineMsgsSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`;
+    // `sparkline` — 12 weekly buckets ending at the current week (oldest
+    // bucket is index 0 in the returned array). Bucket size = 7 days;
+    // window = 84 days. Drives the per-row mini-sparkline in the grid
+    // SenderCard so each card carries a real volume shape, not a flat
+    // line. Uses a CTE over `mail_messages` grouped by integer week
+    // offset, LEFT JOIN'd against `generate_series(0,11)` so missing
+    // weeks fill with 0 (sparkline length is always 12).
+    const sparklineSql = sql<number[]>`(
+      WITH weekly AS (
+        SELECT
+          FLOOR(EXTRACT(EPOCH FROM (now() - ${mailMessages.internalDate})) / 604800)::int AS wk,
+          COUNT(*)::int AS cnt
+        FROM ${mailMessages}
+        WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+          AND ${mailMessages.senderKey} = ${outerSenderKey}
+          AND ${mailMessages.internalDate} >= now() - interval '84 days'
+          AND ${mailMessages.isOutbound} = false
+        GROUP BY 1
+      )
+      SELECT COALESCE(
+        array_agg(COALESCE(w.cnt, 0) ORDER BY g.idx DESC),
+        ARRAY[]::int[]
+      )
+      FROM generate_series(0, 11) AS g(idx)
+      LEFT JOIN weekly w ON w.wk = g.idx
     )`;
 
     // Last-reviewed inputs — three scalar subqueries against
@@ -257,10 +332,18 @@ export class SendersReadService {
     // a unique index, but the ORDER BY + LIMIT 1 keeps us forward-
     // compatible with the planned `triage_decision_history` table
     // (referenced in the triage-decisions schema header). Per
-    // ADR-0008 §3 the senders read service is allowed to touch
-    // `triage_decisions` directly until the triage feature outgrows
-    // its single-table footprint.
-    const lastDecisionAtSql = sql<Date | null>`(
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker
+    // to find them all when ratifying the ADR). The current schema
+    // allows it until the triage feature outgrows its single-table
+    // footprint.
+    // sql<Date | string | null> reflects driver reality: postgres-js
+    // returns scalar subquery `timestamptz` columns as `Date` under
+    // some configs and as ISO strings under others (PGlite returns
+    // `Date`). `buildLastReview` accepts both shapes — keep that
+    // contract explicit on the template type so the next reader
+    // doesn't write `.toISOString()` on what may already be a string.
+    const lastDecisionAtSql = sql<Date | string | null>`(
       SELECT ${triageDecisions.producedAt}
       FROM ${triageDecisions}
       WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
@@ -316,6 +399,10 @@ export class SendersReadService {
     if (cursorPredicate) {
       conditions.push(cursorPredicate);
     }
+    const searchCondition = buildSenderSearchCondition(args.q);
+    if (searchCondition) {
+      conditions.push(searchCondition);
+    }
 
     const rows = await this.db
       .select({
@@ -328,11 +415,10 @@ export class SendersReadService {
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
         unsubscribeMethod: senders.unsubscribeMethod,
-        latestVolume: latestVolumeSql,
-        latestReadCount: latestReadCountSql,
-        currentMonthVolume: currentMonthVolumeSql,
-        priorAvgVolume: priorAvgVolumeSql,
-        historyMonthCount: historyMonthCountSql,
+        last30dMsgs: last30dMsgsSql,
+        last30dReadCount: last30dReadCountSql,
+        baselineMsgs: baselineMsgsSql,
+        sparkline: sparklineSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
         lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
@@ -364,41 +450,61 @@ export class SendersReadService {
       // `hasMore` without a count query.
       .limit(limit + 1);
 
-    return rows.map((row) => ({
-      id: row.id,
-      displayName: row.displayName,
-      email: row.email,
-      domain: row.domain,
-      gmailCategory: row.gmailCategory,
-      firstSeenAt: row.firstSeenAt.toISOString(),
-      lastSeenAt: row.lastSeenAt.toISOString(),
-      // `total_received` is `bigint` in the column but Drizzle's
-      // `mode: 'number'` coerces to a JS number at the boundary. We
-      // assert the runtime type so a future driver swap that hands
-      // back a string surfaces here as a clear contract violation
-      // rather than a misrendered "0" downstream.
-      totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-      monthlyVolume: row.latestVolume,
-      readRate: computeReadRate(row.latestVolume, row.latestReadCount),
-      volumeTrend: computeTrendBucket(
-        row.currentMonthVolume,
-        row.priorAvgVolume,
-        row.historyMonthCount,
-      ),
-      unsubscribeMethod: row.unsubscribeMethod,
-      lastReview: buildLastReview(
-        row.lastDecisionAt,
-        row.lastDecisionVerdict,
-        row.lastDecisionGeneratedBy,
-        row.lastDecisionConfidence,
-      ),
-      protectionFlags: {
-        isVip: row.isVip ?? false,
-        isProtected: row.isProtected ?? false,
-        protectionReason: row.protectionReason ?? null,
-        protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
-      },
-    }));
+    return rows.map((row) => {
+      // Scalar `sql<number | string>` subqueries (last30dMsgs,
+      // last30dReadCount, baselineMsgs) come back from postgres-js +
+      // PGlite as STRINGS even with `::int` casts in the SQL — the
+      // cast affects the wire encoding, not the driver decoding.
+      // Coerce at the map boundary via `ensureSafeIntegerNumber` so
+      // every downstream consumer (`computeReadRate`,
+      // `computeRollingTrendBucket`, FE wire) sees a real `number`.
+      const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
+      const last30dReadCount = ensureSafeIntegerNumber(
+        row.last30dReadCount,
+        'senders.last30dReadCount',
+      );
+      const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
+      return {
+        id: row.id,
+        displayName: row.displayName,
+        email: row.email,
+        domain: row.domain,
+        gmailCategory: row.gmailCategory,
+        firstSeenAt: row.firstSeenAt.toISOString(),
+        lastSeenAt: row.lastSeenAt.toISOString(),
+        // `total_received` is `bigint` in the column but Drizzle's
+        // `mode: 'number'` coerces to a JS number at the boundary. The
+        // assertion makes a violation explicit at the wire boundary.
+        totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+        // `monthlyVolume` wire field now carries last-30-days msg count
+        // (rolling). Replaces the per-sender-latest-year_month sum that
+        // varied across decades. FE renders as "47 in last 30d".
+        monthlyVolume: last30dMsgs,
+        readRate: computeReadRate(last30dMsgs, last30dReadCount),
+        sparkline: row.sparkline ?? null,
+        volumeTrend: computeRollingTrendBucket({
+          last30dMsgs,
+          baselineMsgs,
+          firstSeenAt: row.firstSeenAt,
+          lastSeenAt: row.lastSeenAt,
+          totalReceived: row.totalReceived,
+          now,
+        }),
+        unsubscribeMethod: row.unsubscribeMethod,
+        lastReview: buildLastReview(
+          row.lastDecisionAt,
+          row.lastDecisionVerdict,
+          row.lastDecisionGeneratedBy,
+          row.lastDecisionConfidence,
+        ),
+        protectionFlags: {
+          isVip: row.isVip ?? false,
+          isProtected: row.isProtected ?? false,
+          protectionReason: row.protectionReason ?? null,
+          protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
+        },
+      };
+    });
   }
 
   /**
@@ -424,6 +530,10 @@ export class SendersReadService {
     mailboxAccountId: string;
     category: GmailCategory | null;
     isProtected?: boolean | null;
+    /** Search term (#145) — `totalMatching` must reflect the same filter
+     *  the list scan uses, so "All N" counts the search hits, not the
+     *  whole mailbox. */
+    q?: string | null;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -433,6 +543,10 @@ export class SendersReadService {
     }
     if (isProtected === true) {
       totalMatchingConditions.push(eq(senderPolicies.isProtected, true));
+    }
+    const searchCondition = buildSenderSearchCondition(args.q);
+    if (searchCondition) {
+      totalMatchingConditions.push(searchCondition);
     }
 
     // `totalMatching` mirrors the list query's filter chain. Joins the
@@ -468,6 +582,263 @@ export class SendersReadService {
       totalMatching,
       globalMaxTotal,
       asOf: (args as { now?: Date }).now?.toISOString() ?? new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Mailbox-wide aggregates for `GET /api/senders/summary` (#145 —
+   * "real-data counts" mandate, rewrite for rolling-window honesty).
+   *
+   * REWRITE PRINCIPLES:
+   *   1. ROLLING WINDOWS — every "per month" sum uses `now - 30 days`
+   *      (and 60/90/180 day cutoffs) rather than per-sender latest
+   *      year_month. Eliminates the union-of-disjoint-time-windows
+   *      bug where a sender's Aug-2025 volume contributed to "this
+   *      week".
+   *   2. EIGHT MUTUALLY-EXCLUSIVE BUCKETS in priority order — a sender
+   *      belongs to exactly one. Priority enumerated in
+   *      `BUCKET_PRIORITY` (shared module); the SQL CASE here uses
+   *      the same ordering so FE chip counts agree with rendered rows
+   *      (CLAUDE.md §8 row/chip/KPI invariant).
+   *   3. CONFIG-DRIVEN — every threshold (window days, confidence
+   *      gate, score weights, free-mail domain list, regex patterns)
+   *      comes from `@declutrmail/shared/senders`. FE bucketing
+   *      reads the SAME constants. Edit one file → both sides update.
+   *
+   * The eight buckets (priority order):
+   *   1. one_time     — lifetime ≤ ONE_TIME_MAX_TOTAL (noise floor,
+   *                     hidden by default in the FE)
+   *   2. protect      — explicit user marking (is_protected OR is_vip)
+   *   3. people       — additive score ≥ PERSON_SCORE_THRESHOLD
+   *                     (replied/free-mail/own-domain minus bulk signals)
+   *   4. needs_review — engine recommends cleanup/later at conf ≥ gate
+   *                     AND active in last 30d (don't surface stale recs)
+   *   5. quiet        — silent QUIET_DAYS-DORMANT_DAYS, recurring
+   *   6. dormant      — silent ≥ DORMANT_DAYS, recurring
+   *   7. bulk         — any bulk signal (unsub header / role LP /
+   *                     bulk subdomain) but no engine recommendation
+   *   8. other        — uncategorised, needs manual look
+   *
+   * PERSON SCORE — additive weights from SCORE constants. The
+   * "user has replied" check joins `mail_messages` filtered by
+   * `is_outbound = true` and `recipient_emails @> ARRAY[lower(email)]`
+   * via a `replied` CTE materialised once per request.
+   *
+   * AGGREGATES — `totalSenders`, `activeSenders`, `last30dVolume`,
+   * `noiseReducible`, `protected`, `needsReview`, and `byBucket{...}`
+   * all derive from the same CTE in one SQL round-trip.
+   *
+   * Tenant isolation: every join equates `mailbox_account_id` +
+   * `sender_key` (or `email`) to the outer `s` alias. The MISTAKES.md
+   * 2026-05-23 tautology trap is structurally impossible inside raw
+   * SQL since the column references are alias-qualified.
+   *
+   * `?q=` honors the same search predicate as the list endpoint so
+   * chip/KPI/hero narrow in lockstep with visible rows.
+   */
+  async getSenderSummary(args: {
+    mailboxAccountId: string;
+    q?: string | null;
+    /** When `false`, exclude one-time senders (lifetime ≤ ONE_TIME_MAX_TOTAL)
+     *  from EVERY aggregate so the FE "show one-time" toggle pivots the
+     *  whole summary in lockstep with the list. Default `true` — every
+     *  bucket count includes the full population. */
+    includeOneTime?: boolean;
+    /** Anchor for `asOf` — injectable for tests; defaults to `new Date()`. */
+    now?: Date;
+  }): Promise<SenderSummary> {
+    const { mailboxAccountId } = args;
+    const includeOneTime = args.includeOneTime ?? true;
+    // Search predicate against the outer `s` alias (raw SQL — see the
+    // alias-scope note above `buildSenderSearchPattern`).
+    const pattern = buildSenderSearchPattern(args.q);
+    const searchClause =
+      pattern === null
+        ? sql``
+        : sql` AND (s.display_name ILIKE ${pattern} OR s.email ILIKE ${pattern} OR s.domain ILIKE ${pattern})`;
+    // One-time exclusion clause — applied at the per_sender CTE so it
+    // narrows every downstream aggregate uniformly.
+    const oneTimeClause = includeOneTime
+      ? sql``
+      : sql` AND s.total_received > ${VOLUMES.ONE_TIME_MAX_TOTAL}`;
+
+    // Free-mail domain list interpolated as a PG array — `ANY(ARRAY[...])`
+    // gives the same index hit as `IN (...)` with one bound parameter list.
+    const freeMailArray = sql`ARRAY[${sql.join(
+      FREE_MAIL_DOMAINS.map((d) => sql`${d}`),
+      sql`, `,
+    )}]::text[]`;
+
+    type SummaryRow = {
+      total_senders: number | string;
+      active_senders: number | string;
+      last30d_volume: number | string;
+      cleanup_recent_volume: number | string;
+      one_time_count: number | string;
+      protect_count: number | string;
+      people_count: number | string;
+      needs_review_count: number | string;
+      quiet_count: number | string;
+      dormant_count: number | string;
+      bulk_count: number | string;
+      other_count: number | string;
+    };
+
+    const result = await this.db.execute<SummaryRow>(sql`
+      WITH
+      -- CTE 1: every distinct email the user has sent to (outbound).
+      -- Materialised once per request so the per-sender membership check
+      -- below is an O(1) hash lookup, not an N×M scan.
+      --
+      -- PRIVACY (D7/D228) — DO NOT project the email column to the wire.
+      -- This set IS the user's personal outbound address book (a sensitive
+      -- derived artifact) and is allowed only because the outer SELECT
+      -- projects ONLY integer aggregates (it never leaves the SQL boundary).
+      -- Any future caller that JOINs this CTE into a wire projection — or
+      -- adds a debug log of the replied set mid-debugging — must instead
+      -- store only the BOOLEAN "did this sender appear in the replied set"
+      -- predicate. A guard test on GET /api/senders/summary asserts no
+      -- email-shaped string ever appears in the response body.
+      replied AS (
+        SELECT DISTINCT lower(recip) AS email
+        FROM ${mailMessages}, unnest(recipient_emails) AS recip
+        WHERE mailbox_account_id = ${mailboxAccountId}
+          AND is_outbound = true
+          AND recip IS NOT NULL
+      ),
+      -- CTE 2: per-sender msg count over the rolling 30-day window.
+      -- Index hit on (mailbox_account_id, internal_date) — cheap.
+      last30 AS (
+        SELECT sender_key, COUNT(*) AS msgs30
+        FROM ${mailMessages}
+        WHERE mailbox_account_id = ${mailboxAccountId}
+          AND internal_date >= now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval
+          AND NOT is_outbound
+        GROUP BY sender_key
+      ),
+      -- CTE 3: enrich every in-scope sender with signals + score +
+      -- bucket. Single pass — every downstream aggregate scans this.
+      bucketed AS (
+        SELECT
+          s.sender_key,
+          s.last_seen_at,
+          s.total_received,
+          COALESCE(l30.msgs30, 0)                                    AS msgs30,
+          CASE
+            -- Priority 1: one-time (lifetime ≤ N msgs)
+            WHEN s.total_received <= ${VOLUMES.ONE_TIME_MAX_TOTAL} THEN 'one_time'
+            -- Priority 2: explicit protect
+            WHEN COALESCE(sp.is_protected, false) OR COALESCE(sp.is_vip, false) THEN 'protect'
+            -- Priority 3: people score
+            WHEN (
+                  (CASE WHEN lower(s.email) IN (SELECT email FROM replied) THEN ${SCORE.REPLIED_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.domain = ANY(${freeMailArray}) THEN ${SCORE.FREE_MAIL_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.unsubscribe_method IN ('one_click','mailto') THEN ${SCORE.HAS_UNSUB_HEADER_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.email ~* ${PATTERNS.ROLE_PREFIX_LP_REGEX} THEN ${SCORE.ROLE_PREFIX_WEIGHT} ELSE 0 END)
+                + (CASE WHEN s.email ~* ${PATTERNS.BULK_SUBDOMAIN_REGEX} THEN ${SCORE.BULK_SUBDOMAIN_WEIGHT} ELSE 0 END)
+              ) >= ${SCORE.PERSON_SCORE_THRESHOLD} THEN 'people'
+            -- Priority 4: engine recommendation, gated by confidence + recent activity
+            WHEN ltd.verdict IN ('unsubscribe','archive')
+              AND ltd.confidence >= ${CONFIDENCE.NEEDS_REVIEW_GATE}
+              AND COALESCE(l30.msgs30, 0) >= ${VOLUMES.NEEDS_REVIEW_MIN_RECENT_MSGS}
+              THEN 'needs_review'
+            -- Priority 5: dormant before quiet (the longer-silent wins)
+            WHEN s.last_seen_at < now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval
+              AND s.total_received >= ${VOLUMES.RECURRING_MIN_TOTAL} THEN 'dormant'
+            WHEN s.last_seen_at < now() - (${WINDOWS.QUIET_DAYS} || ' days')::interval
+              AND s.total_received >= ${VOLUMES.RECURRING_MIN_TOTAL} THEN 'quiet'
+            -- Priority 7: bulk signals (any one is enough)
+            WHEN s.unsubscribe_method IN ('one_click','mailto')
+              OR s.email ~* ${PATTERNS.ROLE_PREFIX_LP_REGEX}
+              OR s.email ~* ${PATTERNS.BULK_SUBDOMAIN_REGEX}
+              THEN 'bulk'
+            ELSE 'other'
+          END AS bucket
+        FROM ${senders} s
+        LEFT JOIN ${senderPolicies} sp
+          ON sp.mailbox_account_id = s.mailbox_account_id
+         AND sp.sender_key = s.sender_key
+        -- ADR-0008 §3 ratification: direct triage_decisions read in
+        -- the senders read service (one of several sites — grep this
+        -- marker to find them all when ratifying the ADR).
+        LEFT JOIN LATERAL (
+          SELECT verdict, confidence
+          FROM ${triageDecisions}
+          WHERE mailbox_account_id = s.mailbox_account_id
+            AND sender_key = s.sender_key
+          ORDER BY produced_at DESC
+          LIMIT 1
+        ) ltd ON true
+        LEFT JOIN last30 l30 ON l30.sender_key = s.sender_key
+        WHERE s.mailbox_account_id = ${mailboxAccountId}${oneTimeClause}${searchClause}
+      )
+      SELECT
+        COUNT(*)::bigint                                                              AS total_senders,
+        COUNT(*) FILTER (WHERE msgs30 >= 1)::bigint                                   AS active_senders,
+        COALESCE(SUM(msgs30), 0)::bigint                                              AS last30d_volume,
+        COALESCE(SUM(msgs30) FILTER (WHERE bucket = 'needs_review'), 0)::bigint       AS cleanup_recent_volume,
+        COUNT(*) FILTER (WHERE bucket = 'one_time')::bigint                           AS one_time_count,
+        COUNT(*) FILTER (WHERE bucket = 'protect')::bigint                            AS protect_count,
+        COUNT(*) FILTER (WHERE bucket = 'people')::bigint                             AS people_count,
+        COUNT(*) FILTER (WHERE bucket = 'needs_review')::bigint                       AS needs_review_count,
+        COUNT(*) FILTER (WHERE bucket = 'quiet')::bigint                              AS quiet_count,
+        COUNT(*) FILTER (WHERE bucket = 'dormant')::bigint                            AS dormant_count,
+        COUNT(*) FILTER (WHERE bucket = 'bulk')::bigint                               AS bulk_count,
+        COUNT(*) FILTER (WHERE bucket = 'other')::bigint                              AS other_count
+      FROM bucketed
+    `);
+
+    // postgres-js + PGlite both wrap `execute()` in a `{ rows }` envelope.
+    const rows =
+      ((result as { rows?: SummaryRow[] }).rows ?? (result as unknown as SummaryRow[])) || [];
+    const row = rows[0];
+    if (!row) {
+      throw new InternalServerErrorException('Senders summary returned no aggregate row.');
+    }
+
+    const totalSenders = ensureSafeIntegerNumber(row.total_senders, 'totalSenders');
+    const activeSenders = ensureSafeIntegerNumber(row.active_senders, 'activeSenders');
+    const last30dVolume = ensureSafeIntegerNumber(row.last30d_volume, 'last30dVolume');
+    const cleanupRecentVolume = ensureSafeIntegerNumber(
+      row.cleanup_recent_volume,
+      'cleanupRecentVolume',
+    );
+    const oneTimeCount = ensureSafeIntegerNumber(row.one_time_count, 'byBucket.one_time');
+    const protectCount = ensureSafeIntegerNumber(row.protect_count, 'byBucket.protect');
+    const peopleCount = ensureSafeIntegerNumber(row.people_count, 'byBucket.people');
+    const needsReviewCount = ensureSafeIntegerNumber(
+      row.needs_review_count,
+      'byBucket.needs_review',
+    );
+    const quietCount = ensureSafeIntegerNumber(row.quiet_count, 'byBucket.quiet');
+    const dormantCount = ensureSafeIntegerNumber(row.dormant_count, 'byBucket.dormant');
+    const bulkCount = ensureSafeIntegerNumber(row.bulk_count, 'byBucket.bulk');
+    const otherCount = ensureSafeIntegerNumber(row.other_count, 'byBucket.other');
+
+    // `noiseReducible` — share of last-30d volume coming from the
+    // `needs_review` bucket (high-confidence engine recommendations the
+    // user could act on). 0 when there's no recent volume to reduce.
+    const noiseReducible =
+      last30dVolume === 0 ? 0 : Math.round((cleanupRecentVolume / last30dVolume) * 100);
+
+    return {
+      totalSenders,
+      activeSenders,
+      last30dVolume,
+      noiseReducible,
+      protected: protectCount,
+      needsReview: needsReviewCount,
+      byBucket: {
+        one_time: oneTimeCount,
+        protect: protectCount,
+        people: peopleCount,
+        needs_review: needsReviewCount,
+        quiet: quietCount,
+        dormant: dormantCount,
+        bulk: bulkCount,
+        other: otherCount,
+      },
+      asOf: (args.now ?? new Date()).toISOString(),
     };
   }
 
@@ -537,7 +908,16 @@ export class SendersReadService {
       WHERE ${senderTimeseries.mailboxAccountId} = ${outerMailboxId}
         AND ${senderTimeseries.senderKey} = ${outerSenderKey}
     )`;
-    const lastDecisionAtSql = sql<Date | null>`(
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker to
+    // find them all when ratifying the ADR).
+    // sql<Date | string | null> reflects driver reality: postgres-js
+    // returns scalar subquery `timestamptz` columns as `Date` under
+    // some configs and as ISO strings under others (PGlite returns
+    // `Date`). `buildLastReview` accepts both shapes — keep that
+    // contract explicit on the template type so the next reader
+    // doesn't write `.toISOString()` on what may already be a string.
+    const lastDecisionAtSql = sql<Date | string | null>`(
       SELECT ${triageDecisions.producedAt}
       FROM ${triageDecisions}
       WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
@@ -631,6 +1011,9 @@ export class SendersReadService {
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
+      // Detail endpoint still rides the legacy timeseries shape; sparkline
+      // not yet wired on this path. Null so the contract holds.
+      sparkline: null,
       volumeTrend: computeTrendBucket(
         row.currentMonthVolume,
         row.priorAvgVolume,
@@ -796,6 +1179,9 @@ export class SendersReadService {
       return null;
     }
 
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker
+    // to find them all when ratifying the ADR).
     const conditions = [
       eq(triageDecisions.mailboxAccountId, mailboxAccountId),
       eq(triageDecisions.senderKey, senderKey),
@@ -946,6 +1332,9 @@ export class SendersReadService {
     const sixMonthsAgoIso = sixMonthsAgo.toISOString();
     const nowIso = now.toISOString();
 
+    // ADR-0008 §3 ratification: direct triage_decisions read in the
+    // senders read service (one of several sites — grep this marker to
+    // find them all when ratifying the ADR).
     const [highConfidenceRes, spikeRes, quietRes] = await Promise.all([
       // High-confidence slice (D48 §1): latest triage decision says
       // archive/unsubscribe with confidence > 0.85, ranked by latest
@@ -966,7 +1355,7 @@ export class SendersReadService {
           ORDER BY produced_at DESC
           LIMIT 1
         ) latest_td ON latest_td.verdict IN ('archive', 'unsubscribe')
-                  AND latest_td.confidence > 0.85
+                  AND latest_td.confidence > ${CONFIDENCE.WEEKLY_HERO_HIGH_GATE}
         LEFT JOIN LATERAL (
           SELECT volume, read_count
           FROM ${senderTimeseries}
@@ -1015,7 +1404,7 @@ export class SendersReadService {
           LIMIT 1
         ) latest_ts ON true
         WHERE s.mailbox_account_id = ${mailboxAccountId}
-          AND current_ts.volume >= 3 * prior_ts.avg_vol
+          AND current_ts.volume >= ${TREND.WEEKLY_HERO_SPIKE_RATIO} * prior_ts.avg_vol
         ORDER BY (current_ts.volume::float / prior_ts.avg_vol) DESC, s.sender_key
         LIMIT ${SLICE_MAX}
       `),
@@ -1043,7 +1432,7 @@ export class SendersReadService {
         WHERE s.mailbox_account_id = ${mailboxAccountId}
           AND s.last_seen_at < ${longQuietCutoffIso}
           AND s.first_seen_at < ${sixMonthsAgoIso}
-          AND (latest_ts.read_count::float / latest_ts.volume) < 0.30
+          AND (latest_ts.read_count::float / latest_ts.volume) < ${TREND.WEEKLY_HERO_QUIET_READ_RATE_MAX}
         ORDER BY (latest_ts.volume::float
                    * (EXTRACT(EPOCH FROM (${nowIso}::timestamptz - s.first_seen_at)) / 86400 / 30)) DESC,
                  s.sender_key
@@ -1092,10 +1481,27 @@ export class SendersReadService {
     // Capture per-slice true totalCount from the window function. The
     // value is identical across every row of a slice; reading the
     // first row is sufficient. Empty slice ⇒ 0.
+    // `total_count` is a Postgres `bigint` (via `COUNT(*) OVER ()`) which
+    // postgres-js delivers as a string. Route through
+    // `ensureSafeIntegerNumber` (same guard the summary path uses) so a
+    // value past `Number.MAX_SAFE_INTEGER` throws a clear contract
+    // violation instead of silently coercing to a lossy float.
     const totalCounts = {
-      high_confidence: highConfidence.length > 0 ? Number(highConfidence[0]!.total_count ?? 0) : 0,
-      spike: spike.length > 0 ? Number(spike[0]!.total_count ?? 0) : 0,
-      quiet: quiet.length > 0 ? Number(quiet[0]!.total_count ?? 0) : 0,
+      high_confidence:
+        highConfidence.length > 0
+          ? ensureSafeIntegerNumber(
+              highConfidence[0]!.total_count ?? 0,
+              'weeklyHero.high_confidence.totalCount',
+            )
+          : 0,
+      spike:
+        spike.length > 0
+          ? ensureSafeIntegerNumber(spike[0]!.total_count ?? 0, 'weeklyHero.spike.totalCount')
+          : 0,
+      quiet:
+        quiet.length > 0
+          ? ensureSafeIntegerNumber(quiet[0]!.total_count ?? 0, 'weeklyHero.quiet.totalCount')
+          : 0,
     } as const;
 
     const sliceMembers = {
@@ -1301,24 +1707,9 @@ function mondayOfWeekIso(d: Date): string {
 
 /**
  * Pure helper — map the raw timeseries inputs to one of the bucketed
- * trend labels (`VolumeTrendBucket`) the FE renders. Centralising the
- * thresholds here keeps the SQL clean and gives the bucket logic a
- * single unit-tested home.
- *
- * Bucket order matters — the early returns encode the precedence:
- *
- *   1. No history at all                 → null   ("—" on FE)
- *   2. < 2 months of history             → 'new'
- *   3. Prior average is zero (gap)       → 'up' if current > 0 else null
- *   4. Current is zero, prior > 0        → 'dormant'
- *   5. current ≥ prior × 1.3             → 'up'
- *   6. current ≤ prior × 0.7             → 'down'
- *   7. otherwise                         → 'steady'
- *
- * The 1.3× / 0.7× thresholds are placeholders pending ratification
- * against real mailbox variance (flagged in MISTAKES.md / brief).
- * They are deliberately centralised so a single edit re-buckets every
- * surface.
+ * trend labels (`VolumeTrendBucket`) the FE renders. LEGACY — used by
+ * `getSenderDetail` until its read path migrates to rolling windows.
+ * New code should use `computeRollingTrendBucket` below.
  */
 function computeTrendBucket(
   currentVolume: number | null,
@@ -1335,6 +1726,77 @@ function computeTrendBucket(
   if (current === 0) return 'dormant';
   if (current >= prior * 1.3) return 'up';
   if (current <= prior * 0.7) return 'down';
+  return 'steady';
+}
+
+/**
+ * Pure helper — rolling-window trend bucket (replaces calendar-month
+ * `computeTrendBucket`). Drives the per-row trend chip.
+ *
+ * Inputs come from per-request `mail_messages` aggregates so the
+ * bucket reflects what's actually in the user's inbox right now, NOT
+ * what the `sender_timeseries` worker had rolled up at last run.
+ * Eliminates the "mass-Dormant on day 1 of new month" bug (the
+ * timeseries rollup hadn't run yet → currentVolume looked zero for
+ * everyone) and the "11y-old 1-shot sender = 'new'" bug (history
+ * count rule didn't gate on recency).
+ *
+ * Priority order (first match wins):
+ *
+ *   1. `new` — `first_seen_at >= now - NEW_DAYS`. Sender just
+ *      appeared in the user's life regardless of msg count.
+ *   2. `dormant` — `last_seen_at < now - DORMANT_DAYS` AND recurring
+ *      (`total_received >= RECURRING_MIN_TOTAL`). True silence.
+ *   3. `quiet` — `last_seen_at < now - QUIET_DAYS` AND recurring.
+ *      Trailing off — not silent yet but slowing.
+ *   4. `up` / `down` / `steady` — rate comparison. recent rate per
+ *      day = `last30dMsgs / VOLUME_DAYS`; baseline rate per day =
+ *      `baselineMsgs / (TREND_BASELINE_END - TREND_BASELINE_START)`.
+ *      Normalising both to per-day rates lets us compare 30d vs 60d
+ *      windows fairly.
+ *      - up      : recent ≥ TREND.UP_MULTIPLIER × baseline
+ *      - down    : recent ≤ TREND.DOWN_MULTIPLIER × baseline
+ *      - steady  : in-between
+ *
+ *      A sender with zero baseline AND positive recent → `up` (new
+ *      activity from an otherwise-quiet sender). Zero recent AND
+ *      positive baseline doesn't trigger here — the `dormant`/`quiet`
+ *      rules above catch it via `last_seen_at`.
+ *   5. `null` — one-shot, ancient, nothing to show.
+ */
+function computeRollingTrendBucket(args: {
+  last30dMsgs: number;
+  baselineMsgs: number;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  totalReceived: number;
+  now: Date;
+}): VolumeTrendBucket | null {
+  const { last30dMsgs, baselineMsgs, firstSeenAt, lastSeenAt, totalReceived, now } = args;
+  const nowMs = now.getTime();
+  const ageDays = (ms: number) => (nowMs - ms) / 86_400_000;
+
+  // 1. New — first seen recently. Wins over everything.
+  if (ageDays(firstSeenAt.getTime()) <= WINDOWS.NEW_DAYS) return 'new';
+
+  // 2/3. Dormant / Quiet — silent for long enough AND recurring.
+  if (totalReceived >= VOLUMES.RECURRING_MIN_TOTAL) {
+    const silentFor = ageDays(lastSeenAt.getTime());
+    if (silentFor >= WINDOWS.DORMANT_DAYS) return 'dormant';
+    if (silentFor >= WINDOWS.QUIET_DAYS) return 'quiet';
+  }
+
+  // 4. Velocity buckets — per-day rate comparison.
+  const recentRate = last30dMsgs / WINDOWS.TREND_RECENT_DAYS;
+  const baselineSpanDays = WINDOWS.TREND_BASELINE_END_DAYS - WINDOWS.TREND_BASELINE_START_DAYS;
+  const baselineRate = baselineMsgs / baselineSpanDays;
+
+  if (baselineRate === 0) {
+    return recentRate > 0 ? 'up' : null;
+  }
+  if (recentRate >= baselineRate * TREND.UP_MULTIPLIER) return 'up';
+  if (recentRate <= baselineRate * TREND.DOWN_MULTIPLIER) return 'down';
+  if (recentRate === 0 && baselineRate === 0) return null;
   return 'steady';
 }
 

@@ -2,13 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Avatar, Button, EmptyState, tokens, toast } from '@declutrmail/shared';
-import {
-  historicCount,
-  type ActionRequest,
-  type ActionVerb,
-  type Sender,
-  VERB_PAST,
-} from '../data';
+import { type ActionRequest, type ActionVerb, type Sender, VERB_PAST } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
@@ -154,13 +148,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const { sender, recommendation, recentMessages, stats, history } = detail;
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
-      const historicTotal =
-        verb === 'Archive' ||
-        ((verb === 'Unsubscribe' || verb === 'Later') && opts?.archiveHistoric)
-          ? senders.reduce((sum, s) => sum + historicCount(s), 0)
-          : 0;
+      // Tracer path — fake receipt until this surface's verb BE lands. No
+      // fabricated email count (the former `monthly × 12`); the true number
+      // comes from the worker once the verb is wired.
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         verb === 'Unsubscribe' ? 'warn' : 'success',
@@ -170,7 +162,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           id: `r${++receiptSeq}`,
           verb,
           count: senders.length,
-          historicTotal,
+          historicTotal: 0,
           timeLeft: '6d 23h',
         });
       }

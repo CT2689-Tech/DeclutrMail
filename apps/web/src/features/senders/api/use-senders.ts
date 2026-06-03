@@ -17,7 +17,7 @@
  * time, and refetching on every action would create flicker.
  */
 
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import {
   fetchSenders,
   type GmailCategory,
@@ -46,6 +46,12 @@ export interface UseSendersOptions {
   /** Sort direction. Server picks a sane default per sort if omitted. */
   direction?: SenderListDirection | undefined;
   /**
+   * Server-side search (#145). Case-insensitive substring over name /
+   * email / domain, mailbox-wide. Pass the (debounced) search term;
+   * it's part of the cache key so a new search resets to page 1.
+   */
+  q?: string | undefined;
+  /**
    * Gate the query. Pass `false` when there's no active mailbox so the
    * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders
    * the no-active gate instead). Defaults to enabled.
@@ -64,6 +70,7 @@ export function useSenders(options: UseSendersOptions = {}) {
       isProtected: options.isProtected,
       sort: options.sort,
       direction: options.direction,
+      q: options.q,
     }),
     queryFn: ({ pageParam, signal }) =>
       fetchSenders(
@@ -73,6 +80,7 @@ export function useSenders(options: UseSendersOptions = {}) {
           isProtected: options.isProtected,
           sort: options.sort,
           direction: options.direction,
+          q: options.q,
           cursor: pageParam ?? undefined,
         },
         signal,
@@ -80,5 +88,9 @@ export function useSenders(options: UseSendersOptions = {}) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
     enabled: options.enabled ?? true,
+    // Keep the prior results on screen while a NEW key resolves (e.g. a
+    // search term change) so the list doesn't blank to a skeleton on
+    // every keystroke — `isLoading` only fires on the first-ever load.
+    placeholderData: keepPreviousData,
   });
 }

@@ -21,6 +21,7 @@
 // renders groups in this order with the first group (cleanup) auto-
 // expanded.
 
+import { CONFIDENCE } from '@declutrmail/shared/senders';
 import { isStandingProtected, type Sender } from '../data';
 
 export type SenderIntent = 'cleanup' | 'later' | 'protect' | 'people';
@@ -99,8 +100,14 @@ export const INTENT_META: Record<SenderIntent, IntentMeta> = {
  *
  * High-confidence Phase A rules (replied, gmail_primary, starred,
  * high_read_rate) score 0.80-1.00 and pass the gate cleanly.
+ *
+ * Source-of-truth lives in `@declutrmail/shared/senders` so a future
+ * edit changes BE summary buckets + FE chip counts in lock-step (the
+ * CLAUDE.md §8 invariant). Re-exported as `ENGINE_CONFIDENCE_GATE` for
+ * the legacy FE call sites + tests that still reference the original
+ * name; new code should import `CONFIDENCE.GATE` directly.
  */
-export const ENGINE_CONFIDENCE_GATE = 0.75;
+export const ENGINE_CONFIDENCE_GATE = CONFIDENCE.GATE;
 
 /**
  * Bucket a single sender into its intent group. Returns 'people' when
@@ -127,9 +134,25 @@ export function intentOf(s: Pick<Sender, 'lastReview' | 'protected' | 'isVip'>):
   const confidence = s.lastReview?.confidence ?? 1.0;
   const verdict = confidence >= ENGINE_CONFIDENCE_GATE ? s.lastReview?.verdict : undefined;
 
-  if (verdict === 'unsubscribe') return 'cleanup';
-  if (verdict === 'archive') return 'later';
-  return 'people';
+  // Exhaustive switch — `keep`/`later`/undefined deliberately fall
+  // through to 'people' (the catch-all). If the engine ever grows a
+  // new verdict, the `_exhaustive: never` line stops compiling so the
+  // bucket assignment is updated in the same change (CLAUDE.md §8
+  // chip-vs-row drift class).
+  switch (verdict) {
+    case 'unsubscribe':
+      return 'cleanup';
+    case 'archive':
+      return 'later';
+    case 'keep':
+    case 'later':
+    case undefined:
+      return 'people';
+    default: {
+      const _exhaustive: never = verdict;
+      return _exhaustive;
+    }
+  }
 }
 
 /**

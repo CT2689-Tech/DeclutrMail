@@ -178,7 +178,7 @@ export function SenderSearch({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {s.monthly}/mo · {GROUP_BY_KEY[s.group].label}
+                {s.monthly} in last 30d · {GROUP_BY_KEY[s.group].label}
               </span>
             </button>
           ))}

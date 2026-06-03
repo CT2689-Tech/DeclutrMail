@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
@@ -82,6 +82,63 @@ function weeklyHeroHandler(
           slices: overrides.slices ?? [],
         },
       }),
+  };
+}
+
+/**
+ * Stock /api/senders/summary response (#145, real-data counts). Defaults
+ * match a small, single-sender mailbox so tests that don't care about
+ * the summary don't need to override; per-test overrides shape the
+ * aggregates when the summary IS what's under test.
+ */
+function sendersSummaryHandler(
+  overrides: Partial<{
+    totalSenders: number;
+    activeSenders: number;
+    last30dVolume: number;
+    noiseReducible: number;
+    protected: number;
+    needsReview: number;
+    byBucket: {
+      one_time: number;
+      protect: number;
+      people: number;
+      needs_review: number;
+      quiet: number;
+      dormant: number;
+      bulk: number;
+      other: number;
+    };
+    qCapture: { value: string | null };
+  }> = {},
+) {
+  return {
+    method: 'GET' as const,
+    path: '/api/senders/summary',
+    respond: (_req: Request, url: URL) => {
+      if (overrides.qCapture) overrides.qCapture.value = url.searchParams.get('q');
+      return jsonOk({
+        data: {
+          totalSenders: overrides.totalSenders ?? 1,
+          activeSenders: overrides.activeSenders ?? 1,
+          last30dVolume: overrides.last30dVolume ?? 30,
+          noiseReducible: overrides.noiseReducible ?? 0,
+          protected: overrides.protected ?? 0,
+          needsReview: overrides.needsReview ?? 0,
+          byBucket: overrides.byBucket ?? {
+            one_time: 0,
+            protect: 0,
+            people: 0,
+            needs_review: 0,
+            quiet: 0,
+            dormant: 0,
+            bulk: 0,
+            other: 1,
+          },
+          asOf: '2026-06-01T00:00:00.000Z',
+        },
+      });
+    },
   };
 }
 
@@ -196,13 +253,64 @@ describe('SendersScreen — edge states', () => {
     // Breadcrumb names the active mailbox (D116) — not a static "default
     // mailbox" — so a multi-mailbox switch is visible.
     expect(screen.getByText(/Senders · me@example\.com/)).toBeInTheDocument();
-    // Hero meta strip — reading time derived from totalMonthly.
-    expect(screen.getByText(/Reading time \/ mo/i)).toBeInTheDocument();
+    // Hero meta strip — "Active senders" replaces the dropped "Reading time / mo"
+    // (that cell rode an uncalibrated coefficient on top of the broken
+    // per-sender-latest-month sum and was dropped in the D38 rewrite).
+    expect(screen.getByText(/Active senders/i)).toBeInTheDocument();
     // KPI strip — "Noise reducible" is unique to the strip.
     expect(screen.getByText(/Noise reducible/i)).toBeInTheDocument();
     // Intent filter chips replaced the Gmail-category chips.
     expect(screen.getByRole('button', { name: /^All\b/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
+  });
+
+  it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
+    // The founder's bug: searching "dealskhoj" returned nothing because the
+    // FE filtered only the loaded ≤50-row page. With server-side search the
+    // term goes to the BE, which returns the match even though it isn't on
+    // page 1. The stub returns the dealskhoj sender ONLY when ?q=dealskhoj —
+    // so its appearance proves the term reached the server.
+    const DEALS_ROW = {
+      ...ROW,
+      id: 'deals',
+      displayName: 'Exclusive Deals',
+      email: 'emailer@dealskhoj.in',
+      domain: 'dealskhoj.in',
+    };
+    let lastQ: string | null = null;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          lastQ = url.searchParams.get('q');
+          const match = lastQ === 'dealskhoj';
+          return jsonOk({
+            data: match ? [DEALS_ROW] : [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    // Initial page (no q) shows Sender A; dealskhoj is not on it.
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByText(/Exclusive Deals/)).toBeNull();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'dealskhoj' },
+    });
+
+    // After the debounce, the server gets q and returns the off-page match.
+    await waitFor(() => expect(screen.getAllByText(/Exclusive Deals/).length).toBeGreaterThan(0), {
+      timeout: 2000,
+    });
+    expect(lastQ).toBe('dealskhoj');
   });
 
   it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
@@ -230,6 +338,335 @@ describe('SendersScreen — edge states', () => {
     // Pressing `A` opens the mandatory preview — never a direct mutation.
     fireEvent.keyDown(document.body, { key: 'a' });
     expect(await screen.findByText(/archive all mail from 1 sender/i)).toBeInTheDocument();
+  });
+
+  it('archives a single sender for real (enqueue → poll → receipt → working undo) (D226, P6)', async () => {
+    let archivePosted = false;
+    let undoPosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        // Real inbox count for the preview (D226) — >0 so confirm enables.
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+        },
+      },
+      {
+        // Both the forward action (act-1) and the reverse job (rev-1) poll
+        // here; the first poll already reports `done` so no timers needed.
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: (_req, url) =>
+          jsonOk({
+            data: {
+              actionId: url.pathname.endsWith('rev-1') ? 'rev-1' : 'act-1',
+              status: 'done',
+              requestedCount: 12,
+              affectedCount: 12,
+              undoToken: url.pathname.endsWith('rev-1') ? null : 'tok-1',
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-1',
+        respond: () => {
+          undoPosted = true;
+          return jsonOk({
+            data: {
+              token: 'tok-1',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+
+    // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+    // Wait for the REAL inbox count to load so confirm is no longer gated.
+    await screen.findByText(/in your inbox now/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // The real endpoint was hit, and the REAL receipt appears only after the
+    // worker reports `done` (never optimistically).
+    const receipt = await screen.findByRole('status');
+    expect(archivePosted).toBe(true);
+    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    const undoBtn = screen.getByRole('button', { name: /^undo$/i });
+
+    // Undo reverses for real (token → reverse job → poll) and clears the receipt.
+    fireEvent.click(undoBtn);
+    await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
+    expect(undoPosted).toBe(true);
+  });
+
+  it('reports a no-op archive (0 affected at execution) with no reversible receipt (P6)', async () => {
+    // Defense in depth: even if the preview counted >0, the inbox can empty
+    // before the worker runs (a race), so the worker archives 0 and issues
+    // no undo token. The screen must NOT show a "reversible" receipt with a
+    // dead Undo (the dealskhoj.in class of bug).
+    let statusPolled = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        // Preview counts >0 so confirm enables; the race empties it by execution.
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 5 } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => jsonOk({ data: { actionId: 'act-0', requestedCount: 0, status: 'queued' } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => {
+          statusPolled = true;
+          return jsonOk({
+            data: {
+              actionId: 'act-0',
+              status: 'done',
+              requestedCount: 0,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/in your inbox now/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(statusPolled).toBe(true));
+    // Let the terminal-status effect run, then assert no receipt was shown.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
+    // The real preview now gates the no-op UPFRONT: a 0 count tells the user
+    // there's nothing to archive and blocks confirm, so they never enqueue
+    // a no-op (the primary dealskhoj.in fix; the execution guard is backup).
+    let archivePosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'x', requestedCount: 0, status: 'queued' } });
+        },
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // Preview resolves to 0 → "nothing to archive" + the confirm is disabled.
+    await screen.findByText(/nothing to archive/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
+
+    // ⌘⏎ must NOT enqueue while gated.
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(archivePosted).toBe(false);
+  });
+
+  it('degrades gracefully when the preview count fetch fails (confirm still works)', async () => {
+    // A failed count check must say so honestly — never a fabricated number —
+    // and still let the user proceed (the worker resolves the real set).
+    let archivePosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonServerError(),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/archive',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 3, status: 'queued' } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-1',
+              status: 'done',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: 'tok-1',
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // Count check failed → honest fallback copy, confirm NOT gated.
+    await screen.findByText(/check how much is in your inbox/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /archive/i })).not.toBeDisabled();
+
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    const receipt = await screen.findByRole('status');
+    expect(archivePosted).toBe(true);
+    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+  });
+
+  it('Unsubscribe with 0 inbox mail hides the "also archive" toggle but still confirms (D226)', async () => {
+    // The bug: Unsubscribe offered (and pre-checked) "also archive everything
+    // currently in the inbox" using the LIFETIME total, with no idea the inbox
+    // held nothing — contradicting the Archive preview's "nothing to archive"
+    // for the same sender. The real inbox count must gate the toggle. But
+    // Unsubscribe is future-only, so a 0 count must NOT block its confirm.
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'u' });
+    await screen.findByText(/unsubscribe from 1 sender/i);
+
+    // Once the count resolves to 0, the backlog toggle disappears — no offer
+    // to archive mail that isn't there.
+    await waitFor(() => expect(screen.queryByText(/currently in the inbox/i)).toBeNull());
+    // ...and the confirm stays enabled (unsubscribe stops FUTURE mail; an empty
+    // inbox doesn't make it a no-op the way it does for Archive).
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
+  });
+
+  it('Unsubscribe with inbox mail shows the backlog toggle with the real count', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'u' });
+    await screen.findByText(/unsubscribe from 1 sender/i);
+
+    // The toggle names the real inbox count, not the lifetime total.
+    await screen.findByText(/also archive the 3 emails from this sender currently in the inbox/i);
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 
   it('ignores the verb shortcut while a modal is already open', async () => {
@@ -408,7 +845,12 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     await waitFor(() => expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument());
   });
 
-  it('hides the Weekly Hero when isMonday=false (D47 — non-Monday branch)', async () => {
+  it('shows the suggestions rail every day when slices exist (was Monday-only per D47)', async () => {
+    // The Monday-only gate was dropped — the suggestions rail is the
+    // founder-validated premium surface and BE recomputes slices on
+    // every request, so it makes more sense to always surface when
+    // slices >= MIN. Only an empty slices array OR a session-level
+    // `Not now` dismissal hides it now.
     installFetchStub([
       weeklyHeroHandler({ isMonday: false, slices: [HERO_SLICE] }),
       {
@@ -430,9 +872,8 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
         <SendersScreen />
       </QueryWrapper>,
     );
-    // Wait for the senders list to settle, then assert the hero is absent.
     await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
+    expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument();
   });
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
@@ -558,5 +999,205 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     await waitFor(() => expect(useSendersStore.getState().view).toBe('table'));
     // After flipping, the grid is gone.
     expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Real-data counts mandate (#145) — the hero, KPI strip, and intent chips
+ * MUST reflect mailbox-wide aggregates from `/api/senders/summary`, NOT
+ * the ≤50-row loaded page. Each test installs ONE eligible sender on the
+ * list but a much larger summary; if a number under test reads the loaded
+ * page, it'll show 1 / 30 instead of the summary's larger figure and the
+ * assertion will fail.
+ */
+describe('SendersScreen — summary-driven aggregates (#145)', () => {
+  beforeEach(() => {
+    installFetchStub([weeklyHeroHandler()]);
+    useSendersStore.setState({ view: 'grid' });
+  });
+  afterEach(() => resetFetchStub());
+
+  it('KPI "Senders" reflects mailbox-wide totals (NOT loaded page length)', async () => {
+    // List returns ONE row on the loaded page but advertises a
+    // 7748-sender mailbox via `meta.query.totalMatching` (the BE's
+    // canonical "matching senders" count). Summary mirrors the same
+    // mailbox-wide totals. The pre-#145 code rendered `senders.length`
+    // → 1; the wired-up code reads either source and shows 7748.
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: 7748,
+                globalMaxTotal: 6471,
+                asOf: '2026-06-01T00:00:00.000Z',
+              },
+            },
+          }),
+      },
+      sendersSummaryHandler({
+        totalSenders: 7748,
+        activeSenders: 493,
+        last30dVolume: 12345,
+        noiseReducible: 32,
+        protected: 50,
+        needsReview: 1500,
+        byBucket: {
+          one_time: 4817,
+          protect: 50,
+          people: 520,
+          needs_review: 172,
+          quiet: 246,
+          dormant: 1624,
+          bulk: 312,
+          other: 7,
+        },
+      }),
+    ]);
+
+    renderScreen();
+    // The mailbox-wide total 7748 renders in both the "All" chip and the
+    // "Senders" KPI cell — both sources route to summary / totalMatching.
+    // Asserting `length >= 2` proves BOTH surfaces re-bound to the
+    // mailbox-wide source, not the loaded-page count.
+    await waitFor(() => expect(screen.getAllByText('7748').length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('KPI strip surfaces summary.activeSenders + summary.needsReview', async () => {
+    // The 8-bucket chip filtering is deferred; the legacy 4-intent chips
+    // remain for visual filtering. Assert the new KPI strip cells route
+    // through the summary instead.
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      sendersSummaryHandler({
+        totalSenders: 1050,
+        activeSenders: 433,
+        last30dVolume: 5000,
+        noiseReducible: 28,
+        protected: 42,
+        needsReview: 234,
+        byBucket: {
+          one_time: 100,
+          protect: 42,
+          people: 200,
+          needs_review: 234,
+          quiet: 100,
+          dormant: 250,
+          bulk: 100,
+          other: 24,
+        },
+      }),
+    ]);
+
+    renderScreen();
+    // 433 active senders + 234 needs review — both come ONLY from the summary.
+    await waitFor(() => expect(screen.getAllByText('433').length).toBeGreaterThan(0));
+    expect(screen.getAllByText('234').length).toBeGreaterThan(0);
+  });
+
+  it('hero "N emails reached you in the last 30 days" uses summary.last30dVolume', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      sendersSummaryHandler({
+        totalSenders: 100,
+        activeSenders: 50,
+        // Loaded page sums to monthly=30 (ROW). Pre-rewrite the hero
+        // would show 30. After rewrite the hero reads `summary.last30dVolume`.
+        last30dVolume: 99999,
+        noiseReducible: 40,
+        protected: 5,
+        needsReview: 25,
+        byBucket: {
+          one_time: 0,
+          protect: 5,
+          people: 60,
+          needs_review: 25,
+          quiet: 5,
+          dormant: 5,
+          bulk: 0,
+          other: 0,
+        },
+      }),
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('99999')).toBeInTheDocument());
+    expect(screen.getByText(/emails reached you in the last 30 days/i)).toBeInTheDocument();
+  });
+
+  it('typed search forwards ?q= to both the list AND the summary endpoint', async () => {
+    const summaryQ = { value: null as string | null };
+    let listQ: string | null = null;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          listQ = url.searchParams.get('q');
+          return jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: listQ === 'foo' ? 3 : 1,
+                globalMaxTotal: 120,
+                asOf: '2026-06-01T00:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+      sendersSummaryHandler({
+        totalSenders: 1,
+        activeSenders: 1,
+        last30dVolume: 30,
+        noiseReducible: 0,
+        protected: 0,
+        needsReview: 0,
+        qCapture: summaryQ,
+      }),
+    ]);
+
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    // Type into the search box; both endpoints must receive the debounced `q`.
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'foo' },
+    });
+    await waitFor(() => expect(summaryQ.value).toBe('foo'), { timeout: 2000 });
+    expect(listQ).toBe('foo');
+  });
+
+  it('falls back to loaded-page derivation while the summary is in flight', async () => {
+    // Summary never resolves — the screen MUST still render with loaded-page
+    // numbers, never blank. Edge state coverage per D211/D212.
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders/summary',
+        respond: () => new Promise<Response>(() => {}),
+      },
+    ]);
+
+    renderScreen();
+    // Hero renders with the loaded-page derivation — `30` from ROW.monthly
+    // appears in the hero story alongside "emails reached you". Multiple
+    // `30` text nodes can exist on the screen (e.g. the sender card's
+    // per-month volume), so just assert the hero anchor renders and the
+    // number appears at least once — both prove the fallback path runs
+    // without blanking the screen.
+    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
+    expect(screen.getAllByText('30').length).toBeGreaterThan(0);
   });
 });

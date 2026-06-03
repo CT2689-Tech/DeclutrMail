@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { historicCount, type DecisionId, type ReviewKind, type Sender } from './data';
+import { type DecisionId, type ReviewKind, type Sender } from './data';
 
 const { color, font } = tokens;
 
@@ -119,14 +119,6 @@ export function ReviewSession({
   }, [decisions, cfg.options]);
 
   const changeCount = kind === 'protect' ? (counts.lock ?? 0) : senders.length - (counts.keep ?? 0);
-
-  const historicTotal = useMemo(() => {
-    if (kind === 'protect') return 0;
-    return senders.reduce(
-      (sum, s) => (decisions[s.id] === 'unsub' ? sum + historicCount(s) : sum),
-      0,
-    );
-  }, [senders, decisions, kind]);
 
   const apply = useCallback(() => {
     onApply({ kind, decisions, archiveHistoric });
@@ -397,15 +389,7 @@ export function ReviewSession({
                   </svg>
                 )}
               </span>
-              <span style={{ fontSize: 13, color: color.fgSoft }}>
-                {cfg.historicToggle}
-                {archiveHistoric && historicTotal > 0 && (
-                  <strong style={{ color: color.fg, fontWeight: 600 }}>
-                    {' '}
-                    · ~{historicTotal.toLocaleString()} email{historicTotal === 1 ? '' : 's'}
-                  </strong>
-                )}
-              </span>
+              <span style={{ fontSize: 13, color: color.fgSoft }}>{cfg.historicToggle}</span>
             </button>
           )}
         </div>

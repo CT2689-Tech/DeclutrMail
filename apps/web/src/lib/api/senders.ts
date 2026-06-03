@@ -36,8 +36,17 @@ export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
  * Surfaces as a chip on the Senders row evidence line. Bucketed
  * (rather than raw %) to avoid false precision on small baselines —
  * see the senders-tightening brief + Codex review for context.
+ *
+ * Variants — see BE `VolumeTrendBucket` for the full bucket-priority
+ * rules; this enum MUST stay in lock-step with the BE union:
+ *   - `new`     — sender is freshly seen (wins over all other buckets)
+ *   - `up`      — recent rate ≥ baseline × `UP_MULTIPLIER`
+ *   - `down`    — recent rate ≤ baseline × `DOWN_MULTIPLIER`
+ *   - `steady`  — within multipliers, both rates non-zero
+ *   - `quiet`   — silent QUIET_DAYS..DORMANT_DAYS AND recurring
+ *   - `dormant` — silent ≥ DORMANT_DAYS AND recurring
  */
-export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 
 /**
  * Last-review summary mirrored from `senders.types.ts:LastReview`.
@@ -96,6 +105,12 @@ export interface SenderListRow {
   readRate: number | null;
   /** Bucketed MoM trend. `null` when there's no timeseries history. */
   volumeTrend: VolumeTrendBucket | null;
+  /**
+   * 12-week volume series, oldest → newest. Null when no recent
+   * `mail_messages` (very old one-shot senders). Drives the per-row
+   * mini-sparkline.
+   */
+  sparkline?: number[] | null;
   unsubscribeMethod: UnsubscribeMethod | null;
   /** Most-recent triage decision summary. `null` when never reviewed. */
   lastReview: LastReviewWire | null;
@@ -221,6 +236,66 @@ export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHe
   return apiGet<WeeklyHeroDto>('/api/senders/weekly-hero', { signal });
 }
 
+/**
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, rolling-
+ * window rewrite). Returns the totals the Senders screen's hero, KPI
+ * strip, and chips read so every headline number is a server-resolved
+ * truth over the WHOLE mailbox — never a per-page sum.
+ *
+ * Eight mutually-exclusive buckets in priority order; the SQL CASE in
+ * the BE service and the FE bucketing logic both consume the SAME
+ * `BUCKET_PRIORITY` from `@declutrmail/shared/senders`, so chip / row /
+ * KPI counts cannot disagree (CLAUDE.md §8 invariant).
+ */
+export interface SenderSummaryDto {
+  /** Lifetime distinct senders within retention. */
+  totalSenders: number;
+  /** Senders with ≥1 inbound msg in last 30 days. */
+  activeSenders: number;
+  /** Inbound msg count in last 30 days (mailbox-wide). */
+  last30dVolume: number;
+  /** 0..100 integer percent — share of `last30dVolume` from senders in
+   *  the `needs_review` bucket. */
+  noiseReducible: number;
+  /** Alias of `byBucket.protect` (matches the KPI cell label). */
+  protected: number;
+  /** Alias of `byBucket.needs_review`. */
+  needsReview: number;
+  /** Per-bucket sender counts. Sum equals `totalSenders`. */
+  byBucket: {
+    one_time: number;
+    protect: number;
+    people: number;
+    needs_review: number;
+    quiet: number;
+    dormant: number;
+    bulk: number;
+    other: number;
+  };
+  /** ISO-8601 — server time at compute. */
+  asOf: string;
+}
+
+/**
+ * GET /api/senders/summary — mailbox-wide aggregates (#145).
+ *
+ * `q` honors the active search; `includeOneTime` pivots the whole
+ * summary so the FE one-time toggle hides ~62% of typical noise without
+ * the chip counts going out of sync with the visible rows.
+ */
+export function fetchSendersSummary(
+  params: { q?: string | undefined; includeOneTime?: boolean | undefined } = {},
+  signal?: AbortSignal,
+): Promise<Envelope<SenderSummaryDto, unknown>> {
+  return apiGet<SenderSummaryDto>('/api/senders/summary', {
+    query: {
+      q: params.q ? params.q : undefined,
+      includeOneTime: params.includeOneTime === false ? 'false' : undefined,
+    },
+    signal,
+  });
+}
+
 /** Row shape on `GET /api/senders/:id/history` — decision-history rows. */
 export interface DecisionHistoryRowDto {
   id: string;
@@ -275,6 +350,11 @@ export interface ListSendersParams {
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
   direction?: SenderListDirection | undefined;
+  /**
+   * Server-side search (#145) — case-insensitive substring over name /
+   * email / domain, mailbox-wide. Maps to `?q=`. Omit/empty = no search.
+   */
+  q?: string | undefined;
 }
 
 /**
@@ -328,6 +408,9 @@ export function fetchSenders(
       protected: params.isProtected === true ? 'true' : undefined,
       sort: params.sort,
       direction: params.direction,
+      // Empty string collapses to omitted so a cleared search keys the
+      // same cache entry as "no search".
+      q: params.q ? params.q : undefined,
     },
     signal,
   }) as Promise<SenderListEnvelope>;

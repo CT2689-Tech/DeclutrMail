@@ -97,6 +97,14 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     expect(s.isVip).toBe(false);
   });
 
+  it('carries the REAL total_received to Sender.total — never monthly × 12', () => {
+    // Regression guard for the fabrication removal: `total` must be the
+    // factual all-time count, not the old `monthly × 12` synthesis (which
+    // would have produced 36 here, not 144).
+    const s = adaptSenderListRow(listRow({ totalReceived: 144, monthlyVolume: 3 }));
+    expect(s.total).toBe(144);
+  });
+
   it('shields a VIP-only sender (isVip && !isProtected) from every destructive action', () => {
     // The real BE sends VIP and Protect independently (D42/D43). A VIP
     // that is not also `isProtected` must STILL be untouchable by bulk

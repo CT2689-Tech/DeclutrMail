@@ -42,6 +42,7 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     monthlyVolume: 10,
     readRate: 0.5,
     volumeTrend: 'steady',
+    sparkline: null,
     unsubscribeMethod: 'one_click',
     lastReview: null,
     protectionFlags: {
@@ -87,6 +88,7 @@ interface MockReadService {
   listTimeseries: ReturnType<typeof vi.fn>;
   listDecisionHistory: ReturnType<typeof vi.fn>;
   listWeeklyHero: ReturnType<typeof vi.fn>;
+  getSenderSummary: ReturnType<typeof vi.fn>;
 }
 
 /**
@@ -114,6 +116,7 @@ function buildController(): { ctrl: SendersController; reads: MockReadService } 
     listTimeseries: vi.fn(),
     listDecisionHistory: vi.fn(),
     listWeeklyHero: vi.fn(),
+    getSenderSummary: vi.fn(),
   };
   const ctrl = new SendersController(reads as unknown as SendersReadService);
   return { ctrl, reads };
@@ -145,6 +148,7 @@ describe('SendersController', () => {
         MAILBOX,
         undefined,
         '10',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -186,6 +190,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(res.data).toHaveLength(2);
       expect(res.meta.pagination.hasMore).toBe(true);
@@ -223,6 +228,7 @@ describe('SendersController', () => {
         undefined,
         'last_seen',
         undefined,
+        undefined,
       );
       const decoded = decodeCursor(res.meta.pagination.nextCursor);
       expect(decoded).toEqual({
@@ -233,26 +239,62 @@ describe('SendersController', () => {
 
     it('rejects a malformed cursor with 400', async () => {
       await expect(
-        ctrl.list(MAILBOX, undefined, undefined, 'not-base64!!!', undefined, undefined, undefined),
+        ctrl.list(
+          MAILBOX,
+          undefined,
+          undefined,
+          'not-base64!!!',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ),
       ).rejects.toThrow(/cursor/i);
     });
 
     it('rejects an unsupported sort with 400', async () => {
       await expect(
-        ctrl.list(MAILBOX, undefined, undefined, undefined, undefined, 'bogus', undefined),
+        ctrl.list(
+          MAILBOX,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'bogus',
+          undefined,
+          undefined,
+        ),
       ).rejects.toThrow(/sort/i);
     });
 
     it('rejects an unsupported direction with 400', async () => {
       await expect(
-        ctrl.list(MAILBOX, undefined, undefined, undefined, undefined, 'total', 'sideways'),
+        ctrl.list(
+          MAILBOX,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'total',
+          'sideways',
+          undefined,
+        ),
       ).rejects.toThrow(/direction/i);
     });
 
     it('forwards a valid cursor + sort to the read service untouched', async () => {
       reads.listSenders.mockResolvedValue([]);
       const cursor = encodeCursor({ key: '2026-05-01T00:00:00.000Z', id: SENDER_ID });
-      await ctrl.list(MAILBOX, undefined, undefined, cursor, undefined, 'last_seen', undefined);
+      await ctrl.list(
+        MAILBOX,
+        undefined,
+        undefined,
+        cursor,
+        undefined,
+        'last_seen',
+        undefined,
+        undefined,
+      );
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({
           mailboxAccountId: MAILBOX_ID,
@@ -267,7 +309,16 @@ describe('SendersController', () => {
 
     it('passes a parsed category to the read service when valid', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, 'promotions', undefined, undefined, undefined, undefined, undefined);
+      await ctrl.list(
+        MAILBOX,
+        'promotions',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ category: 'promotions' }),
       );
@@ -275,19 +326,46 @@ describe('SendersController', () => {
 
     it('silently drops an unknown category value', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, 'not-real', undefined, undefined, undefined, undefined, undefined);
+      await ctrl.list(
+        MAILBOX,
+        'not-real',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ category: null }));
     });
 
     it('clamps an over-max ?limit= to 100', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, undefined, '999999', undefined, undefined, undefined, undefined);
+      await ctrl.list(
+        MAILBOX,
+        undefined,
+        '999999',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
     });
 
     it('passes isProtected:true to the read service when ?protected=true', async () => {
       reads.listSenders.mockResolvedValue([]);
-      await ctrl.list(MAILBOX, undefined, undefined, undefined, 'true', undefined, undefined);
+      await ctrl.list(
+        MAILBOX,
+        undefined,
+        undefined,
+        undefined,
+        'true',
+        undefined,
+        undefined,
+        undefined,
+      );
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ isProtected: true }),
       );
@@ -308,6 +386,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(res.meta.query).toEqual({
         totalMatching: 1852,
@@ -322,7 +401,16 @@ describe('SendersController', () => {
       // controller deliberately does NOT expose a "false" filter (no UI
       // surface needs "show only non-protected" yet).
       for (const raw of ['false', '1', 'garbage']) {
-        await ctrl.list(MAILBOX, undefined, undefined, undefined, raw, undefined, undefined);
+        await ctrl.list(
+          MAILBOX,
+          undefined,
+          undefined,
+          undefined,
+          raw,
+          undefined,
+          undefined,
+          undefined,
+        );
         expect(reads.listSenders).toHaveBeenLastCalledWith(
           expect.objectContaining({ isProtected: null }),
         );
@@ -508,6 +596,71 @@ describe('SendersController', () => {
       expect(res.data.weekOf).toBe('2026-05-11');
       expect(res.data.slices).toHaveLength(1);
       expect(res.data.slices[0]!.kind).toBe('high_confidence');
+    });
+  });
+
+  /**
+   * Summary aggregates (#145) — controller-level contract. The service
+   * spec covers the SQL bucketing; here we verify the envelope, mailbox
+   * threading, the `?q=` pass-through, and the route precedence (the
+   * literal `summary` path must not fall into the `:id` UUID 400 path).
+   */
+  describe('summary', () => {
+    const SAMPLE_SUMMARY = {
+      totalSenders: 8,
+      activeSenders: 3,
+      last30dVolume: 3,
+      noiseReducible: 33,
+      protected: 1,
+      needsReview: 1,
+      byBucket: {
+        one_time: 1,
+        protect: 1,
+        people: 1,
+        needs_review: 1,
+        quiet: 1,
+        dormant: 1,
+        bulk: 1,
+        other: 1,
+      },
+      asOf: '2026-06-01T00:00:00.000Z',
+    } as const;
+
+    it('returns the summary envelope and forwards mailbox + q + includeOneTime to the service', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      const res = await ctrl.summary(MAILBOX, 'promo', undefined);
+      expect(reads.getSenderSummary).toHaveBeenCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: 'promo',
+        includeOneTime: true,
+      });
+      expect(res.data).toEqual(SAMPLE_SUMMARY);
+    });
+
+    it('passes q=null to the service when the query string is missing or blank', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      await ctrl.summary(MAILBOX, undefined, undefined);
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+        includeOneTime: true,
+      });
+      await ctrl.summary(MAILBOX, '   ', undefined);
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+        includeOneTime: true,
+      });
+    });
+
+    it('respects includeOneTime=false from the query string', async () => {
+      reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
+      await ctrl.summary(MAILBOX, undefined, 'false');
+      expect(reads.getSenderSummary).toHaveBeenLastCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        q: null,
+        includeOneTime: false,
+      });
     });
   });
 });

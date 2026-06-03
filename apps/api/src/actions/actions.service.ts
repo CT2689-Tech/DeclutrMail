@@ -14,7 +14,12 @@ import { LABEL_ACTION_JOB, labelActionJobOptions } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { ActionEnqueueResult, ActionStatusResult, ArchiveSelector } from './actions.types.js';
+import type {
+  ActionEnqueueResult,
+  ActionStatusResult,
+  ArchivePreviewResult,
+  ArchiveSelector,
+} from './actions.types.js';
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
 export const ACTION_QUEUE_TOKEN = 'ACTION_QUEUE';
@@ -71,19 +76,7 @@ export class ActionsService {
     let requestedCount: number;
 
     if (selector.type === 'sender') {
-      const [sender] = await this.db
-        .select({ senderKey: senders.senderKey })
-        .from(senders)
-        .where(
-          and(eq(senders.id, selector.senderId), eq(senders.mailboxAccountId, mailboxAccountId)),
-        )
-        .limit(1);
-      if (!sender) {
-        throw new NotFoundException({
-          code: 'SENDER_NOT_FOUND',
-          message: 'Sender not found in the current mailbox.',
-        });
-      }
+      const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
 
       const [policy] = await this.db
         .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
@@ -91,7 +84,7 @@ export class ActionsService {
         .where(
           and(
             eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            eq(senderPolicies.senderKey, sender.senderKey),
+            eq(senderPolicies.senderKey, senderKey),
           ),
         )
         .limit(1);
@@ -102,19 +95,9 @@ export class ActionsService {
         });
       }
 
-      const [inboxCount] = await this.db
-        .select({ n: count() })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            eq(mailMessages.senderKey, sender.senderKey),
-            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-          ),
-        );
-      requestedCount = toCount(inboxCount?.n);
+      requestedCount = await this.countSenderInbox(mailboxAccountId, senderKey);
       resolvedMessageIds = []; // the worker resolves "in INBOX now" at execute.
-      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey: sender.senderKey };
+      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey };
     } else {
       // messages selector — keep only ids that belong to this mailbox AND
       // are currently in INBOX. The INBOX filter is the archive verb's
@@ -170,6 +153,62 @@ export class ActionsService {
       requestedCount: inserted.row.requestedCount,
       status: 'queued',
     };
+  }
+
+  /**
+   * Non-mutating archive preview (D226). Returns the REAL count of the
+   * sender's messages currently labelled INBOX — the exact set the archive
+   * would move — so the confirm modal states what actually changes instead
+   * of a client-side `monthlyVolume × 12` estimate. Ownership is enforced
+   * by `resolveSenderKey` (404 on a forged / cross-mailbox id).
+   */
+  async previewArchive(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<ArchivePreviewResult> {
+    const senderKey = await this.resolveSenderKey(input.mailboxAccountId, input.senderId);
+    const inboxCount = await this.countSenderInbox(input.mailboxAccountId, senderKey);
+    return { senderId: input.senderId, inboxCount };
+  }
+
+  /**
+   * Resolve a sender id → its sha256 `sender_key`, scoped to the mailbox.
+   * 404s a forged / cross-mailbox id (ownership). Shared by the archive
+   * enqueue and the preview so both resolve identically.
+   */
+  private async resolveSenderKey(mailboxAccountId: string, senderId: string): Promise<string> {
+    const [sender] = await this.db
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!sender) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+    return sender.senderKey;
+  }
+
+  /**
+   * Count a sender's messages currently labelled INBOX — the exact set the
+   * archive moves. Used both to stamp `requestedCount` on enqueue and to
+   * answer the preview, so the "before anything changes" figure is the
+   * real one.
+   */
+  private async countSenderInbox(mailboxAccountId: string, senderKey: string): Promise<number> {
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          eq(mailMessages.senderKey, senderKey),
+          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+        ),
+      );
+    return toCount(row?.n);
   }
 
   /**
@@ -291,10 +330,16 @@ export class ActionsService {
         labelActionJobOptions(idempotencyKey),
       );
     } catch (err) {
+      // Defense in depth: scope the failure UPDATE by mailbox even
+      // though `actionId` was just minted by `insertJob` and is
+      // unique. Every other touch on `action_jobs` in this service
+      // includes `mailbox_account_id` in the predicate — keeping that
+      // invariant uniform so a future refactor reusing `enqueueJob`
+      // can't quietly cross tenants.
       await this.db
         .update(actionJobs)
         .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-        .where(eq(actionJobs.id, actionId));
+        .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)));
       throw new ServiceUnavailableException({
         code: 'ENQUEUE_FAILED',
         message: `Could not enqueue the action: ${err instanceof Error ? err.message : String(err)}`,

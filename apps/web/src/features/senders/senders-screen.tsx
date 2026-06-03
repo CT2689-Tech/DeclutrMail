@@ -15,7 +15,6 @@ import {
   canLater,
   canUnsubscribe,
   detectCohorts,
-  historicCount,
   isStandingProtected,
   VERB_PAST,
   type ActionRequest,
@@ -33,15 +32,25 @@ import { ReviewSession, type ReviewResult } from './review-session';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
+import { useSendersSummary } from './api/use-senders-summary';
 import { useWeeklyHero } from './api/use-weekly-hero';
 import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
+import {
+  useEnqueueAction,
+  useActionStatus,
+  useRevertUndo,
+  useArchivePreview,
+} from './api/use-action';
+import { sendersKeys } from './api/query-keys';
+import { isTerminalStatus } from '@/lib/api/actions';
+import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { SenderListRow, WeeklyHeroSliceKind } from '@/lib/api/senders';
+import type { SenderListRow, SenderSummaryDto, WeeklyHeroSliceKind } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import {
   InboxStoryHero,
@@ -96,17 +105,36 @@ let receiptSeq = 0;
  * Edge states (D211/D212): loading / error / empty are first-class
  * branches handled inline below.
  */
+/**
+ * Debounce a fast-changing value (e.g. the search box) so a derived
+ * server query fires only after the user pauses — not on every keystroke.
+ */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export function SendersScreen() {
   // Sort + direction come from the Zustand store (D200 client-state)
   // so the new SenderTable's header click and a future
   // sort-shortcut/keyboard surface both write through one seam.
   const sort = useSendersStore((s) => s.sort);
   const direction = useSendersStore((s) => s.direction);
+  // Search lives here (above the fetch) so it drives the server query
+  // (#145) — debounced so typing doesn't fire a request per keystroke.
+  // `keepPreviousData` (in useSenders) holds the list while the new term
+  // resolves, so the screen never blanks to a skeleton mid-search.
+  const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
   // the two share ONE infinite-query cache entry per (category, limit,
-  // isProtected, sort, direction) — page sizes stay uniform across the
+  // isProtected, sort, direction, q) — page sizes stay uniform across the
   // surface as the user pulls more pages here.
-  const sendersQuery = useSenders({ limit: 50, sort, direction });
+  const sendersQuery = useSenders({ limit: 50, sort, direction, q: debouncedQuery });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
@@ -125,6 +153,32 @@ export function SendersScreen() {
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
   const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
+  // KPI strip, and intent chips so headline numbers reflect the WHOLE
+  // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
+  // as the list so chips/KPI narrow in lockstep with visible rows. Loads
+  // in parallel with the list (TanStack will not block the screen on it);
+  // a missing/in-flight summary falls back to loaded-page derivations.
+  const summaryQuery = useSendersSummary({ q: debouncedQuery });
+  const summary = summaryQuery.data?.data;
+  // Surface a sustained summary fetch failure so headline KPIs/hero/chips
+  // do NOT silently fall back to the loaded-page derivation — the very
+  // bug #145 set out to fix. Boolean flag drives a small "approximate"
+  // badge in the KPI strip; the underlying error is breadcrumbed to the
+  // console (Sentry FE wiring queued separately — FOUNDER-FOLLOWUPS).
+  const summaryFailed = summaryQuery.isError;
+  useEffect(() => {
+    if (!summaryQuery.isError) return;
+    const err = summaryQuery.error;
+    console.warn('[senders] summary fetch failed; KPI/hero fall back to loaded page', {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }, [summaryQuery.isError, summaryQuery.error]);
+  // The page-1 `totalMatching` is the canonical "All N" chip count —
+  // already on the wire and search-aware. Prefer it over the summary's
+  // `totalSenders` so the chip stays consistent with the list pagination
+  // banner (`X of N senders`).
+  const totalMatchingFromList = sendersQuery.data?.pages[0]?.meta.query?.totalMatching;
 
   if (sendersQuery.isLoading) {
     return <LoadingState />;
@@ -140,18 +194,20 @@ export function SendersScreen() {
       hasNextPage={sendersQuery.hasNextPage}
       isFetchingNextPage={sendersQuery.isFetchingNextPage}
       onLoadMore={() => void sendersQuery.fetchNextPage()}
+      query={query}
+      onQueryChange={setQuery}
+      summary={summary}
+      summaryFailed={summaryFailed}
+      totalMatchingFromList={totalMatchingFromList}
     />
   );
 }
 
-/**
- * Reading-cost coefficient — average minutes per email scanned. Empirical
- * placeholder used for the "Time cost" KPI cell and the hero meta-strip;
- * matches the figure used in the Variant D detail page (37min/mo for a
- * sender at 23 msg/mo). When the analytics team produces a per-user
- * calibrated coefficient (FOUNDER-FOLLOWUPS candidate), thread it in here.
- */
-const READ_MIN_PER_MSG = 1.6;
+// READ_MIN_PER_MSG (the 1.6 min/email coefficient) removed alongside the
+// dropped "Time cost h/mo" KPI cell + WeeklyProgress "Estimated savings"
+// caption. Both rode an uncalibrated placeholder on top of the broken
+// per-sender-latest-year_month sum. Restore when the analytics team
+// produces a per-user calibration — track in FOUNDER-FOLLOWUPS.
 
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
@@ -161,6 +217,11 @@ function SendersScreenContent({
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
+  query,
+  onQueryChange: setQuery,
+  summary,
+  summaryFailed,
+  totalMatchingFromList,
 }: {
   senders: Sender[];
   wireRows: SenderListRow[];
@@ -168,12 +229,31 @@ function SendersScreenContent({
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
+  /** Search box value, lifted to the parent so it drives the server query
+   *  (#145). `senders` already arrives search-filtered from the BE. */
+  query: string;
+  onQueryChange: (next: string) => void;
+  /**
+   * Mailbox-wide aggregates (#145). When present, drives the hero, KPI
+   * strip, and intent chips. When undefined (initial load / refetch),
+   * the loaded-page derivation is used as a fallback so the screen does
+   * not blank — the summary populates within milliseconds of the list.
+   */
+  summary: SenderSummaryDto | undefined;
+  /**
+   * True when the summary fetch has failed and we are running on the
+   * loaded-page derivation. Drives a small "Live totals approximate"
+   * badge in the KPI strip so the user is not silently shown numbers
+   * derived from ≤50 loaded rows when the mailbox is bigger.
+   */
+  summaryFailed: boolean;
+  /** Page-1 `meta.query.totalMatching` — the canonical "All N" chip count. */
+  totalMatchingFromList: number | undefined;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
   const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
-  const [query, setQuery] = useState('');
   const [activeIntent, setActiveIntent] = useState<SenderIntent | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
@@ -181,6 +261,62 @@ function SendersScreenContent({
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
   const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
   const [heroDismissed, setHeroDismissed] = useState(false);
+
+  // P6 — real single-sender Archive (D226). `enqueue` fires the action;
+  // `activeAction` holds the in-flight handle that `actionStatus` polls to
+  // a terminal state; `revert` + `revertActionId` drive the undo loop. One
+  // in-flight action at a time is sufficient for the single-sender wire.
+  const qc = useQueryClient();
+  const enqueue = useEnqueueAction();
+  const revert = useRevertUndo();
+  const [activeAction, setActiveAction] = useState<{
+    actionId: string;
+    senderName: string;
+  } | null>(null);
+  const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  const revertStatus = useActionStatus(revertActionId);
+
+  // Real inbox-count preview (D226): fetch the actual inbox count for any
+  // single-sender verb whose preview depends on it — Archive (the headline
+  // figure: exactly what moves) AND Unsubscribe/Later (the optional "also
+  // archive the backlog" toggle, which must not offer a no-op). Bulk + other
+  // verbs keep the estimate (archivePreview = undefined).
+  // Resolve the preview sender via an explicit narrow rather than a
+  // bang on `senders[0]` — keeps the guarantee local to the call site so
+  // a future refactor that loosens the length check can't silently
+  // crash on `undefined.id`.
+  const previewVerb = pendingAction?.verb;
+  const previewFirstSender =
+    pendingAction != null &&
+    pendingAction.senders.length === 1 &&
+    (previewVerb === 'Archive' || previewVerb === 'Unsubscribe' || previewVerb === 'Later')
+      ? (pendingAction.senders[0] ?? null)
+      : null;
+  const archivePreviewSenderId = previewFirstSender?.id ?? null;
+  const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
+  // Breadcrumb the underlying error before we collapse it to a boolean
+  // for the modal — preview is D226-mandatory, so a sustained 5xx that
+  // forces the modal into "we'll archive whatever's there" copy without
+  // any observability would invisibly sidestep the mandate. The boolean
+  // still flows to the UI; the error message goes to the console
+  // (Sentry FE wiring is queued in FOUNDER-FOLLOWUPS).
+  useEffect(() => {
+    if (!archivePreviewQuery.isError || archivePreviewSenderId == null) return;
+    const err = archivePreviewQuery.error;
+    console.warn('[senders] archive preview fetch failed', {
+      senderId: archivePreviewSenderId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }, [archivePreviewQuery.isError, archivePreviewQuery.error, archivePreviewSenderId]);
+  const archivePreview =
+    archivePreviewSenderId != null
+      ? {
+          inboxCount: archivePreviewQuery.data?.inboxCount,
+          loading: archivePreviewQuery.isLoading,
+          error: archivePreviewQuery.isError,
+        }
+      : undefined;
   const storeView = useSendersStore((s) => s.view);
   const tableSort = useSendersStore((s) => s.sort);
   const tableDirection = useSendersStore((s) => s.direction);
@@ -221,21 +357,25 @@ function SendersScreenContent({
 
   const cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
-  // Search-filtered base. Used by every downstream count + grouping.
-  const queryBase = useMemo(() => {
-    if (!query) return senders;
-    const q = query.toLowerCase();
-    return senders.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q),
-    );
-  }, [query, senders]);
+  // Search is now server-side (#145) — `senders` already arrives filtered
+  // by the active `q`, so the base for downstream counts + grouping is
+  // just the loaded set (no client-side re-filtering of a single page).
+  const queryBase = senders;
 
   // Intent-grouped buckets — replaces the prior Gmail-category groups
   // per ADR-0012. INTENT_ORDER is honored; empty buckets are kept so
   // the filter chips show real counts even for empty intents.
   const intentBuckets = useMemo(() => groupByIntent(queryBase), [queryBase]);
 
-  const intentCounts = useMemo(() => {
+  // Intent chip counts. The chip row currently shows the legacy
+  // 4-intent grouping (Clean up / Move later / Protect / People) for
+  // row-level filtering — that grouping comes from the loaded-page
+  // `groupByIntent` and is used for visual filtering only. Mailbox-wide
+  // chip totals come from `summary.byBucket` (8 buckets) and surface
+  // via the KPI strip + new bucket chips below. The two are coexisting
+  // until the chip-click-to-filter wiring is rewritten to honor the
+  // 8-bucket priority server-side.
+  const intentCounts = useMemo<Record<SenderIntent, number>>(() => {
     const counts: Record<SenderIntent, number> = {
       cleanup: 0,
       later: 0,
@@ -262,9 +402,14 @@ function SendersScreenContent({
     [selected, senders],
   );
 
-  // Hero / KPI numbers — derived from the unfiltered list so the hero
-  // reflects the whole mailbox, not the active filter slice.
-  const totals = useMemo(() => computeTotals(senders), [senders]);
+  // Hero / KPI numbers. The server-side summary (#145) IS the source of
+  // truth for headline figures — `totalMonthly`, `noiseReducible`,
+  // `protectedCount`, `needsReview`, and `cleanupCount` (= byIntent.cleanup)
+  // are all mailbox-wide aggregates. The loaded-page derivation
+  // remains the fallback for the milliseconds before the summary
+  // populates AND for the time-cost / avg-read / estSaved fields, which
+  // still need per-sender read-rate (not on the summary wire).
+  const totals = useMemo(() => computeTotals(senders, summary), [senders, summary]);
 
   const applyCohort = (cohort: Cohort) => {
     setActiveIntent(null);
@@ -279,13 +424,43 @@ function SendersScreenContent({
   }, []);
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
-      const historicTotal =
-        verb === 'Archive' ||
-        ((verb === 'Unsubscribe' || verb === 'Later') && opts?.archiveHistoric)
-          ? senders.reduce((a, s) => a + historicCount(s), 0)
-          : 0;
+
+      // P6 — real single-sender Archive (D226). The preview already ran
+      // (this fires post-confirm), so enqueue the action, then poll its
+      // handle to a terminal state in the effect below. The real receipt
+      // (with the real undo token) appears on `done`, never optimistically.
+      // Other verbs + multi-sender bulk stay on the tracer path: their BE
+      // pipeline isn't built (the worker rejects them fail-closed) and the
+      // multi-sender selector is P7.
+      if (verb === 'Archive' && senders.length === 1) {
+        const sender = senders[0]!;
+        setPendingAction(null);
+        setSelected(new Set());
+        toast(`Archiving mail from ${sender.name}…`, 'info');
+        enqueue.mutate(
+          { senderId: sender.id },
+          {
+            onSuccess: (res) =>
+              setActiveAction({ actionId: res.actionId, senderName: sender.name }),
+            onError: (err) =>
+              toast(
+                // Protected/VIP senders return 409 PROTECTED_SENDER (a
+                // ConflictException), not 403.
+                err instanceof ApiError && err.status === 409
+                  ? `${sender.name} is protected — unprotect it first`
+                  : `Couldn't archive ${sender.name}`,
+                'warn',
+              ),
+          },
+        );
+        return;
+      }
+
+      // Tracer path — toast + fake receipt until the verb's BE lands. No
+      // email count is shown here: the true number is only known once the
+      // verb's worker runs (P6 wired that for single-sender Archive).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         verb === 'Unsubscribe' ? 'warn' : 'success',
@@ -295,15 +470,133 @@ function SendersScreenContent({
           id: `r${++receiptSeq}`,
           verb,
           count: senders.length,
-          historicTotal,
+          historicTotal: 0,
           timeLeft: '6d 23h',
         });
       }
       setPendingAction(null);
       setSelected(new Set());
     },
-    [],
+    [enqueue],
   );
+
+  // P6 — drive the Archive lifecycle off the polled status. On `done`,
+  // surface the REAL receipt (carrying the real undo token) and refresh the
+  // senders list so counts reflect the archived mail; on `failed`, a warn
+  // toast. The poll stops itself (refetchInterval → false on terminal).
+  //
+  // Error surfacing — `useActionStatus` runs with `retry: false` (the
+  // 4xx-as-designed-state invariant per CLAUDE.md §8), so a sustained
+  // 5xx during the poll keeps `data` undefined forever. Without this
+  // branch the optimistic "Archiving…" toast would never resolve and
+  // `activeAction` would never clear. Surface the error, clear state,
+  // breadcrumb to the console (Sentry FE wiring is queued separately —
+  // FOUNDER-FOLLOWUPS).
+  useEffect(() => {
+    if (!activeAction) return;
+    if (actionStatus.isError) {
+      const err = actionStatus.error;
+      console.warn('[senders] actionStatus poll failed', {
+        actionId: activeAction.actionId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      setActiveAction(null);
+      return;
+    }
+    const data = actionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      if (data.affectedCount === 0 || !data.undoToken) {
+        // No-op: the sender is in the directory by LIFETIME volume but has
+        // no mail in the inbox right now, so the worker archived nothing and
+        // issued no undo token. Never show a "reversible" receipt with a
+        // dead Undo — say plainly that there was nothing to archive.
+        toast(`No inbox mail from ${activeAction.senderName} to archive`, 'info');
+      } else {
+        setReceipt({
+          id: `r${++receiptSeq}`,
+          verb: 'Archive',
+          count: 1,
+          historicTotal: data.affectedCount,
+          timeLeft: '',
+          undoToken: data.undoToken,
+        });
+        toast(
+          `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          'success',
+        );
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      }
+    } else {
+      toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
+    }
+    setActiveAction(null);
+  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
+  // refresh; on `failed`, a warn toast. Same retry-false / sustained-5xx
+  // hazard as the archive lifecycle above — surface the poll error
+  // explicitly so the receipt UI does not get stuck on the
+  // "Restoring…" toast forever.
+  useEffect(() => {
+    if (!revertActionId) return;
+    if (revertStatus.isError) {
+      const err = revertStatus.error;
+      console.warn('[senders] revertStatus poll failed', {
+        revertActionId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      toast("Couldn't confirm undo — see Activity", 'warn');
+      setRevertActionId(null);
+      return;
+    }
+    const data = revertStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      toast('Restored to your inbox', 'success');
+      setReceipt(null);
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    } else {
+      toast("Couldn't undo — see Activity", 'warn');
+    }
+    setRevertActionId(null);
+  }, [revertStatus.data, revertStatus.isError, revertStatus.error, revertActionId, qc]);
+
+  // Receipt Undo — reverse the real action by token (D226 undo loop). The
+  // reverse is itself async: a fresh token enqueues a reverse job we poll;
+  // an already-reverted token resolves immediately. Tracer receipts (no
+  // token) keep the old log-only behavior.
+  const onUndo = useCallback(() => {
+    const token = receipt?.undoToken;
+    if (!token) {
+      toast('Reverted — see Activity for the full log', 'info');
+      setReceipt(null);
+      return;
+    }
+    toast('Restoring…', 'info');
+    revert.mutate(
+      { token },
+      {
+        onSuccess: (res) => {
+          if (res.reverted) {
+            toast('Restored to your inbox', 'success');
+            setReceipt(null);
+            void qc.invalidateQueries({ queryKey: sendersKeys.all });
+          } else if (res.actionId) {
+            setRevertActionId(res.actionId);
+          }
+        },
+        onError: (err) =>
+          toast(
+            err instanceof ApiError && err.status === 410
+              ? 'Undo window has expired'
+              : "Couldn't undo — see Activity",
+            'warn',
+          ),
+      },
+    );
+  }, [receipt, revert, qc]);
 
   // Archive / Unsubscribe / Later move mail, so they route through the
   // mandatory preview (D226). Keep / Protect change nothing and fire
@@ -441,14 +734,7 @@ function SendersScreenContent({
         tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
       />
 
-      <ReceiptStrip
-        receipt={receipt}
-        onUndo={() => {
-          toast('Reverted — see Activity for the full log', 'info');
-          setReceipt(null);
-        }}
-        onDismiss={() => setReceipt(null)}
-      />
+      <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
 
       {/*
         Weekly Hero (D47, D48) — visible ONLY on Mondays per D47.
@@ -459,43 +745,50 @@ function SendersScreenContent({
         deferred); refreshing the page brings the hero back, which is
         acceptable for V2 launch.
       */}
-      {!heroDismissed &&
-        heroQuery.data &&
-        heroQuery.data.data.isMonday &&
-        heroQuery.data.data.slices.length > 0 && (
-          <WeeklyHeroLive
-            data={heroQuery.data.data}
-            onReview={(kind, sliceSenders) => {
-              const reviewKind = mapHeroSliceToReviewKind(kind);
-              // PR #115 P2: review the full hero slice directly. The
-              // paginated `senders` list only contains the first page
-              // (~50 rows); larger mailboxes have hero slice members
-              // OUTSIDE that page, so the prior `senders.filter(...)`
-              // intersection silently dropped most of the slice. Adapt
-              // the hero DTOs into the `Sender` shape via
-              // `adaptHeroSender` so the review session sees every row
-              // the BE returned for the slice, regardless of pagination.
-              const slice = sliceSenders.map(adaptHeroSender);
-              if (slice.length === 0) {
-                // Defensive: the BE should never emit an empty slice
-                // (we don't render slices with < SLICE_MIN), but if it
-                // does, fall through with a calm toast rather than
-                // opening an empty review session.
-                toast('No senders to review in this slice.', 'info');
-                return;
-              }
-              setReview({ slice, kind: reviewKind });
-              setHeroDismissed(true);
-            }}
-            onSkip={() => setHeroDismissed(true)}
-          />
-        )}
+      {/* Suggestions rail — was Monday-only per D47; founder reframed
+          as "always visible when slices exist" since the surface is the
+          premium look the rest of the screen aspires to and BE
+          recomputes slices every fetch. Dismissal still works per
+          session. */}
+      {!heroDismissed && heroQuery.data && heroQuery.data.data.slices.length > 0 && (
+        <WeeklyHeroLive
+          data={heroQuery.data.data}
+          onReview={(kind, sliceSenders) => {
+            const reviewKind = mapHeroSliceToReviewKind(kind);
+            // PR #115 P2: review the full hero slice directly. The
+            // paginated `senders` list only contains the first page
+            // (~50 rows); larger mailboxes have hero slice members
+            // OUTSIDE that page, so the prior `senders.filter(...)`
+            // intersection silently dropped most of the slice. Adapt
+            // the hero DTOs into the `Sender` shape via
+            // `adaptHeroSender` so the review session sees every row
+            // the BE returned for the slice, regardless of pagination.
+            const slice = sliceSenders.map(adaptHeroSender);
+            if (slice.length === 0) {
+              // Defensive: the BE should never emit an empty slice
+              // (we don't render slices with < SLICE_MIN), but if it
+              // does, fall through with a calm toast rather than
+              // opening an empty review session.
+              toast('No senders to review in this slice.', 'info');
+              return;
+            }
+            setReview({ slice, kind: reviewKind });
+            setHeroDismissed(true);
+          }}
+          onSkip={() => setHeroDismissed(true)}
+        />
+      )}
 
       {senders.length > 0 && (
         <InboxStoryHero
-          eyebrow="Your inbox this week"
+          eyebrow="Your senders, last 30 days"
           story={renderHeroStory(totals)}
-          meta={[{ value: `${totals.readingHrs.toFixed(1)}h`, label: 'Reading time / mo' }]}
+          meta={[
+            {
+              value: `${summary?.activeSenders ?? 0}`,
+              label: 'Active senders',
+            },
+          ]}
           ctaCopy={renderCtaCopy(totals)}
           ctaLabel="Start review"
           onCtaClick={onStartReview}
@@ -506,33 +799,75 @@ function SendersScreenContent({
         label="This week"
         done={doneThisWeek}
         total={totals.cleanupCount}
-        caption={
-          totals.cleanupCount > 0
-            ? `Estimated savings so far: ${totals.estSavedHrs.toFixed(1)}h/year`
-            : undefined
-        }
+        // "Estimated savings" copy DROPPED — rode the placeholder
+        // 1.6 min/msg coefficient + the broken monthlyVolume sum.
+        // Will return when a calibrated coefficient lands.
+        caption={undefined}
       />
+
+      {/*
+        Honest-failure banner — appears only when the mailbox-wide summary
+        endpoint is failing AND the user is silently being shown
+        loaded-page derivations (the bug #145 fixed). Tiny, non-blocking,
+        warn-toned so the user can act if KPIs look off.
+      */}
+      {summaryFailed && senders.length > 0 && (
+        // No `role="status"` here — that role is already taken by the
+        // receipt strip / toast and our tests resolve it by role. This
+        // banner is a non-interactive visual flag; `aria-label` + an
+        // explicit data-testid keeps it discoverable for tests + screen
+        // readers without colliding with the receipt's live-region role.
+        <div
+          aria-label="Live totals unavailable"
+          data-testid="senders-summary-fallback-banner"
+          style={{
+            fontFamily: 'var(--font-sans)',
+            fontSize: 11.5,
+            color: 'var(--color-amber)',
+            background: 'var(--color-amber-bg)',
+            border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+          }}
+        >
+          <span aria-hidden>⚠︎</span>
+          Live totals unavailable — showing approximation from loaded rows.
+        </div>
+      )}
 
       {senders.length > 0 && (
         <KpiStrip
           cells={[
-            { label: 'Senders', value: senders.length },
+            // KPI strip — 5 mailbox-wide cells from the rolling-window
+            // summary. Time-cost cell DROPPED (rode a placeholder
+            // 1.6-min/msg coefficient on top of the broken monthlyVolume
+            // sum — would render fiction). Restore when calibrated.
             {
-              label: 'Noise reducible',
-              value: `~${totals.noiseReductionPct}`,
-              unit: '%',
+              label: 'Senders',
+              value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
             },
             {
-              label: 'Time cost',
-              value: totals.readingHrs.toFixed(1),
-              unit: 'h/mo',
+              label: 'Active',
+              value: summary?.activeSenders ?? 0,
+              micro: summary?.activeSenders ? 'last 30 days' : undefined,
+            },
+            {
+              label: 'Needs review',
+              value: totals.needsReview,
             },
             {
               label: 'Protected',
               value: totals.protectedCount,
               micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
             },
-            { label: 'Needs review', value: totals.needsReview },
+            {
+              label: 'Noise reducible',
+              value: `~${totals.noiseReductionPct}`,
+              unit: '%',
+            },
           ]}
         />
       )}
@@ -542,9 +877,16 @@ function SendersScreenContent({
       {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
       {senders.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {/*
+            "All" chip counts every matching sender (mailbox-wide, search-
+            aware). Sourced from the list's page-1 `meta.query.totalMatching`
+            (already on the wire) — falls back to the loaded-page length only
+            while page 1 is in flight. Loaded `queryBase.length` would
+            understate the count on mailboxes larger than one page.
+          */}
           <IntentChip
             label="All"
-            count={queryBase.length}
+            count={totalMatchingFromList ?? summary?.totalSenders ?? queryBase.length}
             active={activeIntent === null}
             onClick={() => setActiveIntent(null)}
           />
@@ -688,6 +1030,7 @@ function SendersScreenContent({
         request={pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
+        archivePreview={archivePreview}
       />
 
       <ReviewSession
@@ -707,13 +1050,14 @@ function SendersScreenContent({
 /* ────────────────── HELPERS ────────────────── */
 
 /**
- * Map the SenderTable's K/A/U/L vocabulary (D227) to the legacy
- * `ActionVerb` shape `ConfirmActionModal` consumes. Keeps the table
- * decoupled from the older verb labels while preserving the
- * single-modal preview wiring.
+ * Map the SenderTable's action vocabulary to the `ActionVerb` shape
+ * `ConfirmActionModal` consumes. The table surfaces only the three move
+ * verbs (Archive / Later / Unsubscribe) — Keep lives in Triage and Protect
+ * is a status star, not a row verb (D227) — so this map no longer carries a
+ * `keep` entry, which previously mis-routed the "Keep" button to Protect
+ * (Codex review of #142, F3).
  */
 const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
-  keep: 'Protect',
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
@@ -756,8 +1100,22 @@ interface SenderTotals {
   estSavedHrs: number;
 }
 
-function computeTotals(senders: Sender[]): SenderTotals {
-  if (senders.length === 0) {
+/**
+ * Compute hero / KPI / progress totals.
+ *
+ * Mailbox-wide aggregates (`totalMonthly`, `noiseReductionPct`,
+ * `protectedCount`, `needsReview`, `cleanupCount`) come from the
+ * server-side summary (#145) when present — the loaded-page derivation
+ * is the fallback only until the summary populates (initial load).
+ *
+ * Read-rate and reading-time fields still ride the loaded page: the
+ * summary does not carry per-sender read counts on the wire today
+ * (privacy posture — counts only, no per-sender opens). These values
+ * approximate the mailbox from the loaded slice; promoting them to the
+ * summary is a follow-up if the approximation drifts at large scale.
+ */
+function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTotals {
+  if (senders.length === 0 && !summary) {
     return {
       totalMonthly: 0,
       avgReadPct: 0,
@@ -769,32 +1127,50 @@ function computeTotals(senders: Sender[]): SenderTotals {
       estSavedHrs: 0,
     };
   }
-  const totalMonthly = senders.reduce((a, s) => a + s.monthly, 0);
+  // Loaded-page sums — feed the read-rate-derived KPIs and act as the
+  // fallback for the mailbox-wide ones until the summary populates.
+  const loadedMonthly = senders.reduce((a, s) => a + s.monthly, 0);
   const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
-  const avgReadPct = totalMonthly === 0 ? 0 : Math.round((totalRead / totalMonthly) * 100);
-  const readingHrs = (totalMonthly * READ_MIN_PER_MSG) / 60;
+  const avgReadPct = loadedMonthly === 0 ? 0 : Math.round((totalRead / loadedMonthly) * 100);
+
   // `intentOf()` honors the X2 confidence gate (and protect-wins) — the
   // raw `verdict === 'unsubscribe'` check would surface low-confidence
   // recommendations the user shouldn't act on, contradicting the
   // Cleanup-bucket suppression. Codex finding #4 on PR #82.
-  const cleanupSenders = senders.filter((s) => intentOf(s) === 'cleanup');
-  const cleanupMonthly = cleanupSenders.reduce((a, s) => a + s.monthly, 0);
+  const loadedCleanup = senders.filter((s) => intentOf(s) === 'cleanup');
+  const loadedCleanupMonthly = loadedCleanup.reduce((a, s) => a + s.monthly, 0);
+  const loadedProtectedCount = senders.filter(isStandingProtected).length;
+  const loadedNeedsReview = senders.filter((s) => s.lastReview != null).length;
+
+  // Mailbox-wide values — read from the rolling-window summary; fall
+  // back to loaded sums only until the summary populates. The summary's
+  // `byBucket.needs_review` is the same predicate the per-row bucket
+  // computation will use server-side, so chip / KPI / row stay
+  // consistent (CLAUDE.md §8 invariant).
+  const totalMonthly = summary?.last30dVolume ?? loadedMonthly;
   const noiseReductionPct =
-    totalMonthly === 0 ? 0 : Math.round((cleanupMonthly / totalMonthly) * 100);
-  // "Protected" KPI counts both Protect and VIP standing policies — the
-  // cell's micro-label is "VIPs · receipts", so VIPs belong in the count
-  // (both ride the list wire via `protectionFlags`). Same `isStandingProtected`
-  // predicate the row chip / CTA / intent bucket use, so they never disagree.
-  const protectedCount = senders.filter(isStandingProtected).length;
-  const needsReview = senders.filter((s) => s.lastReview != null).length;
-  // Yearly savings = cleanup-sender minutes/year ÷ 60.
-  const estSavedHrs = (cleanupMonthly * 12 * READ_MIN_PER_MSG) / 60;
+    summary?.noiseReducible ??
+    (loadedMonthly === 0 ? 0 : Math.round((loadedCleanupMonthly / loadedMonthly) * 100));
+  // `cleanupCount` displayed as "decisions to act on" — maps to the
+  // mailbox-wide `needs_review` bucket (engine recs at conf ≥ 0.75 AND
+  // active in last 30d). Falls back to loaded-page cleanup-intent count.
+  const cleanupCount = summary?.byBucket.needs_review ?? loadedCleanup.length;
+  const protectedCount = summary?.protected ?? loadedProtectedCount;
+  const needsReview = summary?.needsReview ?? loadedNeedsReview;
+
+  // Reading-time and est-saved — RETURN ZERO. Both rode a placeholder
+  // 1.6 min/msg coefficient that was never calibrated against real user
+  // data, AND were built on top of the previously-broken monthlyVolume
+  // sum. Returning 0 silences downstream UI that would otherwise render
+  // fiction; the KPI cells that consumed these get dropped in this PR.
+  const readingHrs = 0;
+  const estSavedHrs = 0;
   return {
     totalMonthly,
     avgReadPct,
     readingHrs,
     noiseReductionPct,
-    cleanupCount: cleanupSenders.length,
+    cleanupCount,
     protectedCount,
     needsReview,
     estSavedHrs,
@@ -810,12 +1186,17 @@ function renderHeroStory(totals: SenderTotals) {
   return [
     <>
       <span style={{ color: color.amber, fontWeight: 600 }}>{totals.totalMonthly}</span> emails
-      reached you.
+      reached you in the last 30 days.
     </>,
-    <>
-      Only <span style={{ color: color.primary, fontWeight: 600 }}>{totals.avgReadPct}%</span> were
-      worth reading.
-    </>,
+    totals.noiseReductionPct > 0 ? (
+      <>
+        About{' '}
+        <span style={{ color: color.primary, fontWeight: 600 }}>{totals.noiseReductionPct}%</span>{' '}
+        of that was noise you could let go.
+      </>
+    ) : (
+      <>You&rsquo;re mostly receiving signal — nice.</>
+    ),
   ];
 }
 

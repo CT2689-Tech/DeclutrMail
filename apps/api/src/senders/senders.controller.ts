@@ -51,6 +51,7 @@ import type {
   SenderListQueryMeta,
   SenderListRow,
   SenderListSort,
+  SenderSummary,
   TimeseriesPoint,
   WeeklyHero,
 } from './senders.types.js';
@@ -123,6 +124,7 @@ export class SendersController {
     @Query('protected') rawProtected: string | undefined,
     @Query('sort') rawSort: string | undefined,
     @Query('direction') rawDirection: string | undefined,
+    @Query('q') rawQ: string | undefined,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -130,6 +132,7 @@ export class SendersController {
     const limit = clampLimit(rawLimit, LIST_LIMIT);
     const sort = parseSort(rawSort);
     const direction = parseDirection(rawDirection);
+    const q = parseSearch(rawQ);
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -153,11 +156,13 @@ export class SendersController {
         direction,
         cursor,
         limit,
+        q,
       }),
       this.reads.getSenderListQueryMeta({
         mailboxAccountId: accountId,
         category,
         isProtected,
+        q,
       }),
     ]);
 
@@ -170,6 +175,38 @@ export class SendersController {
       limit,
     };
     return { data: page, meta: { pagination, query } };
+  }
+
+  /**
+   * GET /api/senders/summary — mailbox-wide aggregates (#145, real-data
+   * counts mandate).
+   *
+   * Returns the totals the Senders screen's hero, KPI strip, and intent
+   * chips read so headline numbers reflect the whole mailbox — not the
+   * ≤50-row page the FE has loaded. Honors `?q=` so search narrows the
+   * chip + KPI counts in lockstep with the list rows.
+   *
+   * NOTE on route ORDER (mirrors `weekly-hero`). Declared BEFORE
+   * `GET :id` — NestJS matches in declaration order, so `summary` must
+   * not fall into the UUID-validation 400 path.
+   */
+  @Get('summary')
+  @RateLimit('triage-load')
+  async summary(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('q') rawQ: string | undefined,
+    @Query('includeOneTime') rawIncludeOneTime: string | undefined,
+  ): Promise<Envelope<SenderSummary>> {
+    const q = parseSearch(rawQ);
+    // Default true — match the list endpoint default. Pivots the whole
+    // summary in lockstep w/ the FE "show one-time" toggle.
+    const includeOneTime = rawIncludeOneTime !== 'false';
+    const data = await this.reads.getSenderSummary({
+      mailboxAccountId: mailbox.id,
+      q,
+      includeOneTime,
+    });
+    return ok(data);
   }
 
   /**
@@ -374,6 +411,18 @@ function takePage<T>(
 function parseCategory(raw: string | undefined): GmailCategory | null {
   if (!raw) return null;
   return CATEGORIES.has(raw as GmailCategory) ? (raw as GmailCategory) : null;
+}
+
+/**
+ * Coerce a raw `?q=` search term: trim, cap length (bounds the ILIKE
+ * scan + a hostile query), and collapse empty to `null` (no search). The
+ * service escapes LIKE wildcards — no sanitization needed here beyond the
+ * length cap.
+ */
+function parseSearch(raw: string | undefined): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim().slice(0, 200);
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**

@@ -22,16 +22,22 @@ import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
  * brief) — `+47%` from a baseline of 2 messages is noise; `up` after
  * a sustained 3-month average is signal.
  *
- *   - `up`      — current month ≥ prior-3-month average × 1.3
- *   - `down`    — current month ≤ prior-3-month average × 0.7
- *   - `steady`  — otherwise (within ±30% of prior average)
- *   - `dormant` — current month is 0 and prior average > 0
- *   - `new`     — fewer than 2 completed months of history
+ *   - `new`     — `first_seen_at >= now - NEW_DAYS`; wins over all
+ *                  other buckets (no prior period to compare against)
+ *   - `up`      — recent-window rate ≥ baseline rate × `UP_MULTIPLIER`
+ *   - `down`    — recent-window rate ≤ baseline rate × `DOWN_MULTIPLIER`
+ *   - `steady`  — otherwise (within multipliers, both rates non-zero)
+ *   - `quiet`   — silent ≥ `QUIET_DAYS` but < `DORMANT_DAYS` AND
+ *                  recurring (`totalReceived ≥ RECURRING_MIN_TOTAL`)
+ *   - `dormant` — silent ≥ `DORMANT_DAYS` AND recurring
  *
- * `null` indicates no timeseries data at all (sync hasn't run); the FE
- * surfaces this as a quiet "—" rather than picking a misleading bucket.
+ * `null` indicates a one-shot ancient sender with nothing meaningful
+ * to show; the FE surfaces this as a quiet "—" rather than picking a
+ * misleading bucket. All thresholds live in `@declutrmail/shared/senders`
+ * (`WINDOWS`, `VOLUMES`, `TREND`) — see `computeRollingTrendBucket` for
+ * the priority order this enum is sorted by.
  */
-export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'dormant';
+export type VolumeTrendBucket = 'new' | 'up' | 'down' | 'steady' | 'quiet' | 'dormant';
 
 /**
  * Summary of the most-recent triage decision for a sender. Surfaces on
@@ -120,6 +126,13 @@ export interface SenderListRow {
   monthlyVolume: number | null;
   readRate: number | null;
   /**
+   * 12-week volume series (rolling, oldest → newest). Always 12 numbers
+   * when present; missing weeks fill with 0. Drives the per-row mini-
+   * sparkline in the grid card. Null when the sender has no recent
+   * `mail_messages` rows (very old one-shots).
+   */
+  sparkline: number[] | null;
+  /**
    * Bucketed month-over-month volume trend — see `VolumeTrendBucket`.
    * `null` when there's no timeseries data at all (sync hasn't run).
    * Drives the trend chip on the Senders row evidence line.
@@ -191,6 +204,53 @@ export type SenderListSort = 'total' | 'last_seen' | 'first_seen' | 'name' | 're
 
 /** Sort direction — server applies a sane default per `sort` if omitted. */
 export type SenderListDirection = 'asc' | 'desc';
+
+/**
+ * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, real-
+ * data counts mandate).
+ *
+ * REWRITE — all "per month" sums use a rolling 30-day window
+ * (`mail_messages.internal_date >= now() - 30d`) instead of per-sender
+ * latest year_month, eliminating the union-of-disjoint-time-windows
+ * inflation. Eight mutually-exclusive buckets with explicit priority —
+ * a sender belongs to exactly one. See
+ * `packages/shared/src/senders/thresholds.ts:BUCKET_PRIORITY` for the
+ * ordering; the SQL CASE in `getSenderSummary` enumerates the same
+ * clauses in the same order so chip/KPI/row counts never disagree
+ * (CLAUDE.md §8 invariant).
+ *
+ * `byBucket` totals MUST sum to `totalSenders`. The 8 fields cover
+ * everything in scope; `one_time` carries the noise-floor (≤2 lifetime
+ * msgs) which the FE hides behind an explicit toggle.
+ */
+export interface SenderSummary {
+  /** Lifetime distinct senders within retention. */
+  totalSenders: number;
+  /** Senders with ≥1 inbound msg in last `WINDOWS.ACTIVE_DAYS`. */
+  activeSenders: number;
+  /** Inbound msg count in last `WINDOWS.VOLUME_DAYS`. */
+  last30dVolume: number;
+  /** 0..100 integer percent — share of `last30dVolume` from senders in
+   *  the `needs_review` bucket. */
+  noiseReducible: number;
+  /** Alias of `byBucket.protect` (kept because the KPI cell label is "Protected"). */
+  protected: number;
+  /** Alias of `byBucket.needs_review`. */
+  needsReview: number;
+  /** Per-bucket sender counts. Sum equals `totalSenders`. */
+  byBucket: {
+    one_time: number;
+    protect: number;
+    people: number;
+    needs_review: number;
+    quiet: number;
+    dormant: number;
+    bulk: number;
+    other: number;
+  };
+  /** ISO-8601 — server time at compute (observability). */
+  asOf: string;
+}
 
 /**
  * `meta.query` on `GET /api/senders` (senders list contract — returned

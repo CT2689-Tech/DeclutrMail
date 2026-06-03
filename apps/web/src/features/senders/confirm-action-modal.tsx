@@ -1,13 +1,26 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { historicCount, verbDisplay, type ActionRequest } from './data';
+import { verbDisplay, type ActionRequest } from './data';
 
 const { color, font } = tokens;
 
 export interface ConfirmOptions {
   archiveHistoric: boolean;
+}
+
+/**
+ * Real archive preview (D226): the actual count of the sender's mail
+ * currently in the inbox — the exact set that will move. Replaces the FE
+ * `monthlyVolume × 12` estimate for the single-sender Archive path.
+ * `inboxCount` is undefined while loading or on a fetch error.
+ */
+export interface ArchivePreviewState {
+  inboxCount: number | undefined;
+  loading: boolean;
+  /** The count fetch failed — the modal says so rather than showing a number. */
+  error: boolean;
 }
 
 /**
@@ -19,10 +32,13 @@ export function ConfirmActionModal({
   request,
   onCancel,
   onConfirm,
+  archivePreview,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
+  /** Real inbox count for the single-sender Archive path; absent on estimate paths. */
+  archivePreview?: ArchivePreviewState | undefined;
 }) {
   // Unsubscribe defaults to also clearing the backlog (the common
   // intent when cutting a sender off). Later defaults OFF — Later is
@@ -34,29 +50,67 @@ export function ConfirmActionModal({
     setArchiveHistoric(request?.verb === 'Unsubscribe');
   }, [request]);
 
+  // The real inbox-now count (undefined while loading / on error / on the
+  // estimate path). Governs both the Archive headline figure and the
+  // "also archive the backlog" toggle on Unsubscribe/Later.
+  const previewLoading = archivePreview?.loading ?? false;
+  const inboxNow =
+    archivePreview != null && !previewLoading && !archivePreview.error
+      ? archivePreview.inboxCount
+      : undefined;
+
+  // Archive is the only verb whose ENTIRE effect is moving inbox mail, so an
+  // empty inbox makes it a pure no-op → block confirm (the dealskhoj.in smoke
+  // case). Unsubscribe/Later are future-only by definition and stay valid
+  // with an empty inbox — for them the count only governs the backlog toggle,
+  // never the confirm button.
+  const isArchiveVerb = request?.verb === 'Archive';
+  const nothingToArchive = isArchiveVerb && inboxNow === 0;
+  const confirmDisabled = isArchiveVerb && (previewLoading || nothingToArchive);
+
+  // The headline figure shows the real count only for Archive; Unsubscribe/
+  // Later keep the lifetime-total framing (their headline isn't "what moves
+  // now" — it's how much this sender has ever sent).
+  const realArchiveFigure = isArchiveVerb && archivePreview != null;
+
+  // Unsubscribe/Later offer the "also archive the backlog" toggle — but never
+  // when we KNOW the inbox holds nothing from this sender (offering, let alone
+  // pre-checking, a no-op contradicts the Archive preview's own "nothing to
+  // archive"). Unknown count (loading / bulk / estimate) keeps the toggle.
+  const showHistoricToggle =
+    (request?.verb === 'Unsubscribe' || request?.verb === 'Later') && inboxNow !== 0;
+  // Never carry archiveHistoric when its toggle isn't shown.
+  const effectiveArchiveHistoric = showHistoricToggle && archiveHistoric;
+
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm({ archiveHistoric });
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
+        onConfirm({ archiveHistoric: effectiveArchiveHistoric });
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [request, archiveHistoric, onCancel, onConfirm]);
+  }, [request, effectiveArchiveHistoric, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
   if (!request) return null;
 
   const { verb, senders } = request;
-  const historic = senders.reduce((sum, s) => sum + historicCount(s), 0);
+  // Real all-time received total (sum of `total_received`). Null if ANY
+  // sender lacks it — we show qualitative copy rather than a partial /
+  // fabricated number (the former `monthly × 12`).
+  const senderTotals = senders.map((s) => s.total);
+  const historic = senderTotals.every((t) => t != null)
+    ? senderTotals.reduce((sum, t) => sum + (t as number), 0)
+    : null;
   const n = senders.length;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
-  // Unsubscribe and Later touch only future mail by default, so both
-  // offer the "also clear the historic backlog" toggle. Archive moves
-  // every message by definition. Only Unsubscribe reads as destructive.
-  const showHistoricToggle = verb === 'Unsubscribe' || verb === 'Later';
+  // Only Unsubscribe reads as destructive. (Whether the historic-backlog
+  // toggle shows is decided above — it depends on the real inbox count.)
   const danger = verb === 'Unsubscribe';
 
   const title =
@@ -71,6 +125,15 @@ export function ConfirmActionModal({
       : verb === 'Later'
         ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
         : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
+
+  const numberStyle: CSSProperties = {
+    fontFamily: font.display,
+    fontSize: 22,
+    fontWeight: 600,
+    letterSpacing: '-0.02em',
+    color: color.fg,
+    fontVariantNumeric: 'tabular-nums',
+  };
 
   return (
     <>
@@ -161,7 +224,8 @@ export function ConfirmActionModal({
             )}
           </div>
 
-          {/* Impact figure */}
+          {/* Impact figure — the REAL inbox count on the single-sender
+              Archive path, the FE estimate everywhere else (D226). */}
           <div
             style={{
               display: 'flex',
@@ -173,22 +237,44 @@ export function ConfirmActionModal({
               borderRadius: 9,
             }}
           >
-            <strong
-              style={{
-                fontFamily: font.display,
-                fontSize: 22,
-                fontWeight: 600,
-                letterSpacing: '-0.02em',
-                color: color.fg,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {historic.toLocaleString()}
-            </strong>
-            <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-              historic email{historic === 1 ? '' : 's'} from{' '}
-              {senders.length === 1 ? 'this sender' : 'these senders'} sit in your mailbox today.
-            </span>
+            {realArchiveFigure ? (
+              previewLoading ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  Checking how much of this sender’s mail is in your inbox…
+                </span>
+              ) : archivePreview.error || archivePreview.inboxCount === undefined ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
+                  this sender.
+                </span>
+              ) : archivePreview.inboxCount === 0 ? (
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  No mail from this sender is in your inbox right now — nothing to archive.
+                </span>
+              ) : (
+                <>
+                  <strong style={numberStyle}>{archivePreview.inboxCount.toLocaleString()}</strong>
+                  <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                    email{archivePreview.inboxCount === 1 ? '' : 's'} from this sender{' '}
+                    {archivePreview.inboxCount === 1 ? 'is' : 'are'} in your inbox now.
+                  </span>
+                </>
+              )
+            ) : historic != null ? (
+              <>
+                <strong style={numberStyle}>{historic.toLocaleString()}</strong>
+                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                  email{historic === 1 ? '' : 's'} received from{' '}
+                  {senders.length === 1 ? 'this sender' : 'these senders'} in total. We archive only
+                  what’s in your inbox now.
+                </span>
+              </>
+            ) : (
+              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                We archive only what’s currently in your inbox from{' '}
+                {senders.length === 1 ? 'this sender' : 'these senders'}.
+              </span>
+            )}
           </div>
 
           {showHistoricToggle && (
@@ -236,8 +322,9 @@ export function ConfirmActionModal({
                 )}
               </span>
               <span style={{ fontSize: 12.5, color: color.fg }}>
-                Also archive the {historic.toLocaleString()} historic email
-                {historic === 1 ? '' : 's'} already in the inbox
+                {inboxNow != null && inboxNow > 0
+                  ? `Also archive the ${inboxNow.toLocaleString()} email${inboxNow === 1 ? '' : 's'} from this sender currently in the inbox`
+                  : `Also archive everything from ${subject} currently in the inbox`}
               </span>
             </button>
           )}
@@ -269,7 +356,8 @@ export function ConfirmActionModal({
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
-              onClick={() => onConfirm({ archiveHistoric })}
+              disabled={confirmDisabled}
+              onClick={() => onConfirm({ archiveHistoric: effectiveArchiveHistoric })}
               iconRight={
                 <Kbd
                   style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}

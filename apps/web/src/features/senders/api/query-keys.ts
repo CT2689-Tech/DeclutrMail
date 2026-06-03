@@ -39,10 +39,22 @@ export const sendersKeys = {
       isProtected?: boolean | undefined;
       sort?: SenderListSort | undefined;
       direction?: SenderListDirection | undefined;
+      /** Search term (#145) — in the key so each query caches separately
+       *  and a new search resets to page 1 (cursor is search-scoped). */
+      q?: string | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */
   weeklyHero: () => ['senders', 'weekly-hero'] as const,
+  /**
+   * Mailbox-wide aggregates (#145, real-data counts mandate) — drives
+   * the hero, KPI strip, and intent chips on the Senders screen. Keyed
+   * by `q` so each active search caches separately and `invalidateQueries()`
+   * (no filter, the canonical mailbox-switch reset) refetches whichever
+   * `q` is mounted. Mailbox scope rides `resetMailboxScopedCache` like
+   * the rest of the senders surface — see §8 invariant comment on `list`.
+   */
+  summary: (params: { q?: string | undefined } = {}) => ['senders', 'summary', params] as const,
   /** Single sender — the umbrella the per-id child queries hang off. */
   detail: (id: string) => ['senders', 'detail', id] as const,
   /** Recent-messages for one sender. */

@@ -53,9 +53,13 @@
  */
 
 import type { CSSProperties } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
+import { adaptSenderListRow } from '../api/adapters';
+import type { ActionVerb, Sender } from '../data';
+import { SenderRowDetail } from '../table/sender-row-detail';
+import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
 import type {
   SenderListDirection,
@@ -71,7 +75,7 @@ const { color, font, radius, text } = tokens;
 export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search-match';
 
 /** Row-level verb the table emits up to the consumer. K/A/U/L (D227). */
-export type SenderTableVerb = 'keep' | 'archive' | 'unsubscribe' | 'later';
+export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe';
 
 export interface SenderTableProps {
   /** Page rows in the order the wire returned them (BE-sorted). */
@@ -343,6 +347,14 @@ function SenderRow({
 }) {
   const [expanded, setExpanded] = useState(false);
 
+  // Intent tone — drives the left-edge tone stripe + magnitude-bar
+  // accent so the table row visually rhymes with the grid SenderCard
+  // and the Hero Bloc cards. Same predicate (`intentOf`) feeds the
+  // chip count, so row tone and chip count cannot disagree.
+  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  const intent = intentOf(adapted);
+  const toneAccent = ROW_TONE_ACCENT[intent];
+
   const cellStyle: CSSProperties = {
     padding: pad,
     borderBottom: `1px solid ${color.lineSoft}`,
@@ -352,7 +364,27 @@ function SenderRow({
   return (
     <>
       <tr data-dm-sender-id={sender.id} data-dm-selected={selected || undefined}>
-        <td style={{ ...cellStyle, width: 28 }}>
+        <td
+          style={{
+            ...cellStyle,
+            width: 28,
+            position: 'relative',
+            paddingLeft: pad,
+          }}
+        >
+          {/* Tone stripe — 3px left edge, intent-colored. Subtle but
+              makes every row instantly readable by bucket. */}
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: 3,
+              background: toneAccent,
+            }}
+          />
           <input
             type="checkbox"
             aria-label={`Select ${displayLabel(sender)}`}
@@ -370,22 +402,35 @@ function SenderRow({
               minWidth: 0,
             }}
           >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+              <ProtectStar flags={sender.protectionFlags} />
+              <span
+                style={{
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  letterSpacing: '-0.005em',
+                }}
+              >
+                {displayLabel(sender)}
+              </span>
+            </span>
             <span
               style={{
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                color: color.fgMuted,
+                fontSize: text.sm,
+                fontFamily: font.mono,
+                letterSpacing: '0.005em',
               }}
             >
-              {displayLabel(sender)}
+              {sender.domain}
             </span>
-            <span style={{ color: color.fgMuted, fontSize: text.sm }}>{sender.domain}</span>
           </div>
         </td>
 
         <td style={{ ...cellStyle, textAlign: 'right', width: 180 }}>
-          <TotalCell value={sender.totalReceived} max={globalMaxTotal} />
+          <TotalCell value={sender.totalReceived} max={globalMaxTotal} accent={toneAccent} />
         </td>
 
         <td style={{ ...cellStyle, width: 90 }}>
@@ -441,13 +486,13 @@ function SenderRow({
           </button>
         </td>
       </tr>
-      {expanded ? <ExpandedRow sender={sender} /> : null}
+      {expanded ? <ExpandedRow sender={sender} onAction={onAction} /> : null}
     </>
   );
 }
 
 /** Total + magnitude bar — bar suppressed when `max === 0`. */
-function TotalCell({ value, max }: { value: number; max: number }) {
+function TotalCell({ value, max, accent }: { value: number; max: number; accent?: string }) {
   // Defense in depth: a malformed wire payload that drops
   // `totalReceived` would otherwise crash `toLocaleString()`. ADR-0014
   // guarantees this is a JS number on the wire; we coerce here so a
@@ -457,12 +502,16 @@ function TotalCell({ value, max }: { value: number; max: number }) {
   const safeMax = max > 0 ? max : 1;
   const pct = Math.min(100, Math.round((safeValue / safeMax) * 100));
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
       <span
         style={{
-          fontFamily: font.mono,
-          fontVariantNumeric: 'tabular-nums',
+          fontFamily: font.display,
+          fontSize: 18,
           fontWeight: 600,
+          letterSpacing: '-0.015em',
+          fontVariantNumeric: 'tabular-nums',
+          color: color.fg,
+          lineHeight: 1,
         }}
       >
         {safeValue.toLocaleString()}
@@ -484,7 +533,7 @@ function TotalCell({ value, max }: { value: number; max: number }) {
               display: 'block',
               width: `${pct}%`,
               height: '100%',
-              background: color.primary,
+              background: accent ?? color.primary,
             }}
           />
         </span>
@@ -493,10 +542,23 @@ function TotalCell({ value, max }: { value: number; max: number }) {
   );
 }
 
+/**
+ * Per-row tone-stripe accent — same intent-to-tone mapping the grid
+ * `SenderCard` and Hero `Bloc` use. Cleanup = amber, Protect = primary,
+ * Later = subtle neutral, People = transparent (no stripe).
+ */
+const ROW_TONE_ACCENT: Record<SenderIntent, string> = {
+  cleanup: color.amber,
+  later: color.fgMuted,
+  protect: color.primary,
+  people: 'transparent',
+};
+
 const TREND_LABEL: Record<VolumeTrendBucket, string> = {
   up: '↑ Up',
   down: '↓ Down',
   steady: '— Steady',
+  quiet: '◐ Quiet',
   dormant: '○ Dormant',
   new: '• New',
 };
@@ -505,6 +567,7 @@ const TREND_COLOR: Record<VolumeTrendBucket, string> = {
   up: color.amber,
   down: color.emerald,
   steady: color.fgMuted,
+  quiet: color.fgMuted,
   dormant: color.fgMuted,
   new: color.primary,
 };
@@ -614,12 +677,40 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
 }
 
 /**
- * Row verbs in canonical K/A/U/L order (D227). The label + shortcut are
- * read from the Action Registry (ADR-0015) at render time, not hardcoded
- * here — one registry descriptor is the source of truth shared with the
- * SelectionBar, the confirm modal, and the keyboard cheatsheet.
+ * Row action verbs on the Senders surface: Archive / Later / Unsubscribe.
+ * Keep is deliberately NOT a row action here — on the management table,
+ * *not acting* already means "keep it for now"; the explicit Keep verb (K)
+ * belongs to the Triage ritual (D227). Protect is a standing *status*, not
+ * a verb — it renders as the ⭐ indicator on the name cell, never a button.
+ * Labels + shortcuts are read from the Action Registry (ADR-0015) at render
+ * time — the single source of truth shared with the SelectionBar, the
+ * confirm modal, and the keyboard cheatsheet.
  */
-const VERB_ORDER: readonly SenderTableVerb[] = ['keep', 'archive', 'unsubscribe', 'later'];
+const VERB_ORDER: readonly SenderTableVerb[] = ['archive', 'later', 'unsubscribe'];
+
+/**
+ * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
+ * not a triage verb (D227), so it renders as a ⭐ on protected / VIP rows —
+ * never a verb button. It is intentionally non-interactive here: flipping
+ * protection needs a Protect write endpoint that does not exist yet (the
+ * same BE gap that keeps Later / Unsubscribe at tracer fidelity on this
+ * surface), so toggling stays on the Sender Detail page until that lands.
+ * Renders nothing for unprotected rows so the name column stays quiet.
+ */
+function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
+  if (!flags.isVip && !flags.isProtected) return null;
+  const label = flags.isVip ? 'VIP — protected' : 'Protected';
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      style={{ color: color.amber, fontSize: text.sm, flexShrink: 0, lineHeight: 1 }}
+    >
+      ★
+    </span>
+  );
+}
 
 function VerbButtons({
   sender,
@@ -667,40 +758,50 @@ function VerbButtons({
   );
 }
 
-/** Expand row — slot for the future Sender Detail mini-card. */
-function ExpandedRow({ sender }: { sender: SenderListRow }) {
+/**
+ * Expand row — rich SenderRowDetail panel (#146 restoration).
+ *
+ * Pre-ce00ad1, the grid-table expand showed a recommendation callout +
+ * sparkline + sample subjects + verb buttons. The Slice 1 flat-sortable
+ * table shipped with a stub (3 metadata lines) by accident. This wires
+ * the existing rich `SenderRowDetail` component back in. Adapts the
+ * wire `SenderListRow` to the FE `Sender` shape via the same adapter
+ * the grid view uses, so the two surfaces stay visually consistent.
+ *
+ * `onAction` threads the parent's D226 preview path so the inline
+ * verbs from the expand panel route through the same mandatory
+ * action-preview as the row's main verb buttons.
+ */
+function ExpandedRow({
+  sender,
+  onAction,
+}: {
+  sender: SenderListRow;
+  onAction: SenderTableProps['onAction'];
+}) {
+  // Adapt the wire row to the FE `Sender` shape SenderRowDetail expects.
+  // Memoised on the row id since adaptation is identity-stable per row.
+  const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
+  // Bridge — SenderRowDetail emits canonical-cased verbs (Archive /
+  // Unsubscribe / Later / Keep / Protect). The parent's `onAction`
+  // expects lowercase `SenderTableVerb`. Map + filter (Keep/Protect
+  // aren't in the table's verb union).
+  const VERB_MAP: Record<ActionVerb, SenderTableVerb | null> = {
+    Archive: 'archive',
+    Unsubscribe: 'unsubscribe',
+    Later: 'later',
+    Keep: null,
+    Protect: null,
+  };
+  const bridgedAction = (req: { verb: ActionVerb; senders: Sender[] }) => {
+    const mapped = VERB_MAP[req.verb];
+    if (mapped === null) return;
+    onAction({ verb: mapped, sender });
+  };
   return (
     <tr data-dm-expanded-for={sender.id}>
       <td colSpan={COLUMNS.length} style={{ padding: '12px 12px 16px 48px', background: color.bg }}>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            color: color.fgMuted,
-            fontSize: text.sm,
-          }}
-        >
-          <div>
-            <span style={{ fontWeight: 600, color: color.fg }}>{displayLabel(sender)}</span>
-            {' · '}
-            <span>{sender.email}</span>
-          </div>
-          <div>
-            First seen: {formatDate(sender.firstSeenAt)} · Last seen:{' '}
-            {formatDate(sender.lastSeenAt)}
-          </div>
-          {sender.lastReview ? (
-            <div>
-              Last review: {sender.lastReview.verdict}
-              {sender.lastReview.confidence !== undefined
-                ? ` (${Math.round(sender.lastReview.confidence * 100)}%)`
-                : ''}
-              {' · '}
-              {formatDate(sender.lastReview.at)}
-            </div>
-          ) : null}
-        </div>
+        <SenderRowDetail s={adapted} onAction={bridgedAction} />
       </td>
     </tr>
   );
@@ -835,12 +936,6 @@ function relativeDate(iso: string): string {
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toISOString().slice(0, 10);
 }
 
 /** Re-exported for tests. */
