@@ -38,3 +38,16 @@ export type {
   PreviewMode,
   SelectorType,
 } from '../contracts/verb-constants';
+
+// ADR-0019 — FE-presentation Verb Registry. Complements ACTION_REGISTRY
+// for surfaces that need tone / canBePrimary / separator / icon
+// metadata. See verb-registry.ts header for the BE vs FE registry split.
+// Phase 5 dead-code sweep consolidates the two registries.
+export {
+  VERB_REGISTRY,
+  PRIMARY_ELIGIBLE_VERBS,
+  SECONDARY_HISTORIC_VERBS,
+  verbById,
+  deriveDefaultPrimary,
+} from './verb-registry';
+export type { VerbId, VerbSpec, VerbTone } from './verb-registry';
