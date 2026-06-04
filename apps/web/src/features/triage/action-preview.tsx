@@ -66,7 +66,9 @@ export function ActionPreview({
         ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
         : verb === 'Unsubscribe'
           ? row.unsubscribeMethod === 'one_click'
-            ? `Future mail from ${subject} stops arriving (RFC 8058 one-click). Nothing already in your inbox moves unless you ask.`
+            ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058
+              // one-click" jargon → "one-click unsubscribe."
+              `Future mail from ${subject} stops arriving (one-click unsubscribe). Nothing already in your inbox moves unless you ask.`
             : `Future mail from ${subject} stops arriving once you send the unsubscribe request from your mailbox. Mailto is queued as a draft — DeclutrMail never auto-sends from a no-reply address.`
           : `${subject} stays in the inbox. No mail is moved.`;
 

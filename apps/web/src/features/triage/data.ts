@@ -182,7 +182,8 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
       'Read rate: 0% over the last 90 days',
       'Volume: 64 messages/month (4-week trailing average)',
       "Volume spike: 2× the sender's usual cadence",
-      'List-Unsubscribe header present (RFC 8058 one-click)',
+      // Locked-copy ban per spec v1.2 Decision 15: jargon-free phrasing.
+      'One-click unsubscribe available',
     ],
     protectionReason: null,
     monthlyVolume: 64,
@@ -230,7 +231,8 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 4% over the last 90 days',
       'Volume: 46 messages/month',
-      'List-Unsubscribe header is mailto-only (RFC 8058 one-click not offered)',
+      // Locked-copy ban per spec v1.2 Decision 15: jargon-free phrasing.
+      'Unsubscribe is by reply only (no one-click option)',
       'No reply from you to this thread in the last 6 months',
     ],
     protectionReason: null,
