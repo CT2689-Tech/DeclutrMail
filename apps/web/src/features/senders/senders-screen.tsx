@@ -346,7 +346,10 @@ function SendersScreenContent({
   // via the KPI strip + new bucket chips below. The two are coexisting
   // until the chip-click-to-filter wiring is rewritten to honor the
   // 8-bucket priority server-side.
-  const intentCounts = useMemo<Record<SenderIntent, number>>(() => {
+  // intentCounts retained as `_intentCounts` for the in-Grid intent
+  // bucket headers; chip-row consumer retired with the fact-chip
+  // replacement (spec v1.2 Decision 2). Phase 2 PR-FE3 deletes both.
+  const _intentCounts = useMemo<Record<SenderIntent, number>>(() => {
     const counts: Record<SenderIntent, number> = {
       cleanup: 0,
       later: 0,
@@ -357,9 +360,93 @@ function SendersScreenContent({
     return counts;
   }, [intentBuckets]);
 
+  // Fact filter chip (spec v1.2 Decision 2 + Decision 3). Replaces the
+  // legacy intent chip row. Each chip is a fact predicate (no inference)
+  // applied client-side over the loaded page; Phase 1 BE adds matching
+  // server-side filter params (`?activity` etc.) so the chip narrows
+  // mailbox-wide. Predicates use existing Sender fields:
+  //   - active   = lastDays <= 30 && monthly > 0
+  //   - quiet    = lastDays > 30 && lastDays <= 180
+  //   - dormant  = lastDays > 180
+  //   - replied  = repliedCount > 0
+  //   - unsub_ready = (proxy) lastReview.verdict === 'unsubscribe' until
+  //                   wire field lands in Phase 1 BE
+  //   - protected = isStandingProtected(sender)
+  type FactChipKey =
+    | 'all'
+    | 'active'
+    | 'quiet'
+    | 'dormant'
+    | 'replied'
+    | 'unsub_ready'
+    | 'protected';
+
+  const FACT_CHIPS: Array<{ key: FactChipKey; label: string; tip: string }> = [
+    { key: 'all', label: 'All', tip: 'Every sender we know about' },
+    { key: 'active', label: 'Active', tip: 'Last seen ≤ 30 days, ≥ 1 msg' },
+    { key: 'quiet', label: 'Quiet', tip: 'Last seen 30–180 days' },
+    { key: 'dormant', label: 'Dormant', tip: 'Last seen > 180 days' },
+    { key: 'replied', label: 'You replied', tip: 'You replied at least once' },
+    {
+      key: 'unsub_ready',
+      label: 'Unsubscribe-ready',
+      tip: 'Has a one-click unsubscribe option',
+    },
+    { key: 'protected', label: 'Protected', tip: 'Pinned by you (Protect or VIP)' },
+  ];
+
+  function matchFactChip(s: Sender, k: FactChipKey): boolean {
+    switch (k) {
+      case 'all':
+        return true;
+      case 'active':
+        return s.lastDays <= 30 && s.monthly > 0;
+      case 'quiet':
+        return s.lastDays > 30 && s.lastDays <= 180;
+      case 'dormant':
+        return s.lastDays > 180;
+      case 'replied':
+        return (s.repliedCount ?? 0) > 0;
+      case 'unsub_ready':
+        // Proxy: existing lastReview.verdict until BE adds a dedicated
+        // `unsub_ready` boolean on SenderListRow (Phase 1 BE — pending).
+        return s.lastReview?.verdict === 'unsubscribe';
+      case 'protected':
+        return isStandingProtected(s);
+    }
+  }
+
+  const [activeFactChip, setActiveFactChip] = useState<FactChipKey>('all');
+
+  const factChipCounts = useMemo<Record<FactChipKey, number>>(() => {
+    const counts: Record<FactChipKey, number> = {
+      all: 0,
+      active: 0,
+      quiet: 0,
+      dormant: 0,
+      replied: 0,
+      unsub_ready: 0,
+      protected: 0,
+    };
+    for (const s of queryBase) {
+      for (const c of FACT_CHIPS) {
+        if (matchFactChip(s, c.key)) counts[c.key] += 1;
+      }
+    }
+    return counts;
+  }, [queryBase]);
+
+  /** Senders filtered by the active fact chip (client-side until BE
+   *  adds matching `?activity` / `?has_unsubscribe` / etc. params). */
+  const factFilteredSenders = useMemo(
+    () => queryBase.filter((s) => matchFactChip(s, activeFactChip)),
+    [queryBase, activeFactChip],
+  );
+
   // Visible groups after the active-intent filter. When `activeIntent` is
   // null ('All' chip), every non-empty group renders; when set, only that
-  // group renders expanded.
+  // group renders expanded. Intent grouping retains for visual bucketing
+  // until Phase 2 PR-FE3 retires `intentOf` entirely.
   const visibleGroups = useMemo(
     () =>
       intentBuckets
@@ -782,31 +869,80 @@ function SendersScreenContent({
           stays computed for now to keep the existing detection logic
           warm without re-introducing the surface. */}
 
-      {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
+      {/* Fact filter chip row (spec v1.2 Decision 2 + Decision 3).
+          Replaces the intent chip row. Each chip is a fact predicate
+          with a literal-definition tooltip. Counts are client-side
+          over the loaded page; Phase 1 BE adds the matching server
+          filter params (?activity / ?has_unsubscribe / ?replied /
+          ?protected) so the chip narrows mailbox-wide. */}
       {senders.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {/*
-            "All" chip counts every matching sender (mailbox-wide, search-
-            aware). Sourced from the list's page-1 `meta.query.totalMatching`
-            (already on the wire) — falls back to the loaded-page length only
-            while page 1 is in flight. Loaded `queryBase.length` would
-            understate the count on mailboxes larger than one page.
-          */}
-          <IntentChip
-            label="All"
-            count={totalMatchingFromList ?? summary?.totalSenders ?? queryBase.length}
-            active={activeIntent === null}
-            onClick={() => setActiveIntent(null)}
-          />
-          {(Object.keys(INTENT_META) as SenderIntent[]).map((intent) => (
-            <IntentChip
-              key={intent}
-              label={INTENT_META[intent].label}
-              count={intentCounts[intent]}
-              active={activeIntent === intent}
-              onClick={() => setActiveIntent(activeIntent === intent ? null : intent)}
+        <div
+          role="radiogroup"
+          aria-label="Filter senders by fact"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+        >
+          {FACT_CHIPS.map((c) => (
+            <FactChip
+              key={c.key}
+              label={c.label}
+              tip={c.tip}
+              count={factChipCounts[c.key]}
+              active={activeFactChip === c.key}
+              onClick={() => setActiveFactChip(c.key)}
             />
           ))}
+        </div>
+      )}
+
+      {/* Result-count strip (spec v1.2 Decision 3 cross-cutting).
+          Restates the active filter literally so the user can see what
+          narrowed the list — the trust artifact founder asked for. */}
+      {senders.length > 0 && (
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--color-fg-muted)',
+            letterSpacing: '0.04em',
+            margin: '4px 0 2px',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>
+            <strong style={{ color: 'var(--color-fg)' }}>{factChipCounts[activeFactChip]}</strong>{' '}
+            senders
+          </span>
+          <span>·</span>
+          <span>
+            filter: {FACT_CHIPS.find((c) => c.key === activeFactChip)?.label.toLowerCase()}
+          </span>
+          {(activeFactChip !== 'all' || query) && (
+            <>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveFactChip('all');
+                  setQuery('');
+                }}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11,
+                  color: 'var(--color-amber)',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                clear [×]
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -836,12 +972,13 @@ function SendersScreenContent({
           }
         />
       ) : view === 'grid' ? (
-        // D49 default — grid of cards. Flatten the intent buckets so
-        // the responsive `auto-fit` layout fills the row evenly; the
-        // intent chips (above) still apply via `visibleGroups`'
-        // filtering.
+        // D49 default — grid of cards. Applies the active fact-chip
+        // filter (spec v1.2 Decision 2 + Decision 3); the legacy
+        // `visibleGroups` intent bucketing is no longer consulted for
+        // the card grid render. Intent grouping logic retired with
+        // Phase 2 PR-FE3.
         <SenderGrid
-          senders={visibleGroups.flatMap((b) => b.items)}
+          senders={factFilteredSenders}
           selectedIds={selected}
           onToggleSelect={(id) =>
             setSelected((prev) => {
@@ -1092,17 +1229,30 @@ function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTot
 // sweep deletes them from this file entirely; the comment marker
 // preserves the deletion intent for the next agent.
 
-interface IntentChipProps {
+// IntentChip RETIRED in favor of FactChip (spec v1.2 Decision 2 +
+// Decision 3). Phase 5 dead-code sweep removes the empty signature.
+
+interface FactChipProps {
   label: string;
+  /**
+   * Literal definition of the chip's predicate ("Last seen ≤ 30 days,
+   * ≥ 1 msg"). Rendered as the `title` attribute so users can hover to
+   * see exactly what the chip filters on (spec v1.2 Decision 3 — trust
+   * artifact: every chip carries its definition).
+   */
+  tip: string;
   count: number;
   active: boolean;
   onClick: () => void;
 }
 
-function IntentChip({ label, count, active, onClick }: IntentChipProps) {
+function FactChip({ label, tip, count, active, onClick }: FactChipProps) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={active}
+      title={tip}
       onClick={onClick}
       style={{
         padding: '6px 14px',
