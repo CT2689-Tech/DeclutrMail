@@ -69,7 +69,12 @@ const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
  * the KPI strip stay consistent. Per-user calibration tracked in
  * FOUNDER-FOLLOWUPS as a follow-up.
  */
-const READ_MIN_PER_MSG = 1.6;
+// READ_MIN_PER_MSG (the 1.6 min/email coefficient) RETIRED per spec
+// v1.2 Decision 6. Was never calibrated against real user data and
+// fed an editorial inference line ("Estimated reading cost: X min")
+// that contradicted the founder's "we don't guess" stance. Re-add
+// when a per-user calibration ships from analytics.
+const _READ_MIN_PER_MSG = 1.6;
 
 export function SenderDetailRoute({ id }: { id: string }) {
   const detail = useSenderDetail(id);
@@ -210,8 +215,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
   // Derived ROI sentence numbers. Reading-cost in minutes/month;
   // yearly savings if the user unsubscribes (cleanup cohort only).
-  const monthlyMins = Math.round(stats.monthlyVolume * READ_MIN_PER_MSG);
-  const yearlySavedHrs = ((stats.monthlyVolume * 12 * READ_MIN_PER_MSG) / 60).toFixed(1);
+  // monthlyMins + yearlySavedHrs RETIRED with the Reading cost KPI
+  // cell + the editorial ROI line (spec v1.2 Decision 6 — ban editorial
+  // inference). Re-add when calibration ships.
 
   // Adapt history rows to the DecisionTimeline shape. Newest first; the
   // most-recent row carries the `current` flag so its node renders
@@ -347,19 +353,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           of what they send.
         </p>
 
-        {/* ROI sentence */}
-        <p
-          style={{
-            fontSize: 13.5,
-            color: color.amber,
-            fontWeight: 500,
-            margin: '0 0 18px',
-            position: 'relative',
-          }}
-        >
-          ↘ Estimated reading cost: {monthlyMins} min/month. Unsubscribing saves ~{yearlySavedHrs}h
-          /year.
-        </p>
+        {/* "Estimated reading cost" line RETIRED per spec v1.2 Decision 6
+            (ban editorial inference). The 1.6 min/msg coefficient was
+            never calibrated against real user data; rendering it inside
+            an editorial Fraunces moment made the guess feel authoritative.
+            The fact half ("Mails you 2x/mo. You read 0% of what they
+            send") above stays. */}
 
         {/* Recommendation banner (existing component, sits inside hero now) */}
         <div style={{ position: 'relative', marginBottom: 18 }}>
@@ -418,12 +417,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             unit: relationshipDisplay(stats.relationshipMonths).unit,
             micro: relationshipDisplay(stats.relationshipMonths).since,
           },
-          {
-            label: 'Reading cost',
-            value: monthlyMins,
-            unit: 'min/mo',
-            micro: `~${yearlySavedHrs}h/year`,
-          },
+          // "Reading cost" KPI cell RETIRED per spec v1.2 Decision 6.
+          // Was the same uncalibrated 1.6 min/msg estimate as the
+          // editorial line above. Cell may return when a calibrated
+          // per-user coefficient lands.
         ]}
       />
 
