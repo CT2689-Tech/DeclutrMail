@@ -213,9 +213,56 @@ export function ConfirmActionModal({
           >
             {title}
           </h2>
+          {/* Sender context strip (spec v1.2 Decision 15) — facts only:
+              domain · monthly volume · last seen · you replied. Renders
+              for single-sender flows; bulk flow already shows the
+              sender lozenge cluster instead. Builds the "is this the
+              right sender?" 3-second check before destructive action. */}
+          {senders.length === 1 && (
+            <div
+              style={{
+                fontFamily: font.mono,
+                fontSize: 11.5,
+                color: color.fgMuted,
+                margin: '8px 0 0',
+                letterSpacing: '0.01em',
+                display: 'flex',
+                gap: 10,
+                flexWrap: 'wrap',
+                alignItems: 'baseline',
+              }}
+            >
+              <span style={{ color: color.fgSoft }}>{senders[0]!.domain}</span>
+              <span>·</span>
+              <span>
+                <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
+                  {senders[0]!.monthly}
+                </strong>{' '}
+                /mo
+              </span>
+              <span>·</span>
+              <span>
+                last seen{' '}
+                <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
+                  {senders[0]!.lastDays === 0 ? 'today' : `${senders[0]!.lastDays}d`}
+                </strong>
+              </span>
+              {senders[0]!.repliedCount !== undefined && senders[0]!.repliedCount > 0 && (
+                <>
+                  <span>·</span>
+                  <span>
+                    you replied{' '}
+                    <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
+                      {senders[0]!.repliedCount}×
+                    </strong>
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           <p
             id="dm-confirm-lead"
-            style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
+            style={{ fontSize: 13, color: color.fgSoft, margin: '10px 0 0', lineHeight: 1.5 }}
           >
             {lead}
           </p>
