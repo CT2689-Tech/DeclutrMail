@@ -82,3 +82,115 @@ export interface ArchivePreviewResult {
   senderId: string;
   inboxCount: number;
 }
+
+/* ─────────────────────────── ADR-0020 — unified composite action shape ────────────────────────── */
+
+/**
+ * Primary verbs allowed on the unified `POST /api/actions` endpoint.
+ * Mirrors the FE Verb Registry's `VerbId` union (K/A/U/L/D — ADR-0019)
+ * minus any verb that does not produce an `action_jobs` row at this
+ * stage. Today the BE pipeline supports `archive` end-to-end; `delete`
+ * routes through the same label-modify worker via the TRASH labelId
+ * (manifest-entries.ts:delete.execution.buildLabelChange); `later` is
+ * enum-ready but worker landing is deferred; `unsubscribe` + `keep`
+ * never produce an action_jobs row.
+ *
+ * Scope guard: enum-validated by Zod so a forged client value 400s
+ * cleanly with `INVALID_REQUEST` instead of leaking past the controller.
+ */
+export const compositePrimaryVerbSchema = z.enum(['archive', 'later', 'delete']);
+export type CompositePrimaryVerb = z.infer<typeof compositePrimaryVerbSchema>;
+
+/**
+ * Secondary historic-action verbs (ADR-0020). Optional. Applies only
+ * when primary ∈ { 'unsubscribe', 'later' } per spec v1.2 Decision 15
+ * ("Also act on past emails" toggle). Acts on the sender's historic
+ * mail in the inbox via the same label-modify pipeline as the primary.
+ *
+ * Today's primary set above does NOT include 'unsubscribe' because
+ * the unsubscribe pipeline is its own kind (manifest-entries.ts:
+ * unsubscribe.execution.kind === 'unsubscribe'); the composite secondary
+ * column is reserved for when that pipeline lands.
+ */
+export const compositeSecondaryVerbSchema = z.enum(['archive', 'delete']);
+export type CompositeSecondaryVerb = z.infer<typeof compositeSecondaryVerbSchema>;
+
+/**
+ * Composite action request body — spec v1.2 Decision 15 wire shape.
+ *
+ *   {
+ *     selector: { type: 'sender', senderId: '<uuid>' },
+ *     primary:   { type: 'archive', olderThanDays: 180 },
+ *     secondary: { type: 'delete',  olderThanDays: 365 }   // optional
+ *   }
+ *
+ * Time-window range (1..3650 days) matches the DB CHECK constraint on
+ * `action_jobs.older_than_days` so a client value outside the range
+ * 400s here instead of failing at INSERT.
+ */
+export const compositeActionRequestSchema = z
+  .object({
+    selector: archiveSelectorSchema,
+    primary: z
+      .object({
+        type: compositePrimaryVerbSchema,
+        olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+      })
+      .strict(),
+    secondary: z
+      .object({
+        type: compositeSecondaryVerbSchema,
+        olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
+    override: z.boolean().optional(),
+  })
+  .strict();
+export type CompositeActionRequest = z.infer<typeof compositeActionRequestSchema>;
+
+/**
+ * Composite enqueue response (ADR-0020). Two ids returned when the
+ * secondary fires; the primary's `actionId` is the same as `compositeId`
+ * (it's the parent row). FE undo via `undoToken` cascades through the
+ * `composite_id` index on the action_jobs table.
+ */
+export interface CompositeActionEnqueueResult {
+  actionId: string;
+  compositeId: string;
+  secondaryId: string | null;
+  status: ActionJobStatus;
+  /** Resolved primary count (same semantic as ActionEnqueueResult). */
+  primaryCount: number;
+  /** Resolved secondary count, or null when no secondary fired. */
+  secondaryCount: number | null;
+}
+
+/**
+ * Composite preview (ADR-0020) — returns the sender context strip +
+ * counts per time-window bucket so the FE can render the chip row with
+ * accurate per-preset counts without a second roundtrip. Buckets are
+ * locked to the FE preset chips: 30d / 90d / 180d / 365d. `all` is the
+ * un-windowed count (= existing `ArchivePreviewResult.inboxCount` for
+ * primary=archive).
+ */
+export interface CompositeActionPreviewResult {
+  sender: {
+    id: string;
+    name: string;
+    domain: string;
+    lastSeenDays: number | null;
+    repliedCount: number | null;
+    monthly: number | null;
+  };
+  counts: {
+    all: number;
+    olderThan30d: number;
+    olderThan90d: number;
+    olderThan180d: number;
+    olderThan365d: number;
+  };
+  unsubAvailable: boolean;
+  protected: boolean;
+}
