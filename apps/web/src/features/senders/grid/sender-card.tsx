@@ -269,7 +269,15 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
           later: laterOk,
           unsubscribe: unsubOk,
           keep: true,
-          delete: true,
+          // Delete suppressed at the card surface until Phase 2 PR-FE3
+          // widens the legacy ActionVerb callback to include 'Delete'
+          // + the composite modal updates. Surfacing Delete in the
+          // popover today would silently route through legacyVerbFromId
+          // → 'Archive' (design-system + typescript + silent-failure
+          // agents 2026-06-03 all flagged this as a Blocking UX
+          // mismatch). Set false → popover renders Delete row disabled
+          // with a tooltip explaining the temporary gating.
+          delete: false,
         }}
         onAction={onAction}
       />
@@ -329,7 +337,13 @@ function CardActionRow({
       >
         {legacyVerbFromId(primaryVerbId)}
       </Button>
-      <ActionPopoverTrigger onClick={() => setPopoverOpen((o) => !o)} />
+      {/* Trigger opens the popover only — never toggles. Toggle pattern
+          races against the popover's click-outside listener (which sees
+          the trigger as 'outside' and closes, then the trigger's
+          onClick re-opens). Open-only + ESC/click-outside close is the
+          standard menu-button affordance (silent-failure-hunter
+          2026-06-03 advisory). */}
+      <ActionPopoverTrigger onClick={() => setPopoverOpen(true)} />
       {popoverOpen && (
         <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 50 }}>
           <ActionPopover

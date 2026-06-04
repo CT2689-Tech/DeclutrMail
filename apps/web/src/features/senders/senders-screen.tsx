@@ -604,6 +604,14 @@ function SendersScreenContent({
       if (isTypingTarget(e.target)) return;
       if (selectedSenders.length === 0) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      // ADR-0019 + silent-failure-hunter 2026-06-03 — when an
+      // ActionPopover is open on any card, its window-level keydown
+      // listener also fires shortcut picks. Without this guard
+      // pressing 'A' with both an open popover AND a bulk selection
+      // would enqueue BOTH a single-sender Archive (popover) AND a
+      // bulk Archive preview (this handler). Suppress the bulk
+      // handler while any popover is open.
+      if (document.querySelector('[role="menu"]')) return;
       const verb = VERB_BY_KEY[e.key.toLowerCase()];
       if (!verb) return;
       e.preventDefault();

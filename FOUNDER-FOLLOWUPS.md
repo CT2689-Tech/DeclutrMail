@@ -26,6 +26,51 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-04 — CLAUDE.md §2.2 K/A/U/L → K/A/U/L/D distillation
+**Source:** design-system-agent critic pass on `feat/d038-senders-v2-integration` 2026-06-04 (Q1 plan-drift)
+**Why:** CLAUDE.md §2.2 still locks "K/A/U/L". Spec v1.2 + ADR-0019 amend to K/A/U/L/D. Per CLAUDE.md §3 agents may not amend CLAUDE.md silently — founder via `chore/distill-` PR.
+**How:**
+1. Open `chore/distill-kauld-amendment`
+2. Update CLAUDE.md §2.2: K/A/U/L → K/A/U/L/D; add Delete row (red tone, Gmail Trash 30d recovery)
+3. Update `check-microcopy.sh --rule=canonical-verbs` allowlist
+4. Update `.claude/agents/*.md` prompts citing K/A/U/L
+**Verifies by:** `rg "K/A/U/L\\b" CLAUDE.md .claude/agents/` returns ZERO matches
+**Status:** Open
+
+### 2026-06-04 — Phase 2 PR-FE3 deferred: composite modal + Delete callback + intent.ts retire
+**Source:** Autonomous build session 2026-06-04
+**Why:** Composite all-chips modal + bulk-by-filter + expand panel + time-window selector not landed. Delete exposed at Verb Registry + BE schema but SUPPRESSED at SenderCard popover (`capabilities.delete: false`) because legacy ActionVerb callback doesn't include Delete. Bridge `legacyVerbFromId('delete') → 'Archive'` is a safety stub.
+**How:**
+1. `feat/d038-senders-v2-pr-fe3` off integration
+2. Widen `ActionRequest.verb` to include 'Delete'
+3. Rewrite ConfirmActionModal per spec v1.2 Decision 15 (all-chips composite)
+4. Time-window chips for Archive + Delete; secondary verb for Unsub + Later
+5. Wire `POST /api/actions` + cascade-undo via composite_id
+6. Bulk-select-by-filter + expand panel
+7. Retire `intent.ts` machinery
+**Verifies by:** Delete in popover → modal red tone + 30d recovery banner + Gmail Trash dispatch
+**Status:** Open
+
+### 2026-06-04 — Magnitude under-bar on SenderCard uses hardcoded `/100` denominator
+**Source:** design-system-agent + typescript-reviewer critic pass 2026-06-04
+**Why:** ADR-0016 §B1 specifies bar width = `sender.total / globalMaxTotal`. SenderCard hardcodes `Math.min(1, sender.monthly / 100)` because `globalMaxTotal` isn't threaded through `SenderGrid` → `SenderCard` props. Comment says "mailbox max"; code caps at 100.
+**How:**
+1. Thread `globalMaxTotal: number` through `SenderGrid` props
+2. Pass to each `SenderCard`
+3. Replace `/ 100` w/ `sender.total != null && globalMaxTotal > 0 ? sender.total / globalMaxTotal : 0`
+**Verifies by:** Highest-volume sender shows full-width amber bar
+**Status:** Open
+
+### 2026-06-04 — Move useWeeklyHero observability to Brief surface
+**Source:** silent-failure-hunter critic pass 2026-06-04
+**Why:** Commit `48a50bb` removed the `console.warn` on `useWeeklyHero.error` w/ editorial-component retirement. Weekly Hero moves to Brief per spec v1.2 Decision 4; until Brief PR lands hero endpoint outages are invisible.
+**How:**
+1. Port `useEffect` observability block to Brief consumer (see senders-screen.tsx commit `48a50bb` history)
+2. Update event `kind` → `'brief.weekly_hero.fetch_failed'`
+3. Verify Sentry + PostHog pick up event in dev smoke
+**Verifies by:** Trigger Weekly Hero failure in dev; structured warn appears
+**Status:** Open
+
 ### 2026-06-03 — Senders visual alignment follow-ups (ADR-0016)
 **Source:** session 2026-06-03 — design-system-agent / typescript-reviewer / silent-failure-hunter critic pass
 **Why:** Three items surfaced during the senders + sender-detail visual-language alignment that are out of the ADR's scope but need founder disposition before they can land
