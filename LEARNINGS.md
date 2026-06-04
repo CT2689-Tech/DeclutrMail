@@ -20,6 +20,34 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-06-03 — Visual-language consolidation via single primitive (ADR-0016)
+
+**Context:** Founder reported card↔detail navigation chrome
+discontinuity + intent tone-wash creating trust hits on
+financial-institution senders. Goal was visual alignment without
+touching semantics (separate fact-first cut PR).
+**Finding:** Four surfaces (SenderCard, SenderTable TotalCell,
+SenderDetailHeader, KpiStrip) rendered Fraunces display numerics at
+four different sizes (32 / 18 / 28 / 26) and weights (600 / 600 / 600
+/ 600) with no shared primitive. Each surface drifted its own scale.
+Replacing all four callsites with `NumericDisplay variant="..."`
+collapsed the drift into one file and gave the design-system-agent a
+single anchor to enforce on later surfaces (Triage, Brief, Activity).
+The same pattern (sub-component eyebrow label) already drifted twice
+(`Eyebrow` at 10.5/0.14em vs ADR-0016's tightened 10/0.12em — see
+design-system-agent advisory) — promoting the eyebrow rule next is
+likely the right follow-up.
+**Rule (provisional):** When two adjacent surfaces (linked by
+navigation) render the same role-of-thing (primary numeric, eyebrow,
+chip, action button) with hand-rolled styles, the next surface
+should NOT add a third hand-rolled style — extract a primitive in
+`packages/shared/src/components/` and treat the ADR as the
+spec-override per D199/D220. Don't wait for ≥3 consumers to
+extract; ≥2 + a navigation link between them is sufficient.
+**Distillation trigger:** Promote to CLAUDE.md §6 if the same
+"two-adjacent-surfaces drifted" pattern appears ≥2 more times
+(action display, magnitude bar, chip styles already candidate).
+
 ## 2026-05-27 — Drizzle 0.43+ wraps PG errors in `DrizzleQueryError` — assertions must walk `.cause`
 
 **Context:** Rebasing dependabot PR #97 (minor+patch group, drizzle

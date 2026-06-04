@@ -3,10 +3,14 @@
 /**
  * `SenderCard` — one sender card on the grid view (D49).
  *
- * Visual vocabulary aligned to the Hero `Bloc` primitive: tone-tinted
- * gradient wash, display-font primary numeric, mono accents, mini
- * sparkline, recommendation-driven primary CTA. Every sender in the
- * grid feels like a curated bloc rather than a spreadsheet row.
+ * Visual vocabulary aligned to ADR-0016 §B3: neutral hairline chrome
+ * (no tone-wash by intent), `NumericDisplay variant="hero"` for the
+ * primary monthly volume, mono accents, mini sparkline, K/A/U/L lead
+ * verb derived from `intentOf` (semantics retained per ADR-0016 §B3).
+ *
+ * The card↔detail navigation no longer presents chrome discontinuity:
+ * card sits on `color.card` with `color.line` hairline border + 8px
+ * corners (`radius.md`), matching the `SenderDetailHeader` chrome rule.
  *
  * Privacy (D7, D228). Renders only allowlisted fields: sender name,
  * domain, monthly volume, read rate, last-seen days. Never body
@@ -14,7 +18,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { Avatar, Button, Spark, tokens } from '@declutrmail/shared';
+import {
+  Avatar,
+  Button,
+  NumericDisplay,
+  Spark,
+  tokens,
+  type NumericDisplayTone,
+} from '@declutrmail/shared';
 import {
   canArchive,
   canLater,
@@ -25,49 +36,21 @@ import {
 } from '../data';
 import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
-const { color, font } = tokens;
+const { color, font, radius } = tokens;
 
-/** Tone palette mirroring `Bloc` — one per intent. Drives wash + border
- *  + accent so the card's mood instantly signals the recommendation. */
-const TONE_BY_INTENT: Record<
-  SenderIntent,
-  {
-    wash: string;
-    border: string;
-    accent: string;
-    sparkColor: string;
-    /** The verb that should "lead" — bigger, tone-colored, on the left. */
-    leadVerb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive';
-  }
-> = {
-  cleanup: {
-    wash: `linear-gradient(180deg, ${color.amberBg}, transparent 55%), ${color.card}`,
-    border: 'rgba(245,158,11,0.35)',
-    accent: color.amber,
-    sparkColor: color.amber,
-    leadVerb: 'Unsubscribe',
-  },
-  later: {
-    wash: `linear-gradient(180deg, rgba(14,20,19,0.04), transparent 55%), ${color.card}`,
-    border: color.line,
-    accent: color.fg,
-    sparkColor: color.fgSoft,
-    leadVerb: 'Later',
-  },
-  protect: {
-    wash: `linear-gradient(180deg, ${color.primarySoft}, transparent 55%), ${color.card}`,
-    border: color.primaryBorder,
-    accent: color.primary,
-    sparkColor: color.primary,
-    leadVerb: 'Keep',
-  },
-  people: {
-    wash: color.card,
-    border: color.line,
-    accent: color.fg,
-    sparkColor: color.fgSoft,
-    leadVerb: 'Keep',
-  },
+/**
+ * Lead-verb map keyed by intent (ADR-0016 §B3 — `intentOf` retains
+ * semantic role of deriving the primary CTA per card). Chrome-related
+ * tones (wash / border / accent / sparkColor) were retired here
+ * because they re-stated the intent label on the card surface and
+ * created a trust hit on financial-institution senders (BofA / Chase).
+ * Card chrome is now uniformly neutral; only the lead verb varies.
+ */
+const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'> = {
+  cleanup: 'Unsubscribe',
+  later: 'Later',
+  protect: 'Keep',
+  people: 'Keep',
 };
 
 const ARROW = (
@@ -150,7 +133,7 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
   const laterOk = canLater(sender);
   const unsubOk = canUnsubscribe(sender);
   const intent = intentOf(sender);
-  const tone = TONE_BY_INTENT[intent];
+  const leadVerb = LEAD_VERB_BY_INTENT[intent];
   const readPct = Math.round(sender.read * 100);
   const protectedNow = isStandingProtected(sender);
 
@@ -160,7 +143,7 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
     { verb: 'Archive', ok: archiveOk },
     { verb: 'Later', ok: laterOk },
     { verb: 'Unsubscribe', ok: unsubOk },
-  ].filter((v) => v.verb !== tone.leadVerb) as Array<{
+  ].filter((v) => v.verb !== leadVerb) as Array<{
     verb: 'Archive' | 'Later' | 'Unsubscribe';
     ok: boolean;
   }>;
@@ -171,9 +154,13 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
       data-selected={selected || undefined}
       data-dm-lift=""
       style={{
-        background: tone.wash,
-        border: `1px solid ${selected ? color.primary : tone.border}`,
-        borderRadius: 14,
+        // ADR-0016 §A2 — neutral hairline chrome. Was tone-wash by
+        // intent which created a trust hit on financial-institution
+        // senders (BofA / Chase reading "Cleanup"). Intent still
+        // drives the lead verb (§B3) — it no longer drives chrome.
+        background: color.card,
+        border: `1px solid ${selected ? color.primary : color.line}`,
+        borderRadius: radius.md,
         padding: '18px 18px 14px',
         display: 'flex',
         flexDirection: 'column',
@@ -216,7 +203,9 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
           </div>
         </div>
         {sender.spark && sender.spark.length > 0 && (
-          <Spark values={sender.spark} width={48} height={16} color={tone.sparkColor} />
+          // ADR-0016 §B3 — sparkline color uniformly neutral; tone
+          // semantics removed from card chrome.
+          <Spark values={sender.spark} width={48} height={16} color={color.fgSoft} />
         )}
         <input
           type="checkbox"
@@ -227,35 +216,19 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
         />
       </div>
 
-      {/* Primary numeric — Bloc-style display number + mono sub */}
+      {/* Primary numeric — ADR-0016 §A1 `NumericDisplay variant="hero"`. */}
       <div>
-        <div
-          style={{
-            fontFamily: font.display,
-            fontSize: 32,
-            fontWeight: 600,
-            letterSpacing: '-0.025em',
-            lineHeight: 1,
-            color: color.fg,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {sender.monthly}
-          <small
-            style={{
-              fontFamily: font.sans,
-              fontSize: 12,
-              fontWeight: 500,
-              color: color.fgSoft,
-              marginLeft: 8,
-              letterSpacing: '-0.005em',
-            }}
-          >
-            in last 30d
-          </small>
-        </div>
+        <NumericDisplay
+          value={sender.monthly}
+          suffix="in last 30d"
+          variant="hero"
+          style={{ display: 'flex' }}
+        />
 
-        {/* Stat micro-strip — mirrors Bloc.StatStrip vocabulary */}
+        {/* Stat micro-strip — labels follow ADR-0016 §B2 (Mono 10
+            letter-spacing 0.12em uppercase). Values use
+            `NumericDisplay variant="data"` for cross-surface scale
+            consistency. */}
         <div
           style={{
             display: 'grid',
@@ -264,36 +237,29 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
             marginTop: 10,
             paddingTop: 10,
             borderTop: `1px dashed ${color.lineSoft}`,
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            letterSpacing: '0.02em',
           }}
         >
-          <Stat
-            label="READ"
-            value={`${readPct}%`}
-            valueColor={readPct >= 50 ? tone.accent : color.fg}
-          />
+          <Stat label="READ" value={`${readPct}%`} />
           <Stat label="LAST" value={sender.lastDays > 0 ? `${sender.lastDays}d` : 'today'} />
           <Stat
             label="STATUS"
             value={protectedNow ? 'Protected' : intentLabel(intent)}
-            valueColor={protectedNow ? color.primary : color.fg}
+            tone={protectedNow ? 'primary' : 'default'}
           />
         </div>
       </div>
 
-      {/* Bottom — lead verb (tone-colored, full-width-ish) + secondaries */}
+      {/* Bottom — lead verb + secondaries (verb derivation via
+          `intentOf`; chrome is neutral per ADR-0016 §A2). */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 'auto' }}>
         <Button
-          tone={leadButtonTone(tone.leadVerb)}
+          tone={leadButtonTone(leadVerb)}
           size="sm"
-          onClick={() => onAction({ verb: tone.leadVerb, senders: [sender] })}
+          onClick={() => onAction({ verb: leadVerb, senders: [sender] })}
           iconRight={ARROW}
           style={{ flex: 1, justifyContent: 'space-between', minWidth: 0 }}
         >
-          {leadButtonCopy(tone.leadVerb)}
+          {leadButtonCopy(leadVerb)}
         </Button>
         {SECONDARY.map(({ verb, ok }) => (
           <Button
@@ -314,23 +280,32 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
   );
 }
 
-function Stat({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+function Stat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** Reuses the shared `NumericDisplayTone` so a future tone added to
+   *  the primitive is inherited here without a duplicate-union edit
+   *  (typescript-reviewer advisory 2026-06-03). */
+  tone?: NumericDisplayTone;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <span style={{ fontSize: 9.5, textTransform: 'uppercase', color: color.fgMuted }}>
-        {label}
-      </span>
       <span
         style={{
-          fontFamily: font.sans,
-          fontSize: 13,
-          fontWeight: 600,
-          color: valueColor ?? color.fg,
-          letterSpacing: '-0.005em',
+          fontFamily: font.mono,
+          fontSize: 10,
+          textTransform: 'uppercase',
+          color: color.fgMuted,
+          letterSpacing: '0.12em',
         }}
       >
-        {value}
+        {label}
       </span>
+      <NumericDisplay value={value} variant="data" tone={tone ?? 'default'} />
     </div>
   );
 }

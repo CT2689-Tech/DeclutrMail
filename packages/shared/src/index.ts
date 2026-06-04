@@ -37,6 +37,17 @@ export type {
 } from './components/empty-state';
 export { ScreenIntro } from './components/screen-intro';
 
+// ADR-0016 — shared numeric primitive for Senders + Sender-Detail
+// surfaces. Variants: hero / display / stat / data. Replaces ad-hoc
+// `font.display` + fontSize combos at every callsite that renders a
+// primary numeric. See docs/adr/0016-senders-visual-language.md.
+export { NumericDisplay } from './components/numeric-display';
+export type {
+  NumericDisplayProps,
+  NumericDisplayTone,
+  NumericDisplayVariant,
+} from './components/numeric-display';
+
 // D211 — typed edge-state inventory. Enforces that every launch screen
 // has designed coverage for every edge state it can enter.
 export { EDGE_STATE_INVENTORY, EDGE_STATES } from './edge-states/inventory';

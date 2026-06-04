@@ -26,6 +26,16 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-03 — Senders visual alignment follow-ups (ADR-0016)
+**Source:** session 2026-06-03 — design-system-agent / typescript-reviewer / silent-failure-hunter critic pass
+**Why:** Three items surfaced during the senders + sender-detail visual-language alignment that are out of the ADR's scope but need founder disposition before they can land
+**How:**
+1. **D220 allowlist amendment.** ADR-0016 introduced `NumericDisplay` as an 11th promoted shared component; D220's table currently lists 10. Either (a) amend D220 to add the `NumericDisplay` row (recommended — ADR satisfies the spec-override clause + 6 active consumers), (b) accept D220 as illustrative-not-exhaustive going forward, or (c) flag plan-drift per CLAUDE.md §3 conflict-resolution. No code blocked.
+2. **TOP SENDER hero bug** — `apps/web/src/features/senders/weekly-hero/weekly-hero-live.tsx:128` renders user's own monogram ("CT2689") in TOP SENDER stat instead of the slice's actual top sender. Independent hotfix PR — not blocked by visual alignment.
+3. **Hero copy rewrite** — `HIGH-CONFIDENCE CLEANUPS` + `Senders we're confident about` + `Long-quiet senders / before they wake up` are inference-driven labels (same trust-hit class as the `intentOf` chip labels the founder asked to retire). Replace w/ fact predicates (`Top unsub-ready · 30 days` + `Long quiet · 60+ days`). Separate PR — own ADR or fact-first-cut PR.
+**Verifies by:** D220 either amended in the plan OR a `LEARNINGS.md` entry locks the illustrative-not-exhaustive disposition; TOP SENDER hotfix lands; hero copy rewrite lands w/ updated Storybook stories
+**Status:** Open
+
 ### 2026-05-29 — Activity feed schema gaps (D55-D60 tracer-bullet follow-ups)
 **Source:** Activity tracer-bullet PR (D55-D60)
 **Why:** The Activity tracer ships the BE + FE that reads `activity_log`,

@@ -21,7 +21,7 @@
 // are Senders / Noise reducible / Time cost / Protected / Needs review.
 
 import type { ReactNode } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { NumericDisplay, tokens } from '@declutrmail/shared';
 
 const { color, font, radius, shadow, text, space } = tokens;
 
@@ -98,25 +98,19 @@ export function KpiStrip({ cells }: KpiStripProps) {
           >
             {cell.label}
           </div>
-          <div
-            style={{
-              fontSize: 26,
-              fontWeight: 600,
-              letterSpacing: '-0.025em',
-              marginTop: space[2],
-              fontVariantNumeric: 'tabular-nums',
-              lineHeight: 1,
-              color: color.fg,
-            }}
-          >
-            {cell.value}
+          {/* ADR-0016 §A1 — KPI value uses `NumericDisplay
+              variant="display"` (Fraunces 28/400/-0.025em). Was
+              ad-hoc 26px/600 system sans. Now consistent w/
+              SenderDetail h1, SenderTable total cell. */}
+          <div style={{ marginTop: space[2], display: 'flex', alignItems: 'baseline', gap: 3 }}>
+            <NumericDisplay value={cell.value} variant="display" />
             {cell.unit != null && (
               <span
                 style={{
+                  fontFamily: font.sans,
                   fontSize: text.sm,
                   color: color.fgMuted,
                   fontWeight: 500,
-                  marginLeft: 3,
                   letterSpacing: 0,
                 }}
               >

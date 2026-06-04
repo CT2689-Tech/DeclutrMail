@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { Avatar, Button, EmptyState, tokens, toast } from '@declutrmail/shared';
+import { Avatar, Button, EmptyState, NumericDisplay, tokens, toast } from '@declutrmail/shared';
 import { type ActionRequest, type ActionVerb, type Sender, VERB_PAST } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
@@ -286,16 +286,14 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             >
               {detail.gmailCategory}
             </span>
-            <h1
-              style={{
-                fontSize: 28,
-                fontWeight: 600,
-                letterSpacing: '-0.025em',
-                margin: 0,
-                color: color.fg,
-              }}
-            >
-              {sender.name}
+            {/* ADR-0016 §A1 — sender name uses `NumericDisplay
+                variant="display"` (Fraunces 28/400/-0.025em) so the
+                Detail h1 scale matches the SenderTable total cell +
+                Hero slice headline. Card↔Detail navigation now lands
+                on a consistent display-numeric scale. Was ad-hoc
+                28px/600 w/ system default font fallback. */}
+            <h1 style={{ margin: 0 }}>
+              <NumericDisplay value={sender.name} variant="display" />
             </h1>
             <span
               style={{
