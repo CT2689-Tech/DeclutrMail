@@ -8,7 +8,35 @@ const { color, font } = tokens;
 
 export interface ConfirmOptions {
   archiveHistoric: boolean;
+  /**
+   * Time-window filter applied to the historic-scope verb (Archive
+   * primary; Archive-historic secondary on Unsubscribe + Later).
+   * `null` = no filter, act on all matching mail. Spec v1.2 Decision 15
+   * surfaces this as a chip row of presets: All / 30d+ / 3mo+ / 6mo+
+   * / 1yr+ / Custom. Plumbed through to the BE on the unified
+   * `POST /api/actions` endpoint via `primary.olderThanDays`.
+   */
+  olderThanDays?: number | null;
 }
+
+/**
+ * Time-window presets per spec v1.2 Decision 15. Days values are
+ * computed for the BE filter; the chip label is what the user reads.
+ * `null` value = no time filter (act on all). `'custom'` value triggers
+ * the inline value+unit input (deferred — Phase 2 PR-FE3 polish).
+ *
+ * Defaults per verb:
+ *   - Archive primary  → `null` ("All inbox" — current behavior)
+ *   - Delete primary   → 180   ("Older than 6 months" — safer)
+ *   - Unsub secondary  → `null` (when archiveHistoric=true)
+ */
+const TIME_WINDOW_PRESETS = [
+  { label: 'All inbox', days: null as number | null },
+  { label: '30 days+', days: 30 },
+  { label: '3 months+', days: 90 },
+  { label: '6 months+', days: 180 },
+  { label: '1 year+', days: 365 },
+] as const;
 
 /**
  * Real archive preview (D226): the actual count of the sender's mail
@@ -45,9 +73,17 @@ export function ConfirmActionModal({
   // future-only by definition; archiving history would make it
   // destructive against the modal's own copy.
   const [archiveHistoric, setArchiveHistoric] = useState(false);
+  // Time-window filter for historic-scope verbs (spec v1.2 Decision 15).
+  // Applies to Archive primary + the archiveHistoric secondary on Unsub/
+  // Later. `null` = no filter (act on all). Defaults to null for Archive
+  // (current behavior preserved); the chip row lets user opt INTO a
+  // narrower window. Reset on modal open so prior selection doesn't
+  // bleed into the next sender.
+  const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
 
   useEffect(() => {
     setArchiveHistoric(request?.verb === 'Unsubscribe');
+    setOlderThanDays(null);
   }, [request]);
 
   // The real inbox-now count (undefined while loading / on error / on the
@@ -87,12 +123,12 @@ export function ConfirmActionModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
-        onConfirm({ archiveHistoric: effectiveArchiveHistoric });
+        onConfirm({ archiveHistoric: effectiveArchiveHistoric, olderThanDays });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [request, effectiveArchiveHistoric, onCancel, onConfirm, confirmDisabled]);
+  }, [request, effectiveArchiveHistoric, olderThanDays, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
@@ -277,6 +313,76 @@ export function ConfirmActionModal({
             )}
           </div>
 
+          {/* Time-window chip row (spec v1.2 Decision 15). Visible when
+              the action is going to act on historic mail — Archive
+              primary (always) OR Unsub/Later with archiveHistoric on.
+              Chips are facts: All / 30d+ / 3mo+ / 6mo+ / 1yr+.
+              Founder's BofA-alerts use case: tap '6 months+' to
+              archive everything older than 6 months. The Custom value+
+              unit chip is deferred to PR-FE3 polish (founder-eyeball). */}
+          {(isArchiveVerb || effectiveArchiveHistoric) && (
+            <div
+              role="radiogroup"
+              aria-label="How far back to act on"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
+                }}
+              >
+                How far back
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                }}
+              >
+                {TIME_WINDOW_PRESETS.map((preset) => {
+                  const active = olderThanDays === preset.days;
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setOlderThanDays(preset.days)}
+                      style={{
+                        fontFamily: font.sans,
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        padding: '6px 12px',
+                        borderRadius: 999,
+                        background: active ? color.fg : 'transparent',
+                        color: active ? '#FFFFFF' : color.fgSoft,
+                        border: `1px solid ${active ? color.fg : color.line}`,
+                        cursor: 'pointer',
+                        transition: 'background 120ms, color 120ms',
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {olderThanDays !== null && (
+                <span style={{ fontSize: 11.5, color: color.fgMuted, fontFamily: font.sans }}>
+                  Acts on mail older than {olderThanDays} day{olderThanDays === 1 ? '' : 's'}.
+                </span>
+              )}
+            </div>
+          )}
+
           {showHistoricToggle && (
             <button
               onClick={() => setArchiveHistoric((v) => !v)}
@@ -357,7 +463,9 @@ export function ConfirmActionModal({
             <Button
               tone={danger ? 'warn' : 'primary'}
               disabled={confirmDisabled}
-              onClick={() => onConfirm({ archiveHistoric: effectiveArchiveHistoric })}
+              onClick={() =>
+                onConfirm({ archiveHistoric: effectiveArchiveHistoric, olderThanDays })
+              }
               iconRight={
                 <Kbd
                   style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}
