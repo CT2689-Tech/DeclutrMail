@@ -71,6 +71,14 @@ export interface Sender {
   lastDays: number;
   /** Currently unread in the inbox from this sender. */
   unread: number;
+  /**
+   * Count of outbound messages from the user to this sender, derived
+   * from Gmail's Sent label match. Pure fact (no inference). Surfaced
+   * on Sender Card stat strip as "You replied". Optional because the
+   * wire field lands in Phase 1 BE — absent ⇒ render em-dash via
+   * NumericDisplay's degraded-input guard.
+   */
+  repliedCount?: number;
   /** Months since first seen — rough relationship age. */
   firstSeenMo: number;
   /** Auto-protected (receipts / statements) — never bulk-acted. */

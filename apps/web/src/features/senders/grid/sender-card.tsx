@@ -172,7 +172,36 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
     >
       {/* Top — avatar + identity + selection + (optional) sparkline */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <Avatar name={sender.name} domain={sender.domain} size={40} />
+        {/* Emerald protected dot (spec v1.2 + ADR-0019). 6px overlay
+            bottom-right of avatar when the sender is standing-protected
+            (D42/D43 — Protect OR VIP). Replaces the inline "STATUS:
+            Protected" text the stat strip used to render — surfaces
+            the state at a glance without a label leak. */}
+        <span
+          style={{
+            position: 'relative',
+            display: 'inline-flex',
+            flex: '0 0 auto',
+          }}
+        >
+          <Avatar name={sender.name} domain={sender.domain} size={40} />
+          {protectedNow && (
+            <span
+              aria-label="Protected sender"
+              title="Protected — never auto-recommended for Unsubscribe"
+              style={{
+                position: 'absolute',
+                bottom: -2,
+                right: -2,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: color.emerald,
+                border: `2px solid ${color.card}`,
+              }}
+            />
+          )}
+        </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
@@ -216,19 +245,52 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
         />
       </div>
 
-      {/* Primary numeric — ADR-0016 §A1 `NumericDisplay variant="hero"`. */}
+      {/* Primary numeric — `NumericDisplay variant="display"`
+          (Fraunces 28/400). Was `hero` (40px); demoted per spec
+          v1.2 Decision 13: `hero` reserved for true hero moments
+          (Weekly Hero slice + KPI strip cells), not every card. */}
       <div>
         <NumericDisplay
           value={sender.monthly}
           suffix="in last 30d"
-          variant="hero"
+          variant="display"
           style={{ display: 'flex' }}
         />
 
-        {/* Stat micro-strip — labels follow ADR-0016 §B2 (Mono 10
-            letter-spacing 0.12em uppercase). Values use
-            `NumericDisplay variant="data"` for cross-surface scale
-            consistency. */}
+        {/* Magnitude under-bar (spec v1.2 Decision 13 + ADR-0016 §B1).
+            2px bar width-proportional to mailbox max. Amber when
+            sender is unsub-ready (recommendation-action-available);
+            muted otherwise. Hidden when totalsAcrossMailbox absent —
+            wire shape varies. */}
+        {sender.total !== undefined && (
+          <div
+            aria-hidden="true"
+            style={{
+              height: 2,
+              background: color.line,
+              marginTop: 8,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                background: intent === 'cleanup' ? color.amber : color.fgSoft,
+                transformOrigin: 'left center',
+                transform: `scaleX(${Math.min(1, sender.monthly / 100)})`,
+              }}
+            />
+          </div>
+        )}
+
+        {/* Stat micro-strip — full-word user-friendly labels per
+            spec v1.2 Decision 12. `STATUS` retired (was the only
+            inferred cell on the card); replaced with `You replied`
+            (fact-only). Labels follow ADR-0016 §B2 (Mono 10 / 0.12em
+            uppercase). Values use `NumericDisplay variant="data"`. */}
         <div
           style={{
             display: 'grid',
@@ -239,12 +301,11 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
             borderTop: `1px dashed ${color.lineSoft}`,
           }}
         >
-          <Stat label="READ" value={`${readPct}%`} />
-          <Stat label="LAST" value={sender.lastDays > 0 ? `${sender.lastDays}d` : 'today'} />
+          <Stat label="Opened" value={`${readPct}%`} />
+          <Stat label="Last seen" value={sender.lastDays > 0 ? `${sender.lastDays}d` : 'today'} />
           <Stat
-            label="STATUS"
-            value={protectedNow ? 'Protected' : intentLabel(intent)}
-            tone={protectedNow ? 'primary' : 'default'}
+            label="You replied"
+            value={sender.repliedCount !== undefined ? `${sender.repliedCount}×` : '—'}
           />
         </div>
       </div>
