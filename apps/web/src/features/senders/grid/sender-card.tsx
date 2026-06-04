@@ -17,8 +17,10 @@
  * content, attachments, or non-allowlisted headers.
  */
 
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
+  ActionPopover,
+  ActionPopoverTrigger,
   Avatar,
   Button,
   NumericDisplay,
@@ -26,6 +28,7 @@ import {
   tokens,
   type NumericDisplayTone,
 } from '@declutrmail/shared';
+import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
 import {
   canArchive,
   canLater,
@@ -310,35 +313,145 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
         </div>
       </div>
 
-      {/* Bottom — lead verb + secondaries (verb derivation via
-          `intentOf`; chrome is neutral per ADR-0016 §A2). */}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 'auto' }}>
-        <Button
-          tone={leadButtonTone(leadVerb)}
-          size="sm"
-          onClick={() => onAction({ verb: leadVerb, senders: [sender] })}
-          iconRight={ARROW}
-          style={{ flex: 1, justifyContent: 'space-between', minWidth: 0 }}
-        >
-          {leadButtonCopy(leadVerb)}
-        </Button>
-        {SECONDARY.map(({ verb, ok }) => (
-          <Button
-            key={verb}
-            tone="default"
-            size="sm"
-            disabled={!ok}
-            onClick={() => onAction({ verb, senders: [sender] })}
-            iconLeft={VERB_ICONS[verb]}
-            aria-label={verb}
-            title={verb}
-          >
-            {verb}
-          </Button>
-        ))}
-      </div>
+      {/* Bottom — primary CTA + ⋯ overflow (spec v1.2 Decision 9 +
+          ADR-0019). Primary verb derived per Verb Registry's
+          `deriveDefaultPrimary` fact-rule; overflow popover exposes
+          the full K/A/U/L/D set so user can compose any action. */}
+      <CardActionRow
+        sender={sender}
+        legacyLeadVerb={leadVerb}
+        capabilities={{
+          archive: archiveOk,
+          later: laterOk,
+          unsubscribe: unsubOk,
+          keep: true,
+          delete: true,
+        }}
+        onAction={onAction}
+      />
     </article>
   );
+}
+
+/**
+ * Renders the bottom row of the card: derived-primary CTA + `⋯`
+ * trigger that opens the K/A/U/L/D ActionPopover. Primary verb is
+ * derived from `deriveDefaultPrimary` (ADR-0019 fact-rule), with a
+ * legacy fallback to the `intentOf` lead-verb while the wire still
+ * carries intent metadata — once Phase 2 PR-FE2 retires `intentOf`
+ * the fallback drops.
+ */
+function CardActionRow({
+  sender,
+  legacyLeadVerb,
+  capabilities,
+  onAction,
+}: {
+  sender: Sender;
+  legacyLeadVerb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive';
+  capabilities: Record<VerbId, boolean>;
+  onAction: (req: ActionRequest) => void;
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  // Fact-rule primary derivation (ADR-0019). Falls back to the
+  // legacy `intentOf` lead verb when neither rule's antecedent
+  // fires — preserves continuity until Phase 2 PR-FE2 lands the
+  // fact-first cut.
+  const factPrimary = deriveDefaultPrimary({
+    protected: sender.protected === true || sender.isVip === true,
+    unsubReady: false, // wire field lands in Phase 1 BE; until then fall back
+    lastSeenDays: sender.lastDays,
+  });
+  const primaryVerbId: VerbId =
+    factPrimary === 'keep' ? mapLegacyVerb(legacyLeadVerb) : factPrimary;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 6,
+        alignItems: 'center',
+        marginTop: 'auto',
+        position: 'relative',
+      }}
+    >
+      <Button
+        tone={leadButtonTone(legacyVerbFromId(primaryVerbId))}
+        size="sm"
+        onClick={() => onAction({ verb: legacyVerbFromId(primaryVerbId), senders: [sender] })}
+        iconRight={ARROW}
+        style={{ flex: 1, justifyContent: 'space-between', minWidth: 0 }}
+      >
+        {legacyVerbFromId(primaryVerbId)}
+      </Button>
+      <ActionPopoverTrigger onClick={() => setPopoverOpen((o) => !o)} />
+      {popoverOpen && (
+        <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 50 }}>
+          <ActionPopover
+            capabilities={capabilities}
+            dimmedVerb={primaryVerbId}
+            onPick={(verbId) => {
+              onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
+            }}
+            onClose={() => setPopoverOpen(false)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bridge the FE `ActionVerb` legacy type ('Unsubscribe' / 'Later' /
+ * 'Keep' / 'Archive') to the new `VerbId` enum ('unsubscribe' /
+ * 'later' / 'keep' / 'archive' / 'delete'). Lower-cases the verb;
+ * unknown values default to 'keep'.
+ */
+function mapLegacyVerb(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'): VerbId {
+  switch (verb) {
+    case 'Unsubscribe':
+      return 'unsubscribe';
+    case 'Later':
+      return 'later';
+    case 'Keep':
+      return 'keep';
+    case 'Archive':
+      return 'archive';
+    default: {
+      const _exhaustive: never = verb;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Inverse of `mapLegacyVerb` — converts `VerbId` back to the legacy
+ * `ActionVerb` shape `onAction` callbacks expect. Drops Delete to
+ * 'Archive' as a safe fallback for the legacy callback signature
+ * (Phase 2 PR-FE3 rewrites the callback to accept `VerbId` directly,
+ * removing this bridge).
+ */
+function legacyVerbFromId(id: VerbId): 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' {
+  switch (id) {
+    case 'unsubscribe':
+      return 'Unsubscribe';
+    case 'later':
+      return 'Later';
+    case 'keep':
+      return 'Keep';
+    case 'archive':
+      return 'Archive';
+    case 'delete':
+      // Legacy callback signature has no Delete; route to Archive
+      // for now. Phase 2 PR-FE3 widens the callback to include 'Delete'
+      // and removes this bridge.
+      return 'Archive';
+    default: {
+      const _exhaustive: never = id;
+      return _exhaustive;
+    }
+  }
 }
 
 function Stat({

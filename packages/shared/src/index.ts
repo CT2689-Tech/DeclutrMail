@@ -48,6 +48,12 @@ export type {
   NumericDisplayVariant,
 } from './components/numeric-display';
 
+// ADR-0019 — K/A/U/L/D action popover surface. Replaces hand-rolled
+// verb-to-button rows on SenderCard / SenderTable / SenderDetail /
+// SelectionBar. See docs/adr/0019-verb-registry-and-kauld.md.
+export { ActionPopover, ActionPopoverTrigger } from './components/action-popover';
+export type { ActionPopoverProps } from './components/action-popover';
+
 // D211 — typed edge-state inventory. Enforces that every launch screen
 // has designed coverage for every edge state it can enter.
 export { EDGE_STATE_INVENTORY, EDGE_STATES } from './edge-states/inventory';
