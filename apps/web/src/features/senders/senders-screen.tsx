@@ -23,7 +23,6 @@ import {
   type ReviewKind,
   type Sender,
 } from './data';
-import { CohortRail } from './cohort-rail';
 import { SenderSearch } from './sender-search';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
@@ -33,8 +32,7 @@ import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
-import { useWeeklyHero } from './api/use-weekly-hero';
-import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
+import { adaptSenderListRow } from './api/adapters';
 import {
   useEnqueueAction,
   useActionStatus,
@@ -46,21 +44,12 @@ import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
-import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { SenderListRow, SenderSummaryDto, WeeklyHeroSliceKind } from '@/lib/api/senders';
+import type { SenderListRow, SenderSummaryDto } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
-import {
-  InboxStoryHero,
-  KpiStrip,
-  WeeklyProgress,
-  groupByIntent,
-  intentOf,
-  INTENT_META,
-  type SenderIntent,
-} from './uplift-d';
+import { KpiStrip, groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
 
 const { color, font } = tokens;
 
@@ -259,8 +248,9 @@ function SendersScreenContent({
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
-  const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
-  const [heroDismissed, setHeroDismissed] = useState(false);
+  // State previously holding doneThisWeek + heroDismissed retired
+  // with the Senders Weekly Hero + WeeklyProgress render (spec v1.2
+  // Decision 4). Engagement loop ships on Brief.
 
   // P6 — real single-sender Archive (D226). `enqueue` fires the action;
   // `activeAction` holds the in-flight handle that `actionStatus` polls to
@@ -329,33 +319,14 @@ function SendersScreenContent({
   // returns to Table without a re-click.
   const isMobile = useIsAtMost('sm');
   const view = isMobile ? 'grid' : storeView;
-  // Weekly Hero (D47, D48). Always fetched; only RENDERED when
-  // `data.isMonday=true` per D47 ("refreshes Monday morning per user
-  // timezone"). The single in-flight fetch is cheap and keeps the
-  // cache warm so a same-week revisit is instant.
-  const heroQuery = useWeeklyHero();
+  // useWeeklyHero retired from Senders (spec v1.2 Decision 4); the
+  // Weekly Hero now lives on Brief. The hook + its observability
+  // effect move to apps/web/src/features/brief/ in the Brief redesign.
 
-  // D211/D212: a fetch failure must NOT be silently swallowed. Surface
-  // through structured `console.warn` (the observability seam picks it
-  // up downstream) so a Monday-morning hero outage is visible in logs
-  // even though the UI itself stays calm — we never block the senders
-  // list on the hero, which is a value-add card. The fallback render
-  // below shows a single-line inline notice on Mondays so the user
-  // knows the slot is "loading failed" rather than "you have nothing
-  // to review".
-  useEffect(() => {
-    if (heroQuery.error) {
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'senders.weekly_hero.fetch_failed',
-          message: heroQuery.error.message,
-        }),
-      );
-    }
-  }, [heroQuery.error]);
-
-  const cohorts = useMemo(() => detectCohorts(senders), [senders]);
+  // CohortRail render removed per spec v1.2 Decision 4. Cohort
+  // detection retained internally for potential resurrect as
+  // "Saved filters" post-launch (no production consumer today).
+  const _cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
   // Search is now server-side (#145) — `senders` already arrives filtered
   // by the active `q`, so the base for downstream counts + grouping is
@@ -411,7 +382,8 @@ function SendersScreenContent({
   // still need per-sender read-rate (not on the summary wire).
   const totals = useMemo(() => computeTotals(senders, summary), [senders, summary]);
 
-  const applyCohort = (cohort: Cohort) => {
+  // applyCohort retired with CohortRail render (spec v1.2 Decision 4).
+  const _applyCohort = (cohort: Cohort) => {
     setActiveIntent(null);
     setQuery('');
     setSelected(new Set(cohort.ids));
@@ -665,23 +637,10 @@ function SendersScreenContent({
     [review, performAction],
   );
 
-  // Hero CTA opens the review session over the senders the engine
-  // wants to clean up — same Wave-1 review primitive, new entry point.
-  //
-  // Filter via `intentOf()` (NOT the raw `lastReview.verdict`) so the
-  // X2 confidence gate is honored end-to-end: low-confidence
-  // `unsubscribe` verdicts that get suppressed from the Cleanup bucket
-  // also stay out of the hero CTA's review slice. Per Codex review of
-  // PR #82 (finding #4) — the gate previously affected `groupByIntent`
-  // only, leaving the hero + KPI totals counting raw verdicts.
-  const onStartReview = useCallback(() => {
-    const cleanup = senders.filter((s) => intentOf(s) === 'cleanup');
-    if (cleanup.length === 0) {
-      toast('No cleanup recommendations right now — your inbox is in shape.', 'info');
-      return;
-    }
-    setReview({ slice: cleanup, kind: 'promo' });
-  }, [senders]);
+  // onStartReview retired with InboxStoryHero render (spec v1.2
+  // Decision 4). Brief screen reframes the "start review" flow as
+  // its own hero CTA. The ReviewSession primitive remains available
+  // for direct invocation from chip rows or saved filters post-launch.
 
   return (
     <div
@@ -737,73 +696,16 @@ function SendersScreenContent({
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
 
       {/*
-        Weekly Hero (D47, D48) — visible ONLY on Mondays per D47.
-        Hidden when the user has dismissed for the week (D47 — "Hero
-        auto-dismisses for the week after user reviews any slice OR
-        clicks 'Not now.'"). Dismissal state is local-only at launch
-        (no `weekly_hero_runs.dismissed_at` table yet — that schema is
-        deferred); refreshing the page brings the hero back, which is
-        acceptable for V2 launch.
+        Weekly Hero, InboxStoryHero, WeeklyProgress, CohortRail
+        ALL REMOVED from Senders per spec v1.2 Decision 4.
+        WeeklyHero moves to Brief (separate ADR + PR); InboxStoryHero
+        retired entirely (editorial inference banned per Decision 6);
+        WeeklyProgress moves to Brief; CohortRail retire-then-resurrect
+        as "Saved filters" post-launch.
+
+        Senders becomes a lean power tool: header → KPI strip → chips
+        + sort + result-count strip → grid/table. No editorial frame.
       */}
-      {/* Suggestions rail — was Monday-only per D47; founder reframed
-          as "always visible when slices exist" since the surface is the
-          premium look the rest of the screen aspires to and BE
-          recomputes slices every fetch. Dismissal still works per
-          session. */}
-      {!heroDismissed && heroQuery.data && heroQuery.data.data.slices.length > 0 && (
-        <WeeklyHeroLive
-          data={heroQuery.data.data}
-          onReview={(kind, sliceSenders) => {
-            const reviewKind = mapHeroSliceToReviewKind(kind);
-            // PR #115 P2: review the full hero slice directly. The
-            // paginated `senders` list only contains the first page
-            // (~50 rows); larger mailboxes have hero slice members
-            // OUTSIDE that page, so the prior `senders.filter(...)`
-            // intersection silently dropped most of the slice. Adapt
-            // the hero DTOs into the `Sender` shape via
-            // `adaptHeroSender` so the review session sees every row
-            // the BE returned for the slice, regardless of pagination.
-            const slice = sliceSenders.map(adaptHeroSender);
-            if (slice.length === 0) {
-              // Defensive: the BE should never emit an empty slice
-              // (we don't render slices with < SLICE_MIN), but if it
-              // does, fall through with a calm toast rather than
-              // opening an empty review session.
-              toast('No senders to review in this slice.', 'info');
-              return;
-            }
-            setReview({ slice, kind: reviewKind });
-            setHeroDismissed(true);
-          }}
-          onSkip={() => setHeroDismissed(true)}
-        />
-      )}
-
-      {senders.length > 0 && (
-        <InboxStoryHero
-          eyebrow="Your senders, last 30 days"
-          story={renderHeroStory(totals)}
-          meta={[
-            {
-              value: `${summary?.activeSenders ?? 0}`,
-              label: 'Active senders',
-            },
-          ]}
-          ctaCopy={renderCtaCopy(totals)}
-          ctaLabel="Start review"
-          onCtaClick={onStartReview}
-        />
-      )}
-
-      <WeeklyProgress
-        label="This week"
-        done={doneThisWeek}
-        total={totals.cleanupCount}
-        // "Estimated savings" copy DROPPED — rode the placeholder
-        // 1.6 min/msg coefficient + the broken monthlyVolume sum.
-        // Will return when a calibrated coefficient lands.
-        caption={undefined}
-      />
 
       {/*
         Honest-failure banner — appears only when the mailbox-wide summary
@@ -841,10 +743,14 @@ function SendersScreenContent({
       {senders.length > 0 && (
         <KpiStrip
           cells={[
-            // KPI strip — 5 mailbox-wide cells from the rolling-window
-            // summary. Time-cost cell DROPPED (rode a placeholder
-            // 1.6-min/msg coefficient on top of the broken monthlyVolume
-            // sum — would render fiction). Restore when calibrated.
+            // KPI strip — 3 fact-only mailbox-wide cells per spec v1.2
+            // Decisions 4 + 6. Inferred cells RETIRED:
+            //   - 'Needs review' (derived from intentOf → inference)
+            //   - 'Noise reducible' (derived from cleanup-intent fraction)
+            // Fact-derived 'Senders / Active / Protected' kept.
+            // Phase 1 BE summary adds 'Replied' and 'Unsub-ready' bucket
+            // counts; this strip will gain those two cells when the wire
+            // lands. Until then 3 cells; pre-launch room for growth.
             {
               label: 'Senders',
               value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
@@ -855,24 +761,18 @@ function SendersScreenContent({
               micro: summary?.activeSenders ? 'last 30 days' : undefined,
             },
             {
-              label: 'Needs review',
-              value: totals.needsReview,
-            },
-            {
               label: 'Protected',
               value: totals.protectedCount,
               micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
-            },
-            {
-              label: 'Noise reducible',
-              value: `~${totals.noiseReductionPct}`,
-              unit: '%',
             },
           ]}
         />
       )}
 
-      {cohorts.length > 0 && <CohortRail cohorts={cohorts} onApply={applyCohort} />}
+      {/* CohortRail removed per spec v1.2 Decision 4 (retire-then-
+          resurrect as "Saved filters" post-launch). The cohorts data
+          stays computed for now to keep the existing detection logic
+          warm without re-introducing the surface. */}
 
       {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
       {senders.length > 0 && (
@@ -1177,66 +1077,12 @@ function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTot
   };
 }
 
-/**
- * Editorial hero story per ADR-0011 (hero-surface relaxation). One
- * editorial framing phrase ("worth reading") is permitted; D209
- * forbidden words remain forbidden. Renders two paragraphs.
- */
-function renderHeroStory(totals: SenderTotals) {
-  return [
-    <>
-      <span style={{ color: color.amber, fontWeight: 600 }}>{totals.totalMonthly}</span> emails
-      reached you in the last 30 days.
-    </>,
-    totals.noiseReductionPct > 0 ? (
-      <>
-        About{' '}
-        <span style={{ color: color.primary, fontWeight: 600 }}>{totals.noiseReductionPct}%</span>{' '}
-        of that was noise you could let go.
-      </>
-    ) : (
-      <>You&rsquo;re mostly receiving signal — nice.</>
-    ),
-  ];
-}
-
-function renderCtaCopy(totals: SenderTotals) {
-  if (totals.cleanupCount === 0) {
-    return (
-      <>
-        <strong>No cleanup recommendations this week.</strong> Your inbox is in shape — next review
-        when new senders arrive.
-      </>
-    );
-  }
-  return (
-    <>
-      <strong>
-        {totals.cleanupCount} decision{totals.cleanupCount === 1 ? '' : 's'} can cut next week's
-        inbox by ~{totals.noiseReductionPct}%.
-      </strong>{' '}
-      We'll guide you one at a time. {totals.cleanupCount <= 5 ? '3' : '5'} minutes.
-    </>
-  );
-}
-
-/**
- * Map a wire Hero slice kind (`high_confidence` / `spike` / `quiet`)
- * to the existing FE `ReviewKind` enum (`promo` / `quiet` / `protect`).
- * The mappings are pragmatic: high-confidence cleanups and spikes both
- * route through the "promo" review flow (Unsubscribe / Archive); the
- * long-quiet slice routes through the softer "quiet" flow.
- */
-function mapHeroSliceToReviewKind(kind: WeeklyHeroSliceKind): ReviewKind {
-  switch (kind) {
-    case 'high_confidence':
-      return 'promo';
-    case 'spike':
-      return 'promo';
-    case 'quiet':
-      return 'quiet';
-  }
-}
+// renderHeroStory, renderCtaCopy, mapHeroSliceToReviewKind RETIRED
+// alongside the InboxStoryHero + WeeklyHeroLive renders (spec v1.2
+// Decisions 4, 6). Hero copy moves to Brief per Decision 5; editorial
+// inference like "About 29% was noise" banned. Phase 5 dead-code
+// sweep deletes them from this file entirely; the comment marker
+// preserves the deletion intent for the next agent.
 
 interface IntentChipProps {
   label: string;
