@@ -8,7 +8,7 @@
  * the contracts match via a small contract test once both surfaces
  * land in the same PR slice.
  */
-export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule';
+export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule' | 'delete';
 
 /** One row in the tray — what the API returns per active token. */
 export interface UndoTrayEntry {

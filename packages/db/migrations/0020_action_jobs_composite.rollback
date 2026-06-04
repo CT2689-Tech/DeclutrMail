@@ -1,0 +1,26 @@
+-- Rollback for 0020_action_jobs_composite.sql
+--
+-- Drops the two columns + their index + FK constraint added by the
+-- forward migration. The drops are forward-incompatible: if any row
+-- relies on a composite_id pointing to a different action_jobs.id
+-- (a real composite action), the FK constraint drops cleanly but the
+-- composite linkage is lost. The expected use is for early Atlas
+-- round-trip tests, not for unwinding production data.
+
+DROP INDEX IF EXISTS "action_jobs_composite_id_idx";
+--> statement-breakpoint
+
+ALTER TABLE "action_jobs"
+  DROP CONSTRAINT IF EXISTS "action_jobs_composite_id_fk";
+--> statement-breakpoint
+
+ALTER TABLE "action_jobs"
+  DROP COLUMN IF EXISTS "composite_id";
+--> statement-breakpoint
+
+ALTER TABLE "action_jobs"
+  DROP CONSTRAINT IF EXISTS "action_jobs_older_than_days_range_chk";
+--> statement-breakpoint
+
+ALTER TABLE "action_jobs"
+  DROP COLUMN IF EXISTS "older_than_days";

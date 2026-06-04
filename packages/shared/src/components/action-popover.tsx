@@ -24,7 +24,7 @@
 
 'use client';
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
   VERB_REGISTRY,
   verbById,

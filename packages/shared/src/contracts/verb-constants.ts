@@ -36,7 +36,18 @@
  * which do not yet include it). `unsubscribe` routes through a separate
  * pipeline and `keep` is policy-only.
  */
-export const ACTION_VERBS = ['keep', 'archive', 'later', 'unsubscribe', 'unarchive'] as const;
+export const ACTION_VERBS = [
+  'keep',
+  'archive',
+  'later',
+  'unsubscribe',
+  'unarchive',
+  // ADR-0019 + ADR-0020 (2026-06-03) — Delete verb added per spec v1.2
+  // Decision 1. Routes to Gmail Trash worker (messages.trash). 30-day
+  // recovery window. Append-only — DB enum mirror migration is
+  // packages/db/migrations/0019_action_verb_delete.sql.
+  'delete',
+] as const;
 export type ActionVerb = (typeof ACTION_VERBS)[number];
 
 /**
@@ -102,10 +113,13 @@ export const CANONICAL_SHORTCUTS = {
   archive: 'A',
   unsubscribe: 'U',
   later: 'L',
+  // ADR-0019 (2026-06-03) — Delete shortcut added per spec v1.2
+  // Decision 1. Extends D227's K/A/U/L letter set to K/A/U/L/D.
+  delete: 'D',
 } as const;
 export type CanonicalVerb = keyof typeof CANONICAL_SHORTCUTS;
 
-/** The four D227 shortcut letters — `'K' | 'A' | 'U' | 'L'`. */
+/** The five D227 (amended) shortcut letters — `'K' | 'A' | 'U' | 'L' | 'D'`. */
 export type CanonicalShortcut = (typeof CANONICAL_SHORTCUTS)[CanonicalVerb];
 
 /** Type guard — narrows an arbitrary string to a known `ActionVerb`. */

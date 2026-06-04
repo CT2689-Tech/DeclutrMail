@@ -72,6 +72,14 @@ export interface VerbParams {
   readonly later: Record<string, never>;
   readonly unsubscribe: Record<string, never>;
   readonly unarchive: Record<string, never>;
+  /**
+   * Delete verb (ADR-0019). Currently params-less — the time-window
+   * filter (`olderThanDays`) lives on the `action_jobs.older_than_days`
+   * column directly, not as a verb param, because the worker reads it
+   * from the row when resolving the message set. Future Delete-specific
+   * params (e.g., a "skip Important label" toggle) land here.
+   */
+  readonly delete: Record<string, never>;
 }
 export type ParamsForVerb<V extends ActionVerb> = VerbParams[V];
 
@@ -253,6 +261,39 @@ export const ACTION_REGISTRY: ActionRegistry = {
       // side-effect label at V2; the one-click vs mailto resolver lands at
       // P9 (D230). NOT in the label-modify pg_enum.
       sideEffect: { addLabelIds: ['DeclutrMail/Unsubscribed'] },
+    },
+  },
+  delete: {
+    verb: 'delete',
+    copy: {
+      primary: 'Delete',
+      description:
+        "Move this sender's mail to Gmail Trash. Recoverable for 30 days, after which Gmail permanently deletes it.",
+    },
+    shortcut: CANONICAL_SHORTCUTS.delete,
+    // Delete is destructive in a way that survives undo — Trash recovery
+    // window is 30 days vs Archive/Later's 7d. Modal preview MANDATORY
+    // per D226; the modal renders the red Delete tone + recovery-window
+    // banner per spec v1.2 Decision 15 ConfirmActionModal redesign.
+    preview: 'modal',
+    capabilities: {
+      sender: { tier: 'free', countsAsCleanup: true },
+      'multi-sender': { tier: 'plus', countsAsCleanup: true, cap: 1000 },
+      'sender-filter': { tier: 'pro', countsAsCleanup: true },
+    },
+    execution: {
+      // Routes through `label-modify` kind because Gmail's `TRASH` is
+      // internally a label; the worker reads the verb and dispatches
+      // to `messages.trash` (not `labels.modify`) per Gmail API
+      // semantics. The buildLabelChange surfaces the conceptual
+      // shape — forward = add TRASH; reverse = remove TRASH — so the
+      // activity log + undo journal stay consistent with the rest of
+      // the label-modify family.
+      kind: 'label-modify',
+      buildLabelChange: () => ({
+        forward: { addLabelIds: ['TRASH'] },
+        reverse: { removeLabelIds: ['TRASH'] },
+      }),
     },
   },
   unarchive: {

@@ -17,7 +17,7 @@
  * content, attachments, or non-allowlisted headers.
  */
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import {
   ActionPopover,
   ActionPopoverTrigger,
@@ -72,56 +72,11 @@ const ARROW = (
   </svg>
 );
 
-const VERB_ICONS: Record<'Archive' | 'Later' | 'Unsubscribe', ReactNode> = {
-  Archive: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="21 8 21 21 3 21 3 8" />
-      <rect x="1" y="3" width="22" height="5" />
-      <line x1="10" y1="12" x2="14" y2="12" />
-    </svg>
-  ),
-  Later: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
-  ),
-  Unsubscribe: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  ),
-};
+// ADR-0019 Verb Registry now provides verb icons via `VerbSpec.icon`
+// (emoji glyph). The legacy `VERB_ICONS` SVG map retired with the
+// secondary-buttons row on the card; ActionPopover renders icons
+// uniformly across surfaces. The Phase 5 dead-code sweep removed the
+// SVG strings from this file in 2026-06-03.
 
 export interface SenderCardProps {
   sender: Sender;
@@ -139,17 +94,6 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
   const leadVerb = LEAD_VERB_BY_INTENT[intent];
   const readPct = Math.round(sender.read * 100);
   const protectedNow = isStandingProtected(sender);
-
-  // Secondary verbs — exclude the lead so the bottom row only carries
-  // the alternatives.
-  const SECONDARY: Array<{ verb: 'Archive' | 'Later' | 'Unsubscribe'; ok: boolean }> = [
-    { verb: 'Archive', ok: archiveOk },
-    { verb: 'Later', ok: laterOk },
-    { verb: 'Unsubscribe', ok: unsubOk },
-  ].filter((v) => v.verb !== leadVerb) as Array<{
-    verb: 'Archive' | 'Later' | 'Unsubscribe';
-    ok: boolean;
-  }>;
 
   return (
     <article
@@ -484,50 +428,16 @@ function Stat({
   );
 }
 
-function intentLabel(i: SenderIntent): string {
-  switch (i) {
-    case 'cleanup':
-      return 'Cleanup';
-    case 'later':
-      return 'Move later';
-    case 'protect':
-      return 'Protected';
-    case 'people':
-      return 'Keep';
-    default: {
-      // Forces a compile error if `SenderIntent` grows a new variant —
-      // without this, the function silently returns `undefined` and
-      // ships the literal string "undefined" to the DOM.
-      const _exhaustive: never = i;
-      return _exhaustive;
-    }
-  }
-}
-
+/**
+ * Lead-button tone derivation for the primary CTA. Tone semantics
+ * locked by D26/D31: Unsubscribe = amber `warn`; Keep = dark; others
+ * = neutral `default`. Phase 2 PR-FE3 widens the union when Delete
+ * lands on the card surface via the Verb Registry's `danger` tone.
+ */
 function leadButtonTone(
   verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive',
 ): 'warn' | 'dark' | 'default' {
   if (verb === 'Unsubscribe') return 'warn';
   if (verb === 'Keep') return 'dark';
   return 'default';
-}
-
-function leadButtonCopy(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'): string {
-  // Single-word labels so the lead CTA never truncates in narrow grid
-  // columns. The recommendation context lives in the tone wash + the
-  // primary numeric — the button doesn't need to re-state the volume.
-  switch (verb) {
-    case 'Unsubscribe':
-      return 'Unsubscribe';
-    case 'Later':
-      return 'Later';
-    case 'Keep':
-      return 'Keep';
-    case 'Archive':
-      return 'Archive';
-    default: {
-      const _exhaustive: never = verb;
-      return _exhaustive;
-    }
-  }
 }

@@ -246,5 +246,14 @@ function verbLabel(kind: UndoActionKind): string {
       return 'Later';
     case 'apply-rule':
       return 'Rule applied';
+    case 'delete':
+      // ADR-0019 — Delete verb label. Recoverable for 30 days from
+      // Gmail Trash; the tray surfaces the longer recovery window via
+      // formatTimeLeft on the entry's expiresAt timestamp.
+      return 'Delete';
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
   }
 }

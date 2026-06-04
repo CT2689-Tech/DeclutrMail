@@ -1,0 +1,24 @@
+-- Rollback for 0021_delete_action_kinds.sql
+--
+-- Drops `'delete'` from both `undo_action_kind` and `activity_action`
+-- pg_enums via the same recreate-without-value pattern used in
+-- 0019_action_verb_delete.rollback.
+
+-- undo_action_kind
+ALTER TABLE "undo_journal" ALTER COLUMN "action_kind" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."undo_action_kind";
+--> statement-breakpoint
+CREATE TYPE "public"."undo_action_kind" AS ENUM('archive', 'unsubscribe', 'later', 'apply-rule');
+--> statement-breakpoint
+ALTER TABLE "undo_journal" ALTER COLUMN "action_kind" TYPE "public"."undo_action_kind" USING action_kind::"public"."undo_action_kind";
+--> statement-breakpoint
+
+-- activity_action
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."activity_action";
+--> statement-breakpoint
+CREATE TYPE "public"."activity_action" AS ENUM('keep', 'archive', 'unsubscribe', 'later', 'followup-dismiss');
+--> statement-breakpoint
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE "public"."activity_action" USING action::"public"."activity_action";

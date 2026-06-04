@@ -1,0 +1,25 @@
+-- 0019_action_verb_delete.sql
+--
+-- ADR-0019 + ADR-0020 — append `delete` to the `action_verb` pg_enum.
+-- Mirrors the 0018_action_verb_later.sql pattern (append-only enum
+-- extension). The `delete` verb routes to a Gmail Trash worker
+-- (messages.trash) — moves messages to Trash, where Gmail auto-empties
+-- them after 30 days. The 30-day window is our recovery period; undo
+-- journal retention (D232) ensures the action-job row + undo token
+-- survive the worst case (7d minimum, extended for delete to 30d).
+--
+-- Forward-only-friendly: existing consumers still recognize the
+-- previous values; the new value is additive and not used by any
+-- existing code path until the action API enqueues a delete job.
+--
+-- Privacy (D7, D228): metadata only — `action_jobs` rows carry ids/keys,
+-- never message content. The Trash worker writes to Gmail via
+-- `messages.trash` API; no body, no snippet, no header is fetched or
+-- stored as part of the Delete operation.
+--
+-- The rollback companion drops + recreates the type so the round-trip
+-- test can prove the schema returns to the prior state; if any row
+-- carries the new value the rollback fails on the USING cast (correct
+-- semantics — you cannot rollback if data depends on the value).
+
+ALTER TYPE "public"."action_verb" ADD VALUE IF NOT EXISTS 'delete';

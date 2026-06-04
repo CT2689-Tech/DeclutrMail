@@ -7,7 +7,7 @@
  * union AND the migration AND the enum, which is exactly the contract
  * we want.
  */
-export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule';
+export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule' | 'delete';
 
 /**
  * Per-action payload shape (D232).
