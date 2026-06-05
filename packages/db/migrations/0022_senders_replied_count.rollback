@@ -1,0 +1,18 @@
+-- 0022_senders_replied_count.rollback
+--
+-- Reverses 0022. Drops the `senders.replied_count` denorm column.
+--
+-- The auto-protect rows written by the forward apply are NOT undone —
+-- a `sender_policies.is_protected=true` row created via the spec
+-- v1.3 engagement rule remains; the rollback is "give me back the
+-- prior shape," not "wipe user trust state." Re-applying the forward
+-- migration is idempotent (the UPSERT guard preserves provenance) so
+-- a roundtrip leaves no drift.
+--
+-- Safe — `replied_count` is a denormalised cache of
+-- `COUNT(DISTINCT outbound thread)` derivable from `mail_messages`;
+-- dropping the column loses the cache but the source-of-truth counts
+-- remain queryable, and `InitialSyncWorker.buildSenderIndex`
+-- rebuilds the column on a subsequent forward apply.
+
+ALTER TABLE "senders" DROP COLUMN IF EXISTS "replied_count";

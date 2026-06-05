@@ -1,4 +1,10 @@
-import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
+import {
+  mailMessages,
+  providerSyncState,
+  senderPolicies,
+  senders,
+  senderTimeseries,
+} from '@declutrmail/db';
 import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -559,6 +565,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // for this mailbox is a fresh write from the recomputed aggregate.
     // PG rolls back if any insert throws → last known-good state
     // preserved, never a partial teardown.
+    //
+    // Reply attribution post-pass (spec v1.3 + mig 0022).
+    // After the rebuild's INSERTs, recompute `senders.replied_count` +
+    // `sender_timeseries.reply_count` from `mail_messages` via the SAME
+    // SQL as 0022's backfill — the migration IS the formula, single
+    // source of truth. Then upsert `sender_policies` for any sender
+    // whose `replied_count` crossed the auto-protect threshold (≥3,
+    // spec L488). Both run inside the rebuild tx so a partial reply
+    // pass rolls back with the rest.
     await this.deps.db.transaction(async (tx) => {
       await tx
         .delete(senderTimeseries)
@@ -575,6 +590,104 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
         }
       }
+
+      // Reply-attribution post-pass. The aggregate counts DISTINCT
+      // outbound `mail_messages.id` per `(sender_key)` whose thread
+      // contains ≥1 inbound from that sender. Matches mig 0022's
+      // backfill semantic exactly — drift-free across migration apply
+      // + every initial-sync run.
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET ${sql.identifier('replied_count')} = sub.cnt
+        FROM (
+          SELECT
+            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m1.${sql.identifier('sender_key')} AS sender_key,
+            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m1
+          JOIN ${mailMessages} AS m2
+            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
+           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
+           AND m2.${sql.identifier('is_outbound')} = true
+          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m1.${sql.identifier('is_outbound')} = false
+          GROUP BY m1.${sql.identifier('mailbox_account_id')}, m1.${sql.identifier('sender_key')}
+        ) AS sub
+        WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND s.${sql.identifier('sender_key')} = sub.sender_key
+      `);
+
+      // Per-month reply attribution into `sender_timeseries.reply_count`
+      // (column existed since schema; populator was the missing piece
+      // per the schema doc on sender-timeseries.ts L26-27). Same
+      // distinct-outbound-id semantic as above, but bucketed by
+      // `date_trunc('month', m2.internal_date)` so the row keyed by
+      // `(mailbox_account_id, sender_key, year_month)` already exists
+      // from the timeseries insert above — UPDATE in place.
+      await tx.execute(sql`
+        UPDATE ${senderTimeseries} AS st
+        SET ${sql.identifier('reply_count')} = sub.cnt
+        FROM (
+          SELECT
+            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m1.${sql.identifier('sender_key')} AS sender_key,
+            date_trunc('month', m2.${sql.identifier('internal_date')})::date AS year_month,
+            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m1
+          JOIN ${mailMessages} AS m2
+            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
+           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
+           AND m2.${sql.identifier('is_outbound')} = true
+          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m1.${sql.identifier('is_outbound')} = false
+          GROUP BY
+            m1.${sql.identifier('mailbox_account_id')},
+            m1.${sql.identifier('sender_key')},
+            date_trunc('month', m2.${sql.identifier('internal_date')})
+        ) AS sub
+        WHERE st.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND st.${sql.identifier('sender_key')} = sub.sender_key
+          AND st.${sql.identifier('year_month')} = sub.year_month
+      `);
+
+      // Auto-protect on replied ≥ 3 (spec v1.3 §"Trust-canary CI
+      // fixture" L488). Engagement-based provenance — the cascade
+      // audit copy reads `protection_reason` to render the audit
+      // string (score-cascade.ts:159-173). The WHERE-clause guard on
+      // UPSERT preserves prior user_defined / vip provenance.
+      await tx.execute(sql`
+        INSERT INTO ${senderPolicies} (
+          ${sql.identifier('mailbox_account_id')},
+          ${sql.identifier('sender_key')},
+          ${sql.identifier('policy_type')},
+          ${sql.identifier('is_protected')},
+          ${sql.identifier('protection_reason')},
+          ${sql.identifier('protection_set_at')}
+        )
+        SELECT
+          s.${sql.identifier('mailbox_account_id')},
+          s.${sql.identifier('sender_key')},
+          'keep'::sender_policy_type,
+          true,
+          'engagement_based'::protection_reason,
+          now()
+        FROM ${senders} AS s
+        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+          AND s.${sql.identifier('replied_count')} >= 3
+        ON CONFLICT (${sql.identifier('mailbox_account_id')}, ${sql.identifier('sender_key')}) DO UPDATE
+        SET
+          ${sql.identifier('is_protected')} = true,
+          ${sql.identifier('protection_reason')} = COALESCE(
+            sender_policies.${sql.identifier('protection_reason')},
+            'engagement_based'::protection_reason
+          ),
+          ${sql.identifier('protection_set_at')} = COALESCE(
+            sender_policies.${sql.identifier('protection_set_at')},
+            now()
+          ),
+          ${sql.identifier('updated_at')} = now()
+        WHERE sender_policies.${sql.identifier('is_protected')} = false
+      `);
     });
 
     if (orphans > 0) {

@@ -129,6 +129,7 @@ export class SendersController {
     @Query('q') rawQ: string | undefined,
     @Query('activity') rawActivity: string | undefined,
     @Query('unsub_ready') rawUnsubReady: string | undefined,
+    @Query('replied') rawReplied: string | undefined,
     @Query('window') rawWindow: string | undefined,
     @Query('domain') rawDomain: string | undefined,
   ): Promise<SenderListEnvelope> {
@@ -142,6 +143,7 @@ export class SendersController {
     // D38 compose strip params.
     const activity = parseActivity(rawActivity);
     const unsubReady = parseTriState(rawUnsubReady);
+    const repliedTo = parseTriState(rawReplied);
     const quietForDays = parseWindow(rawWindow);
     const domain = parseSearch(rawDomain); // share the search trimmer
 
@@ -170,6 +172,7 @@ export class SendersController {
         q,
         activity,
         unsubReady,
+        repliedTo,
         quietForDays,
         domain,
       }),
@@ -180,6 +183,7 @@ export class SendersController {
         q,
         activity,
         unsubReady,
+        repliedTo,
         quietForDays,
         domain,
       }),

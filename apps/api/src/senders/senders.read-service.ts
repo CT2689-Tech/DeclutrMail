@@ -282,6 +282,12 @@ export class SendersReadService {
      */
     domain?: string | null;
     /**
+     * "You replied" filter (D38 + spec v1.3). `true` requires
+     * `replied_count > 0`; `false` requires `replied_count = 0`;
+     * `null` = no constraint. Mirrors `unsubReady` tri-state shape.
+     */
+    repliedTo?: TriStateFilter;
+    /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
      * controllers don't have to thread the clock through.
@@ -467,6 +473,11 @@ export class SendersReadService {
       conditions.push(
         sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
       );
+    }
+    if (args.repliedTo === true) {
+      conditions.push(sql`${senders.repliedCount} > 0`);
+    } else if (args.repliedTo === false) {
+      conditions.push(sql`${senders.repliedCount} = 0`);
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       conditions.push(
@@ -674,6 +685,8 @@ export class SendersReadService {
     unsubReady?: TriStateFilter;
     quietForDays?: number | null;
     domain?: string | null;
+    /** D38 + spec v1.3 — `you replied N` filter (tri-state). */
+    repliedTo?: TriStateFilter;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -699,6 +712,11 @@ export class SendersReadService {
       totalMatchingConditions.push(
         sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
       );
+    }
+    if (args.repliedTo === true) {
+      totalMatchingConditions.push(sql`${senders.repliedCount} > 0`);
+    } else if (args.repliedTo === false) {
+      totalMatchingConditions.push(sql`${senders.repliedCount} = 0`);
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       totalMatchingConditions.push(
@@ -759,6 +777,13 @@ export class SendersReadService {
         unsubReady: sql<
           string | number
         >`COUNT(*) FILTER (WHERE ${senders.unsubscribeMethod} IS NOT NULL AND ${senders.unsubscribeMethod} <> 'none')::bigint`,
+        // D38 + Senders V2 spec v1.3 — `you replied N` compose chip count.
+        // Backed by `senders.replied_count` (mig 0022) which materialises
+        // `COUNT(DISTINCT outbound m.id WHERE m.thread has inbound from
+        // sender)` so the predicate stays index-friendly + O(1) per row.
+        repliedToCount: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.repliedCount} > 0)::bigint`,
         protectedCount: sql<
           string | number
         >`COUNT(*) FILTER (WHERE ${senderPolicies.isProtected} = true)::bigint`,
@@ -788,10 +813,9 @@ export class SendersReadService {
           quiet: ensureSafeIntegerNumber(counts.quiet ?? 0, 'filterCounts.quiet'),
           dormant: ensureSafeIntegerNumber(counts.dormant ?? 0, 'filterCounts.dormant'),
           unsubReady: ensureSafeIntegerNumber(counts.unsubReady ?? 0, 'filterCounts.unsubReady'),
-          // `repliedTo` requires the `replied_count` column added in
-          // Phase 1 BE (handoff todo). Stub to 0 until that lands; FE
-          // hides the chip when count is 0 + the column is absent.
-          repliedTo: 0,
+          // D38 honest count — `senders.replied_count > 0` (mig 0022 +
+          // buildSenderIndex/IncrementalSyncWorker write paths).
+          repliedTo: ensureSafeIntegerNumber(counts.repliedToCount ?? 0, 'filterCounts.repliedTo'),
           protected: ensureSafeIntegerNumber(counts.protectedCount ?? 0, 'filterCounts.protected'),
         }
       : undefined;

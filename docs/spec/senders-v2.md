@@ -1,11 +1,18 @@
-# Senders V2 — Product Spec (single-signer) — v1.2
+# Senders V2 — Product Spec (single-signer) — v1.3
 
-- **Status:** Awaiting founder signature
-- **Version:** v1.2 (patches v1.1 with founder marks from 2026-06-03 review)
+- **Status:** Founder-signed (v1.2 → 2026-06-03; v1.3 amendment → 2026-06-05)
+- **Version:** v1.3 (patches v1.2 with the recent-subjects amendment from 2026-06-05 session)
 - **Author:** session 2026-06-03 (drafted by Claude, recommendations only)
 - **Owner:** chintan.a.thakkar@gmail.com
 - **Supersedes:** the open-loop spec discussion since 2026-05-30
 - **Locks:** every Senders + Sender-Detail product decision below for the build cycle. Drift = visible (any PR contradicting a signed section flags plan-drift per CLAUDE.md §3)
+
+## v1.2 → v1.3 changelog
+
+Session 2026-06-05 amendment:
+
+- **`oldestSubjects` → `recentSubjects`** in the "Show what will move" preview panel. The 3-second sender-recognition check works better on recent subjects ("Statement available - April" — user just got it) than on dustiest-at-boundary subjects. Recent = `ORDER BY internal_date DESC LIMIT 5` within the selected time-window. Privacy line + "Subjects only · we never read email bodies" reassurance unchanged.
+- Affected sections: §"Show what will move" preview expansion, §Preview payload contract (`recentSubjects` field), §Phase 1 BE foundation (endpoint contract).
 
 ## v1.1 → v1.2 changelog
 
@@ -277,7 +284,7 @@ Pulled from existing `SenderListRow`:
 
 ### "Show what will move" preview expansion
 
-Tapping `[Show what will move (5 of N) ▾]` reveals 5 oldest subjects in the selected time-window:
+Tapping `[Show what will move (5 of N) ▾]` reveals the 5 most-recent subjects in the selected time-window (v1.3 amendment — recent beats oldest for 3-second sender recognition):
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -448,7 +455,7 @@ Returns counts per time-window bucket:
   custom: { /* computed on-demand via debounced refetch when user types Custom */ },
   unsubAvailable: true,
   protected: false,
-  oldestSubjects: [ /* 5 oldest within selected window for "Show what will move" */ ],
+  recentSubjects: [ /* 5 most-recent within selected window for "Show what will move" — v1.3 */ ],
 }
 ```
 
@@ -540,7 +547,7 @@ Bulk SelectionBar:
 - `sort=read` w/ low-N floor
 - `recent-subjects` endpoint
 - **NEW unified `POST /api/actions` endpoint** (replaces per-verb endpoints)
-- **NEW `GET /api/actions/preview` endpoint** (returns time-window bucket counts + `oldestSubjects` for preview)
+- **NEW `GET /api/actions/preview` endpoint** (returns time-window bucket counts + `recentSubjects` for preview — v1.3)
 - Bulk-by-filter endpoint
 - `summary.byBucket` += `replied`, `unsub_ready` keys
 - `replied_count`, `to_me_only`, `has_attachment` columns added

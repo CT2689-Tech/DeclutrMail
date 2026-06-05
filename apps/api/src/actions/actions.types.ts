@@ -181,6 +181,9 @@ export interface CompositeActionPreviewResult {
     name: string;
     domain: string;
     lastSeenDays: number | null;
+    /** `senders.replied_count` (mig 0022) — `null` only when sender
+     *  row pre-dates the backfill. The sender-context strip renders
+     *  `you replied N×` from this value. */
     repliedCount: number | null;
     monthly: number | null;
   };
@@ -190,6 +193,22 @@ export interface CompositeActionPreviewResult {
     olderThan90d: number;
     olderThan180d: number;
     olderThan365d: number;
+  };
+  /**
+   * Top 5 most-recent subjects per time-window for the "Show what will
+   * move" trust panel (spec v1.3 — recent beats oldest for 3-sec sender
+   * recognition). Each array is ordered by `internal_date DESC`,
+   * capped at 5. Empty array when no messages match the window.
+   * `subject` is D7-allowlisted (sender + subject + snippet + dates +
+   * labels + read state) — no body, no attachment, no other header
+   * surfaces here.
+   */
+  recentSubjects: {
+    all: string[];
+    olderThan30d: string[];
+    olderThan90d: string[];
+    olderThan180d: string[];
+    olderThan365d: string[];
   };
   unsubAvailable: boolean;
   protected: boolean;

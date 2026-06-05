@@ -344,6 +344,17 @@ describe('ActionsService', () => {
       expect(res.sender.domain).toBe('shop.example');
       expect(res.unsubAvailable).toBe(false);
       expect(res.protected).toBe(false);
+      // Spec v1.3 — recent subjects per window. Each array is top-5 most-
+      // recent (DESC by internal_date). The fixture's INBOX messages have
+      // `subject` = '' (seed default), so we assert COUNTS not contents.
+      // The exclusion of `m-archived` is what matters semantically: it
+      // never appears in any recent-subjects bucket because its label
+      // mask lacks INBOX.
+      expect(res.recentSubjects.all).toHaveLength(5);
+      expect(res.recentSubjects.olderThan30d).toHaveLength(4);
+      expect(res.recentSubjects.olderThan90d).toHaveLength(3);
+      expect(res.recentSubjects.olderThan180d).toHaveLength(2);
+      expect(res.recentSubjects.olderThan365d).toHaveLength(1);
     });
 
     it('returns protected:true when the sender has a policy row', async () => {

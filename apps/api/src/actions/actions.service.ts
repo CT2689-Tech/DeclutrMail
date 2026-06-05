@@ -203,6 +203,7 @@ export class ActionsService {
         domain: senders.domain,
         lastSeenAt: senders.lastSeenAt,
         unsubscribeMethod: senders.unsubscribeMethod,
+        repliedCount: senders.repliedCount,
       })
       .from(senders)
       .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
@@ -226,25 +227,56 @@ export class ActionsService {
       .limit(1);
 
     // ONE aggregate query: all four time-window buckets + the
-    // un-windowed `all` count + the past-30d `monthly` figure. The
-    // FILTER clauses are equivalent to N separate counted queries but
-    // share the single index seek, so the modal opens in one round-trip.
+    // un-windowed `all` count + the past-30d `monthly` figure + the
+    // top-5 most-recent subjects per window for the "Show what will
+    // move" trust panel (spec v1.3 §"Show what will move" — recent
+    // beats oldest for 3-sec sender recognition).
+    //
+    // `array_agg(subject ORDER BY ... DESC) FILTER (WHERE rn <= 5 AND
+    // window_predicate)` collapses what would have been five separate
+    // LIMIT 5 queries into one aggregate — the window function picks
+    // top-5 per window, the FILTER clause selects per bucket. Single
+    // index seek on `mail_messages_account_sender_date_idx`.
     const [counts] = await this.db
       .select({
         all: sql<number>`count(*)::int`,
-        olderThan30d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '30 days')::int`,
-        olderThan90d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '90 days')::int`,
-        olderThan180d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '180 days')::int`,
-        olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
-        monthly: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} >= now() - interval '30 days')::int`,
+        olderThan30d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '30 days')::int`,
+        olderThan90d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '90 days')::int`,
+        olderThan180d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '180 days')::int`,
+        olderThan365d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '365 days')::int`,
+        monthly: sql<number>`count(*) FILTER (WHERE m.internal_date >= now() - interval '30 days')::int`,
+        recentAll: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), ARRAY[]::text[])`,
+        recent30d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), ARRAY[]::text[])`,
+        recent90d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), ARRAY[]::text[])`,
+        recent180d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), ARRAY[]::text[])`,
+        recent365d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), ARRAY[]::text[])`,
       })
-      .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.senderKey, sender.senderKey),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
+      .from(
+        sql`(
+          SELECT
+            ${mailMessages.subject} AS subject,
+            ${mailMessages.internalDate} AS internal_date,
+            row_number() OVER (ORDER BY ${mailMessages.internalDate} DESC) AS rn_all,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '30 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_30,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '90 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_90,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '180 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_180,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '365 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_365
+          FROM ${mailMessages}
+          WHERE ${mailMessages.mailboxAccountId} = ${mailboxAccountId}
+            AND ${mailMessages.senderKey} = ${sender.senderKey}
+            AND ${mailMessages.isOutbound} = false
+            AND 'INBOX' = ANY(${mailMessages.labelIds})
+        ) m`,
       );
 
     const nowMs = Date.now();
@@ -259,11 +291,11 @@ export class ActionsService {
         name: sender.displayName,
         domain: sender.domain,
         lastSeenDays,
-        // `repliedCount` is not yet a senders column at this build —
-        // Phase 1 BE adds it alongside the auto-protect-on-replied-≥3
-        // rule. Stay null until then; the FE renders the strip without
-        // the "you replied" segment when null.
-        repliedCount: null,
+        // `senders.replied_count` from mig 0022 — populated
+        // authoritatively by `InitialSyncWorker.buildSenderIndex` and
+        // incrementally by `IncrementalSyncWorker`. The number IS the
+        // sender-context-strip "you replied N×" copy.
+        repliedCount: sender.repliedCount,
         monthly: toCount(counts?.monthly),
       },
       counts: {
@@ -272,6 +304,17 @@ export class ActionsService {
         olderThan90d: toCount(counts?.olderThan90d),
         olderThan180d: toCount(counts?.olderThan180d),
         olderThan365d: toCount(counts?.olderThan365d),
+      },
+      // Spec v1.3 — top 5 most-recent subjects per window for the
+      // "Show what will move" trust panel. `subject` is D7-allowlisted
+      // (sender + subject + snippet + dates + labels + read state);
+      // no body, no attachment, no header-outside-allowlist surfaced.
+      recentSubjects: {
+        all: counts?.recentAll ?? [],
+        olderThan30d: counts?.recent30d ?? [],
+        olderThan90d: counts?.recent90d ?? [],
+        olderThan180d: counts?.recent180d ?? [],
+        olderThan365d: counts?.recent365d ?? [],
       },
       unsubAvailable: sender.unsubscribeMethod !== null,
       protected: Boolean(policy?.isProtected || policy?.isVip),

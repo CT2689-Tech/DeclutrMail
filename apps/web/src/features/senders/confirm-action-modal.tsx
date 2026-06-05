@@ -90,6 +90,27 @@ function pickBucketCount(
   return counts.all;
 }
 
+/**
+ * Mirror of `pickBucketCount` for the "Show what will move" recent-
+ * subjects panel (spec v1.3 — recent beats oldest for 3-sec sender
+ * recognition). Returns the BE-returned top-5 subjects for the chip
+ * the user has selected. Returns `undefined` when the preview hasn't
+ * loaded yet so the caller can fall back to the fixture pool during
+ * the in-flight flash.
+ */
+function pickBucketSubjects(
+  buckets: CompositeActionPreviewResult['recentSubjects'] | undefined,
+  olderThanDays: number | null,
+): string[] | undefined {
+  if (!buckets) return undefined;
+  if (olderThanDays === null) return buckets.all;
+  if (olderThanDays === 30) return buckets.olderThan30d;
+  if (olderThanDays === 90) return buckets.olderThan90d;
+  if (olderThanDays === 180) return buckets.olderThan180d;
+  if (olderThanDays === 365) return buckets.olderThan365d;
+  return buckets.all;
+}
+
 /** Default time-window per primary verb (spec v1.2 Decision 15 table). */
 function defaultWindow(verb: ActionVerb): number | null {
   return verb === 'Delete' ? 180 : null;
@@ -299,12 +320,19 @@ export function ConfirmActionModal({
       ? 'Reversible for 7 days from Activity.'
       : null;
 
-  // Subjects for the "Show what will move" panel. Single-sender single-
-  // verb path uses the existing fixture pool (`sampleSubjects`) — the BE
-  // oldest-subjects endpoint is queued as a follow-up (spec Decision 15
-  // `oldestSubjects`); until it lands the panel shows the privacy-safe
-  // sample for trust signalling rather than a fake count.
-  const subjectsPreview = senders.length === 1 ? sampleSubjects(senders[0]!) : [];
+  // Subjects for the "Show what will move" panel (spec v1.3 — recent
+  // beats oldest for 3-sec sender recognition). Single-sender single-
+  // verb path reads top-5 from `compositePreview.recentSubjects[bucket]`;
+  // falls back to the fixture pool ONLY while the preview is in flight
+  // so the panel never blanks during the load flash. Bulk flow (>1
+  // sender) hides the panel entirely — per-sender drilldown is a
+  // separate ticket.
+  const subjectsFromWire =
+    senders.length === 1
+      ? pickBucketSubjects(compositePreview?.recentSubjects, olderThanDays)
+      : undefined;
+  const subjectsPreview =
+    senders.length === 1 ? (subjectsFromWire ?? sampleSubjects(senders[0]!)) : [];
 
   return (
     <>

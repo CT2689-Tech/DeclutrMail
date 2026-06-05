@@ -163,6 +163,8 @@ export interface CompositeActionPreviewResult {
     name: string;
     domain: string;
     lastSeenDays: number | null;
+    /** `senders.replied_count` from mig 0022 — drives the
+     *  sender-context-strip "you replied N×" copy. */
     repliedCount: number | null;
     monthly: number | null;
   };
@@ -172,6 +174,20 @@ export interface CompositeActionPreviewResult {
     olderThan90d: number;
     olderThan180d: number;
     olderThan365d: number;
+  };
+  /**
+   * Top 5 most-recent subjects per time-window for the "Show what will
+   * move" trust panel (spec v1.3). Each array is ordered by
+   * `internal_date DESC`, capped at 5. Empty when no INBOX messages
+   * match the window. `subject` is D7-allowlisted; no body, no
+   * attachment, no header-outside-allowlist surfaces here.
+   */
+  recentSubjects: {
+    all: string[];
+    olderThan30d: string[];
+    olderThan90d: string[];
+    olderThan180d: string[];
+    olderThan365d: string[];
   };
   unsubAvailable: boolean;
   protected: boolean;
