@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   EmptyState,
@@ -1008,31 +1008,16 @@ function SendersScreenContent({
             filter: {FACT_CHIPS.find((c) => c.key === activeFactChip)?.label.toLowerCase()}
           </span>
           <span>·</span>
-          {/* Sort surface (Q2 — surface the active sort on grid; click
-              cycles through the BE-supported set). Same affordance the
-              table column headers already provide, exposed for the
-              grid view that has no header row to click. The store is
-              the single seam, so grid + table stay in lockstep. */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = nextSort({ sort: tableSort, direction: tableDirection });
-              setTableSort(next);
-            }}
-            aria-label="Change sort"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11,
-              color: 'var(--color-fg-soft)',
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              letterSpacing: '0.04em',
-            }}
-          >
-            sorted by {sortLabelFor(tableSort)} {tableDirection === 'desc' ? '↓' : '↑'}
-          </button>
+          {/* Sort surface — dropdown menu w/ every (column × direction)
+              pair explicit. Picking one writes through the existing
+              useSendersStore seam, so grid + table stay in lockstep.
+              Both directions are first-class so a user reaching for
+              "smallest first" doesn't have to discover the cycle order. */}
+          <SortMenu
+            sort={tableSort}
+            direction={tableDirection}
+            onPick={(next) => setTableSort(next)}
+          />
           {/* Bulk-select-by-filter (spec v1.2 Decision 15). Lets the
               user act on EVERY sender matching the active fact-chip
               filter in one click — feeds the bulk variant of the
@@ -1278,58 +1263,208 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
 };
 
 /**
- * Sort columns the grid's cycle button rotates through. Subset of the
- * full `SenderListSort` union — `read` and `recommended` are reserved
- * in the wire contract but the BE rejects them today (see SUPPORTED_
- * SORTS in `senders.read-service.ts`), so we keep them out of the FE
- * affordance until they land.
+ * Sort columns the SortMenu surfaces. Subset of the full
+ * `SenderListSort` union — `read` and `recommended` are reserved in
+ * the wire contract but the BE rejects them today (see SUPPORTED_SORTS
+ * in `senders.read-service.ts`), so the menu omits them until they
+ * land. A `read` / `recommended` value coming in from elsewhere (URL
+ * state, server response) still renders in the trigger label via
+ * `COLUMN_FALLBACK_LABEL`.
  */
 type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
 
 /**
- * User-facing labels for the cycle button. Mirrors the BE-supported
- * subset; "name" reads naturally as "name" rather than "display name"
- * since that's the only name we show.
+ * Every (column × direction) pair the menu offers, in render order,
+ * grouped by column. Labels are user-intent copy — "Most emails ever"
+ * reads more naturally than "total ↓" for the value the column holds,
+ * "Newest / Oldest" for dates, "A → Z / Z → A" for name. The wire
+ * `direction` ('asc' | 'desc') stays the BE truth; this map is the
+ * menu's display layer only.
  */
-const SORT_LABEL: Record<GridSortColumn, string> = {
-  total: 'total',
+const SORT_OPTIONS: ReadonlyArray<{
+  sort: GridSortColumn;
+  direction: SenderListDirection;
+  label: string;
+  group: string;
+}> = [
+  { sort: 'total', direction: 'desc', label: 'Most emails ever', group: 'Volume' },
+  { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
+  { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
+  { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
+  { sort: 'first_seen', direction: 'desc', label: 'Newest senders', group: 'First seen' },
+  { sort: 'first_seen', direction: 'asc', label: 'Oldest senders', group: 'First seen' },
+  { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
+  { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
+];
+
+/** Trigger-label fallback for any sort outside `GridSortColumn`. */
+const COLUMN_FALLBACK_LABEL: Record<GridSortColumn, string> = {
+  total: 'volume',
   last_seen: 'last seen',
   first_seen: 'first seen',
   name: 'name',
 };
 
-/**
- * Cycle the active sort + direction. Order picked for product utility:
- * total↓ → last seen↓ → first seen↓ → name↑ → back to total↓. Each
- * column uses its natural default direction so a click is one click —
- * the user doesn't have to follow up with a direction toggle. A sort
- * value outside the cycle subset (a future `read` / `recommended` set
- * from elsewhere) resets to `total` so the affordance stays defined.
- */
-function nextSort(current: { sort: SenderListSort; direction: SenderListDirection }): {
-  sort: SenderListSort;
-  direction: SenderListDirection;
-} {
-  switch (current.sort as GridSortColumn) {
-    case 'total':
-      return { sort: 'last_seen', direction: 'desc' };
-    case 'last_seen':
-      return { sort: 'first_seen', direction: 'desc' };
-    case 'first_seen':
-      return { sort: 'name', direction: 'asc' };
-    case 'name':
-    default:
-      return { sort: 'total', direction: 'desc' };
-  }
+/** Resolve the trigger-label for the currently active sort + direction. */
+function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
+  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
+  if (match) return match.label;
+  // Reserved-but-unsupported column or an unhandled direction — fall
+  // back to the raw column id with an arrow so the strip never goes
+  // blank if a URL or store seeds an odd value.
+  const colLabel = (COLUMN_FALLBACK_LABEL as Record<string, string>)[sort] ?? sort;
+  return `${colLabel} ${direction === 'desc' ? '↓' : '↑'}`;
 }
 
 /**
- * Resolve a sort column's label, falling back to the raw column id for
- * any value outside the grid-cycle subset (reserved columns; see
- * `GridSortColumn`).
+ * Sort dropdown — trigger on the result-count strip; clicking opens a
+ * popover with every (column × direction) pair grouped by column.
+ * Active row carries a leading ✓. Click outside / Escape close.
+ *
+ * Inline (not a shared primitive) because the option vocabulary is
+ * tightly bound to the senders surface — Volume / Last seen / First
+ * seen / Name. A different surface needs different copy.
  */
-function sortLabelFor(sort: SenderListSort): string {
-  return SORT_LABEL[sort as GridSortColumn] ?? sort;
+function SortMenu({
+  sort,
+  direction,
+  onPick,
+}: {
+  sort: SenderListSort;
+  direction: SenderListDirection;
+  onPick: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Group options by `group` for render. Insertion order preserved
+  // because the source array is already grouped (Object.entries on a
+  // plain object preserves insertion order for string keys).
+  const groups = SORT_OPTIONS.reduce<Record<string, (typeof SORT_OPTIONS)[number][]>>(
+    (acc, opt) => {
+      const arr = acc[opt.group] ?? [];
+      arr.push(opt);
+      acc[opt.group] = arr;
+      return acc;
+    },
+    {},
+  );
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Change sort"
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--color-fg-soft)',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          letterSpacing: '0.04em',
+        }}
+      >
+        sorted by {activeSortLabel(sort, direction).toLowerCase()} ▾
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 60,
+            minWidth: 220,
+            background: color.card,
+            border: `1px solid ${color.border}`,
+            borderRadius: 9,
+            boxShadow: tokens.shadow.pop,
+            padding: 4,
+            fontFamily: font.sans,
+          }}
+        >
+          {Object.entries(groups).map(([groupLabel, options]) => (
+            <div key={groupLabel}>
+              <div
+                style={{
+                  padding: '6px 10px 2px',
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
+                }}
+              >
+                {groupLabel}
+              </div>
+              {options.map((opt) => {
+                const active = opt.sort === sort && opt.direction === direction;
+                return (
+                  <button
+                    key={`${opt.sort}-${opt.direction}`}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    onClick={() => {
+                      onPick({ sort: opt.sort, direction: opt.direction });
+                      setOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: active ? color.primarySoft : 'transparent',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: font.sans,
+                      fontSize: 12.5,
+                      color: color.fg,
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 12,
+                        color: active ? color.primary : 'transparent',
+                        fontWeight: 600,
+                      }}
+                    >
+                      ✓
+                    </span>
+                    <span style={{ flex: 1 }}>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
 }
 
 /**
