@@ -20,6 +20,26 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-06-04 — `FILTER (WHERE ...)` aggregates collapse N preview queries into 1
+
+**Context:** spec v1.2 Decision 15's composite confirm modal needs 4 time-window bucket counts (`>30d`, `>90d`, `>180d`, `>365d`) plus the un-windowed `all` count + a past-30d `monthly` figure for the sender context strip. Naïve impl = 6 separate `SELECT COUNT(*) WHERE ...` queries per modal open.
+
+**Finding:** Postgres `FILTER (WHERE …)` clauses on `count(*)` aggregate every bucket in ONE query — one index seek on `(mailbox_account_id, sender_key, internal_date)`, six aggregate columns out. The FE chip row receives all bucket counts with the modal-open round-trip, no per-chip refetch needed. The worker resolver applies the SAME predicate (`internal_date <= now() - interval 'N days'`) so the modal preview and the worker's actual resolved set match exactly — preview truthfulness comes for free instead of needing a second confirmation step.
+
+**Rule (provisional):** any preview surface that shows N variations of "count under filter X" should be ONE aggregate query with FILTER clauses, never N separate counts. Mirror the worker's resolution predicate verbatim so the modal's number IS the executed number.
+
+**Distillation trigger:** promote to CLAUDE.md §X if the FILTER-aggregate pattern recurs on the Brief / Autopilot / Activity-log preview surfaces.
+
+## 2026-06-04 — Composite cascade-undo via `composite_id` walks at undo time, not issue time
+
+**Context:** ADR-0020 composite shape stores primary + secondary as two `action_jobs` rows linked by `composite_id`. The undo flow needs to reverse BOTH siblings when the user undoes one. Two design options: (A) issue ONE undo token at forward time that the worker uses for the whole composite, or (B) issue per-row undo tokens and walk siblings at undo time.
+
+**Finding:** (B) is simpler AND more correct. Each forward row keeps its own `undo_token`, so the activity log + undo journal stay homogeneous with single-verb actions. At `POST /undo/:T` the controller resolves the row by `undo_token=T`, computes the primary id (`row.compositeId ?? row.id`), then `SELECT … WHERE id = $primary OR composite_id = $primary` returns the whole composite. For a single-verb action the same query returns exactly one row, so the cascade path IS the single-verb path. No undo-journal migration needed.
+
+**Rule (provisional):** when a many-to-one or sibling relationship exists between mutation records, store the relation on the records and walk it at the SECONDARY operation (undo/revert/rollback) — don't try to denormalize the relation onto the primary record's token/handle.
+
+**Distillation trigger:** revisit if Autopilot rules need an analogous composite (batch match revert).
+
 ## 2026-06-03 — Visual-language consolidation via single primitive (ADR-0016)
 
 **Context:** Founder reported card↔detail navigation chrome

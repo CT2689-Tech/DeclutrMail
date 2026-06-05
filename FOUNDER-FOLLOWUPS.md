@@ -37,18 +37,21 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** `rg "K/A/U/L\\b" CLAUDE.md .claude/agents/` returns ZERO matches
 **Status:** Open
 
-### 2026-06-04 — Phase 2 PR-FE3 deferred: composite modal + Delete callback + intent.ts retire
-**Source:** Autonomous build session 2026-06-04
-**Why:** Composite all-chips modal + bulk-by-filter + expand panel + time-window selector not landed. Delete exposed at Verb Registry + BE schema but SUPPRESSED at SenderCard popover (`capabilities.delete: false`) because legacy ActionVerb callback doesn't include Delete. Bridge `legacyVerbFromId('delete') → 'Archive'` is a safety stub.
+### 2026-06-04 — `senders-lab-v2` throwaway dir cleanup
+**Source:** Session 2026-06-04 (Thread A+B close-out)
+**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` is the throwaway Senders premium-redesign playground from a prior session. Founder picked the variant; lab no longer needed. Agent `rm -rf` permission was denied.
+**How:** `rm -rf apps/web/src/app/senders-lab-v2/`
+**Verifies by:** `git status` no longer shows the untracked dir; `pnpm --filter @declutrmail/web build` still passes.
+**Status:** Open
+
+### 2026-06-04 — Composite preview `oldestSubjects` BE endpoint
+**Source:** Session 2026-06-04 (Thread A+B close-out)
+**Why:** Spec v1.2 Decision 15 "Show what will move" panel ships in PR-FE3 using `sampleSubjects(sender)` from the FE fixture pool. The privacy-safe sample is fine for trust signalling at launch, but the real value is showing the actual oldest 5 subjects in the selected time-window (allowed under D7 — subject is in the storage allowlist).
 **How:**
-1. `feat/d038-senders-v2-pr-fe3` off integration
-2. Widen `ActionRequest.verb` to include 'Delete'
-3. Rewrite ConfirmActionModal per spec v1.2 Decision 15 (all-chips composite)
-4. Time-window chips for Archive + Delete; secondary verb for Unsub + Later
-5. Wire `POST /api/actions` + cascade-undo via composite_id
-6. Bulk-select-by-filter + expand panel
-7. Retire `intent.ts` machinery
-**Verifies by:** Delete in popover → modal red tone + 30d recovery banner + Gmail Trash dispatch
+1. Extend `CompositeActionPreviewResult` with `oldestSubjects: string[]` (per active window)
+2. Service queries `mail_messages.subject ORDER BY internal_date ASC LIMIT 5 WHERE [window]`
+3. FE swaps `sampleSubjects(senders[0])` for the wire value when present; fixture pool stays as fallback
+**Verifies by:** Modal panel shows the 5 oldest subjects from the senders fixture-mailbox, matching the BE-resolved set.
 **Status:** Open
 
 ### 2026-06-04 — Magnitude under-bar on SenderCard uses hardcoded `/100` denominator
@@ -960,6 +963,20 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-04 — Phase 2 PR-FE3 deferred: composite modal + Delete callback + intent.ts retire
+**Source:** Autonomous build session 2026-06-04
+**Why:** Composite all-chips modal + bulk-by-filter + expand panel + time-window selector not landed. Delete exposed at Verb Registry + BE schema but SUPPRESSED at SenderCard popover (`capabilities.delete: false`) because legacy ActionVerb callback doesn't include Delete. Bridge `legacyVerbFromId('delete') → 'Archive'` is a safety stub.
+**How:**
+1. `feat/d038-senders-v2-pr-fe3` off integration
+2. Widen `ActionRequest.verb` to include 'Delete'
+3. Rewrite ConfirmActionModal per spec v1.2 Decision 15 (all-chips composite)
+4. Time-window chips for Archive + Delete; secondary verb for Unsub + Later
+5. Wire `POST /api/actions` + cascade-undo via composite_id
+6. Bulk-select-by-filter + expand panel
+7. Retire `intent.ts` machinery
+**Verifies by:** Delete in popover → modal red tone + 30d recovery banner + Gmail Trash dispatch
+**Status:** Done 2026-06-04 (session Thread A+B close-out) — items 1-6 shipped on `feat/d038-senders-v2-integration`. Item 7 (`intent.ts` retire) deferred to Phase 5 dead-code sweep PR per spec.
 
 ### 2026-05-27 — `listWeeklyHero` N+1 (no outer LIMIT + 6 correlated subqueries per sender)
 
