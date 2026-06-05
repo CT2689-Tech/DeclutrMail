@@ -20,9 +20,11 @@
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
 import {
   fetchSenders,
+  type ActivityBucket,
   type GmailCategory,
   type SenderListDirection,
   type SenderListSort,
+  type TriStateFilter,
 } from '@/lib/api/senders';
 import { sendersKeys } from './query-keys';
 
@@ -31,12 +33,11 @@ export interface UseSendersOptions {
   /** Page size — clamped by the server to a route-specific max. */
   limit?: number | undefined;
   /**
-   * When `true`, request only standing-protected senders (D42/D43).
-   * Backs the Settings → Standing Policies surface so it pages server-
-   * side instead of fetching the whole mailbox. ADR-0014 + senders list
-   * contract.
+   * Tri-state standing-protected filter (D38). `true` = only protected;
+   * `false` = exclude protected; omit = no constraint. Backs the
+   * Settings → Standing Policies surface + the compose-strip toggle.
    */
-  isProtected?: boolean | undefined;
+  isProtected?: TriStateFilter | undefined;
   /**
    * Sortable column (ADR-0014). Server-side default = `'total'` when
    * omitted, so omitting takes the contract default — only pass when
@@ -51,6 +52,16 @@ export interface UseSendersOptions {
    * it's part of the cache key so a new search resets to page 1.
    */
   q?: string | undefined;
+  /** D38 compose strip — activity bucket (require). */
+  activity?: ActivityBucket | undefined;
+  /** D38 compose strip — when true, send the negated form of activity. */
+  activityNegate?: boolean | undefined;
+  /** D38 compose strip — unsub-readiness tri-state. */
+  unsubReady?: TriStateFilter | undefined;
+  /** D38 compose strip — "quiet for N days+" filter. */
+  windowDays?: number | undefined;
+  /** D38 compose strip — domain substring. */
+  domain?: string | undefined;
   /**
    * Gate the query. Pass `false` when there's no active mailbox so the
    * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders
@@ -61,9 +72,9 @@ export interface UseSendersOptions {
 
 export function useSenders(options: UseSendersOptions = {}) {
   return useInfiniteQuery({
-    // Sort + direction are part of the cache key — switching sort/dir
-    // resets to page 1 (per the contract: a cursor is bound to its
-    // sort context; changing sort discards the cursor).
+    // Sort + direction + every compose axis are part of the cache key.
+    // Switching any filter resets to page 1 (per the contract: a cursor
+    // is bound to its query context).
     queryKey: sendersKeys.list({
       category: options.category,
       limit: options.limit,
@@ -71,6 +82,11 @@ export function useSenders(options: UseSendersOptions = {}) {
       sort: options.sort,
       direction: options.direction,
       q: options.q,
+      activity: options.activity,
+      activityNegate: options.activityNegate,
+      unsubReady: options.unsubReady,
+      windowDays: options.windowDays,
+      domain: options.domain,
     }),
     queryFn: ({ pageParam, signal }) =>
       fetchSenders(
@@ -81,6 +97,11 @@ export function useSenders(options: UseSendersOptions = {}) {
           sort: options.sort,
           direction: options.direction,
           q: options.q,
+          activity: options.activity,
+          activityNegate: options.activityNegate,
+          unsubReady: options.unsubReady,
+          windowDays: options.windowDays,
+          domain: options.domain,
           cursor: pageParam ?? undefined,
         },
         signal,

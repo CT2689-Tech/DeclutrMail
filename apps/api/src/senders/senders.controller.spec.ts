@@ -153,6 +153,10 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       expect(res.meta.pagination).toEqual({
         nextCursor: null,
@@ -186,6 +190,10 @@ describe('SendersController', () => {
         MAILBOX,
         undefined,
         '2',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -229,6 +237,10 @@ describe('SendersController', () => {
         'last_seen',
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       const decoded = decodeCursor(res.meta.pagination.nextCursor);
       expect(decoded).toEqual({
@@ -248,6 +260,10 @@ describe('SendersController', () => {
           undefined,
           undefined,
           undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
         ),
       ).rejects.toThrow(/cursor/i);
     });
@@ -261,6 +277,10 @@ describe('SendersController', () => {
           undefined,
           undefined,
           'bogus',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
           undefined,
           undefined,
         ),
@@ -278,6 +298,10 @@ describe('SendersController', () => {
           'total',
           'sideways',
           undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
         ),
       ).rejects.toThrow(/direction/i);
     });
@@ -292,6 +316,10 @@ describe('SendersController', () => {
         cursor,
         undefined,
         'last_seen',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
       );
@@ -318,6 +346,10 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ category: 'promotions' }),
@@ -329,6 +361,10 @@ describe('SendersController', () => {
       await ctrl.list(
         MAILBOX,
         'not-real',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -350,6 +386,10 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
     });
@@ -362,6 +402,10 @@ describe('SendersController', () => {
         undefined,
         undefined,
         'true',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -387,6 +431,10 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
       expect(res.meta.query).toEqual({
         totalMatching: 1852,
@@ -395,12 +443,20 @@ describe('SendersController', () => {
       });
     });
 
-    it('treats every non-"true" ?protected= value as no filter', async () => {
+    it('parses ?protected= per D38 tri-state semantics', async () => {
       reads.listSenders.mockResolvedValue([]);
-      // Three flavors of "not true" all map to `isProtected: null`. The
-      // controller deliberately does NOT expose a "false" filter (no UI
-      // surface needs "show only non-protected" yet).
-      for (const raw of ['false', '1', 'garbage']) {
+      // D38 widened the surface: 'true' requires protected; 'not' /
+      // 'false' excludes them (toggle-chip in the off/negated state);
+      // anything else (garbage / unrelated wire) leaves the filter
+      // absent.
+      const cases: Array<[string, boolean | null]> = [
+        ['true', true],
+        ['not', false],
+        ['false', false],
+        ['1', null],
+        ['garbage', null],
+      ];
+      for (const [raw, expected] of cases) {
         await ctrl.list(
           MAILBOX,
           undefined,
@@ -410,9 +466,13 @@ describe('SendersController', () => {
           undefined,
           undefined,
           undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
         );
         expect(reads.listSenders).toHaveBeenLastCalledWith(
-          expect.objectContaining({ isProtected: null }),
+          expect.objectContaining({ isProtected: expected }),
         );
       }
     });

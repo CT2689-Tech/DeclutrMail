@@ -15,7 +15,6 @@ import {
   canLater,
   canUnsubscribe,
   detectCohorts,
-  isStandingProtected,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
@@ -24,6 +23,8 @@ import {
   type Sender,
 } from './data';
 import { SenderSearch } from './sender-search';
+import { ComposeStrip, type ComposeState } from './compose-strip';
+import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
@@ -56,7 +57,7 @@ import type {
   SenderSummaryDto,
 } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
-import { KpiStrip, groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
+import { groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
 
 const { color, font } = tokens;
 
@@ -130,7 +131,21 @@ export function SendersScreen() {
   // the two share ONE infinite-query cache entry per (category, limit,
   // isProtected, sort, direction, q) — page sizes stay uniform across the
   // surface as the user pulls more pages here.
-  const sendersQuery = useSenders({ limit: 50, sort, direction, q: debouncedQuery });
+  // D38 compose state — every axis lives on the URL. Wired to the BE
+  // list query below so chips narrow mailbox-wide (not loaded-page).
+  const { compose, setCompose, clearCompose } = useComposeState();
+  const sendersQuery = useSenders({
+    limit: 50,
+    sort,
+    direction,
+    q: debouncedQuery,
+    activity: compose.activity ?? undefined,
+    activityNegate: compose.activity ? compose.activityNegate : undefined,
+    unsubReady: compose.unsubReady,
+    windowDays: compose.windowDays ?? undefined,
+    domain: compose.domain ?? undefined,
+    isProtected: compose.protectedFlag,
+  });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
@@ -149,6 +164,15 @@ export function SendersScreen() {
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
   const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
+  // and is preserved across the scroll (subsequent pages recompute on
+  // the server but the FE caches the page-1 snapshot so chip counts
+  // don't shift mid-scroll).
+  const filterCounts = sendersQuery.data?.pages[0]?.meta.query?.filterCounts;
+  // D38 — total mailbox-wide matching count for the active compose
+  // (the BE-honest "X senders match"). Falls back to the loaded length
+  // while page 1 is in flight.
+  const totalMatching = sendersQuery.data?.pages[0]?.meta.query?.totalMatching ?? undefined;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -171,10 +195,8 @@ export function SendersScreen() {
     });
   }, [summaryQuery.isError, summaryQuery.error]);
   // The page-1 `totalMatching` is the canonical "All N" chip count —
-  // already on the wire and search-aware. Prefer it over the summary's
-  // `totalSenders` so the chip stays consistent with the list pagination
-  // banner (`X of N senders`).
-  const totalMatchingFromList = sendersQuery.data?.pages[0]?.meta.query?.totalMatching;
+  // already on the wire and search-aware. Surfaced via `totalMatching`
+  // above (D38) — drives the hero number + the compose summary line.
 
   if (sendersQuery.isLoading) {
     return <LoadingState />;
@@ -194,7 +216,11 @@ export function SendersScreen() {
       onQueryChange={setQuery}
       summary={summary}
       summaryFailed={summaryFailed}
-      totalMatchingFromList={totalMatchingFromList}
+      totalMatching={totalMatching}
+      filterCounts={filterCounts}
+      compose={compose}
+      setCompose={setCompose}
+      clearCompose={clearCompose}
     />
   );
 }
@@ -215,9 +241,13 @@ function SendersScreenContent({
   onLoadMore,
   query,
   onQueryChange: setQuery,
-  summary,
+  summary: _summary,
   summaryFailed,
-  totalMatchingFromList,
+  totalMatching,
+  filterCounts,
+  compose,
+  setCompose,
+  clearCompose,
 }: {
   senders: Sender[];
   wireRows: SenderListRow[];
@@ -243,8 +273,24 @@ function SendersScreenContent({
    * derived from ≤50 loaded rows when the mailbox is bigger.
    */
   summaryFailed: boolean;
-  /** Page-1 `meta.query.totalMatching` — the canonical "All N" chip count. */
-  totalMatchingFromList: number | undefined;
+  /** D38 — BE-honest count for the active compose (page-1 snapshot). */
+  totalMatching: number | undefined;
+  /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
+  filterCounts:
+    | {
+        total: number;
+        active: number;
+        quiet: number;
+        dormant: number;
+        unsubReady: number;
+        repliedTo: number;
+        protected: number;
+      }
+    | undefined;
+  /** D38 — URL-backed compose state. */
+  compose: ComposeState;
+  setCompose: (next: ComposeState) => void;
+  clearCompose: () => void;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
@@ -399,77 +445,10 @@ function SendersScreenContent({
   //   - replied  = repliedCount > 0
   //   - unsub_ready = (proxy) lastReview.verdict === 'unsubscribe' until
   //                   wire field lands in Phase 1 BE
-  //   - protected = isStandingProtected(sender)
-  type FactChipKey =
-    | 'all'
-    | 'active'
-    | 'quiet'
-    | 'dormant'
-    | 'replied'
-    | 'unsub_ready'
-    | 'protected';
-
-  const FACT_CHIPS: Array<{ key: FactChipKey; label: string; tip: string }> = [
-    { key: 'all', label: 'All', tip: 'Every sender we know about' },
-    { key: 'active', label: 'Active', tip: 'Last seen ≤ 30 days, ≥ 1 msg' },
-    { key: 'quiet', label: 'Quiet', tip: 'Last seen 30–180 days' },
-    { key: 'dormant', label: 'Dormant', tip: 'Last seen > 180 days' },
-    { key: 'replied', label: 'You replied', tip: 'You replied at least once' },
-    {
-      key: 'unsub_ready',
-      label: 'Unsubscribe-ready',
-      tip: 'Has a one-click unsubscribe option',
-    },
-    { key: 'protected', label: 'Protected', tip: 'Pinned by you (Protect or VIP)' },
-  ];
-
-  function matchFactChip(s: Sender, k: FactChipKey): boolean {
-    switch (k) {
-      case 'all':
-        return true;
-      case 'active':
-        return s.lastDays <= 30 && s.monthly > 0;
-      case 'quiet':
-        return s.lastDays > 30 && s.lastDays <= 180;
-      case 'dormant':
-        return s.lastDays > 180;
-      case 'replied':
-        return (s.repliedCount ?? 0) > 0;
-      case 'unsub_ready':
-        // Proxy: existing lastReview.verdict until BE adds a dedicated
-        // `unsub_ready` boolean on SenderListRow (Phase 1 BE — pending).
-        return s.lastReview?.verdict === 'unsubscribe';
-      case 'protected':
-        return isStandingProtected(s);
-    }
-  }
-
-  const [activeFactChip, setActiveFactChip] = useState<FactChipKey>('all');
-
-  const factChipCounts = useMemo<Record<FactChipKey, number>>(() => {
-    const counts: Record<FactChipKey, number> = {
-      all: 0,
-      active: 0,
-      quiet: 0,
-      dormant: 0,
-      replied: 0,
-      unsub_ready: 0,
-      protected: 0,
-    };
-    for (const s of queryBase) {
-      for (const c of FACT_CHIPS) {
-        if (matchFactChip(s, c.key)) counts[c.key] += 1;
-      }
-    }
-    return counts;
-  }, [queryBase]);
-
-  /** Senders filtered by the active fact chip (client-side until BE
-   *  adds matching `?activity` / `?has_unsubscribe` / etc. params). */
-  const factFilteredSenders = useMemo(
-    () => queryBase.filter((s) => matchFactChip(s, activeFactChip)),
-    [queryBase, activeFactChip],
-  );
+  // D38 — fact-chip row, matchFactChip helper, factChipCounts and
+  // factFilteredSenders retired here. The ComposeStrip (above) owns the
+  // multi-axis compose, the BE owns the predicate evaluation, and
+  // `senders` arrives already-filtered for the active scope.
 
   // Visible groups after the active-intent filter. When `activeIntent` is
   // null ('All' chip), every non-empty group renders; when set, only that
@@ -495,7 +474,9 @@ function SendersScreenContent({
   // remains the fallback for the milliseconds before the summary
   // populates AND for the time-cost / avg-read / estSaved fields, which
   // still need per-sender read-rate (not on the summary wire).
-  const totals = useMemo(() => computeTotals(senders, summary), [senders, summary]);
+  // computeTotals + the local `totals` aggregate retired with the KPI
+  // strip (D38). `summary` still drives the in-flight banner; chip
+  // counts now come from `filterCounts` on the wire.
 
   // applyCohort retired with CohortRail render (spec v1.2 Decision 4).
   const _applyCohort = (cohort: Cohort) => {
@@ -923,176 +904,116 @@ function SendersScreenContent({
         </div>
       )}
 
+      {/* Hero — single editorial number replaces the 3-cell KPI strip.
+          Counts the senders matching the active compose (mailbox-wide,
+          BE-honest). Fraunces italic gives the page one anchor moment;
+          everything below is the body of the article. */}
       {senders.length > 0 && (
-        <KpiStrip
-          cells={[
-            // KPI strip — 3 fact-only mailbox-wide cells per spec v1.2
-            // Decisions 4 + 6. Inferred cells RETIRED:
-            //   - 'Needs review' (derived from intentOf → inference)
-            //   - 'Noise reducible' (derived from cleanup-intent fraction)
-            // Fact-derived 'Senders / Active / Protected' kept.
-            // Phase 1 BE summary adds 'Replied' and 'Unsub-ready' bucket
-            // counts; this strip will gain those two cells when the wire
-            // lands. Until then 3 cells; pre-launch room for growth.
-            {
-              label: 'Senders',
-              value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
-            },
-            {
-              label: 'Active',
-              value: summary?.activeSenders ?? 0,
-              micro: summary?.activeSenders ? 'last 30 days' : undefined,
-            },
-            {
-              label: 'Protected',
-              value: totals.protectedCount,
-              micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
-            },
-          ]}
-        />
-      )}
-
-      {/* CohortRail removed per spec v1.2 Decision 4 (retire-then-
-          resurrect as "Saved filters" post-launch). The cohorts data
-          stays computed for now to keep the existing detection logic
-          warm without re-introducing the surface. */}
-
-      {/* Fact filter chip row (spec v1.2 Decision 2 + Decision 3).
-          Replaces the intent chip row. Each chip is a fact predicate
-          with a literal-definition tooltip. Counts are client-side
-          over the loaded page; Phase 1 BE adds the matching server
-          filter params (?activity / ?has_unsubscribe / ?replied /
-          ?protected) so the chip narrows mailbox-wide. */}
-      {senders.length > 0 && (
-        <div
-          role="radiogroup"
-          aria-label="Filter senders by fact"
-          style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
-        >
-          {FACT_CHIPS.map((c) => (
-            <FactChip
-              key={c.key}
-              label={c.label}
-              tip={c.tip}
-              count={factChipCounts[c.key]}
-              active={activeFactChip === c.key}
-              onClick={() => setActiveFactChip(c.key)}
-            />
-          ))}
+        <div style={{ margin: '8px 0 4px' }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-display, "Fraunces", serif)',
+              fontStyle: 'italic',
+              fontWeight: 400,
+              fontSize: 56,
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              color: 'var(--color-fg)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {(totalMatching ?? senders.length).toLocaleString()}
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--font-display, "Fraunces", serif)',
+              fontSize: 22,
+              color: 'var(--color-fg-soft)',
+              marginLeft: 12,
+              letterSpacing: '-0.005em',
+            }}
+          >
+            senders
+          </span>
         </div>
       )}
 
-      {/* Result-count strip (spec v1.2 Decision 3 cross-cutting).
-          Restates the active filter literally so the user can see what
-          narrowed the list — the trust artifact founder asked for. */}
+      {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
+          Counts on chips are mailbox-wide absolutes (filterCounts),
+          NOT loaded-page derivations. URL state via useComposeState
+          makes the scope shareable + refresh-stable. */}
+      {senders.length > 0 && (
+        <ComposeStrip
+          state={compose}
+          counts={
+            filterCounts
+              ? {
+                  total: filterCounts.total,
+                  active: filterCounts.active,
+                  quiet: filterCounts.quiet,
+                  dormant: filterCounts.dormant,
+                  unsubReady: filterCounts.unsubReady,
+                  repliedTo: filterCounts.repliedTo,
+                  protected: filterCounts.protected,
+                }
+              : undefined
+          }
+          onChange={(next: ComposeState) => setCompose(next)}
+          onClear={clearCompose}
+          domainSuggestions={topDomains(senders)}
+        />
+      )}
+
+      {/* Compose summary line — replaces the old result-count strip.
+          Reads as a sentence: "47 senders match. sorted [biggest first ▾]."
+          Sort menu inline. Bulk select + clear ride the same line. */}
       {senders.length > 0 && (
         <div
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            color: 'var(--color-fg-muted)',
-            letterSpacing: '0.04em',
-            margin: '4px 0 2px',
             display: 'flex',
-            gap: 12,
-            alignItems: 'center',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 16,
+            margin: '12px 0 4px',
             flexWrap: 'wrap',
+            fontFamily: 'var(--font-display, "Fraunces", serif)',
+            fontSize: 16,
+            color: 'var(--color-fg)',
           }}
         >
           <span>
-            <strong style={{ color: 'var(--color-fg)' }}>{factChipCounts[activeFactChip]}</strong>{' '}
-            senders
+            <strong
+              style={{
+                fontStyle: 'italic',
+                fontWeight: 600,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {(totalMatching ?? senders.length).toLocaleString()}
+            </strong>{' '}
+            senders match.{' '}
+            <SortMenu
+              sort={tableSort}
+              direction={tableDirection}
+              onPick={(next) => setTableSort(next)}
+            />
+            .
           </span>
-          <span>·</span>
-          <span>
-            filter: {FACT_CHIPS.find((c) => c.key === activeFactChip)?.label.toLowerCase()}
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11.5,
+              letterSpacing: '0.04em',
+              color: 'var(--color-fg-soft)',
+              display: 'inline-flex',
+              gap: 14,
+              alignItems: 'baseline',
+            }}
+          >
+            {senders.length > 0 && (
+              <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
+            )}
           </span>
-          <span>·</span>
-          {/* Sort surface — dropdown menu w/ every (column × direction)
-              pair explicit. Picking one writes through the existing
-              useSendersStore seam, so grid + table stay in lockstep.
-              Both directions are first-class so a user reaching for
-              "smallest first" doesn't have to discover the cycle order. */}
-          <SortMenu
-            sort={tableSort}
-            direction={tableDirection}
-            onPick={(next) => setTableSort(next)}
-          />
-          {/* Bulk-select-by-filter (spec v1.2 Decision 15). Lets the
-              user act on EVERY sender matching the active fact-chip
-              filter in one click — feeds the bulk variant of the
-              composite confirm modal. Toggles between Select all N /
-              Deselect all when every filtered sender is already in the
-              selection. */}
-          {factFilteredSenders.length > 0 && (
-            <>
-              <span>·</span>
-              {(() => {
-                const allSelected = factFilteredSenders.every((s) => selected.has(s.id));
-                return (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (allSelected) {
-                        // Deselect just the matching subset, preserve any
-                        // cross-filter selection the user built earlier.
-                        setSelected((prev) => {
-                          const next = new Set(prev);
-                          for (const s of factFilteredSenders) next.delete(s.id);
-                          return next;
-                        });
-                      } else {
-                        setSelected((prev) => {
-                          const next = new Set(prev);
-                          for (const s of factFilteredSenders) next.add(s.id);
-                          return next;
-                        });
-                      }
-                    }}
-                    aria-pressed={allSelected}
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 11,
-                      color: 'var(--color-primary)',
-                      background: 'transparent',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      letterSpacing: '0.04em',
-                    }}
-                  >
-                    {allSelected
-                      ? `deselect all ${factFilteredSenders.length} [⌫]`
-                      : `select all ${factFilteredSenders.length} [+]`}
-                  </button>
-                );
-              })()}
-            </>
-          )}
-          {(activeFactChip !== 'all' || query) && (
-            <>
-              <span>·</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveFactChip('all');
-                  setQuery('');
-                }}
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 11,
-                  color: 'var(--color-amber)',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                clear [×]
-              </button>
-            </>
-          )}
         </div>
       )}
 
@@ -1122,13 +1043,12 @@ function SendersScreenContent({
           }
         />
       ) : view === 'grid' ? (
-        // D49 default — grid of cards. Applies the active fact-chip
-        // filter (spec v1.2 Decision 2 + Decision 3); the legacy
+        // D49 default — grid of cards. `senders` arrives already
+        // BE-filtered for the active compose (D38). The legacy
         // `visibleGroups` intent bucketing is no longer consulted for
-        // the card grid render. Intent grouping logic retired with
-        // Phase 2 PR-FE3.
+        // the card grid render.
         <SenderGrid
-          senders={factFilteredSenders}
+          senders={senders}
           selectedIds={selected}
           onToggleSelect={(id) =>
             setSelected((prev) => {
@@ -1468,6 +1388,76 @@ function SortMenu({
 }
 
 /**
+ * D38 — derive the top-N domain suggestions for the ComposeStrip's
+ * domain popover. Reads from the loaded senders only (cheap, no extra
+ * round-trip); the BE `/api/senders/suggest` endpoint backs the search
+ * box's mailbox-wide typeahead.
+ */
+function topDomains(senders: readonly Sender[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of senders) {
+    const d = s.domain;
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    out.push(d);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+/**
+ * D38 — bulk-select toggle on the compose summary line. Acts on the
+ * currently loaded senders (BE-filtered, so the set already matches
+ * the active compose). `select all N` ↔ `deselect all N`.
+ */
+function BulkSelectButton({
+  senders,
+  selected,
+  setSelected,
+}: {
+  senders: readonly Sender[];
+  selected: ReadonlySet<string>;
+  setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
+}) {
+  if (senders.length === 0) return null;
+  const allSelected = senders.every((s) => selected.has(s.id));
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (allSelected) {
+          setSelected((prev) => {
+            const next = new Set(prev);
+            for (const s of senders) next.delete(s.id);
+            return next;
+          });
+        } else {
+          setSelected((prev) => {
+            const next = new Set(prev);
+            for (const s of senders) next.add(s.id);
+            return next;
+          });
+        }
+      }}
+      aria-pressed={allSelected}
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11.5,
+        color: allSelected ? 'var(--color-amber)' : 'var(--color-fg-soft)',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        letterSpacing: '0.04em',
+      }}
+    >
+      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
+    </button>
+  );
+}
+
+/**
  * Filter the wire-shape rows for the flat-table view.
  *
  * The table consumes `SenderListRow` directly (so it sees
@@ -1493,93 +1483,11 @@ function filterTableRows(
   });
 }
 
-interface SenderTotals {
-  totalMonthly: number;
-  avgReadPct: number;
-  readingHrs: number;
-  noiseReductionPct: number;
-  cleanupCount: number;
-  protectedCount: number;
-  needsReview: number;
-  estSavedHrs: number;
-}
-
-/**
- * Compute hero / KPI / progress totals.
- *
- * Mailbox-wide aggregates (`totalMonthly`, `noiseReductionPct`,
- * `protectedCount`, `needsReview`, `cleanupCount`) come from the
- * server-side summary (#145) when present — the loaded-page derivation
- * is the fallback only until the summary populates (initial load).
- *
- * Read-rate and reading-time fields still ride the loaded page: the
- * summary does not carry per-sender read counts on the wire today
- * (privacy posture — counts only, no per-sender opens). These values
- * approximate the mailbox from the loaded slice; promoting them to the
- * summary is a follow-up if the approximation drifts at large scale.
- */
-function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTotals {
-  if (senders.length === 0 && !summary) {
-    return {
-      totalMonthly: 0,
-      avgReadPct: 0,
-      readingHrs: 0,
-      noiseReductionPct: 0,
-      cleanupCount: 0,
-      protectedCount: 0,
-      needsReview: 0,
-      estSavedHrs: 0,
-    };
-  }
-  // Loaded-page sums — feed the read-rate-derived KPIs and act as the
-  // fallback for the mailbox-wide ones until the summary populates.
-  const loadedMonthly = senders.reduce((a, s) => a + s.monthly, 0);
-  const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
-  const avgReadPct = loadedMonthly === 0 ? 0 : Math.round((totalRead / loadedMonthly) * 100);
-
-  // `intentOf()` honors the X2 confidence gate (and protect-wins) — the
-  // raw `verdict === 'unsubscribe'` check would surface low-confidence
-  // recommendations the user shouldn't act on, contradicting the
-  // Cleanup-bucket suppression. Codex finding #4 on PR #82.
-  const loadedCleanup = senders.filter((s) => intentOf(s) === 'cleanup');
-  const loadedCleanupMonthly = loadedCleanup.reduce((a, s) => a + s.monthly, 0);
-  const loadedProtectedCount = senders.filter(isStandingProtected).length;
-  const loadedNeedsReview = senders.filter((s) => s.lastReview != null).length;
-
-  // Mailbox-wide values — read from the rolling-window summary; fall
-  // back to loaded sums only until the summary populates. The summary's
-  // `byBucket.needs_review` is the same predicate the per-row bucket
-  // computation will use server-side, so chip / KPI / row stay
-  // consistent (CLAUDE.md §8 invariant).
-  const totalMonthly = summary?.last30dVolume ?? loadedMonthly;
-  const noiseReductionPct =
-    summary?.noiseReducible ??
-    (loadedMonthly === 0 ? 0 : Math.round((loadedCleanupMonthly / loadedMonthly) * 100));
-  // `cleanupCount` displayed as "decisions to act on" — maps to the
-  // mailbox-wide `needs_review` bucket (engine recs at conf ≥ 0.75 AND
-  // active in last 30d). Falls back to loaded-page cleanup-intent count.
-  const cleanupCount = summary?.byBucket.needs_review ?? loadedCleanup.length;
-  const protectedCount = summary?.protected ?? loadedProtectedCount;
-  const needsReview = summary?.needsReview ?? loadedNeedsReview;
-
-  // Reading-time and est-saved — RETURN ZERO. Both rode a placeholder
-  // 1.6 min/msg coefficient that was never calibrated against real user
-  // data, AND were built on top of the previously-broken monthlyVolume
-  // sum. Returning 0 silences downstream UI that would otherwise render
-  // fiction; the KPI cells that consumed these get dropped in this PR.
-  const readingHrs = 0;
-  const estSavedHrs = 0;
-  return {
-    totalMonthly,
-    avgReadPct,
-    readingHrs,
-    noiseReductionPct,
-    cleanupCount,
-    protectedCount,
-    needsReview,
-    estSavedHrs,
-  };
-}
+// SenderTotals + computeTotals retired with the KPI strip (D38). The
+// hero number rides `meta.query.totalMatching` (BE-honest, scope-
+// aware) and the chip counts ride `meta.query.filterCounts` — both
+// computed server-side. Intent-derived aggregates (cleanup / needs_
+// review) belong on Brief per spec v1.2 Decision 4.
 
 // renderHeroStory, renderCtaCopy, mapHeroSliceToReviewKind RETIRED
 // alongside the InboxStoryHero + WeeklyHeroLive renders (spec v1.2
@@ -1591,51 +1499,9 @@ function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTot
 // IntentChip RETIRED in favor of FactChip (spec v1.2 Decision 2 +
 // Decision 3). Phase 5 dead-code sweep removes the empty signature.
 
-interface FactChipProps {
-  label: string;
-  /**
-   * Literal definition of the chip's predicate ("Last seen ≤ 30 days,
-   * ≥ 1 msg"). Rendered as the `title` attribute so users can hover to
-   * see exactly what the chip filters on (spec v1.2 Decision 3 — trust
-   * artifact: every chip carries its definition).
-   */
-  tip: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}
-
-function FactChip({ label, tip, count, active, onClick }: FactChipProps) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={active}
-      title={tip}
-      onClick={onClick}
-      style={{
-        padding: '6px 14px',
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 500,
-        background: active ? color.fg : color.card,
-        color: active ? '#FFFFFF' : color.fgSoft,
-        border: `1px solid ${active ? color.fg : color.line}`,
-        cursor: 'pointer',
-        transition: 'background 120ms, color 120ms, border-color 120ms',
-        fontFamily: font.sans,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-      }}
-    >
-      {label}
-      <span style={{ color: active ? 'rgba(255,255,255,0.65)' : color.fgMuted, fontWeight: 500 }}>
-        {count}
-      </span>
-    </button>
-  );
-}
+// FactChip retired with the fact-chip row (D38). The ComposeStrip
+// owns the multi-axis filter surface. Phase 5 dead-code sweep can
+// drop this comment marker when it lands.
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
 function LoadingState() {

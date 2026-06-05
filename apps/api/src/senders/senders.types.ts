@@ -275,6 +275,56 @@ export interface SenderListQueryMeta {
   globalMaxTotal: number;
   asOf: string;
   counts?: Record<string, number>;
+  /**
+   * Mailbox-wide absolute counts per filter axis (D38 powerful filters).
+   *
+   * Computed once per list query and returned with every page. Counts
+   * are ABSOLUTE per axis — the number of senders matching JUST that
+   * axis predicate, ignoring the rest of the active compose. The hero
+   * "X senders match" reflects the composed scope (`totalMatching`);
+   * the chip counts here stay stable so the user sees what each axis
+   * holds independently and can predict the next click.
+   */
+  filterCounts?: {
+    total: number;
+    active: number;
+    quiet: number;
+    dormant: number;
+    unsubReady: number;
+    repliedTo: number;
+    protected: number;
+  };
+}
+
+/**
+ * Activity bucket — derived from `senders.last_seen_at` against
+ * `WINDOWS.ACTIVE_DAYS` (30d) and `WINDOWS.DORMANT_DAYS` (180d).
+ *
+ *   active   = last_seen_at >= now - 30d
+ *   quiet    = last_seen_at <  now - 30d AND last_seen_at >= now - 180d
+ *   dormant  = last_seen_at <  now - 180d
+ *
+ * Mutually exclusive — exactly one bucket per sender. Used by the
+ * Senders V2 compose strip (D38).
+ */
+export type ActivityBucket = 'active' | 'quiet' | 'dormant';
+
+/**
+ * Tri-state filter — a chip can be required (`true`), negated
+ * (`false` — exclude rows matching), or absent (`null` — no constraint).
+ * Mirrors the wire param parsing: `true | not | <absent>`.
+ */
+export type TriStateFilter = boolean | null;
+
+/**
+ * Activity filter — same tri-state semantics, applied per bucket.
+ * The wire shape carries the bucket and direction (`active | not-active
+ * | quiet | not-quiet | ...`); parsed into this struct.
+ */
+export interface ActivityFilter {
+  bucket: ActivityBucket;
+  /** When true, EXCLUDE the bucket instead of requiring it. */
+  negate: boolean;
 }
 
 /**
