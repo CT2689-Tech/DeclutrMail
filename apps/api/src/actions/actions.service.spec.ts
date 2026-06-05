@@ -129,6 +129,12 @@ function fakeQueue() {
       q.count += 1;
       if (opts?.jobId) q.jobIds.push(opts.jobId);
     },
+    // Stub for the failed-revert retry path: enqueueRevert calls
+    // getJob to drop a stale failed BullMQ hash before re-enqueueing.
+    // The fake always returns null (no stale job) so the retry path
+    // proceeds straight to `add`. Tests that need to assert the
+    // remove() invocation extend this locally.
+    getJob: async (_jobId: string) => null,
   };
   return q;
 }
@@ -284,6 +290,67 @@ describe('ActionsService', () => {
     expect(row!.direction).toBe('reverse');
     expect(row!.undoToken).toBe(token);
     expect([...row!.resolvedMessageIds].sort()).toEqual(['m1', 'm2']);
+  });
+
+  it('enqueueRevert RETRIES a previously-failed reverse action (MISTAKES 2026-06-05 stale-worker class)', async () => {
+    // When a reverse action_jobs row terminated with status='failed' (the
+    // smoke session's stale-worker case dead-lettered the original
+    // attempt), `undo_journal.reverted_at` stays NULL by design — but the
+    // idempotency-key dedup used to return the cached failure forever,
+    // leaving the messages permanently stuck in their post-mutation
+    // state (Gmail Trash for delete, archive for archive). The retry
+    // path resets the row to 'queued' + re-enqueues so the next worker
+    // attempt actually runs.
+    const [undo] = await db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'delete',
+        payload: { kind: 'delete', messageIds: ['m-stuck-1', 'm-stuck-2'] },
+      })
+      .returning({ token: undoJournal.token });
+    const token = undo!.token;
+
+    // First attempt — succeeds at enqueue (fake queue records the job).
+    const first = await svc.enqueueRevert({
+      mailboxAccountId: mailboxId,
+      token,
+      verb: 'delete',
+      messageIds: ['m-stuck-1', 'm-stuck-2'],
+    });
+    expect(first.status).toBe('queued');
+
+    // Simulate the prior worker run terminally failing (stale-worker
+    // class — the row never reaches `done`, errorCode + affected_count
+    // record the partial state).
+    await db
+      .update(actionJobs)
+      .set({
+        status: 'failed',
+        errorCode: 'ValidationError',
+        affectedCount: 0,
+      })
+      .where(eq(actionJobs.id, first.actionId));
+    queue.count = 0;
+    queue.jobIds = [];
+
+    // Second attempt — MUST retry the same row, not return cached failure.
+    const second = await svc.enqueueRevert({
+      mailboxAccountId: mailboxId,
+      token,
+      verb: 'delete',
+      messageIds: ['m-stuck-1', 'm-stuck-2'],
+    });
+    expect(second.actionId).toBe(first.actionId); // same row
+    expect(second.status).toBe('queued'); // reset, not 'failed'
+    expect(queue.jobIds).toEqual([`revert-${token}`]); // re-enqueued
+
+    // The row's failure metadata is cleared so the next worker run
+    // starts fresh.
+    const [retried] = await db.select().from(actionJobs).where(eq(actionJobs.id, first.actionId));
+    expect(retried!.status).toBe('queued');
+    expect(retried!.errorCode).toBeNull();
+    expect(retried!.affectedCount).toBe(0);
   });
 
   it('getStatus is mailbox-scoped (404 for a foreign mailbox)', async () => {

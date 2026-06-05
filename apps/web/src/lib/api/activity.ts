@@ -29,8 +29,15 @@ export type ActivitySourceWire = 'triage' | 'manual' | 'autopilot' | 'screener';
 
 export type ActivitySourceFilterWire = 'all' | ActivitySourceWire;
 
-/** Canonical verbs (D227) plus the D88 followup-dismiss row variant. */
-export type ActivityActionWire = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'followup-dismiss';
+/** Canonical verbs (D227 → K/A/U/L/D after ADR-0019) plus the D88
+ *  followup-dismiss row variant. */
+export type ActivityActionWire =
+  | 'keep'
+  | 'archive'
+  | 'unsubscribe'
+  | 'later'
+  | 'delete'
+  | 'followup-dismiss';
 
 export interface ActivitySenderWire {
   senderKey: string;
@@ -64,6 +71,9 @@ export interface ActivityStatsWire {
   unsubscribed: number;
   kept: number;
   later: number;
+  /** D227 K/A/U/L/D — Delete verb count (ADR-0019). Always present on
+   *  the wire; `0` when no delete activity in the window. */
+  deleted: number;
   followupsDismissed: number;
   /** D59 — failed-action surface; 0 until the action_jobs join lands. */
   needsAttention: number;

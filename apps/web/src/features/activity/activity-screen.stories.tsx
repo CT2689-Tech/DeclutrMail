@@ -44,6 +44,8 @@ const STATS: ActivityStatsWire = {
   unsubscribed: 12,
   kept: 8,
   later: 3,
+
+  deleted: 0,
   followupsDismissed: 2,
   needsAttention: 0,
 };

@@ -101,7 +101,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source or time window; undo destructive actions within their 7-day window."
+        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source or time window. Undo windows: Archive/Later 7 days, Delete 30 days (Gmail Trash)."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
@@ -161,6 +161,8 @@ function StatsHeader({ stats, window }: { stats: ActivityStatsWire; window: Acti
         {windowLabel}:
       </strong>
       <span>{stats.archived} archived</span>
+      <Sep />
+      <span>{stats.deleted ?? 0} deleted</span>
       <Sep />
       <span>{stats.unsubscribed} unsubscribed</span>
       <Sep />
@@ -469,6 +471,10 @@ const ACTION_LABEL: Record<ActivityActionWire, string> = {
   archive: 'Archived',
   unsubscribe: 'Unsubscribed',
   later: 'Later',
+  // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
+  // "Deleted" rather than "Trashed" to stay verb-symmetric with
+  // "Archived"; spec L312 confirms "Delete" is the user-facing verb.
+  delete: 'Deleted',
   'followup-dismiss': 'Followup resolved',
 };
 

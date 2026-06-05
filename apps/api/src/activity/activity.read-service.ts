@@ -213,6 +213,8 @@ export class ActivityReadService {
     );
     return {
       archived: byVerb.get('archive') ?? 0,
+      // D227 K/A/U/L/D — Delete verb count (ADR-0019).
+      deleted: byVerb.get('delete') ?? 0,
       unsubscribed: byVerb.get('unsubscribe') ?? 0,
       kept: byVerb.get('keep') ?? 0,
       later: byVerb.get('later') ?? 0,

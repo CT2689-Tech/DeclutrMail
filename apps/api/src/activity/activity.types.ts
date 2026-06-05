@@ -90,6 +90,10 @@ export interface ActivityStats {
   unsubscribed: number;
   kept: number;
   later: number;
+  /** D227 K/A/U/L/D — Delete verb count (ADR-0019). Counts rows whose
+   *  `activity_log.action = 'delete'`. Zero when no Delete activity in
+   *  the window. */
+  deleted: number;
   followupsDismissed: number;
   /**
    * D59 "needing attention" — reserved for the failed-action surface

@@ -704,6 +704,58 @@ export class ActionsService {
       undoToken: input.token,
     });
     if (inserted.existing) {
+      // Existing revert row found. Dispatch by status:
+      //
+      // - 'done'                 → idempotent replay (revert already
+      //                            succeeded; undo_journal.reverted_at
+      //                            is set; controller returns
+      //                            already-reverted via findRevertable
+      //                            before reaching here, so this branch
+      //                            is a defensive no-op).
+      // - 'queued' / 'executing' / 'failed' → potentially stranded.
+      //   Reasons it might be stranded:
+      //     a. 'failed' — the prior reverse attempt terminated
+      //        terminally (worker dead-lettered; MISTAKES.md 2026-06-05
+      //        stale-worker class). undo_journal.reverted_at stayed
+      //        NULL by design (UndoService.findRevertable still returns
+      //        'ready' on the next click), so the action_jobs row IS
+      //        the sticky barrier. BullMQ keeps the failed job in
+      //        Redis (`removeOnFail: false`) so a fresh `queue.add`
+      //        with the same jobId silently dedups against it — the
+      //        new add looks like it succeeded but the worker never
+      //        runs. We must drop the stale Redis hash first.
+      //     b. 'queued' — a prior retry already reset the row but the
+      //        BullMQ enqueue silently no-op'd against a still-present
+      //        failed hash (the `'failed'` branch's first attempt
+      //        followed by a transient `getJob` miss). The row sits
+      //        forever waiting for a worker that won't pick it up.
+      //     c. 'executing' — rare; a crashed worker mid-job. Same
+      //        recovery: drop the stale hash + re-enqueue.
+      //   Recovery is the same for all three: reset the row state +
+      //   force-reap any prior BullMQ job + re-enqueue.
+      if (inserted.row.status !== 'done') {
+        await this.db
+          .update(actionJobs)
+          .set({
+            status: 'queued',
+            errorCode: null,
+            affectedCount: 0,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(actionJobs.id, inserted.row.id));
+        try {
+          const stale = await this.queue!.getJob(idempotencyKey);
+          if (stale) {
+            await stale.remove();
+          }
+        } catch {
+          // Don't block retry on a stale-hash cleanup failure; if
+          // the prior job is active (locked), the next call recovers
+          // after the worker finishes / dead-letters.
+        }
+        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+        return { actionId: inserted.row.id, status: 'queued' };
+      }
       return { actionId: inserted.row.id, status: inserted.row.status };
     }
     await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);

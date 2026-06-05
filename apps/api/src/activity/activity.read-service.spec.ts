@@ -475,6 +475,7 @@ describe('ActivityReadService', () => {
       // Stats span the full window across sources.
       expect(stats).toEqual({
         archived: 3,
+        deleted: 0,
         unsubscribed: 2,
         kept: 1,
         later: 1,
@@ -506,6 +507,52 @@ describe('ActivityReadService', () => {
         nowMs: NOW_MS,
       });
       expect(stats.archived).toBe(1);
+    });
+
+    it('counts the Delete verb (D227 K/A/U/L/D after ADR-0019)', async () => {
+      // 3 deletes + 2 archives + 1 unsubscribe inside the window.
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 4 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 5 * ONE_DAY_MS),
+        source: 'autopilot',
+        action: 'delete',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 6 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+      });
+
+      const { stats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(stats.deleted).toBe(3);
+      expect(stats.archived).toBe(1);
+      expect(stats.unsubscribed).toBe(1);
     });
   });
 

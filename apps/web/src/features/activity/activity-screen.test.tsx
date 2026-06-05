@@ -37,6 +37,8 @@ const STATS_BASE: ActivityStatsWire = {
   unsubscribed: 4,
   kept: 3,
   later: 1,
+
+  deleted: 0,
   followupsDismissed: 0,
   needsAttention: 0,
 };
