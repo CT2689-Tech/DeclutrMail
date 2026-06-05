@@ -115,6 +115,14 @@ class FakeGmailClient {
     this.profileCalls += 1;
     return { historyId: this.historyId };
   }
+
+  // `listHistory` belongs to `GmailMetadataClient` (D8 incremental sync);
+  // initial-sync never invokes it, so the stub returns `null` (the same
+  // signal the real adapter emits on a 404 — "cursor too old").
+  // IncrementalSyncWorker tests use their own fake.
+  async listHistory(): Promise<null> {
+    return null;
+  }
 }
 
 /** A `GmailAccess` that always hands back the given fake client. */

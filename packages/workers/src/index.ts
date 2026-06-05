@@ -19,14 +19,20 @@ export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
   createRedisConnection,
+  ensureIncrementalSyncJob,
   ensureInitialSyncJob,
+  INCREMENTAL_SYNC_JOB,
+  INCREMENTAL_SYNC_QUEUE,
+  incrementalSyncJobOptions,
   INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
   initialSyncJobOptions,
 } from './queue.js';
-export type { InitialSyncJobData } from './queue.js';
+export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {
   GmailAccess,
+  GmailHistoryPage,
+  GmailHistoryRecord,
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,

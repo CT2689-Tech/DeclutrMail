@@ -53,6 +53,60 @@ export interface GmailMessageListPage {
 }
 
 /**
+ * A single `users.history.list` record — Gmail's incremental change log.
+ *
+ * Each record is anchored to a `historyId` (Gmail's monotonic mailbox-
+ * level cursor; D229). The four event kinds correspond to Gmail's REST
+ * shapes (`messagesAdded`, `messagesDeleted`, `labelsAdded`,
+ * `labelsRemoved`); the union is normalised here so the worker can
+ * pattern-match without depending on Gmail's exact wire shape.
+ *
+ * PRIVACY (D7 / D228). Only the message id, thread id, and label ids
+ * are surfaced — no header, no body. The worker fetches full metadata
+ * via the existing `getMessageMetadata` port only for `added` records,
+ * and `messages.get` is itself body-free by the `METADATA_FORMAT`
+ * constant in the Gmail adapter.
+ */
+export type GmailHistoryRecord =
+  | {
+      kind: 'added';
+      messageId: string;
+      threadId: string;
+      labelIds: string[];
+    }
+  | {
+      kind: 'deleted';
+      messageId: string;
+      threadId: string;
+    }
+  | {
+      kind: 'labels_added';
+      messageId: string;
+      labelIds: string[];
+    }
+  | {
+      kind: 'labels_removed';
+      messageId: string;
+      labelIds: string[];
+    };
+
+/** One page of `users.history.list`. */
+export interface GmailHistoryPage {
+  /** Normalised records on this page in source order. */
+  records: GmailHistoryRecord[];
+  /** Cursor for the next page; omitted on the last page. */
+  nextPageToken?: string;
+  /**
+   * The historyId Gmail reports as the most-recent on the mailbox at
+   * fetch time. The worker uses this to advance
+   * `provider_sync_state.last_history_id` only after every page is
+   * processed successfully — partial advance would leave the next
+   * webhook unable to find the gap.
+   */
+  historyId: string;
+}
+
+/**
  * A Gmail client already bound to one mailbox's credentials. Exposes
  * only the two metadata-only calls the backfill needs.
  */
@@ -71,6 +125,15 @@ export interface GmailMetadataClient {
    * during the fetch is replayed by the first incremental run.
    */
   getProfile(): Promise<{ historyId: string }>;
+  /**
+   * Page through `users.history.list` starting at the given historyId.
+   * Returns normalised `GmailHistoryRecord`s plus the mailbox's
+   * current historyId for cursor advancement. `null` when Gmail
+   * returns a 404 (`startHistoryId` too old — the worker must
+   * fall back to a full re-sync) so the caller decides the recovery
+   * path rather than throwing through the port.
+   */
+  listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null>;
 }
 
 /**

@@ -21,6 +21,90 @@ export interface InitialSyncJobData {
 }
 
 /**
+ * Queue + job name for the incremental sync (Gmail Pub/Sub-triggered;
+ * D8 + D229). Each verified webhook enqueues one job over the historyId
+ * range `[startHistoryId, endHistoryId]`; the worker pages
+ * `users.history.list` from that cursor and reconciles
+ * mail_messages + senders + sender_policies for the delta.
+ */
+export const INCREMENTAL_SYNC_QUEUE = 'incremental-sync';
+export const INCREMENTAL_SYNC_JOB = 'incremental-sync';
+
+/** Payload of an incremental-sync job. */
+export interface IncrementalSyncJobData {
+  /** Mailbox whose Gmail change triggered the webhook. */
+  mailboxAccountId: string;
+  /**
+   * Lower bound of the historyId range to fetch — the previous
+   * monotonic cursor `provider_sync_state.last_history_id`. Passed as
+   * a string because Gmail historyIds are 64-bit ints; the wire is
+   * decimal, no scientific notation.
+   */
+  startHistoryId: string;
+  /**
+   * Upper bound — the historyId carried by the webhook payload. The
+   * Gmail history API is open-ended (paginates until current), so this
+   * is informational + logged for trace; the worker stops when the
+   * page set is exhausted, not when it reaches `endHistoryId`.
+   */
+  endHistoryId: string;
+}
+
+/**
+ * Job options for an incremental-sync enqueue.
+ *
+ * `jobId = ${mailboxAccountId}:${endHistoryId}` namespaces by mailbox
+ * AND historyId — concurrent webhooks for the same mailbox advance the
+ * cursor monotonically, but a redelivered webhook for the same
+ * `endHistoryId` MUST be a no-op rather than enqueueing twice. BullMQ
+ * dedups by jobId so the second `add()` is silently ignored.
+ *
+ * `perMailboxPolicy` (D203/D225) governs retries — backoff matches
+ * initial-sync since both speak to the same Gmail API + rate budget.
+ */
+export function incrementalSyncJobOptions(
+  mailboxAccountId: string,
+  endHistoryId: string,
+): JobsOptions {
+  const policy = WORKER_POLICIES.perMailboxPolicy;
+  return {
+    jobId: `${mailboxAccountId}:${endHistoryId}`,
+    attempts: policy.maxAttempts,
+    ...(policy.backoff
+      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
+      : {}),
+    // Drop completed jobs after 24h — they are pure ack signal, no
+    // value beyond the cursor advance which already lives in
+    // `provider_sync_state`.
+    removeOnComplete: { age: 86_400 },
+    removeOnFail: false,
+  };
+}
+
+/**
+ * Enqueue an incremental-sync job. Idempotent — BullMQ ignores a
+ * duplicate jobId, so redelivered webhooks AND concurrent producers
+ * (controller path + reconciler) cannot double-enqueue the same
+ * `(mailboxAccountId, endHistoryId)` pair.
+ */
+export async function ensureIncrementalSyncJob(
+  queue: Queue<IncrementalSyncJobData>,
+  data: IncrementalSyncJobData,
+): Promise<'added' | 'noop'> {
+  const jobId = `${data.mailboxAccountId}:${data.endHistoryId}`;
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    return 'noop';
+  }
+  await queue.add(
+    INCREMENTAL_SYNC_JOB,
+    data,
+    incrementalSyncJobOptions(data.mailboxAccountId, data.endHistoryId),
+  );
+  return 'added';
+}
+
+/**
  * A Redis connection configured for BullMQ. `maxRetriesPerRequest: null`
  * is mandatory for BullMQ workers; `rediss://` URLs (Upstash) enable TLS
  * automatically. The caller owns the connection's lifecycle.
