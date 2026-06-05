@@ -21,6 +21,18 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-06-05 — Stale dev worker process from a prior session intercepted BullMQ jobs with pre-Delete-verb code
+
+**PR:** (this branch — caught during D38 smoke 2026-06-05)
+**Caught by:** manual Delete smoke fired with `unknown action verb delete` ValidationError despite the verb existing in every registry / enum (action_verb pg_enum, ACTION_REGISTRY, PIPELINE_COMPLETE_VERBS, ActionLabelAppliedPayloadSchema). Diagnostic console.logs added at `execute()` entry never fired even after a `./scripts/dev-up.sh --stop && ./scripts/dev-up.sh` cycle. `ps aux | grep worker.ts` revealed a **second `node ... worker.ts` process started May 29** still alive, intercepting jobs in parallel with the freshly-restarted one.
+**What happened:** `./scripts/dev-up.sh --stop` (line 821-832 in `apps/api/src/worker.ts`) closes the BullMQ Workers + Redis connection cleanly, but the parent `pnpm --filter @declutrmail/api worker` shell wrapper doesn't always propagate SIGTERM to the actual `node --import @swc-node/register/esm-register src/worker.ts` child. The May 29 worker's TS module graph was loaded BEFORE ADR-0019 added the Delete verb to the Action Registry (ACTION_VERBS, ACTION_REGISTRY, PIPELINE_COMPLETE_VERBS, ActionLabelAppliedPayloadSchema). `labelChangeForVerb('delete')` on that old graph threw `ValidationError('unknown action verb delete')` — a message that literally no longer exists in current source, which made the bug nearly impossible to grep into. BullMQ workers compete for jobs from the same queue, so any single delete attempt had a ~50/50 chance of hitting either consumer — the only fix was to kill the stale PID.
+**Correct approach:** On every dev-up restart, verify there's exactly ONE `worker.ts` process per queue. `dev-up.sh` should add a sanity check before starting the new worker: `pgrep -f "worker\\.ts" | xargs -r kill -9` (or scope by cwd). Alternative: a `worker-startup` log line that includes a build-time hash / commit short SHA so an old process is visibly identified by its hash differing from the running source tree.
+**Rule:** Before debugging a "code-doesn't-match-behavior" mystery in a dev worker, ALWAYS check `ps aux | grep worker\.ts` for multiple instances. swc-node uses in-memory module compilation; a process that was started before a code change keeps the OLD source graph until it exits, no matter how many file edits happen. The grep-the-codebase-for-the-error-message reflex fails when the error originates from a process holding a version of the source that no longer exists on disk.
+**Enforcement update:**
+1. `scripts/dev-up.sh` — add a pre-start `pkill -f "apps/api/src/worker\\.ts" || true` sweep gated on the project-root cwd so concurrent dev-ups in OTHER repos aren't affected.
+2. Worker boot — log a structured `worker.boot { gitSha, startedAt, pid }` line; a quick `tail` against the log file shows whether the running process matches `git rev-parse HEAD`.
+3. CLAUDE.md §8 "Smoke before merge" — add a one-line note: "When smoking a worker change, verify exactly one `worker.ts` process is running before issuing the test action."
+
 ## 2026-06-05 — BullMQ `queue.add` inside `db.transaction(...)` callback publishes job BEFORE PG commits
 
 **PR:** (this branch, fixed pre-merge — `04c8546`)
