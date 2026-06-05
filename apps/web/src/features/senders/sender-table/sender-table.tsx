@@ -74,8 +74,13 @@ const { color, font, radius, text } = tokens;
 /** Discriminator for the empty-state cell when `rows.length === 0`. */
 export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search-match';
 
-/** Row-level verb the table emits up to the consumer. K/A/U/L (D227). */
-export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe';
+/**
+ * Row-level verb the table emits up to the consumer.
+ * Spec v1.2 Decision 1 (ADR-0019) widens the canonical set to K/A/U/L/D —
+ * Delete joins as a row verb so the popover row + bulk surface route the
+ * same shape end-to-end.
+ */
+export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe' | 'delete';
 
 export interface SenderTableProps {
   /** Page rows in the order the wire returned them (BE-sorted). */
@@ -782,6 +787,9 @@ function ExpandedRow({
     Archive: 'archive',
     Unsubscribe: 'unsubscribe',
     Later: 'later',
+    // Spec v1.2 Decision 1 — Delete routes through the composite modal
+    // (the row detail surface) the same as Archive/Later.
+    Delete: 'delete',
     Keep: null,
     Protect: null,
   };

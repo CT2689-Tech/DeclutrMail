@@ -38,6 +38,8 @@ import {
   useActionStatus,
   useRevertUndo,
   useArchivePreview,
+  useCompositePreview,
+  useEnqueueComposite,
 } from './api/use-action';
 import { sendersKeys } from './api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
@@ -258,6 +260,11 @@ function SendersScreenContent({
   // in-flight action at a time is sufficient for the single-sender wire.
   const qc = useQueryClient();
   const enqueue = useEnqueueAction();
+  // ADR-0020 unified composite endpoint — covers Delete primary + Later
+  // primary + composite secondary (Later/Unsub + Archive/Delete past).
+  // The per-verb `enqueueArchiveSender` stays for the single-sender
+  // Archive path until Phase 5 dead-code sweep retires it.
+  const enqueueComposite = useEnqueueComposite();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -280,11 +287,27 @@ function SendersScreenContent({
   const previewFirstSender =
     pendingAction != null &&
     pendingAction.senders.length === 1 &&
-    (previewVerb === 'Archive' || previewVerb === 'Unsubscribe' || previewVerb === 'Later')
+    (previewVerb === 'Archive' ||
+      previewVerb === 'Unsubscribe' ||
+      previewVerb === 'Later' ||
+      previewVerb === 'Delete')
       ? (pendingAction.senders[0] ?? null)
       : null;
   const archivePreviewSenderId = previewFirstSender?.id ?? null;
   const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
+  // ADR-0020 composite preview — single round-trip for sender ctx strip
+  // + per-time-window bucket counts. Powers the chip row + summary line
+  // for every primary verb (archive/delete/later/unsub) without the FE
+  // having to fetch 5 buckets separately.
+  const compositePreviewQuery = useCompositePreview(archivePreviewSenderId);
+  useEffect(() => {
+    if (!compositePreviewQuery.isError || archivePreviewSenderId == null) return;
+    const err = compositePreviewQuery.error;
+    console.warn('[senders] composite preview fetch failed', {
+      senderId: archivePreviewSenderId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }, [compositePreviewQuery.isError, compositePreviewQuery.error, archivePreviewSenderId]);
   // Breadcrumb the underlying error before we collapse it to a boolean
   // for the modal — preview is D226-mandatory, so a sustained 5xx that
   // forces the modal into "we'll archive whatever's there" copy without
@@ -483,7 +506,7 @@ function SendersScreenContent({
   }, []);
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
 
       // P6 — real single-sender Archive (D226). The preview already ran
@@ -493,23 +516,74 @@ function SendersScreenContent({
       // Other verbs + multi-sender bulk stay on the tracer path: their BE
       // pipeline isn't built (the worker rejects them fail-closed) and the
       // multi-sender selector is P7.
-      if (verb === 'Archive' && senders.length === 1) {
+      if (verb === 'Archive' && senders.length === 1 && opts?.secondary == null) {
         const sender = senders[0]!;
         setPendingAction(null);
         setSelected(new Set());
         toast(`Archiving mail from ${sender.name}…`, 'info');
-        enqueue.mutate(
-          { senderId: sender.id },
+        const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
+        enqueue.mutate(mutationArgs, {
+          onSuccess: (res) => setActiveAction({ actionId: res.actionId, senderName: sender.name }),
+          onError: (err) =>
+            toast(
+              // Protected/VIP senders return 409 PROTECTED_SENDER (a
+              // ConflictException), not 403.
+              err instanceof ApiError && err.status === 409
+                ? `${sender.name} is protected — unprotect it first`
+                : `Couldn't archive ${sender.name}`,
+              'warn',
+            ),
+        });
+        return;
+      }
+
+      // Composite path (ADR-0020 + spec v1.2 Decision 15) — single-sender
+      // Delete primary OR Later primary OR Archive/Later with a secondary
+      // historic verb. Routes through `POST /api/actions` so the BE
+      // composite executor persists primary + secondary as two linked
+      // rows when relevant. Unsubscribe primary stays tracer at this
+      // build (no BE composite primary support for unsub) — the secondary
+      // chip on Unsub also tracers until the unsub pipeline lands.
+      if (
+        senders.length === 1 &&
+        (verb === 'Delete' || (verb === 'Archive' && opts?.secondary != null) || verb === 'Later')
+      ) {
+        const sender = senders[0]!;
+        const primaryType: 'archive' | 'later' | 'delete' =
+          verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
+        const inFlightCopy =
+          primaryType === 'delete'
+            ? `Moving mail from ${sender.name} to Trash…`
+            : primaryType === 'later'
+              ? `Moving ${sender.name} to Later…`
+              : `Archiving mail from ${sender.name}…`;
+        setPendingAction(null);
+        setSelected(new Set());
+        toast(inFlightCopy, 'info');
+        enqueueComposite.mutate(
+          {
+            senderId: sender.id,
+            primary: {
+              type: primaryType,
+              olderThanDays: opts?.olderThanDays ?? null,
+            },
+            ...(opts?.secondary
+              ? {
+                  secondary: {
+                    type: opts.secondary.type,
+                    olderThanDays: opts.secondary.olderThanDays ?? null,
+                  },
+                }
+              : {}),
+          },
           {
             onSuccess: (res) =>
               setActiveAction({ actionId: res.actionId, senderName: sender.name }),
             onError: (err) =>
               toast(
-                // Protected/VIP senders return 409 PROTECTED_SENDER (a
-                // ConflictException), not 403.
                 err instanceof ApiError && err.status === 409
                   ? `${sender.name} is protected — unprotect it first`
-                  : `Couldn't archive ${sender.name}`,
+                  : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
               ),
           },
@@ -657,13 +731,18 @@ function SendersScreenContent({
     );
   }, [receipt, revert, qc]);
 
-  // Archive / Unsubscribe / Later move mail, so they route through the
-  // mandatory preview (D226). Keep / Protect change nothing and fire
-  // directly.
+  // Archive / Unsubscribe / Later / Delete move mail, so they route
+  // through the mandatory preview (D226 + spec v1.2 Decision 15). Keep /
+  // Protect change nothing and fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
-      if (req.verb === 'Archive' || req.verb === 'Unsubscribe' || req.verb === 'Later') {
+      if (
+        req.verb === 'Archive' ||
+        req.verb === 'Unsubscribe' ||
+        req.verb === 'Later' ||
+        req.verb === 'Delete'
+      ) {
         setPendingAction(req);
       } else {
         performAction(req.verb, req.senders);
@@ -919,6 +998,57 @@ function SendersScreenContent({
           <span>
             filter: {FACT_CHIPS.find((c) => c.key === activeFactChip)?.label.toLowerCase()}
           </span>
+          {/* Bulk-select-by-filter (spec v1.2 Decision 15). Lets the
+              user act on EVERY sender matching the active fact-chip
+              filter in one click — feeds the bulk variant of the
+              composite confirm modal. Toggles between Select all N /
+              Deselect all when every filtered sender is already in the
+              selection. */}
+          {factFilteredSenders.length > 0 && (
+            <>
+              <span>·</span>
+              {(() => {
+                const allSelected = factFilteredSenders.every((s) => selected.has(s.id));
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (allSelected) {
+                        // Deselect just the matching subset, preserve any
+                        // cross-filter selection the user built earlier.
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const s of factFilteredSenders) next.delete(s.id);
+                          return next;
+                        });
+                      } else {
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          for (const s of factFilteredSenders) next.add(s.id);
+                          return next;
+                        });
+                      }
+                    }}
+                    aria-pressed={allSelected}
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 11,
+                      color: 'var(--color-primary)',
+                      background: 'transparent',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {allSelected
+                      ? `deselect all ${factFilteredSenders.length} [⌫]`
+                      : `select all ${factFilteredSenders.length} [+]`}
+                  </button>
+                );
+              })()}
+            </>
+          )}
           {(activeFactChip !== 'all' || query) && (
             <>
               <span>·</span>
@@ -1076,6 +1206,7 @@ function SendersScreenContent({
         onCancel={closePending}
         onConfirm={confirmPending}
         archivePreview={archivePreview}
+        compositePreview={compositePreviewQuery.data}
       />
 
       <ReviewSession
@@ -1106,6 +1237,9 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
+  // Spec v1.2 Decision 1 (ADR-0019) — Delete joins the row verb set;
+  // routes through the same composite confirm modal as Archive/Later.
+  delete: 'Delete',
 };
 
 /**

@@ -138,3 +138,87 @@ export async function revertUndo(
   });
   return env.data;
 }
+
+/* ─────────────────────── ADR-0020 — unified composite client ─────────────────────── */
+
+/** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */
+export type CompositePrimaryVerb = 'archive' | 'later' | 'delete';
+/** Secondary historic verb — applies on Unsubscribe / Later primaries. */
+export type CompositeSecondaryVerb = 'archive' | 'delete';
+
+/** Returned by `POST /api/actions` — composite enqueue handle. */
+export interface CompositeActionEnqueueResult {
+  actionId: string;
+  compositeId: string;
+  secondaryId: string | null;
+  status: ActionJobStatus;
+  primaryCount: number;
+  secondaryCount: number | null;
+}
+
+/** Returned by `GET /api/actions/preview` — composite preview shape. */
+export interface CompositeActionPreviewResult {
+  sender: {
+    id: string;
+    name: string;
+    domain: string;
+    lastSeenDays: number | null;
+    repliedCount: number | null;
+    monthly: number | null;
+  };
+  counts: {
+    all: number;
+    olderThan30d: number;
+    olderThan90d: number;
+    olderThan180d: number;
+    olderThan365d: number;
+  };
+  unsubAvailable: boolean;
+  protected: boolean;
+}
+
+/**
+ * Enqueue a unified composite action (ADR-0020). Single-verb shape omits
+ * `secondary`; composite shape includes it. The BE handles both through
+ * one path so the FE can talk to ONE endpoint regardless of selection.
+ */
+export async function enqueueCompositeAction(
+  input: {
+    senderId: string;
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
+    override?: boolean;
+    idempotencyKey: string;
+  } & ActionRequestOptions,
+): Promise<CompositeActionEnqueueResult> {
+  const env = await apiPost<CompositeActionEnqueueResult>(
+    '/api/actions',
+    {
+      selector: { type: 'sender', senderId: input.senderId },
+      primary: input.primary,
+      ...(input.secondary ? { secondary: input.secondary } : {}),
+      override: input.override ?? false,
+    },
+    {
+      headers: { 'Idempotency-Key': input.idempotencyKey },
+      ...(input.mailboxId ? { mailboxId: input.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
+/**
+ * Composite preview — sender context strip + per-time-window bucket counts
+ * for the confirm modal chip row. One round-trip pulls every chip count so
+ * the modal opens without a second fetch (ADR-0020).
+ */
+export async function getCompositePreview(
+  senderId: string,
+  options: ActionRequestOptions = {},
+): Promise<CompositeActionPreviewResult> {
+  const env = await apiGet<CompositeActionPreviewResult>('/api/actions/preview', {
+    query: { senderId },
+    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+  });
+  return env.data;
+}

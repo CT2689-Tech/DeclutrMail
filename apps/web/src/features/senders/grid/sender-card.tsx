@@ -269,15 +269,13 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
           later: laterOk,
           unsubscribe: unsubOk,
           keep: true,
-          // Delete suppressed at the card surface until Phase 2 PR-FE3
-          // widens the legacy ActionVerb callback to include 'Delete'
-          // + the composite modal updates. Surfacing Delete in the
-          // popover today would silently route through legacyVerbFromId
-          // → 'Archive' (design-system + typescript + silent-failure
-          // agents 2026-06-03 all flagged this as a Blocking UX
-          // mismatch). Set false → popover renders Delete row disabled
-          // with a tooltip explaining the temporary gating.
-          delete: false,
+          // Phase 2 PR-FE3 (ADR-0019 + spec v1.2 Decision 1) — Delete
+          // now routes end-to-end: `legacyVerbFromId('delete')` returns
+          // the 'Delete' verb instead of 'Archive', `ActionVerb` was
+          // widened, and the composite confirm modal renders the red
+          // Delete tone + 30-day recovery warning. Enabled at the card
+          // surface so the popover row is selectable.
+          delete: true,
         }}
         onAction={onAction}
       />
@@ -385,12 +383,11 @@ function mapLegacyVerb(verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'): Verb
 
 /**
  * Inverse of `mapLegacyVerb` — converts `VerbId` back to the legacy
- * `ActionVerb` shape `onAction` callbacks expect. Drops Delete to
- * 'Archive' as a safe fallback for the legacy callback signature
- * (Phase 2 PR-FE3 rewrites the callback to accept `VerbId` directly,
- * removing this bridge).
+ * `ActionVerb` shape `onAction` callbacks expect. Spec v1.2 Decision 1
+ * (PR-FE3) widened `ActionVerb` to include 'Delete', so this bridge is
+ * exhaustive across the K/A/U/L/D set.
  */
-function legacyVerbFromId(id: VerbId): 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' {
+function legacyVerbFromId(id: VerbId): 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' | 'Delete' {
   switch (id) {
     case 'unsubscribe':
       return 'Unsubscribe';
@@ -401,10 +398,7 @@ function legacyVerbFromId(id: VerbId): 'Unsubscribe' | 'Later' | 'Keep' | 'Archi
     case 'archive':
       return 'Archive';
     case 'delete':
-      // Legacy callback signature has no Delete; route to Archive
-      // for now. Phase 2 PR-FE3 widens the callback to include 'Delete'
-      // and removes this bridge.
-      return 'Archive';
+      return 'Delete';
     default: {
       const _exhaustive: never = id;
       return _exhaustive;
@@ -444,14 +438,19 @@ function Stat({
 
 /**
  * Lead-button tone derivation for the primary CTA. Tone semantics
- * locked by D26/D31: Unsubscribe = amber `warn`; Keep = dark; others
- * = neutral `default`. Phase 2 PR-FE3 widens the union when Delete
- * lands on the card surface via the Verb Registry's `danger` tone.
+ * locked by D26/D31 + ADR-0019: Unsubscribe = amber `warn`; Keep =
+ * dark; Delete = `warn` (red is mapped to warn at this build until the
+ * danger tone variant lands as a Button prop — design-system follow-up);
+ * others = neutral `default`. Per spec v1.2 Decision 2, Delete is
+ * `canBePrimary: false` so this branch is reached only when a verb
+ * registry rule routes it as primary, but the type still has to span the
+ * full K/A/U/L/D set so the bridge typechecks.
  */
 function leadButtonTone(
-  verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive',
+  verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' | 'Delete',
 ): 'warn' | 'dark' | 'default' {
   if (verb === 'Unsubscribe') return 'warn';
+  if (verb === 'Delete') return 'warn';
   if (verb === 'Keep') return 'dark';
   return 'default';
 }

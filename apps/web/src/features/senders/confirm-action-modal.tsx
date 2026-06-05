@@ -2,33 +2,53 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { verbDisplay, type ActionRequest } from './data';
+import type { CompositeActionPreviewResult } from './api/use-action';
+import { sampleSubjects, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
 
+/**
+ * Composite secondary verb (spec v1.2 Decision 15). Picked from the
+ * "ALSO ACT ON PAST EMAILS" chip row on Unsubscribe + Later primary.
+ * `null` = "Leave alone" (the default — no secondary action fires).
+ */
+export type ConfirmSecondaryVerb = 'archive' | 'delete' | null;
+
 export interface ConfirmOptions {
-  archiveHistoric: boolean;
   /**
-   * Time-window filter applied to the historic-scope verb (Archive
-   * primary; Archive-historic secondary on Unsubscribe + Later).
-   * `null` = no filter, act on all matching mail. Spec v1.2 Decision 15
-   * surfaces this as a chip row of presets: All / 30d+ / 3mo+ / 6mo+
-   * / 1yr+ / Custom. Plumbed through to the BE on the unified
-   * `POST /api/actions` endpoint via `primary.olderThanDays`.
+   * Time-window filter for the PRIMARY verb (Archive primary, Delete
+   * primary, or the secondary historic action on Unsub/Later when its
+   * own window is not set). `null` = no filter, act on all matching
+   * mail. Spec v1.2 Decision 15 chips: All / 30d+ / 3mo+ / 6mo+ / 1yr+.
    */
   olderThanDays?: number | null;
+  /**
+   * Composite secondary (ADR-0020). Applies only when primary ∈
+   * {Unsubscribe, Later}. `null` / omitted = "Leave alone" — no
+   * secondary action fires. Carries its own time-window so the user
+   * can say "Unsubscribe + Delete past 6 months" with one click.
+   */
+  secondary?: {
+    type: 'archive' | 'delete';
+    olderThanDays?: number | null;
+  } | null;
+  /**
+   * @deprecated Pre-spec-v1.2 boolean toggle preserved for tracer
+   * surfaces (review-session apply). New callers should populate
+   * `secondary` directly. The modal derives this from `secondary` so
+   * legacy consumers continue to receive a truthy value when the user
+   * picks "Archive them".
+   */
+  archiveHistoric?: boolean;
 }
 
 /**
- * Time-window presets per spec v1.2 Decision 15. Days values are
- * computed for the BE filter; the chip label is what the user reads.
- * `null` value = no time filter (act on all). `'custom'` value triggers
- * the inline value+unit input (deferred — Phase 2 PR-FE3 polish).
- *
- * Defaults per verb:
- *   - Archive primary  → `null` ("All inbox" — current behavior)
- *   - Delete primary   → 180   ("Older than 6 months" — safer)
- *   - Unsub secondary  → `null` (when archiveHistoric=true)
+ * Time-window presets (spec v1.2 Decision 15). Days values plumb to the
+ * BE `olderThanDays` filter; the label is what the user reads. `null`
+ * value = no time filter (act on all). Defaults per verb (handoff spec):
+ *   - Archive primary → null    ("All inbox")
+ *   - Delete primary  → 180     ("6 months+" — safer)
+ *   - Unsub/Later secondary historic → null when first toggled on
  */
 const TIME_WINDOW_PRESETS = [
   { label: 'All inbox', days: null as number | null },
@@ -39,105 +59,186 @@ const TIME_WINDOW_PRESETS = [
 ] as const;
 
 /**
- * Real archive preview (D226): the actual count of the sender's mail
- * currently in the inbox — the exact set that will move. Replaces the FE
- * `monthlyVolume × 12` estimate for the single-sender Archive path.
- * `inboxCount` is undefined while loading or on a fetch error.
+ * Real archive preview (D226). Carried alongside the request shape so
+ * the modal can state the REAL inbox-now count for the single-sender
+ * Archive path. Kept for backwards compatibility; the composite preview
+ * supersedes it on every Senders surface.
  */
 export interface ArchivePreviewState {
   inboxCount: number | undefined;
   loading: boolean;
-  /** The count fetch failed — the modal says so rather than showing a number. */
   error: boolean;
 }
 
 /**
+ * Pick the right bucket count from the composite preview for a given
+ * `olderThanDays`. Keeps the summary line + confirm button in step with
+ * the active chip without a round-trip per chip.
+ */
+function pickBucketCount(
+  counts: CompositeActionPreviewResult['counts'] | undefined,
+  olderThanDays: number | null,
+): number | undefined {
+  if (!counts) return undefined;
+  if (olderThanDays === null) return counts.all;
+  if (olderThanDays === 30) return counts.olderThan30d;
+  if (olderThanDays === 90) return counts.olderThan90d;
+  if (olderThanDays === 180) return counts.olderThan180d;
+  if (olderThanDays === 365) return counts.olderThan365d;
+  // Custom value (post-launch) — fall back to `all` until the
+  // server-side on-demand bucket query lands (Phase 1 BE PR-N polish).
+  return counts.all;
+}
+
+/** Default time-window per primary verb (spec v1.2 Decision 15 table). */
+function defaultWindow(verb: ActionVerb): number | null {
+  return verb === 'Delete' ? 180 : null;
+}
+
+/**
+ * Verb → confirm-button emoji glyph. Spec v1.2 Decision 15 confirm
+ * button copy: `📥 Archive 47` / `🗑 Delete 125` / `🚫 Unsubscribe` etc.
+ * Kept letter-free per ADR-0019 §3.1 (shortcut chip carries the letter).
+ */
+const VERB_GLYPH: Partial<Record<ActionVerb, string>> = {
+  Archive: '📥',
+  Delete: '🗑',
+  Unsubscribe: '🚫',
+  Later: '⏰',
+};
+
+/**
  * The mandatory action preview (D226). No bulk mutation runs without
  * this confirm — it states exactly what changes and how much mail it
- * touches before anything happens.
+ * touches before anything happens. PR-FE3 (spec v1.2 Decision 15)
+ * adds: Delete primary (red tone + 30-day recovery banner), composite
+ * secondary chip row on Unsub/Later, "Show what will move" expand
+ * panel, and per-bucket count preview via the composite endpoint.
  */
 export function ConfirmActionModal({
   request,
   onCancel,
   onConfirm,
   archivePreview,
+  compositePreview,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
-  /** Real inbox count for the single-sender Archive path; absent on estimate paths. */
+  /**
+   * Legacy single-sender archive count — superseded by `compositePreview`
+   * on the senders surface; retained for triage's tracer integration.
+   */
   archivePreview?: ArchivePreviewState | undefined;
+  /**
+   * Composite preview (ADR-0020). Drives the sender context strip's real
+   * domain/monthly/lastSeenDays values + the per-bucket counts the chip
+   * row displays. Single-sender path only — absent for bulk flows.
+   */
+  compositePreview?: CompositeActionPreviewResult | undefined;
 }) {
-  // Unsubscribe defaults to also clearing the backlog (the common
-  // intent when cutting a sender off). Later defaults OFF — Later is
-  // future-only by definition; archiving history would make it
-  // destructive against the modal's own copy.
-  const [archiveHistoric, setArchiveHistoric] = useState(false);
-  // Time-window filter for historic-scope verbs (spec v1.2 Decision 15).
-  // Applies to Archive primary + the archiveHistoric secondary on Unsub/
-  // Later. `null` = no filter (act on all). Defaults to null for Archive
-  // (current behavior preserved); the chip row lets user opt INTO a
-  // narrower window. Reset on modal open so prior selection doesn't
-  // bleed into the next sender.
+  const verb = request?.verb;
+  // Composite secondary (chip row) — applies only on Unsubscribe + Later
+  // primary. `null` = "Leave alone" (the default — keeps the modal
+  // non-destructive for first-time openers).
+  const [secondaryVerb, setSecondaryVerb] = useState<ConfirmSecondaryVerb>(null);
+  // Time-window filter for the historic-scope verb (archive/delete
+  // primary OR the active secondary).
   const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
+  // "Show what will move" expand panel state (spec v1.2 Decision 15).
+  const [showSubjects, setShowSubjects] = useState(false);
 
   useEffect(() => {
-    setArchiveHistoric(request?.verb === 'Unsubscribe');
-    setOlderThanDays(null);
+    if (!request) return;
+    setSecondaryVerb(null);
+    setOlderThanDays(defaultWindow(request.verb));
+    setShowSubjects(false);
   }, [request]);
 
-  // The real inbox-now count (undefined while loading / on error / on the
-  // estimate path). Governs both the Archive headline figure and the
-  // "also archive the backlog" toggle on Unsubscribe/Later.
+  // The historic-bucket count for the current chip selection — used by
+  // the summary line + confirm button + "Show what will move" header.
+  const isArchiveVerb = verb === 'Archive';
+  const isDeleteVerb = verb === 'Delete';
+  const isUnsubVerb = verb === 'Unsubscribe';
+  const isLaterVerb = verb === 'Later';
+  // Primary verbs that act on existing inbox mail in a time-window. The
+  // chip row is visible only for these; Unsub/Later primaries delegate
+  // the "how far back" decision to the secondary chip row instead.
+  const primaryActsOnInbox = isArchiveVerb || isDeleteVerb;
+  // Whether the secondary chip row is shown (Unsub or Later primary).
+  const showSecondaryRow = isUnsubVerb || isLaterVerb;
+  const hasSecondaryAction = showSecondaryRow && secondaryVerb !== null;
+
+  // For Archive/Delete primary the time-window applies to the primary
+  // verb itself. For Unsub/Later with a non-null secondary, the
+  // time-window applies to the secondary's historic mail.
+  const showWindowRow = primaryActsOnInbox || hasSecondaryAction;
+
+  // Composite preview bucket count under the current chip selection.
+  const compositeCount = pickBucketCount(compositePreview?.counts, olderThanDays);
   const previewLoading = archivePreview?.loading ?? false;
   const inboxNow =
     archivePreview != null && !previewLoading && !archivePreview.error
       ? archivePreview.inboxCount
-      : undefined;
+      : (compositePreview?.counts?.all ?? undefined);
 
   // Archive is the only verb whose ENTIRE effect is moving inbox mail, so an
-  // empty inbox makes it a pure no-op → block confirm (the dealskhoj.in smoke
-  // case). Unsubscribe/Later are future-only by definition and stay valid
-  // with an empty inbox — for them the count only governs the backlog toggle,
-  // never the confirm button.
-  const isArchiveVerb = request?.verb === 'Archive';
-  const nothingToArchive = isArchiveVerb && inboxNow === 0;
-  const confirmDisabled = isArchiveVerb && (previewLoading || nothingToArchive);
+  // empty inbox makes it a pure no-op → block confirm. Delete primary
+  // follows the same rule (no inbox mail in window = nothing to delete).
+  const nothingToActOn =
+    (isArchiveVerb && inboxNow === 0) ||
+    (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
+  const confirmDisabled = (isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn);
 
-  // The headline figure shows the real count only for Archive; Unsubscribe/
-  // Later keep the lifetime-total framing (their headline isn't "what moves
-  // now" — it's how much this sender has ever sent).
-  const realArchiveFigure = isArchiveVerb && archivePreview != null;
-
-  // Unsubscribe/Later offer the "also archive the backlog" toggle — but never
-  // when we KNOW the inbox holds nothing from this sender (offering, let alone
-  // pre-checking, a no-op contradicts the Archive preview's own "nothing to
-  // archive"). Unknown count (loading / bulk / estimate) keeps the toggle.
-  const showHistoricToggle =
-    (request?.verb === 'Unsubscribe' || request?.verb === 'Later') && inboxNow !== 0;
-  // Never carry archiveHistoric when its toggle isn't shown.
-  const effectiveArchiveHistoric = showHistoricToggle && archiveHistoric;
+  // Derived ConfirmOptions for onConfirm — packages secondary into the
+  // shape the BE composite endpoint expects.
+  const buildConfirmOpts = (): ConfirmOptions => {
+    const opts: ConfirmOptions = {};
+    if (showWindowRow) opts.olderThanDays = olderThanDays;
+    if (hasSecondaryAction) {
+      opts.secondary = {
+        type: secondaryVerb as 'archive' | 'delete',
+        olderThanDays,
+      };
+    } else if (showSecondaryRow) {
+      opts.secondary = null;
+    }
+    // Backwards-compat surface for review-session (pre-spec-v1.2).
+    opts.archiveHistoric = hasSecondaryAction && secondaryVerb === 'archive';
+    return opts;
+  };
 
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
-        onConfirm({ archiveHistoric: effectiveArchiveHistoric, olderThanDays });
+        onConfirm(buildConfirmOpts());
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [request, effectiveArchiveHistoric, olderThanDays, onCancel, onConfirm, confirmDisabled]);
+    // `buildConfirmOpts` is a stable closure over the deps below; listing
+    // it would re-add the same dependencies and the linter would still
+    // flag the duplicate. Listing the inputs directly keeps the surface
+    // explicit and the dep set accurate.
+  }, [
+    request,
+    secondaryVerb,
+    olderThanDays,
+    onCancel,
+    onConfirm,
+    confirmDisabled,
+    showSecondaryRow,
+    showWindowRow,
+    hasSecondaryAction,
+  ]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(request !== null);
 
   if (!request) return null;
 
-  const { verb, senders } = request;
-  // Real all-time received total (sum of `total_received`). Null if ANY
-  // sender lacks it — we show qualitative copy rather than a partial /
-  // fabricated number (the former `monthly × 12`).
+  const { senders } = request;
   const senderTotals = senders.map((s) => s.total);
   const historic = senderTotals.every((t) => t != null)
     ? senderTotals.reduce((sum, t) => sum + (t as number), 0)
@@ -145,20 +246,23 @@ export function ConfirmActionModal({
   const n = senders.length;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
-  // Only Unsubscribe reads as destructive. (Whether the historic-backlog
-  // toggle shows is decided above — it depends on the real inbox count.)
-  const danger = verb === 'Unsubscribe';
+  // Tone: Delete is the strongest destructive — red eyebrow + amber-red
+  // recovery banner. Unsubscribe reads as destructive too (cuts future
+  // mail), but moves no past mail by itself.
+  const danger = isUnsubVerb || isDeleteVerb;
 
-  const title =
-    verb === 'Archive'
+  const title = isDeleteVerb
+    ? `Delete mail from ${n} sender${plural}`
+    : isArchiveVerb
       ? `Archive all mail from ${n} sender${plural}`
-      : verb === 'Later'
+      : isLaterVerb
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
-  const lead =
-    verb === 'Archive'
+  const lead = isDeleteVerb
+    ? `Mail from ${subject} moves to Gmail Trash. Gmail recovers from Trash for 30 days; after that Gmail permanently deletes it.`
+    : isArchiveVerb
       ? `Every message from ${subject} moves out of the inbox into Gmail's archive. Nothing is deleted.`
-      : verb === 'Later'
+      : isLaterVerb
         ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
         : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
 
@@ -170,6 +274,37 @@ export function ConfirmActionModal({
     color: color.fg,
     fontVariantNumeric: 'tabular-nums',
   };
+
+  // Confirm-button label — spec v1.2 Decision 15 always names the action.
+  const confirmLabel = (() => {
+    const primaryGlyph = VERB_GLYPH[verb!] ?? '';
+    const cnt = compositeCount ?? inboxNow;
+    const primaryPart =
+      isArchiveVerb || isDeleteVerb
+        ? `${primaryGlyph} ${verbDisplay(verb!).label}${cnt !== undefined ? ` ${cnt.toLocaleString()}` : ''}`
+        : `${primaryGlyph} ${verbDisplay(verb!).label}`;
+    if (!hasSecondaryAction) return primaryPart;
+    const secVerb = secondaryVerb === 'archive' ? 'Archive' : 'Delete';
+    const secGlyph = VERB_GLYPH[secVerb] ?? '';
+    const secCnt = compositeCount;
+    const secondaryPart = `${secGlyph} ${secVerb}${secCnt !== undefined ? ` ${secCnt.toLocaleString()}` : ''}`;
+    return `${primaryPart} + ${secondaryPart}`;
+  })();
+
+  // Recovery-window banner (spec v1.2 Decision 15 — top of the modal).
+  // Delete = 30 days (Gmail Trash physical guarantee); Archive/Later = 7d.
+  const recoveryCopy = isDeleteVerb
+    ? 'Recoverable for 30 days in Gmail Trash.'
+    : isArchiveVerb || isLaterVerb
+      ? 'Reversible for 7 days from Activity.'
+      : null;
+
+  // Subjects for the "Show what will move" panel. Single-sender single-
+  // verb path uses the existing fixture pool (`sampleSubjects`) — the BE
+  // oldest-subjects endpoint is queued as a follow-up (spec Decision 15
+  // `oldestSubjects`); until it lands the panel shows the privacy-safe
+  // sample for trust signalling rather than a fake count.
+  const subjectsPreview = senders.length === 1 ? sampleSubjects(senders[0]!) : [];
 
   return (
     <>
@@ -195,7 +330,7 @@ export function ConfirmActionModal({
           left: '50%',
           transform: 'translateX(-50%)',
           width: 'min(540px, calc(100vw - 32px))',
-          maxHeight: '76vh',
+          maxHeight: '78vh',
           overflow: 'auto',
           background: color.card,
           borderRadius: 14,
@@ -214,10 +349,7 @@ export function ConfirmActionModal({
             {title}
           </h2>
           {/* Sender context strip (spec v1.2 Decision 15) — facts only:
-              domain · monthly volume · last seen · you replied. Renders
-              for single-sender flows; bulk flow already shows the
-              sender lozenge cluster instead. Builds the "is this the
-              right sender?" 3-second check before destructive action. */}
+              domain · monthly volume · last seen · you replied. */}
           {senders.length === 1 && (
             <div
               style={{
@@ -232,11 +364,13 @@ export function ConfirmActionModal({
                 alignItems: 'baseline',
               }}
             >
-              <span style={{ color: color.fgSoft }}>{senders[0]!.domain}</span>
+              <span style={{ color: color.fgSoft }}>
+                {compositePreview?.sender?.domain ?? senders[0]!.domain}
+              </span>
               <span>·</span>
               <span>
                 <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                  {senders[0]!.monthly}
+                  {compositePreview?.sender?.monthly ?? senders[0]!.monthly}
                 </strong>{' '}
                 /mo
               </span>
@@ -244,20 +378,27 @@ export function ConfirmActionModal({
               <span>
                 last seen{' '}
                 <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                  {senders[0]!.lastDays === 0 ? 'today' : `${senders[0]!.lastDays}d`}
+                  {(() => {
+                    const days = compositePreview?.sender?.lastSeenDays ?? senders[0]!.lastDays;
+                    return days === 0 ? 'today' : `${days}d`;
+                  })()}
                 </strong>
               </span>
-              {senders[0]!.repliedCount !== undefined && senders[0]!.repliedCount > 0 && (
-                <>
-                  <span>·</span>
-                  <span>
-                    you replied{' '}
-                    <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                      {senders[0]!.repliedCount}×
-                    </strong>
-                  </span>
-                </>
-              )}
+              {(() => {
+                const r = compositePreview?.sender?.repliedCount ?? senders[0]!.repliedCount;
+                if (r === undefined || r === null || r === 0) return null;
+                return (
+                  <>
+                    <span>·</span>
+                    <span>
+                      you replied{' '}
+                      <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
+                        {r}×
+                      </strong>
+                    </span>
+                  </>
+                );
+              })()}
             </div>
           )}
           <p
@@ -268,106 +409,76 @@ export function ConfirmActionModal({
           </p>
         </div>
 
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Affected senders preview */}
+        {/* Recovery banner (spec v1.2 Decision 15 — top of body). Tone
+            matches action: amber for Archive 7d, red-ish for Delete 30d. */}
+        {recoveryCopy && (
           <div
+            role="status"
             style={{
+              margin: '12px 24px 0',
+              padding: '8px 12px',
+              borderRadius: 8,
+              background: isDeleteVerb ? 'rgba(196,46,46,0.06)' : color.paper,
+              border: `1px solid ${isDeleteVerb ? 'rgba(196,46,46,0.30)' : color.line}`,
+              fontSize: 12,
+              color: isDeleteVerb ? '#A12525' : color.fgSoft,
               display: 'flex',
-              flexWrap: 'wrap',
-              gap: 6,
-            }}
-          >
-            {senders.slice(0, 6).map((s) => (
-              <span
-                key={s.id}
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  color: color.fgSoft,
-                  background: color.paper,
-                  border: `1px solid ${color.line}`,
-                  borderRadius: 6,
-                  padding: '3px 8px',
-                }}
-              >
-                {s.name}
-              </span>
-            ))}
-            {senders.length > 6 && (
-              <span
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  color: color.fgMuted,
-                  alignSelf: 'center',
-                }}
-              >
-                +{senders.length - 6} more
-              </span>
-            )}
-          </div>
-
-          {/* Impact figure — the REAL inbox count on the single-sender
-              Archive path, the FE estimate everywhere else (D226). */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
+              alignItems: 'center',
               gap: 8,
-              padding: '12px 14px',
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 9,
             }}
           >
-            {realArchiveFigure ? (
-              previewLoading ? (
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  Checking how much of this sender’s mail is in your inbox…
-                </span>
-              ) : archivePreview.error || archivePreview.inboxCount === undefined ? (
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
-                  this sender.
-                </span>
-              ) : archivePreview.inboxCount === 0 ? (
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  No mail from this sender is in your inbox right now — nothing to archive.
-                </span>
-              ) : (
-                <>
-                  <strong style={numberStyle}>{archivePreview.inboxCount.toLocaleString()}</strong>
-                  <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                    email{archivePreview.inboxCount === 1 ? '' : 's'} from this sender{' '}
-                    {archivePreview.inboxCount === 1 ? 'is' : 'are'} in your inbox now.
-                  </span>
-                </>
-              )
-            ) : historic != null ? (
-              <>
-                <strong style={numberStyle}>{historic.toLocaleString()}</strong>
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  email{historic === 1 ? '' : 's'} received from{' '}
-                  {senders.length === 1 ? 'this sender' : 'these senders'} in total. We archive only
-                  what’s in your inbox now.
-                </span>
-              </>
-            ) : (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                We archive only what’s currently in your inbox from{' '}
-                {senders.length === 1 ? 'this sender' : 'these senders'}.
-              </span>
-            )}
+            <span aria-hidden style={{ fontSize: 13 }}>
+              ⏱
+            </span>
+            <span>{recoveryCopy}</span>
           </div>
+        )}
+
+        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Bulk sender lozenges (kept for multi-sender flows). */}
+          {senders.length > 1 && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+              }}
+            >
+              {senders.slice(0, 6).map((s) => (
+                <span
+                  key={s.id}
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgSoft,
+                    background: color.paper,
+                    border: `1px solid ${color.line}`,
+                    borderRadius: 6,
+                    padding: '3px 8px',
+                  }}
+                >
+                  {s.name}
+                </span>
+              ))}
+              {senders.length > 6 && (
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgMuted,
+                    alignSelf: 'center',
+                  }}
+                >
+                  +{senders.length - 6} more
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Time-window chip row (spec v1.2 Decision 15). Visible when
-              the action is going to act on historic mail — Archive
-              primary (always) OR Unsub/Later with archiveHistoric on.
-              Chips are facts: All / 30d+ / 3mo+ / 6mo+ / 1yr+.
-              Founder's BofA-alerts use case: tap '6 months+' to
-              archive everything older than 6 months. The Custom value+
-              unit chip is deferred to PR-FE3 polish (founder-eyeball). */}
-          {(isArchiveVerb || effectiveArchiveHistoric) && (
+              the action acts on historic mail — Archive/Delete primary
+              OR the active secondary historic action. */}
+          {showWindowRow && (
             <div
               role="radiogroup"
               aria-label="How far back to act on"
@@ -397,6 +508,7 @@ export function ConfirmActionModal({
               >
                 {TIME_WINDOW_PRESETS.map((preset) => {
                   const active = olderThanDays === preset.days;
+                  const bucketCount = pickBucketCount(compositePreview?.counts, preset.days);
                   return (
                     <button
                       key={preset.label}
@@ -418,69 +530,277 @@ export function ConfirmActionModal({
                       }}
                     >
                       {preset.label}
+                      {bucketCount !== undefined && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            fontVariantNumeric: 'tabular-nums',
+                            opacity: active ? 0.85 : 0.7,
+                          }}
+                        >
+                          {bucketCount.toLocaleString()}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
-              {olderThanDays !== null && (
-                <span style={{ fontSize: 11.5, color: color.fgMuted, fontFamily: font.sans }}>
-                  Acts on mail older than {olderThanDays} day{olderThanDays === 1 ? '' : 's'}.
-                </span>
-              )}
             </div>
           )}
 
-          {showHistoricToggle && (
-            <button
-              onClick={() => setArchiveHistoric((v) => !v)}
+          {/* Composite secondary chip row (spec v1.2 Decision 15). Shown
+              for Unsub + Later primary — "ALSO ACT ON PAST EMAILS":
+              [Leave alone | Archive them | Delete them]. */}
+          {showSecondaryRow && (
+            <div
+              role="radiogroup"
+              aria-label="Also act on past emails"
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
-                background: archiveHistoric ? color.primarySoft : 'transparent',
-                border: `1px solid ${archiveHistoric ? color.primaryBorder : color.line}`,
-                borderRadius: 9,
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontFamily: font.sans,
+                flexDirection: 'column',
+                gap: 8,
               }}
             >
-              <span
+              <div
                 style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 4,
-                  border: `1.5px solid ${archiveHistoric ? color.primary : 'rgba(14,20,19,0.28)'}`,
-                  background: archiveHistoric ? color.primary : color.card,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
                 }}
               >
-                {archiveHistoric && (
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </span>
-              <span style={{ fontSize: 12.5, color: color.fg }}>
-                {inboxNow != null && inboxNow > 0
-                  ? `Also archive the ${inboxNow.toLocaleString()} email${inboxNow === 1 ? '' : 's'} from this sender currently in the inbox`
-                  : `Also archive everything from ${subject} currently in the inbox`}
-              </span>
-            </button>
+                Also act on past emails
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {(
+                  [
+                    { value: null as ConfirmSecondaryVerb, label: 'Leave alone' },
+                    { value: 'archive' as ConfirmSecondaryVerb, label: 'Archive them' },
+                    { value: 'delete' as ConfirmSecondaryVerb, label: 'Delete them' },
+                  ] as const
+                ).map((opt) => {
+                  const active = secondaryVerb === opt.value;
+                  return (
+                    <button
+                      key={opt.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setSecondaryVerb(opt.value)}
+                      style={{
+                        fontFamily: font.sans,
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        padding: '6px 12px',
+                        borderRadius: 999,
+                        background: active
+                          ? opt.value === 'delete'
+                            ? '#A12525'
+                            : color.fg
+                          : 'transparent',
+                        color: active ? '#FFFFFF' : color.fgSoft,
+                        border: `1px solid ${active ? (opt.value === 'delete' ? '#A12525' : color.fg) : color.line}`,
+                        cursor: 'pointer',
+                        transition: 'background 120ms, color 120ms',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
+
+          {/* Summary line + "Show what will move" expand (spec v1.2 Decision 15). */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              padding: '12px 14px',
+              background: color.paper,
+              border: `1px solid ${color.line}`,
+              borderRadius: 9,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+              {(() => {
+                // Headline figure resolution order:
+                //   1. composite per-bucket count (most accurate)
+                //   2. legacy archivePreview (single-sender archive path)
+                //   3. historic total (bulk + no preview)
+                //   4. fallback qualitative copy
+                if (compositeCount !== undefined) {
+                  if (primaryActsOnInbox) {
+                    return (
+                      <>
+                        <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
+                        <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                          email{compositeCount === 1 ? '' : 's'}{' '}
+                          {isDeleteVerb ? 'will move to Trash' : 'will move to Archive'}
+                          {olderThanDays !== null
+                            ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
+                            : ''}
+                          .
+                        </span>
+                      </>
+                    );
+                  }
+                  if (hasSecondaryAction) {
+                    return (
+                      <>
+                        <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
+                        <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                          email{compositeCount === 1 ? '' : 's'} will{' '}
+                          {secondaryVerb === 'delete' ? 'move to Trash' : 'archive'}
+                          {olderThanDays !== null
+                            ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
+                            : ''}
+                          .
+                        </span>
+                      </>
+                    );
+                  }
+                }
+                if (
+                  isArchiveVerb &&
+                  archivePreview != null &&
+                  !previewLoading &&
+                  !archivePreview.error &&
+                  archivePreview.inboxCount !== undefined
+                ) {
+                  if (archivePreview.inboxCount === 0) {
+                    return (
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        No mail from this sender is in your inbox right now — nothing to archive.
+                      </span>
+                    );
+                  }
+                  return (
+                    <>
+                      <strong style={numberStyle}>
+                        {archivePreview.inboxCount.toLocaleString()}
+                      </strong>
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        email{archivePreview.inboxCount === 1 ? '' : 's'} from this sender{' '}
+                        {archivePreview.inboxCount === 1 ? 'is' : 'are'} in your inbox now.
+                      </span>
+                    </>
+                  );
+                }
+                if (
+                  isArchiveVerb &&
+                  archivePreview != null &&
+                  !previewLoading &&
+                  (archivePreview.error || archivePreview.inboxCount === undefined)
+                ) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
+                      this sender.
+                    </span>
+                  );
+                }
+                if (previewLoading) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Checking how much of this sender’s mail is in your inbox…
+                    </span>
+                  );
+                }
+                if (historic != null) {
+                  return (
+                    <>
+                      <strong style={numberStyle}>{historic.toLocaleString()}</strong>
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        email{historic === 1 ? '' : 's'} received from {subject} in total.
+                      </span>
+                    </>
+                  );
+                }
+                return (
+                  <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                    We act only on what’s currently in your inbox from {subject}.
+                  </span>
+                );
+              })()}
+            </div>
+
+            {/* Show what will move (5 of N) ▾ — privacy-safe subjects panel.
+                Only shown for single-sender flows where the "subjects pool"
+                stub is meaningful; bulk flows would need a per-sender
+                drilldown that lands separately. */}
+            {senders.length === 1 && (compositeCount ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSubjects((v) => !v)}
+                aria-expanded={showSubjects}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  fontFamily: font.mono,
+                  fontSize: 11,
+                  color: color.fgMuted,
+                  letterSpacing: '0.04em',
+                }}
+              >
+                {showSubjects
+                  ? 'Hide what will move ▴'
+                  : `Show what will move (5 of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
+              </button>
+            )}
+            {showSubjects && subjectsPreview.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  padding: '8px 10px',
+                  background: color.card,
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 6,
+                  marginTop: 4,
+                }}
+              >
+                {subjectsPreview.slice(0, 5).map((s, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'baseline',
+                      fontFamily: font.mono,
+                      fontSize: 11.5,
+                      color: color.fgSoft,
+                    }}
+                  >
+                    <span style={{ width: 18, color: color.fgMuted }}>
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span style={{ color: color.fg }}>{s}</span>
+                  </div>
+                ))}
+                <div
+                  style={{
+                    marginTop: 6,
+                    paddingTop: 6,
+                    borderTop: `1px dashed ${color.line}`,
+                    fontFamily: font.mono,
+                    fontSize: 10.5,
+                    color: color.fgMuted,
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Subjects only · we never read email bodies
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div
@@ -493,26 +813,19 @@ export function ConfirmActionModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            Reversible for 7 days from Activity.
-          </span>
+          <span style={{ fontSize: 11.5, color: color.fgMuted }}>{recoveryCopy ?? ''}</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
               tone="default"
               onClick={onCancel}
-              // Subtle secondary hint — the key this modal actually cancels
-              // on is Escape (see the keydown handler above), so the chip
-              // reads `Esc`, not the looser `⌫` notation from the brief.
               iconRight={<Kbd style={{ fontSize: 9, color: color.fgMuted }}>Esc</Kbd>}
             >
               Cancel
             </Button>
             <Button
-              tone={danger ? 'warn' : 'primary'}
+              tone={isDeleteVerb || danger ? 'warn' : 'primary'}
               disabled={confirmDisabled}
-              onClick={() =>
-                onConfirm({ archiveHistoric: effectiveArchiveHistoric, olderThanDays })
-              }
+              onClick={() => onConfirm(buildConfirmOpts())}
               iconRight={
                 <Kbd
                   style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}
@@ -521,8 +834,7 @@ export function ConfirmActionModal({
                 </Kbd>
               }
             >
-              {/* Confirm label = the verb's registry copy (ADR-0015). */}
-              {verbDisplay(verb).label}
+              {confirmLabel}
             </Button>
           </div>
         </div>

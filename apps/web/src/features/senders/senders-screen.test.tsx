@@ -646,7 +646,13 @@ describe('SendersScreen — edge states', () => {
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 
-  it('Unsubscribe with inbox mail shows the backlog toggle with the real count', async () => {
+  it('Unsubscribe surfaces the composite secondary chip row (spec v1.2 Decision 15)', async () => {
+    // PR-FE3 replaced the boolean "Also archive the N emails currently in
+    // the inbox" toggle with a chip row [Leave alone | Archive them |
+    // Delete them]. The default is "Leave alone" (Unsubscribe stays
+    // non-destructive against past mail by default); the user can opt
+    // into Archive/Delete past via the chip row, which surfaces the
+    // time-window chip row underneath when active.
     installFetchStub([
       weeklyHeroHandler(),
       oneSenderHandler(),
@@ -663,9 +669,12 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'u' });
     await screen.findByText(/unsubscribe from 1 sender/i);
 
-    // The toggle names the real inbox count, not the lifetime total.
-    await screen.findByText(/also archive the 3 emails from this sender currently in the inbox/i);
+    // The secondary chip row group label + chip options appear.
+    await screen.findByRole('radiogroup', { name: /also act on past emails/i });
     const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('radio', { name: /leave alone/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: /archive them/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('radio', { name: /delete them/i })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 

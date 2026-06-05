@@ -704,7 +704,7 @@ export function gmailSearchUrl(domain: string): string {
 // Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
 // Protect — a distinct VIP/lock operation, not a triage verb.
 
-export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect';
+export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect' | 'Delete';
 
 /** Past-tense verb labels for toasts + receipts — single source. */
 export const VERB_PAST: Record<ActionVerb, string> = {
@@ -713,6 +713,9 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Unsubscribe: 'Unsubscribed from',
   Later: 'Moved to Later',
   Protect: 'Protected',
+  // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
+  // Past-tense surfaces in the receipt strip after the worker completes.
+  Delete: 'Deleted',
 };
 
 /**
@@ -726,6 +729,7 @@ const VERB_TO_REGISTRY: Partial<Record<ActionVerb, RegistryActionVerb>> = {
   Archive: 'archive',
   Unsubscribe: 'unsubscribe',
   Later: 'later',
+  Delete: 'delete',
 };
 
 /**
