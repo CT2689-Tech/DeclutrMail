@@ -1,4 +1,4 @@
-h1:FPc0sfzs7B604PLzwjDN8SfPlGHQ1TMxnOX52yu2QW8=
+h1:+wRxbOD/8hK8gUwAZ5+aL9n3+fBferTgkhrUUp+bVK8=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:COE1cnXSzGmexAp7l9JwAYLVhPilqOD4Vo6roD/D5To=
 0002_mailbox_oauth_tokens.sql h1:1sPxNFc73SsT9MSMW+4KYw96x/5KT47gSpz6ysoOa7E=
@@ -18,3 +18,6 @@ h1:FPc0sfzs7B604PLzwjDN8SfPlGHQ1TMxnOX52yu2QW8=
 0016_security_events.sql h1:RO7YDrncQpe1f++fui2ydxs1cTXpQQoY2D8Y6lnPne0=
 0017_senders_total_received.sql h1:8GWPG/ZUc3XP4MB5uoZ6rZ+caRC2ZCFhPqWXOwxvadw=
 0018_action_verb_later.sql h1:aL8TLj0Qq3i7m3q2k+ANZp2lStA6Gj/nFHv0adW4iDU=
+0019_action_verb_delete.sql h1:qeN/3CAkZMtem9iZ8t2VVKfwKh8GxZ9RBBhQdKJVRhQ=
+0020_action_jobs_composite.sql h1:aCWwpl6e6+d3v8zY2UpRYiDOhXemT8AWyCROUhHSBcY=
+0021_delete_action_kinds.sql h1:NupiTVgxLjveUIGtnxPQB34xItY5ZCwh9x6H463iDw4=
