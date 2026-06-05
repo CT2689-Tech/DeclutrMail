@@ -44,14 +44,24 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** `git status` no longer shows the untracked dir; `pnpm --filter @declutrmail/web build` still passes.
 **Status:** Open
 
-### 2026-06-04 — Composite preview `oldestSubjects` BE endpoint
-**Source:** Session 2026-06-04 (Thread A+B close-out)
-**Why:** Spec v1.2 Decision 15 "Show what will move" panel ships in PR-FE3 using `sampleSubjects(sender)` from the FE fixture pool. The privacy-safe sample is fine for trust signalling at launch, but the real value is showing the actual oldest 5 subjects in the selected time-window (allowed under D7 — subject is in the storage allowlist).
+### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
+**Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
+**Why:** `IncrementalSyncWorker` returns `{cursorTooOld: true}` when Gmail's `history.list` 404s on an aged `startHistoryId` (D5's 7-day retention boundary). The worker correctly LEAVES the cursor untouched, but no consumer of that signal re-schedules a full re-sync — the mailbox would stay stale until the next manual reconnect.
 **How:**
-1. Extend `CompositeActionPreviewResult` with `oldestSubjects: string[]` (per active window)
-2. Service queries `mail_messages.subject ORDER BY internal_date ASC LIMIT 5 WHERE [window]`
-3. FE swaps `sampleSubjects(senders[0])` for the wire value when present; fixture pool stays as fallback
-**Verifies by:** Modal panel shows the 5 oldest subjects from the senders fixture-mailbox, matching the BE-resolved set.
+1. Inspect worker.succeeded log lines for `cursorTooOld: true` (the run completes normally, signal lives in the result payload).
+2. Add an onSuccess hook in `apps/api/src/worker.ts` IncrementalSyncWorker registration: when `result.cursorTooOld === true`, call `ensureInitialSyncJob(initialQueue, mailboxId, { force: true })` to schedule a fresh full sync.
+3. Emit a `sync.cursor_recovery` PostHog event for visibility.
+**Verifies by:** Manual force-stale a cursor (`UPDATE provider_sync_state SET last_history_id = 1 WHERE mailbox_account_id=...`), fire any webhook, watch `cursorTooOld: true` → initial-sync re-enqueues automatically.
+**Status:** Open
+
+### 2026-06-05 — Senders-list row `repliedCount` column on the wire
+**Source:** Session 2026-06-05 — local smoke
+**Why:** `GET /api/senders` row shape lacks the new `senders.replied_count` column. Compose strip + previewComposite see honest counts via filterCounts + preview payload, but per-row UIs (Sender Detail context strip, future "you replied N×" badge on the card) need it on every row.
+**How:**
+1. Add `repliedCount: senders.repliedCount` to the SELECT in `senders.read-service.ts:488-515`
+2. Add the field to `SenderListRow` wire type
+3. Surface in Sender Detail context strip (`apps/web/src/app/senders/[id]/page.tsx` area)
+**Verifies by:** `curl /api/senders?limit=1` returns `repliedCount` on the row; Sender Detail shows "you replied N×" copy.
 **Status:** Open
 
 ### 2026-06-04 — Magnitude under-bar on SenderCard uses hardcoded `/100` denominator
@@ -963,6 +973,16 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-04 — Composite preview `oldestSubjects` BE endpoint
+**Source:** Session 2026-06-04 (Thread A+B close-out)
+**Why:** Spec v1.2 Decision 15 "Show what will move" panel ships in PR-FE3 using `sampleSubjects(sender)` from the FE fixture pool. The privacy-safe sample is fine for trust signalling at launch, but the real value is showing the actual oldest 5 subjects in the selected time-window (allowed under D7 — subject is in the storage allowlist).
+**How:**
+1. Extend `CompositeActionPreviewResult` with `oldestSubjects: string[]` (per active window)
+2. Service queries `mail_messages.subject ORDER BY internal_date ASC LIMIT 5 WHERE [window]`
+3. FE swaps `sampleSubjects(senders[0])` for the wire value when present; fixture pool stays as fallback
+**Verifies by:** Modal panel shows the 5 oldest subjects from the senders fixture-mailbox, matching the BE-resolved set.
+**Status:** Done 2026-06-05 — spec amended v1.3 to `recentSubjects` (recent beats oldest for 3-sec recognition); `previewComposite` returns `recentSubjects.{all,olderThan30d,90d,180d,365d}` per window via one window-function subquery; modal swaps fixture for wire. Smoke confirmed real subjects on American Express (`repliedCount: 5, recentSubjects.olderThan180d: ["Here's your weekly account snapshot", "Your SafeKey Verification Code", ...]`). Commits `e850d74`, `326f4af`.
 
 ### 2026-06-04 — Phase 2 PR-FE3 deferred: composite modal + Delete callback + intent.ts retire
 **Source:** Autonomous build session 2026-06-04

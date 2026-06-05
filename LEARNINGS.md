@@ -20,6 +20,16 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-06-05 — Reuse migration SQL as worker post-pass to keep three derive paths single-sourced
+
+**Context:** spec v1.3 + mig 0022 add `senders.replied_count` + the auto-protect-on-replied-≥3 rule. The derived state has THREE entry points: the migration's backfill (initial deploy), `InitialSyncWorker.buildSenderIndex` (full rebuild), and `IncrementalSyncWorker` (per-webhook delta). Each could implement the formula independently — and silently drift from each other.
+
+**Finding:** Pasting the SAME SQL (`UPDATE senders … FROM (SELECT … COUNT(DISTINCT m2.id) …)`) into all three paths makes the formula a literal single source of truth — change the rule in one place, every drift surface re-applies it on its next run. `InitialSyncWorker.buildSenderIndex` runs it inside the rebuild tx; `IncrementalSyncWorker` runs it inside a dedicated tx after each batch; the migration runs it as the backfill. All converge to the same byte-for-byte result.
+
+**Rule (provisional):** for derived-state formulas that touch >1 write path, keep the canonical statement as raw SQL — Drizzle templating + JS abstraction tempt clever de-duplication that obscures drift surface. Quote the same statement in every entry point + audit by string match.
+
+**Distillation trigger:** promote to CLAUDE.md §X if a third migration/worker pair lands using this pattern (Brief/Activity could also).
+
 ## 2026-06-04 — `FILTER (WHERE ...)` aggregates collapse N preview queries into 1
 
 **Context:** spec v1.2 Decision 15's composite confirm modal needs 4 time-window bucket counts (`>30d`, `>90d`, `>180d`, `>365d`) plus the un-windowed `all` count + a past-30d `monthly` figure for the sender context strip. Naïve impl = 6 separate `SELECT COUNT(*) WHERE ...` queries per modal open.
