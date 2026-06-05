@@ -670,4 +670,148 @@ describe('InitialSyncWorker', () => {
       true,
     );
   });
+
+  // Senders V2 spec v1.3 §"Trust-canary CI fixture" L488-494 — the
+  // auto-protect-on-replied-≥3 rule, encoded as worker integration:
+  //   - 0 replies + N msgs + unsub-link → no engagement_based protect
+  //     (the cascade will recommend Unsubscribe)
+  //   - ≥3 replies → sender_policies.is_protected=true,
+  //     protection_reason=engagement_based, regardless of unsub presence
+  //   - boundary at exactly =2 stays unprotected (engagement threshold
+  //     is GE 3, not GT 2; documented at L488)
+  describe('trust-canary (spec v1.3 L488-494) — auto-protect on replied ≥ 3', () => {
+    /**
+     * Build a fixture where `senderIndex` has `replyCount` outbound
+     * messages on threads they originated. The inbound seed message
+     * shares its `threadId` with the user's outbound replies so the
+     * thread-attribution self-join finds them.
+     */
+    function makeRepliedSender(
+      senderIndex: number,
+      replyCount: number,
+      hasUnsub: boolean,
+    ): GmailMessageMetadata[] {
+      const base = Date.UTC(2026, 0, 1) + senderIndex * 86_400_000;
+      const senderEmail = `sender${senderIndex}@example.com`;
+      // Seed: 1 inbound from the sender.
+      const inbound: GmailMessageMetadata = {
+        id: `inbound-${senderIndex}`,
+        threadId: `thread-${senderIndex}`,
+        labelIds: ['INBOX'],
+        snippet: `from sender ${senderIndex}`,
+        internalDate: String(base),
+        from: `Sender ${senderIndex} <${senderEmail}>`,
+        subject: `Subject ${senderIndex}`,
+        to: null,
+        cc: null,
+        listUnsubscribe: hasUnsub ? `<https://unsub.example/${senderIndex}>` : null,
+        listUnsubscribePost: hasUnsub ? 'List-Unsubscribe=One-Click' : null,
+      };
+      // User's outbound replies on the same thread.
+      const replies: GmailMessageMetadata[] = Array.from({ length: replyCount }, (_, i) => ({
+        id: `reply-${senderIndex}-${i}`,
+        threadId: `thread-${senderIndex}`,
+        labelIds: ['SENT'],
+        snippet: `reply ${i}`,
+        internalDate: String(base + (i + 1) * 60_000),
+        from: 'Owner <owner@declutrmail.ai>',
+        subject: `Re: Subject ${senderIndex}`,
+        to: senderEmail,
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      }));
+      return [inbound, ...replies];
+    }
+
+    it('replied ≥ 3 → senders.replied_count >= 3 + sender_policies engagement_based protected', async () => {
+      // Sender 0 has 5 replies (above threshold), sender 1 has exactly 2
+      // (at boundary — still below), sender 2 has 0 (no engagement).
+      const fixture = [
+        ...makeRepliedSender(0, 5, false),
+        ...makeRepliedSender(1, 2, false),
+        ...makeRepliedSender(2, 0, true), // 0 replies + unsub → spec L492 path
+      ];
+      const client = new FakeGmailClient(fixture);
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      const senderRows = await db
+        .select({ senderKey: senders.senderKey, repliedCount: senders.repliedCount })
+        .from(senders);
+      const bySender = new Map(senderRows.map((r) => [r.senderKey, r.repliedCount]));
+      expect(bySender.get(deriveSenderKey('sender0@example.com'))).toBe(5);
+      expect(bySender.get(deriveSenderKey('sender1@example.com'))).toBe(2);
+      expect(bySender.get(deriveSenderKey('sender2@example.com'))).toBe(0);
+
+      const policies = await db
+        .select({
+          senderKey: schema.senderPolicies.senderKey,
+          isProtected: schema.senderPolicies.isProtected,
+          protectionReason: schema.senderPolicies.protectionReason,
+        })
+        .from(schema.senderPolicies);
+      const protectedBySender = new Map(
+        policies.map((p) => [
+          p.senderKey,
+          { isProtected: p.isProtected, reason: p.protectionReason },
+        ]),
+      );
+      // Sender 0 (5 replies) is auto-protected with engagement_based.
+      const s0 = protectedBySender.get(deriveSenderKey('sender0@example.com'));
+      expect(s0?.isProtected).toBe(true);
+      expect(s0?.reason).toBe('engagement_based');
+      // Sender 1 (2 replies) stays below the threshold — no auto-protect row.
+      expect(protectedBySender.has(deriveSenderKey('sender1@example.com'))).toBe(false);
+      // Sender 2 (0 replies + unsub link) — same: not auto-protected (the
+      // canary's "Unsubscribe primary CTA" outcome happens in cascade
+      // evaluation downstream; the worker only refuses to mark them).
+      expect(protectedBySender.has(deriveSenderKey('sender2@example.com'))).toBe(false);
+    });
+
+    it('idempotent — second run preserves engagement_based provenance + does not overwrite user_defined', async () => {
+      // Run 1: sender 0 gets engagement_based protect (5 replies).
+      const fixture = makeRepliedSender(0, 5, false);
+      const client = new FakeGmailClient(fixture);
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+      const senderKey = deriveSenderKey('sender0@example.com');
+      const [firstRun] = await db
+        .select()
+        .from(schema.senderPolicies)
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+      expect(firstRun?.protectionReason).toBe('engagement_based');
+      const firstSetAt = firstRun!.protectionSetAt;
+
+      // Manually elevate to user_defined (simulating a user later marking
+      // the sender). Spec L488 sticky semantics — subsequent reruns must
+      // PRESERVE the stronger provenance, not overwrite it.
+      await db
+        .update(schema.senderPolicies)
+        .set({ protectionReason: 'user_defined' })
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+
+      // Run 2 (no new Gmail messages — same fixture). Worker rebuild
+      // re-runs the auto-protect UPSERT; the WHERE guard should refuse
+      // to overwrite the now-stronger user_defined reason.
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+      const [secondRun] = await db
+        .select()
+        .from(schema.senderPolicies)
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+      expect(secondRun?.protectionReason).toBe('user_defined');
+      expect(secondRun?.isProtected).toBe(true);
+      // `protection_set_at` from the original engagement-based grant is
+      // preserved — the cascade audit copy reads when protection
+      // started, not the most recent rerun.
+      expect(secondRun?.protectionSetAt?.getTime()).toBe(firstSetAt?.getTime());
+    });
+  });
 });
