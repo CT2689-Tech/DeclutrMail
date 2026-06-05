@@ -1,9 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Queue } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { mailboxAccounts, webhookDedup } from '@declutrmail/db';
+import { ensureIncrementalSyncJob, type IncrementalSyncJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { SyncService } from '../sync/sync.service.js';
+
+/** DI token for the BullMQ `Queue<IncrementalSyncJobData>` producer. */
+export const INCREMENTAL_SYNC_QUEUE_TOKEN = 'INCREMENTAL_SYNC_QUEUE';
 
 /**
  * Gmail Pub/Sub webhook service (D8, D229).
@@ -52,6 +57,8 @@ export class GmailWebhookService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly sync: SyncService,
+    @Inject(INCREMENTAL_SYNC_QUEUE_TOKEN)
+    private readonly incrementalSyncQueue: Queue<IncrementalSyncJobData>,
   ) {}
 
   /**
@@ -148,14 +155,54 @@ export class GmailWebhookService {
         };
       }
 
-      // TODO(D8 follow-up): enqueue an incremental-sync job over
-      // [previousHistoryId, incomingHistoryId]. The incremental-sync
-      // worker + queue land in the next PR; for now the cursor
-      // advance is the durable signal the reconciler will use to
-      // backfill the range. The dedup row + advanced cursor are the
-      // atomic effect; an enqueue failure cannot leave us in an
-      // inconsistent state because the reconciler will pick up any
-      // range gap on its next tick.
+      // D8 — enqueue the incremental-sync job over
+      // [previousHistoryId, incomingHistoryId]. The enqueue happens
+      // AFTER the tx body but BEFORE the tx commits because BullMQ
+      // doesn't participate in PG transactions; if Redis is down the
+      // tx still commits (the dedup row + cursor advance are durable)
+      // and the future reconciler will pick up the range gap on its
+      // next tick. The enqueue itself is idempotent —
+      // `ensureIncrementalSyncJob` dedups on
+      // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
+      // of the same historyId cannot double-enqueue.
+      //
+      // Stringify the bigints — BullMQ's job payload goes through
+      // JSON.stringify, which throws on bigint. The worker parses
+      // them back with `BigInt(startHistoryId)`.
+      // `previousHistoryId` can be null on the very first advance
+      // after an initial sync seeds the row — the worker needs a
+      // concrete cursor to page from, so skip enqueue (the initial
+      // sync already covers messages up to its snapshot). Subsequent
+      // webhooks will have a non-null cursor and enqueue normally.
+      if (advance.previousHistoryId === null) {
+        this.logger.log(
+          `webhook.skipped_first_enqueue mailbox=${mailbox.id} historyId=${incomingHistoryId}`,
+        );
+        return {
+          kind: 'enqueued',
+          mailboxAccountId: mailbox.id,
+          previousHistoryId: advance.previousHistoryId,
+          historyId: incomingHistoryId,
+        };
+      }
+      try {
+        await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
+          mailboxAccountId: mailbox.id,
+          startHistoryId: advance.previousHistoryId.toString(),
+          endHistoryId: incomingHistoryId.toString(),
+        });
+      } catch (err) {
+        // An enqueue failure is non-fatal — the dedup + cursor advance
+        // remain durable. Log so the reconciler's next-tick range
+        // backfill is the observable recovery path. Silent-failure
+        // hunter would flag swallowing this; we capture + emit, never
+        // throw past the webhook contract.
+        this.logger.warn(
+          `webhook.incremental_enqueue_failed mailbox=${mailbox.id} error=${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
 
       return {
         kind: 'enqueued',

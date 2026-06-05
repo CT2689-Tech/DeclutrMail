@@ -16,7 +16,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Queue } from 'bullmq';
-import type { InitialSyncJobData } from '@declutrmail/workers';
+import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { SyncService } from '../../sync/sync.service.js';
@@ -106,8 +106,17 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // queue, so a never-called stub is sufficient. `enqueueInitialSync`
     // / `schedule` are exercised by SyncService's own specs.
     const queueStub = {} as Queue<InitialSyncJobData>;
+    // `ensureIncrementalSyncJob` is exercised by the IncrementalSyncWorker
+    // spec; here we just need an object whose `getJob`/`add` shape is
+    // present at call time. A bare stub with both methods returning
+    // resolved promises is enough — the webhook test asserts on the
+    // dedup + cursor side of `processVerifiedPush`, not the enqueue.
+    const incrementalQueueStub = {
+      getJob: async () => null,
+      add: async () => undefined,
+    } as unknown as Queue<IncrementalSyncJobData>;
     const sync = new SyncService(queueStub, db);
-    service = new GmailWebhookService(db, sync);
+    service = new GmailWebhookService(db, sync, incrementalQueueStub);
   });
 
   it('advances historyId, writes a dedup row, returns enqueued', async () => {
@@ -249,7 +258,15 @@ describe('GmailWebhookService.processVerifiedPush', () => {
         throw new Error('simulated crash mid-advance');
       }
     }
-    const crashingService = new GmailWebhookService(db, new CrashingSync(queueStub, db));
+    const incrementalQueueStub = {
+      getJob: async () => null,
+      add: async () => undefined,
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const crashingService = new GmailWebhookService(
+      db,
+      new CrashingSync(queueStub, db),
+      incrementalQueueStub,
+    );
 
     // First push crashes — the transaction must roll back.
     await expect(
@@ -275,7 +292,11 @@ describe('GmailWebhookService.processVerifiedPush', () => {
 
     // A Pub/Sub retry with the SAME messageId re-enters the critical
     // section (not deduped to no-op) and successfully advances the cursor.
-    const healthyService = new GmailWebhookService(db, new SyncService(queueStub, db));
+    const healthyService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, db),
+      incrementalQueueStub,
+    );
     const retry = await healthyService.processVerifiedPush({
       messageId: 'msg-crash',
       payload: { emailAddress: 'alice@example.com', historyId: '1500' },

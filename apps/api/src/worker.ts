@@ -16,6 +16,8 @@ import {
   enqueueBriefSnapshotTick,
   enqueueSendersCounterReconciliationTick,
   enqueueUndoExpiryTick,
+  INCREMENTAL_SYNC_QUEUE,
+  IncrementalSyncWorker,
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
@@ -39,6 +41,8 @@ import type {
   BriefSnapshotResult,
   GmailAccess,
   GmailMutationAccess,
+  IncrementalSyncJobData,
+  IncrementalSyncResult,
   InitialSyncJobData,
   InitialSyncResult,
   LabelActionJobData,
@@ -293,6 +297,25 @@ async function bootstrap(): Promise<void> {
   );
 
   bullWorker.on('error', (err) => {
+    console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
+  });
+
+  // IncrementalSyncWorker consumer (D8, D229 follow-up). Producer side
+  // is the webhook (`WebhooksModule` enqueues on every verified Pub/Sub
+  // push); consumer runs here in the same worker process so the
+  // observer/D159 seam shares wiring with InitialSyncWorker. Per-mailbox
+  // serialisation is enforced by the `jobId =
+  // ${mailboxAccountId}:${endHistoryId}` namespacing at enqueue time —
+  // two webhooks for the same mailbox at different historyIds CAN run
+  // concurrently, which is correct: each processes its own delta.
+  const incrementalSync = new IncrementalSyncWorker({ db, gmailAccess });
+  incrementalSync.setObserver(observer);
+  const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
+    INCREMENTAL_SYNC_QUEUE,
+    (job) => incrementalSync.run(job),
+    { connection, concurrency: 20 },
+  );
+  incrementalBullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
