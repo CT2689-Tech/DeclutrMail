@@ -342,4 +342,88 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     const messages = [err?.message, err?.cause?.message].filter(Boolean).join(' | ');
     expect(messages).toMatch(/value too long|length|varying\(512\)/i);
   });
+
+  it('enqueue happens AFTER the tx commits — observable ordering', async () => {
+    // architecture-guardian 2026-06-05 [BLOCKING] fix: the BullMQ enqueue
+    // MUST run outside the PG transaction. If it ran inside, a commit
+    // failure after a successful `queue.add` would leave a durable job
+    // in Redis that points at a rolled-back cursor (silent regression).
+    //
+    // Asserts the observable ordering: when the enqueue stub is called,
+    // the dedup row + cursor advance are already visible in the DB —
+    // i.e. the tx has committed before `queue.add` is invoked.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    let dedupVisibleAtEnqueue = false;
+    let cursorAtEnqueue: bigint | null = null;
+    const observingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        const dedup = await db
+          .select()
+          .from(webhookDedup)
+          .where(eq(webhookDedup.messageId, 'msg-order'));
+        dedupVisibleAtEnqueue = dedup.length === 1;
+        const state = await db
+          .select()
+          .from(providerSyncState)
+          .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+        cursorAtEnqueue = state[0]?.lastHistoryId ?? null;
+        return undefined;
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const orderingService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, db),
+      observingQueue,
+    );
+    const outcome = await orderingService.processVerifiedPush({
+      messageId: 'msg-order',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(outcome.kind).toBe('enqueued');
+    // Both invariants visible at enqueue time = tx committed FIRST.
+    expect(dedupVisibleAtEnqueue).toBe(true);
+    expect(cursorAtEnqueue).toBe(1500n);
+  });
+
+  it('enqueue failure does NOT roll back the tx (recovery via reconciler-on-redis-state)', async () => {
+    // webhook-security-auditor 2026-06-05 [WARNING] coverage gap: the
+    // try/catch around `ensureIncrementalSyncJob` is load-bearing — a
+    // Redis outage MUST leave the dedup row + cursor advance durable so
+    // (a) Pub/Sub doesn't retry forever against a non-idempotent cursor
+    // (the dedup row catches the redelivery) and (b) the future
+    // reconciler can backfill the range from the durable cursor.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const failingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        throw new Error('simulated redis down');
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const failingService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, db),
+      failingQueue,
+    );
+    const outcome = await failingService.processVerifiedPush({
+      messageId: 'msg-redis-down',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    // Webhook contract: 200 to Pub/Sub regardless of Redis health.
+    expect(outcome.kind).toBe('enqueued');
+    // Dedup row durable — Pub/Sub redelivery will skip via step 7.
+    const dedup = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-redis-down'));
+    expect(dedup.length).toBe(1);
+    // Cursor advanced — the reconciler's recovery path reads this.
+    const state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBe(1500n);
+  });
 });

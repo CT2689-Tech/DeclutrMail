@@ -89,7 +89,18 @@ export class GmailWebhookService {
     // would then return `duplicate_message_id` and skip the cursor
     // advance forever. One transaction = both writes commit or neither
     // does; a Pub/Sub retry of a crashed run re-enters this block fresh.
-    return this.db.transaction(async (tx): Promise<ProcessOutcome> => {
+    //
+    // The BullMQ enqueue (D8) lives OUTSIDE this transaction
+    // (architecture-guardian 2026-06-05 [BLOCKING] fix). BullMQ does not
+    // participate in PG transactions; awaiting `queue.add` inside the
+    // tx would publish the job to Redis BEFORE the tx commits, so a
+    // commit failure (PG conn drop / serialization failure / statement
+    // timeout) would leave the job durable while the cursor advance is
+    // rolled back — the worker would then run against the OLD
+    // `last_history_id`, silently regressing the cursor. Symmetric to
+    // `SyncModule.connect` which enqueues `initial-sync` AFTER the
+    // OAuth tx commits.
+    const outcome = await this.db.transaction(async (tx): Promise<ProcessOutcome> => {
       // Step 7: messageId dedup. Atomic PK insert; conflict means
       // we've already processed this delivery. Insert FIRST, before
       // any other state lookup, so a duplicate burst from Pub/Sub
@@ -155,55 +166,6 @@ export class GmailWebhookService {
         };
       }
 
-      // D8 — enqueue the incremental-sync job over
-      // [previousHistoryId, incomingHistoryId]. The enqueue happens
-      // AFTER the tx body but BEFORE the tx commits because BullMQ
-      // doesn't participate in PG transactions; if Redis is down the
-      // tx still commits (the dedup row + cursor advance are durable)
-      // and the future reconciler will pick up the range gap on its
-      // next tick. The enqueue itself is idempotent —
-      // `ensureIncrementalSyncJob` dedups on
-      // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
-      // of the same historyId cannot double-enqueue.
-      //
-      // Stringify the bigints — BullMQ's job payload goes through
-      // JSON.stringify, which throws on bigint. The worker parses
-      // them back with `BigInt(startHistoryId)`.
-      // `previousHistoryId` can be null on the very first advance
-      // after an initial sync seeds the row — the worker needs a
-      // concrete cursor to page from, so skip enqueue (the initial
-      // sync already covers messages up to its snapshot). Subsequent
-      // webhooks will have a non-null cursor and enqueue normally.
-      if (advance.previousHistoryId === null) {
-        this.logger.log(
-          `webhook.skipped_first_enqueue mailbox=${mailbox.id} historyId=${incomingHistoryId}`,
-        );
-        return {
-          kind: 'enqueued',
-          mailboxAccountId: mailbox.id,
-          previousHistoryId: advance.previousHistoryId,
-          historyId: incomingHistoryId,
-        };
-      }
-      try {
-        await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
-          mailboxAccountId: mailbox.id,
-          startHistoryId: advance.previousHistoryId.toString(),
-          endHistoryId: incomingHistoryId.toString(),
-        });
-      } catch (err) {
-        // An enqueue failure is non-fatal — the dedup + cursor advance
-        // remain durable. Log so the reconciler's next-tick range
-        // backfill is the observable recovery path. Silent-failure
-        // hunter would flag swallowing this; we capture + emit, never
-        // throw past the webhook contract.
-        this.logger.warn(
-          `webhook.incremental_enqueue_failed mailbox=${mailbox.id} error=${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-
       return {
         kind: 'enqueued',
         mailboxAccountId: mailbox.id,
@@ -211,5 +173,45 @@ export class GmailWebhookService {
         historyId: incomingHistoryId,
       };
     });
+
+    // D8 enqueue — runs ONLY after the tx commits successfully, so a
+    // committed `enqueued` outcome is the canonical signal both
+    // (a) cursor advanced durably AND (b) job is/will-be in Redis.
+    //
+    // `ensureIncrementalSyncJob` is idempotent on
+    // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
+    // re-running this path cannot double-enqueue. BigInts are
+    // stringified — BullMQ's payload goes through `JSON.stringify`
+    // which throws on bigint; the worker parses back via `BigInt(...)`.
+    //
+    // `previousHistoryId === null` is the first advance after an
+    // initial sync seeds the row — the worker needs a concrete
+    // start cursor to page from, so skip enqueue here (the initial
+    // sync already covers messages up to its snapshot).
+    if (outcome.kind === 'enqueued' && outcome.previousHistoryId !== null) {
+      try {
+        await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
+          mailboxAccountId: outcome.mailboxAccountId,
+          startHistoryId: outcome.previousHistoryId.toString(),
+          endHistoryId: outcome.historyId.toString(),
+        });
+      } catch (err) {
+        // Cursor advance is durable; enqueue failure is recoverable
+        // via the future reconciler-on-redis-state tick. Surface the
+        // gap as a WARN so on-call can grep without losing the
+        // outcome — never rethrow past the webhook contract.
+        this.logger.warn(
+          `webhook.incremental_enqueue_failed mailbox=${outcome.mailboxAccountId} ` +
+            `error=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else if (outcome.kind === 'enqueued' && outcome.previousHistoryId === null) {
+      this.logger.log(
+        `webhook.skipped_first_enqueue mailbox=${outcome.mailboxAccountId} ` +
+          `historyId=${outcome.historyId}`,
+      );
+    }
+
+    return outcome;
   }
 }
