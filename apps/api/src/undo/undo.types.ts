@@ -47,6 +47,18 @@ export type UndoPayload =
       priorLabels: string[];
     }
   | {
+      /**
+       * Delete = Gmail TRASH label applied (spec v1.2 Decision 1). Revert
+       * runs Gmail untrash via the worker's `change.reverse` — no
+       * `priorLabels` needed because the reverse `LabelChange` is the
+       * restoration step. Gmail's 30-day Trash recovery window is the
+       * physical guarantee that the message is still present.
+       */
+      kind: 'delete';
+      /** Gmail message ids moved to Trash. */
+      messageIds: string[];
+    }
+  | {
       kind: 'apply-rule';
       /** The Autopilot rule whose application is being reverted (D99). */
       ruleId: string;

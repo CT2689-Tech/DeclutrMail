@@ -94,16 +94,22 @@ async function seedMessage(
   mailboxAccountId: string,
   pid: string,
   labels: string[],
+  internalDate: Date = new Date('2026-05-01'),
 ): Promise<void> {
   await db.insert(mailMessages).values({
     mailboxAccountId,
     providerMessageId: pid,
     providerThreadId: `t-${pid}`,
     senderKey: SENDER_KEY,
-    internalDate: new Date('2026-05-01'),
+    internalDate,
     isUnread: false,
     labelIds: labels,
   });
+}
+
+/** Helper: a Date N days before `now`. */
+function daysAgo(n: number): Date {
+  return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 }
 
 /**
@@ -305,5 +311,304 @@ describe('ActionsService', () => {
         override: false,
       }),
     ).rejects.toMatchObject({ response: { code: 'QUEUE_UNAVAILABLE' } });
+  });
+
+  describe('previewComposite (ADR-0020)', () => {
+    it('returns sender context strip + per-bucket counts in one round-trip', async () => {
+      // 5 inbox messages spread across the time-window buckets, plus one
+      // archived (not in INBOX → excluded from every bucket).
+      await seedMessage(db, mailboxId, 'm-2d', ['INBOX'], daysAgo(2));
+      await seedMessage(db, mailboxId, 'm-45d', ['INBOX'], daysAgo(45));
+      await seedMessage(db, mailboxId, 'm-100d', ['INBOX'], daysAgo(100));
+      await seedMessage(db, mailboxId, 'm-200d', ['INBOX'], daysAgo(200));
+      await seedMessage(db, mailboxId, 'm-400d', ['INBOX'], daysAgo(400));
+      await seedMessage(db, mailboxId, 'm-archived', ['CATEGORY_PROMOTIONS'], daysAgo(10));
+
+      const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+
+      // Bucket math (older-than X means `internal_date <= now - X days`):
+      //   all      = 5 inbox messages
+      //   >30d     = 45 + 100 + 200 + 400         = 4
+      //   >90d     = 100 + 200 + 400              = 3
+      //   >180d    = 200 + 400                    = 2
+      //   >365d    = 400                          = 1
+      //   monthly  = inbox messages WITHIN last 30 days = m-2d → 1
+      expect(res.counts).toEqual({
+        all: 5,
+        olderThan30d: 4,
+        olderThan90d: 3,
+        olderThan180d: 2,
+        olderThan365d: 1,
+      });
+      expect(res.sender.monthly).toBe(1);
+      expect(res.sender.domain).toBe('shop.example');
+      expect(res.unsubAvailable).toBe(false);
+      expect(res.protected).toBe(false);
+    });
+
+    it('returns protected:true when the sender has a policy row', async () => {
+      await db
+        .insert(senderPolicies)
+        .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+      const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
+      expect(res.protected).toBe(true);
+    });
+
+    it('404s a sender not in the current mailbox', async () => {
+      await expect(
+        svc.previewComposite({
+          mailboxAccountId: mailboxId,
+          senderId: '00000000-0000-4000-8000-000000000000',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
+    });
+  });
+
+  describe('enqueueComposite (ADR-0020)', () => {
+    it('single-verb Archive: ONE row, composite_id null, namespaced idempotency key', async () => {
+      await seedMessage(db, mailboxId, 'm1', ['INBOX'], daysAgo(5));
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'click-arch-only',
+        override: false,
+      });
+      expect(res.actionId).toBeTruthy();
+      expect(res.compositeId).toBe(res.actionId); // wire convention: mirror id
+      expect(res.secondaryId).toBeNull();
+      expect(res.primaryCount).toBe(1);
+      expect(res.secondaryCount).toBeNull();
+      expect(queue.jobIds).toEqual(['archive-click-arch-only']);
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.verb).toBe('archive');
+      expect(rows[0]!.compositeId).toBeNull(); // DB-level: primary is self-implicit
+    });
+
+    it('time-window narrows the persisted requestedCount + olderThanDays', async () => {
+      await seedMessage(db, mailboxId, 'm-recent', ['INBOX'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'm-old', ['INBOX'], daysAgo(200));
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'delete', olderThanDays: 180 },
+        idempotencyKey: 'click-del-180',
+        override: false,
+      });
+      expect(res.primaryCount).toBe(1); // only m-old satisfies 180+ days
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
+      expect(row!.olderThanDays).toBe(180);
+      expect(row!.requestedCount).toBe(1);
+      expect(row!.verb).toBe('delete');
+    });
+
+    it('composite Later + Delete past: TWO rows linked by composite_id, both enqueued', async () => {
+      await seedMessage(db, mailboxId, 'm-recent', ['INBOX'], daysAgo(10));
+      await seedMessage(db, mailboxId, 'm-old', ['INBOX'], daysAgo(400));
+      const res = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'later' },
+        secondary: { type: 'delete', olderThanDays: 365 },
+        idempotencyKey: 'click-later-del',
+        override: false,
+      });
+      expect(res.secondaryId).toBeTruthy();
+      expect(res.primaryCount).toBe(2); // primary's window = null → both inbox messages
+      expect(res.secondaryCount).toBe(1); // secondary's window = 365+ → just m-old
+      // BOTH jobs are enqueued, with distinct namespaced keys.
+      expect(queue.jobIds.sort()).toEqual(['delete-click-later-del-sec', 'later-click-later-del']);
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(2);
+      const primary = rows.find((r) => r.id === res.actionId);
+      const secondary = rows.find((r) => r.id === res.secondaryId);
+      expect(primary!.verb).toBe('later');
+      expect(primary!.compositeId).toBeNull(); // primary is self-implicit
+      expect(secondary!.verb).toBe('delete');
+      expect(secondary!.compositeId).toBe(primary!.id); // secondary points up
+    });
+
+    it('Protected sender blocks BOTH rows before either is written (no partial-composite)', async () => {
+      await db
+        .insert(senderPolicies)
+        .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+      await seedMessage(db, mailboxId, 'm1', ['INBOX']);
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'later' },
+          secondary: { type: 'delete', olderThanDays: 90 },
+          idempotencyKey: 'click-prot-comp',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'PROTECTED_SENDER' } });
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('enqueueCompositeRevert (ADR-0020 cascade-undo)', () => {
+    it('single-verb action: returns just the one reverse row', async () => {
+      const [u] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['m1'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      const [fwd] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          direction: 'forward',
+          status: 'done',
+          selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+          resolvedMessageIds: ['m1'],
+          idempotencyKey: 'archive-orig-1',
+          undoToken: u!.token,
+        })
+        .returning({ id: actionJobs.id });
+      const res = await svc.enqueueCompositeRevert({
+        mailboxAccountId: mailboxId,
+        token: u!.token,
+      });
+      expect(res).toHaveLength(1);
+      expect(res[0]!.token).toBe(u!.token);
+      // Cascade resolved no extras — confirm by checking only the one
+      // reverse row was inserted.
+      const reverses = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.direction, 'reverse'));
+      expect(reverses).toHaveLength(1);
+      expect(reverses[0]!.undoToken).toBe(u!.token);
+      // Forward row is preserved alongside its reverse.
+      expect(fwd).toBeTruthy();
+    });
+
+    it('composite: reverses BOTH siblings in primary-first order', async () => {
+      // Two undo tokens (primary later, secondary delete) — both forward
+      // rows have undo tokens (they each affected ≥1 message).
+      const [uP] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'later',
+          payload: { kind: 'later', messageIds: ['m1', 'm2'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      const [uS] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'delete',
+          payload: { kind: 'delete', messageIds: ['m2'] },
+        })
+        .returning({ token: undoJournal.token });
+      const [primary] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'later',
+          direction: 'forward',
+          status: 'done',
+          selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+          resolvedMessageIds: ['m1', 'm2'],
+          idempotencyKey: 'later-comp-1',
+          undoToken: uP!.token,
+        })
+        .returning({ id: actionJobs.id });
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        status: 'done',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        resolvedMessageIds: ['m2'],
+        idempotencyKey: 'delete-comp-1-sec',
+        undoToken: uS!.token,
+        compositeId: primary!.id,
+      });
+
+      // Undo via EITHER token cascades to both.
+      const res = await svc.enqueueCompositeRevert({
+        mailboxAccountId: mailboxId,
+        token: uS!.token, // the secondary's token
+      });
+      expect(res).toHaveLength(2);
+      // Primary-first ordering (the FE polls the first as the user-visible
+      // progress signal).
+      expect(res[0]!.token).toBe(uP!.token);
+      expect(res[1]!.token).toBe(uS!.token);
+      // Two reverse rows inserted, namespaced by `revert-<token>`.
+      expect(queue.jobIds.sort()).toEqual([`revert-${uP!.token}`, `revert-${uS!.token}`].sort());
+    });
+
+    it('skips siblings with no undo token (the empty-resolve case)', async () => {
+      const [uP] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['m1'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      const [primary] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          direction: 'forward',
+          status: 'done',
+          selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+          resolvedMessageIds: ['m1'],
+          idempotencyKey: 'arch-skip-1',
+          undoToken: uP!.token,
+        })
+        .returning({ id: actionJobs.id });
+      // Secondary affected zero messages → completed with undoToken=null.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        status: 'done',
+        affectedCount: 0,
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        resolvedMessageIds: [],
+        idempotencyKey: 'del-skip-1-sec',
+        compositeId: primary!.id,
+      });
+
+      const res = await svc.enqueueCompositeRevert({
+        mailboxAccountId: mailboxId,
+        token: uP!.token,
+      });
+      // Only the primary is revertable; the no-op secondary is silently
+      // skipped (no reverse row, no enqueue).
+      expect(res).toHaveLength(1);
+      expect(queue.jobIds).toEqual([`revert-${uP!.token}`]);
+    });
+
+    it('404s a token that has no forward action row', async () => {
+      await expect(
+        svc.enqueueCompositeRevert({
+          mailboxAccountId: mailboxId,
+          token: '00000000-0000-4000-8000-000000000000',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+    });
   });
 });

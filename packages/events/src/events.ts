@@ -128,14 +128,30 @@ export const ActionLabelAppliedPayloadSchema = z
     mailboxAccountId: UuidSchema,
     /** `action_jobs.id` — the aggregate this event is about. */
     actionId: UuidSchema,
-    /** Label-modify verb that applied. */
-    verb: z.enum(['archive']),
+    /**
+     * Label-modify verb that applied. Mirrors the `action_verb` pg_enum
+     * (archive + later + delete). `delete` joined per ADR-0019 + spec
+     * v1.2 Decision 1 — Gmail TRASH is a label, so it rides the same
+     * label-modify pipeline; the worker is the single producer.
+     */
+    verb: z.enum(['archive', 'later', 'delete']),
     /** Present for a sender selector; null for a message selector. */
     senderKey: SenderKeySchema.nullable(),
-    /** Undo token issued for this action (always set — archive is undoable). */
+    /**
+     * Undo token issued for this action — always set for label-modify
+     * verbs (archive/later/delete are all undoable; delete via Gmail
+     * Trash recovery within 30d per D81/D232).
+     */
     undoToken: UuidSchema,
     /** Messages the action moved. */
     affectedCount: z.number().int().nonnegative(),
+    /**
+     * Composite linkage (ADR-0020). For a composite secondary action
+     * (e.g. the Delete part of "Later + Delete past"), this carries the
+     * primary row's id so audit consumers can join siblings. Null for
+     * single-verb actions and for the primary row of a composite.
+     */
+    compositeId: UuidSchema.nullable(),
   })
   .strict();
 export type ActionLabelAppliedPayload = z.infer<typeof ActionLabelAppliedPayloadSchema>;

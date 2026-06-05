@@ -22,7 +22,7 @@ import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { UndoService } from './undo.service.js';
-import type { UndoActionKind, UndoPayload, UndoResult } from './undo.types.js';
+import type { UndoActionKind, UndoResult } from './undo.types.js';
 
 /**
  * UndoController — `/undo` endpoints (D35, D58).
@@ -147,9 +147,16 @@ export class UndoController {
       });
     }
 
-    // 'ready' — enqueue the reverse job for the verb's label change.
-    // Only label-modify verbs have an async reverter today (archive).
-    if (found.entry.actionKind !== 'archive') {
+    // 'ready' — enqueue the reverse job(s) for the verb's label change.
+    // Composite-aware (ADR-0020): `enqueueCompositeRevert` resolves the
+    // primary + any secondaries via `action_jobs.composite_id` and fires
+    // a reverse row for each in primary-first order. For a single-verb
+    // action this returns just the one row.
+    //
+    // Only the label-modify family has an async reverter today
+    // (archive / later / delete). Unsubscribe + apply-rule keep their
+    // 501 fail-closed signal until their reverter pipelines land.
+    if (!LABEL_MODIFY_UNDO_KINDS.has(found.entry.actionKind)) {
       throw new HttpException(
         {
           error: {
@@ -160,27 +167,39 @@ export class UndoController {
         HttpStatus.NOT_IMPLEMENTED,
       );
     }
-    const payload = found.entry.payload as UndoPayload;
-    const messageIds = payload.kind === 'archive' ? payload.messageIds : [];
-    const { actionId, status } = await this.actions.enqueueRevert({
+
+    const reverts = await this.actions.enqueueCompositeRevert({
       mailboxAccountId: mailbox.id,
       token,
-      verb: 'archive',
-      messageIds,
     });
-    // A repeat POST may return an existing reverse row that already
-    // completed — reflect that rather than always reporting in-flight
-    // (the FE still polls `GET /api/actions/:actionId` for the truth).
+    // The primary (or single-verb) row's reverse is first by design — the
+    // FE polls this `actionId` as the user-visible progress signal. The
+    // secondary reverse(s) tick over in the background; their results
+    // surface through the worker's local-mirror update + the activity
+    // log so cache invalidation is automatic.
+    const primary = reverts[0];
+    const allDone = reverts.length > 0 && reverts.every((r) => r.status === 'done');
     return ok({
       token,
       actionKind: found.entry.actionKind,
-      reverted: status === 'done',
+      reverted: allDone,
       expired: false,
       revertedAt: null,
-      actionId,
+      actionId: primary?.actionId ?? null,
     });
   }
 }
+
+/**
+ * Undo kinds whose reverter pipeline is wired end-to-end (label-modify
+ * family). `unsubscribe` and `apply-rule` are reserved for their own
+ * pipeline PRs and return 501 from the undo controller until then.
+ */
+const LABEL_MODIFY_UNDO_KINDS: ReadonlySet<UndoActionKind> = new Set<UndoActionKind>([
+  'archive',
+  'later',
+  'delete',
+]);
 
 /** Clamp the requested limit to the server-side max for the tray. */
 function clampLimit(raw: string | undefined): number {

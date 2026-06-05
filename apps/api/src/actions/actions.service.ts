@@ -19,6 +19,10 @@ import type {
   ActionStatusResult,
   ArchivePreviewResult,
   ArchiveSelector,
+  CompositeActionEnqueueResult,
+  CompositeActionPreviewResult,
+  CompositePrimaryVerb,
+  CompositeSecondaryVerb,
 } from './actions.types.js';
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -172,6 +176,315 @@ export class ActionsService {
   }
 
   /**
+   * Composite preview (ADR-0020) — sender context strip + per-time-window
+   * bucket counts for the confirm modal chip row. ONE query for all four
+   * buckets via `count(*) FILTER (WHERE internal_date <= …)` aggregates,
+   * matching the same `internal_date` column the worker resolver narrows
+   * on so the chip preview equals what the worker will actually move.
+   *
+   * `protected` is derived from `sender_policies` — drives the destructive
+   * confirm's "this sender is Protected" warning. `unsubAvailable` is
+   * true when the sender has any unsubscribe method recorded; used by the
+   * FE to know whether to render the Unsubscribe primary chip enabled.
+   * `monthly` is the inbound-message count for the past 30 days, used in
+   * the sender context strip ("12/mo").
+   */
+  async previewComposite(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<CompositeActionPreviewResult> {
+    const { mailboxAccountId, senderId } = input;
+    const [sender] = await this.db
+      .select({
+        id: senders.id,
+        senderKey: senders.senderKey,
+        displayName: senders.displayName,
+        email: senders.email,
+        domain: senders.domain,
+        lastSeenAt: senders.lastSeenAt,
+        unsubscribeMethod: senders.unsubscribeMethod,
+      })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!sender) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+
+    const [policy] = await this.db
+      .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, sender.senderKey),
+        ),
+      )
+      .limit(1);
+
+    // ONE aggregate query: all four time-window buckets + the
+    // un-windowed `all` count + the past-30d `monthly` figure. The
+    // FILTER clauses are equivalent to N separate counted queries but
+    // share the single index seek, so the modal opens in one round-trip.
+    const [counts] = await this.db
+      .select({
+        all: sql<number>`count(*)::int`,
+        olderThan30d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '30 days')::int`,
+        olderThan90d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '90 days')::int`,
+        olderThan180d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '180 days')::int`,
+        olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
+        monthly: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} >= now() - interval '30 days')::int`,
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          eq(mailMessages.senderKey, sender.senderKey),
+          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+        ),
+      );
+
+    const nowMs = Date.now();
+    const lastSeenDays = Math.max(
+      0,
+      Math.floor((nowMs - sender.lastSeenAt.getTime()) / (24 * 60 * 60 * 1000)),
+    );
+
+    return {
+      sender: {
+        id: sender.id,
+        name: sender.displayName,
+        domain: sender.domain,
+        lastSeenDays,
+        // `repliedCount` is not yet a senders column at this build —
+        // Phase 1 BE adds it alongside the auto-protect-on-replied-≥3
+        // rule. Stay null until then; the FE renders the strip without
+        // the "you replied" segment when null.
+        repliedCount: null,
+        monthly: toCount(counts?.monthly),
+      },
+      counts: {
+        all: toCount(counts?.all),
+        olderThan30d: toCount(counts?.olderThan30d),
+        olderThan90d: toCount(counts?.olderThan90d),
+        olderThan180d: toCount(counts?.olderThan180d),
+        olderThan365d: toCount(counts?.olderThan365d),
+      },
+      unsubAvailable: sender.unsubscribeMethod !== null,
+      protected: Boolean(policy?.isProtected || policy?.isVip),
+    };
+  }
+
+  /**
+   * Enqueue a composite action (ADR-0020). Handles both single-verb
+   * (no secondary) and composite (primary + secondary) cases through one
+   * code path so the FE can talk to ONE endpoint regardless of shape.
+   *
+   * Persistence (Option A — two linked records):
+   *   - Single-verb: ONE `action_jobs` row, `composite_id = NULL`.
+   *   - Composite:   TWO rows. Primary's `composite_id = NULL`
+   *                  (self-implicit via `id`); secondary's
+   *                  `composite_id = primary.id`. Cascade-undo finds
+   *                  siblings by `composite_id = $primary` ∪ `id = $primary`.
+   *
+   * Idempotency: the client's `Idempotency-Key` is one per "Apply" click;
+   * we namespace it per-row so the SAME key cannot collide across verbs:
+   *   - Primary key:   `${primary.type}-${idempotencyKey}`
+   *   - Secondary key: `${secondary.type}-${idempotencyKey}-sec`
+   * The `archive-${key}` shape is the SAME shape `enqueueArchive` uses,
+   * so the FE can migrate from `POST /api/actions/archive` to
+   * `POST /api/actions` without losing dedup on a network-retried click.
+   *
+   * Time-window: `olderThanDays` is persisted on the row (DB CHECK enforces
+   * 1..3650). The worker reads it during sender-selector resolution and
+   * narrows via `internal_date <= now() - interval 'N days'`, matching the
+   * `previewComposite` per-bucket query.
+   *
+   * Protected sender: BOTH primary and secondary share the override flag
+   * (one click = one consent decision). The sender selector enforces it
+   * up front — a non-overridden Protected sender 409s before either row
+   * is written.
+   */
+  async enqueueComposite(input: {
+    mailboxAccountId: string;
+    selector: ArchiveSelector;
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    secondary?:
+      | { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined }
+      | undefined;
+    idempotencyKey: string;
+    override: boolean;
+  }): Promise<CompositeActionEnqueueResult> {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+
+    // Resolve target set + ownership ONCE for the sender selector — both
+    // primary and secondary act on the same sender / same selector. The
+    // override check fires on the resolved senderKey so a Protected
+    // sender is blocked before any row is written (defense-in-depth, D42).
+    let storedSelector: LabelActionSelector;
+    let resolvedMessageIds: string[];
+    let primaryCount: number;
+
+    if (selector.type === 'sender') {
+      const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
+      const [policy] = await this.db
+        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
+      if (policy && (policy.isProtected || policy.isVip) && !override) {
+        throw new ConflictException({
+          code: 'PROTECTED_SENDER',
+          message: 'This sender is Protected or VIP. Confirm to apply the action anyway.',
+        });
+      }
+      primaryCount = await this.countSenderInboxWithWindow(
+        mailboxAccountId,
+        senderKey,
+        primary.olderThanDays ?? null,
+      );
+      resolvedMessageIds = []; // worker resolves "in INBOX now" at execute
+      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey };
+    } else {
+      // messages selector — keep only owned, currently-INBOX ids. The
+      // per-row time-window does not apply to a messages selector (the
+      // caller already supplied the exact set).
+      const owned = await this.db
+        .select({ providerMessageId: mailMessages.providerMessageId })
+        .from(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            inArray(mailMessages.providerMessageId, selector.messageIds),
+            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+          ),
+        );
+      resolvedMessageIds = owned.map((r) => r.providerMessageId);
+      primaryCount = resolvedMessageIds.length;
+      storedSelector = { type: 'messages' };
+    }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const primaryStorageKey = `${primary.type}-${safeKey}`;
+
+    const primaryRow = await this.insertJob({
+      mailboxAccountId,
+      verb: primary.type,
+      direction: 'forward',
+      selector: storedSelector,
+      resolvedMessageIds,
+      requestedCount: primaryCount,
+      idempotencyKey: primaryStorageKey,
+      olderThanDays: primary.olderThanDays ?? null,
+    });
+
+    if (!primaryRow.existing) {
+      await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryStorageKey);
+    }
+
+    if (!secondary) {
+      return {
+        actionId: primaryRow.row.id,
+        // Single-verb: per the wire contract, `compositeId` mirrors
+        // `actionId` so the FE can carry it uniformly through undo
+        // (cascade-undo on a single-row composite is a no-op join).
+        compositeId: primaryRow.row.id,
+        secondaryId: null,
+        status: primaryRow.row.status,
+        primaryCount: primaryRow.row.requestedCount,
+        secondaryCount: null,
+      };
+    }
+
+    // Secondary acts on the SAME sender / messages selector but with its
+    // own time-window. Re-resolve the count for the secondary's window;
+    // resolved ids stay empty for sender selector (worker handles), and
+    // for messages selector the secondary shares the primary's frozen set.
+    const secondaryStorageKey = `${secondary.type}-${safeKey}-sec`;
+    let secondaryCount: number;
+    if (selector.type === 'sender') {
+      // The sender selector already resolved the senderKey above; reuse it
+      // via the stored selector.
+      const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
+      secondaryCount = await this.countSenderInboxWithWindow(
+        mailboxAccountId,
+        senderSel.senderKey,
+        secondary.olderThanDays ?? null,
+      );
+    } else {
+      secondaryCount = resolvedMessageIds.length;
+    }
+
+    const secondaryRow = await this.insertJob({
+      mailboxAccountId,
+      verb: secondary.type,
+      direction: 'forward',
+      selector: storedSelector,
+      resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+      requestedCount: secondaryCount,
+      idempotencyKey: secondaryStorageKey,
+      olderThanDays: secondary.olderThanDays ?? null,
+      compositeId: primaryRow.row.id,
+    });
+
+    if (!secondaryRow.existing) {
+      await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryStorageKey);
+    }
+
+    return {
+      actionId: primaryRow.row.id,
+      compositeId: primaryRow.row.id,
+      secondaryId: secondaryRow.row.id,
+      status: primaryRow.row.status,
+      primaryCount: primaryRow.row.requestedCount,
+      secondaryCount: secondaryRow.row.requestedCount,
+    };
+  }
+
+  /**
+   * Count a sender's INBOX messages narrowed by an optional time-window
+   * (ADR-0020). Mirrors the worker's resolver query so the
+   * enqueue-time `requestedCount` matches the worker's resolved set.
+   * NULL window = whole inbox.
+   */
+  private async countSenderInboxWithWindow(
+    mailboxAccountId: string,
+    senderKey: string,
+    olderThanDays: number | null,
+  ): Promise<number> {
+    const predicates = [
+      eq(mailMessages.mailboxAccountId, mailboxAccountId),
+      eq(mailMessages.senderKey, senderKey),
+      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+    ];
+    if (olderThanDays !== null) {
+      predicates.push(
+        sql`${mailMessages.internalDate} <= now() - (${olderThanDays} || ' days')::interval`,
+      );
+    }
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(mailMessages)
+      .where(and(...predicates));
+    return toCount(row?.n);
+  }
+
+  /**
    * Resolve a sender id → its sha256 `sender_key`, scoped to the mailbox.
    * 404s a forged / cross-mailbox id (ownership). Shared by the archive
    * enqueue and the preview so both resolve identically.
@@ -218,10 +531,116 @@ export class ActionsService {
    * double-POST is idempotent at both the row and the BullMQ layers.
    * (`-` not `:` — BullMQ forbids `:` in a custom jobId.)
    */
+  /**
+   * Resolve composite siblings for a primary undo token and enqueue a
+   * reverse `action_jobs` row for each (ADR-0020 cascade-undo).
+   *
+   * Algorithm:
+   *   1. Look up the forward `action_jobs` row that issued `token`.
+   *   2. Compute the composite primary id — `row.id` if this token is
+   *      the primary, `row.compositeId` if it's a secondary.
+   *   3. Read every forward sibling in the composite (rows where
+   *      `id = primary_id` OR `composite_id = primary_id`) — for the
+   *      single-verb case this returns just the one row.
+   *   4. For each sibling that has its own undo token, enqueue a
+   *      reverse row keyed `revert-<token>`. BullMQ + the undo journal's
+   *      `reverted_at IS NULL` guard provide idempotency, so a repeat
+   *      cascade is safe.
+   *
+   * Returns the reverse-action handles in primary-then-secondary order
+   * — the FE polls the first entry as the user-visible undo progress;
+   * the rest tick over silently via the worker's local-mirror update.
+   */
+  async enqueueCompositeRevert(input: { mailboxAccountId: string; token: string }): Promise<
+    Array<{
+      token: string;
+      actionId: string;
+      status: ActionStatusResult['status'];
+    }>
+  > {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    const { mailboxAccountId, token } = input;
+
+    // The forward row that issued this token. `undoToken` is unique per
+    // forward row (one per action), so the limit-1 is a guard, not a tie
+    // break.
+    const [forwardRow] = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.undoToken, token),
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+        ),
+      )
+      .limit(1);
+    if (!forwardRow) {
+      throw new NotFoundException({
+        code: 'ACTION_NOT_FOUND',
+        message: 'No forward action matches this undo token.',
+      });
+    }
+
+    const primaryId = forwardRow.compositeId ?? forwardRow.id;
+
+    // Composite siblings: rows where id = primary (the primary itself)
+    // or composite_id = primary (every secondary). For a single-verb
+    // action this returns the one row.
+    const siblings = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+          sql`(${actionJobs.id} = ${primaryId} OR ${actionJobs.compositeId} = ${primaryId})`,
+        ),
+      );
+
+    // Order primary-first so the FE polls the primary's reverse as the
+    // user-visible progress signal.
+    siblings.sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0));
+
+    const results: Array<{
+      token: string;
+      actionId: string;
+      status: ActionStatusResult['status'];
+    }> = [];
+
+    for (const sibling of siblings) {
+      if (!sibling.undoToken) {
+        // No undo token issued — the forward action completed with zero
+        // affected messages (e.g. the sender had no inbox mail in the
+        // window). Nothing to revert.
+        continue;
+      }
+      const handle = await this.enqueueRevert({
+        mailboxAccountId,
+        token: sibling.undoToken,
+        verb: sibling.verb,
+        messageIds: sibling.resolvedMessageIds,
+      });
+      results.push({
+        token: sibling.undoToken,
+        actionId: handle.actionId,
+        status: handle.status,
+      });
+    }
+
+    return results;
+  }
+
   async enqueueRevert(input: {
     mailboxAccountId: string;
     token: string;
-    verb: 'archive';
+    verb: 'archive' | 'later' | 'delete';
     messageIds: string[];
   }): Promise<{ actionId: string; status: 'queued' | 'executing' | 'done' | 'failed' }> {
     if (!this.queue) {
@@ -276,8 +695,21 @@ export class ActionsService {
     resolvedMessageIds: string[];
     requestedCount: number;
     idempotencyKey: string;
-    verb?: 'archive';
+    /**
+     * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
+     * keep `enqueueArchive` source-compatible; composite + delete paths
+     * pass the verb explicitly.
+     */
+    verb?: 'archive' | 'later' | 'delete';
     undoToken?: string;
+    /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
+    olderThanDays?: number | null;
+    /**
+     * ADR-0020 composite linkage — set on a secondary row to the
+     * primary's `id`. NULL for single-verb actions + primary of a
+     * composite (per the schema's "primary is self-implicit" convention).
+     */
+    compositeId?: string | null;
   }): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
     const [inserted] = await this.db
       .insert(actionJobs)
@@ -290,6 +722,10 @@ export class ActionsService {
         requestedCount: input.requestedCount,
         idempotencyKey: input.idempotencyKey,
         ...(input.undoToken ? { undoToken: input.undoToken } : {}),
+        ...(input.olderThanDays !== undefined && input.olderThanDays !== null
+          ? { olderThanDays: input.olderThanDays }
+          : {}),
+        ...(input.compositeId ? { compositeId: input.compositeId } : {}),
       })
       .onConflictDoNothing({ target: actionJobs.idempotencyKey })
       .returning();

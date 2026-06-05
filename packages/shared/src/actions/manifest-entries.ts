@@ -283,16 +283,19 @@ export const ACTION_REGISTRY: ActionRegistry = {
     },
     execution: {
       // Routes through `label-modify` kind because Gmail's `TRASH` is
-      // internally a label; the worker reads the verb and dispatches
-      // to `messages.trash` (not `labels.modify`) per Gmail API
-      // semantics. The buildLabelChange surfaces the conceptual
-      // shape — forward = add TRASH; reverse = remove TRASH — so the
-      // activity log + undo journal stay consistent with the rest of
-      // the label-modify family.
+      // internally a label; `batchModify` with `addLabelIds:['TRASH']` is
+      // semantically equivalent to `messages.trash` per Gmail API
+      // (the message gains TRASH; Gmail hides it from inbox view). We
+      // ALSO drop `INBOX` explicitly so the local label mirror reflects
+      // "out of inbox" — our sender-inbox queries use
+      // `'INBOX' = ANY(labelIds)`, which would otherwise still return
+      // trashed messages. Reverse re-adds `INBOX` + removes `TRASH` so
+      // undo within the 30-day Gmail Trash window restores the inbox
+      // state the user expects (spec v1.2 Decision 1).
       kind: 'label-modify',
       buildLabelChange: () => ({
-        forward: { addLabelIds: ['TRASH'] },
-        reverse: { removeLabelIds: ['TRASH'] },
+        forward: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] },
+        reverse: { addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] },
       }),
     },
   },
