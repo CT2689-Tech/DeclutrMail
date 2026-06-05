@@ -237,6 +237,36 @@ export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHe
 }
 
 /**
+ * Minimal-shape suggestion row for the `/senders/suggest` typeahead.
+ * Lighter than `SenderListRow` by design — the dropdown only needs
+ * enough to render one line per match.
+ */
+export interface SenderSuggestionDto {
+  id: string;
+  name: string;
+  email: string;
+  domain: string;
+  totalReceived: number;
+}
+
+/**
+ * GET /api/senders/suggest — typeahead autocomplete (autosuggest).
+ * Mailbox-scoped; ranked by `total_received DESC` so the biggest
+ * matches surface first. Empty / whitespace query → empty array.
+ */
+export function fetchSenderSuggestions(
+  q: string,
+  options: { limit?: number; signal?: AbortSignal } = {},
+): Promise<Envelope<{ senders: SenderSuggestionDto[] }, unknown>> {
+  const query: Record<string, string> = { q };
+  if (options.limit !== undefined) query.limit = String(options.limit);
+  return apiGet<{ senders: SenderSuggestionDto[] }>('/api/senders/suggest', {
+    query,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
+}
+
+/**
  * Mailbox-wide aggregates for `GET /api/senders/summary` (#145, rolling-
  * window rewrite). Returns the totals the Senders screen's hero, KPI
  * strip, and chips read so every headline number is a server-resolved

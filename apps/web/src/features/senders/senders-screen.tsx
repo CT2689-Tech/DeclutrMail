@@ -49,7 +49,12 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { SenderListRow, SenderSummaryDto } from '@/lib/api/senders';
+import type {
+  SenderListDirection,
+  SenderListRow,
+  SenderListSort,
+  SenderSummaryDto,
+} from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { KpiStrip, groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
 
@@ -500,7 +505,11 @@ function SendersScreenContent({
     toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
   };
 
-  const onSearchPick = useCallback((s: Sender) => {
+  // Search suggestion picked. The BE typeahead spans the whole mailbox,
+  // so the chosen sender may not be on the current list page. Set the
+  // query to its name (BE list narrows to that single row) and drop the
+  // intent filter so the row is guaranteed visible.
+  const onSearchPick = useCallback((s: { id: string; name: string; domain: string }) => {
     setQuery(s.name);
     setActiveIntent(null);
   }, []);
@@ -998,6 +1007,32 @@ function SendersScreenContent({
           <span>
             filter: {FACT_CHIPS.find((c) => c.key === activeFactChip)?.label.toLowerCase()}
           </span>
+          <span>·</span>
+          {/* Sort surface (Q2 — surface the active sort on grid; click
+              cycles through the BE-supported set). Same affordance the
+              table column headers already provide, exposed for the
+              grid view that has no header row to click. The store is
+              the single seam, so grid + table stay in lockstep. */}
+          <button
+            type="button"
+            onClick={() => {
+              const next = nextSort({ sort: tableSort, direction: tableDirection });
+              setTableSort(next);
+            }}
+            aria-label="Change sort"
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--color-fg-soft)',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              letterSpacing: '0.04em',
+            }}
+          >
+            sorted by {sortLabelFor(tableSort)} {tableDirection === 'desc' ? '↓' : '↑'}
+          </button>
           {/* Bulk-select-by-filter (spec v1.2 Decision 15). Lets the
               user act on EVERY sender matching the active fact-chip
               filter in one click — feeds the bulk variant of the
@@ -1241,6 +1276,61 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   // routes through the same composite confirm modal as Archive/Later.
   delete: 'Delete',
 };
+
+/**
+ * Sort columns the grid's cycle button rotates through. Subset of the
+ * full `SenderListSort` union — `read` and `recommended` are reserved
+ * in the wire contract but the BE rejects them today (see SUPPORTED_
+ * SORTS in `senders.read-service.ts`), so we keep them out of the FE
+ * affordance until they land.
+ */
+type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
+
+/**
+ * User-facing labels for the cycle button. Mirrors the BE-supported
+ * subset; "name" reads naturally as "name" rather than "display name"
+ * since that's the only name we show.
+ */
+const SORT_LABEL: Record<GridSortColumn, string> = {
+  total: 'total',
+  last_seen: 'last seen',
+  first_seen: 'first seen',
+  name: 'name',
+};
+
+/**
+ * Cycle the active sort + direction. Order picked for product utility:
+ * total↓ → last seen↓ → first seen↓ → name↑ → back to total↓. Each
+ * column uses its natural default direction so a click is one click —
+ * the user doesn't have to follow up with a direction toggle. A sort
+ * value outside the cycle subset (a future `read` / `recommended` set
+ * from elsewhere) resets to `total` so the affordance stays defined.
+ */
+function nextSort(current: { sort: SenderListSort; direction: SenderListDirection }): {
+  sort: SenderListSort;
+  direction: SenderListDirection;
+} {
+  switch (current.sort as GridSortColumn) {
+    case 'total':
+      return { sort: 'last_seen', direction: 'desc' };
+    case 'last_seen':
+      return { sort: 'first_seen', direction: 'desc' };
+    case 'first_seen':
+      return { sort: 'name', direction: 'asc' };
+    case 'name':
+    default:
+      return { sort: 'total', direction: 'desc' };
+  }
+}
+
+/**
+ * Resolve a sort column's label, falling back to the raw column id for
+ * any value outside the grid-cycle subset (reserved columns; see
+ * `GridSortColumn`).
+ */
+function sortLabelFor(sort: SenderListSort): string {
+  return SORT_LABEL[sort as GridSortColumn] ?? sort;
+}
 
 /**
  * Filter the wire-shape rows for the flat-table view.

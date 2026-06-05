@@ -87,6 +87,7 @@ interface SenderListEnvelope extends Envelope<
 
 /** Page-size bounds — see each route's clamp call for the route-specific defaults. */
 const LIST_LIMIT = { def: 25, min: 1, max: 100 } as const;
+const SUGGEST_LIMIT = { def: 8, min: 1, max: 20 } as const;
 const MESSAGES_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 default
 const HISTORY_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 default
 
@@ -230,6 +231,47 @@ export class SendersController {
   async weeklyHero(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<WeeklyHero>> {
     const hero = await this.reads.listWeeklyHero({ mailboxAccountId: mailbox.id });
     return ok(hero);
+  }
+
+  /**
+   * GET /api/senders/suggest — typeahead autocomplete for the senders
+   * search input. Returns up to `limit` minimal-shape rows ordered by
+   * `total_received DESC`. Mailbox-scoped.
+   *
+   * NOTE on route ORDER. Declared BEFORE `GET :id` — NestJS matches in
+   * declaration order; otherwise `suggest` is interpreted as an `:id`
+   * param and falls into the UUID-validation 400 path.
+   *
+   * Rate-limit: `triage-load` bucket overridden to 120/min (typing
+   * fires 1-3 calls per term with the FE's 150ms debounce; 120/min
+   * absorbs an aggressive typist plus their backspace).
+   */
+  @Get('suggest')
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  async suggest(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('q') rawQ: string | undefined,
+    @Query('limit') rawLimit: string | undefined,
+  ): Promise<
+    Envelope<{
+      senders: Array<{
+        id: string;
+        name: string;
+        email: string;
+        domain: string;
+        totalReceived: number;
+      }>;
+    }>
+  > {
+    const q = parseSearch(rawQ);
+    if (q === null) return ok({ senders: [] });
+    const limit = clampLimit(rawLimit, SUGGEST_LIMIT);
+    const rows = await this.reads.suggestSenders({
+      mailboxAccountId: mailbox.id,
+      q,
+      limit,
+    });
+    return ok({ senders: rows });
   }
 
   /**

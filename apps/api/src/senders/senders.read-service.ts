@@ -508,6 +508,60 @@ export class SendersReadService {
   }
 
   /**
+   * Sender typeahead — minimal-shape search for the `/senders/suggest`
+   * autocomplete dropdown. Returns up to `limit` senders whose
+   * `display_name`, `email`, or `domain` matches `q` (case-insensitive
+   * substring), ranked by `total_received DESC` so the highest-volume
+   * matches surface first. Mailbox-scoped.
+   *
+   * Light read by design: no correlated subqueries, no monthly stats —
+   * just the columns the dropdown row needs (id / name / domain /
+   * total). The Senders list endpoint stays the source of truth for
+   * full row state; suggest only powers the picker.
+   *
+   * PRIVACY (D7): every returned column is on the storage allowlist.
+   */
+  async suggestSenders(args: {
+    mailboxAccountId: string;
+    q: string;
+    limit: number;
+  }): Promise<
+    Array<{ id: string; name: string; email: string; domain: string; totalReceived: number }>
+  > {
+    const trimmed = args.q.trim();
+    if (trimmed.length === 0) return [];
+    const pattern = `%${trimmed}%`;
+    const rows = await this.db
+      .select({
+        id: senders.id,
+        name: senders.displayName,
+        email: senders.email,
+        domain: senders.domain,
+        totalReceived: senders.totalReceived,
+      })
+      .from(senders)
+      .where(
+        and(
+          eq(senders.mailboxAccountId, args.mailboxAccountId),
+          or(
+            ilike(senders.displayName, pattern),
+            ilike(senders.email, pattern),
+            ilike(senders.domain, pattern),
+          ),
+        ),
+      )
+      .orderBy(desc(senders.totalReceived), asc(senders.displayName))
+      .limit(args.limit);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      domain: r.domain,
+      totalReceived: Number(r.totalReceived ?? 0),
+    }));
+  }
+
+  /**
    * Compute the `meta.query` block for `GET /api/senders` (senders
    * list contract). Returned on every page; clients should treat
    * **page 1's value as authoritative** through a scroll.

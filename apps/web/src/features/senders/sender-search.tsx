@@ -2,13 +2,28 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, tokens } from '@declutrmail/shared';
-import { GROUP_BY_KEY, type Sender } from './data';
+import { useSenderSuggestions } from './api/use-sender-suggestions';
+import type { Sender } from './data';
 
 const { color, font } = tokens;
 
+const SUGGEST_DEBOUNCE_MS = 150;
+
 /**
- * Sender search with a live typeahead. Typing filters the table (via
- * `onChange`); the dropdown surfaces the top matches for quick jump.
+ * Sender search w/ live typeahead.
+ *
+ * Suggestions span the WHOLE mailbox via `GET /api/senders/suggest`
+ * (mailbox-scoped, ranked by `total_received DESC`), not just the
+ * loaded list page. Typing also propagates to the host via `onChange`
+ * so the underlying list narrows in lockstep.
+ *
+ * Debounced 150ms — typing fires ~3 keystrokes/sec; 150ms catches
+ * pauses without piling up cancelled queries. The query is keyed by
+ * the debounced term so an in-flight fetch for an obsolete term
+ * resolves into a stale cache, not the active dropdown.
+ *
+ * Privacy (D7): the suggestion row renders allowlisted fields only —
+ * name, domain, `totalReceived`. No body, snippet, or headers.
  */
 export function SenderSearch({
   value,
@@ -18,21 +33,65 @@ export function SenderSearch({
 }: {
   value: string;
   onChange: (next: string) => void;
+  /**
+   * Fallback pool from the loaded list page. Used to render the
+   * dropdown while the BE suggestion query is in flight so the user
+   * never sees a flash of "no matches" on a fresh keystroke. The BE
+   * result supersedes this once it lands.
+   */
   senders: Sender[];
   /** Called when a suggestion is chosen — lets the host clear filters. */
-  onPick?: (sender: Sender) => void;
+  onPick?: (sender: { id: string; name: string; domain: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [debounced, setDebounced] = useState(value);
   const ref = useRef<HTMLDivElement>(null);
 
-  const matches = useMemo(() => {
+  // Debounce the term that feeds the BE typeahead. The visible input
+  // stays controlled by `value` — only the network query trails.
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), SUGGEST_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [value]);
+
+  const remote = useSenderSuggestions(debounced, { limit: 8 });
+
+  // Local fallback for the gap between keystroke and the first BE hit.
+  // When the remote query has landed (success or empty), it wins; until
+  // then we surface the loaded-page matches so the dropdown isn't empty
+  // mid-typing.
+  const fallbackMatches = useMemo(() => {
     const q = value.trim().toLowerCase();
     if (!q) return [];
     return senders
       .filter((s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q))
-      .slice(0, 6);
+      .slice(0, 6)
+      .map((s) => ({ id: s.id, name: s.name, domain: s.domain, monthly: s.monthly }));
   }, [value, senders]);
+
+  // Resolve the dropdown row set. Empty query → nothing. Remote result
+  // available → use it. Otherwise the fallback while we wait.
+  const trimmed = value.trim();
+  const matches = useMemo(() => {
+    if (trimmed.length === 0) return [];
+    if (remote.suggestions.length > 0 || (!remote.loading && !remote.error)) {
+      return remote.suggestions.map((s) => ({
+        id: s.id,
+        name: s.name,
+        domain: s.domain,
+        // Suggestions don't carry monthly volume — show the lifetime
+        // total instead so the row still has a quantitative anchor.
+        secondary: s.totalReceived.toLocaleString() + ' lifetime',
+      }));
+    }
+    return fallbackMatches.map((s) => ({
+      id: s.id,
+      name: s.name,
+      domain: s.domain,
+      secondary: s.monthly + ' in last 30d',
+    }));
+  }, [trimmed, remote.suggestions, remote.loading, remote.error, fallbackMatches]);
 
   useEffect(() => {
     setActive(0);
@@ -47,9 +106,9 @@ export function SenderSearch({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const showList = open && matches.length > 0;
+  const showList = open && (matches.length > 0 || (remote.loading && trimmed.length > 0));
 
-  const pick = (s: Sender) => {
+  const pick = (s: { id: string; name: string; domain: string }) => {
     if (onPick) onPick(s);
     else onChange(s.name);
     setOpen(false);
@@ -119,6 +178,19 @@ export function SenderSearch({
             overflowY: 'auto',
           }}
         >
+          {matches.length === 0 && remote.loading && (
+            <div
+              style={{
+                padding: '10px 12px',
+                fontFamily: font.mono,
+                fontSize: 11,
+                color: color.fgMuted,
+                letterSpacing: '0.04em',
+              }}
+            >
+              searching mailbox…
+            </div>
+          )}
           {matches.map((s, i) => (
             <button
               key={s.id}
@@ -178,7 +250,7 @@ export function SenderSearch({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {s.monthly} in last 30d · {GROUP_BY_KEY[s.group].label}
+                {s.secondary}
               </span>
             </button>
           ))}
