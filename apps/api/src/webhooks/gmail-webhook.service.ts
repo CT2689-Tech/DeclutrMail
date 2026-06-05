@@ -43,7 +43,24 @@ export type ProcessOutcome =
   | {
       kind: 'enqueued';
       mailboxAccountId: string;
-      previousHistoryId: bigint | null;
+      // Non-null — `previousHistoryId === null` is now the dedicated
+      // `first_advance_skipped_enqueue` variant below (architecture-
+      // guardian 2026-06-05). `enqueued` always means "job dispatched
+      // to Redis or its enqueue was attempted post-commit."
+      previousHistoryId: bigint;
+      historyId: bigint;
+    }
+  | {
+      // First-advance skip — webhook arrived for a mailbox whose
+      // `last_history_id` was just seeded by initial-sync (the snapshot
+      // taken at sync start) and no prior cursor existed. The
+      // InitialSyncWorker already covered messages up to its snapshot,
+      // so this delta is empty by construction — the worker would have
+      // nothing to page. Cursor advance still commits durably; this
+      // variant exists so observability counters split "actually
+      // enqueued" from "deliberately skipped first-advance."
+      kind: 'first_advance_skipped_enqueue';
+      mailboxAccountId: string;
       historyId: bigint;
     };
 
@@ -166,6 +183,18 @@ export class GmailWebhookService {
         };
       }
 
+      // Split here so the outcome's discriminator HONESTLY reflects
+      // whether an enqueue will be attempted. `previousHistoryId ===
+      // null` is the first-advance case where the InitialSyncWorker
+      // already covers the delta — never attempt the enqueue (the
+      // worker can't page from a null cursor).
+      if (advance.previousHistoryId === null) {
+        return {
+          kind: 'first_advance_skipped_enqueue',
+          mailboxAccountId: mailbox.id,
+          historyId: incomingHistoryId,
+        };
+      }
       return {
         kind: 'enqueued',
         mailboxAccountId: mailbox.id,
@@ -183,12 +212,7 @@ export class GmailWebhookService {
     // re-running this path cannot double-enqueue. BigInts are
     // stringified — BullMQ's payload goes through `JSON.stringify`
     // which throws on bigint; the worker parses back via `BigInt(...)`.
-    //
-    // `previousHistoryId === null` is the first advance after an
-    // initial sync seeds the row — the worker needs a concrete
-    // start cursor to page from, so skip enqueue here (the initial
-    // sync already covers messages up to its snapshot).
-    if (outcome.kind === 'enqueued' && outcome.previousHistoryId !== null) {
+    if (outcome.kind === 'enqueued') {
       try {
         await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
           mailboxAccountId: outcome.mailboxAccountId,
@@ -205,7 +229,7 @@ export class GmailWebhookService {
             `error=${err instanceof Error ? err.message : String(err)}`,
         );
       }
-    } else if (outcome.kind === 'enqueued' && outcome.previousHistoryId === null) {
+    } else if (outcome.kind === 'first_advance_skipped_enqueue') {
       this.logger.log(
         `webhook.skipped_first_enqueue mailbox=${outcome.mailboxAccountId} ` +
           `historyId=${outcome.historyId}`,

@@ -181,7 +181,12 @@ export class GmailWebhookController {
         break;
       case 'enqueued':
         this.logger.log(
-          `pubsub.history_advanced mailbox=${outcome.mailboxAccountId} from=${outcome.previousHistoryId ?? 'null'} to=${outcome.historyId}`,
+          `pubsub.history_advanced mailbox=${outcome.mailboxAccountId} from=${outcome.previousHistoryId} to=${outcome.historyId}`,
+        );
+        break;
+      case 'first_advance_skipped_enqueue':
+        this.logger.log(
+          `pubsub.history_advanced_first mailbox=${outcome.mailboxAccountId} to=${outcome.historyId}`,
         );
         break;
     }

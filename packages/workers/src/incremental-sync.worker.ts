@@ -211,11 +211,26 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // Advance the durable cursor to Gmail's reported historyId. Only
     // after every page processed successfully — partial advance would
     // silently drop records the next webhook can no longer see.
-    if (lastPageHistoryId) {
+    //
+    // Monotonic guard (architecture-guardian 2026-06-05 [WARNING]):
+    // `WHERE last_history_id IS NULL OR last_history_id < $new` so a
+    // concurrent IncrementalSyncWorker job carrying an older
+    // `lastPageHistoryId` (or a concurrent InitialSyncWorker.markReady
+    // carrying its snapshot-time `historyId`) cannot regress the
+    // cursor. Mirrors `SyncService.advanceHistoryIdWithExecutor`'s
+    // `stale` short-circuit — but inline here because `packages/workers`
+    // cannot import the Nest `SyncService` (D204 boundary).
+    if (lastPageHistoryId !== null) {
+      const candidate = BigInt(lastPageHistoryId);
       await this.deps.db
         .update(providerSyncState)
-        .set({ lastHistoryId: BigInt(lastPageHistoryId), updatedAt: new Date() })
-        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        .set({ lastHistoryId: candidate, updatedAt: new Date() })
+        .where(
+          and(
+            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+            sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})`,
+          ),
+        );
     }
 
     return {
@@ -510,6 +525,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           AND st.${sql.identifier('sender_key')} = sub.sender_key
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
+      // User-agency-wins guard — see InitialSyncWorker for full
+      // rationale. An engagement_based row that was manually demoted
+      // (is_protected=false) stays demoted on this incremental pass —
+      // the user's decision survives the next webhook.
       await tx.execute(sql`
         INSERT INTO ${senderPolicies} (
           ${sql.identifier('mailbox_account_id')},
@@ -542,6 +561,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           ),
           ${sql.identifier('updated_at')} = now()
         WHERE sender_policies.${sql.identifier('is_protected')} = false
+          AND (
+            sender_policies.${sql.identifier('protection_reason')} IS NULL
+            OR sender_policies.${sql.identifier('protection_reason')} <> 'engagement_based'::protection_reason
+          )
       `);
     });
   }

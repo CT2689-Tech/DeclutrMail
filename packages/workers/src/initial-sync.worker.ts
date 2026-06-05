@@ -655,6 +655,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // audit copy reads `protection_reason` to render the audit
       // string (score-cascade.ts:159-173). The WHERE-clause guard on
       // UPSERT preserves prior user_defined / vip provenance.
+      //
+      // User-agency-wins guard (flow-completeness-auditor 2026-06-05
+      // 🔴-3): if a user manually demoted an `engagement_based`-
+      // protected row (`is_protected=false` but the prior
+      // `protection_reason='engagement_based'`), the re-protect path
+      // would silently flip them back on every sync — overriding the
+      // user's decision. The extra
+      // `protection_reason != 'engagement_based'` clause respects the
+      // demote: an engagement_based-then-demoted row stays demoted
+      // until the underlying signal (replied_count) is reset OR the
+      // user manually re-protects. Fresh rows (no prior reason) are
+      // untouched by this clause and still pick up engagement_based.
       await tx.execute(sql`
         INSERT INTO ${senderPolicies} (
           ${sql.identifier('mailbox_account_id')},
@@ -687,6 +699,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           ),
           ${sql.identifier('updated_at')} = now()
         WHERE sender_policies.${sql.identifier('is_protected')} = false
+          AND (
+            sender_policies.${sql.identifier('protection_reason')} IS NULL
+            OR sender_policies.${sql.identifier('protection_reason')} <> 'engagement_based'::protection_reason
+          )
       `);
     });
 
@@ -979,6 +995,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * Final transition — stage `ready`, 100%, sync timestamp set, AND the
    * historyId snapshot captured at sync-start persisted to
    * `last_history_id` so PR-D's incremental sync starts from there.
+   *
+   * Monotonic cursor guard (architecture-guardian 2026-06-05 [WARNING]):
+   * the historyId snapshot was captured BEFORE the fetch started, so
+   * a concurrent IncrementalSyncWorker that ran during the fetch could
+   * have advanced the cursor past this snapshot. Writing the snapshot
+   * unconditionally would regress the cursor and orphan that worker's
+   * delta. The CASE expression on `last_history_id` picks
+   * GREATEST(stored, snapshot) — the state-machine fields (stage,
+   * readiness, progress, errorCode, lastSyncedAt) always commit so the
+   * sync gate transitions correctly; only the cursor field is
+   * monotonic-guarded.
    */
   private async markReady(mailboxAccountId: string, historyId: string): Promise<void> {
     const lastHistoryId = BigInt(historyId);
@@ -998,7 +1025,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           readinessStatus: 'ready',
           progressPct: 100,
           errorCode: null,
-          lastHistoryId,
+          // GREATEST(stored, snapshot) — never regress on a concurrent
+          // IncrementalSyncWorker's already-advanced cursor.
+          lastHistoryId: sql`CASE
+            WHEN ${providerSyncState.lastHistoryId} IS NULL
+              OR EXCLUDED.${sql.identifier('last_history_id')} > ${providerSyncState.lastHistoryId}
+            THEN EXCLUDED.${sql.identifier('last_history_id')}
+            ELSE ${providerSyncState.lastHistoryId}
+          END`,
           lastSyncedAt: sql`now()`,
           updatedAt: sql`now()`,
         },

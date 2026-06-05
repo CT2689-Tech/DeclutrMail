@@ -84,9 +84,23 @@ export interface SenderCardProps {
   selected: boolean;
   onToggleSelect: (id: string) => void;
   onAction: (req: ActionRequest) => void;
+  /**
+   * Mailbox-wide MAX(total_received) — magnitude under-bar denominator
+   * per ADR-0016 §B1. Bar width = `sender.total / globalMaxTotal`,
+   * clamped to [0, 1]. A filtered view does NOT rescale to its own max
+   * (bars stay comparable across compose changes). `0` = no senders →
+   * render no bar to avoid divide-by-zero.
+   */
+  globalMaxTotal: number;
 }
 
-export function SenderCard({ sender, selected, onToggleSelect, onAction }: SenderCardProps) {
+export function SenderCard({
+  sender,
+  selected,
+  onToggleSelect,
+  onAction,
+  globalMaxTotal,
+}: SenderCardProps) {
   const archiveOk = canArchive(sender);
   const laterOk = canLater(sender);
   const unsubOk = canUnsubscribe(sender);
@@ -227,7 +241,16 @@ export function SenderCard({ sender, selected, onToggleSelect, onAction }: Sende
                 width: '100%',
                 background: intent === 'cleanup' ? color.amber : color.fgSoft,
                 transformOrigin: 'left center',
-                transform: `scaleX(${Math.min(1, sender.monthly / 100)})`,
+                // ADR-0016 §B1 — denominator is mailbox-wide MAX, not
+                // a hardcoded 100. `sender.total` is the sender's
+                // lifetime inbound count; bar width is the proportion of
+                // the mailbox's loudest sender. Filtered view does NOT
+                // rescale.
+                transform: `scaleX(${
+                  sender.total != null && globalMaxTotal > 0
+                    ? Math.min(1, sender.total / globalMaxTotal)
+                    : 0
+                })`,
               }}
             />
           </div>

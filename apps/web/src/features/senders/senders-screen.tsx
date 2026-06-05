@@ -1056,6 +1056,7 @@ function SendersScreenContent({
             })
           }
           onAction={requestAction}
+          globalMaxTotal={globalMaxTotal}
         />
       ) : (
         // Slice 1 Step 7a — flat-sortable SenderTable (ADR-0014,

@@ -123,6 +123,20 @@ export interface SenderListRow {
    * sender ever sent me", not "how many are in inbox right now".
    */
   totalReceived: number;
+  /**
+   * Per-sender "you replied N×" count (Senders V2 spec v1.3 + mig 0022).
+   * Distinct outbound messages whose thread contains ≥1 inbound from
+   * this sender; reconciles arithmetically with
+   * `SUM(sender_timeseries.reply_count)`. Drives the per-row "you
+   * replied N" copy on Sender Detail + the future card badge. `0` is
+   * the engine default (no replies seen); never `null` because
+   * `senders.replied_count` is `NOT NULL DEFAULT 0`.
+   *
+   * The auto-protect rule fires at `repliedCount >= 3` —
+   * `protectionFlags.isProtected = true, protectionReason =
+   * 'engagement_based'` follow.
+   */
+  repliedCount: number;
   monthlyVolume: number | null;
   readRate: number | null;
   /**

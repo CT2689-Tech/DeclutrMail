@@ -93,6 +93,12 @@ export interface SenderListRow {
    * A on every full rebuild and reconciled nightly.
    */
   totalReceived: number;
+  /**
+   * "You replied N×" count (Senders V2 spec v1.3 + mig 0022) — distinct
+   * outbound messages whose thread contains ≥1 inbound from this sender.
+   * Auto-protect threshold is ≥3. Engine default `0` (never null).
+   */
+  repliedCount: number;
   /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
   monthlyVolume: number | null;
   /**

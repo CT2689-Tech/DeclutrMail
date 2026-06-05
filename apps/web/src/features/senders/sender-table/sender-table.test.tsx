@@ -37,6 +37,7 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     firstSeenAt: overrides.firstSeenAt ?? '2013-08-11T20:18:16.000Z',
     lastSeenAt: overrides.lastSeenAt ?? '2026-05-28T13:01:34.000Z',
     totalReceived: overrides.totalReceived ?? 6471,
+    repliedCount: 0,
     monthlyVolume: overrides.monthlyVolume ?? 61,
     readRate: overrides.readRate ?? 0,
     volumeTrend: overrides.volumeTrend ?? 'steady',

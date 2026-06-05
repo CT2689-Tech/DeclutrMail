@@ -27,6 +27,7 @@ function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     firstSeenAt: '2025-01-01T00:00:00.000Z',
     lastSeenAt: '2026-05-01T00:00:00.000Z',
     totalReceived: 144,
+    repliedCount: 0,
     monthlyVolume: 12,
     readRate: 0.1,
     volumeTrend: 'steady',

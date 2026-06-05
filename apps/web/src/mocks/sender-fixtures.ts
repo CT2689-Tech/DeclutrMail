@@ -91,6 +91,10 @@ export function fixtureToSenderListRow(s: Sender, now: number = Date.now()): Sen
     // months at M/mo" story (ADR-0014). Stress-case stories can override
     // via `totalReceived` on the seed.
     totalReceived: s.totalReceived ?? Math.max(s.monthly * Math.max(s.firstSeenMo, 1), 0),
+    // Fixtures default to 0 replies — engine default. Stress-case
+    // stories that need a populated value (e.g. an auto-protected
+    // engagement-based row) extend `Sender` upstream.
+    repliedCount: 0,
     monthlyVolume: s.monthly,
     readRate: s.read,
     // Fixtures don't carry a real trend signal; default to `steady` so

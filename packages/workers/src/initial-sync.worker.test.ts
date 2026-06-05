@@ -779,6 +779,52 @@ describe('InitialSyncWorker', () => {
       expect(protectedBySender.has(deriveSenderKey('sender2@example.com'))).toBe(false);
     });
 
+    it('user-agency-wins — manually demoted engagement_based row stays demoted on re-run (founder default 2026-06-05)', async () => {
+      // flow-completeness-auditor 🔴-3 resolution: if the user manually
+      // flips an engagement_based-protected row to `is_protected=false`,
+      // subsequent worker passes MUST respect the demote — never
+      // silently re-protect on the next sync.
+      const fixture = makeRepliedSender(0, 5, false);
+      const client = new FakeGmailClient(fixture);
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+      const senderKey = deriveSenderKey('sender0@example.com');
+      // Worker auto-protected on the first run.
+      const [firstRun] = await db
+        .select()
+        .from(schema.senderPolicies)
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+      expect(firstRun?.isProtected).toBe(true);
+      expect(firstRun?.protectionReason).toBe('engagement_based');
+
+      // User manually demotes — leaves the row but flips the flag off.
+      // (Production demote path may NULL the reason too; we test the
+      // worst-case "demote-without-NULL" because that's the trap the
+      // narrow guard protects against.)
+      await db
+        .update(schema.senderPolicies)
+        .set({ isProtected: false })
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+
+      // Re-run the worker. Same fixture, same engagement signal — but
+      // the WHERE guard's `protection_reason != 'engagement_based'`
+      // clause must refuse the re-protect.
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const [secondRun] = await db
+        .select()
+        .from(schema.senderPolicies)
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+      // STAYED demoted — user agency preserved.
+      expect(secondRun?.isProtected).toBe(false);
+      expect(secondRun?.protectionReason).toBe('engagement_based'); // reason retained as audit trail
+    });
+
     it('idempotent — second run preserves engagement_based provenance + does not overwrite user_defined', async () => {
       // Run 1: sender 0 gets engagement_based protect (5 replies).
       const fixture = makeRepliedSender(0, 5, false);

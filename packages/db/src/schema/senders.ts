@@ -130,6 +130,17 @@ export const senders = pgTable(
      * `protection_reason = 'engagement_based'`. The flip is sticky —
      * subsequent drops below 3 do NOT unprotect.
      *
+     * User-agency-wins semantic (flow-completeness-auditor 2026-06-05
+     * 🔴-3, founder-defaulted): the auto-protect UPSERT respects a
+     * MANUAL demote of an engagement_based-protected row. If the user
+     * flips `is_protected=false` on a row whose
+     * `protection_reason='engagement_based'`, subsequent worker passes
+     * do NOT re-protect — the user's decision survives. Fresh
+     * unprotected rows (NULL reason) still pick up engagement_based
+     * normally. Encoded in both worker `runReplyAttributionPostPass`
+     * SQL blocks via
+     * `WHERE is_protected = false AND (reason IS NULL OR reason <> 'engagement_based')`.
+     *
      * `mode: 'number'` because counts are bounded far below 2^53 and
      * the wire shape per the senders list contract is a JSON number,
      * not a `bigint` string.

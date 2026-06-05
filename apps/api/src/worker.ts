@@ -318,6 +318,49 @@ async function bootstrap(): Promise<void> {
   incrementalBullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
+  // Cursor-too-old recovery (flow-completeness-auditor 2026-06-05 🔴-1):
+  // when Gmail's history.list returns 404 (startHistoryId older than D5's
+  // 7-day retention window), the IncrementalSyncWorker returns
+  // `{ cursorTooOld: true, advancedToHistoryId: null }` and exits — the
+  // cursor stays put deliberately. Without a consumer of that signal the
+  // mailbox stays stale until manual reconnect. This onCompleted hook
+  // re-enqueues a forced InitialSyncWorker run to fetch the full mailbox
+  // from a fresh historyId snapshot (`force: true` reaps any stale
+  // pending initial-sync job so the new attempt isn't blocked).
+  // Best-effort — a failed re-enqueue is WARN-logged; the nightly
+  // reconciler is the backup recovery surface.
+  incrementalBullWorker.on('completed', (job, result: IncrementalSyncResult) => {
+    if (!result?.cursorTooOld) {
+      return;
+    }
+    const { mailboxAccountId } = job.data as IncrementalSyncJobData;
+    void (async () => {
+      try {
+        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId, {
+          force: true,
+        });
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'sync.cursor_recovery_scheduled',
+            mailboxAccountId,
+            jobId: job.id,
+            initialSyncOutcome: outcome,
+          }),
+        );
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'sync.cursor_recovery_failed',
+            mailboxAccountId,
+            jobId: job.id,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    })();
+  });
 
   /**
    * BriefSnapshotWorker consumer + scheduler (D61, D62, D63, D67, D69,
@@ -779,6 +822,9 @@ async function bootstrap(): Promise<void> {
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
   console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }),
+  );
+  console.log(
     JSON.stringify({
       level: 'info',
       kind: 'worker.listening',
@@ -819,6 +865,7 @@ async function bootstrap(): Promise<void> {
         await inFlight;
       }
       await bullWorker.close();
+      await incrementalBullWorker.close();
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();

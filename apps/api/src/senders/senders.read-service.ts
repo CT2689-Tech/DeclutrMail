@@ -506,6 +506,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        repliedCount: senders.repliedCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
@@ -568,6 +569,9 @@ export class SendersReadService {
         // `mode: 'number'` coerces to a JS number at the boundary. The
         // assertion makes a violation explicit at the wire boundary.
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+        // `replied_count` — mig 0022 integer column, NOT NULL DEFAULT 0.
+        // Drives the Sender Detail "you replied N×" copy.
+        repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
         // `monthlyVolume` wire field now carries last-30-days msg count
         // (rolling). Replaces the per-sender-latest-year_month sum that
         // varied across decades. FE renders as "47 in last 30d".
@@ -1204,6 +1208,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        repliedCount: senders.repliedCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
@@ -1252,6 +1257,7 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+      repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
       // Detail endpoint still rides the legacy timeseries shape; sparkline

@@ -1060,7 +1060,7 @@ function Statement({
           gap: 16,
         }}
       >
-        <span>{hidden.toLocaleString()} hidden · no bodies read</span>
+        <span>{hidden.toLocaleString()} hidden · metadata only · no email bodies</span>
         <span aria-hidden style={{ flex: 1, height: 1, background: C.inkFaint }} />
         <span>{matched.length} loaded · scroll for more</span>
       </div>
@@ -1399,7 +1399,7 @@ export default function SendersLabV2() {
             textTransform: 'uppercase',
           }}
         >
-          <span>fin. metadata only · no bodies read · no inference</span>
+          <span>fin. metadata only · no email bodies · no inference</span>
           <span>composed {new Date().toLocaleDateString()}</span>
         </footer>
       </div>

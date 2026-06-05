@@ -343,6 +343,55 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(messages).toMatch(/value too long|length|varying\(512\)/i);
   });
 
+  it('returns first_advance_skipped_enqueue when previousHistoryId is null (no queue.add call)', async () => {
+    // architecture-guardian 2026-06-05 [WARNING] discriminator clarity:
+    // first webhook after initial-sync seeds `last_history_id` from a
+    // null prior. The InitialSyncWorker already covers messages up to
+    // its snapshot, so the worker would have nothing to page from a
+    // null start cursor. The outcome MUST be observable as a
+    // deliberate skip — NOT counted as a real enqueue.
+    //
+    // Seed shape: a `provider_sync_state` row EXISTS (ready) but its
+    // `last_history_id` is NULL — the "initial-sync just finished but
+    // never wrote a historyId snapshot" edge case (pre-D5 mailboxes
+    // or InitialSyncWorker failing to capture historyId from getProfile).
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', null);
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: mailboxId,
+      readinessStatus: 'ready',
+      currentStage: 'ready',
+      progressPct: 100,
+      lastHistoryId: null,
+    });
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    let addCalled = false;
+    const trackingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        addCalled = true;
+        return undefined;
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const skipService = new GmailWebhookService(db, new SyncService(queueStub, db), trackingQueue);
+    const outcome = await skipService.processVerifiedPush({
+      messageId: 'msg-first',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(outcome.kind).toBe('first_advance_skipped_enqueue');
+    if (outcome.kind === 'first_advance_skipped_enqueue') {
+      expect(outcome.mailboxAccountId).toBe(mailboxId);
+      expect(outcome.historyId).toBe(1500n);
+    }
+    // CRITICAL: no enqueue happened.
+    expect(addCalled).toBe(false);
+    // Cursor still advanced durably.
+    const state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBe(1500n);
+  });
+
   it('enqueue happens AFTER the tx commits — observable ordering', async () => {
     // architecture-guardian 2026-06-05 [BLOCKING] fix: the BullMQ enqueue
     // MUST run outside the PG transaction. If it ran inside, a commit
