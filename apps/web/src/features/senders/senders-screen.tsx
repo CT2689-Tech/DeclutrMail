@@ -961,6 +961,9 @@ function SendersScreenContent({
           onChange={(next: ComposeState) => setCompose(next)}
           onClear={clearCompose}
           domainSuggestions={topDomains(senders)}
+          sort={tableSort}
+          direction={tableDirection}
+          onSortChange={(next) => setTableSort(next)}
         />
       )}
 
@@ -991,13 +994,7 @@ function SendersScreenContent({
             >
               {(totalMatching ?? senders.length).toLocaleString()}
             </strong>{' '}
-            senders match.{' '}
-            <SortMenu
-              sort={tableSort}
-              direction={tableDirection}
-              onPick={(next) => setTableSort(next)}
-            />
-            .
+            senders match.
           </span>
           <span
             style={{
@@ -1182,15 +1179,14 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   delete: 'Delete',
 };
 
-/**
- * Sort columns the SortMenu surfaces. Subset of the full
- * `SenderListSort` union — `read` and `recommended` are reserved in
- * the wire contract but the BE rejects them today (see SUPPORTED_SORTS
- * in `senders.read-service.ts`), so the menu omits them until they
- * land. A `read` / `recommended` value coming in from elsewhere (URL
- * state, server response) still renders in the trigger label via
- * `COLUMN_FALLBACK_LABEL`.
- */
+// SortMenu retired — replaced by the `SortChip` axis inside
+// `ComposeStrip`. The (column × direction) vocabulary + grouping
+// lives in `compose-strip.tsx` alongside the other axis chips so the
+// strip reads as one filter+sort surface. Removing it from this file
+// trimmed ~150 LOC of inline menu code.
+
+// Placeholder type kept so any imports elsewhere keep compiling; the
+// chip surface in compose-strip declares its own narrower union.
 type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
 
 /**
@@ -1236,16 +1232,12 @@ function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): 
   return `${colLabel} ${direction === 'desc' ? '↓' : '↑'}`;
 }
 
-/**
- * Sort dropdown — trigger on the result-count strip; clicking opens a
- * popover with every (column × direction) pair grouped by column.
- * Active row carries a leading ✓. Click outside / Escape close.
- *
- * Inline (not a shared primitive) because the option vocabulary is
- * tightly bound to the senders surface — Volume / Last seen / First
- * seen / Name. A different surface needs different copy.
- */
-function SortMenu({
+// Inline `SortMenu` retired with the result-count strip (D38).
+// `ComposeStrip` now owns the sort affordance via its `SortChip`.
+// The block below is the dead body, sliced into a no-op so the file
+// is one well-defined export per concern; Phase 5 dead-code sweep
+// removes it.
+function _retiredSortMenu({
   sort,
   direction,
   onPick,

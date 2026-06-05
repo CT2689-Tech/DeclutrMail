@@ -26,7 +26,12 @@
 
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { tokens } from '@declutrmail/shared';
-import type { ActivityBucket, TriStateFilter } from '@/lib/api/senders';
+import type {
+  ActivityBucket,
+  SenderListDirection,
+  SenderListSort,
+  TriStateFilter,
+} from '@/lib/api/senders';
 
 const { color, font } = tokens;
 
@@ -67,12 +72,19 @@ export function ComposeStrip({
   onChange,
   onClear,
   domainSuggestions,
+  sort,
+  direction,
+  onSortChange,
 }: {
   state: ComposeState;
   /** Mailbox-wide absolute counts per axis. May be undefined while loading. */
   counts: ComposeCounts | undefined;
   onChange: (next: ComposeState) => void;
   onClear: () => void;
+  /** Active sort column — surfaced as a Sort chip alongside the filter axes. */
+  sort: SenderListSort;
+  direction: SenderListDirection;
+  onSortChange: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
   /** Up to ~6 top domains for the popover quick-pick. */
   domainSuggestions: string[];
 }) {
@@ -126,6 +138,10 @@ export function ComposeStrip({
         onChange={(domain) => onChange({ ...state, domain })}
         suggestions={domainSuggestions}
       />
+
+      <Divider />
+
+      <SortChip sort={sort} direction={direction} onChange={onSortChange} />
 
       <span style={{ flex: 1 }} />
 
@@ -605,5 +621,136 @@ function PopoverItem({
       </span>
       <span style={{ flex: 1 }}>{children}</span>
     </button>
+  );
+}
+
+/* ─── sort chip ─────────────────────────────────────────────────── */
+
+type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
+
+const SORT_OPTIONS: ReadonlyArray<{
+  sort: GridSortColumn;
+  direction: SenderListDirection;
+  label: string;
+  group: string;
+}> = [
+  { sort: 'total', direction: 'desc', label: 'Most emails ever', group: 'Volume' },
+  { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
+  { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
+  { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
+  { sort: 'first_seen', direction: 'desc', label: 'Newest senders', group: 'First seen' },
+  { sort: 'first_seen', direction: 'asc', label: 'Oldest senders', group: 'First seen' },
+  { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
+  { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
+];
+
+const COLUMN_FALLBACK_LABEL: Record<GridSortColumn, string> = {
+  total: 'volume',
+  last_seen: 'last seen',
+  first_seen: 'first seen',
+  name: 'name',
+};
+
+function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
+  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
+  if (match) return match.label;
+  const colLabel = (COLUMN_FALLBACK_LABEL as Record<string, string>)[sort] ?? sort;
+  return `${colLabel} ${direction === 'desc' ? '↓' : '↑'}`;
+}
+
+/**
+ * Sort chip — popover that lists every (column × direction) option
+ * grouped by column. Rides the same affordance shape as Window /
+ * Domain so the user reads the row as one strip ("filter / sort
+ * compose"), not "filters … then sort somewhere else".
+ */
+function SortChip({
+  sort,
+  direction,
+  onChange,
+}: {
+  sort: SenderListSort;
+  direction: SenderListDirection;
+  onChange: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  const groups = SORT_OPTIONS.reduce<Record<string, (typeof SORT_OPTIONS)[number][]>>(
+    (acc, opt) => {
+      const arr = acc[opt.group] ?? [];
+      arr.push(opt);
+      acc[opt.group] = arr;
+      return acc;
+    },
+    {},
+  );
+  // Sort is ALWAYS active (there's always SOME ordering). Render the
+  // chip in the same neutral default state as Window/Domain when the
+  // chosen sort matches the BE default `total ↓`; mark "active" once
+  // the user has picked anything else.
+  const isCustomSort = !(sort === 'total' && direction === 'desc');
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{ ...chipStyle({ active: isCustomSort, negated: false }), gap: 4 }}
+      >
+        <AxisLabel>sort</AxisLabel>
+        <span>{activeSortLabel(sort, direction)}</span>
+        <span style={{ fontSize: 9, color: color.fgMuted, marginLeft: 2 }}>▾</span>
+      </button>
+      {open && (
+        <Popover>
+          {Object.entries(groups).map(([groupLabel, options]) => (
+            <span key={groupLabel} style={{ display: 'block' }}>
+              <span
+                style={{
+                  display: 'block',
+                  padding: '6px 10px 2px',
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.08em',
+                  color: color.fgMuted,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {groupLabel}
+              </span>
+              {options.map((opt) => {
+                const active = opt.sort === sort && opt.direction === direction;
+                return (
+                  <PopoverItem
+                    key={`${opt.sort}-${opt.direction}`}
+                    active={active}
+                    onClick={() => {
+                      onChange({ sort: opt.sort, direction: opt.direction });
+                      setOpen(false);
+                    }}
+                  >
+                    {opt.label}
+                  </PopoverItem>
+                );
+              })}
+            </span>
+          ))}
+        </Popover>
+      )}
+    </span>
   );
 }
