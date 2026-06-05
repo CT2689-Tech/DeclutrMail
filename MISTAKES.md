@@ -21,6 +21,15 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-06-05 — BullMQ `queue.add` inside `db.transaction(...)` callback publishes job BEFORE PG commits
+
+**PR:** (this branch, fixed pre-merge — `04c8546`)
+**Caught by:** architecture-guardian critic pass — [BLOCKING]
+**What happened:** Closing the `gmail-webhook.service.ts:151` TODO, the enqueue was added inside the existing `this.db.transaction(async (tx) => { ... await ensureIncrementalSyncJob(...) ... })` callback. The inline comment claimed "the enqueue happens AFTER the tx body but BEFORE the tx commits" — wrong. Awaiting `queue.add` inside the Drizzle tx callback publishes the BullMQ job (durable in Redis the instant `add()` resolves) before the transaction's resolved value gets committed. A commit failure between `add()` returning and the COMMIT statement landing would leave the job durable while the dedup row + cursor advance get rolled back — the worker would then run against the OLD `last_history_id`, silently regressing history.
+**Correct approach:** External side effects that the transactional store can't roll back (BullMQ, HTTP calls, emails) MUST run AFTER `await db.transaction(...)` resolves. Capture the values needed for the side effect inside the tx, return them from the callback, dispatch the side effect from the post-`await` continuation. `SyncModule.connect` (initial-sync enqueue path) already follows this contract.
+**Rule:** When ANY of {BullMQ, Stripe, Sentry capture, outbound HTTP, email} appears in a code path that also opens a PG transaction, place the side effect OUTSIDE `db.transaction(...)`. The discriminated outcome union is the carrier — keep the tx body pure DB writes, dispatch external effects in the continuation. Mirror: never trust an inline comment that says "AFTER the tx body" — verify by reading the closure structure.
+**Enforcement update:** architecture-guardian agent prompt — add an explicit check: "external side effects (queue.add, Stripe, HTTP, email) inside a `db.transaction` callback = BLOCKING". MISTAKES.md log + the two new tests in `gmail-webhook.service.spec.ts` (`enqueue happens AFTER the tx commits — observable ordering` + `enqueue failure does NOT roll back the tx`) document the invariant by example.
+
 ## 2026-05-27 — Raw `sql\`\`` template interpolation of a JS `Date` failed Bind on postgres-js@3.4.9 / Node v24
 
 **PR:** [#117](https://github.com/CT2689-Tech/DeclutrMail/pull/117) — `fix(workers): serialise Date params in raw sql templates (D86)`

@@ -44,6 +44,62 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** `git status` no longer shows the untracked dir; `pnpm --filter @declutrmail/web build` still passes.
 **Status:** Open
 
+### 2026-06-05 — Cursor regression guard on `provider_sync_state` (IncrementalSyncWorker)
+**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
+**Why:** `IncrementalSyncWorker` ends with an unguarded `UPDATE provider_sync_state SET last_history_id = $1` (incremental-sync.worker.ts:214-219). With `concurrency: 20`, two webhooks for the same mailbox at different historyIds CAN run concurrently — the LATER job's `lastPageHistoryId` could be older than an already-committed advance from an EARLIER job. The webhook path's `advanceHistoryIdWithExecutor` has the SELECT FOR UPDATE + monotonic compare; the worker path does not. `InitialSyncWorker` has the same pattern (lines 947, 964, 986) so this isn't a regression introduced by D8, but it widens the surface.
+**How:**
+1. Add `WHERE last_history_id IS NULL OR last_history_id < $1` to the worker's UPDATE (cheapest fix; matches `advanceHistoryIdWithExecutor`'s `stale` short-circuit).
+2. Or push a `SyncRepository` port into `packages/workers` (matches `GmailAccess` pattern) — bigger lift, cleaner D204.
+3. Apply the same guard to InitialSyncWorker's three direct writes for consistency.
+**Verifies by:** Race test — kick 2 jobs at the same mailbox w/ historyIds 1500 and 1600 in shuffled order; assert final `last_history_id = 1600` regardless of which won the race.
+**Status:** Open
+
+### 2026-06-05 — Discriminator clarity: `kind: 'enqueued'` returned when first-advance enqueue was skipped
+**Source:** architecture-guardian + webhook-security-auditor critic pass 2026-06-05 [INFO/WARNING]
+**Why:** When `previousHistoryId === null` (first webhook after initial-sync seeds the row), the service correctly SKIPS the enqueue + logs `webhook.skipped_first_enqueue`, but the returned outcome is `{ kind: 'enqueued', previousHistoryId: null, ... }`. Observability counts get false positives ("X webhooks enqueued" vs "X webhooks actually published a job"). A future test that asserts on `outcome.kind === 'enqueued'` can't catch a regression that breaks the skip logic.
+**How:**
+1. Add a `kind: 'first_advance_skipped_enqueue'` variant to `ProcessOutcome` (or pivot the existing `enqueued` to include an `enqueued: boolean`).
+2. Controller maps both to 200; observability counters split.
+**Verifies by:** New spec asserts skip path returns the new discriminator variant; existing enqueue spec stays on `kind: 'enqueued'`.
+**Status:** Open
+
+### 2026-06-05 — IncrementalSync queue: `worker.listening` + shutdown drain parity
+**Source:** architecture-guardian critic pass 2026-06-05 [WARNING]
+**Why:** Every other queue in `apps/api/src/worker.ts` emits a structured `kind: 'worker.listening'` line at boot AND calls `await <queue>.close()` in the shutdown drain. `INCREMENTAL_SYNC_QUEUE` (added 2026-06-05) does neither. Silent boot = a consumer outage is invisible until jobs back up; missing shutdown close = uneven drain on graceful exit.
+**How:**
+1. Add `console.log(JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }))` next to the other listening lines (~line 798).
+2. Add `await incrementalBullWorker.close()` to the shutdown handler (lines 821-832).
+**Verifies by:** API boot logs show `worker.listening` for `incremental-sync`; SIGTERM drains the worker cleanly.
+**Status:** Open
+
+### 2026-06-05 — Sticky auto-protect re-protects after manual demote (semantic ambiguity)
+**Source:** flow-completeness-auditor + schema-migration-reviewer 2026-06-05 [WARNING/UNVERIFIED]
+**Why:** The auto-protect UPSERT's `WHERE sender_policies.is_protected = false` guard preserves prior `user_defined`/`vip` provenance correctly — but if a user MANUALLY demotes an `engagement_based`-protected row to `is_protected=false`, the very next worker pass re-protects them (the UPSERT fires again because `replied_count >= 3` is still true). No D-decision documents whether this is intended sticky-up behavior or a bug. The schema comment at `senders.ts:130-131` describes the `replied_count` direction ("drop from 3→2 doesn't unprotect") but does NOT address manual demote of an `engagement_based` row.
+**How (founder pick):**
+1. **Intended:** document the sticky-up semantic on `sender-policies.ts` + add a worker test pinning the behavior.
+2. **Bug:** narrow the UPSERT guard to `WHERE sender_policies.is_protected = false AND sender_policies.protection_reason != 'engagement_based'` so a manually-demoted engagement_based row stays demoted until the underlying signal naturally drops.
+3. **Third path:** add a `user_overrode_at` timestamp column; UPSERT skips when set.
+**Verifies by:** Worker test seeds `is_protected=false, protection_reason='engagement_based'`, fires a webhook, asserts the chosen semantic.
+**Status:** Open — needs founder decision before fix
+
+### 2026-06-05 — Lab-route trust copy reframes the canonical privacy line
+**Source:** privacy-auditor 2026-06-05 [WARNING]
+**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` line 1063 + 1402 use "no bodies read" — the canonical D228 copy is "Full bodies fetched: 0" (CLAUDE.md §2.1) and the spec's in-product line is "Metadata only · No email bodies" / "Subjects only · we never read email bodies". The literal banned regex `/bod(y|ies) read.*0/i` doesn't match, so no automated trip, but the phrasing drift risks getting copy-pasted forward when the chosen variant hardens.
+**How:**
+1. Swap both strings to "Metadata only · No email bodies" or the spec's "Subjects only · we never read email bodies".
+2. Add the lab-route literal "no bodies read" to `check-microcopy.sh` ban list so future drift is caught at lint time.
+**Verifies by:** `rg "no bodies read" apps/web/src/app/senders-lab-v2/` returns 0 results.
+**Status:** Open
+
+### 2026-06-05 — Schema future-compat: `protection_reason` stale on `is_protected=false` rows
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** The UPSERT's COALESCE at `0022_senders_replied_count.sql:117-120` preserves any pre-existing non-NULL `protection_reason` even when `is_protected` was `false` — could resurface as a misleading `user_defined`/`vip` cascade-audit string. Population at-risk is empty today (no producer NULLs the reason while leaving the row), but a future "unprotect" path that doesn't NULL the reason would silently re-protect with the wrong audit string.
+**How (cheapest first):**
+1. Add a DB CHECK constraint: `(is_protected = false) = (protection_reason IS NULL)` in a future migration.
+2. OR change the COALESCE to `CASE WHEN sender_policies.protection_reason IS NOT NULL AND sender_policies.is_protected THEN sender_policies.protection_reason ELSE 'engagement_based' END`.
+**Verifies by:** Migration test seeds an `is_protected=false, protection_reason='user_defined'` row, runs the UPSERT, asserts the resulting `protection_reason` is the fresh `engagement_based` not the stale value.
+**Status:** Open
+
 ### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
 **Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
 **Why:** `IncrementalSyncWorker` returns `{cursorTooOld: true}` when Gmail's `history.list` 404s on an aged `startHistoryId` (D5's 7-day retention boundary). The worker correctly LEAVES the cursor untouched, but no consumer of that signal re-schedules a full re-sync — the mailbox would stay stale until the next manual reconnect.
