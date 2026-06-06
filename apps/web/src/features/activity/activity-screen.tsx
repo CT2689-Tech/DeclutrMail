@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { Avatar, Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
 
@@ -18,7 +18,7 @@ import type {
 
 import { useActivity, useRevertActivity } from './api/use-activity';
 
-const { color, font } = tokens;
+const { color, font, shadow } = tokens;
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
@@ -180,28 +180,29 @@ export function ActivityScreen() {
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
-      {stats && (
-        <StatsLine
-          label={windowToLabel(
-            filters.window ?? '30d',
-            filters.dateFrom ?? null,
-            filters.dateTo ?? null,
-          )}
-          stats={stats}
-        />
-      )}
-      {allTimeStats && <StatsLine label="all time" stats={allTimeStats} tone="muted" />}
+      <MetricsHeader
+        windowLabel={windowToLabel(
+          filters.window ?? '30d',
+          filters.dateFrom ?? null,
+          filters.dateTo ?? null,
+        )}
+        stats={stats ?? null}
+        allTimeStats={allTimeStats ?? null}
+        isWindowAllTime={
+          (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
+        }
+      />
 
-      <SourceChips active={filters.source ?? 'all'} onSelect={setSource} />
-      <VerbChips active={filters.verbs ?? []} onChange={setVerbs} />
-      <WindowAndDateRow
+      <FilterToolbar
+        source={filters.source ?? 'all'}
+        onSource={setSource}
+        verbs={filters.verbs ?? []}
+        onVerbs={setVerbs}
         window={filters.window ?? '30d'}
         dateFrom={filters.dateFrom ?? null}
         dateTo={filters.dateTo ?? null}
         onWindow={setWindow}
         onRange={setDateRange}
-      />
-      <ToolsRow
         senderQuery={filters.senderQuery ?? ''}
         onSenderQuery={setSenderQuery}
         groupMode={groupMode}
@@ -236,7 +237,7 @@ export function ActivityScreen() {
             padding: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: 6,
+            gap: 4,
           }}
         >
           {rows.map((row) => (
@@ -253,59 +254,156 @@ export function ActivityScreen() {
   );
 }
 
-// ── Stats line ────────────────────────────────────────────────────────
+// ── Metrics header (D59 + B16) ────────────────────────────────────────
 
-function StatsLine({
-  label,
+/**
+ * Editorial metrics block — replaces the two stacked mono lines.
+ *
+ * Five tiles in a horizontal strip: ARCHIVED · DELETED · UNSUB · KEPT ·
+ * LATER. Each tile shows the window count as a display-font numeral and
+ * the all-time count as a small mono footnote below — so the user gets
+ * BOTH numbers per verb at a glance, without two competing rows.
+ *
+ * When the window equals "all time" (no upper bound + no custom range),
+ * the window stat IS the all-time stat — we suppress the footnote to
+ * avoid the duplicate-stats bug the original two-line layout shipped
+ * with.
+ */
+function MetricsHeader({
+  windowLabel,
   stats,
-  tone = 'fg',
+  allTimeStats,
+  isWindowAllTime,
 }: {
-  label: string;
-  stats: ActivityStatsWire;
-  tone?: 'fg' | 'muted';
+  windowLabel: string;
+  stats: ActivityStatsWire | null;
+  allTimeStats: ActivityStatsWire | null;
+  isWindowAllTime: boolean;
 }) {
-  const labelColor = tone === 'muted' ? color.fgMuted : color.fg;
+  if (!stats) return null;
+  const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
+    { key: 'archived', label: 'Archived', accent: color.fg },
+    { key: 'deleted', label: 'Deleted', accent: color.amber },
+    { key: 'unsubscribed', label: 'Unsubscribed', accent: color.primary },
+    { key: 'kept', label: 'Kept', accent: color.emerald },
+    { key: 'later', label: 'Later', accent: color.fgSoft },
+  ];
   return (
-    <div
+    <section
       role="status"
       aria-live="polite"
+      aria-label="Activity metrics"
       style={{
-        fontFamily: font.mono,
-        fontSize: 12.5,
-        color: color.fgMuted,
+        border: `1px solid ${color.line}`,
+        borderRadius: 14,
+        background: color.card,
+        padding: '14px 18px 16px',
         display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column',
+        gap: 10,
       }}
     >
-      <strong style={{ color: labelColor, fontWeight: 600, textTransform: 'lowercase' }}>
-        {label}:
-      </strong>
-      <span>{stats.archived} archived</span>
-      <Sep />
-      <span>{stats.deleted ?? 0} deleted</span>
-      <Sep />
-      <span>{stats.unsubscribed} unsubscribed</span>
-      <Sep />
-      <span>{stats.kept} kept</span>
-      <Sep />
-      <span>{stats.later} later</span>
-      {tone === 'fg' && (
-        <>
-          <Sep />
-          <span>{stats.needsAttention} needing attention</span>
-        </>
-      )}
-    </div>
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          fontFamily: font.mono,
+          fontSize: 10.5,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          color: color.fgMuted,
+        }}
+      >
+        <span>
+          <span style={{ color: color.fg, fontWeight: 600 }}>{windowLabel}</span>
+          {!isWindowAllTime && allTimeStats && (
+            <span style={{ marginLeft: 8, color: color.fgMuted }}>· vs. all-time below</span>
+          )}
+        </span>
+        {stats.needsAttention > 0 && (
+          <span style={{ color: color.amber, fontWeight: 600 }}>
+            {stats.needsAttention} need attention
+          </span>
+        )}
+      </header>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+          gap: 0,
+          borderTop: `1px solid ${color.lineSoft}`,
+          paddingTop: 12,
+        }}
+      >
+        {tiles.map((tile, idx) => {
+          const windowValue = (stats[tile.key] as number | undefined) ?? 0;
+          const allTimeValue = allTimeStats
+            ? ((allTimeStats[tile.key] as number | undefined) ?? 0)
+            : null;
+          return (
+            <div
+              key={tile.key}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                paddingLeft: idx === 0 ? 0 : 16,
+                paddingRight: idx === tiles.length - 1 ? 0 : 16,
+                borderRight: idx === tiles.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
+                }}
+              >
+                {tile.label}
+              </span>
+              <span
+                style={{
+                  fontFamily: font.display,
+                  fontSize: 30,
+                  lineHeight: 1.05,
+                  fontWeight: 600,
+                  letterSpacing: '-0.02em',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: tile.accent,
+                }}
+              >
+                {windowValue}
+              </span>
+              {!isWindowAllTime && allTimeValue !== null && (
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    color: color.fgMuted,
+                    fontVariantNumeric: 'tabular-nums',
+                    marginTop: 2,
+                  }}
+                  title={`${allTimeValue} ${tile.label.toLowerCase()} all time`}
+                >
+                  / {allTimeValue} all time
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-function Sep() {
-  return <span aria-hidden="true">·</span>;
-}
+// ── Filter toolbar (D56 + B8 + B9 + B10 + B11 + B14) ─────────────────
 
-// ── Source chips (D56, partial) ───────────────────────────────────────
+type GroupMode = 'none' | 'sender';
 
 const SOURCE_CHIPS: ReadonlyArray<{ value: ActivitySourceFilterWire; label: string }> = [
   { value: 'all', label: 'All' },
@@ -315,171 +413,223 @@ const SOURCE_CHIPS: ReadonlyArray<{ value: ActivitySourceFilterWire; label: stri
   { value: 'manual', label: 'Manual' },
 ];
 
-function SourceChips({
-  active,
-  onSelect,
-}: {
-  active: ActivitySourceFilterWire;
-  onSelect: (next: ActivitySourceFilterWire) => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="Filter by source"
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
-    >
-      {SOURCE_CHIPS.map((chip) => (
-        <Chip
-          key={chip.value}
-          label={chip.label}
-          isActive={active === chip.value}
-          onClick={() => onSelect(chip.value)}
-        />
-      ))}
-    </div>
-  );
-}
-
-// ── Verb chips (B8) ───────────────────────────────────────────────────
-
-const VERB_CHIPS: ReadonlyArray<{ value: ActivityVerbFilterWire; label: string }> = [
-  { value: 'archive', label: 'Archived' },
-  { value: 'delete', label: 'Deleted' },
-  { value: 'unsubscribe', label: 'Unsubscribed' },
-  { value: 'later', label: 'Later' },
-  { value: 'keep', label: 'Kept' },
-  { value: 'followup-dismiss', label: 'Followups' },
+/**
+ * Semantic verb palette — each verb carries its own accent so the row
+ * left-edge dot + the matching filter chip read at a glance:
+ *   archive  → neutral fgSoft (no signal, baseline housekeeping)
+ *   delete   → amber          (destructive)
+ *   unsub    → primary green  (brand + emancipation)
+ *   later    → violet         (parking)
+ *   keep     → emerald        (affirmative)
+ *   followup → fgMuted        (administrative)
+ */
+const VERB_CHIPS: ReadonlyArray<{
+  value: ActivityVerbFilterWire;
+  label: string;
+  dot: string;
+}> = [
+  { value: 'archive', label: 'Archived', dot: color.fgSoft },
+  { value: 'delete', label: 'Deleted', dot: color.amber },
+  { value: 'unsubscribe', label: 'Unsubscribed', dot: color.primary },
+  { value: 'later', label: 'Later', dot: '#7C3AED' },
+  { value: 'keep', label: 'Kept', dot: color.emerald },
+  { value: 'followup-dismiss', label: 'Followups', dot: color.fgMuted },
 ];
-
-function VerbChips({
-  active,
-  onChange,
-}: {
-  active: readonly ActivityVerbFilterWire[];
-  onChange: (next: readonly ActivityVerbFilterWire[]) => void;
-}) {
-  const activeSet = useMemo(() => new Set(active), [active]);
-  const toggle = (verb: ActivityVerbFilterWire) => {
-    const next = new Set(activeSet);
-    if (next.has(verb)) next.delete(verb);
-    else next.add(verb);
-    onChange([...next]);
-  };
-  return (
-    <div
-      role="group"
-      aria-label="Filter by verb"
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}
-    >
-      <span
-        style={{
-          fontSize: 11,
-          fontFamily: font.mono,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          color: color.fgMuted,
-          marginRight: 4,
-        }}
-      >
-        Verb:
-      </span>
-      {VERB_CHIPS.map((chip) => (
-        <Chip
-          key={chip.value}
-          label={chip.label}
-          isActive={activeSet.has(chip.value)}
-          onClick={() => toggle(chip.value)}
-          tone="muted"
-        />
-      ))}
-      {active.length > 0 && (
-        <button
-          type="button"
-          onClick={() => onChange([])}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: color.fgMuted,
-            fontFamily: font.mono,
-            fontSize: 11,
-            cursor: 'pointer',
-            marginLeft: 4,
-          }}
-        >
-          clear
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Window + date range (D55 + B10) ───────────────────────────────────
 
 const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
-  { value: '7d', label: 'Last 7 days' },
-  { value: '30d', label: 'Last 30 days' },
-  { value: '90d', label: 'Last 90 days' },
-  { value: 'all', label: 'All time' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: '90d', label: '90d' },
+  { value: 'all', label: 'All' },
 ];
 
-function WindowAndDateRow({
+/**
+ * Single composed filter toolbar — replaces 4 stacked chip rows.
+ *
+ *   Band 1 (filter):  SOURCE  │  VERB
+ *   Band 2 (tools):   RANGE   │  SEARCH                  GROUP   EXPORT
+ *
+ * Vertical `Divider` carries the "these chips belong to one filter
+ * group" signal — replaces the small-caps eyebrow labels that
+ * previously cluttered the layout.
+ */
+function FilterToolbar({
+  source,
+  onSource,
+  verbs,
+  onVerbs,
   window,
   dateFrom,
   dateTo,
   onWindow,
   onRange,
+  senderQuery,
+  onSenderQuery,
+  groupMode,
+  onGroupMode,
+  rows,
+  filters,
 }: {
+  source: ActivitySourceFilterWire;
+  onSource: (next: ActivitySourceFilterWire) => void;
+  verbs: readonly ActivityVerbFilterWire[];
+  onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
   window: ActivityWindowWire;
   dateFrom: string | null;
   dateTo: string | null;
   onWindow: (next: ActivityWindowWire) => void;
   onRange: (from: string | null, to: string | null) => void;
+  senderQuery: string;
+  onSenderQuery: (next: string) => void;
+  groupMode: GroupMode;
+  onGroupMode: (next: GroupMode) => void;
+  rows: readonly ActivityRowWire[];
+  filters: ActivityFilters;
 }) {
+  const verbSet = useMemo(() => new Set(verbs), [verbs]);
+  const toggleVerb = (verb: ActivityVerbFilterWire) => {
+    const next = new Set(verbSet);
+    if (next.has(verb)) next.delete(verb);
+    else next.add(verb);
+    onVerbs([...next]);
+  };
   const isCustomRange = dateFrom !== null || dateTo !== null;
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-      {WINDOWS.map((opt) => (
-        <Chip
-          key={opt.value}
-          label={opt.label}
-          isActive={!isCustomRange && window === opt.value}
-          onClick={() => onWindow(opt.value)}
-          tone="muted"
-        />
-      ))}
-      <span
-        aria-hidden="true"
-        style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}
+    <div
+      role="region"
+      aria-label="Filters"
+      style={{
+        border: `1px solid ${color.line}`,
+        borderRadius: 12,
+        background: color.card,
+        padding: '10px 12px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      {/* Band 1 — SOURCE │ VERB */}
+      <div
+        role="group"
+        aria-label="Filter by source and verb"
+        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
       >
-        or
-      </span>
-      <DateInput
-        label="From"
-        value={isoDateOnly(dateFrom)}
-        onChange={(v) => onRange(v ? new Date(`${v}T00:00:00Z`).toISOString() : null, dateTo)}
-      />
-      <DateInput
-        label="To"
-        value={isoDateOnly(dateTo)}
-        onChange={(v) => onRange(dateFrom, v ? new Date(`${v}T00:00:00Z`).toISOString() : null)}
-      />
-      {isCustomRange && (
-        <button
-          type="button"
-          onClick={() => onRange(null, null)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: color.fgMuted,
-            fontFamily: font.mono,
-            fontSize: 11,
-            cursor: 'pointer',
-          }}
-        >
-          clear range
-        </button>
-      )}
+        {SOURCE_CHIPS.map((chip) => (
+          <Chip
+            key={chip.value}
+            label={chip.label}
+            isActive={source === chip.value}
+            onClick={() => onSource(chip.value)}
+          />
+        ))}
+        <Divider />
+        {VERB_CHIPS.map((chip) => (
+          <Chip
+            key={chip.value}
+            label={chip.label}
+            isActive={verbSet.has(chip.value)}
+            onClick={() => toggleVerb(chip.value)}
+            tone="muted"
+            dot={chip.dot}
+          />
+        ))}
+        {verbs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => onVerbs([])}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 11,
+              letterSpacing: '0.04em',
+              cursor: 'pointer',
+              padding: '4px 4px',
+            }}
+          >
+            clear
+          </button>
+        )}
+      </div>
+
+      {/* Band 2 — RANGE │ SEARCH                       GROUP   EXPORT */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 8,
+          paddingTop: 8,
+          borderTop: `1px solid ${color.lineSoft}`,
+        }}
+      >
+        {WINDOWS.map((opt) => (
+          <Chip
+            key={opt.value}
+            label={opt.label}
+            isActive={!isCustomRange && window === opt.value}
+            onClick={() => onWindow(opt.value)}
+            tone="muted"
+            compact
+          />
+        ))}
+        <DateInput
+          label="From"
+          value={isoDateOnly(dateFrom)}
+          onChange={(v) => onRange(v ? new Date(`${v}T00:00:00Z`).toISOString() : null, dateTo)}
+        />
+        <DateInput
+          label="To"
+          value={isoDateOnly(dateTo)}
+          onChange={(v) => onRange(dateFrom, v ? new Date(`${v}T00:00:00Z`).toISOString() : null)}
+        />
+        {isCustomRange && (
+          <button
+            type="button"
+            onClick={() => onRange(null, null)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 11,
+              cursor: 'pointer',
+              padding: '4px 4px',
+            }}
+          >
+            clear range
+          </button>
+        )}
+        <Divider />
+        <SenderSearchInput value={senderQuery} onChange={onSenderQuery} />
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <Chip
+            label={groupMode === 'sender' ? 'Grouped' : 'Group'}
+            isActive={groupMode === 'sender'}
+            onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
+            tone="muted"
+            compact
+          />
+          <ExportCsvButton rows={rows} filters={filters} />
+        </div>
+      </div>
     </div>
+  );
+}
+
+function Divider() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-block',
+        width: 1,
+        height: 16,
+        background: color.line,
+        margin: '0 4px',
+      }}
+    />
   );
 }
 
@@ -493,13 +643,23 @@ function DateInput({
   onChange: (next: string) => void;
 }) {
   return (
-    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+    <label
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '2px 10px 2px 10px',
+        border: `1px solid ${color.lineSoft}`,
+        borderRadius: 999,
+        background: color.bg,
+      }}
+    >
       <span
         style={{
-          fontSize: 11,
+          fontSize: 10,
           fontFamily: font.mono,
           textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          letterSpacing: '0.12em',
           color: color.fgMuted,
         }}
       >
@@ -511,55 +671,15 @@ function DateInput({
         onChange={(e) => onChange(e.target.value)}
         style={{
           fontSize: 12,
-          fontFamily: font.sans,
-          padding: '3px 6px',
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 6,
-          background: color.card,
+          fontFamily: font.mono,
+          padding: '2px 0',
+          border: 'none',
+          background: 'transparent',
           color: color.fg,
+          outline: 'none',
         }}
       />
     </label>
-  );
-}
-
-// ── Tools row: sender search + group toggle + CSV (B9 + B11 + B14) ────
-
-type GroupMode = 'none' | 'sender';
-
-function ToolsRow({
-  senderQuery,
-  onSenderQuery,
-  groupMode,
-  onGroupMode,
-  rows,
-  filters,
-}: {
-  senderQuery: string;
-  onSenderQuery: (next: string) => void;
-  groupMode: GroupMode;
-  onGroupMode: (next: GroupMode) => void;
-  rows: readonly ActivityRowWire[];
-  filters: ActivityFilters;
-}) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 8,
-        alignItems: 'center',
-      }}
-    >
-      <SenderSearchInput value={senderQuery} onChange={onSenderQuery} />
-      <Chip
-        label={groupMode === 'sender' ? 'Grouped' : 'Group by sender'}
-        isActive={groupMode === 'sender'}
-        onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
-        tone="muted"
-      />
-      <ExportCsvButton rows={rows} filters={filters} />
-    </div>
   );
 }
 
@@ -592,23 +712,42 @@ function SenderSearchInput({
     return () => clearTimeout(handle);
   }, [draft, onChange]);
   return (
-    <input
-      type="search"
-      placeholder="Search sender…"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      aria-label="Search sender"
+    <label
       style={{
-        fontSize: 12.5,
-        fontFamily: font.sans,
-        padding: '6px 10px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '4px 10px 4px 10px',
         border: `1px solid ${color.lineSoft}`,
         borderRadius: 999,
-        background: color.card,
-        color: color.fg,
-        minWidth: 200,
+        background: color.bg,
+        minWidth: 220,
       }}
-    />
+    >
+      <span
+        aria-hidden="true"
+        style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}
+      >
+        ⌕
+      </span>
+      <input
+        type="search"
+        placeholder="Search sender…"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        aria-label="Search sender"
+        style={{
+          fontSize: 12.5,
+          fontFamily: font.sans,
+          padding: '2px 0',
+          border: 'none',
+          background: 'transparent',
+          color: color.fg,
+          outline: 'none',
+          flex: 1,
+        }}
+      />
+    </label>
   );
 }
 
@@ -704,48 +843,95 @@ function BulkActionBar({
       role="region"
       aria-label="Bulk actions"
       style={{
+        position: 'sticky',
+        top: 8,
+        zIndex: 5,
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 12,
-        padding: '10px 14px',
-        background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: 10,
+        gap: 14,
+        padding: '12px 16px',
+        background: color.fg,
+        color: '#FFFFFF',
+        border: `1px solid ${color.fg}`,
+        borderRadius: 12,
+        boxShadow: shadow.lift,
       }}
     >
-      <span style={{ fontSize: 13, fontWeight: 600, color: color.fg }}>
-        {selectedIds.size} selected
+      <span
+        aria-hidden="true"
+        style={{
+          fontFamily: font.mono,
+          fontSize: 10,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          color: 'rgba(255,255,255,0.55)',
+        }}
+      >
+        Selection
+      </span>
+      <span
+        style={{
+          fontSize: 13.5,
+          fontWeight: 600,
+          color: '#FFFFFF',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
         {revertableCount < selectedIds.size && (
-          <span style={{ fontWeight: 400, color: color.fgMuted, marginLeft: 6 }}>
-            ({revertableCount} undoable)
+          <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.65)', marginLeft: 8 }}>
+            · {revertableCount} undoable
           </span>
         )}
       </span>
-      <Button
-        tone="primary"
-        size="sm"
+      <span style={{ flex: 1 }} />
+      <button
+        type="button"
         onClick={runBulkUndo}
         disabled={revertableCount === 0 || bulkBusy}
+        style={{
+          fontFamily: font.sans,
+          fontSize: 13,
+          fontWeight: 600,
+          color: color.fg,
+          background: '#FFFFFF',
+          border: 'none',
+          padding: '8px 16px',
+          borderRadius: 999,
+          cursor: revertableCount === 0 || bulkBusy ? 'not-allowed' : 'pointer',
+          opacity: revertableCount === 0 || bulkBusy ? 0.55 : 1,
+        }}
       >
         {bulkBusy ? 'Undoing…' : `Undo ${revertableCount}`}
-      </Button>
+      </button>
       <button
         type="button"
         onClick={onClear}
         style={{
           background: 'transparent',
           border: 'none',
-          color: color.fgMuted,
+          color: 'rgba(255,255,255,0.7)',
           fontFamily: font.mono,
           fontSize: 11,
+          letterSpacing: '0.04em',
           cursor: 'pointer',
         }}
       >
-        clear selection
+        clear
       </button>
       {bulkError && (
-        <span style={{ fontSize: 12, color: color.amber, fontFamily: font.mono }}>{bulkError}</span>
+        <span
+          style={{
+            flexBasis: '100%',
+            fontSize: 12,
+            color: '#F4B860',
+            fontFamily: font.mono,
+            marginTop: 2,
+          }}
+        >
+          {bulkError}
+        </span>
       )}
     </div>
   );
@@ -910,6 +1096,17 @@ function GroupedList({
 
 // ── Row ───────────────────────────────────────────────────────────────
 
+/** Semantic verb → accent colour. Mirrors the FilterToolbar palette so the
+ *  left-edge dot reads the same in chip and row. */
+const VERB_DOT: Record<ActivityActionWire, string> = {
+  archive: color.fgSoft,
+  delete: color.amber,
+  unsubscribe: color.primary,
+  later: '#7C3AED',
+  keep: color.emerald,
+  'followup-dismiss': color.fgMuted,
+};
+
 function ActivityRow({
   row,
   isSelected,
@@ -927,32 +1124,55 @@ function ActivityRow({
   const verbLabel = ACTION_LABEL[row.action];
   const sourceLabel = SOURCE_LABEL[row.source];
   const relative = relativeTime(row.occurredAt);
+  const dotColor = VERB_DOT[row.action];
+  const [hovered, setHovered] = useState(false);
   return (
     <li
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         display: 'grid',
-        // checkbox · avatar · sender · verb+count · pill · undo · open · time
+        // dot · checkbox · avatar · sender · verb+meta · actions · time
         gridTemplateColumns:
           variant === 'grouped'
-            ? 'auto auto minmax(140px, 1fr) auto auto auto auto'
-            : 'auto auto minmax(180px, 1.2fr) minmax(140px, 1fr) auto auto auto auto',
+            ? '4px auto auto minmax(140px, 1fr) auto auto auto'
+            : '4px auto auto minmax(200px, 1.4fr) minmax(160px, 1fr) auto auto',
         alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        background: variant === 'grouped' ? color.paper : color.card,
+        columnGap: 14,
+        padding: '12px 16px 12px 0',
+        background:
+          variant === 'grouped'
+            ? hovered
+              ? color.mutedBg
+              : 'transparent'
+            : hovered
+              ? color.bg
+              : color.card,
         border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-        borderRadius: 8,
+        borderRadius: 10,
         fontFamily: font.sans,
+        transition: 'background 120ms ease',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {/* Verb-accent left rail */}
+      <span
+        aria-hidden="true"
+        style={{
+          alignSelf: 'stretch',
+          background: dotColor,
+          width: 4,
+        }}
+      />
       <input
         type="checkbox"
         checked={isSelected}
         onChange={onToggleSelect}
         aria-label={`Select activity row from ${senderName}`}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', marginLeft: 4, accentColor: color.fg }}
       />
-      <Avatar size={28} name={senderName} domain={senderEmail} />
+      <Avatar size={32} name={senderName} domain={senderEmail} />
       {variant === 'flat' ? (
         <div style={{ minWidth: 0 }}>
           <div
@@ -963,35 +1183,85 @@ function ActivityRow({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              letterSpacing: '-0.005em',
             }}
           >
             {senderName}
           </div>
           {senderDomain && (
-            <div style={{ fontSize: 12, color: color.fgMuted, fontFamily: font.mono }}>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: color.fgMuted,
+                fontFamily: font.mono,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {senderDomain}
             </div>
           )}
         </div>
       ) : null}
-      <div style={{ fontSize: 13, color: color.fg }}>
-        <strong style={{ fontWeight: 600 }}>{verbLabel}</strong>
-        {row.affectedCount > 0 && (
-          <span style={{ color: color.fgMuted }}>
-            {' '}
-            · {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-          </span>
-        )}
-      </div>
-      <SourcePill label={sourceLabel} />
-      <UndoCell row={row} />
-      <OpenInGmailLink row={row} />
       <div
         style={{
-          fontSize: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: dotColor,
+              letterSpacing: '-0.005em',
+            }}
+          >
+            {verbLabel}
+          </span>
+          {row.affectedCount > 0 && (
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 12,
+                color: color.fgMuted,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+        <span
+          style={{
+            fontSize: 10,
+            fontFamily: font.mono,
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: color.fgMuted,
+          }}
+        >
+          via {sourceLabel}
+        </span>
+      </div>
+      <RowActions row={row} />
+      <div
+        style={{
+          fontSize: 11.5,
           color: color.fgMuted,
           fontFamily: font.mono,
           whiteSpace: 'nowrap',
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {relative}
@@ -1000,22 +1270,28 @@ function ActivityRow({
   );
 }
 
-function SourcePill({ label }: { label: string }) {
+/**
+ * Right-aligned action cluster — Undo + Open-in-Gmail rendered as a
+ * single horizontal group with a 1px hairline between them. Replaces
+ * the three separate floating pills the tracer shipped with.
+ */
+function RowActions({ row }: { row: ActivityRowWire }) {
   return (
-    <span
+    <div
       style={{
-        fontSize: 11,
-        fontFamily: font.mono,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        color: color.fgMuted,
-        padding: '2px 8px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0,
         border: `1px solid ${color.lineSoft}`,
-        borderRadius: 6,
+        borderRadius: 999,
+        background: color.bg,
+        padding: '0 2px',
+        overflow: 'hidden',
       }}
     >
-      {label}
-    </span>
+      <UndoCell row={row} />
+      <OpenInGmailLink row={row} />
+    </div>
   );
 }
 
@@ -1032,25 +1308,37 @@ function OpenInGmailLink({ row }: { row: ActivityRowWire }) {
   if (!row.sender) return <span aria-hidden="true" />;
   const href = `https://mail.google.com/mail/u/0/#search/from:${encodeURIComponent(row.sender.email)}`;
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`Open ${row.sender.displayName} in Gmail`}
-      style={{
-        fontSize: 11,
-        fontFamily: font.mono,
-        textTransform: 'uppercase',
-        letterSpacing: '0.08em',
-        color: color.fgMuted,
-        textDecoration: 'none',
-        padding: '2px 8px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 6,
-      }}
-    >
-      ↗ GMAIL
-    </a>
+    <>
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-block',
+          width: 1,
+          alignSelf: 'stretch',
+          background: color.line,
+        }}
+      />
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`Open ${row.sender.displayName} in Gmail`}
+        style={{
+          fontSize: 11,
+          fontFamily: font.mono,
+          textTransform: 'uppercase',
+          letterSpacing: '0.10em',
+          color: color.fgMuted,
+          textDecoration: 'none',
+          padding: '6px 10px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        Gmail <span aria-hidden="true">↗</span>
+      </a>
+    </>
   );
 }
 
@@ -1074,6 +1362,19 @@ function UndoCell({ row }: { row: ActivityRowWire }) {
   // in-flight revert — gate the visual pending state on `variables`.
   const isPendingHere = revert.isPending && revert.variables === lastToken(undo);
 
+  const baseStyle: CSSProperties = {
+    fontSize: 12,
+    fontFamily: font.sans,
+    fontWeight: 500,
+    padding: '6px 12px',
+    background: 'transparent',
+    border: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    cursor: 'pointer',
+  };
+
   if (undo.kind === 'available') {
     const failed = revert.isError && revert.variables === undo.token;
     return (
@@ -1087,35 +1388,64 @@ function UndoCell({ row }: { row: ActivityRowWire }) {
             : 'Revert this action.'
         }
         style={{
-          fontSize: 12.5,
+          ...baseStyle,
           color: failed ? color.amber : color.primary,
-          background: 'transparent',
-          border: 'none',
-          padding: 0,
           cursor: isPendingHere ? 'wait' : 'pointer',
-          fontWeight: failed ? 600 : 400,
+          fontWeight: failed ? 600 : 500,
         }}
       >
-        {isPendingHere ? 'Undoing…' : failed ? 'Try again →' : 'Undo →'}
+        {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
+        <span aria-hidden="true">↺</span>
       </button>
     );
   }
   if (undo.kind === 'executed') {
     return (
-      <span style={{ fontSize: 11, color: color.fgMuted, fontFamily: font.mono }}>UNDONE</span>
+      <span
+        style={{
+          ...baseStyle,
+          color: color.fgMuted,
+          fontFamily: font.mono,
+          fontSize: 10.5,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          cursor: 'default',
+        }}
+      >
+        Undone
+      </span>
     );
   }
   if (undo.kind === 'expired') {
     return (
       <span
         title={`Undo window closed on ${formatExpiry(undo.expiredAt)}.`}
-        style={{ fontSize: 11, color: color.fgMuted, fontFamily: font.mono }}
+        style={{
+          ...baseStyle,
+          color: color.fgMuted,
+          fontFamily: font.mono,
+          fontSize: 10.5,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          cursor: 'help',
+        }}
       >
-        UNDO EXPIRED
+        Expired
       </span>
     );
   }
-  return <span aria-hidden="true" />;
+  return (
+    <span
+      style={{
+        ...baseStyle,
+        color: 'transparent',
+        cursor: 'default',
+      }}
+      aria-hidden="true"
+    >
+      —
+    </span>
+  );
 }
 
 /** Helper for the row-pending guard — extract the token from an undo state. */
@@ -1182,11 +1512,18 @@ function Chip({
   isActive,
   onClick,
   tone = 'accent',
+  dot,
+  compact = false,
 }: {
   label: string;
   isActive: boolean;
   onClick: () => void;
   tone?: 'accent' | 'muted';
+  /** Optional leading colour-dot — used by the verb chips to surface the
+   *  semantic per-verb palette in both the chip and the matching row. */
+  dot?: string;
+  /** Tighter padding + size for dense toolbar bands. */
+  compact?: boolean;
 }) {
   const activeBg = tone === 'accent' ? color.primary : color.fg;
   return (
@@ -1195,16 +1532,34 @@ function Chip({
       onClick={onClick}
       aria-pressed={isActive}
       style={{
-        padding: '4px 12px',
-        fontSize: 12,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: dot ? 6 : 0,
+        padding: compact ? '3px 10px' : '4px 12px',
+        fontSize: compact ? 11.5 : 12,
         fontFamily: font.sans,
         border: `1px solid ${isActive ? activeBg : color.lineSoft}`,
         background: isActive ? activeBg : 'transparent',
         color: isActive ? '#FFFFFF' : color.fg,
         borderRadius: 999,
         cursor: 'pointer',
+        transition: 'background 120ms ease, border-color 120ms ease',
       }}
     >
+      {dot && (
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-block',
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: isActive ? '#FFFFFF' : dot,
+            // Faint ring so the dot reads on hover even when fill matches bg
+            boxShadow: isActive ? 'none' : `0 0 0 1px ${dot}33`,
+          }}
+        />
+      )}
       {label}
     </button>
   );

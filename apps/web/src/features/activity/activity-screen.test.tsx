@@ -154,9 +154,18 @@ describe('ActivityScreen — populated', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/12 archived/i)).toBeInTheDocument());
-    expect(screen.getByText(/4 unsubscribed/i)).toBeInTheDocument();
-    expect(screen.getByText(/3 kept/i)).toBeInTheDocument();
+    // The redesigned metrics block renders one tile per verb. Each
+    // tile pairs a label (Archived / Unsubscribed / Kept …) with the
+    // window count displayed as a large display-font numeral. Labels
+    // also appear on the verb-filter chip row, so `getAllByText` is
+    // intentional — we assert the labels render somewhere.
+    await waitFor(() => expect(screen.getAllByText(/^Archived$/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/^Unsubscribed$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Kept$/).length).toBeGreaterThan(0);
+    // Counts render as standalone numerals — assert the trio.
+    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('4').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
   });
 
   it('D55 defaults to window=30d when no ?window= present', async () => {
@@ -235,9 +244,9 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /undo →/i })).toBeInTheDocument(),
-    );
+    // The redesigned UndoCell renders "Undo" + a `↺` arrow span; the
+    // accessible name is "Undo ↺" — match the verb only.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^undo/i })).toBeInTheDocument());
   });
 
   it('renders UNDONE pill for `executed`', async () => {
@@ -262,7 +271,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/^UNDONE$/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {
@@ -287,7 +296,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/UNDO EXPIRED/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^Expired$/i)).toBeInTheDocument());
   });
 
   it('renders nothing for `unavailable`', async () => {
@@ -310,9 +319,9 @@ describe('ActivityScreen — D58 undo affordances', () => {
     renderScreen();
     await waitFor(() => expect(screen.getByText(/Sender One/)).toBeInTheDocument());
     // No undo-cell content for `unavailable` — no button, no pill.
-    expect(screen.queryByRole('button', { name: /undo →/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/^UNDONE$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^UNDO EXPIRED$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^undo/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Undone$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Expired$/i)).not.toBeInTheDocument();
   });
 });
 
@@ -465,11 +474,11 @@ describe('ActivityScreen — B16 all-time totals', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/5 archived/)).toBeInTheDocument());
-    expect(screen.getByText(/42 archived/)).toBeInTheDocument();
-    // The all-time stats line starts with "all time:" — match via the
-    // colon to disambiguate from the "All time" window chip.
-    expect(screen.getByText(/^all time:$/i)).toBeInTheDocument();
+    // The redesigned metrics block shows each verb tile with a window
+    // count above a "/ N all time" footnote. The window count 5 + the
+    // all-time count 42 both render; the footnote reads "/ 42 all time".
+    await waitFor(() => expect(screen.getByText(/\/ 42 all time/)).toBeInTheDocument());
+    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
   });
 });
 
@@ -497,7 +506,8 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
     renderScreen();
     const checkbox = await screen.findByRole('checkbox', { name: /select activity row/i });
     await userEvent.click(checkbox);
-    expect(screen.getByText(/1 selected/)).toBeInTheDocument();
+    // BulkActionBar header: "Selection 1 row" + accent "Undo 1" CTA.
+    expect(screen.getByText(/^1 row$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /undo 1/i })).toBeInTheDocument();
   });
 });
@@ -512,7 +522,9 @@ describe('ActivityScreen — B11 group by sender', () => {
       },
     ]);
     renderScreen();
-    const groupChip = await screen.findByRole('button', { name: /group by sender/i });
+    // The toolbar "Group" chip toggles between "Group" (off) and
+    // "Grouped" (on). Match the off-state label.
+    const groupChip = await screen.findByRole('button', { name: /^Group$/ });
     await userEvent.click(groupChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('group=sender'));
   });
