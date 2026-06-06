@@ -8,10 +8,14 @@ import {
 import { Queue } from 'bullmq';
 import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
+// `senderPolicies` is imported for READ-ONLY queries (Protect/VIP guards
+// on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
+// are explicitly allowed.
 import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import type { LabelActionSelector } from '@declutrmail/db';
-import { LABEL_ACTION_JOB, labelActionJobOptions } from '@declutrmail/workers';
+import { LABEL_ACTION_JOB, labelActionJobOptions, OutboxPublisher } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
+import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrmail/events';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -46,15 +50,27 @@ export const ACTION_QUEUE_TOKEN = 'ACTION_QUEUE';
  *
  * Privacy (D7 / D228): only ids + the sha256 sender_key are read/stored.
  */
+/** NestJS DI token for the OutboxPublisher singleton (D204). */
+export const OUTBOX_PUBLISHER_TOKEN = 'OUTBOX_PUBLISHER';
+
 @Injectable()
 export class ActionsService {
+  private readonly outbox: OutboxPublisher;
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     // `Queue | null` — fail-open when REDIS_URL is unset (matches
     // TriageModule). Only the enqueue paths need it; `getStatus` works
     // without Redis so the FE can still poll.
     @Inject(ACTION_QUEUE_TOKEN) private readonly queue: Queue<LabelActionJobData> | null,
-  ) {}
+    // OutboxPublisher (D13, D204) — optional ctor arg so the existing
+    // `new ActionsService(db, queue)` test wiring keeps working; in
+    // production the Nest provider supplies a singleton. When omitted,
+    // we fall back to a fresh instance — the publisher is stateless
+    // (gates + insert only), so this is safe for unit tests.
+    outbox?: OutboxPublisher,
+  ) {
+    this.outbox = outbox ?? new OutboxPublisher();
+  }
 
   /**
    * Resolve + persist + enqueue a forward archive action. `idempotencyKey`
@@ -608,11 +624,25 @@ export class ActionsService {
     }
 
     return await this.db.transaction(async (tx) => {
-      // Upsert the policy. policy_type=unsubscribe is the pending state;
-      // re-clicking on a sender already pending is a no-op upsert. We do
-      // NOT touch is_protected / is_vip / protection_reason so a Protect
-      // override stays preserved (the user can be both "Protect to avoid
-      // bulk" + "Unsub pending" until the brand honours the unsub).
+      // D204 boundary fix (2026-06-06). `sender_policies` is owned by
+      // the senders feature, so ActionsService MUST NOT write it
+      // directly. We emit an outbox event inside this same transaction;
+      // a senders-owned consumer (SendersPolicyAttributionConsumer +
+      // OutboxDispatcherWorker, wired in apps/api/src/worker.ts) reads
+      // the stream and upserts sender_policies.
+      //
+      // **DUAL-WRITE TRANSITION** — the direct sender_policies upsert
+      // below stays for one release so the "Unsub queued" pill on
+      // Sender Detail does not regress while the consumer pipeline is
+      // wired end-to-end. Once the dispatcher confirms it's running in
+      // prod (Cloud Logging shows `outbox.dispatch.event_dispatched`
+      // for the topic + `sender_policies` rows land within a couple of
+      // seconds of the audit row), the direct write below is removed
+      // in a follow-up commit. Tracked in FOUNDER-FOLLOWUPS 2026-06-06.
+      //
+      // Architecture-guardian: the cross-feature signal IS the event;
+      // the direct write below is a temporary backstop, not the
+      // permanent contract.
       await tx
         .insert(senderPolicies)
         .values({
@@ -675,6 +705,23 @@ export class ActionsService {
           idempotencyKey: namespacedKey,
         })
         .onConflictDoNothing({ target: actionJobs.idempotencyKey });
+
+      // D204 boundary fix — emit the cross-feature signal. The senders-
+      // owned consumer reads this and upserts sender_policies. Inside
+      // the same tx as the audit row so the publish + audit are atomic
+      // (a tx rollback rolls back both — no orphaned policy projection,
+      // no audit row without a policy follow-up).
+      await this.outbox.publish(tx, {
+        topic: TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+        aggregateId: inserted.id,
+        payload: {
+          mailboxAccountId,
+          senderKey,
+          activityLogId: inserted.id,
+          recordedAt: inserted.occurredAt.toISOString(),
+        },
+        schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
+      });
 
       return {
         senderId,

@@ -24,6 +24,8 @@ import {
   InvalidGrantError,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
+  OUTBOX_NOTIFY_CHANNEL,
+  OutboxDispatcherWorker,
   OutboxPublisher,
   RateLimiter,
   SCORE_JOB,
@@ -65,6 +67,7 @@ import { GmailClientService } from './gmail/gmail-client.service.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
+import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
 
 /**
  * Worker process composition root (D157).
@@ -941,6 +944,50 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  /**
+   * OutboxDispatcherWorker (D13, D204) — the single consumer pipeline
+   * for every cross-feature event the API publishes (LabelActionWorker's
+   * action.label_action_applied, ActionsService's actions.unsubscribe
+   * _intent_recorded, future topics). Started here so an `outbox_events`
+   * row written by any publisher lands in the senders / activity /
+   * autopilot projection within seconds.
+   *
+   * Wake-up path:
+   *   - LISTEN/NOTIFY via a dedicated pg connection (`outboxListenPg`)
+   *     so the dispatcher wakes on commit instead of polling.
+   *   - Polling fallback every 5s catches any missed NOTIFY (worker
+   *     restart, network blip, Postgres failover).
+   *
+   * The consumer router (`buildOutboxConsumer`) dispatches by topic.
+   * Each handler is idempotent on the event id (at-least-once delivery
+   * is the dispatcher's guarantee; at-most-once is the consumer's
+   * responsibility).
+   */
+  const outboxListenPg = postgres(process.env.DATABASE_URL ?? '', { max: 1 });
+  const outboxDispatcher = new OutboxDispatcherWorker({
+    db,
+    consumer: buildOutboxConsumer(db),
+    observer: {
+      captureBackgroundFailure: (err, ctx) =>
+        observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), ctx),
+    },
+    listen: async (handler) => {
+      // Dedicated connection for the LISTEN — the dispatcher's own
+      // pg pool is shared with feature reads/writes. A LISTEN holds
+      // the connection for the worker's full lifetime; we don't want
+      // that to starve the pool.
+      await outboxListenPg.listen(OUTBOX_NOTIFY_CHANNEL, () => handler());
+      // Return the unsubscribe — the dispatcher calls this on shutdown.
+      return async () => {
+        await outboxListenPg.end({ timeout: 5 });
+      };
+    },
+  });
+  await outboxDispatcher.start();
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: 'outbox-dispatcher' }),
+  );
+
   // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
   // sweep, then drain BullMQ and release connections. Closing the
   // queue/connection while a sweep is mid-`getJob` would throw
@@ -963,6 +1010,9 @@ async function bootstrap(): Promise<void> {
       if (inFlight) {
         await inFlight;
       }
+      // Stop the outbox dispatcher first so a draining BullMQ Worker
+      // doesn't race a fresh dispatch tick that touched the same db.
+      await outboxDispatcher.stop();
       await bullWorker.close();
       await incrementalBullWorker.close();
       await briefSnapshotBullWorker.close();

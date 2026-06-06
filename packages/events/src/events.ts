@@ -273,6 +273,40 @@ export const MailboxDeletedPayloadSchema = z
 export type MailboxDeletedPayload = z.infer<typeof MailboxDeletedPayloadSchema>;
 
 // ──────────────────────────────────────────────────────────────────────
+// actions.unsubscribe_intent_recorded
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Emitted by ActionsService.recordUnsubscribeIntent inside the same
+ * transaction as the activity_log + action_jobs writes (D38; D204
+ * boundary fix 2026-06-06). Per D204 the senders feature owns
+ * `sender_policies` — ActionsService must NOT write that table
+ * directly. Instead this event ships sender identification + the
+ * captured intent timestamp; a senders-owned consumer
+ * (SendersPolicyAttributionWorker) projects the policy upsert.
+ *
+ * The activity_log row is the durable audit trail (FE renders from
+ * there); this event is the cross-feature signal.
+ *
+ * Privacy (D7, D228): metadata only — mailbox id + sender_key +
+ * activity_log id + ISO timestamp. No sender email, no subject, no
+ * snippet.
+ */
+export const ActionsUnsubscribeIntentRecordedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    senderKey: SenderKeySchema,
+    /** FE-facing audit-row id — handle for cross-feature joins. */
+    activityLogId: UuidSchema,
+    /** ISO-8601 — when the activity_log row's `occurred_at` landed. */
+    recordedAt: z.string().datetime(),
+  })
+  .strict();
+export type ActionsUnsubscribeIntentRecordedPayload = z.infer<
+  typeof ActionsUnsubscribeIntentRecordedPayloadSchema
+>;
+
+// ──────────────────────────────────────────────────────────────────────
 // Topic ↔ payload map — typed lookup for publishers + dispatcher
 // ──────────────────────────────────────────────────────────────────────
 
@@ -295,6 +329,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
+  [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
 } as const satisfies Record<EventTopic, z.ZodSchema>;
 
 /**
@@ -311,4 +346,5 @@ export type EventPayloadByTopic = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;
+  [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayload;
 };

@@ -16,6 +16,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
     "@declutrmail/db": "workspace:*",
+    "@declutrmail/events": "workspace:*",
     "@declutrmail/shared": "workspace:*",
     "@declutrmail/workers": "workspace:*",
     "@google-cloud/kms": "^4.5.0",
