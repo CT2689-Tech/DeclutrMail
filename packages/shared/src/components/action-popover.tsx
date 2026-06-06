@@ -43,17 +43,16 @@ const { color, font, radius, shadow } = tokens;
  * tone semantic separately — the registry already declares the tone,
  * the popover resolves it once.
  *
- * `danger` resolves to the new `#DC2626` red token added by ADR-0019.
- * Until the token migration lands the value is inlined; once
- * `color.danger` is in tokens.ts (Phase 1 BE foundation), this map
- * dereferences the token verbatim.
+ * `danger` resolves to `color.danger` (added Phase 0 of the D38
+ * prod-ready pass; FOUNDER-FOLLOWUPS 2026-06-05). Was inlined as
+ * `#DC2626` while the token was queued; now dereferences the token.
  */
 const TONE_TO_FG: Record<VerbTone, string> = {
   neutral: color.fg,
   dark: color.fg,
   amber: color.amber,
   primary: color.primary,
-  danger: '#DC2626',
+  danger: color.danger,
 };
 
 export interface ActionPopoverProps {

@@ -462,7 +462,7 @@ export function ConfirmActionModal({
               background: isDeleteVerb ? 'rgba(196,46,46,0.06)' : color.paper,
               border: `1px solid ${isDeleteVerb ? 'rgba(196,46,46,0.30)' : color.line}`,
               fontSize: 12,
-              color: isDeleteVerb ? '#A12525' : color.fgSoft,
+              color: isDeleteVerb ? color.danger : color.fgSoft,
               display: 'flex',
               alignItems: 'center',
               gap: 8,
@@ -637,11 +637,11 @@ export function ConfirmActionModal({
                         borderRadius: 999,
                         background: active
                           ? opt.value === 'delete'
-                            ? '#A12525'
+                            ? color.danger
                             : color.fg
                           : 'transparent',
                         color: active ? '#FFFFFF' : color.fgSoft,
-                        border: `1px solid ${active ? (opt.value === 'delete' ? '#A12525' : color.fg) : color.line}`,
+                        border: `1px solid ${active ? (opt.value === 'delete' ? color.danger : color.fg) : color.line}`,
                         cursor: 'pointer',
                         transition: 'background 120ms, color 120ms',
                       }}

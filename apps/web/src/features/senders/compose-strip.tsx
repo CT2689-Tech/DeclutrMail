@@ -340,9 +340,9 @@ function chipStyle({
   negated: boolean;
   withCheckbox?: boolean;
 }): React.CSSProperties {
-  const bg = active ? color.fg : negated ? 'rgba(161,37,37,0.06)' : color.card;
-  const fg = active ? color.card : negated ? '#A12525' : color.fgSoft;
-  const border = active ? color.fg : negated ? 'rgba(161,37,37,0.30)' : color.line;
+  const bg = active ? color.fg : negated ? color.dangerBg : color.card;
+  const fg = active ? color.card : negated ? color.danger : color.fgSoft;
+  const border = active ? color.fg : negated ? color.dangerBorder : color.line;
   return {
     display: 'inline-flex',
     alignItems: 'center',
