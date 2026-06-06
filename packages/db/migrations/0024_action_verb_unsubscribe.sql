@@ -1,0 +1,38 @@
+-- 0024_action_verb_unsubscribe.sql
+--
+-- Append `unsubscribe` to the `action_verb` pg_enum (D38 prod-ready
+-- pass + FOUNDER-FOLLOWUPS 2026-06-05 'DB-level Idempotency-Key dedup
+-- for unsubscribe-intent').
+--
+-- Today the unsubscribe-intent endpoint stores its audit row directly
+-- in `activity_log` and the FE-supplied Idempotency-Key has no DB-level
+-- dedup partner — a retried POST writes a duplicate `activity_log` row.
+-- Adding `'unsubscribe'` to `action_verb` lets `ActionsService.record-
+-- UnsubscribeIntent` store the intent as an `action_jobs` row (verb=
+-- 'unsubscribe', status='done', resolved_message_ids=[activityLogId]).
+-- The existing UNIQUE constraint on `action_jobs.idempotency_key`
+-- becomes the DB-level dedup partner; a replay reads the prior row by
+-- namespaced key + returns its cached activity_log_id.
+--
+-- The follow-up migrations 0025 + 0026 extend `undo_action_kind` and
+-- `activity_action` to recognize the new value — without those, a worker
+-- writing 'unsubscribe' into either downstream column would still fail
+-- the cast. We do those in separate migrations to match the
+-- 0019/0021 staging pattern (each enum extension is a tiny review unit).
+--
+-- Forward-only-friendly: existing consumers still recognize the
+-- previous values; the new value is additive and not used by any
+-- existing code path until ActionsService writes the unsubscribe row
+-- (a follow-up commit in this same PR).
+--
+-- Privacy (D7, D228): metadata only. `action_jobs` rows carry sender
+-- ids + idempotency keys, never message content. The unsubscribe
+-- pipeline (D9, D230) acts on RFC 8058 / mailto / manual — none of
+-- those touch message bodies.
+--
+-- The rollback companion drops + recreates the type without the new
+-- value; the cast back to enum FAILS if any row carries 'unsubscribe'
+-- — correct safety semantics (you cannot rollback if data depends on
+-- a removed value).
+
+ALTER TYPE "public"."action_verb" ADD VALUE IF NOT EXISTS 'unsubscribe';

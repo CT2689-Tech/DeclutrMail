@@ -67,15 +67,23 @@ import { undoJournal } from './undo-journal';
  * Gmail `messages.trash` (NOT `messages.delete` — Trash is the
  * 30-day recovery window the spec relies on).
  *
- * `keep` (policy-only) and `unsubscribe` (its own pipeline) never produce
- * an `action_jobs` row, so they are not here. `unarchive` is in the
- * Action Registry (ADR-0015) as a label-modify verb but is intentionally
- * NOT added to this enum yet: the worker writes the verb into
- * `undo_action_kind` + `activity_action`, which do not include
- * `unarchive`. Adding it is the restore-pipeline change (those two enums
- * + worker support) and has no producer at this stage.
+ * `keep` (policy-only) never produces an `action_jobs` row.
+ *
+ * `unsubscribe` was added in 2026-06-06 (migration 0024 per FOUNDER-
+ * FOLLOWUPS 2026-06-05 'DB-level Idempotency-Key dedup for unsubscribe
+ * -intent'). The verb does NOT enqueue a worker job — the row is
+ * persisted directly at status='done' with `resolved_message_ids =
+ * [activityLogId]`, so the unique `action_jobs_idempotency_key_uniq`
+ * constraint dedups a retried POST. The real unsub execution pipeline
+ * (D9, D230) reads the activity_log row, never the action_jobs row.
+ *
+ * `unarchive` is in the Action Registry (ADR-0015) as a label-modify
+ * verb but is intentionally NOT added to this enum yet: the worker
+ * writes the verb into `undo_action_kind` + `activity_action`, which do
+ * not include `unarchive`. Adding it is the restore-pipeline change
+ * (those two enums + worker support) and has no producer at this stage.
  */
-export const actionVerb = pgEnum('action_verb', ['archive', 'later', 'delete']);
+export const actionVerb = pgEnum('action_verb', ['archive', 'later', 'delete', 'unsubscribe']);
 
 /** Forward action vs. its reverse (undo). */
 export const actionDirection = pgEnum('action_direction', ['forward', 'reverse']);

@@ -755,6 +755,65 @@ describe('ActionsService', () => {
       expect(acts.every((a) => a.action === 'unsubscribe')).toBe(true);
     });
 
+    it('DB-level idempotency dedup — same key twice → ONE activity_log row + ONE cached action_jobs row (mig 0024)', async () => {
+      // FOUNDER-FOLLOWUPS 2026-06-05: a network-retried POST with the
+      // SAME Idempotency-Key MUST collapse to one audit row, returning
+      // the cached activity_log_id on the second call. Migration 0024
+      // adds 'unsubscribe' to action_verb so action_jobs.idempotency_key
+      // becomes the DB-level dedup partner.
+      const first = await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'shared-replay-key',
+      });
+      const second = await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'shared-replay-key',
+      });
+      expect(second.activityLogId).toBe(first.activityLogId);
+      expect(second.recordedAt).toBe(first.recordedAt);
+
+      // One audit row (NOT two — that's the dedup we're enforcing).
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(1);
+
+      // One cached action_jobs row, verb=unsubscribe, status=done.
+      const jobs = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'unsub:shared-replay-key'));
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]!.verb).toBe('unsubscribe');
+      expect(jobs[0]!.status).toBe('done');
+      // resolved_message_ids carries the cached activity_log id so the
+      // replay can project it back into the response shape.
+      expect(jobs[0]!.resolvedMessageIds).toEqual([first.activityLogId]);
+    });
+
+    it('namespaces the key so an unsub-intent dedup never collides with a worker job key', async () => {
+      // The same raw key the FE generates for unsubscribe might collide
+      // with one a worker enqueue uses (clients see one Idempotency-
+      // Key per click, regardless of verb). The 'unsub:' prefix prevents
+      // the cross-verb collision; this test asserts both rows can
+      // coexist.
+      const result = await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'shared-raw-key',
+      });
+      expect(result.activityLogId).toBeDefined();
+      const jobs = await db.select().from(actionJobs);
+      // The unsubscribe row's key is the namespaced one.
+      const unsubRow = jobs.find((j) => j.verb === 'unsubscribe');
+      expect(unsubRow?.idempotencyKey).toBe('unsub:shared-raw-key');
+      // A future worker enqueue with the raw 'shared-raw-key' would
+      // hit a DIFFERENT idempotency_key value, so no UNIQUE collision.
+    });
+
     it('404s a sender that does not exist in this mailbox', async () => {
       // Bogus UUID — never seeded. The resolveSenderKey path returns
       // 404 SENDER_NOT_FOUND for any id-mailbox combination that

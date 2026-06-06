@@ -564,24 +564,48 @@ export class ActionsService {
     const { mailboxAccountId, senderId, idempotencyKey } = input;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
 
-    // Idempotency at the controller layer (D202): the header is now
-    // required (≥8 chars). DB-level per-key dedup is deferred — the
-    // existing `action_jobs.idempotency_key` unique constraint cannot
-    // host an `'unsubscribe'` verb because `action_verb` only includes
-    // archive/later/delete. The follow-up either (a) extends
-    // `action_verb` + reuses action_jobs as the dedup anchor, or
-    // (b) introduces a small `intent_dedup` table. Tracked in
-    // FOUNDER-FOLLOWUPS 2026-06-05.
+    // DB-level idempotency dedup (FOUNDER-FOLLOWUPS 2026-06-05; landed
+    // via migration 0024 that extends `action_verb` with 'unsubscribe').
     //
-    // In the meantime, the controller-level header requirement closes
-    // the "naive double-click" path (the FE sends a fresh key per
-    // click via newIdempotencyKey, so distinct clicks write distinct
-    // rows — the founder's "each click is a decision" semantic). The
-    // remaining gap is network-retry under sustained timeout, which
-    // we accept until the follow-up lands. We capture the key on the
-    // returned shape so a future BE-side dedup can be added without an
-    // FE wire change.
-    void idempotencyKey;
+    // Strategy: namespace the FE-supplied key with the 'unsub:' prefix
+    // so worker-job rows (verb='archive'|'later'|'delete') and intent
+    // rows (verb='unsubscribe') can never collide on the existing
+    // `action_jobs_idempotency_key_uniq` index. A retried POST with the
+    // same FE key + same sender resolves back to the cached
+    // `activity_log_id` and returns the SAME shape — the FE never sees
+    // a duplicate audit row.
+    //
+    // The action_jobs row carries:
+    //   - verb='unsubscribe' (now valid per migration 0024)
+    //   - status='done' (no worker; the intent IS the durable outcome)
+    //   - resolved_message_ids=[activityLogId] — repurposes the column
+    //     to carry the cached identifier the replay needs to project.
+    //     The semantics fit: "resolved messages" for an intent IS the
+    //     single activity_log row that audits the click.
+    //   - selector={type:'sender', senderId, senderKey} — same shape as
+    //     the worker-driven verbs use, so /api/actions/:id readers don't
+    //     need a special case.
+    const namespacedKey = `unsub:${idempotencyKey}`;
+    const cachedRows = await this.db
+      .select({
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
+        createdAt: actionJobs.createdAt,
+      })
+      .from(actionJobs)
+      .where(eq(actionJobs.idempotencyKey, namespacedKey))
+      .limit(1);
+    if (cachedRows.length > 0 && cachedRows[0]!.resolvedMessageIds.length > 0) {
+      const cached = cachedRows[0]!;
+      // Project the cached activity_log id back into the response shape.
+      // The replay path keeps the original `recordedAt` so the FE timeline
+      // doesn't drift if a slow retry lands days later.
+      const activityLogId = cached.resolvedMessageIds[0]!;
+      return {
+        senderId,
+        recordedAt: cached.createdAt.toISOString(),
+        activityLogId,
+      };
+    }
 
     return await this.db.transaction(async (tx) => {
       // Upsert the policy. policy_type=unsubscribe is the pending state;
@@ -624,6 +648,33 @@ export class ActionsService {
       if (!inserted) {
         throw new Error('activity_log insert returned no row');
       }
+
+      // Persist the dedup partner — `idempotency_key=namespacedKey,
+      // verb='unsubscribe', status='done'`, with the activity_log id
+      // cached on `resolved_message_ids` so a replay can project it
+      // back into the response without re-writing the audit row.
+      //
+      // ON CONFLICT (idempotency_key) DO NOTHING handles the race where
+      // two concurrent requests with the same key both pass the
+      // cache-miss read above; the second insert is a no-op and the
+      // second caller's response is computed from the just-inserted
+      // activity_log row (their tx already committed it). Two rows in
+      // activity_log is the small, accepted cost of a true race; the
+      // common case (sequential retry) sees one row total.
+      await tx
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey },
+          resolvedMessageIds: [inserted.id],
+          requestedCount: 0,
+          affectedCount: 0,
+          status: 'done',
+          idempotencyKey: namespacedKey,
+        })
+        .onConflictDoNothing({ target: actionJobs.idempotencyKey });
 
       return {
         senderId,
@@ -763,6 +814,15 @@ export class ActionsService {
         // No undo token issued — the forward action completed with zero
         // affected messages (e.g. the sender had no inbox mail in the
         // window). Nothing to revert.
+        continue;
+      }
+      if (sibling.verb === 'unsubscribe') {
+        // Unsubscribe-intent rows live in action_jobs only for DB-level
+        // dedup of the FE-supplied Idempotency-Key (migration 0024).
+        // They have no worker, no Gmail side-effect, and intentionally
+        // no undo token (undoToken IS NULL above already covers this
+        // branch, but the explicit guard documents the contract: the
+        // reverter set is `archive | later | delete`).
         continue;
       }
       const handle = await this.enqueueRevert({
