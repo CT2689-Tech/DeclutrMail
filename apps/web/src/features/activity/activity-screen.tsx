@@ -18,6 +18,8 @@ import type {
 } from '@/lib/api/activity';
 
 import { useActivity, useRevertActivity } from './api/use-activity';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb } from '@/lib/sentry';
 
 const { color, font, shadow } = tokens;
 
@@ -809,6 +811,23 @@ function ExportCsvButton({
         document.body.removeChild(a);
         // Defer revoke so Safari/Firefox finish reading the blob.
         setTimeout(() => URL.revokeObjectURL(url), 1000);
+        // Funnel instrumentation — `filtered=true` whenever ANY filter
+        // is set away from the defaults (verbs / window / source /
+        // senderQuery / date range). Lets PostHog answer "do users
+        // export filtered slices or the whole table". Every field on
+        // ActivityFilters is optional; treat undefined as the default.
+        const filtered =
+          (filters.verbs?.length ?? 0) > 0 ||
+          (filters.window !== undefined && filters.window !== '30d') ||
+          (filters.source !== undefined && filters.source !== 'all') ||
+          (filters.senderQuery ?? '').trim().length > 0 ||
+          (filters.dateFrom ?? null) !== null ||
+          (filters.dateTo ?? null) !== null;
+        void track('csv_exported', {
+          surface: 'activity',
+          row_count: rows.length,
+          filtered,
+        });
       }}
       disabled={disabled}
       title={disabled ? 'Nothing to export at the current filters.' : 'Export visible rows as CSV.'}
@@ -866,12 +885,28 @@ function BulkActionBar({
       .filter((r) => r.undoState.kind === 'available')
       .map((r) => (r.undoState.kind === 'available' ? r.undoState.token : null))
       .filter((token): token is string => token !== null);
+    addBreadcrumb({
+      category: 'undo',
+      message: `activity: bulk-undo fire (n=${targets.length})`,
+      level: 'info',
+      data: { token_count: targets.length },
+    });
     // Parallel — each POST hits its own undo journal row; the BE rate
     // limiter (30/min on gmail-action) bounds the burst.
     const results = await Promise.allSettled(targets.map((token) => revert.mutateAsync(token)));
     const failedTokenList = results
       .map((r, i) => (r.status === 'rejected' ? targets[i]! : null))
       .filter((t): t is string => t !== null);
+    const outcome: 'all_success' | 'partial' | 'all_failed' =
+      failedTokenList.length === 0
+        ? 'all_success'
+        : failedTokenList.length === targets.length
+          ? 'all_failed'
+          : 'partial';
+    void track('bulk_undo_clicked', {
+      action_ids_count: targets.length,
+      outcome,
+    });
     if (failedTokenList.length > 0) {
       onSetBulkError(
         `${failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} failed. Failed rows show "Try again".`,
