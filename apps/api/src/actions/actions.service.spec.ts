@@ -206,9 +206,12 @@ describe('ActionsService', () => {
   });
 
   it('blocks a Protected sender unless override is set', async () => {
-    await db
-      .insert(senderPolicies)
-      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
 
     await expect(
@@ -425,9 +428,12 @@ describe('ActionsService', () => {
     });
 
     it('returns protected:true when the sender has a policy row', async () => {
-      await db
-        .insert(senderPolicies)
-        .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
       const res = await svc.previewComposite({ mailboxAccountId: mailboxId, senderId });
       expect(res.protected).toBe(true);
     });
@@ -514,9 +520,12 @@ describe('ActionsService', () => {
     });
 
     it('Protected sender blocks BOTH rows before either is written (no partial-composite)', async () => {
-      await db
-        .insert(senderPolicies)
-        .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY, isProtected: true });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
       await seedMessage(db, mailboxId, 'm1', ['INBOX']);
       await expect(
         svc.enqueueComposite({

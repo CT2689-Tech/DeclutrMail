@@ -139,13 +139,18 @@ function makeClient(
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
   if (rows) {
-    client.setQueryData(activityKeys.list(window, source), {
+    client.setQueryData(activityKeys.list({ window, source }), {
       data: rows,
       meta: {
         pagination: { nextCursor: null, hasMore: false, limit: 25 },
         stats: STATS,
+        allTimeStats: STATS,
         window,
         source,
+        verbs: [],
+        senderQuery: '',
+        dateFrom: null,
+        dateTo: null,
       },
     });
   }

@@ -25,6 +25,7 @@ import type {
   ActivityListMeta,
   ActivityRow,
   ActivitySourceFilter,
+  ActivityVerbFilter,
   ActivityWindow,
 } from './activity.types.js';
 
@@ -44,6 +45,26 @@ const ALLOWED_SOURCES: ReadonlySet<ActivitySourceFilter> = new Set([
   'autopilot',
   'screener',
 ]);
+
+/**
+ * Valid verb filter values — every `activity_log.action` enum value
+ * the Activity feed surfaces. Multi-select on the wire.
+ */
+const ALLOWED_VERBS: ReadonlySet<ActivityVerbFilter> = new Set([
+  'keep',
+  'archive',
+  'unsubscribe',
+  'later',
+  'delete',
+  'followup-dismiss',
+]);
+
+/**
+ * Hard cap on the sender-search input length — defensive guard against
+ * a runaway query and against a user pasting a 100KB string into the
+ * search box. 200 chars covers any sane sender name + email + slack.
+ */
+const SENDER_QUERY_MAX_LENGTH = 200;
 
 /**
  * Combined activity envelope. Carries:
@@ -83,6 +104,10 @@ export class ActivityController {
     @CurrentMailbox() mailbox: { id: string },
     @Query('window') rawWindow: string | undefined,
     @Query('source') rawSource: string | undefined,
+    @Query('verb') rawVerb: string | string[] | undefined,
+    @Query('sender_q') rawSenderQuery: string | undefined,
+    @Query('date_from') rawDateFrom: string | undefined,
+    @Query('date_to') rawDateTo: string | undefined,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<ActivityListEnvelope> {
@@ -90,6 +115,13 @@ export class ActivityController {
     const window = resolveWindow(rawWindow);
     const sourceFilter = resolveSource(rawSource);
     const sourceForQuery = sourceFilter === 'all' ? null : sourceFilter;
+    const verbs = resolveVerbs(rawVerb);
+    const senderQuery = resolveSenderQuery(rawSenderQuery);
+    const dateFrom = resolveDate(rawDateFrom, 'date_from');
+    const dateTo = resolveDate(rawDateTo, 'date_to');
+    if (dateFrom && dateTo && dateFrom >= dateTo) {
+      throw new BadRequestException('date_from must be earlier than date_to.');
+    }
     const limit = clampLimit(rawLimit, ACTIVITY_LIMIT);
 
     const cursorRaw = decodeCursor(rawCursor);
@@ -101,10 +133,14 @@ export class ActivityController {
       throw new BadRequestException('Invalid cursor.');
     }
 
-    const { rows, stats } = await this.reads.listActivity({
+    const { rows, stats, allTimeStats } = await this.reads.listActivity({
       mailboxAccountId: accountId,
       window,
       source: sourceForQuery,
+      verbs,
+      senderQuery,
+      dateFrom,
+      dateTo,
       cursor,
       limit,
       nowMs: Date.now(),
@@ -125,8 +161,13 @@ export class ActivityController {
         pagination,
         ...(nextCursor !== null ? { nextCursor } : {}),
         stats,
+        allTimeStats,
         window,
         source: sourceFilter,
+        verbs,
+        senderQuery,
+        dateFrom: dateFrom ? dateFrom.toISOString() : null,
+        dateTo: dateTo ? dateTo.toISOString() : null,
       },
     };
   }
@@ -159,4 +200,46 @@ function resolveSource(raw: string | undefined): ActivitySourceFilter {
     return raw as ActivitySourceFilter;
   }
   return 'all';
+}
+
+/**
+ * Parse the `verb` query param into a deduped list of valid action
+ * verbs. Accepts repeat-param (`?verb=archive&verb=delete`) and
+ * comma-separated (`?verb=archive,delete`); rejects bogus values
+ * silently rather than 400ing — drop-and-continue matches the
+ * conservative param handling of `window` / `source`.
+ */
+function resolveVerbs(raw: string | string[] | undefined): ActivityVerbFilter[] {
+  if (raw === undefined) return [];
+  const flat = (Array.isArray(raw) ? raw : [raw]).flatMap((entry) => entry.split(','));
+  const seen = new Set<ActivityVerbFilter>();
+  for (const token of flat) {
+    const trimmed = token.trim();
+    if (ALLOWED_VERBS.has(trimmed as ActivityVerbFilter)) {
+      seen.add(trimmed as ActivityVerbFilter);
+    }
+  }
+  return [...seen];
+}
+
+/** Trim + length-cap the sender search term. Empty after trim = no filter. */
+function resolveSenderQuery(raw: string | undefined): string {
+  if (!raw) return '';
+  const trimmed = raw.trim().slice(0, SENDER_QUERY_MAX_LENGTH);
+  return trimmed;
+}
+
+/**
+ * Parse an ISO-8601 date string from the wire. Throws 400 on a
+ * malformed value (vs window/source which silently fall back) — a
+ * date that doesn't parse is a typo the FE should surface, not a
+ * silent narrowing.
+ */
+function resolveDate(raw: string | undefined, paramName: string): Date | null {
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`${paramName} must be a valid ISO-8601 date.`);
+  }
+  return date;
 }

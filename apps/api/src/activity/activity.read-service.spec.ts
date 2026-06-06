@@ -121,7 +121,7 @@ async function seedActivity(
     mailboxAccountId: string;
     occurredAt: Date;
     source: 'triage' | 'manual' | 'autopilot' | 'screener';
-    action: 'keep' | 'archive' | 'unsubscribe' | 'later' | 'followup-dismiss';
+    action: 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete' | 'followup-dismiss';
     affectedCount?: number;
     senderKey?: string;
     undoToken?: string;
@@ -618,5 +618,272 @@ describe('ActivityReadService', () => {
       stamps[2]!.toISOString(),
       stamps[1]!.toISOString(),
     ]);
+  });
+
+  // ── B-track Activity power-options ───────────────────────────────────
+
+  describe('verb filter (multi-select)', () => {
+    it('narrows rows to a single verb', async () => {
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        verbs: ['delete'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((r) => r.action)).toEqual(['delete']);
+    });
+
+    it('accepts a multi-verb subset', async () => {
+      for (const action of ['archive', 'delete', 'unsubscribe', 'keep'] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+          source: 'manual',
+          action,
+        });
+      }
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        verbs: ['archive', 'delete'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((r) => r.action).sort()).toEqual(['archive', 'delete']);
+    });
+
+    it('window-stats stay independent of the verb filter (D59 contract preserved)', async () => {
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+      });
+      const { stats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        verbs: ['delete'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      // Stats answer "what HAPPENED in this window", not "what's visible";
+      // the verb filter narrows rows but stats still count both verbs.
+      expect(stats.archived).toBe(1);
+      expect(stats.deleted).toBe(1);
+    });
+  });
+
+  describe('sender_q search', () => {
+    beforeEach(async () => {
+      await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'sender-aber',
+        'aber@em.abercrombie.com',
+        'Abercrombie',
+      );
+      await seedSender(db, mailboxA.mailboxAccountId, 'sender-dkny', 'newsletter@dkny.com', 'DKNY');
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+        senderKey: 'sender-aber',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+        senderKey: 'sender-dkny',
+      });
+    });
+
+    it('matches a display-name substring case-insensitively', async () => {
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: 'aber',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((r) => r.sender?.displayName)).toEqual(['Abercrombie']);
+    });
+
+    it('matches an email substring case-insensitively', async () => {
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: 'DKNY.COM',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((r) => r.sender?.displayName)).toEqual(['DKNY']);
+    });
+
+    it('escapes ILIKE wildcards so % is a literal match', async () => {
+      // No sender's name contains a literal %, so the wildcard-escape
+      // run must return zero rows (without the escape, `%` would match
+      // every row).
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        senderQuery: '%',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('date_from / date_to custom range', () => {
+    beforeEach(async () => {
+      // Drop one activity row at each of -3d / -10d / -45d.
+      for (const days of [3, 10, 45]) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - days * ONE_DAY_MS),
+          source: 'manual',
+          action: 'archive',
+        });
+      }
+    });
+
+    it('dateFrom alone replaces the window-derived lower bound', async () => {
+      // window=30d would exclude the -45d row; dateFrom=-60d INCLUDES it.
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        dateFrom: new Date(NOW_MS - 60 * ONE_DAY_MS),
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toHaveLength(3);
+    });
+
+    it('dateTo enforces a strict upper bound', async () => {
+      // -3d row excluded; -10d + -45d remain (no lower bound).
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        dateTo: new Date(NOW_MS - 5 * ONE_DAY_MS),
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toHaveLength(2);
+    });
+  });
+
+  describe('all-time stats', () => {
+    it('counts every row ever, ignoring window + verb + sender + date filters', async () => {
+      // 2 archives 2d ago + 3 deletes 100d ago (outside any 30d window).
+      for (let i = 0; i < 2; i++) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'archive',
+        });
+      }
+      for (let i = 0; i < 3; i++) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 100 * ONE_DAY_MS),
+          source: 'manual',
+          action: 'delete',
+        });
+      }
+
+      const { stats, allTimeStats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        verbs: ['archive'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      // 30d-window stats: only the 2 archives are inside the window.
+      expect(stats.archived).toBe(2);
+      expect(stats.deleted).toBe(0);
+      // All-time stats include the 100d-old deletes.
+      expect(allTimeStats.archived).toBe(2);
+      expect(allTimeStats.deleted).toBe(3);
+    });
+
+    it('isolates all-time stats per mailbox (tenant safety)', async () => {
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      const { allTimeStats: aStats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      const { allTimeStats: bStats } = await svc.listActivity({
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(aStats.archived).toBe(1);
+      expect(bStats.archived).toBe(1);
+    });
   });
 });

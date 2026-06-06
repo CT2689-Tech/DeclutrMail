@@ -21,7 +21,7 @@
 
 import type { Envelope, PaginationMeta } from '@declutrmail/shared/contracts';
 
-import { apiGet } from './client';
+import { apiGet, apiPost } from './client';
 
 export type ActivityWindowWire = '7d' | '30d' | '90d' | 'all';
 
@@ -38,6 +38,9 @@ export type ActivityActionWire =
   | 'later'
   | 'delete'
   | 'followup-dismiss';
+
+/** Verb filter (B-track power-options) — multi-select on the wire. */
+export type ActivityVerbFilterWire = ActivityActionWire;
 
 export interface ActivitySenderWire {
   senderKey: string;
@@ -83,26 +86,75 @@ export interface ActivityListMetaWire {
   pagination: PaginationMeta;
   nextCursor?: string;
   stats: ActivityStatsWire;
+  /** All-time stats across the entire mailbox history (ignores filters). */
+  allTimeStats: ActivityStatsWire;
   window: ActivityWindowWire;
   source: ActivitySourceFilterWire;
+  /** Echo of the resolved verb filter (empty = no filter). */
+  verbs: ActivityVerbFilterWire[];
+  /** Echo of the resolved sender search term ('' = no filter). */
+  senderQuery: string;
+  /** Echo of the resolved custom date range (ISO); null when unset. */
+  dateFrom: string | null;
+  dateTo: string | null;
+}
+
+/**
+ * Combined filter state for `GET /api/activity`.
+ *
+ * Every field is optional — the BE applies its own defaults (window=30d,
+ * source=all, verbs=[], senderQuery=''). The FE always passes the
+ * full set so query keys / URL state stay in lockstep across renders.
+ */
+export interface ActivityFilters {
+  window?: ActivityWindowWire;
+  source?: ActivitySourceFilterWire;
+  /** Multi-select verb filter; empty / undefined means "no verb filter". */
+  verbs?: readonly ActivityVerbFilterWire[];
+  /** Sender substring search term; trimmed by the BE. */
+  senderQuery?: string;
+  /** Custom date range — overrides the window-derived lower bound. */
+  dateFrom?: string | null;
+  dateTo?: string | null;
 }
 
 /**
  * GET /api/activity — paginated feed for the current mailbox.
  * Defaults: window=30d, source=all, limit=25.
  */
-export function fetchActivity(args: {
-  window?: ActivityWindowWire;
-  source?: ActivitySourceFilterWire;
-  cursor?: string | undefined;
-  signal?: AbortSignal;
-}): Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>> {
+export function fetchActivity(
+  args: ActivityFilters & {
+    cursor?: string | undefined;
+    signal?: AbortSignal;
+  },
+): Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>> {
   return apiGet<ActivityRowWire[]>('/api/activity', {
     ...(args.signal ? { signal: args.signal } : {}),
     query: {
       ...(args.window ? { window: args.window } : {}),
       ...(args.source ? { source: args.source } : {}),
+      // CSV-joined repeat-safe — BE accepts both shapes; CSV keeps the
+      // URL short when several verbs are selected.
+      ...(args.verbs && args.verbs.length > 0 ? { verb: args.verbs.join(',') } : {}),
+      ...(args.senderQuery ? { sender_q: args.senderQuery } : {}),
+      ...(args.dateFrom ? { date_from: args.dateFrom } : {}),
+      ...(args.dateTo ? { date_to: args.dateTo } : {}),
       ...(args.cursor ? { cursor: args.cursor } : {}),
     },
   }) as Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>>;
+}
+
+/**
+ * POST /api/undo/:token — revert the action recorded for `token`.
+ *
+ * The Activity row's `undoState.token` is the input; the BE enqueues a
+ * reverse `action_jobs` row asynchronously and the FE invalidates the
+ * Activity list query on success so the row flips to `executed` on the
+ * next refetch.
+ *
+ * The fetcher swallows the typed envelope and returns nothing — every
+ * caller wants the side effect, not the payload.
+ */
+export async function revertActivityUndo(token: string): Promise<void> {
+  await apiPost<unknown>(`/api/undo/${encodeURIComponent(token)}`);
 }

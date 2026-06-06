@@ -18,7 +18,7 @@ import { userEvent } from '@testing-library/user-event';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { ActivityScreen, relativeTime } from './activity-screen';
+import { ActivityScreen, relativeTime, rowsToCsv } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
@@ -322,5 +322,218 @@ describe('ActivityScreen — pure helpers', () => {
     expect(relativeTime(new Date(NOW - 2 * 60 * 60 * 1000).toISOString(), NOW)).toBe('2h ago');
     expect(relativeTime(new Date(NOW - 90 * 1000).toISOString(), NOW)).toBe('1m ago');
     expect(relativeTime(new Date(NOW).toISOString(), NOW)).toBe('just now');
+  });
+
+  it('rowsToCsv emits header + one line per row + RFC-4180-quotes commas/quotes', () => {
+    const rows: ActivityRowWire[] = [
+      row({
+        id: 'r-1',
+        action: 'archive',
+        affectedCount: 3,
+        sender: {
+          senderKey: 'sk-comma',
+          displayName: 'Smith, John',
+          email: 'sj@example.com',
+          domain: 'example.com',
+        },
+      }),
+      row({
+        id: 'r-2',
+        action: 'delete',
+        affectedCount: 1,
+        sender: {
+          senderKey: 'sk-quote',
+          displayName: 'Quote "Co"',
+          email: 'q@example.com',
+          domain: 'example.com',
+        },
+      }),
+    ];
+    const csv = rowsToCsv(rows);
+    const lines = csv.split('\n');
+    expect(lines[0]).toBe(
+      'Occurred At,Verb,Source,Sender Name,Sender Email,Affected Messages,Undo State',
+    );
+    expect(lines[1]).toContain('"Smith, John"');
+    expect(lines[2]).toContain('"Quote ""Co"""');
+    expect(lines[1]).toContain('Archived');
+    expect(lines[2]).toContain('Deleted');
+  });
+});
+
+// ── B-track Activity power-options ───────────────────────────────────
+
+const META_BASE = {
+  pagination: { nextCursor: null, hasMore: false, limit: 25 },
+  stats: STATS_BASE,
+  allTimeStats: STATS_BASE,
+  window: '30d',
+  source: 'all',
+  verbs: [],
+  senderQuery: '',
+  dateFrom: null,
+  dateTo: null,
+};
+
+describe('ActivityScreen — B8 verb filter', () => {
+  it('verb chip click drives router.replace with ?verb=', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const archivedChip = await screen.findByRole('button', { name: /^Archived$/ });
+    await userEvent.click(archivedChip);
+    expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('verb=archive'));
+  });
+
+  it('clicking the same verb twice deselects it (URL clears)', async () => {
+    currentSearch = 'verb=archive';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: { ...META_BASE, verbs: ['archive'] } }),
+      },
+    ]);
+    renderScreen();
+    const archivedChip = await screen.findByRole('button', { name: /^Archived$/ });
+    expect(archivedChip).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(archivedChip);
+    expect(replaceMock).toHaveBeenCalledWith(expect.not.stringContaining('verb='));
+  });
+});
+
+describe('ActivityScreen — B9 sender search', () => {
+  it('debounced typing eventually pushes ?sender_q=', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const input = await screen.findByLabelText(/search sender/i);
+    await userEvent.type(input, 'aber');
+    await waitFor(
+      () => expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('sender_q=aber')),
+      { timeout: 1000 },
+    );
+  });
+});
+
+describe('ActivityScreen — B10 date range', () => {
+  it('typing into the From input pushes ?date_from=', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const fromInput = (await screen.findByText('From')).parentElement!.querySelector(
+      'input[type="date"]',
+    ) as HTMLInputElement;
+    expect(fromInput).toBeInTheDocument();
+    await userEvent.type(fromInput, '2026-05-01');
+    await waitFor(() =>
+      expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('date_from=')),
+    );
+  });
+});
+
+describe('ActivityScreen — B16 all-time totals', () => {
+  it('renders BOTH a window stats line AND an all-time stats line', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({})],
+            meta: {
+              ...META_BASE,
+              stats: { ...STATS_BASE, archived: 5 },
+              allTimeStats: { ...STATS_BASE, archived: 42 },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText(/5 archived/)).toBeInTheDocument());
+    expect(screen.getByText(/42 archived/)).toBeInTheDocument();
+    // The all-time stats line starts with "all time:" — match via the
+    // colon to disambiguate from the "All time" window chip.
+    expect(screen.getByText(/^all time:$/i)).toBeInTheDocument();
+  });
+});
+
+describe('ActivityScreen — B7 multi-select + bulk undo', () => {
+  it('selecting a row reveals the bulk action bar with a count', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                undoState: {
+                  kind: 'available',
+                  token: '11111111-1111-1111-1111-111111111111',
+                  expiresAt: new Date(NOW + 24 * 60 * 60 * 1000).toISOString(),
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select activity row/i });
+    await userEvent.click(checkbox);
+    expect(screen.getByText(/1 selected/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /undo 1/i })).toBeInTheDocument();
+  });
+});
+
+describe('ActivityScreen — B11 group by sender', () => {
+  it('toggling the group chip pushes ?group=sender', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const groupChip = await screen.findByRole('button', { name: /group by sender/i });
+    await userEvent.click(groupChip);
+    expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('group=sender'));
+  });
+});
+
+describe('ActivityScreen — B12 Open in Gmail', () => {
+  it('renders a per-row Gmail search link', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const link = await screen.findByRole('link', { name: /gmail/i });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/u/0/#search/from:one%40example.com',
+    );
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
   });
 });

@@ -606,6 +606,7 @@ describe('SendersReadService', () => {
           policyType: 'keep',
           isVip: false,
           isProtected: true,
+          protectionReason: 'user_defined',
         });
 
         const meta = await svc.getSenderListQueryMeta({
