@@ -351,6 +351,13 @@ export function buildSenderDetail(
 
   return {
     sender,
+    // Synthesised email from the fixture's name+domain — matches the
+    // wire convention well enough for stories + tests. Real callers
+    // override via the adapter path.
+    email: `${sender.name.toLowerCase().replace(/[^a-z0-9]+/g, '.')}@${sender.domain}`,
+    // Fixture senders have no standing policy by default; stories that
+    // need the Unsub-queued pill flip this through their overrides.
+    policyType: null,
     gmailCategory: GMAIL_CATEGORY[sender.group],
     isVip,
     isProtected,

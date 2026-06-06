@@ -16,6 +16,9 @@ import { useSenderHistory } from '../api/use-sender-history';
 import { adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
+import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb } from '@/lib/sentry';
 
 const { color, font, radius, shadow, space } = tokens;
 
@@ -311,7 +314,66 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               {sender.domain}
             </span>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: space[2] }}>
+          <div
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              gap: space[2],
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+            }}
+          >
+            {/* Unsub-queued pill (FOUNDER-FOLLOWUPS 2026-06-05).
+                Mirrors the senders-list row pill: shown when a
+                standing unsubscribe policy is in flight but the
+                provider hasn't acted on the RFC 8058 endpoint yet.
+                Reads `policyType` directly so the Detail header is
+                consistent with the list — same source of truth. */}
+            {detail.policyType === 'unsubscribe' && <UnsubQueuedPill />}
+
+            {/* Open-all-in-Gmail (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
+                DeclutrMail never renders message bodies (D7); the
+                fastest path to "see every email from this sender" is
+                to deep-link the user into Gmail's own search UI.
+                PostHog tag identifies which surface drove the click;
+                Sentry breadcrumb is the trace handle. */}
+            <a
+              href={gmailAllFromSenderDeepLink(detail.email)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                void track('gmail_deep_link_opened', {
+                  source: 'sender_detail_open_all',
+                  deep_link_kind: 'all_from_sender',
+                });
+                addBreadcrumb({
+                  category: 'navigation',
+                  message: `gmail-deep-link: all-from-sender ${sender.id}`,
+                  level: 'info',
+                });
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 30,
+                padding: '0 12px',
+                borderRadius: radius.pill,
+                background: color.card,
+                border: `1px solid ${color.line}`,
+                color: color.fg,
+                fontFamily: font.sans,
+                fontSize: 12.5,
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+              aria-label="Open all messages from this sender in Gmail"
+              title="Search every email from this sender in Gmail"
+            >
+              Open all in Gmail
+              <ExternalLinkIcon />
+            </a>
             <Button
               tone={detail.isVip ? 'primary' : 'default'}
               size="sm"
@@ -582,5 +644,73 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
         }
       />
     </div>
+  );
+}
+
+/**
+ * "Unsub queued" pill — Sender Detail header surface (FOUNDER-FOLLOWUPS
+ * 2026-06-05). Mirrors the senders-list row pill so a user navigating
+ * between list ↔ detail never sees a contradiction. Wired off
+ * `detail.policyType === 'unsubscribe'`.
+ *
+ * Visual: pale-amber wash so it reads alongside the VIP (warm) chip
+ * without competing with the deep-teal primary actions. Uses the
+ * canonical `color.amberBg` token (no hand-rolled rgba).
+ */
+function UnsubQueuedPill() {
+  return (
+    <span
+      role="status"
+      aria-label="Unsubscribe queued"
+      title="Unsubscribe sent — Gmail will remove this sender shortly. (RFC 8058)"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        height: 26,
+        padding: '0 10px',
+        borderRadius: radius.pill,
+        background: color.amberBg,
+        color: color.amber,
+        border: `1px solid ${color.amber}`,
+        fontFamily: font.sans,
+        fontSize: 11.5,
+        fontWeight: 600,
+        letterSpacing: '0.01em',
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-block',
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: color.amber,
+        }}
+      />
+      Unsub queued
+    </span>
+  );
+}
+
+/** Small chevron-out glyph for the "Open all in Gmail" CTA. */
+function ExternalLinkIcon() {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
   );
 }
