@@ -43,6 +43,7 @@ import {
   useEnqueueComposite,
 } from './api/use-action';
 import { sendersKeys } from './api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
@@ -320,6 +321,10 @@ function SendersScreenContent({
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
     senderName: string;
+    // Carried through the polled lifecycle so the done-handler can render
+    // a verb-correct receipt + toast (Delete must NOT say "Archived",
+    // Later must NOT say "Archived" — composite path mistake 2026-06-05).
+    verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
@@ -513,7 +518,8 @@ function SendersScreenContent({
         toast(`Archiving mail from ${sender.name}…`, 'info');
         const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
         enqueue.mutate(mutationArgs, {
-          onSuccess: (res) => setActiveAction({ actionId: res.actionId, senderName: sender.name }),
+          onSuccess: (res) =>
+            setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
           onError: (err) =>
             toast(
               // Protected/VIP senders return 409 PROTECTED_SENDER (a
@@ -568,7 +574,16 @@ function SendersScreenContent({
           },
           {
             onSuccess: (res) =>
-              setActiveAction({ actionId: res.actionId, senderName: sender.name }),
+              setActiveAction({
+                actionId: res.actionId,
+                senderName: sender.name,
+                verb:
+                  primaryType === 'delete'
+                    ? 'Delete'
+                    : primaryType === 'later'
+                      ? 'Later'
+                      : 'Archive',
+              }),
             onError: (err) =>
               toast(
                 err instanceof ApiError && err.status === 409
@@ -630,29 +645,39 @@ function SendersScreenContent({
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
+      // Verb-correct copy — the composite path runs the SAME done-handler
+      // for Archive / Delete / Later, so the receipt + toast must read
+      // from the polled handle's recorded verb, not a hardcoded one.
+      const verbPast = VERB_PAST[activeAction.verb];
+      const verbLowercase = activeAction.verb.toLowerCase();
       if (data.affectedCount === 0 || !data.undoToken) {
         // No-op: the sender is in the directory by LIFETIME volume but has
-        // no mail in the inbox right now, so the worker archived nothing and
+        // no mail in the inbox right now, so the worker did nothing and
         // issued no undo token. Never show a "reversible" receipt with a
-        // dead Undo — say plainly that there was nothing to archive.
-        toast(`No inbox mail from ${activeAction.senderName} to archive`, 'info');
+        // dead Undo — say plainly that there was nothing to do.
+        toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
       } else {
         setReceipt({
           id: `r${++receiptSeq}`,
-          verb: 'Archive',
+          verb: activeAction.verb,
           count: 1,
           historicTotal: data.affectedCount,
           timeLeft: '',
           undoToken: data.undoToken,
         });
         toast(
-          `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
           'success',
         );
+        // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
+        // Activity feed (new activity_log row from the worker). Missing
+        // the activity invalidation left /activity stale on Delete done
+        // 2026-06-05.
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
       }
     } else {
-      toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
+      toast(`Couldn't ${activeAction.verb.toLowerCase()} ${activeAction.senderName}`, 'warn');
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
@@ -680,6 +705,10 @@ function SendersScreenContent({
       toast('Restored to your inbox', 'success');
       setReceipt(null);
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      // Revert wrote a fresh activity_log row + flipped the original
+      // row's undoState to `executed`. Surface both on /activity by
+      // invalidating the feed alongside senders.
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
     } else {
       toast("Couldn't undo — see Activity", 'warn');
     }
@@ -706,6 +735,7 @@ function SendersScreenContent({
             toast('Restored to your inbox', 'success');
             setReceipt(null);
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
+            void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
             setRevertActionId(res.actionId);
           }
