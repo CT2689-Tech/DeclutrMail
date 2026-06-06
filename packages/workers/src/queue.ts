@@ -53,11 +53,17 @@ export interface IncrementalSyncJobData {
 /**
  * Job options for an incremental-sync enqueue.
  *
- * `jobId = ${mailboxAccountId}:${endHistoryId}` namespaces by mailbox
+ * `jobId = ${mailboxAccountId}__${endHistoryId}` namespaces by mailbox
  * AND historyId — concurrent webhooks for the same mailbox advance the
  * cursor monotonically, but a redelivered webhook for the same
  * `endHistoryId` MUST be a no-op rather than enqueueing twice. BullMQ
  * dedups by jobId so the second `add()` is silently ignored.
+ *
+ * Separator is `__` (double underscore), not `:` — BullMQ ≥5.77 rejects
+ * jobIds containing ':' at validateOptions (smoke 2026-06-06 caught a
+ * 500 on the new POST /api/v1/sync/incremental endpoint with the old
+ * `${mailbox}:${historyId}` pattern). UUID + bigint both stay
+ * representable without colons; the dedup semantics are preserved.
  *
  * `perMailboxPolicy` (D203/D225) governs retries — backoff matches
  * initial-sync since both speak to the same Gmail API + rate budget.
@@ -68,7 +74,7 @@ export function incrementalSyncJobOptions(
 ): JobsOptions {
   const policy = WORKER_POLICIES.perMailboxPolicy;
   return {
-    jobId: `${mailboxAccountId}:${endHistoryId}`,
+    jobId: `${mailboxAccountId}__${endHistoryId}`,
     attempts: policy.maxAttempts,
     ...(policy.backoff
       ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
@@ -91,7 +97,9 @@ export async function ensureIncrementalSyncJob(
   queue: Queue<IncrementalSyncJobData>,
   data: IncrementalSyncJobData,
 ): Promise<'added' | 'noop'> {
-  const jobId = `${data.mailboxAccountId}:${data.endHistoryId}`;
+  // `__` separator matches incrementalSyncJobOptions — BullMQ ≥5.77
+  // rejects ':' in jobIds. Keep both call sites identical so dedup works.
+  const jobId = `${data.mailboxAccountId}__${data.endHistoryId}`;
   const existing = await queue.getJob(jobId);
   if (existing) {
     return 'noop';

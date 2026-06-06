@@ -114,7 +114,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   }
 
   protected override getIdempotencyKey(payload: IncrementalSyncJobData): string {
-    return `${payload.mailboxAccountId}:${payload.endHistoryId}`;
+    // `__` separator matches the BullMQ jobId in `queue.ts` (BullMQ
+    // ≥5.77 rejects ':' in jobIds; the idempotency key here mirrors
+    // the jobId so dedup at the worker layer agrees with the queue).
+    return `${payload.mailboxAccountId}__${payload.endHistoryId}`;
   }
 
   override async processJob(
