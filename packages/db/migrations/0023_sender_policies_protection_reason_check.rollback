@@ -1,0 +1,13 @@
+-- 0023_sender_policies_protection_reason_check.rollback
+--
+-- Reverses 0023. Drops the partial-invariant CHECK
+-- (`sender_policies_protection_reason_when_protected_chk`).
+--
+-- The heal UPDATE (legacy rows: is_protected=true AND reason=NULL →
+-- reason='user_defined') is NOT undone — the rollback restores the
+-- prior shape, not the prior data. Re-applying the forward migration
+-- is idempotent because the heal WHERE clause matches no rows on a
+-- healed table.
+
+ALTER TABLE "sender_policies"
+  DROP CONSTRAINT IF EXISTS "sender_policies_protection_reason_when_protected_chk";

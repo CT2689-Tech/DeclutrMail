@@ -98,7 +98,7 @@ section to the Done section. Do not delete entries — the trail matters.
 1. Add a DB CHECK constraint: `(is_protected = false) = (protection_reason IS NULL)` in a future migration.
 2. OR change the COALESCE to `CASE WHEN sender_policies.protection_reason IS NOT NULL AND sender_policies.is_protected THEN sender_policies.protection_reason ELSE 'engagement_based' END`.
 **Verifies by:** Migration test seeds an `is_protected=false, protection_reason='user_defined'` row, runs the UPSERT, asserts the resulting `protection_reason` is the fresh `engagement_based` not the stale value.
-**Status:** Open
+**Status:** Done 2026-06-05 — shipped weaker one-way CHECK (`NOT is_protected OR protection_reason IS NOT NULL`) in migration `0023_sender_policies_protection_reason_check.sql`. The biconditional was rejected because it would forbid the user-agency-wins memory pin (`is_protected=false, protection_reason='engagement_based'` on a manually-demoted engagement row — read by the worker WHERE as "user said no, do not re-protect"). The shipped CHECK still catches the impossible-by-code state a future unprotect path is most likely to introduce. 5 integration tests in `packages/db/tests/sender-policies-protection-check.test.ts`.
 
 ### 2026-06-05 — Reconnect after cursor-too-old (incremental-sync 404 recovery)
 **Source:** Session 2026-06-05 (Thread A — IncrementalSyncWorker)
