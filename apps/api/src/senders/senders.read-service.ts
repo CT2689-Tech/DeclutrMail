@@ -524,6 +524,11 @@ export class SendersReadService {
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
+        // Standing policy verb (keep / archive / unsubscribe / later).
+        // Surfaces the "Unsub queued" pill on the sender row while the
+        // real unsub pipeline (D230) is unbuilt — written by
+        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        policyType: senderPolicies.policyType,
       })
       .from(senders)
       .leftJoin(
@@ -599,6 +604,7 @@ export class SendersReadService {
           protectionReason: row.protectionReason ?? null,
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
         },
+        policyType: row.policyType ?? null,
       };
     });
   }
@@ -1225,6 +1231,11 @@ export class SendersReadService {
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
+        // Standing policy verb (keep / archive / unsubscribe / later).
+        // Surfaces the "Unsub queued" pill on the sender row while the
+        // real unsub pipeline (D230) is unbuilt — written by
+        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        policyType: senderPolicies.policyType,
       })
       .from(senders)
       .leftJoin(
@@ -1276,6 +1287,7 @@ export class SendersReadService {
         row.lastDecisionConfidence,
       ),
       protectionFlags,
+      policyType: row.policyType ?? null,
     };
   }
 

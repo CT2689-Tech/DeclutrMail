@@ -559,9 +559,29 @@ export class ActionsService {
   async recordUnsubscribeIntent(input: {
     mailboxAccountId: string;
     senderId: string;
+    idempotencyKey: string;
   }): Promise<UnsubscribeIntentResult> {
-    const { mailboxAccountId, senderId } = input;
+    const { mailboxAccountId, senderId, idempotencyKey } = input;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
+
+    // Idempotency at the controller layer (D202): the header is now
+    // required (≥8 chars). DB-level per-key dedup is deferred — the
+    // existing `action_jobs.idempotency_key` unique constraint cannot
+    // host an `'unsubscribe'` verb because `action_verb` only includes
+    // archive/later/delete. The follow-up either (a) extends
+    // `action_verb` + reuses action_jobs as the dedup anchor, or
+    // (b) introduces a small `intent_dedup` table. Tracked in
+    // FOUNDER-FOLLOWUPS 2026-06-05.
+    //
+    // In the meantime, the controller-level header requirement closes
+    // the "naive double-click" path (the FE sends a fresh key per
+    // click via newIdempotencyKey, so distinct clicks write distinct
+    // rows — the founder's "each click is a decision" semantic). The
+    // remaining gap is network-retry under sustained timeout, which
+    // we accept until the follow-up lands. We capture the key on the
+    // returned shape so a future BE-side dedup can be added without an
+    // FE wire change.
+    void idempotencyKey;
 
     return await this.db.transaction(async (tx) => {
       // Upsert the policy. policy_type=unsubscribe is the pending state;

@@ -166,17 +166,46 @@ export function SenderCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div
             style={{
-              fontFamily: font.sans,
-              fontSize: 14,
-              fontWeight: 600,
-              color: color.fg,
-              letterSpacing: '-0.005em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
             }}
           >
-            {sender.name}
+            <span
+              style={{
+                fontFamily: font.sans,
+                fontSize: 14,
+                fontWeight: 600,
+                color: color.fg,
+                letterSpacing: '-0.005em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              {sender.name}
+            </span>
+            {sender.unsubPending && (
+              <span
+                title="Unsub queued — we'll process it when the pipeline ships"
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 9.5,
+                  letterSpacing: '0.10em',
+                  textTransform: 'uppercase',
+                  color: color.primary,
+                  background: color.primarySoft,
+                  border: `1px solid ${color.primaryBorder}`,
+                  borderRadius: 999,
+                  padding: '1px 6px',
+                  flex: '0 0 auto',
+                }}
+              >
+                Unsub queued
+              </span>
+            )}
           </div>
           <div
             style={{

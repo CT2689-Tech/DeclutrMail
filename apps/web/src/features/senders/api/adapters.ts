@@ -166,6 +166,10 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     // block degrades to "not protected" rather than crashing the list.
     protected: row.protectionFlags?.isProtected ?? false,
     isVip: row.protectionFlags?.isVip ?? false,
+    // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
+    // when the BE has the sender's policy at `'unsubscribe'`. Drives
+    // the "Unsub queued" pill on the sender card.
+    unsubPending: row.policyType === 'unsubscribe',
   };
   return sender;
 }

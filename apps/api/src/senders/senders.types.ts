@@ -171,6 +171,14 @@ export interface SenderListRow {
    * no `sender_policies` row — i.e. engine-default, not pinned.
    */
   protectionFlags: ProtectionFlags;
+  /**
+   * Standing policy verb (`keep | archive | unsubscribe | later`) from
+   * `sender_policies.policy_type`. `null` when no policy row exists
+   * (engine-default). The FE renders a "Unsub queued" pill when this
+   * equals `'unsubscribe'` (D38 2026-06-05 brainstorm). Will fold into
+   * the unified action manifest once D230 lands.
+   */
+  policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
 }
 
 /**

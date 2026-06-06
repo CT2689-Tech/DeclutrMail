@@ -705,6 +705,7 @@ describe('ActionsService', () => {
       const result = await svc.recordUnsubscribeIntent({
         mailboxAccountId: mailboxId,
         senderId,
+        idempotencyKey: 'unsub-key-1',
       });
       expect(result.senderId).toBe(senderId);
       expect(result.activityLogId).toMatch(/^[0-9a-f-]{36}$/);
@@ -728,8 +729,16 @@ describe('ActionsService', () => {
     });
 
     it('is idempotent at the policy level — second call upserts to the same row but writes a SECOND audit row', async () => {
-      await svc.recordUnsubscribeIntent({ mailboxAccountId: mailboxId, senderId });
-      await svc.recordUnsubscribeIntent({ mailboxAccountId: mailboxId, senderId });
+      await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'unsub-key-a',
+      });
+      await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'unsub-key-b',
+      });
       const policies = await db
         .select()
         .from(senderPolicies)
@@ -754,6 +763,7 @@ describe('ActionsService', () => {
         svc.recordUnsubscribeIntent({
           mailboxAccountId: mailboxId,
           senderId: '00000000-0000-4000-8000-000000000000',
+          idempotencyKey: 'unsub-bogus-key',
         }),
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });

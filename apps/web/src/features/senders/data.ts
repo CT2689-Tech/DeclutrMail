@@ -84,6 +84,15 @@ export interface Sender {
   /** Auto-protected (receipts / statements) — never bulk-acted. */
   protected?: boolean;
   /**
+   * Standing-policy unsub state — `true` when the user has clicked
+   * Unsubscribe and the BE has written `sender_policies.policy_type =
+   * 'unsubscribe'` (D38 + 2026-06-05 founder brainstorm). The FE
+   * renders a "Unsub queued" pill on the sender card while the real
+   * unsub pipeline (D230) is unbuilt. Optional because Weekly-Hero
+   * + storybook fixtures don't carry it; absent ⇒ no pill.
+   */
+  unsubPending?: boolean;
+  /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
    * route a sender into the "Protect" intent bucket (intentOf OR-s
    * them) — a VIP must never surface as a Cleanup recommendation.

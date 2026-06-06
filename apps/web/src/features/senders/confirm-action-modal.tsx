@@ -142,6 +142,7 @@ export function ConfirmActionModal({
   onConfirm,
   archivePreview,
   compositePreview,
+  compositePreviewError,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -157,6 +158,14 @@ export function ConfirmActionModal({
    * row displays. Single-sender path only — absent for bulk flows.
    */
   compositePreview?: CompositeActionPreviewResult | undefined;
+  /**
+   * Composite-preview fetch error — surfaces when the BE preview call
+   * failed. For Delete primary this MUST disable confirm so the user
+   * cannot proceed past D226's preview mandate (silent-failure-hunter
+   * 2026-06-05: a sustained 5xx during composite preview left confirm
+   * enabled with `compositeCount === undefined`).
+   */
+  compositePreviewError?: boolean | undefined;
 }) {
   const verb = request?.verb;
   // Composite secondary (chip row) — applies only on Unsubscribe + Later
@@ -209,7 +218,11 @@ export function ConfirmActionModal({
   const nothingToActOn =
     (isArchiveVerb && inboxNow === 0) ||
     (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
-  const confirmDisabled = (isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn);
+  // Block confirm on Delete primary when the composite preview failed —
+  // D226 requires the preview to inform the destructive choice.
+  const previewBlocksDelete = isDeleteVerb && (compositePreviewError ?? false);
+  const confirmDisabled =
+    ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) || previewBlocksDelete;
 
   // Derived ConfirmOptions for onConfirm — packages secondary into the
   // shape the BE composite endpoint expects.
@@ -841,7 +854,17 @@ export function ConfirmActionModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>{recoveryCopy ?? ''}</span>
+          <span
+            style={{
+              fontSize: 11.5,
+              color: previewBlocksDelete ? color.amber : color.fgMuted,
+              fontWeight: previewBlocksDelete ? 600 : 400,
+            }}
+          >
+            {previewBlocksDelete
+              ? "Couldn't load preview — refresh and try again before confirming."
+              : (recoveryCopy ?? '')}
+          </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button
               tone="default"

@@ -72,16 +72,23 @@ export interface ActionEnqueueResult {
   actionId: string;
   /**
    * The number of messages the BE RESOLVED at enqueue time — not the
-   * caller's raw `messageIds.length` ask. Semantic differs by selector:
+   * caller's raw `messageIds.length` ask. Semantic differs by selector
+   * type (the schema discriminant on `archiveSelectorSchema` is `type`,
+   * NOT `kind` — typo fix 2026-06-05 type-design-analyzer):
    *
-   *   - `selector.kind === 'sender'`   → count of the sender's inbox
+   *   - `selector.type === 'sender'`   → count of the sender's inbox
    *      messages at this instant (whatever the worker is about to
    *      archive). Equal to `ArchivePreviewResult.inboxCount` from a
    *      preview taken in the same instant.
-   *   - `selector.kind === 'messages'` → length of the messageIds
+   *   - `selector.type === 'messages'` → length of the messageIds
    *      array AFTER ownership filtering (forged or cross-mailbox ids
    *      are dropped silently); may be strictly less than the caller's
    *      `messageIds.length`.
+   *
+   * NOTE: `ActionEnqueueResult` does NOT carry the selector itself —
+   * the discriminant lives on the request body, not the response. The
+   * comment documents the semantic of `requestedCount` per the request
+   * shape the caller already sent.
    *
    * Surfaces in the FE receipt strip ("Archived X of Y") and the
    * confirm modal. The FE should treat this as the authoritative
@@ -128,8 +135,19 @@ export interface ArchivePreviewResult {
  * Scope guard: enum-validated by Zod so a forged client value 400s
  * cleanly with `INVALID_REQUEST` instead of leaking past the controller.
  */
-export const compositePrimaryVerbSchema = z.enum(['archive', 'later', 'delete']);
-export type CompositePrimaryVerb = z.infer<typeof compositePrimaryVerbSchema>;
+// Verb set derived from the SHARED const so the FE + BE cannot drift
+// (type-design-analyzer 2026-06-05). A new primary verb added to the
+// shared array propagates here on next typecheck. The cast preserves
+// the literal tuple identity for `z.enum` (which requires a non-empty
+// readonly tuple of literal strings).
+import { COMPOSITE_PRIMARY_VERBS } from '@declutrmail/shared/contracts';
+export const compositePrimaryVerbSchema = z.enum(
+  COMPOSITE_PRIMARY_VERBS as unknown as readonly [
+    (typeof COMPOSITE_PRIMARY_VERBS)[number],
+    ...(typeof COMPOSITE_PRIMARY_VERBS)[number][],
+  ],
+);
+export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
 
 /**
  * Secondary historic-action verbs (ADR-0020). Optional. Applies only
@@ -142,8 +160,14 @@ export type CompositePrimaryVerb = z.infer<typeof compositePrimaryVerbSchema>;
  * unsubscribe.execution.kind === 'unsubscribe'); the composite secondary
  * column is reserved for when that pipeline lands.
  */
-export const compositeSecondaryVerbSchema = z.enum(['archive', 'delete']);
-export type CompositeSecondaryVerb = z.infer<typeof compositeSecondaryVerbSchema>;
+import { COMPOSITE_SECONDARY_VERBS } from '@declutrmail/shared/contracts';
+export const compositeSecondaryVerbSchema = z.enum(
+  COMPOSITE_SECONDARY_VERBS as unknown as readonly [
+    (typeof COMPOSITE_SECONDARY_VERBS)[number],
+    ...(typeof COMPOSITE_SECONDARY_VERBS)[number][],
+  ],
+);
+export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
 
 /**
  * Composite action request body — spec v1.2 Decision 15 wire shape.

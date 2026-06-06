@@ -113,8 +113,9 @@ export type ActivityVerbFilter = ActivityLogEntry['action'];
 
 /** Pagination `meta` carries `total` so D59 stats can show the window total. */
 export interface ActivityListMeta {
-  /** Next-page cursor; omitted on the last page. */
-  nextCursor?: string;
+  // Pagination cursor lives on `meta.pagination.nextCursor` (D202).
+  // The prior top-level `nextCursor?` was dropped — duplicate fields
+  // are a contract drift surface (architecture-guardian 2026-06-05).
   stats: ActivityStats;
   /**
    * All-time stats — verb-aggregated counts across the user's ENTIRE

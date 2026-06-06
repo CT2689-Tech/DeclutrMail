@@ -19,10 +19,20 @@ import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/a
 
 import { activityKeys } from './query-keys';
 
-export function useActivity(filters: ActivityFilters) {
+export function useActivity(filters: ActivityFilters, options?: { hasInFlightAction?: boolean }) {
   return useQuery({
     queryKey: activityKeys.list(filters),
     queryFn: ({ signal }) => fetchActivity({ ...filters, signal }),
+    // While an action is being polled elsewhere (Senders screen's
+    // useActionStatus or a revert poll), refetch /activity every 1.5s
+    // so a user who navigates here mid-poll sees the worker's
+    // activity_log row land without a manual refresh. Returns false
+    // (no polling) when no action is in flight — back to the default
+    // append-only refetch-on-focus cadence. Flow-completeness-auditor
+    // 2026-06-05: the "navigate from /senders to /activity mid-poll"
+    // class previously left /activity stale forever.
+    refetchInterval: options?.hasInFlightAction ? 1500 : false,
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -134,6 +134,15 @@ export interface SenderListRow {
     protectionReason: ProtectionReasonWire | null;
     protectionSetAt: string | null;
   };
+  /**
+   * Standing policy verb (`keep | archive | unsubscribe | later`).
+   * `null` = no policy row (engine default). FE renders a "Unsub queued"
+   * pill when this equals `'unsubscribe'` (D38 2026-06-05 brainstorm).
+   *
+   * Optional on the type because legacy test fixtures + Weekly-Hero
+   * wire shapes don't carry it; absent ⇒ adapter treats as `null`.
+   */
+  policyType?: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
 }
 
 /**

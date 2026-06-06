@@ -52,6 +52,7 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
       protectionReason: null,
       protectionSetAt: null,
     },
+    policyType: null,
     ...overrides,
   };
 }

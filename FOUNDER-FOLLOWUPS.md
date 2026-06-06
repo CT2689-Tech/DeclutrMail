@@ -26,6 +26,118 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-05 — D204 cross-feature write: ActionsService → sender_policies (extract via outbox)
+**Source:** architecture-guardian 2026-06-05 [BLOCKING]
+**Why:** `recordUnsubscribeIntent` (actions.service.ts:572-585) upserts `sender_policies` directly — that table is senders-owned per `SendersModule` header. D204 requires either a `SendersWriter` facade or an outbox event. Currently shipped to unblock the founder's smoke flow; the boundary fix is queued.
+**How (preferred):**
+1. Add `actions.unsubscribe_intent_recorded` to `packages/events/src/events.ts` with payload `{ mailboxAccountId, senderKey, recordedAt }`.
+2. Emit from `ActionsService.recordUnsubscribeIntent` via `outbox.publish(tx, …)` inside the existing transaction (mirrors the LabelActionWorker outbox pattern at `label-action.worker.ts:304-313`).
+3. Add a senders-owned consumer in `packages/workers/src/senders-policy-attribution.worker.ts` (or extend the existing reconciler) that projects the event into `sender_policies.policy_type='unsubscribe'`.
+4. Drop the direct `tx.insert(senderPolicies)` from ActionsService.
+**Verifies by:** Integration test in `actions.service.spec.ts` asserts the outbox row lands; consumer test asserts the policy row is upserted.
+**Status:** Open
+
+### 2026-06-05 — DB-level Idempotency-Key dedup for unsubscribe-intent
+**Source:** architecture-guardian 2026-06-05 [BLOCKING] → controller header now enforced 2026-06-05 commit
+**Why:** `POST /api/actions/unsubscribe-intent` requires `Idempotency-Key` header (≥8 chars) but does NOT yet enforce DB-level dedup per key. The shared `action_jobs.idempotency_key` unique constraint cannot host a `'unsubscribe'` verb because `action_verb` enum only includes `archive|later|delete`. A network-retried POST with the same key currently writes a second `activity_log` row.
+**How (cheapest):** Add 'unsubscribe' to the `action_verb` enum (mig 0024) and store the intent row as `action_jobs` with `status='done', verb='unsubscribe', idempotency_key=namespacedKey, resolved_message_ids=[activityLogId]`. Replay reads the prior row by namespaced key + returns the cached activity_log_id.
+**Verifies by:** spec test calls `recordUnsubscribeIntent` twice with the same key + asserts a SINGLE `activity_log` row.
+**Status:** Open
+
+### 2026-06-05 — Sender Detail "Unsub queued" pill + composite-preview pending row
+**Source:** flow-completeness-auditor 2026-06-05 [BLOCKING] → policyType wire + sender-card pill landed 2026-06-05
+**Why:** Sender Detail page still doesn't carry the pill; the senders-list row now shows it (via `unsubPending` from `policyType==='unsubscribe'`). Sender Detail header should mirror.
+**How:** Read `senderDetail.policyType` in the detail page header; render the pill alongside the Protected chip when `'unsubscribe'`. Add a story for `Protected + UnsubPending` overlap.
+**Verifies by:** Visual check on /senders/:id of a sender with an unsub-pending policy.
+**Status:** Open
+
+### 2026-06-05 — Storybook coverage: ComposeStrip + ConfirmActionModal + Activity B-track
+**Source:** design-system-agent 2026-06-05 [BLOCKING]
+**Why:** D210 requires every new component to ship with a stories file. `compose-strip.tsx` (756 lines, NEW) and the heavily-rewritten `confirm-action-modal.tsx` have no stories. The Activity redesign added 9+ states (Loading/Error/WithSelection/BulkUndoError/Grouped/VerbFiltered/CustomDateRange/WindowAllTime/UndoTryAgain) the existing 3-story file does not cover.
+**How:**
+1. Add `compose-strip.stories.tsx` — empty / single-axis / multi-axis / negated / window-popover-open / domain-popover-open / loading-counts.
+2. Add `confirm-action-modal.stories.tsx` — Archive / Delete / Unsub-with-secondary-archive / Unsub-with-secondary-delete / Later / loading-preview / preview-error / expanded-recent-subjects.
+3. Extend `activity-screen.stories.tsx` with the 9 new states above + update the stale meta description.
+**Verifies by:** Storybook lists every state; visual-regression CI catches future drift.
+**Status:** Open
+
+### 2026-06-05 — Tokens: `color.danger` family + retire #A12525 / #DC2626 / `color.red` drift
+**Source:** design-system-agent 2026-06-05 [SUGGESTION]
+**Why:** Three reds in flight — `#A12525` (compose-strip + confirm-action-modal), `#DC2626` (action-popover), `color.red = #B91C1C` (tokens). Verb registry header says `color.danger` is the planned token but never landed.
+**How:** Add `color.danger`, `color.dangerBg`, `color.dangerBorder` to tokens. Dereference from all three call sites.
+**Verifies by:** `grep '#A12525\|#DC2626'` returns 0 hits in `apps/web` + `packages/shared`.
+**Status:** Open
+
+### 2026-06-05 — Inverse-surface tokens (fgInverse / fgInverseSoft / lineInverse)
+**Source:** design-system-agent 2026-06-05 [NIT]
+**Why:** Three different alphas hand-rolled on inverted-dark surfaces (BulkActionBar 0.55/0.65/0.7; confirm-action-modal 0.16; etc). Inverse-surface area now justifies a token row.
+**How:** Add `fgInverse`, `fgInverseSoft`, `fgInverseMuted`, `lineInverse` to tokens. Migrate call sites.
+**Verifies by:** `rgba(255,255,255,` literal hits 0 in `apps/web/src/features` + `packages/shared`.
+**Status:** Open
+
+### 2026-06-05 — Branded IDs (UndoToken / ActionId / SenderId / MailboxId / SenderKey)
+**Source:** type-design-analyzer 2026-06-05 [SUGGESTION]
+**Why:** All ids flow as bare `string` through the action + activity surface. The bulk-undo loop reads `row.undoState.token` AND `row.id` from the same object; a typo at the call site is a runtime 404, not a compile error.
+**How:** Add `packages/shared/src/contracts/brands.ts` with the 5 brands. Cast at wire boundaries (fetchers) + worker output.
+**Verifies by:** A swapped arg (`getActionStatus(undoToken)`) becomes a TS error.
+**Status:** Open
+
+### 2026-06-05 — Verb vocabulary consolidation (6 parallel types → 1 manifest)
+**Source:** typescript-reviewer 2026-06-05 [SUGGESTION] + MEMORY "Action Registry design"
+**Why:** Six "verb" types and four bridge functions (`mapLegacyVerb`, `legacyVerbFromId`, `VERB_MAP`, `VERB_TO_REGISTRY`) — each verb add pays an N-file tax. Already tracked as PR #137.
+**How:** Land the Action Registry design (docs/handoffs/2026-05-30-bulk-actions-final-consensus.md).
+**Verifies by:** Single canonical `VerbId` type derived from `ACTION_VERBS`; bridges retire.
+**Status:** Open
+
+### 2026-06-05 — Exhaustive switches on GmailHistoryRecord / volumeTrend / ActivityUndoStateWire
+**Source:** typescript-reviewer 2026-06-05 [SUGGESTION]
+**Why:** Three closed-union switches lack a `default: assertNever(x)` tail. Adding a future variant silently drops events / renders the dash placeholder.
+**How:** Append `default: { const _exhaustive: never = ev; return _exhaustive; }` to each.
+**Verifies by:** Adding a bogus variant turns each into a compile error.
+**Status:** Open
+
+### 2026-06-05 — Activity envelope: BE/FE Zod-parse the meta on wire boundary
+**Source:** typescript-reviewer 2026-06-05 [SUGGESTION] + privacy-auditor passive
+**Why:** `fetchActivity` casts `meta` to `ActivityListMetaWire` with no runtime check; a BE field rename will compile-clean and render the wrong number.
+**How:** Add a `parseActivityEnvelope` Zod schema in `@/lib/api/activity.ts`; call it from `fetchActivity` before returning.
+**Verifies by:** Stubbing a BE meta drop in tests surfaces a parse error, not a silent zero.
+**Status:** Open
+
+### 2026-06-05 — Cursor recovery path: `sync.cursor_recovery_failed` to Sentry, not just console.warn
+**Source:** silent-failure-hunter 2026-06-05 [SUGGESTION]
+**Why:** `apps/api/src/worker.ts:3802-3827` swallows recovery enqueue failures with `console.warn`. A sustained Redis hiccup at recovery-time leaves the mailbox stuck silently.
+**How:** Route to `observer.onError` + emit a `sync.cursor_recovery_failed` PostHog counter so a spike is alertable.
+**Verifies by:** Forcing an enqueue failure surfaces a Sentry capture.
+**Status:** Open
+
+### 2026-06-05 — Migration 0023 — heal + CHECK in single transaction
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** Atlas runs each `--> statement-breakpoint` chunk in its own transaction. A concurrent writer between heal and ADD CONSTRAINT could fail the constraint addition.
+**How:** Either drop the breakpoint (single multi-statement chunk) OR use `ADD CONSTRAINT … NOT VALID` then `VALIDATE CONSTRAINT` separately.
+**Verifies by:** Online deploy with synthetic concurrent write does not break.
+**Status:** Open
+
+### 2026-06-05 — Migration 0022 — defensive UPSERT predicate for memory-pin idempotence
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** The ON CONFLICT DO UPDATE WHERE clause `is_protected=false` does NOT match the worker's `AND reason <> 'engagement_based'` — re-running 0022 against a mailbox with a manual-demoted memory pin would re-protect.
+**How:** Mirror the worker's predicate in the migration's WHERE clause.
+**Verifies by:** Replay test seeds a memory-pin row + re-applies 0022 → row stays demoted.
+**Status:** Open
+
+### 2026-06-05 — Migration 0020 — annotate CREATE INDEX with `atlas:nolint concurrent_index`
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** `CREATE INDEX action_jobs_composite_id_idx` lacks the `concurrent_index` annotation that the sibling 0015 establishes as precedent. Pre-launch OK; invites future drift.
+**How:** Add the annotation + rationale matching 0015.
+**Verifies by:** Atlas lint passes; grep finds annotation.
+**Status:** Open
+
+### 2026-06-05 — Pre-existing PGlite hook timeout flakes (5 API tests)
+**Source:** Multi-agent audit 2026-06-05
+**Why:** `BriefReadService.listByRange`, `ActionsService.sender selector` enqueue, `AutopilotReadService.listRules`, `FollowupReadService.listAwaiting`, `GmailWebhookService.processVerifiedPush` all flake on `Hook timed out in 30000ms`. Pre-existing class (MISTAKES.md 2026-05-27 already calls out the testTimeout/hookTimeout mismatch).
+**How:** Raise `hookTimeout: 60_000` in `apps/api/vitest.config.ts`.
+**Verifies by:** Full `pnpm --filter @declutrmail/api test` runs green across 3 consecutive runs.
+**Status:** Open
+
 ### 2026-06-04 — CLAUDE.md §2.2 K/A/U/L → K/A/U/L/D distillation
 **Source:** design-system-agent critic pass on `feat/d038-senders-v2-integration` 2026-06-04 (Q1 plan-drift)
 **Why:** CLAUDE.md §2.2 still locks "K/A/U/L". Spec v1.2 + ADR-0019 amend to K/A/U/L/D. Per CLAUDE.md §3 agents may not amend CLAUDE.md silently — founder via `chore/distill-` PR.

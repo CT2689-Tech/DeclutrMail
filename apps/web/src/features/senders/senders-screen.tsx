@@ -598,32 +598,61 @@ function SendersScreenContent({
         return;
       }
 
-      // Single-sender Unsubscribe — record the intent honestly (D38 +
-      // 2026-06-05 brainstorm). The real RFC8058 / mailto / manual
-      // pipeline (D230) lands later; for now we upsert
-      // sender_policies.policy_type='unsubscribe' + write a 0-affected
-      // activity_log row so /activity reflects the decision. Replaces
-      // the prior tracer-toast-with-fake-receipt path that violated
-      // CLAUDE.md §10 ("Unsubscribed from DKNY" was a lie with no BE
-      // call).
-      if (verb === 'Unsubscribe' && senders.length === 1) {
-        const sender = senders[0]!;
+      // Unsubscribe — record the intent honestly (D38 + 2026-06-05
+      // brainstorm). The real RFC8058 / mailto / manual pipeline (D230)
+      // lands later; for now we upsert sender_policies.policy_type=
+      // 'unsubscribe' + write a 0-affected activity_log row so /activity
+      // reflects the decision. Replaces the prior tracer-toast-with-fake-
+      // receipt path that violated CLAUDE.md §10 ("Unsubscribed from
+      // DKNY" was a lie with no BE call). Multi-sender Unsub fans the
+      // mutation across each sender so the audit trail captures every
+      // decision; we do NOT batch into a single tracer toast for the
+      // bulk case (same honesty rule).
+      if (verb === 'Unsubscribe') {
+        // Guard against rapid double-confirmation. While a previous
+        // recordUnsubIntent.mutate is in-flight we drop the click (the
+        // modal has already closed; the button is no longer visible).
+        if (recordUnsubIntent.isPending) return;
         setPendingAction(null);
         setSelected(new Set());
-        recordUnsubIntent.mutate(
-          { senderId: sender.id },
-          {
-            onSuccess: () => {
-              toast(
-                `Unsubscribe queued for ${sender.name} — we'll process it when the pipeline ships.`,
-                'success',
-              );
-              void qc.invalidateQueries({ queryKey: sendersKeys.all });
-              void qc.invalidateQueries({ queryKey: activityKeys.all });
+        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
+        const isBulk = senderRefs.length > 1;
+        // Fire each intent. TanStack Query dedupes invalidations into
+        // one refetch, so the toast burst + per-success invalidation
+        // collapse to a single Activity refresh at the end of the run.
+        let succeeded = 0;
+        let failed = 0;
+        for (const sref of senderRefs) {
+          recordUnsubIntent.mutate(
+            { senderId: sref.id },
+            {
+              onSuccess: () => {
+                succeeded++;
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `Unsubscribe queued for ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''} — we'll process when the pipeline ships.`
+                      : `Unsubscribe queued for ${sref.name} — we'll process it when the pipeline ships.`,
+                    failed > 0 ? 'warn' : 'success',
+                  );
+                }
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                void qc.invalidateQueries({ queryKey: activityKeys.all });
+              },
+              onError: () => {
+                failed++;
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `${failed} of ${senderRefs.length} unsubscribes failed to queue — try again.`
+                      : `Couldn't queue unsubscribe for ${sref.name}`,
+                    'warn',
+                  );
+                }
+              },
             },
-            onError: () => toast(`Couldn't queue unsubscribe for ${sender.name}`, 'warn'),
-          },
-        );
+          );
+        }
         return;
       }
 
@@ -631,10 +660,10 @@ function SendersScreenContent({
       // email count is shown here: the true number is only known once the
       // verb's worker runs (P6 wired that for single-sender Archive).
       // NOTE: Keep is intentionally tracer (no Gmail mutation needed);
-      // multi-sender bulk for any verb is still tracer (P7).
+      // multi-sender bulk for non-Unsub verbs is still tracer (P7).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
-        verb === 'Unsubscribe' ? 'warn' : 'success',
+        'success',
       );
       if (verb !== 'Keep') {
         setReceipt({
@@ -689,6 +718,11 @@ function SendersScreenContent({
         // issued no undo token. Never show a "reversible" receipt with a
         // dead Undo — say plainly that there was nothing to do.
         toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        // The worker still wrote a 0-affected `activity_log` row
+        // (label-action.worker.ts:248 — the audit-trail consistency
+        // fix 2026-06-05). Invalidate Activity so a user navigating
+        // to /activity sees the audit row instead of an empty feed.
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         setReceipt({
           id: `r${++receiptSeq}`,
@@ -1208,6 +1242,7 @@ function SendersScreenContent({
         onConfirm={confirmPending}
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
+        compositePreviewError={compositePreviewQuery.isError}
       />
 
       <ReviewSession

@@ -155,11 +155,15 @@ export class ActivityController {
       hasMore: nextCursor !== null,
       limit,
     };
+    // `meta.pagination.nextCursor` is the canonical D202 cursor field
+    // (matches senders + undo + triage). A previous revision also spread
+    // `nextCursor` at the meta top level — architecture-guardian flagged
+    // the duplicate as a contract drift surface (a client reading from
+    // one and another reading from the other agreed by coincidence).
     return {
       data: page,
       meta: {
         pagination,
-        ...(nextCursor !== null ? { nextCursor } : {}),
         stats,
         allTimeStats,
         window,

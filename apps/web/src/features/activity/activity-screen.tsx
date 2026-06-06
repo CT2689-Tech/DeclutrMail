@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useIsFetching } from '@tanstack/react-query';
 
 import { Avatar, Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
 
@@ -57,7 +58,12 @@ export function ActivityScreen() {
   const filters = readFiltersFromUrl(params);
   const groupMode = readGroupMode(params.get('group'));
 
-  const query = useActivity(filters);
+  // Cross-feature signal: any action-status poll currently in flight
+  // (Senders or Triage). When true, /activity refetches every 1.5s so
+  // the user sees the row appear without manual refresh on
+  // mid-poll navigation (flow-completeness-auditor 2026-06-05).
+  const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
+  const query = useActivity(filters, { hasInFlightAction: inFlightActionPolls > 0 });
 
   const writeUrl = useCallback(
     (updates: Record<string, string | null>) => {
@@ -118,6 +124,14 @@ export function ActivityScreen() {
   //   - URL-encoding 100+ ids per page would blow the URL limit
   //   - filter changes naturally drop selections (we clear below)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Bulk-undo state lives at the screen level (was in BulkActionBar)
+  // so it survives the bar's unmount when `selectedIds` clears AND
+  // exposes failed tokens to per-row UndoCell so the "Try again"
+  // pill renders on bulk-failed rows. silent-failure-hunter +
+  // flow-completeness-auditor 2026-06-05.
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+  const [failedTokens, setFailedTokens] = useState<Set<string>>(new Set());
   const filterKey = useMemo(
     () =>
       JSON.stringify([
@@ -138,10 +152,15 @@ export function ActivityScreen() {
     ],
   );
   useEffect(() => {
-    // Filter change → drop selections. Otherwise a row hidden by a new
-    // filter could still be in the bulk action set, invisible.
+    // Filter change → drop selections + failed-token pills. Otherwise a
+    // row hidden by a new filter could still be in the bulk action set,
+    // invisible. Guarded on !bulkBusy so an in-flight bulk-undo
+    // doesn't lose its target set mid-run.
+    if (bulkBusy) return;
     setSelectedIds(new Set());
-  }, [filterKey]);
+    setFailedTokens(new Set());
+    setBulkError(null);
+  }, [filterKey, bulkBusy]);
   const toggleRow = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -214,7 +233,15 @@ export function ActivityScreen() {
       <BulkActionBar
         rows={rows}
         selectedIds={selectedIds}
-        onClear={() => setSelectedIds(new Set())}
+        bulkBusy={bulkBusy}
+        bulkError={bulkError}
+        onSetBulkBusy={setBulkBusy}
+        onSetBulkError={setBulkError}
+        onSetFailedTokens={setFailedTokens}
+        onClear={() => {
+          setSelectedIds(new Set());
+          setBulkError(null);
+        }}
       />
 
       {rows.length === 0 ? (
@@ -228,7 +255,12 @@ export function ActivityScreen() {
           }
         />
       ) : groupMode === 'sender' ? (
-        <GroupedList rows={rows} selectedIds={selectedIds} onToggle={toggleRow} />
+        <GroupedList
+          rows={rows}
+          selectedIds={selectedIds}
+          onToggle={toggleRow}
+          failedTokens={failedTokens}
+        />
       ) : (
         <ul
           style={{
@@ -246,6 +278,7 @@ export function ActivityScreen() {
               row={row}
               isSelected={selectedIds.has(row.id)}
               onToggleSelect={() => toggleRow(row.id)}
+              failedTokens={failedTokens}
             />
           ))}
         </ul>
@@ -431,7 +464,7 @@ const VERB_CHIPS: ReadonlyArray<{
   { value: 'archive', label: 'Archived', dot: color.fgSoft },
   { value: 'delete', label: 'Deleted', dot: color.amber },
   { value: 'unsubscribe', label: 'Unsubscribed', dot: color.primary },
-  { value: 'later', label: 'Later', dot: '#7C3AED' },
+  { value: 'later', label: 'Later', dot: color.dashboard.accent },
   { value: 'keep', label: 'Kept', dot: color.emerald },
   { value: 'followup-dismiss', label: 'Followups', dot: color.fgMuted },
 ];
@@ -577,12 +610,12 @@ function FilterToolbar({
         <DateInput
           label="From"
           value={isoDateOnly(dateFrom)}
-          onChange={(v) => onRange(v ? new Date(`${v}T00:00:00Z`).toISOString() : null, dateTo)}
+          onChange={(v) => onRange(safeIsoFromDateInput(v), dateTo)}
         />
         <DateInput
           label="To"
           value={isoDateOnly(dateTo)}
-          onChange={(v) => onRange(dateFrom, v ? new Date(`${v}T00:00:00Z`).toISOString() : null)}
+          onChange={(v) => onRange(dateFrom, safeIsoFromDateInput(v))}
         />
         {isCustomRange && (
           <button
@@ -800,10 +833,20 @@ function ExportCsvButton({
 function BulkActionBar({
   rows,
   selectedIds,
+  bulkBusy,
+  bulkError,
+  onSetBulkBusy,
+  onSetBulkError,
+  onSetFailedTokens,
   onClear,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
+  bulkBusy: boolean;
+  bulkError: string | null;
+  onSetBulkBusy: (busy: boolean) => void;
+  onSetBulkError: (err: string | null) => void;
+  onSetFailedTokens: (updater: (prev: Set<string>) => Set<string>) => void;
   onClear: () => void;
 }) {
   const revert = useRevertActivity();
@@ -812,14 +855,13 @@ function BulkActionBar({
   // so the user can SEE that a stale / expired row was skipped.
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
   const revertableCount = selectedRows.filter((r) => r.undoState.kind === 'available').length;
-  const [bulkError, setBulkError] = useState<string | null>(null);
-  const [bulkBusy, setBulkBusy] = useState(false);
 
   if (selectedIds.size === 0) return null;
 
   const runBulkUndo = async () => {
-    setBulkBusy(true);
-    setBulkError(null);
+    onSetBulkBusy(true);
+    onSetBulkError(null);
+    onSetFailedTokens(() => new Set());
     const targets = selectedRows
       .filter((r) => r.undoState.kind === 'available')
       .map((r) => (r.undoState.kind === 'available' ? r.undoState.token : null))
@@ -827,15 +869,27 @@ function BulkActionBar({
     // Parallel — each POST hits its own undo journal row; the BE rate
     // limiter (30/min on gmail-action) bounds the burst.
     const results = await Promise.allSettled(targets.map((token) => revert.mutateAsync(token)));
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (failed > 0) {
-      setBulkError(
-        `${failed} of ${targets.length} undo${targets.length === 1 ? '' : 's'} failed. Try again from the row.`,
+    const failedTokenList = results
+      .map((r, i) => (r.status === 'rejected' ? targets[i]! : null))
+      .filter((t): t is string => t !== null);
+    if (failedTokenList.length > 0) {
+      onSetBulkError(
+        `${failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} failed. Failed rows show "Try again".`,
       );
+      // Persist failed tokens to ActivityScreen state so per-row
+      // UndoCell renders the "Try again" pill on each failed row
+      // (was lost when the bar unmounted on clear — bug class:
+      // bulk-failure copy tells user "act on row" but row had no
+      // signal; silent-failure-hunter 2026-06-05).
+      onSetFailedTokens((prev) => {
+        const next = new Set(prev);
+        for (const t of failedTokenList) next.add(t);
+        return next;
+      });
     } else {
       onClear();
     }
-    setBulkBusy(false);
+    onSetBulkBusy(false);
   };
 
   return (
@@ -973,10 +1027,12 @@ function GroupedList({
   rows,
   selectedIds,
   onToggle,
+  failedTokens,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
+  failedTokens?: Set<string> | undefined;
 }) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1083,6 +1139,7 @@ function GroupedList({
                     isSelected={selectedIds.has(row.id)}
                     onToggleSelect={() => onToggle(row.id)}
                     variant="grouped"
+                    failedTokens={failedTokens}
                   />
                 ))}
               </ul>
@@ -1102,7 +1159,7 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   archive: color.fgSoft,
   delete: color.amber,
   unsubscribe: color.primary,
-  later: '#7C3AED',
+  later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
 };
@@ -1112,11 +1169,16 @@ function ActivityRow({
   isSelected,
   onToggleSelect,
   variant = 'flat',
+  failedTokens,
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
   onToggleSelect: () => void;
   variant?: 'flat' | 'grouped';
+  /** Set of undo tokens that just failed in a bulk-undo burst. Each
+   *  matching row renders the per-row "Try again" pill in amber so
+   *  the bar's instruction ("act on the row") has a visible affordance. */
+  failedTokens?: Set<string> | undefined;
 }) {
   const senderName = row.sender?.displayName ?? 'Account-scoped action';
   const senderEmail = row.sender?.email ?? '';
@@ -1254,7 +1316,7 @@ function ActivityRow({
           via {sourceLabel}
         </span>
       </div>
-      <RowActions row={row} />
+      <RowActions row={row} failedTokens={failedTokens} />
       <div
         style={{
           fontSize: 11.5,
@@ -1275,7 +1337,13 @@ function ActivityRow({
  * single horizontal group with a 1px hairline between them. Replaces
  * the three separate floating pills the tracer shipped with.
  */
-function RowActions({ row }: { row: ActivityRowWire }) {
+function RowActions({
+  row,
+  failedTokens,
+}: {
+  row: ActivityRowWire;
+  failedTokens?: Set<string> | undefined;
+}) {
   return (
     <div
       style={{
@@ -1289,7 +1357,7 @@ function RowActions({ row }: { row: ActivityRowWire }) {
         overflow: 'hidden',
       }}
     >
-      <UndoCell row={row} />
+      <UndoCell row={row} bulkFailedTokens={failedTokens} />
       <OpenInGmailLink row={row} />
     </div>
   );
@@ -1352,7 +1420,16 @@ function OpenInGmailLink({ row }: { row: ActivityRowWire }) {
  * silent-failure class from MISTAKES.md 2026-06-05 + the stuck-revert
  * recovery path the handoff calls out.
  */
-function UndoCell({ row }: { row: ActivityRowWire }) {
+function UndoCell({
+  row,
+  bulkFailedTokens,
+}: {
+  row: ActivityRowWire;
+  /** Failed-token set lifted from BulkActionBar so a row that failed
+   *  in a bulk-undo burst keeps its "Try again" pill visible after
+   *  the bar dismisses. Address silent-failure-hunter 2026-06-05. */
+  bulkFailedTokens?: Set<string> | undefined;
+}) {
   const revert = useRevertActivity();
   const undo = row.undoState;
 
@@ -1361,6 +1438,8 @@ function UndoCell({ row }: { row: ActivityRowWire }) {
   // rows share the same hook instance, so `isPending` flips for any
   // in-flight revert — gate the visual pending state on `variables`.
   const isPendingHere = revert.isPending && revert.variables === lastToken(undo);
+  const tokenIsBulkFailed =
+    undo.kind === 'available' && (bulkFailedTokens?.has(undo.token) ?? false);
 
   const baseStyle: CSSProperties = {
     fontSize: 12,
@@ -1376,7 +1455,7 @@ function UndoCell({ row }: { row: ActivityRowWire }) {
   };
 
   if (undo.kind === 'available') {
-    const failed = revert.isError && revert.variables === undo.token;
+    const failed = (revert.isError && revert.variables === undo.token) || tokenIsBulkFailed;
     return (
       <button
         type="button"
@@ -1384,7 +1463,7 @@ function UndoCell({ row }: { row: ActivityRowWire }) {
         disabled={isPendingHere}
         title={
           failed
-            ? `Last attempt failed: ${revert.error?.message ?? 'unknown error'}. Click to retry.`
+            ? `Last attempt failed: ${revert.error?.message ?? 'click failed in a bulk undo'}. Click to retry.`
             : 'Revert this action.'
         }
         style={{
@@ -1486,14 +1565,23 @@ function LoadingState() {
 }
 
 function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
+  // Distinguish user-input errors (400) from server errors (5xx). A
+  // generic "Try again in a moment" on a 400 produced by `dateFrom >
+  // dateTo` would loop the user back into the same broken filter
+  // forever — flow-completeness-auditor 2026-06-05.
+  const isClientInput = error instanceof ApiError && error.status >= 400 && error.status < 500;
+  const title = isClientInput
+    ? 'Your filters returned an invalid query'
+    : "We couldn't load your activity";
+  const message = isClientInput
+    ? 'Check the date range (From must be earlier than To) and the source/verb filters, then try again.'
+    : error instanceof ApiError
       ? `We couldn't load your activity (${error.status}). Try again in a moment.`
       : "We couldn't load your activity right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState
-        title="We couldn't load your activity"
+        title={title}
         description={message}
         action={
           <Button tone="primary" onClick={onRetry}>
@@ -1699,6 +1787,23 @@ function isoDateOnly(iso: string | null): string {
   const month = String(d.getUTCMonth() + 1).padStart(2, '0');
   const day = String(d.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parse a `<input type="date">` value into an ISO timestamp safely.
+ * The native picker normalises to `YYYY-MM-DD` in compliant browsers,
+ * but a future regression to `<input type="text">`, a Firefox quirk,
+ * or a paste of garbage can yield an unparseable string. Returning null
+ * on parse failure keeps the filter state honest (the URL clears
+ * rather than getting `Invalid Date.toISOString()` throwing through a
+ * React event handler and leaving the filter in a stuck state — the
+ * silent-failure pattern flagged 2026-06-05 silent-failure-hunter).
+ */
+function safeIsoFromDateInput(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 // ── CSV builder ───────────────────────────────────────────────────────

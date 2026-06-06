@@ -11,12 +11,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
-import type {
-  GmailAccess,
-  GmailHistoryRecord,
-  GmailMessageMetadata,
-  GmailMetadataClient,
-} from './ports.js';
+import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
 import type { IncrementalSyncJobData } from './queue.js';
 import { deriveSenderKey, emailDomain, parseFromHeader } from './sender-key.js';
 import { ValidationError } from './worker-errors.js';

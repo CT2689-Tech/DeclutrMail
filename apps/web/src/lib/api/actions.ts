@@ -142,9 +142,12 @@ export async function revertUndo(
 /* ─────────────────────── ADR-0020 — unified composite client ─────────────────────── */
 
 /** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */
-export type CompositePrimaryVerb = 'archive' | 'later' | 'delete';
+// Derived from the shared const so FE/BE cannot drift (type-design-
+// analyzer 2026-06-05).
+import type { CompositePrimaryVerb, CompositeSecondaryVerb } from '@declutrmail/shared/contracts';
+export type { CompositePrimaryVerb, CompositeSecondaryVerb };
 /** Secondary historic verb — applies on Unsubscribe / Later primaries. */
-export type CompositeSecondaryVerb = 'archive' | 'delete';
+// CompositeSecondaryVerb re-exported above.
 
 /** Returned by `POST /api/actions` — composite enqueue handle. */
 export interface CompositeActionEnqueueResult {
@@ -247,15 +250,23 @@ export interface UnsubscribeIntentResult {
  * Record an unsubscribe intent for a sender. Replaces the prior
  * tracer toast (which lied — said "Unsubscribed" with no BE call) per
  * the 2026-06-05 founder brainstorm. CLAUDE.md §10 no-fake-completion.
+ *
+ * Idempotency-Key (D202): every call sends a fresh key by default; a
+ * network-retry of the SAME mutation dedups at the BE (action_jobs
+ * idempotency_key unique). The caller may supply a key explicitly to
+ * collapse multiple click handlers — TanStack Query's retry path passes
+ * the same key automatically.
  */
 export async function recordUnsubscribeIntent(
   senderId: string,
-  options: ActionRequestOptions = {},
+  options: ActionRequestOptions & { idempotencyKey?: string } = {},
 ): Promise<UnsubscribeIntentResult> {
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
   const env = await apiPost<UnsubscribeIntentResult>(
     '/api/actions/unsubscribe-intent',
     { senderId },
     {
+      headers: { 'Idempotency-Key': idempotencyKey },
       ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
     },
   );

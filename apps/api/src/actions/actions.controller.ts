@@ -179,19 +179,29 @@ export class ActionsController {
    *      LIED ("Unsubscribed from DKNY") with no BE call (CLAUDE.md §10
    *      no-fake-completion violation).
    *
-   * No `Idempotency-Key` required — the endpoint is naturally
-   * idempotent at the sender_policies upsert + the activity_log row is
-   * an audit entry (re-clicking on a sender already pending writes a
-   * second audit row, which is the right behaviour: each click is a
-   * decision worth recording).
+   * Idempotency (D202). Requires `Idempotency-Key` header (≥8 chars)
+   * matching the sibling routes. A network-retried POST with the same
+   * key returns the prior result without writing a second audit row;
+   * a fresh user click (new key) writes a new audit row — that's the
+   * "each click is a decision" semantic, kept honest via the key.
+   * Added 2026-06-05 after architecture-guardian flagged the prior
+   * "no idempotency at all" stance as an invitation for phantom audit
+   * rows from flaky-network retries.
    */
   @RateLimit({ bucket: 'gmail-action' })
   @Post('unsubscribe-intent')
   @UseGuards(CsrfGuard)
   async unsubscribeIntent(
     @CurrentMailbox() mailbox: { id: string },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() body: unknown,
   ): Promise<Envelope<UnsubscribeIntentResult>> {
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for actions.',
+      });
+    }
     const parsed = unsubscribeIntentRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException({
@@ -202,6 +212,7 @@ export class ActionsController {
     const result = await this.actions.recordUnsubscribeIntent({
       mailboxAccountId: mailbox.id,
       senderId: parsed.data.senderId,
+      idempotencyKey: idempotencyKey.trim(),
     });
     return ok(result);
   }

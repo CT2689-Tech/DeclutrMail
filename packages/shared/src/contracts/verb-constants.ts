@@ -51,6 +51,27 @@ export const ACTION_VERBS = [
 export type ActionVerb = (typeof ACTION_VERBS)[number];
 
 /**
+ * Composite-action primary verb subset (ADR-0020 + spec v1.2 Decision
+ * 15). The primary `archive | later | delete` set is the ONLY allowed
+ * primary today; `unsubscribe` is locked to its own intent endpoint
+ * (D38 2026-06-05) until the RFC8058 / mailto / manual pipeline (D230)
+ * lands. Derived as a const so the FE and BE cannot drift —
+ * type-design-analyzer 2026-06-05 caught the prior parallel-literal-
+ * union drift bomb.
+ */
+export const COMPOSITE_PRIMARY_VERBS = ['archive', 'later', 'delete'] as const;
+export type CompositePrimaryVerb = (typeof COMPOSITE_PRIMARY_VERBS)[number];
+
+/**
+ * Composite-action secondary verb subset (ADR-0020). Applies on
+ * Unsubscribe / Later primaries: a historic Archive or Delete window
+ * that batches with the primary. Derived from the same const so a
+ * future addition propagates through both BE schema + FE consumer.
+ */
+export const COMPOSITE_SECONDARY_VERBS = ['archive', 'delete'] as const;
+export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
+
+/**
  * Selector axes a verb's capabilities are gated on (Codex correction C
  * — `capabilitiesBySelector`, not a single `tier`). `sender` = one
  * sender; `multi-sender` = an explicit multi-select; `sender-filter` =

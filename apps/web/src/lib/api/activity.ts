@@ -84,7 +84,8 @@ export interface ActivityStatsWire {
 
 export interface ActivityListMetaWire {
   pagination: PaginationMeta;
-  nextCursor?: string;
+  // Pagination cursor lives on `pagination.nextCursor` (D202). Removed
+  // the duplicate top-level `nextCursor?` per architecture-guardian.
   stats: ActivityStatsWire;
   /** All-time stats across the entire mailbox history (ignores filters). */
   allTimeStats: ActivityStatsWire;
