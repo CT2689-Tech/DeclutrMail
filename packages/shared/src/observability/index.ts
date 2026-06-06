@@ -5,4 +5,4 @@
 // and their payload shapes. See `scrubber.ts` for the D7/D228 guarantees.
 
 export { scrubObject, scrubTelemetryPayload } from './scrubber.js';
-export type { EventName, EventPayloads, EventProps } from './events.js';
+export type { EventName, EventPayloads, EventProps, Verb } from './events.js';

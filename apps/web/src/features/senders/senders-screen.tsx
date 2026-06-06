@@ -60,8 +60,28 @@ import type {
 } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb } from '@/lib/sentry';
+import type { Verb } from '@declutrmail/shared/observability';
 
 const { color, font } = tokens;
+
+/**
+ * FE verb labels → PostHog closed-union verb tokens. Keeps the
+ * 'bulk_action_taken' event's `verb` field schema-aligned with the
+ * canonical KAULD set (D227 / verb-registry). 'Protect' is internal
+ * (standing-policy toggle, not a verb-fire) so it maps to 'keep' for
+ * the funnel; the protect-specific event lands when the surface
+ * deserves a dedicated event.
+ */
+const VERB_TO_POSTHOG: Record<ActionVerb, Verb> = {
+  Keep: 'keep',
+  Archive: 'archive',
+  Unsubscribe: 'unsubscribe',
+  Later: 'later',
+  Delete: 'delete',
+  Protect: 'keep',
+};
 
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boolean> = {
   Archive: canArchive,
@@ -505,6 +525,37 @@ function SendersScreenContent({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+
+      // Instrumentation single-entry — every verb-fire from this screen
+      // lands here (single + bulk + composite + unsub), so PostHog +
+      // Sentry attach exactly once per user intent. The 'invocation'
+      // discriminator (single vs multi) distinguishes one-sender clicks
+      // from selection-fanned bulks at the source so the funnel reads
+      // cleanly. `bulk_in_filter` is reserved for a future surface that
+      // tracks the bulk-by-filter selection state explicitly.
+      const invocation: 'single' | 'multi' = senders.length === 1 ? 'single' : 'multi';
+      const phVerb = VERB_TO_POSTHOG[verb];
+      void track('bulk_action_taken', {
+        verb: phVerb,
+        selected_count: senders.length,
+        // We don't know the affected_messages count at fire-time
+        // (composite preview resolves it server-side). Conservatively
+        // report sender count; downstream Activity action_completed
+        // events carry the real message count.
+        affected_messages: senders.length,
+        source: 'senders_bulk_bar',
+      });
+      addBreadcrumb({
+        category: 'action',
+        message: `senders: ${verb} fire (n=${senders.length}, inv=${invocation})`,
+        level: 'info',
+        data: {
+          verb: phVerb,
+          sender_count: senders.length,
+          has_secondary: opts?.secondary != null,
+          older_than_days: opts?.olderThanDays ?? null,
+        },
+      });
 
       // P6 — real single-sender Archive (D226). The preview already ran
       // (this fires post-confirm), so enqueue the action, then poll its
