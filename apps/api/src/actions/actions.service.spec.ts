@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
+  activityLog,
   mailMessages,
   mailboxAccounts,
   schema,
@@ -696,6 +697,65 @@ describe('ActionsService', () => {
           token: '00000000-0000-4000-8000-000000000000',
         }),
       ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+    });
+  });
+
+  describe('recordUnsubscribeIntent (D38 + 2026-06-05 brainstorm)', () => {
+    it('upserts sender_policies + writes 0-affected activity_log row + returns the id', async () => {
+      const result = await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+      });
+      expect(result.senderId).toBe(senderId);
+      expect(result.activityLogId).toMatch(/^[0-9a-f-]{36}$/);
+      // sender_policies upsert: policy_type='unsubscribe'.
+      const policies = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policies).toHaveLength(1);
+      expect(policies[0]!.policyType).toBe('unsubscribe');
+      // activity_log: 0-affected unsubscribe row, source='manual', no undo token.
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(1);
+      expect(acts[0]!.action).toBe('unsubscribe');
+      expect(acts[0]!.source).toBe('manual');
+      expect(acts[0]!.affectedCount).toBe(0);
+      expect(acts[0]!.undoToken).toBeNull();
+    });
+
+    it('is idempotent at the policy level — second call upserts to the same row but writes a SECOND audit row', async () => {
+      await svc.recordUnsubscribeIntent({ mailboxAccountId: mailboxId, senderId });
+      await svc.recordUnsubscribeIntent({ mailboxAccountId: mailboxId, senderId });
+      const policies = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      // Single policy row — upsert dedups.
+      expect(policies).toHaveLength(1);
+      expect(policies[0]!.policyType).toBe('unsubscribe');
+      // Two activity_log rows — each click is a recorded decision.
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(2);
+      expect(acts.every((a) => a.action === 'unsubscribe')).toBe(true);
+    });
+
+    it('404s a sender that does not exist in this mailbox', async () => {
+      // Bogus UUID — never seeded. The resolveSenderKey path returns
+      // 404 SENDER_NOT_FOUND for any id-mailbox combination that
+      // misses the sender ownership join.
+      await expect(
+        svc.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId: '00000000-0000-4000-8000-000000000000',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });
   });
 });

@@ -41,6 +41,7 @@ import {
   useArchivePreview,
   useCompositePreview,
   useEnqueueComposite,
+  useRecordUnsubscribeIntent,
 } from './api/use-action';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
@@ -317,6 +318,7 @@ function SendersScreenContent({
   // The per-verb `enqueueArchiveSender` stays for the single-sender
   // Archive path until Phase 5 dead-code sweep retires it.
   const enqueueComposite = useEnqueueComposite();
+  const recordUnsubIntent = useRecordUnsubscribeIntent();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -596,9 +598,40 @@ function SendersScreenContent({
         return;
       }
 
+      // Single-sender Unsubscribe — record the intent honestly (D38 +
+      // 2026-06-05 brainstorm). The real RFC8058 / mailto / manual
+      // pipeline (D230) lands later; for now we upsert
+      // sender_policies.policy_type='unsubscribe' + write a 0-affected
+      // activity_log row so /activity reflects the decision. Replaces
+      // the prior tracer-toast-with-fake-receipt path that violated
+      // CLAUDE.md §10 ("Unsubscribed from DKNY" was a lie with no BE
+      // call).
+      if (verb === 'Unsubscribe' && senders.length === 1) {
+        const sender = senders[0]!;
+        setPendingAction(null);
+        setSelected(new Set());
+        recordUnsubIntent.mutate(
+          { senderId: sender.id },
+          {
+            onSuccess: () => {
+              toast(
+                `Unsubscribe queued for ${sender.name} — we'll process it when the pipeline ships.`,
+                'success',
+              );
+              void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              void qc.invalidateQueries({ queryKey: activityKeys.all });
+            },
+            onError: () => toast(`Couldn't queue unsubscribe for ${sender.name}`, 'warn'),
+          },
+        );
+        return;
+      }
+
       // Tracer path — toast + fake receipt until the verb's BE lands. No
       // email count is shown here: the true number is only known once the
       // verb's worker runs (P6 wired that for single-sender Archive).
+      // NOTE: Keep is intentionally tracer (no Gmail mutation needed);
+      // multi-sender bulk for any verb is still tracer (P7).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         verb === 'Unsubscribe' ? 'warn' : 'success',

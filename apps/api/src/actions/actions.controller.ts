@@ -19,11 +19,13 @@ import { ActionsService } from './actions.service.js';
 import {
   archiveRequestSchema,
   compositeActionRequestSchema,
+  unsubscribeIntentRequestSchema,
   type ActionEnqueueResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
+  type UnsubscribeIntentResult,
 } from './actions.types.js';
 
 /**
@@ -158,6 +160,48 @@ export class ActionsController {
         : undefined,
       idempotencyKey: idempotencyKey.trim(),
       override: req.override ?? false,
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/unsubscribe-intent — record the user's intent to
+   * unsubscribe from a sender (D38 + 2026-06-05 founder brainstorm).
+   *
+   * Unlike Archive/Delete/Later, this does NOT enqueue a Gmail
+   * mutation; the real unsub pipeline (RFC8058 + mailto + manual
+   * fallback per D230) lands later. The endpoint just:
+   *
+   *   1. Upserts `sender_policies.policy_type='unsubscribe'` so the
+   *      Sender Detail "Unsub queued" pill has its source-of-truth.
+   *   2. Writes a 0-affected `activity_log` row so the user sees their
+   *      decision in /activity — replaces the prior tracer toast that
+   *      LIED ("Unsubscribed from DKNY") with no BE call (CLAUDE.md §10
+   *      no-fake-completion violation).
+   *
+   * No `Idempotency-Key` required — the endpoint is naturally
+   * idempotent at the sender_policies upsert + the activity_log row is
+   * an audit entry (re-clicking on a sender already pending writes a
+   * second audit row, which is the right behaviour: each click is a
+   * decision worth recording).
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('unsubscribe-intent')
+  @UseGuards(CsrfGuard)
+  async unsubscribeIntent(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<UnsubscribeIntentResult>> {
+    const parsed = unsubscribeIntentRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid unsubscribe-intent request.',
+      });
+    }
+    const result = await this.actions.recordUnsubscribeIntent({
+      mailboxAccountId: mailbox.id,
+      senderId: parsed.data.senderId,
     });
     return ok(result);
   }

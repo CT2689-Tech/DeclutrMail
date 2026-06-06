@@ -255,7 +255,7 @@ describe('LabelActionWorker', () => {
     });
   });
 
-  it('forward archive — empty resolve issues no undo token', async () => {
+  it('forward archive — empty resolve writes 0-affected activity_log row but issues no undo token', async () => {
     // Sender has no INBOX messages.
     await seedMessage(db, mailboxId, 'm9', ['CATEGORY_PROMOTIONS']);
     const [job] = await db
@@ -278,6 +278,19 @@ describe('LabelActionWorker', () => {
     expect(gmail.calls).toHaveLength(0);
     const undos = await db.select().from(undoJournal);
     expect(undos).toHaveLength(0);
+    // 2026-06-05 — audit-trail consistency: the user MADE a decision
+    // (Archive on this sender). Even when nothing matched, the
+    // activity_log row exists so /activity surfaces the intent —
+    // matches the Keep precedent (0-message decisions logged).
+    const acts = await db
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+    expect(acts).toHaveLength(1);
+    expect(acts[0]!.action).toBe('archive');
+    expect(acts[0]!.affectedCount).toBe(0);
+    expect(acts[0]!.senderKey).toBe(SENDER_KEY);
+    expect(acts[0]!.undoToken).toBeNull();
   });
 
   it('forward archive — messages selector uses the frozen set', async () => {

@@ -20,6 +20,7 @@ import {
   getCompositePreview,
   isTerminalStatus,
   newIdempotencyKey,
+  recordUnsubscribeIntent,
   revertUndo,
   type ActionEnqueueResult,
   type ActionStatusResult,
@@ -28,6 +29,7 @@ import {
   type CompositePrimaryVerb,
   type CompositeSecondaryVerb,
   type UndoRevertResult,
+  type UnsubscribeIntentResult,
 } from '@/lib/api/actions';
 
 /** Poll cadence in ms while an action job is in flight. */
@@ -140,6 +142,19 @@ export function useCompositePreview(senderId: string | null) {
     enabled: senderId !== null,
     retry: false,
     staleTime: 0,
+  });
+}
+
+/**
+ * Record an unsubscribe intent for a single sender. Used by the
+ * sender action sheet (replaces the prior tracer toast that violated
+ * CLAUDE.md §10 no-fake-completion 2026-06-05). The mutation writes
+ * BOTH the sender_policies pending row + the activity_log audit row
+ * in a single transaction on the BE.
+ */
+export function useRecordUnsubscribeIntent() {
+  return useMutation<UnsubscribeIntentResult, Error, { senderId: string }>({
+    mutationFn: ({ senderId }) => recordUnsubscribeIntent(senderId),
   });
 }
 

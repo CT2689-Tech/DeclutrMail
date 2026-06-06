@@ -36,6 +36,36 @@ export const archiveRequestSchema = z
   .strict();
 export type ArchiveRequest = z.infer<typeof archiveRequestSchema>;
 
+/**
+ * Unsubscribe-intent request shape — `POST /api/actions/unsubscribe-intent`.
+ *
+ * Records the user's DECISION to unsubscribe from a sender without
+ * triggering a Gmail mutation. Wired before the real unsub pipeline
+ * (RFC8058 + mailto + manual fallback per D230) lands so the founder
+ * can ship Unsub-button-as-honest-affordance instead of the prior
+ * tracer toast (CLAUDE.md §10 no-fake-completion violation 2026-06-05).
+ */
+export const unsubscribeIntentRequestSchema = z
+  .object({
+    senderId: z.string().uuid(),
+  })
+  .strict();
+export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
+
+/**
+ * Unsubscribe-intent response — `POST /api/actions/unsubscribe-intent`.
+ *
+ * Carries the activity_log row id so the FE can deep-link "see in
+ * Activity" if the toast surface offers that link.
+ */
+export interface UnsubscribeIntentResult {
+  senderId: string;
+  /** ISO timestamp the intent was recorded. */
+  recordedAt: string;
+  /** activity_log.id of the freshly-written row. */
+  activityLogId: string;
+}
+
 export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
 
 export interface ActionEnqueueResult {

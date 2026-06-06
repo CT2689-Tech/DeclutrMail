@@ -228,6 +228,40 @@ export async function enqueueCompositeAction(
  * for the confirm modal chip row. One round-trip pulls every chip count so
  * the modal opens without a second fetch (ADR-0020).
  */
+/**
+ * Returned by `POST /api/actions/unsubscribe-intent` — the user's
+ * recorded intent to unsubscribe from a sender. No Gmail mutation
+ * fires; the real unsub pipeline (RFC8058 + mailto + manual per D230)
+ * lands later. The endpoint upserts `sender_policies.policy_type=
+ * 'unsubscribe'` + writes a 0-affected `activity_log` row.
+ */
+export interface UnsubscribeIntentResult {
+  senderId: string;
+  /** ISO timestamp the intent was recorded server-side. */
+  recordedAt: string;
+  /** activity_log.id of the freshly-written row. */
+  activityLogId: string;
+}
+
+/**
+ * Record an unsubscribe intent for a sender. Replaces the prior
+ * tracer toast (which lied — said "Unsubscribed" with no BE call) per
+ * the 2026-06-05 founder brainstorm. CLAUDE.md §10 no-fake-completion.
+ */
+export async function recordUnsubscribeIntent(
+  senderId: string,
+  options: ActionRequestOptions = {},
+): Promise<UnsubscribeIntentResult> {
+  const env = await apiPost<UnsubscribeIntentResult>(
+    '/api/actions/unsubscribe-intent',
+    { senderId },
+    {
+      ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
 export async function getCompositePreview(
   senderId: string,
   options: ActionRequestOptions = {},

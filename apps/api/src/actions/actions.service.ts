@@ -8,7 +8,7 @@ import {
 import { Queue } from 'bullmq';
 import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
-import { actionJobs, mailMessages, senderPolicies, senders } from '@declutrmail/db';
+import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import type { LabelActionSelector } from '@declutrmail/db';
 import { LABEL_ACTION_JOB, labelActionJobOptions } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
@@ -23,6 +23,7 @@ import type {
   CompositeActionPreviewResult,
   CompositePrimaryVerb,
   CompositeSecondaryVerb,
+  UnsubscribeIntentResult,
 } from './actions.types.js';
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -532,6 +533,86 @@ export class ActionsService {
    * 404s a forged / cross-mailbox id (ownership). Shared by the archive
    * enqueue and the preview so both resolve identically.
    */
+  /**
+   * Record the user's intent to unsubscribe from a sender (D38 +
+   * 2026-06-05 brainstorm). Unlike Archive/Delete/Later, this is NOT a
+   * Gmail mutation — the real RFC8058/mailto/manual pipeline lands per
+   * D230 in a follow-up. For now, we:
+   *
+   *   1. Upsert `sender_policies.policy_type='unsubscribe'` so the
+   *      Sender Detail surface can render a "Unsub queued" pill and the
+   *      future pipeline knows which senders to process.
+   *   2. Write a 0-affected `activity_log` row (`action='unsubscribe'`,
+   *      `source='manual'`, `undo_token=null`) so /activity reflects
+   *      the DECISION — same precedent as Keep and the just-shipped
+   *      0-affected fix in label-action.worker.ts.
+   *
+   * Autopilot is NOT blocked — pending unsub ≠ guaranteed unsub. If the
+   * brand ignores the future unsub, Autopilot still archives the new
+   * mail. If the brand honours it, no new mail arrives and Autopilot
+   * doesn't fire. User wins either way (founder design 2026-06-05).
+   *
+   * Privacy (D7, D228). No body, snippet, or non-allowlisted header —
+   * the endpoint only writes the sender key + policy_type and the
+   * verb + count. Wire shape mirrors the existing intent endpoints.
+   */
+  async recordUnsubscribeIntent(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<UnsubscribeIntentResult> {
+    const { mailboxAccountId, senderId } = input;
+    const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
+
+    return await this.db.transaction(async (tx) => {
+      // Upsert the policy. policy_type=unsubscribe is the pending state;
+      // re-clicking on a sender already pending is a no-op upsert. We do
+      // NOT touch is_protected / is_vip / protection_reason so a Protect
+      // override stays preserved (the user can be both "Protect to avoid
+      // bulk" + "Unsub pending" until the brand honours the unsub).
+      await tx
+        .insert(senderPolicies)
+        .values({
+          mailboxAccountId,
+          senderKey,
+          policyType: 'unsubscribe',
+        })
+        .onConflictDoUpdate({
+          target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+          set: {
+            policyType: 'unsubscribe',
+            updatedAt: sql`now()`,
+          },
+        });
+
+      const [inserted] = await tx
+        .insert(activityLog)
+        .values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: 'unsubscribe',
+          affectedCount: 0,
+          // No undo token — intent has no Gmail side-effect to reverse.
+          // The Activity row's undoState resolves to `unavailable`
+          // client-side. When the real unsub pipeline ships, the worker
+          // will write its OWN row (or update this one) with the actual
+          // affected count + undo token.
+          undoToken: null,
+        })
+        .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+
+      if (!inserted) {
+        throw new Error('activity_log insert returned no row');
+      }
+
+      return {
+        senderId,
+        recordedAt: inserted.occurredAt.toISOString(),
+        activityLogId: inserted.id,
+      };
+    });
+  }
+
   private async resolveSenderKey(mailboxAccountId: string, senderId: string): Promise<string> {
     const [sender] = await this.db
       .select({ senderKey: senders.senderKey })

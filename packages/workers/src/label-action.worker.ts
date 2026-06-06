@@ -245,12 +245,35 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .where(eq(actionJobs.id, job.id));
     }
 
-    // Nothing to do — no undo token / activity row for a no-op action.
+    // No matching messages — nothing for Gmail to do, no undo token to
+    // issue (nothing to reverse), but the user MADE A DECISION and the
+    // audit trail must reflect that. Write a 0-affected activity_log
+    // row so the user can see "you clicked Delete on DKNY (older than
+    // 365d): nothing matched." Same precedent as Keep (also 0-message
+    // decisions).
+    //
+    // 2026-06-05 founder smoke surfaced this: POST 365d-delete on a
+    // sender with no aged INBOX rows ⇒ action_jobs done, activity_log
+    // silent ⇒ /activity appears broken (it isn't — it's empty by
+    // omission, which reads identically to broken).
     if (ids.length === 0) {
-      await db
-        .update(actionJobs)
-        .set({ status: 'done', affectedCount: 0, updatedAt: sql`now()` })
-        .where(eq(actionJobs.id, job.id));
+      const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
+      await db.transaction(async (tx) => {
+        await tx
+          .update(actionJobs)
+          .set({ status: 'done', affectedCount: 0, updatedAt: sql`now()` })
+          .where(eq(actionJobs.id, job.id));
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: job.verb,
+          affectedCount: 0,
+          // No undo token — there is nothing to reverse. The Activity
+          // row's undoState resolves to `unavailable` client-side.
+          undoToken: null,
+        });
+      });
       return { affectedCount: 0, undoToken: null, alreadyDone: false };
     }
 
