@@ -1,21 +1,40 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { createRedisConnection, INITIAL_SYNC_QUEUE } from '@declutrmail/workers';
-import type { InitialSyncJobData } from '@declutrmail/workers';
+import {
+  createRedisConnection,
+  INCREMENTAL_SYNC_QUEUE,
+  INITIAL_SYNC_QUEUE,
+} from '@declutrmail/workers';
+import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { SyncController } from './sync.controller.js';
-import { INITIAL_SYNC_QUEUE_TOKEN, SyncService } from './sync.service.js';
+import {
+  INCREMENTAL_SYNC_QUEUE_TOKEN,
+  INITIAL_SYNC_QUEUE_TOKEN,
+  SyncService,
+} from './sync.service.js';
 
 /**
- * SyncModule (D201, D109, D224) — owns the initial-sync queue producer
- * + the sync-gate status transport.
+ * SyncModule (D201, D109, D224) — owns BOTH sync-queue producers + the
+ * sync-gate status transport.
  *
- * The BullMQ `Queue` is built eagerly from `REDIS_URL`. SyncModule is
- * imported by `AuthModule` (the orchestrator enqueues the initial sync
- * on connect) and exposes `SyncController` for the onboarding gate,
- * guarded by `JwtGuard` + `CurrentMailboxGuard`.
+ * Queues:
+ *   - INITIAL_SYNC_QUEUE     — one-shot backfill on connect (D109).
+ *   - INCREMENTAL_SYNC_QUEUE — delta jobs from Pub/Sub pushes (D8, D229)
+ *     AND from the user-facing "Sync now" button / 5-min reconciliation
+ *     cron (D38 prod-ready pass). One Queue producer instance per
+ *     process, shared between webhook + controller + cron — exported
+ *     so WebhooksModule can inject without registering its own.
+ *
+ * The BullMQ `Queue` providers are eager from `REDIS_URL`. SyncModule
+ * is imported by:
+ *   - AuthModule  (orchestrator enqueues the initial sync on connect)
+ *   - WebhooksModule  (webhook service enqueues incrementals)
+ * and exposes `SyncController` for the onboarding gate + the new
+ * `POST /api/v1/sync/incremental` route, guarded by `JwtGuard` +
+ * `CurrentMailboxGuard`.
  *
  * `forwardRef(AuthModule)` breaks the cycle:
  *   AuthModule → SyncModule (orchestrator enqueues sync)
@@ -23,7 +42,7 @@ import { INITIAL_SYNC_QUEUE_TOKEN, SyncService } from './sync.service.js';
  * Both are eagerly loaded, so the forwardRef resolves once Nest
  * finishes wiring both.
  *
- * The queue CONSUMER is a separate process (`apps/api/src/worker.ts`),
+ * The queue CONSUMERS are a separate process (`apps/api/src/worker.ts`),
  * not part of this HTTP module.
  */
 @Module({
@@ -42,8 +61,20 @@ import { INITIAL_SYNC_QUEUE_TOKEN, SyncService } from './sync.service.js';
         });
       },
     },
+    {
+      provide: INCREMENTAL_SYNC_QUEUE_TOKEN,
+      useFactory: (): Queue<IncrementalSyncJobData> => {
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          throw new Error('REDIS_URL is not set — see .env.example.');
+        }
+        return new Queue<IncrementalSyncJobData>(INCREMENTAL_SYNC_QUEUE, {
+          connection: createRedisConnection(url),
+        });
+      },
+    },
     SyncService,
   ],
-  exports: [SyncService],
+  exports: [SyncService, INITIAL_SYNC_QUEUE_TOKEN, INCREMENTAL_SYNC_QUEUE_TOKEN],
 })
 export class SyncModule {}

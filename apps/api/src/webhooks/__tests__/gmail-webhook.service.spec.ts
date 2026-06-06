@@ -115,7 +115,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       getJob: async () => null,
       add: async () => undefined,
     } as unknown as Queue<IncrementalSyncJobData>;
-    const sync = new SyncService(queueStub, db);
+    const sync = new SyncService(queueStub, incrementalQueueStub, db);
     service = new GmailWebhookService(db, sync, incrementalQueueStub);
   });
 
@@ -264,7 +264,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     } as unknown as Queue<IncrementalSyncJobData>;
     const crashingService = new GmailWebhookService(
       db,
-      new CrashingSync(queueStub, db),
+      new CrashingSync(queueStub, {} as Queue<IncrementalSyncJobData>, db),
       incrementalQueueStub,
     );
 
@@ -294,7 +294,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // section (not deduped to no-op) and successfully advances the cursor.
     const healthyService = new GmailWebhookService(
       db,
-      new SyncService(queueStub, db),
+      new SyncService(queueStub, incrementalQueueStub, db),
       incrementalQueueStub,
     );
     const retry = await healthyService.processVerifiedPush({
@@ -372,7 +372,11 @@ describe('GmailWebhookService.processVerifiedPush', () => {
         return undefined;
       },
     } as unknown as Queue<IncrementalSyncJobData>;
-    const skipService = new GmailWebhookService(db, new SyncService(queueStub, db), trackingQueue);
+    const skipService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      trackingQueue,
+    );
     const outcome = await skipService.processVerifiedPush({
       messageId: 'msg-first',
       payload: { emailAddress: 'alice@example.com', historyId: '1500' },
@@ -423,7 +427,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     } as unknown as Queue<IncrementalSyncJobData>;
     const orderingService = new GmailWebhookService(
       db,
-      new SyncService(queueStub, db),
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
       observingQueue,
     );
     const outcome = await orderingService.processVerifiedPush({
@@ -453,7 +457,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     } as unknown as Queue<IncrementalSyncJobData>;
     const failingService = new GmailWebhookService(
       db,
-      new SyncService(queueStub, db),
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
       failingQueue,
     );
     const outcome = await failingService.processVerifiedPush({

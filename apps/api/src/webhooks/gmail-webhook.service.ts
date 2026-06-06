@@ -5,10 +5,14 @@ import { mailboxAccounts, webhookDedup } from '@declutrmail/db';
 import { ensureIncrementalSyncJob, type IncrementalSyncJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { SyncService } from '../sync/sync.service.js';
+import { SyncService, INCREMENTAL_SYNC_QUEUE_TOKEN } from '../sync/sync.service.js';
 
-/** DI token for the BullMQ `Queue<IncrementalSyncJobData>` producer. */
-export const INCREMENTAL_SYNC_QUEUE_TOKEN = 'INCREMENTAL_SYNC_QUEUE';
+// `INCREMENTAL_SYNC_QUEUE_TOKEN` lives in SyncService as of the sync-now
+// PR (D38 prod-ready pass) — the sync feature owns the cursor + the
+// incremental-sync queue producer per the D204 boundary. WebhooksModule
+// imports SyncModule and reuses the same provider; re-exporting the
+// token here keeps existing imports from outside this file unchanged.
+export { INCREMENTAL_SYNC_QUEUE_TOKEN };
 
 /**
  * Gmail Pub/Sub webhook service (D8, D229).

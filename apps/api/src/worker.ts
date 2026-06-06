@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
@@ -12,6 +12,7 @@ import {
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
   createRedisConnection,
+  ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   enqueueBriefSnapshotTick,
   enqueueSendersCounterReconciliationTick,
@@ -818,6 +819,103 @@ async function bootstrap(): Promise<void> {
   }, SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS);
   sendersCounterReconciliationSchedulerHandle.unref();
 
+  /**
+   * Incremental-sync drift sweeper (D38 prod-ready pass).
+   *
+   * Every `INCREMENTAL_DRIFT_INTERVAL_MS`, enqueue an incremental-sync
+   * job for every mailbox whose `provider_sync_state.last_history_id`
+   * hasn't advanced in `INCREMENTAL_DRIFT_STALE_AFTER_MS` (10 minutes
+   * by default). This handles:
+   *   1. **Local dev** — no Pub/Sub topic is registered, so without
+   *      this sweep new emails are never reconciled until the user
+   *      clicks "Sync now".
+   *   2. **Pub/Sub outage** — if a push delivery is lost (Pub/Sub is
+   *      at-least-once but not exactly-once across retries), the drift
+   *      sweep catches it within 10 minutes.
+   *   3. **Pub/Sub still rolling out** — until `users.watch` is wired,
+   *      every mailbox is in this state.
+   *
+   * Idempotent end-to-end:
+   *   - `ensureIncrementalSyncJob` dedups by `${mailbox}:${cursor}` so
+   *     a sweep that fires while the previous one's job is still in
+   *     flight is a no-op.
+   *   - The worker advances the cursor on success, so the NEXT sweep
+   *     sees a different `${cursor}` and (correctly) enqueues a new
+   *     job — Gmail history may have advanced since.
+   */
+  const incrementalReconcilerQueue = new Queue<IncrementalSyncJobData>(INCREMENTAL_SYNC_QUEUE, {
+    connection,
+  });
+  const INCREMENTAL_DRIFT_INTERVAL_MS = 5 * 60 * 1000;
+  const INCREMENTAL_DRIFT_STALE_AFTER_MS = 10 * 60 * 1000;
+  const INCREMENTAL_DRIFT_BATCH = 100;
+
+  async function driftSweepIncrementalSync(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      const cutoff = sql`now() - interval '${sql.raw(
+        String(INCREMENTAL_DRIFT_STALE_AFTER_MS),
+      )} milliseconds'`;
+      const rows = await db
+        .select({
+          mailboxAccountId: providerSyncState.mailboxAccountId,
+          lastHistoryId: providerSyncState.lastHistoryId,
+        })
+        .from(providerSyncState)
+        .where(
+          sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+        )
+        .limit(INCREMENTAL_DRIFT_BATCH);
+
+      let enqueued = 0;
+      let noop = 0;
+      for (const row of rows) {
+        if (shuttingDown) break;
+        if (row.lastHistoryId === null) continue;
+        const cursor = row.lastHistoryId.toString();
+        const outcome = await ensureIncrementalSyncJob(incrementalReconcilerQueue, {
+          mailboxAccountId: row.mailboxAccountId,
+          startHistoryId: cursor,
+          endHistoryId: cursor,
+        });
+        if (outcome === 'added') enqueued += 1;
+        else noop += 1;
+      }
+
+      if (enqueued > 0 || noop > 0) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'incremental_drift.swept',
+            enqueued,
+            noop,
+            scanned: rows.length,
+          }),
+        );
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'incremental_drift.failed',
+          message: error.message,
+        }),
+      );
+      // D159 seam — same as the initial-sync reconciler above.
+      observer.captureBackgroundFailure(error, { kind: 'incremental_drift.failed' });
+    }
+  }
+
+  // Boot sweep so a worker restart immediately catches up any mailbox
+  // that drifted during the deploy gap. The follow-up `setInterval`
+  // keeps the cadence going.
+  await driftSweepIncrementalSync();
+  const incrementalDriftHandle = setInterval(() => {
+    void driftSweepIncrementalSync();
+  }, INCREMENTAL_DRIFT_INTERVAL_MS);
+  incrementalDriftHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
@@ -860,6 +958,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
+    clearInterval(incrementalDriftHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -875,6 +974,7 @@ async function bootstrap(): Promise<void> {
       await sendersCounterReconciliationBullWorker.close();
       await sendersCounterReconciliationSchedulerQueue.close();
       await reconcilerQueue.close();
+      await incrementalReconcilerQueue.close();
       await connection.quit();
       await lockPg.end();
       await pg.end();

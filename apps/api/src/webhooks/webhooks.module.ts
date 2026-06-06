@@ -1,14 +1,8 @@
 import { Module } from '@nestjs/common';
-import { Queue } from 'bullmq';
-import {
-  createRedisConnection,
-  INCREMENTAL_SYNC_QUEUE,
-  type IncrementalSyncJobData,
-} from '@declutrmail/workers';
 
 import { SyncModule } from '../sync/sync.module.js';
 import { GmailWebhookController, PUBSUB_OIDC_VERIFIER } from './gmail-webhook.controller.js';
-import { GmailWebhookService, INCREMENTAL_SYNC_QUEUE_TOKEN } from './gmail-webhook.service.js';
+import { GmailWebhookService } from './gmail-webhook.service.js';
 import { PubSubOidcVerifier } from './oidc-verifier.js';
 
 /**
@@ -41,18 +35,6 @@ import { PubSubOidcVerifier } from './oidc-verifier.js';
           throw new Error('PUBSUB_PUSH_SA_EMAIL is not set — see .env.example.');
         }
         return new PubSubOidcVerifier({ audience, serviceAccountEmail });
-      },
-    },
-    {
-      provide: INCREMENTAL_SYNC_QUEUE_TOKEN,
-      useFactory: (): Queue<IncrementalSyncJobData> => {
-        const url = process.env.REDIS_URL;
-        if (!url) {
-          throw new Error('REDIS_URL is not set — see .env.example.');
-        }
-        return new Queue<IncrementalSyncJobData>(INCREMENTAL_SYNC_QUEUE, {
-          connection: createRedisConnection(url),
-        });
       },
     },
   ],
