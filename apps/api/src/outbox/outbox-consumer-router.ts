@@ -1,6 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { senderPolicies } from '@declutrmail/db';
-import { TOPICS } from '@declutrmail/events';
+import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrmail/events';
 import type { ActionsUnsubscribeIntentRecordedPayload } from '@declutrmail/events';
 import type { DispatchedEvent } from '@declutrmail/workers';
 
@@ -31,22 +31,32 @@ import type { DrizzleDb } from '../db/db.module.js';
 export function buildOutboxConsumer(db: DrizzleDb) {
   return async function consumeOutboxEvent(event: DispatchedEvent): Promise<void> {
     switch (event.topic) {
-      case TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED:
-        await handleUnsubscribeIntentRecorded(
-          db,
-          event.payload as ActionsUnsubscribeIntentRecordedPayload,
-        );
+      case TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED: {
+        // Defense-in-depth Zod re-parse on the consumer side
+        // (typescript-reviewer 2026-06-06). The publisher already
+        // validates against the same schema before insert, so this
+        // duplicates effort on the happy path — but the column type is
+        // jsonb → unknown, so a hand-rolled INSERT or a future
+        // publisher path that bypasses OutboxPublisher would otherwise
+        // flow garbage into the handler. The parse step gives Sentry a
+        // clean ZodError on shape drift instead of a downstream
+        // "undefined is not an object."
+        const payload = ActionsUnsubscribeIntentRecordedPayloadSchema.parse(event.payload);
+        await handleUnsubscribeIntentRecorded(db, payload);
         return;
+      }
       default:
-        // Topic the API doesn't recognize. Log + ack so the row flips
+        // Topic the API doesn't recognize. Log + ACK so the row flips
         // to `dispatched` rather than blocking the queue. A future
         // consumer can subscribe; the publisher contract is "fire and
-        // forget the routing". Operators see the unknown-topic count
-        // on dashboards if it grows.
-        console.log(
+        // forget the routing". Log at WARN (not INFO) so the count
+        // surfaces in default log filters; default kind name renamed
+        // from `no_handler` to `unknown_topic` for grep clarity
+        // (silent-failure-hunter 2026-06-06).
+        console.warn(
           JSON.stringify({
-            level: 'info',
-            kind: 'outbox.consumer.no_handler',
+            level: 'warn',
+            kind: 'outbox.consumer.unknown_topic',
             topic: event.topic,
             eventId: event.id,
           }),

@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  InternalServerErrorException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -134,7 +130,7 @@ describe('SyncController.postIncremental (D38 prod-ready pass — Sync now)', ()
     });
   });
 
-  it('throws SYNC_NOT_READY (409 → BadRequestException) when initial sync has not completed', async () => {
+  it('throws SYNC_NOT_READY (409 → ConflictException) when initial sync has not completed', async () => {
     // Designed-state path per CLAUDE.md §8 "guard-4xx-as-designed-state":
     // the FE renders the sync-gate progress card, NOT a generic error
     // toast. A retry would just re-throw — the FE must not loop.
@@ -143,6 +139,11 @@ describe('SyncController.postIncremental (D38 prod-ready pass — Sync now)', ()
       .mockResolvedValue({ kind: 'not_ready' });
     const controller = makeController({ enqueueManualIncrementalSync: enqueue });
 
-    await expect(controller.postIncremental(MAILBOX)).rejects.toBeInstanceOf(BadRequestException);
+    const err = await controller.postIncremental(MAILBOX).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    // Lock the contract: HTTP 409, not 400. Architecture-guardian flagged
+    // a prior draft that used BadRequestException (400) here; the 409 is
+    // the canonical designed-state code per CLAUDE.md §8.
+    expect((err as ConflictException).getStatus()).toBe(409);
   });
 });

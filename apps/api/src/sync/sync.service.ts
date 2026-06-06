@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
@@ -361,9 +361,13 @@ export class SyncService {
  * state. Mirrors the `CurrentMailboxGuard` 409s the FE already handles
  * (SELECT_MAILBOX / NO_ACTIVE_MAILBOX) — `SYNC_NOT_READY` is a designed
  * state per CLAUDE.md §8 "guard-4xx-as-designed-state".
+ *
+ * `ConflictException` maps to HTTP 409 in Nest (not `BadRequestException`'s
+ * 400 — earlier draft of this code used BadRequestException by mistake;
+ * architecture-guardian flagged the contract drift 2026-06-06).
  */
-export function syncNotReady(): BadRequestException {
-  return new BadRequestException({
+export function syncNotReady(): ConflictException {
+  return new ConflictException({
     code: 'SYNC_NOT_READY',
     message: 'Initial sync has not completed for this mailbox yet.',
   });

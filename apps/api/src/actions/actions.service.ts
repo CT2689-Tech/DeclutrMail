@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
@@ -62,12 +63,18 @@ export class ActionsService {
     // TriageModule). Only the enqueue paths need it; `getStatus` works
     // without Redis so the FE can still poll.
     @Inject(ACTION_QUEUE_TOKEN) private readonly queue: Queue<LabelActionJobData> | null,
-    // OutboxPublisher (D13, D204) — optional ctor arg so the existing
-    // `new ActionsService(db, queue)` test wiring keeps working; in
-    // production the Nest provider supplies a singleton. When omitted,
-    // we fall back to a fresh instance — the publisher is stateless
-    // (gates + insert only), so this is safe for unit tests.
-    outbox?: OutboxPublisher,
+    // OutboxPublisher (D13, D204). `@Optional()` is REQUIRED for Nest
+    // DI: without it, the reflector reads `design:paramtypes` (a
+    // metadata-emitting tsconfig is on), sees `OutboxPublisher` as the
+    // class identity, fails to find a provider for it, and throws
+    // 'Nest can't resolve dependencies of the ActionsService' at boot.
+    // Marking the param optional tells Nest to pass `undefined` when no
+    // provider is registered, and we fall back to a fresh instance —
+    // the publisher is stateless (Zod parse + denylist + insert), so a
+    // per-instance OutboxPublisher is safe. The existing
+    // `new ActionsService(db, queue)` test wiring (no third arg) keeps
+    // working unchanged.
+    @Optional() outbox?: OutboxPublisher,
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
   }

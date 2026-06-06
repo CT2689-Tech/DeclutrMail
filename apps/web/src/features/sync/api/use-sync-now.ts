@@ -152,11 +152,24 @@ export function useSyncNow(source: Source) {
           toast('Reconnect a mailbox to sync.', 'danger');
           break;
         case 'UNKNOWN':
-        default:
           toast('Sync failed — please try again.', 'danger');
+          break;
+        default:
+          // Exhaustiveness gate (typescript-reviewer 2026-06-06). When
+          // a new SyncNowErrorCode is added to the union, TS narrows
+          // `err.code` to `never` here and an explicit `never` assignment
+          // fails compile — better than a silent `default` catch-all
+          // that would route the new code into the generic 'Sync failed'
+          // toast (and hide a missing branch).
+          assertNeverSyncNowErrorCode(err.code);
       }
     },
   });
+}
+
+/** Compile-time exhaustiveness gate for the SyncNowErrorCode switch. */
+function assertNeverSyncNowErrorCode(x: never): never {
+  throw new Error(`unhandled SyncNowErrorCode: ${String(x)}`);
 }
 
 /**

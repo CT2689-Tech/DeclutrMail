@@ -910,13 +910,47 @@ async function bootstrap(): Promise<void> {
     }
   }
 
+  /**
+   * Overlap + defense-in-depth wrapper for the drift-sweep tick.
+   * Mirrors the initial-sync reconciler's `inFlight + tick + .catch`
+   * pattern (silent-failure-hunter 2026-06-06 — the drift sweep was
+   * missing both guards; a future refactor that moves a line out of
+   * `driftSweepIncrementalSync`'s inner try/catch would leak an
+   * unhandled rejection straight to Node, and a slow sweep that
+   * exceeds the 5-min interval would race itself).
+   */
+  let driftInFlight: Promise<void> | null = null;
+  function driftTick(): void {
+    if (shuttingDown || driftInFlight) return;
+    const p = driftSweepIncrementalSync()
+      .then(() => undefined)
+      .finally(() => {
+        driftInFlight = null;
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'incremental_drift.tick_unexpected',
+            message: error.message,
+          }),
+        );
+        observer.captureBackgroundFailure(error, {
+          kind: 'incremental_drift.tick_unexpected',
+        });
+      });
+    driftInFlight = p;
+  }
+
   // Boot sweep so a worker restart immediately catches up any mailbox
-  // that drifted during the deploy gap. The follow-up `setInterval`
-  // keeps the cadence going.
-  await driftSweepIncrementalSync();
-  const incrementalDriftHandle = setInterval(() => {
-    void driftSweepIncrementalSync();
-  }, INCREMENTAL_DRIFT_INTERVAL_MS);
+  // that drifted during the deploy gap. Routed through the same
+  // `driftTick` so the inFlight slot is honored at shutdown.
+  driftTick();
+  if (driftInFlight) {
+    await driftInFlight;
+  }
+  const incrementalDriftHandle = setInterval(driftTick, INCREMENTAL_DRIFT_INTERVAL_MS);
   incrementalDriftHandle.unref();
 
   console.log(
@@ -1009,6 +1043,11 @@ async function bootstrap(): Promise<void> {
     void (async () => {
       if (inFlight) {
         await inFlight;
+      }
+      // Await any mid-flight drift sweep so its pg.select doesn't race
+      // pg.end() (silent-failure-hunter 2026-06-06).
+      if (driftInFlight) {
+        await driftInFlight;
       }
       // Stop the outbox dispatcher first so a draining BullMQ Worker
       // doesn't race a fresh dispatch tick that touched the same db.
