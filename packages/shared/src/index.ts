@@ -8,6 +8,26 @@ export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
 
+// Branded identifiers (FOUNDER-FOLLOWUPS 2026-06-05).
+export type {
+  SenderId,
+  MailboxId,
+  UserId,
+  ActionId,
+  UndoToken,
+  SenderKey,
+  IdempotencyKey,
+} from './ids/branded';
+export {
+  asSenderId,
+  asMailboxId,
+  asUserId,
+  asActionId,
+  asUndoToken,
+  asSenderKey,
+  asIdempotencyKey,
+} from './ids/branded';
+
 export { useLocalState } from './hooks/use-local-state';
 export { useIsAtMost } from './hooks/use-is-at-most';
 export type { Breakpoint } from './hooks/use-is-at-most';

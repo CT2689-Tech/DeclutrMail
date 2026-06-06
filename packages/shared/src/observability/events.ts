@@ -12,14 +12,47 @@
  * errors — there are no accidental new event names in production.
  */
 export type EventName =
+  // — Onboarding + sync —
   | 'onboarding_step_completed'
   | 'sync_started'
   | 'sync_completed'
+  | 'sync_now_clicked'
+  // — Triage + action lifecycle —
   | 'triage_action_taken'
   | 'undo_clicked'
   | 'unsubscribe_attempted'
   | 'rule_fired'
-  | 'billing_event';
+  | 'billing_event'
+  // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
+  | 'page_viewed'
+  | 'sender_detail_opened'
+  | 'gmail_deep_link_opened'
+  // — Senders V2 surface —
+  | 'compose_filter_changed'
+  | 'bulk_select_in_filter'
+  | 'bulk_action_taken'
+  | 'confirm_action_modal_opened'
+  | 'recent_subjects_expanded'
+  | 'sender_search_submitted'
+  // — Activity surface —
+  | 'activity_filter_changed'
+  | 'bulk_undo_clicked'
+  | 'csv_exported'
+  // — Brief surface —
+  | 'brief_refresh_clicked'
+  | 'brief_cta_clicked'
+  // — Autopilot surface —
+  | 'autopilot_paused'
+  | 'autopilot_resumed'
+  | 'autopilot_suggestion_decided'
+  | 'autopilot_preset_changed';
+
+/**
+ * Canonical KAULD verb union. Mirrors the verb-registry literal in
+ * `packages/shared/src/actions/verb-registry.ts` so PostHog props stay
+ * compile-safe when a new verb lands.
+ */
+export type Verb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
 
 /**
  * Per-event payload shapes. Only includes scalars and small enums —
@@ -45,15 +78,19 @@ export interface EventPayloads {
     duration_ms: number;
     outcome: 'success' | 'partial' | 'failed';
   };
+  sync_now_clicked: {
+    mailbox_id: string;
+    source: 'app_shell' | 'senders' | 'activity' | 'brief' | 'sender_detail';
+  };
   triage_action_taken: {
-    verb: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    verb: Verb;
     sender_id: string;
     affected_messages: number;
     source: 'sheet' | 'inline' | 'shortcut';
   };
   undo_clicked: {
     action_id: string;
-    verb: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    verb: Verb;
     age_ms: number;
   };
   unsubscribe_attempted: {
@@ -64,7 +101,7 @@ export interface EventPayloads {
   rule_fired: {
     rule_id: string;
     rule_is_preset: boolean;
-    verb: 'keep' | 'archive' | 'unsubscribe' | 'later';
+    verb: Verb;
     affected_messages: number;
   };
   billing_event: {
@@ -75,6 +112,123 @@ export interface EventPayloads {
       | 'payment_succeeded'
       | 'payment_failed';
     tier: 'free' | 'plus' | 'pro';
+  };
+
+  // — Page-view + navigation funnel —
+  page_viewed: {
+    page:
+      | 'senders'
+      | 'sender_detail'
+      | 'activity'
+      | 'brief'
+      | 'autopilot'
+      | 'triage'
+      | 'onboarding'
+      | 'settings'
+      | 'mailboxes';
+    mailbox_id: string | null;
+  };
+  sender_detail_opened: {
+    sender_id: string;
+    source: 'senders_grid' | 'senders_table' | 'activity_row' | 'brief_card' | 'search';
+  };
+  gmail_deep_link_opened: {
+    /** What surface the link came from. */
+    source:
+      | 'recent_messages_row'
+      | 'sender_detail_open_all'
+      | 'senders_card_overflow'
+      | 'activity_row';
+    /** Which Gmail-link shape — single thread vs all-from-sender vs search. */
+    deep_link_kind: 'thread' | 'all_from_sender' | 'search';
+  };
+
+  // — Senders V2 surface —
+  compose_filter_changed: {
+    axis: 'volume' | 'window' | 'domain' | 'replied' | 'protected' | 'sort';
+    op: 'set' | 'cleared' | 'negated';
+    /** Number of axes active AFTER this change (multi-axis support). */
+    active_axes: number;
+    mailbox_id: string;
+  };
+  bulk_select_in_filter: {
+    selected_count: number;
+    /** Comma-joined active filter axes (e.g. `volume,window`). */
+    filter_axes: string;
+  };
+  bulk_action_taken: {
+    verb: Verb;
+    selected_count: number;
+    /** Sender count vs message count breakdown — KAULD-aware. */
+    affected_messages: number;
+    source: 'senders_bulk_bar' | 'activity_bulk_bar' | 'confirm_modal';
+  };
+  confirm_action_modal_opened: {
+    verb: Verb;
+    sender_count: number;
+    /** Was the modal opened against a single sender, a multi-select, or a bulk-in-filter? */
+    invocation: 'single' | 'multi' | 'bulk_in_filter';
+  };
+  recent_subjects_expanded: {
+    verb: Verb;
+    sender_count: number;
+    /** Which time-window bucket the user expanded. */
+    bucket: '30d' | '90d' | '180d' | '365d' | 'all';
+  };
+  sender_search_submitted: {
+    /** Length only — never the search text. */
+    query_length: number;
+    /** Did the user pick a suggestion or hit Enter on raw text? */
+    submission_kind: 'enter' | 'suggestion';
+    result_count: number;
+  };
+
+  // — Activity surface —
+  activity_filter_changed: {
+    filter: 'verb' | 'window' | 'date_range' | 'custom_search';
+    /** Generic op enum — `set` covers most; `cleared` covers reset. */
+    op: 'set' | 'cleared';
+  };
+  bulk_undo_clicked: {
+    /** Number of action_ids the user attempted to revert in this click. */
+    action_ids_count: number;
+    /** Did all succeed, partial, or all fail? */
+    outcome: 'all_success' | 'partial' | 'all_failed';
+  };
+  csv_exported: {
+    surface: 'activity' | 'senders';
+    row_count: number;
+    /** Did the export include filter state, or was it the unfiltered table? */
+    filtered: boolean;
+  };
+
+  // — Brief surface —
+  brief_refresh_clicked: {
+    mailbox_id: string;
+  };
+  brief_cta_clicked: {
+    /** Which Brief CTA was clicked. */
+    cta_kind: 'top_sender_open' | 'open_in_gmail' | 'review_session_start' | 'sender_detail_open';
+    target: 'sender_detail' | 'gmail' | 'triage' | 'activity';
+  };
+
+  // — Autopilot surface —
+  autopilot_paused: {
+    duration_kind: '24h' | '7d' | 'until_resumed' | 'custom';
+  };
+  autopilot_resumed: {
+    /** Was the resume manual or did the paused window expire? */
+    trigger: 'manual' | 'window_expired';
+  };
+  autopilot_suggestion_decided: {
+    /** Did the founder accept, reject, or snooze the suggestion? */
+    decision: 'accepted' | 'rejected' | 'snoozed';
+    /** Which suggestion category — preset, custom rule, sender-policy nudge. */
+    suggestion_kind: 'preset_rule' | 'sender_policy' | 'preset_change';
+  };
+  autopilot_preset_changed: {
+    preset_id: string;
+    action: 'enabled' | 'disabled' | 'parameter_changed';
   };
 }
 
