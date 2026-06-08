@@ -789,6 +789,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       unsubscribeUrl: httpsUrl,
       unsubscribeMailtoUrl: mailtoUrl,
       unsubscribeOneClick,
+      // ADR-0021 — pass through Gmail's `sizeEstimate` when present.
+      // Drizzle's `integer` column tolerates `undefined` (lands NULL).
+      sizeBytes: meta.sizeBytes ?? null,
     };
 
     return {
@@ -934,6 +937,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             unsubscribeUrl: sql`excluded.unsubscribe_url`,
             unsubscribeMailtoUrl: sql`excluded.unsubscribe_mailto_url`,
             unsubscribeOneClick: sql`excluded.unsubscribe_one_click`,
+            // ADR-0021 — mirror incremental-sync's defensive shape.
+            // When Gmail omits `sizeEstimate` on a re-fetch (rare but
+            // observed on some message shapes) `excluded.size_bytes`
+            // arrives NULL; COALESCE preserves any prior stored value
+            // so a resumed initial-sync doesn't silently clobber a
+            // backfilled column. Symmetric with incremental's
+            // conditional-spread guard at incremental-sync.worker.ts.
+            sizeBytes: sql`coalesce(excluded.size_bytes, mail_messages.size_bytes)`,
             updatedAt: sql`now()`,
           },
         });

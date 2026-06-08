@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
@@ -22,12 +23,15 @@ import { mailboxAccounts } from './mailbox-accounts';
  *   - dates (`internal_date`)
  *   - Gmail `label_ids`
  *   - read/unread state (`is_unread`)
+ *   - whole-message size estimate (`size_bytes`; ADR-0021 amendment)
+ *     — Gmail `sizeEstimate` integer from the same metadata envelope.
+ *     Per-attachment sizes / filenames remain BANNED.
  *
  * It NEVER stores: full message bodies (HTML or plain text), attachments,
- * inline images, raw MIME, attachment sizes/filenames, message
- * `sizeEstimate`, or any header outside the allowlist. The sync worker
- * fetches Gmail messages with `format=metadata` — bodies are never
- * fetched, preserving the "Full bodies fetched: 0" trust artifact.
+ * inline images, raw MIME, attachment sizes/filenames, or any header
+ * outside the allowlist. The sync worker fetches Gmail messages with
+ * `format=metadata` — bodies are never fetched, preserving the
+ * "Full bodies fetched: 0" trust artifact.
  *
  * `provider_message_id` is Gmail's message id — it powers the D41
  * open-in-Gmail deep link and is the dedup key for at-least-once
@@ -37,6 +41,14 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `sender_key` is denormalized here (not a FK) because a message may be
  * ingested before its `senders` row is materialized by the
  * `building_sender_index` stage (D224). It carries the same D12 hash.
+ *
+ * D7 ALLOWLIST AMENDMENT (2026-06-06, ADR-0021). Column added:
+ *   - `size_bytes` — Gmail's `sizeEstimate` from the metadata envelope
+ *     (NOT a body fetch — same call shape; we simply stop discarding the
+ *     integer). Nullable: pre-amendment rows render an em-dash; new rows
+ *     carry the real value. Powers the Sender Detail Recent Messages
+ *     size column (was hardcoded `0B` and shipping fake data before this
+ *     amendment).
  *
  * D7 ALLOWLIST AMENDMENT (2026-05-22, ADR-0004). Columns added:
  *   - `is_outbound` — derived from `label_ids.includes('SENT')`. Lets
@@ -130,6 +142,17 @@ export const mailMessages = pgTable(
      * ADR-0004.
      */
     unsubscribeOneClick: boolean('unsubscribe_one_click').notNull().default(false),
+    /**
+     * Gmail `sizeEstimate` — rough byte count of the encoded message.
+     * Persisted from the existing `messages.get?format=metadata` envelope
+     * (no new call shape; no body fetch). Nullable: rows synced before
+     * ADR-0021 stay NULL until an optional backfill worker fills them
+     * (FOUNDER-FOLLOWUPS 2026-06-06). The Sender Detail Recent Messages
+     * row renders an em-dash on NULL rather than a misleading "0B".
+     * Deliberately UNINDEXED — display-only data; no read path filters
+     * or sorts on size.
+     */
+    sizeBytes: integer('size_bytes'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

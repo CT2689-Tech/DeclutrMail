@@ -92,6 +92,14 @@ interface GmailGetResponse {
   snippet?: string;
   internalDate?: string;
   payload?: { headers?: { name: string; value: string }[] };
+  /**
+   * Rough byte-count of the encoded message — D7 storage-allowlist
+   * amendment per ADR-0021 (2026-06-06). In Gmail's metadata envelope,
+   * not the body; the call shape is unchanged (`format=metadata`).
+   * Gmail occasionally omits the field; tolerate undefined and persist
+   * the column as NULL when absent.
+   */
+  sizeEstimate?: number;
 }
 
 /** Shape of a `users.getProfile` response (only the historyId is read). */
@@ -220,6 +228,13 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
       cc: findHeader(json, 'Cc'),
       listUnsubscribe: findHeader(json, 'List-Unsubscribe'),
       listUnsubscribePost: findHeader(json, 'List-Unsubscribe-Post'),
+      // ADR-0021 — pass through Gmail's `sizeEstimate` when present.
+      // Gmail occasionally omits the field on certain message shapes;
+      // a finite-number guard avoids surfacing `NaN`/`Infinity` into
+      // the persisted integer column.
+      ...(typeof json.sizeEstimate === 'number' && Number.isFinite(json.sizeEstimate)
+        ? { sizeBytes: json.sizeEstimate }
+        : {}),
     };
   }
 

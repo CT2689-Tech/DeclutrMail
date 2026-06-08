@@ -303,6 +303,8 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         unsubscribeUrl,
         unsubscribeMailtoUrl,
         unsubscribeOneClick,
+        // ADR-0021 — Gmail `sizeEstimate`; lands NULL when Gmail omits.
+        sizeBytes: meta.sizeBytes ?? null,
       })
       .onConflictDoUpdate({
         target: [mailMessages.mailboxAccountId, mailMessages.providerMessageId],
@@ -311,6 +313,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           isUnread,
           snippet: meta.snippet,
           updatedAt: new Date(),
+          // Update size on conflict only when Gmail actually returned a
+          // value — preserve any prior backfill if the redelivered
+          // metadata happens to omit the field.
+          ...(meta.sizeBytes !== undefined ? { sizeBytes: meta.sizeBytes } : {}),
         },
       })
       .returning({ id: mailMessages.id });

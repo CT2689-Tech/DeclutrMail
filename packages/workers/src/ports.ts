@@ -12,12 +12,15 @@
  * One message's metadata — the D7 storage allowlist and nothing else.
  *
  * Sourced from `messages.get?format=metadata`. There is deliberately no
- * field for body, MIME, attachments, or `sizeEstimate`: a body cannot be
- * represented by this type, so it cannot leak through this port.
+ * field for body, MIME, or attachments: a body cannot be represented by
+ * this type, so it cannot leak through this port.
  *
- * D7 allowlist amendment (ADR-0004) added `to`, `cc`, `listUnsubscribe`,
- * and `listUnsubscribePost` — see the schema docs on `mail_messages`
- * for the per-field rationale.
+ * D7 allowlist amendments:
+ *   - ADR-0004 added `to`, `cc`, `listUnsubscribe`, `listUnsubscribePost`.
+ *   - ADR-0021 added `sizeBytes` (Gmail `sizeEstimate` — whole-message
+ *     integer from the same metadata envelope; not a body fetch, not a
+ *     header, not per-attachment).
+ * See the schema docs on `mail_messages` for the per-field rationale.
  */
 export interface GmailMessageMetadata {
   /** Gmail message id. */
@@ -42,6 +45,12 @@ export interface GmailMessageMetadata {
   listUnsubscribe: string | null;
   /** Raw `List-Unsubscribe-Post` header value, or `null` if absent (RFC 8058). */
   listUnsubscribePost: string | null;
+  /**
+   * Gmail's whole-message `sizeEstimate` integer (ADR-0021). Optional
+   * — Gmail omits it on some message shapes; absent → `mail_messages
+   * .size_bytes` lands NULL and the FE renders an em-dash.
+   */
+  sizeBytes?: number;
 }
 
 /** One page of `messages.list`. */
