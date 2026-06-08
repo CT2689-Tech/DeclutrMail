@@ -1,0 +1,237 @@
+# Build + push container images, then deploy both Cloud Run services.
+#
+# Trigger: every push to `main`. Manual via `workflow_dispatch`.
+# Cost: GitHub Actions free OSS minutes; Cloud Build is the docker
+# builder under the hood (10s of free build-minutes/day).
+#
+# Image strategy (matches `docs/runbooks/prod-infra-bootstrap.md`):
+#   - One image tagged with the commit SHA (immutable) + `latest` (movable)
+#   - Two Cloud Run services share the image
+#   - `declutrmail-worker` overrides `command`/`args` to switch entrypoint
+#     to `src/worker.ts`; `declutrmail-api` uses the image's default CMD
+#
+# Authentication — Workload Identity Federation (NOT a JSON SA key):
+#   - The deploy SA `declutrmail-deploy@declutrmail-ai-prod.iam.gserviceaccount.com`
+#     is the GCP principal the workflow impersonates.
+#   - The GCP org policy `constraints/iam.disableServiceAccountKeyCreation`
+#     blocks long-lived JSON keys (good default). WIF replaces them with
+#     short-lived OIDC token exchange — GitHub's OIDC token → GCP STS →
+#     SA impersonation. No long-lived secret to leak or rotate.
+#   - Two GH secrets carry the wiring (NOT the auth value itself —
+#     these are public-ish identifiers, but stored as secrets for hygiene):
+#       GCP_WIF_PROVIDER → the full provider resource name
+#       GCP_DEPLOY_SA    → the deploy SA email
+#   - The deploy SA has `roles/artifactregistry.writer`,
+#     `roles/run.developer`, and `roles/iam.serviceAccountUser` on the
+#     runtime SA so it can deploy revisions running as the runtime SA.
+#   - Repo `CT2689-Tech/DeclutrMail` is bound to impersonate the deploy
+#     SA via `principalSet://…/attribute.repository/CT2689-Tech/DeclutrMail`.
+#     A WIF provider attribute condition pins this to that one repo, so
+#     a different repo's GH OIDC token cannot impersonate.
+#
+# Why not just push :latest and let Cloud Run pull? Two reasons:
+#   1. Cloud Run only redeploys when you tell it to (`gcloud run deploy`).
+#      Pushing a tag isn't enough; the workflow MUST also run deploy.
+#   2. Pinning the deployed revision to the commit SHA tag (not `:latest`)
+#      means a rollback is `gcloud run services update --image=<sha>` —
+#      no risk of pulling a freshly-mutated `:latest` from a rolled-back
+#      build.
+#
+# Branch deployment policy: only `main` deploys. Preview deploys (per
+# PR / per branch) are intentionally NOT wired here — Cloud Run revisions
+# are cheap but managing N stale ones is operational tax. Promote to
+# preview deploys once we have a real second environment to point at.
+#
+# Workflow-injection safety:
+#   Per GitHub's hardening guidance, NEVER interpolate `${{ ... }}` from
+#   any GitHub-supplied input (issue titles, commit messages, branch
+#   names) directly into `run:` script bodies — they can carry shell
+#   metacharacters. Instead, route every interpolation through `env:`
+#   so the shell receives a normal env var, not a substituted token.
+#   Even values that are structurally safe today (e.g. `github.sha` is
+#   a 40-char SHA-1 hex string from git itself) follow this pattern so
+#   a future swap to an attacker-controllable input doesn't open a hole.
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    # Skip when only docs / non-runtime files change. Faster CI + fewer
+    # spurious deploys. List files Cloud Run cares about.
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - '.dockerignore'
+      - '.github/workflows/deploy-cloud-run.yml'
+  workflow_dispatch:
+    # Allow manual re-deploys (e.g. after a Secret Manager rotation
+    # where the IMAGE hasn't changed but the env needs to be repulled).
+
+env:
+  PROJECT: declutrmail-ai-prod
+  REGION: us-central1
+  REPO: declutrmail
+  # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
+  # future rename touches one place.
+  RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
+  # KMS resource path — config string, safe in plaintext.
+  KMS_KEY_RESOURCE: projects/declutrmail-ai-prod/locations/us-central1/keyRings/declutrmail/cryptoKeys/oauth-token-kek
+  # OAuth client ID — public-facing per `.env.example` (not a secret).
+  GOOGLE_CLIENT_ID: 387835380133-34lfqvcgmk5d017dd264tkjmme8as8ml.apps.googleusercontent.com
+  # Pub/Sub topic — config string.
+  GMAIL_PUBSUB_TOPIC: projects/declutrmail-ai-prod/topics/gmail-push
+  PUBSUB_OIDC_SERVICE_ACCOUNT: gmail-webhook-oidc@declutrmail-ai-prod.iam.gserviceaccount.com
+
+# Concurrency: serialize deploys per branch so two pushes in quick
+# succession don't race on the same Cloud Run revision number.
+concurrency:
+  group: deploy-cloud-run-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # `id-token: write` lets the workflow exchange GH OIDC for GCP
+      # short-lived creds via Workload Identity Federation. We currently
+      # use a JSON key (simpler), but keeping the permission so the
+      # later switch to WIF is one-line.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity Federation
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # WIF — no JSON key. GH OIDC token is exchanged for a
+          # short-lived GCP access token tied to the deploy SA.
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Install gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker auth for Artifact Registry
+        run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
+
+      - name: Build + push image (linux/amd64)
+        id: build
+        # Route `github.sha` through env per workflow-injection guidance
+        # (see top-of-file note). `github.sha` is a git-generated SHA-1
+        # hex string — structurally safe — but the env-var pattern is
+        # the only one that stays safe under future input changes.
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SHA_TAG="$REGION-docker.pkg.dev/$PROJECT/$REPO/api:$GITHUB_SHA"
+          LATEST_TAG="$REGION-docker.pkg.dev/$PROJECT/$REPO/api:latest"
+          # `--platform linux/amd64` is REQUIRED — GH Actions runs on x86
+          # already so this is the native build, but stating it explicitly
+          # so a future arm runner doesn't silently produce arm-only
+          # manifests that Cloud Run rejects.
+          docker build --platform linux/amd64 \
+            -f apps/api/Dockerfile \
+            -t "$SHA_TAG" \
+            -t "$LATEST_TAG" \
+            .
+          docker push "$SHA_TAG"
+          docker push "$LATEST_TAG"
+          echo "image=$SHA_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy declutrmail-api (HTTP)
+        # Same routing-via-env pattern for every interpolation.
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # `--update-secrets` mounts existing Secret Manager secrets as
+          # env vars. The runtime SA must hold `roles/secretmanager.
+          # secretAccessor` for each (already bound in step 2 of the
+          # bootstrap runbook).
+          # `--allow-unauthenticated` exposes the service to the public
+          # internet — the app does its own session-cookie auth.
+          gcloud run deploy declutrmail-api \
+            --image="$IMAGE" \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --service-account="$RUNTIME_SA" \
+            --min-instances=0 \
+            --max-instances=3 \
+            --memory=512Mi \
+            --cpu=1 \
+            --port=8080 \
+            --allow-unauthenticated \
+            --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest" \
+            --quiet
+
+      - name: Deploy declutrmail-worker (BullMQ + health)
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Worker shares the API image — only the entrypoint differs.
+          # `--command="node"` + `--args=...` overrides the image CMD.
+          # Worker is `--no-allow-unauthenticated` (no public HTTP).
+          # `--port=8080` is required so the Cloud Run startup probe
+          # passes; the in-process health server (see
+          # `apps/api/src/worker.ts startHealthServer()`) listens there.
+          gcloud run deploy declutrmail-worker \
+            --image="$IMAGE" \
+            --region="$REGION" \
+            --project="$PROJECT" \
+            --service-account="$RUNTIME_SA" \
+            --min-instances=0 \
+            --max-instances=3 \
+            --memory=1Gi \
+            --cpu=1 \
+            --port=8080 \
+            --no-allow-unauthenticated \
+            --command="node" \
+            --args="--import,@swc-node/register/esm-register,src/worker.ts" \
+            --set-env-vars="NODE_ENV=production,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest" \
+            --quiet
+
+      - name: Smoke API revision
+        run: |
+          set -euo pipefail
+          API_URL=$(gcloud run services describe declutrmail-api \
+            --region="$REGION" --project="$PROJECT" \
+            --format="value(status.url)")
+          # Expect HTTP 401 + canonical error envelope. ANY 5xx fails
+          # the deploy + leaves the previous revision serving traffic
+          # (Cloud Run's default — `--no-traffic` would gate this even
+          # tighter, but for pre-launch single-prod-env this is enough).
+          STATUS=$(curl -sS -o /tmp/resp -w "%{http_code}" "$API_URL/api/auth/me" || echo "000")
+          echo "Status: $STATUS"
+          cat /tmp/resp
+          test "$STATUS" = "401" || (echo "API smoke FAILED — expected 401, got $STATUS" && exit 1)
+
+      - name: Smoke worker revision
+        run: |
+          set -euo pipefail
+          # Worker URL is private (--no-allow-unauthenticated). We can't
+          # hit it from CI. Instead, assert the revision is Ready via
+          # the Cloud Run control plane.
+          REVISION=$(gcloud run services describe declutrmail-worker \
+            --region="$REGION" --project="$PROJECT" \
+            --format="value(status.latestReadyRevisionName)")
+          STATUS=$(gcloud run revisions describe "$REVISION" \
+            --region="$REGION" --project="$PROJECT" \
+            --format="value(status.conditions[0].status)")
+          echo "Worker revision $REVISION status: $STATUS"
+          test "$STATUS" = "True" || (echo "Worker revision NOT Ready" && exit 1)

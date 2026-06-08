@@ -99,7 +99,59 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Cloud Run health probe (D158). Cloud Run requires every Service to
+ * listen on `$PORT` and pass a startup probe within ~4 minutes, even
+ * for headless workers. This tiny HTTP server responds 200 to anything,
+ * 503 only while `bootstrapComplete` is still false. Kept local — not
+ * a NestJS app — so a Nest framework error never breaks the health
+ * signal that keeps the revision serving.
+ *
+ * Has no effect locally (the local worker is started directly and
+ * Cloud Run isn't probing it). PORT defaults to 8080 to match the
+ * Cloud Run default but is respected if injected.
+ */
+let bootstrapComplete = false;
+function startHealthServer(): void {
+  // Lazy import keeps the import surface unchanged for local + tests.
+  import('node:http')
+    .then(({ createServer }) => {
+      const port = Number.parseInt(process.env.PORT ?? '8080', 10);
+      createServer((_req, res) => {
+        res.statusCode = bootstrapComplete ? 200 : 503;
+        res.end(bootstrapComplete ? 'ok' : 'starting');
+      }).listen(port, () => {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'worker.health_listening',
+            port,
+          }),
+        );
+      });
+    })
+    .catch((err: unknown) => {
+      // Never let a health-server failure block worker boot — the boot
+      // itself is the source of truth. Cloud Run will fail the revision
+      // if the probe never succeeds; log it loudly.
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.health_server_failed',
+          message: error.message,
+        }),
+      );
+    });
+}
+
 async function bootstrap(): Promise<void> {
+  // Start the Cloud Run health server FIRST so the platform can probe
+  // /any-path while the rest of bootstrap runs. The handler reports
+  // 503 until `bootstrapComplete` flips at the end of this function,
+  // so a half-booted worker never reports healthy.
+  startHealthServer();
+
   // D159: initialise Sentry before anything else so the worker process —
   // including the boot-time reconciler sweep — has the SDK installed for
   // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
@@ -1092,6 +1144,11 @@ async function bootstrap(): Promise<void> {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Cloud Run health probe: flip to 200 only after every BullMQ worker
+  // is listening + the outbox dispatcher is wired. Probes before this
+  // point return 503 so a half-booted revision isn't routed traffic.
+  bootstrapComplete = true;
 }
 
 // Boot-time errors (bad `DATABASE_URL`, Redis TLS failure, KMS

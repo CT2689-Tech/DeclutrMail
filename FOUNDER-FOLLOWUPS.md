@@ -26,6 +26,99 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-07 — Backfill `docs/runbooks/secrets-inventory.md` into operational practice
+**Source:** session 2026-06-07 — prod Anthropic key creation prompted formal tracking
+**Why:** Three Anthropic keys + Sentry DSN×2 + Sentry auth token + PostHog key + Google OAuth secret + DB URL + JWT secrets + KMS resource + Pub/Sub identifiers all live in different stores (`.env.local`, GH secrets, GCP Secret Manager, Vercel env). No single doc said WHERE each one lives, last-rotated, spend cap, or owner. Inventory created this session at `docs/runbooks/secrets-inventory.md`. Two backfill actions remain to make it operational.
+**How:**
+1. Mirror every existing key into a personal password manager vault (1Password / Bitwarden) — one entry per inventory row, fields = vendor label + value + vendor URL + rotation steps. The repo + secret stores are operational truth, but if the laptop dies or a GCP project is lost, the vault is the recovery path.
+2. Update the `Rotated` column of each row to the actual ISO date the key was last issued (today's date for keys created in this session; "n/a" for never-rotated DSNs / config strings).
+3. Add a quarterly review reminder at the top of this followups file: re-read `secrets-inventory.md`, rotate anything > 12 months stale, mirror rotations to the vault.
+**Verifies by:** every row in `secrets-inventory.md` has a non-empty `Rotated` cell OR `n/a` with a documented reason; personal vault has matching entries; this followup is closed on the date the backfill completes.
+**Status:** Open
+
+### 2026-06-07 — Sentry: verify source-map upload + real stack traces on first Vercel deploy
+**Source:** session 2026-06-07 (Sentry full prod wiring — Path B)
+**Why:** All 4 Vercel env vars set (`NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`). Code wired via `withSentryConfig` + `instrumentation-client.ts` + `sentry.server.config.ts` + `sentry.edge.config.ts` + `instrumentation.ts`. Local FE→Sentry verified live (10/10 events landed). What's untested = the actual Vercel build runs `withSentryConfig`'s source-map upload step without error AND prod stack traces resolve to real `file:line` instead of minified chunks.
+**How:**
+1. Push `feat/d038-prod-ready-pass` to GitHub → Vercel auto-builds preview
+2. Watch the Vercel build log for `Uploading sourcemaps` line (or any Sentry CLI output) — if absent, `SENTRY_AUTH_TOKEN` not being read at build time
+3. Open the preview URL → `throw new Error('prod-sentry-smoke-2026-06-07')` in browser console
+4. Sentry → Issues → filter `environment:preview` (or `production` if merged to main) → entry within 30s
+5. Click entry → expand stack trace → MUST show real `apps/web/src/features/...` paths + line numbers; if it shows `chunks/615-xxx.js:1:42xxxx` source-map upload didn't work
+**Verifies by:** stack trace in Sentry shows real source file paths, not chunk hashes
+**Status:** Open
+
+### 2026-06-07 — Sentry: alert rules for prod errors (Slack/email)
+**Source:** session 2026-06-07
+**Why:** Errors land in Sentry but nothing pages on them. A spike of 500s in prod is invisible until you happen to open the dashboard.
+**How:**
+1. Sentry → Alerts → Create Alert → Issue Alert
+2. Conditions:
+   - When an event is captured by the system
+   - AND environment equals `production`
+   - AND level equals `error` or higher
+3. Filter: occurs more than `10` times in `5 minutes`
+4. Action: send to Slack channel (or email) — Sentry → Integrations → Slack (workspace install)
+5. Second rule for `level:fatal`: alert on FIRST event (no threshold)
+**Verifies by:** intentionally throw an error 11 times in prod → Slack message lands within 1 min.
+**Status:** Open
+
+### 2026-06-06 — CLAUDE.md §2.1 distillation: add `Size` to storage allowlist (per ADR-0021)
+**Source:** session 2026-06-06 (Sender Detail vertical slice; founder picked Path A)
+**Why:** ADR-0021 amends the D7 storage allowlist to include Gmail `sizeEstimate` (persisted as `mail_messages.size_bytes`). Code + schema comment + migration are in this PR; CLAUDE.md §2.1 still lists `sizeEstimate` as forbidden via ADR-0004's wording. Per CLAUDE.md §11, agents do NOT edit CLAUDE.md — founder distills.
+**How:**
+1. Open `chore/distill-d7-allowlist-size-bytes` branch
+2. CLAUDE.md §2.1 — add `Size (Gmail sizeEstimate)` to the "DeclutrMail stores ONLY" list; nothing else moves
+3. (Optional) reference ADR-0021 from §2.1 alongside the existing ADR-0004 reference
+4. Open the distillation PR, merge
+**Verifies by:** privacy-auditor agent reads CLAUDE.md §2.1 + the schema comment in mail-messages.ts + does not flag new PRs touching `size_bytes`. The agent's reference list is now coherent.
+**Status:** Open
+
+### 2026-06-06 — Triage engine over-recommends Unsubscribe on receipt / financial / gov senders
+**Source:** session 2026-06-06 (full-branch smoke, Triage row inspection)
+**Why:** The triage queue for the founder's mailbox surfaced 5+ rows in a row tagged "Unsubscribe · 95% RECOMMENDED" against senders that should clearly be auto-protected: `donotreply@dmv.ca.gov` (government), `orders.apple.com` (Apple Store receipts), `cs-reply@amazon.com` (Amazon CS / receipts), `binanceussupport.zendesk.com` (financial), `airindia.com` (travel). All carry "Quiet 90d · N lifetime" — quiet senders with thin lifetime data getting maximum-confidence destructive verdicts. Clicking Unsubscribe on these would permanently stop legitimate receipts. The Phase A auto-protect cascade (receipts / financial) appears not to be firing OR not to be respected by the verdict cascade.
+**How:**
+1. Audit `apps/api/src/triage/triage.read-service.ts` + the score-worker — confirm `is_auto_protected_*` flows into the verdict logic
+2. Add a 0.85+-confidence Unsub guardrail: never recommend Unsub at ≥0.85 on a sender whose category is `updates|forums` AND no recent volume AND domain matches known transactional/financial patterns (e.g. `.gov`, `*.apple.com`, `*amazon*`, `binance*`, airline patterns)
+3. Add a triage.read-service.spec test seeding `binanceussupport.zendesk.com` + assert verdict is NOT `unsubscribe` at ≥0.85
+**Verifies by:** the founder's mailbox no longer shows transactional senders in the Unsub-recommended bucket; new spec passes.
+**Status:** Open
+
+### 2026-06-06 — Sender Detail action toolbar still a tracer (D226 + D232 compliance)
+**Source:** architecture-guardian 2026-06-06 [WARNING]
+**Why:** `apps/web/src/features/senders/detail/sender-detail-page.tsx:performAction` for Archive / Unsubscribe / Later / Delete writes a local toast + a synthetic receipt (`timeLeft: '6d 23h'` hardcoded). It never calls `useEnqueueAction` / `useEnqueueComposite` / `useRecordUnsubscribeIntent`; the action never reaches `actions.service.ts`, never writes `action_jobs`, never issues an `undo_token`. The in-file comment ("Tracer path — fake receipt until this surface's verb BE lands") concedes the issue. senders-screen already wires the real mutations; sender-detail is the straggler.
+
+This PR's Bug 1 fix wired `useCompositePreview` (preview is now correct + reactive), so the missing step is mutation → undo, not preview. D226 mandates preview → mutation → undo; D232 mandates undo wiring for destructive mutations.
+
+**How:**
+1. For Unsubscribe verb → call `useRecordUnsubscribeIntent({ senderId })`
+2. For Archive / Later / Delete → call `useEnqueueAction` or `useEnqueueComposite` with the pendingAction's senders + the modal's `ConfirmOptions` (olderThanDays + secondary)
+3. Replace synthetic receipt with the response's `undoToken.expiresAt` derived `timeLeft`
+4. Drop `receiptSeq` counter + the local-only setReceipt path
+
+**Verifies by:** integration test from sender-detail-page that an Archive click writes an `action_jobs` row + Activity log entry; manual smoke shows a real undo timer that decrements.
+**Status:** Open
+
+### 2026-06-06 — Per-feature error boundaries for the other 4 D38 surfaces
+**Source:** session 2026-06-06 (handoff Tier A bucket "Per-feature error boundaries — 5 files, ~1h")
+**Why:** Only Sender Detail has its boundary so far (`apps/web/src/app/(app)/senders/[id]/error.tsx`). Senders, Activity, Brief, Autopilot still fall through to the global `app/error.tsx`, which takes over the whole authed shell on any render-time throw. Each surface needs its own `error.tsx` with a `surface=…` Sentry tag so prod errors group distinctly.
+**How:**
+1. Extend `ErrorBoundary` union in `apps/web/src/lib/error-capture.ts` with `'senders' | 'activity' | 'brief' | 'autopilot'` (mirror the `senders-detail` precedent)
+2. Add boundary file at each route: `apps/web/src/app/(app)/{senders,activity,brief,autopilot}/error.tsx` (model on `senders/[id]/error.tsx`)
+3. Tighten tone copy per surface ("This sender hit a snag" → "This list hit a snag" / "This brief hit a snag" etc.)
+**Verifies by:** synthetic throw in each surface routes to its boundary, not the app shell; Sentry receives the `boundary=…` tag.
+**Status:** Open
+
+### 2026-06-06 — One-off `size_bytes` backfill for pre-amendment rows (optional)
+**Source:** session 2026-06-06 (ADR-0021)
+**Why:** Existing `mail_messages` rows (synced before ADR-0021) persist `size_bytes = NULL` — Recent Messages renders an em-dash for these. New messages going forward carry real Gmail `sizeEstimate`. If we want history to look full too, we need a one-off worker.
+**How:**
+1. Add a one-shot BullMQ job — `BackfillSizeBytesWorker` — that pages `mail_messages WHERE size_bytes IS NULL` per mailbox, calls `messages.get?format=metadata` for each id, persists the returned `sizeEstimate`.
+2. Resumable via per-mailbox cursor (last processed `id` ASC).
+3. Quota plan: ~5 units per `messages.get` × ~100k existing rows per founder mailbox = ~500k units; at 15k/min user ceiling that's ~33 min per mailbox sequential. Schedule off-hours OR rate-limit to 8k/min to share quota.
+**Verifies by:** `SELECT COUNT(*) FROM mail_messages WHERE size_bytes IS NULL;` trends to ~0 (modulo rows Gmail occasionally omits the field on).
+**Status:** Open
+
 ### 2026-06-05 — D204 cross-feature write: ActionsService → sender_policies (extract via outbox)
 **Source:** architecture-guardian 2026-06-05 [BLOCKING]
 **Why:** `recordUnsubscribeIntent` (actions.service.ts:572-585) upserts `sender_policies` directly — that table is senders-owned per `SendersModule` header. D204 requires either a `SendersWriter` facade or an outbox event. Currently shipped to unblock the founder's smoke flow; the boundary fix is queued.
@@ -1141,6 +1234,59 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-07 — Execute prod infra bootstrap (Tier A, ~$10/mo idle)
+**Source:** session 2026-06-07 — founder asked to pre-create prod infra to unblock D160
+**Why:** D158 hosting stack (Cloud Run + Vercel + KMS + Pub/Sub + Secret Manager) is locked but unbuilt. Until the API + worker have a Cloud Run home, no Anthropic prod key can mount (still local-only); no Gmail Pub/Sub webhook can target a real URL; no GH Actions deploy workflow can deploy anything. Tier A = free-while-idle infra only (~$10/mo Cloud KMS); Tier B (Cloud SQL ~$50, Upstash, `min_instances=1`) intentionally deferred.
+**How:** Follow `docs/runbooks/prod-infra-bootstrap.md` end-to-end. 10 steps, ~1 weekend of work. Steps:
+1. GCP project + billing + $30/mo budget alert
+2. Service accounts + IAM (deploy SA + runtime SA, least privilege)
+3. Artifact Registry repo
+4. Secret Manager — populate ~8 prod secrets
+5. Cloud KMS CryptoKey (D14 OAuth-token KEK)
+6. Pub/Sub topic + OIDC publisher SA (D229 Gmail webhooks)
+7. Dockerfiles for API + worker (verify local docker build first)
+8. Cloud Run services deployed `min_instances=0, max_instances=3`
+9. GH Actions deploy workflow (D160)
+10. End-to-end smoke: curl Cloud Run URL → 401 from `/api/auth/me`
+**Verifies by:** `gcloud run services list` shows both services Ready; `curl $API_URL/api/auth/me` returns HTTP 401 with the canonical error envelope; `gcloud secrets list` shows all 8 secrets; budget alert configured at $30; idle GCP billing forecast < $15/mo. D160 row in IMPLEMENTATION-LOG flips to 🔵.
+**Status:** Done 2026-06-08 — all 10 steps executed in session.
+- Step 1: project `declutrmail-ai-prod` already existed (CASA-verified for Gmail scopes — kept, not recreated); APIs enabled (Cloud Run, Artifact Registry, Secret Manager, IAM, Cloud Build, billingbudgets, iamcredentials); `$30/mo` budget alert created at 50/90/100% thresholds.
+- Step 2: deploy SA `declutrmail-deploy` created; runtime SA `declutrmail-api` reused (pre-existing); IAM bindings: deploy SA → `roles/artifactregistry.writer` + `roles/run.developer` + `roles/iam.serviceAccountUser` on runtime SA; runtime SA → `roles/secretmanager.secretAccessor` + `roles/cloudkms.cryptoKeyEncrypterDecrypter` + `roles/pubsub.publisher` + `roles/pubsub.subscriber`. JSON key creation BLOCKED by org policy `constraints/iam.disableServiceAccountKeyCreation`; switched to Workload Identity Federation (pool `github-actions`, OIDC provider `github`, repo-pinned).
+- Step 3: Artifact Registry repo `declutrmail` created in us-central1.
+- Step 4: 8 Secret Manager secrets populated — `anthropic-api-key-prod`, `google-oauth-client-secret-prod`, `sentry-dsn-api`, `jwt-access-secret-prod`, `jwt-refresh-secret-prod`, `database-url-prod` (placeholder), `redis-url-prod` (placeholder), `admin-email-allowlist-prod`.
+- Step 5: KMS keyring `declutrmail` + key `oauth-token-kek` already existed (D14 KEK ready) — verified, not recreated.
+- Step 6: Pub/Sub topic `gmail-push` already existed; push-subscription deferred until prod webhook route ready.
+- Step 7: `apps/api/Dockerfile` written; multi-stage; ships TS source + swc-node JIT runtime (single image for API + worker, entrypoint overridden at deploy time); `.dockerignore` added.
+- Step 8: BOTH Cloud Run services deployed and Ready — `declutrmail-api` (https://declutrmail-api-387835380133.us-central1.run.app) and `declutrmail-worker` (worker URL private). Worker `startHealthServer()` added to satisfy Cloud Run port probe while keeping BullMQ async wiring.
+- Step 9: `.github/workflows/deploy-cloud-run.yml` shipped with WIF auth, image-SHA pinning, env-var routed interpolations (workflow-injection hardened), in-workflow smoke gates for both services.
+- Step 10: live smoke — `curl https://declutrmail-api-387835380133.us-central1.run.app/api/auth/me` → HTTP 401 + canonical error envelope with `traceId` populated (Sentry SDK auto-instrumented in prod).
+Tier B (Cloud SQL real DB URL + Upstash real Redis URL + `min_instances=1` flip + Vercel Pro + custom domain) remains deferred per runbook design.
+
+### 2026-06-07 — Wire prod Anthropic key to Cloud Run worker secret
+**Source:** session 2026-06-07 (LLM smoke — local key 400 "credit balance too low" → founder created separate prod key)
+**Why:** Three Anthropic keys now exist (local/CI/prod). Prod key `declutrmail-prod-worker-202606` was created at console.anthropic.com but is not yet mounted in Cloud Run. Until mounted, the prod worker has no `ANTHROPIC_API_KEY` → both LLM adapters return null → every triage decision + brief snapshot ships template-only (D24/D62 LLM path inert). The adapter contract is honored (null = template), but the product loses the LLM reasoning the trust badge implies.
+**How:**
+1. At Anthropic console → Plans & Billing → set spend cap on the prod key workspace ($100/mo to start)
+2. `echo -n "$PROD_KEY" | gcloud secrets create anthropic-api-key-prod --project declutrmail-ai-prod --data-file=-`
+3. Cloud Run service `declutrmail-worker` → Variables & Secrets → mount secret `anthropic-api-key-prod:latest` as env var `ANTHROPIC_API_KEY`
+4. Redeploy worker (`gcloud run services update declutrmail-worker --update-secrets=ANTHROPIC_API_KEY=anthropic-api-key-prod:latest`)
+5. Trigger a real score job in prod (POST /api/triage/score-sender from the prod app) → wait ~5s → query DB: `SELECT generated_by, reasoning FROM triage_decisions WHERE produced_at > now() - interval '1 minute'` — expect `generated_by='llm_haiku'` + a 1-2 sentence reasoning string
+**Verifies by:** at least one `triage_decisions` row with `generated_by='llm_haiku'` after a post-deploy trigger; `worker.succeeded` log line shows `llmExplanations >= 1`. NO `reasoning.adapter_error` lines in the same window.
+**Status:** Done 2026-06-08 — prod key `declutrmail-prod-worker-202606` created at Anthropic console; mounted as `anthropic-api-key-prod` in Secret Manager; wired to BOTH `declutrmail-api` and `declutrmail-worker` Cloud Run services via `--update-secrets=ANTHROPIC_API_KEY=anthropic-api-key-prod:latest`. End-to-end Anthropic verify deferred until Tier B (real `DATABASE_URL` lands so score jobs can write `triage_decisions`); image + secret wiring proven by Cloud Run revision `declutrmail-api-00003-d97` accepting deployment without env-validation throw, and by local-Docker smoke replicating the same env shape (HTTP 401 + canonical envelope).
+
+### 2026-06-07 — Sentry: add server-side `SENTRY_DSN` to Cloud Run secret
+**Source:** session 2026-06-07
+**Why:** `sentry.server.config.ts` + `sentry.edge.config.ts` read `process.env.SENTRY_DSN` (server-only). Today Cloud Run has no such secret, so every Nest exception / BullMQ worker failure / sync error in prod logs to stdout only and never reaches Sentry. FE side (browser) is fine — `NEXT_PUBLIC_SENTRY_DSN` is set in Vercel.
+**How:**
+1. Sentry → Settings → Client Keys → either reuse the FE DSN OR create a new key labeled `declutrmail-api-server`
+2. `gcloud secrets create sentry-dsn --project declutrmail-ai-prod --data-file=-` (paste DSN, Ctrl-D)
+3. Cloud Run service `declutrmail-api` → Variables & Secrets → mount secret `sentry-dsn` as env var `SENTRY_DSN`
+4. Same for `declutrmail-worker` service (if separate)
+5. Optional: also set `SENTRY_RELEASE` to the git SHA in the Cloud Run deploy workflow + `SENTRY_ENVIRONMENT=production`
+6. Redeploy api + worker
+**Verifies by:** force an API error (`curl -sS https://api.declutrmail.com/api/_test/throw` if you add a temporary route, OR trigger a failing job) → Sentry inbox lands a server-tagged entry within 30s. Server events carry `runtime:node` tag distinguishing them from browser events.
+**Status:** Done 2026-06-08 — pre-launch choice: reused FE DSN as server DSN (filter by `runtime:node` in Sentry UI). Stored as Secret Manager `sentry-dsn-api`. Mounted as `SENTRY_DSN` on BOTH `declutrmail-api` and `declutrmail-worker` Cloud Run services. Server trace propagation verified live — `curl https://declutrmail-api-…run.app/api/auth/me` returns 401 with `traceId` populated in the error envelope (Sentry SDK auto-instrumented). Post-launch upgrade to separate Sentry project tracked in `docs/runbooks/secrets-inventory.md` under "Sentry → Server DSN".
 
 ### 2026-06-04 — Composite preview `oldestSubjects` BE endpoint
 **Source:** Session 2026-06-04 (Thread A+B close-out)
