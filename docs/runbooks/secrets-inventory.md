@@ -67,14 +67,14 @@ per workspace. Caps are vendor-side hard limits, not advisory.
 
 ### Sentry
 
-| Slot                         | Vendor label                                                                                                                | Storage                                                                    | Env var                               | Rotated                 | Owner   |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------- | ----------------------- | ------- |
-| Web DSN                      | Sentry project: `declutrmail-web`                                                                                           | `.env.local` + Vercel env (Production + Preview)                           | `NEXT_PUBLIC_SENTRY_DSN`              | n/a (DSN, not a secret) | founder |
-| Web release tag              | n/a                                                                                                                         | Vercel auto-injects `VERCEL_GIT_COMMIT_SHA` → `NEXT_PUBLIC_SENTRY_RELEASE` | `NEXT_PUBLIC_SENTRY_RELEASE`          | n/a                     | founder |
-| Server DSN                   | Reuses FE DSN pre-launch (filter by `runtime:node` in Sentry UI); upgrade to separate project `declutrmail-api` post-launch | GCP Secret Manager: `sentry-dsn-api`                                       | `SENTRY_DSN` (Cloud Run API + worker) | 2026-06-08              | founder |
-| Build-time source-map upload | Sentry auth token                                                                                                           | GH Actions secret + Vercel build env                                       | `SENTRY_AUTH_TOKEN`                   | TBD                     | founder |
-| Build-time identity          | Sentry org slug                                                                                                             | GH Actions secret + Vercel build env                                       | `SENTRY_ORG`                          | n/a                     | founder |
-| Build-time identity          | Sentry project slug                                                                                                         | GH Actions secret + Vercel build env                                       | `SENTRY_PROJECT`                      | n/a                     | founder |
+| Slot                         | Vendor label                                                                                                                                     | Storage                                                                           | Env var                               | Rotated                 | Owner   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ------------------------------------- | ----------------------- | ------- |
+| Web DSN                      | Sentry project: `declutrmail-web`                                                                                                                | `.env.local` + Vercel env (Production + Preview)                                  | `NEXT_PUBLIC_SENTRY_DSN`              | n/a (DSN, not a secret) | founder |
+| Web release tag              | n/a                                                                                                                                              | Vercel auto-injects `VERCEL_GIT_COMMIT_SHA` → `NEXT_PUBLIC_SENTRY_RELEASE`        | `NEXT_PUBLIC_SENTRY_RELEASE`          | n/a                     | founder |
+| Server DSN                   | Reuses FE DSN pre-launch (filter by `runtime:node` in Sentry UI); upgrade to separate project `declutrmail-api` post-launch                      | GCP Secret Manager: `sentry-dsn-api`                                              | `SENTRY_DSN` (Cloud Run API + worker) | 2026-06-08              | founder |
+| Build-time source-map upload | Sentry **Organization Auth Token** `declutrmail-vercel-sourcemaps-202606`, scope `org:ci` (Source Map Upload + Release Creation + Code Mappings) | Vercel env (Production + Preview, encrypted) — `prj_hWYbyer4xJEWfCiSb9M3krrdh5D7` | `SENTRY_AUTH_TOKEN`                   | 2026-06-08              | founder |
+| Build-time identity          | Sentry org slug                                                                                                                                  | GH Actions secret + Vercel build env                                              | `SENTRY_ORG`                          | n/a                     | founder |
+| Build-time identity          | Sentry project slug                                                                                                                              | GH Actions secret + Vercel build env                                              | `SENTRY_PROJECT`                      | n/a                     | founder |
 
 **Note on DSNs:** A Sentry DSN is technically a URL that anyone with the
 DSN can post events to. It is NOT a secret in the strict sense — it
@@ -83,7 +83,11 @@ sits in the browser bundle. Still inventory it here because rotation
 
 **Note on auth token:** `SENTRY_AUTH_TOKEN` IS a real secret — it
 authorizes source-map upload during builds. Treat like an API key.
-Scopes required: `project:releases` + `project:write`.
+Use a Sentry **Organization Auth Token** (Settings → Developer
+Settings → Auth Tokens — NOT user-scoped Personal Tokens), scope
+`org:ci` which bundles Source Map Upload + Release Creation + Code
+Mappings. Org tokens survive team-membership changes; personal
+tokens do not.
 
 ### PostHog
 
@@ -112,10 +116,10 @@ client ID can stay stable.
 
 ### Database (Postgres)
 
-| Slot          | Storage                                 | Env var                                 | Rotated                                                                | Owner   |
-| ------------- | --------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------- | ------- |
-| Local dev URL | `.env.local`                            | `DATABASE_URL`                          | n/a (local default `postgres:postgres@localhost:5432/declutrmail`)     | founder |
-| Prod DB URL   | GCP Secret Manager: `database-url-prod` | `DATABASE_URL` (Cloud Run API + worker) | 2026-06-08 (placeholder value; rotate to real Cloud SQL DSN at Tier B) | founder |
+| Slot          | Storage                                                                                                                                                                                                                                                                                                                    | Env var                                 | Rotated                                                            | Owner   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ | ------- |
+| Local dev URL | `.env.local`                                                                                                                                                                                                                                                                                                               | `DATABASE_URL`                          | n/a (local default `postgres:postgres@localhost:5432/declutrmail`) | founder |
+| Prod DB URL   | GCP Secret Manager: `database-url-prod` version 2 — real Supabase pooled DSN (`aws-0-us-west-2.pooler.supabase.com:6543`, transaction-mode). Migration DSN (session pooler, port 5432) stays out of the runtime mount; founder runs `atlas migrate apply` locally. ADR-0022 documents this swap from Cloud SQL → Supabase. | `DATABASE_URL` (Cloud Run API + worker) | 2026-06-08                                                         | founder |
 
 **Note:** Prod DB URL embeds the password. Treat as a secret. Atlas
 migration apply runs from CI only — Atlas CI workflow reads the same
@@ -123,10 +127,10 @@ secret.
 
 ### Redis / BullMQ
 
-| Slot             | Storage                              | Env var                              | Rotated                                                              | Owner   |
-| ---------------- | ------------------------------------ | ------------------------------------ | -------------------------------------------------------------------- | ------- |
-| Local dev URL    | `.env.local`                         | `REDIS_URL`                          | n/a (local default `redis://localhost:6379`, docker-compose)         | founder |
-| Prod Upstash URL | GCP Secret Manager: `redis-url-prod` | `REDIS_URL` (Cloud Run API + worker) | 2026-06-08 (placeholder value; rotate to real Upstash URL at Tier B) | founder |
+| Slot             | Storage                                                                                                                                                                                                              | Env var                              | Rotated                                                      | Owner   |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------ | ------- |
+| Local dev URL    | `.env.local`                                                                                                                                                                                                         | `REDIS_URL`                          | n/a (local default `redis://localhost:6379`, docker-compose) | founder |
+| Prod Upstash URL | GCP Secret Manager: `redis-url-prod` version 2 — real Upstash `declutrmail-v2-bullmq` (AWS us-west-1, Free tier, TLS `rediss://`, 256MB / 500K cmd/mo soft cap). Endpoint `coherent-jaybird-134126.upstash.io:6379`. | `REDIS_URL` (Cloud Run API + worker) | 2026-06-08                                                   | founder |
 
 **Note:** Local must NOT point at Upstash — BullMQ idle polling burns
 through the free tier in days. See `.env.example` lines 122-128.

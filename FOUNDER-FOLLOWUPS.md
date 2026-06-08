@@ -26,6 +26,75 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-08 — Atlas state-sync on Supabase for migration 0026
+**Source:** session 2026-06-08 (RLS deny-anon applied via MCP)
+**Why:** Migration `0026_rls_deny_anon.sql` was applied via the Supabase MCP `apply_migration` tool (which writes to `supabase_migrations.schema_migrations`), not via the Atlas CLI (which tracks state in `atlas_schema_revisions`). Atlas does not know 0026 is applied. The next `atlas migrate apply` against Supabase will try to re-execute 0026; `ENABLE ROW LEVEL SECURITY` is idempotent so it would no-op cleanly, but Atlas will fail on hash mismatch unless told.
+**How:**
+1. From repo root: `atlas migrate apply --url "$SESSION_POOLER_DSN?sslmode=require" --dir 'file://packages/db/migrations' --allow-dirty`
+2. Confirm output mentions `0026_rls_deny_anon` applied (idempotent)
+3. After success Atlas writes the revision; future migrations chain cleanly
+**Verifies by:** `atlas migrate status --url $DSN --dir file://packages/db/migrations` shows `Migration Status: OK` with the latest version 0026.
+**Status:** Open
+
+### 2026-06-08 — Supabase WARN advisories: function search_path + citext extension
+**Source:** session 2026-06-08 (`get_advisors` after RLS apply)
+**Why:** Two non-blocking WARN-level security advisories remain on the new Supabase project:
+1. `function_search_path_mutable` — functions `public.set_updated_at` + `public.outbox_notify_inserted` have a role-mutable `search_path`. Risk: a malicious schema injection could rebind unqualified table names. Low risk because functions are SECURITY INVOKER by default + no untrusted role can write to `public` (RLS denies anon).
+2. `extension_in_public` — `citext` extension installed in `public` schema. Risk: schema pollution + a future Supabase upgrade could conflict.
+**How:**
+1. New migration `0027_function_security_hardening.sql`:
+   - `ALTER FUNCTION public.set_updated_at() SET search_path = pg_catalog, public;`
+   - `ALTER FUNCTION public.outbox_notify_inserted() SET search_path = pg_catalog, public;`
+2. Optional migration `0028_move_citext_to_extensions.sql` — `CREATE SCHEMA IF NOT EXISTS extensions; ALTER EXTENSION citext SET SCHEMA extensions;` plus update any column types that reference `public.citext`.
+**Verifies by:** `get_advisors(type=security)` returns no WARN entries, only the expected INFO-level `rls_enabled_no_policy` lines.
+**Status:** Open
+
+### 2026-06-08 — Hard $60/mo billing cap on declutrmail-ai-prod (not just alert)
+**Source:** session 2026-06-08 — founder asked for watchdog scripts beyond alerts
+**Why:** The existing $30/mo budget at 50/90/100% emails the founder but does NOT stop spend. A misconfigured Cloud Run autoscaler, a stuck cron, or a leaked SA could spike billing 10x before the founder reads the email. Cloud Billing supports a hard cap via a Cloud Function that calls `billing.projects.updateBillingInfo` to disable billing when a budget threshold fires.
+**How:**
+1. Follow https://cloud.google.com/billing/docs/how-to/notify (Disable billing via Pub/Sub + Cloud Function)
+2. Use the existing `declutrmail-pre-launch-30` budget; threshold 100% → publish to a Pub/Sub topic `billing-alerts`
+3. Deploy a Cloud Function that subscribes to that topic + calls billing.projects.updateBillingInfo with `billingAccountName=""` when threshold == 100%
+4. Cap value: raise budget to $60 as you onboard real users
+**Verifies by:** Intentionally bump a Cloud Run service to high traffic in a staging fork + confirm billing auto-disables within 5 min of crossing $60.
+**Status:** Open
+
+### 2026-06-08 — Daily resource-state snapshot script (drift detector)
+**Source:** session 2026-06-08 — same conversation
+**Why:** Even with the destructive-ops alert + Bash hook, silent additive changes (a new IAM binding, a new Cloud Run env var with a sketchy default, an unexpectedly enabled API) can drift the project from its known-good state. A daily snapshot diff-able against yesterday catches drift.
+**How:**
+1. Create `scripts/infra-snapshot.sh` that runs `gcloud services list`, `gcloud iam service-accounts list`, `gcloud projects get-iam-policy`, `gcloud run services describe declutrmail-{api,worker} --format=yaml`, `gcloud secrets list`, `gh secret list`, etc.
+2. Output to `docs/infra-state/YYYY-MM-DD.yaml`
+3. GH Actions cron daily: run the script, commit result to a `chore/infra-snapshot-YYYY-MM-DD` branch, open a PR if diff is non-empty
+4. PR review surface = visible drift
+**Verifies by:** Day 1 baseline commits; day 2 either zero-diff (PR skipped) or visible diff PR.
+**Status:** Open
+
+### 2026-06-08 — Tier B remaining for full prod readiness (custom domain → OAuth → Pub/Sub → first grant)
+**Source:** session 2026-06-08 — end-to-end validation revealed cross-site cookie block + missing prod webhook URL
+**Why:** Vercel preview (`*.vercel.app`) ↔ Cloud Run API (`*.run.app`) are different registrable domains. `SameSite=Lax` session cookies won't ride that cross-site hop, so even a valid session can't authenticate API requests from the deployed FE. Same root cause blocks the prod Gmail OAuth redirect URI (needs an `https://api.declutrmail.com/...` URL) + Pub/Sub push subscription (same).
+**How:**
+1. Buy `declutrmail.com` at a registrar (Cloudflare ~$8/yr, Namecheap ~$10/yr)
+2. Create `CNAME app.declutrmail.com → cname.vercel-dns.com` + `CNAME api.declutrmail.com → ghs.googlehosted.com` (Cloud Run custom domain)
+3. Vercel project → Domains → add `app.declutrmail.com`; auto-issues Let's Encrypt cert
+4. Cloud Run → Domain mappings → map `api.declutrmail.com` to `declutrmail-api` service
+5. Update Cloud Run env `WEB_URL=https://app.declutrmail.com` + `CORS_ORIGIN=https://app.declutrmail.com`
+6. Update Cloud Run env `COOKIE_DOMAIN=.declutrmail.com` (eTLD+1) so cookies set on api. ride to app.
+7. At Google Cloud OAuth client (CASA-verified `declutrmail-ai-prod`): add `https://api.declutrmail.com/api/auth/google/callback` as an authorized redirect URI
+8. Update Cloud Run env `GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback`
+9. Create Pub/Sub push subscription `gmail-push-sub` with endpoint `https://api.declutrmail.com/api/webhooks/gmail` + audience matching API URL
+10. Real Gmail OAuth grant from your real account → mailbox connects → initial sync starts → verify `mailbox_accounts` row in Supabase + `triage_decisions` rows after worker run + Anthropic LLM `generated_by='llm_haiku'`
+**Verifies by:** `curl https://api.declutrmail.com/api/auth/me` returns 401 + canonical envelope; browser sign-in via real Gmail completes; `psql $SUPABASE -c "SELECT email FROM mailbox_accounts"` shows your account; worker log shows `worker.succeeded llmExplanations >= 1`.
+**Status:** Open
+
+### 2026-06-08 — Stale BullMQ jobs from local-dev runs in Upstash (cleanup)
+**Source:** session 2026-06-08 — `bull:*` scan showed `initial-sync` jobs with mailbox UUIDs from the local-dev Postgres (not the new Supabase)
+**Why:** During the local LLM smoke earlier in this session I enqueued real BullMQ jobs that hit Upstash. Now Cloud Run worker is connected to the same Upstash. Those leftover jobs reference mailbox UUIDs that don't exist in Supabase, so `worker.failed` events will trickle in.
+**How:** One-shot `redis-cli -u $REDIS_URL_PROD DEL bull:initial-sync:90fe296e... bull:initial-sync:698c662b... bull:initial-sync:beb88a8f...` for the specific stale UUIDs; preserve queue meta keys since BullMQ recreates them lazily. Alternative: let workers fail those jobs once + BullMQ moves them to the dead-letter set; either way no production data corruption.
+**Verifies by:** No `worker.failed` log lines for the listed UUIDs after the cleanup; `redis-cli SCAN MATCH 'bull:initial-sync:*'` shows only fresh keys.
+**Status:** Open
+
 ### 2026-06-07 — Backfill `docs/runbooks/secrets-inventory.md` into operational practice
 **Source:** session 2026-06-07 — prod Anthropic key creation prompted formal tracking
 **Why:** Three Anthropic keys + Sentry DSN×2 + Sentry auth token + PostHog key + Google OAuth secret + DB URL + JWT secrets + KMS resource + Pub/Sub identifiers all live in different stores (`.env.local`, GH secrets, GCP Secret Manager, Vercel env). No single doc said WHERE each one lives, last-rotated, spend cap, or owner. Inventory created this session at `docs/runbooks/secrets-inventory.md`. Two backfill actions remain to make it operational.
