@@ -20,7 +20,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.4.6",
+    "@electric-sql/pglite": "^0.5.1",
     "@types/node": "^22.10.5",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"

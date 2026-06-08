@@ -14,7 +14,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.98.0",
+    "@anthropic-ai/sdk": "^0.102.0",
     "@declutrmail/db": "workspace:*",
     "@declutrmail/shared": "workspace:*",
     "@declutrmail/workers": "workspace:*",
@@ -36,7 +36,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.4.6",
+    "@electric-sql/pglite": "^0.5.1",
     "@nestjs/testing": "^10.4.15",
     "@swc-node/register": "^1.11.1",
     "@swc/core": "^1.15.33",
