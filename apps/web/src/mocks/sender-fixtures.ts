@@ -134,6 +134,7 @@ export function fixtureToMailMessageRows(s: Sender): MailMessageRow[] {
     snippet: m.snippet,
     internalDate: m.receivedAt,
     isUnread: m.unread,
+    sizeBytes: m.sizeBytes,
   }));
 }
 

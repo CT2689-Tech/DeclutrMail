@@ -3,6 +3,8 @@
 import { Eyebrow, EmptyState, tokens } from '@declutrmail/shared';
 import { fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb } from '@/lib/sentry';
 
 const { color, font, radius } = tokens;
 
@@ -145,6 +147,23 @@ function MessageRow({ message }: { message: RecentMessage }) {
           href={gmailDeepLink(message.threadId)}
           target="_blank"
           rel="noopener noreferrer"
+          // D38 session-3: per-row Gmail deep-link instrumentation.
+          // The "Open all in Gmail" header link already fires this
+          // event (source='sender_detail_open_all', kind='all_from_
+          // sender'); the per-row click was previously silent.
+          // Privacy (D7): no subject / snippet / address in the event
+          // payload — only the source surface + deep-link shape.
+          onClick={() => {
+            void track('gmail_deep_link_opened', {
+              source: 'recent_messages_row',
+              deep_link_kind: 'thread',
+            });
+            addBreadcrumb({
+              category: 'navigation',
+              message: 'gmail-deep-link: recent-messages-row',
+              level: 'info',
+            });
+          }}
           style={{
             display: 'block',
             fontSize: 13.5,

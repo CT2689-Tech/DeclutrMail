@@ -66,6 +66,7 @@ function makeMessageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow
     snippet: 'A snippet (allowlisted by D7)',
     internalDate: '2026-05-01T00:00:00.000Z',
     isUnread: false,
+    sizeBytes: null,
     ...overrides,
   };
 }

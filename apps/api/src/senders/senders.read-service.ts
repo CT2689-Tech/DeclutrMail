@@ -1338,6 +1338,10 @@ export class SendersReadService {
         snippet: mailMessages.snippet,
         internalDate: mailMessages.internalDate,
         isUnread: mailMessages.isUnread,
+        // ADR-0021 storage-allowlist amendment — surface Gmail's
+        // `sizeEstimate` so Sender Detail can render real KB/MB on the
+        // Recent Messages row size cell. NULL for pre-amendment rows.
+        sizeBytes: mailMessages.sizeBytes,
       })
       .from(mailMessages)
       .where(and(...conditions))
@@ -1352,6 +1356,7 @@ export class SendersReadService {
       snippet: row.snippet,
       internalDate: row.internalDate.toISOString(),
       isUnread: row.isUnread,
+      sizeBytes: row.sizeBytes,
     }));
   }
 

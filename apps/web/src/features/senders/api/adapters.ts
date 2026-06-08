@@ -252,7 +252,20 @@ export function adaptSenderDetail(args: {
   };
 }
 
-/** Wire message row → FE recent-message row. `sizeBytes` placeholdered (wire omits). */
+/**
+ * Wire message row → FE recent-message row.
+ *
+ * `sizeBytes` is forwarded verbatim (nullable per ADR-0021). The render
+ * layer shows an em-dash on null OR zero; this adapter does NOT coerce.
+ *
+ * D7: `hasAttachment` stays a placeholder. The indicator would require
+ * either reading attachment metadata (banned by D7) OR inferring from
+ * `sizeEstimate` / MIME-boundary heuristics — which effectively
+ * reconstitutes attachment metadata from the allowlisted integer. Do
+ * NOT add such inference here, even if a future PR makes it tempting;
+ * surfacing "has attachment" as a derived signal is a privacy-posture
+ * change that needs its own ADR.
+ */
 export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
   return {
     id: row.id,
@@ -261,11 +274,8 @@ export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
     subject: row.subject,
     snippet: row.snippet,
     receivedAt: row.internalDate,
-    // Wire omits message size — render as 0B until BE adds the field.
-    // The UI gracefully shows "0B" rather than crashing, and the row
-    // height is unaffected.
-    sizeBytes: 0,
-    // Wire omits attachment indicator — default false. BE follow-up.
+    sizeBytes: row.sizeBytes,
+    // Wire omits attachment indicator — default false. Separate decision.
     hasAttachment: false,
     unread: row.isUnread,
   };

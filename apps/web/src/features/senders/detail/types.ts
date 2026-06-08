@@ -99,8 +99,13 @@ export interface RecentMessage {
   snippet: string;
   /** ISO-8601 received-at — relative-formatted in the UI. */
   receivedAt: string;
-  /** Bytes — surfaced as a compact KB label. */
-  sizeBytes: number;
+  /**
+   * Bytes — surfaced as a compact KB / MB label. `null` for rows synced
+   * before ADR-0021 (D7 storage-allowlist amendment, 2026-06-06) OR
+   * rows where Gmail omitted `sizeEstimate`; the renderer shows an
+   * em-dash on null rather than a misleading "0B".
+   */
+  sizeBytes: number | null;
   hasAttachment: boolean;
   unread: boolean;
 }

@@ -94,8 +94,17 @@ const SNIPPETS: Record<SenderGroup, string[]> = {
   ],
 };
 
-/** Compact KB label — 1024 → "1KB", 8742 → "9KB". */
-export function fmtSize(bytes: number): string {
+/**
+ * Compact size label — 1024 → "1KB", 8742 → "9KB", 2_500_000 → "2.4MB".
+ *
+ * `null` (pre-ADR-0021 row or Gmail-omitted `sizeEstimate`) renders an
+ * em-dash so the absence reads honestly instead of as "0B". `0`
+ * collapses to the same em-dash for the same reason — a real
+ * zero-byte message would be Gmail's mistake, not ours, and the
+ * em-dash still says "no useful size" without lying about the value.
+ */
+export function fmtSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) return '—';
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;

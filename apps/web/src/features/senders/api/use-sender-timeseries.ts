@@ -10,7 +10,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchSenderTimeseries } from '@/lib/api/senders';
 import { sendersKeys } from './query-keys';
-import { retryUnless404 } from './retry';
+import { retryUnless4xx } from './retry';
 
 export function useSenderTimeseries(id: string) {
   return useQuery({
@@ -19,7 +19,7 @@ export function useSenderTimeseries(id: string) {
     // Share the 404-aware retry predicate with `useSenderDetail` so a
     // stale sender id short-circuits all four panes in lockstep
     // (silent-failure-hunter finding on PR #41).
-    retry: retryUnless404,
+    retry: retryUnless4xx,
     enabled: id.length > 0,
   });
 }

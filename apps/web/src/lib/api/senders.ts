@@ -187,6 +187,13 @@ export interface MailMessageRow {
   /** ISO-8601 — Gmail `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  /**
+   * Whole-message byte estimate from Gmail `sizeEstimate` (D7
+   * amendment per ADR-0021). `null` for rows synced before the
+   * amendment OR rows where Gmail omitted the field; the renderer
+   * shows an em-dash on null rather than "0B".
+   */
+  sizeBytes: number | null;
 }
 
 /** Row shape on `GET /api/senders/:id/timeseries` — 12-month volume + read counts. */
