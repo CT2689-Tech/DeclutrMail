@@ -48,3 +48,19 @@ if (dsn) {
       ) as unknown as typeof breadcrumb,
   });
 }
+
+/**
+ * Next 15 / App Router navigation instrumentation hook (Sentry 10+).
+ *
+ * The Sentry SDK requires this export from `instrumentation-client.ts`
+ * to know when an App-Router transition starts so it can begin a
+ * navigation transaction. Without it, the Vercel build logs an
+ * `ACTION REQUIRED` warning per build (visible in the 2026-06-08
+ * build trace) and client-side navigation events go unobserved.
+ *
+ * Privacy posture is unchanged — this hook only delimits transaction
+ * boundaries; it does NOT add new captures. `tracesSampleRate: 0`
+ * above means no actual trace is sent either way; the hook just
+ * silences the warning + leaves the door open for future opt-in.
+ */
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
