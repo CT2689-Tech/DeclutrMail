@@ -33,6 +33,13 @@ export interface TriageQueueRow {
   signals: string[];
   protectionReason: 'vip' | 'engagement' | 'auto-receipts' | 'auto-financial' | null;
   monthlyVolume: number;
+  /**
+   * Raw last-90-day message count. Used by the FE to render an honest
+   * rolling-window signal ("N in last 90d") rather than the derived
+   * `monthlyVolume = round(last90 / 3)` which rounds to 0 for senders
+   * quiet within the window.
+   */
+  last90dMessages: number;
   readRate: number;
   lastDays: number;
   totalAllTime: number;
@@ -212,6 +219,16 @@ export class TriageReadService {
         }),
         protectionReason: mapProtectionReason(r.isVip, r.protectionReason),
         monthlyVolume,
+        /**
+         * Raw last-90-day count — the underlying signal `monthlyVolume`
+         * is derived from (`monthlyVolume = round(last90Messages / 3)`).
+         * Surfaced separately so the FE can render an honest rolling
+         * window ("N in last 90d") instead of the derived "/mo" that
+         * silently rounds to 0 for senders quiet within the window
+         * (FOUNDER 2026-06-06 smoke — every triage row read "0/mo"
+         * because the only mail from these senders was older than 90d).
+         */
+        last90dMessages: last90Total,
         readRate,
         lastDays,
         totalAllTime: total,

@@ -67,6 +67,16 @@ export interface AutopilotMatchDto {
   ruleId: string;
   /** sha256 hex digest — never the raw email (D7). */
   senderKey: string;
+  /**
+   * Sender display name — joined from `senders.display_name`. `null`
+   * during the brief race window before `building_sender_index`
+   * materialises the row; the FE falls back to the senderKey hash so
+   * the row never blanks. D7-compliant — sender identity is on the
+   * storage allowlist (FIRST item).
+   */
+  senderName: string | null;
+  /** Sender email — joined from `senders.email`. Same race-null contract. */
+  senderEmail: string | null;
   matchedAt: string;
   modeAtMatch: AutopilotMatchMode;
   confidence: number;
