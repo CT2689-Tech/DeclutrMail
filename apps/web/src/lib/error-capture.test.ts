@@ -124,6 +124,36 @@ describe('captureErrorBoundaryException', () => {
     expect(warnSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('forwards the per-feature "senders-detail" boundary tag verbatim', async () => {
+    // D38 session-3 — `/senders/[id]/error.tsx` uses the per-feature
+    // boundary so Sentry groups its errors distinctly from the global
+    // app shell.
+    await captureErrorBoundaryException(new Error('boom'), {
+      boundary: 'senders-detail',
+    });
+    expect(captureExceptionSpy).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: { boundary: 'senders-detail' },
+      }),
+    );
+  });
+
+  it.each(['senders', 'activity', 'brief', 'autopilot'] as const)(
+    'forwards the per-feature "%s" boundary tag verbatim',
+    async (boundary) => {
+      // FOUNDER-FOLLOWUPS 2026-06-06 — each authed surface gets its own
+      // route-segment error.tsx so Sentry groups them distinctly.
+      await captureErrorBoundaryException(new Error('boom'), { boundary });
+      expect(captureExceptionSpy).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          tags: { boundary },
+        }),
+      );
+    },
+  );
+
   it('normalises unknown boundary values to "unknown" in the Sentry tag', async () => {
     await captureErrorBoundaryException(new Error('boom'), {
       // @ts-expect-error — exercise the runtime guard with a value not

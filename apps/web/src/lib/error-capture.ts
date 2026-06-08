@@ -1,8 +1,10 @@
 // Sentry capture helper for App Router error boundaries (D167).
 //
-// `lib/sentry.ts` owns init. This module owns the capture surface so
-// the error boundaries can call a single function without each one
-// repeating the dynamic-import dance.
+// `sentry.client.config.ts` owns init (eager, runs at module load).
+// This module owns the boundary-capture surface so each error.tsx
+// calls one typed function with a `boundary` tag — Sentry groups by
+// that tag distinctly from the global app shell + from feature-level
+// captureFeatureException calls.
 //
 // The wrapper is its own module (rather than a method on the Sentry
 // bootstrap) so tests can mock it cleanly: error-boundary tests stub
@@ -10,15 +12,40 @@
 //
 // Privacy posture (D7): the boundary passes the raw `Error` object,
 // which can contain user data in its `message`. The Sentry init
-// (`lib/sentry.ts`) installs `beforeSend` with `scrubTelemetryPayload`
-// so the same scrubber that protects regular events also covers
-// boundary captures. No bodies, snippets, or subject lines leak.
+// (`sentry.client.config.ts`) installs `beforeSend` with
+// `scrubTelemetryPayload` so the same scrubber that protects regular
+// events also covers boundary captures. No bodies, snippets, or
+// subject lines leak.
 
-/** Stable identifier for the boundary that captured the error. */
-export type ErrorBoundary = 'app-router-error' | 'app-router-global-error';
+import * as Sentry from '@sentry/nextjs';
+
+/**
+ * Stable identifier for the boundary that captured the error.
+ *
+ * Per-feature boundary tags (`senders-detail`, …) let Sentry group
+ * route-scoped errors distinctly from the global app shell — a Sender
+ * Detail render error shouldn't pile into the same bucket as a
+ * top-level routing throw.
+ */
+export type ErrorBoundary =
+  | 'app-router-error'
+  | 'app-router-global-error'
+  | 'senders-detail'
+  | 'senders'
+  | 'activity'
+  | 'brief'
+  | 'autopilot';
 
 /** Closed set used both as the type union and the runtime allowlist. */
-const VALID_BOUNDARIES = new Set<ErrorBoundary>(['app-router-error', 'app-router-global-error']);
+const VALID_BOUNDARIES = new Set<ErrorBoundary>([
+  'app-router-error',
+  'app-router-global-error',
+  'senders-detail',
+  'senders',
+  'activity',
+  'brief',
+  'autopilot',
+]);
 
 /**
  * Runtime guard for the boundary tag value before it's handed to Sentry.
@@ -44,16 +71,21 @@ let warnedNotInitialised = false;
 /**
  * Capture an exception caught by an App Router error boundary.
  *
- * No-op when `NEXT_PUBLIC_SENTRY_DSN` is unset (init bails early in
- * `lib/sentry.ts`). The dynamic import keeps the SDK out of the main
- * bundle until a crash actually happens.
+ * No-op when `NEXT_PUBLIC_SENTRY_DSN` is unset (eager init bails in
+ * `sentry.client.config.ts`). The early-return keeps local dev
+ * silent — no fallback console noise, no Sentry SDK overhead.
  *
- * If the Sentry SDK loads but reports it isn't initialised (init
- * raced with the boundary mount, or the host stripped the init module),
- * fall back to a structured `console.error` payload so the crash is
- * still observable. The fallback warning fires at most once per session
- * — repeated boundary captures during a single race shouldn't flood
- * the console.
+ * If the SDK IS configured (DSN set) but reports no active client at
+ * capture time (init race, chunk-load failure, or build skipped the
+ * init file), fall back to `console.error` so the crash is still
+ * observable in the browser. The one-shot `warnedNotInitialised`
+ * latch keeps repeated boundary captures during a single race from
+ * flooding the console.
+ *
+ * Signature stays `async` for backwards compatibility — every error
+ * boundary already awaits this call. The body is synchronous now
+ * (static import of `@sentry/nextjs`), which makes the wrapper a
+ * resolved promise instantly.
  */
 export async function captureErrorBoundaryException(
   error: unknown,
@@ -69,13 +101,12 @@ export async function captureErrorBoundaryException(
     error,
   };
 
-  const Sentry = await import('@sentry/nextjs');
-
-  // Sentry's `getClient()` returns the active client when `Sentry.init`
-  // has run. If init lost the race with this capture call (or was
-  // skipped entirely), the client is undefined — captureException
-  // would then silently drop the event. Log a structured fallback so
-  // the crash is still observable in the browser console.
+  // `getClient()` returns the active client when `Sentry.init` has run.
+  // If init lost the race with this capture call (or was skipped
+  // entirely by a build step), the client is undefined —
+  // captureException would then silently drop the event. Log a
+  // structured fallback so the crash is still observable in the
+  // browser console.
   const client = typeof Sentry.getClient === 'function' ? Sentry.getClient() : undefined;
   if (!client) {
     if (!warnedNotInitialised) {
