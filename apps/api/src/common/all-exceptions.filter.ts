@@ -65,6 +65,67 @@ export class AllExceptionsFilter implements ExceptionFilter {
       `${req.method} ${req.path} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,
     );
 
+    // 5xx-only diagnostics: the inner error message + any HTTP-response
+    // status / payload from libraries like Gaxios (Google OAuth) is the
+    // only signal that distinguishes "Google returned invalid_client"
+    // from "redirect_uri mismatch" from "DB write failed" at the
+    // exception-filter layer. We emit it as a structured JSON log line
+    // (not the colored Nest one-liner) so Cloud Logging filters can
+    // group by `cid`, AND ship the same exception to Sentry tagged
+    // with `cid` so the operator sees the stack + the trail in the
+    // alert inbox, not just Cloud Logging.
+    //
+    // Privacy: the message is the SDK's error text, never a request
+    // body, and is only emitted on 5xx where the alternative is a
+    // totally opaque INTERNAL_ERROR envelope. The Sentry SDK's
+    // `beforeSend` (see `observability/sentry.ts`) runs the shared
+    // `scrubTelemetryPayload` as defense in depth.
+    if (status >= 500 && exception instanceof Error) {
+      const errObj = exception as Error & {
+        response?: { status?: number; data?: unknown };
+        code?: string | number;
+        stack?: string;
+      };
+      const detail = {
+        kind: 'exception.5xx',
+        cid: correlationId,
+        path: req.path,
+        method: req.method,
+        name: errObj.name,
+        message: errObj.message,
+        code: errObj.code,
+        responseStatus: errObj.response?.status,
+        responseData: errObj.response?.data,
+        stack: (errObj.stack ?? '').split('\n').slice(0, 6).join(' | '),
+      };
+      // eslint-disable-next-line no-console
+      console.error(JSON.stringify(detail));
+      // Fire-and-forget Sentry capture. The dynamic import keeps the
+      // @sentry/node bundle out of the no-DSN path. Errors in capture
+      // itself are swallowed — we never want a failing alert pipeline
+      // to escalate into another 500 on the response path.
+      if (process.env.SENTRY_DSN) {
+        void import('@sentry/node')
+          .then((Sentry) => {
+            Sentry.withScope((scope) => {
+              scope.setTags({
+                cid: correlationId,
+                method: req.method,
+                path: req.path,
+                response_status: String(status),
+              });
+              if (errObj.response?.status) {
+                scope.setTag('upstream_status', String(errObj.response.status));
+              }
+              Sentry.captureException(errObj);
+            });
+          })
+          .catch(() => {
+            // Sentry transport failed — nothing more we can do.
+          });
+      }
+    }
+
     const error: ApiError = { ...rest, correlationId, traceId, displayId };
     res.status(status).json({ error });
   }

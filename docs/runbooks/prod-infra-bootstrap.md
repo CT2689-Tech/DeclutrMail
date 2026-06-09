@@ -479,9 +479,19 @@ gcloud run deploy declutrmail-worker \
   --cpu=1 \
   --no-allow-unauthenticated \
   --set-env-vars="NODE_ENV=production" \
-  --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest" \
+  --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,SENTRY_DSN=sentry-dsn-api:latest" \
   --project=$PROJECT
 ```
+
+> **Worker secrets list correction (2026-06-08 session).** An earlier
+> version of this runbook mounted only `ANTHROPIC_API_KEY`,
+> `DATABASE_URL`, and `REDIS_URL` on the worker. `worker.ts` ALSO calls
+> `requireEnv('GOOGLE_CLIENT_SECRET')` (for Gmail refresh-token rotation),
+> `requireEnv('JWT_ACCESS_SECRET')` / `_REFRESH_SECRET` (for token
+> validation in the brief snapshot flow), and reads `SENTRY_DSN`
+> (observability). The full list above is what `worker.ts` actually
+> needs — leaving any of these unmounted causes a silent bootstrap
+> hang (`worker.boot.env_check` line surfaces which ones are missing).
 
 **Note on `--no-allow-unauthenticated`**: requires IAM auth to invoke.
 For Gmail Pub/Sub push to reach the API, the Pub/Sub OIDC SA needs

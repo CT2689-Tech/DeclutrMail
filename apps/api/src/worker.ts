@@ -100,6 +100,47 @@ function requireEnv(name: string): string {
 }
 
 /**
+ * Boot-time env audit (2026-06-08 session — closes the "worker missed
+ * GOOGLE_CLIENT_SECRET silently" bug). Emits one structured
+ * `worker.boot.env_check` log line at the very start of bootstrap
+ * listing every required env that's missing. With this line in place,
+ * an operator searching Cloud Logging for `worker.boot.env_check`
+ * always sees the full set of misconfigured envs before any
+ * `requireEnv()` call throws, instead of having to backtrack from a
+ * generic boot-failed error.
+ *
+ * Kept as a pre-flight check rather than wired into `requireEnv()`
+ * itself because we want a SINGLE consolidated log line, not one per
+ * missing var; and because some envs the worker checks lazily later
+ * (e.g. KMS_KEY_RESOURCE inside the KMS provider factory) — listing
+ * them up-front catches them before any other code path runs.
+ *
+ * Optional envs (SENTRY_DSN, ANTHROPIC_API_KEY) are excluded — their
+ * absence is part of the no-op contract, not a misconfiguration.
+ */
+function auditRequiredEnv(): void {
+  const required = [
+    'DATABASE_URL',
+    'REDIS_URL',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    // KMS or local-fallback — exactly one is fine; flag if both missing.
+  ] as const;
+  const missing = required.filter((k) => !process.env[k]);
+  const kmsLocal = process.env.KMS_KEY_RESOURCE || process.env.ENCRYPTION_LOCAL_KEY;
+  if (!kmsLocal) missing.push('KMS_KEY_RESOURCE_or_ENCRYPTION_LOCAL_KEY' as never);
+  console.log(
+    JSON.stringify({
+      level: missing.length ? 'error' : 'info',
+      kind: 'worker.boot.env_check',
+      missing,
+      present: required.filter((k) => process.env[k]).length,
+      nodeEnv: process.env.NODE_ENV ?? 'unset',
+    }),
+  );
+}
+
+/**
  * Cloud Run health probe (D158). Cloud Run requires every Service to
  * listen on `$PORT` and pass a startup probe within ~4 minutes, even
  * for headless workers. This tiny HTTP server responds 200 to anything,
@@ -151,6 +192,12 @@ async function bootstrap(): Promise<void> {
   // 503 until `bootstrapComplete` flips at the end of this function,
   // so a half-booted worker never reports healthy.
   startHealthServer();
+
+  // Env audit BEFORE any `requireEnv()` call. Emits a single
+  // `worker.boot.env_check` log line with the full list of missing
+  // required envs — so a misconfigured deployment is one log search
+  // away instead of "worker silently never logs `worker.listening`".
+  auditRequiredEnv();
 
   // D159: initialise Sentry before anything else so the worker process —
   // including the boot-time reconciler sweep — has the SDK installed for

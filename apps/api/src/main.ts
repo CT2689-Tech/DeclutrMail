@@ -46,6 +46,47 @@ function parseCorsOrigin(raw: string | undefined): string | string[] | RegExp {
 }
 
 /**
+ * Boot-time env audit (2026-06-08 session — sibling of the worker's
+ * `auditRequiredEnv`). Emits ONE structured `api.boot.env_check` log
+ * line at the very start of bootstrap with the full list of missing
+ * required envs.
+ *
+ * Why eagerly listed instead of relying on DI failures: the NestJS
+ * factory's first DI error usually surfaces as a cryptic "Nest can't
+ * resolve dependencies of …" — useful for code-side debugging but
+ * useless for "which env is missing in the Cloud Run revision?". This
+ * line surfaces the answer in one greppable log entry.
+ *
+ * KMS choice: prod requires `KMS_KEY_RESOURCE` (Cloud KMS); local
+ * accepts `ENCRYPTION_LOCAL_KEY` instead — we only flag the slot if
+ * BOTH are missing.
+ */
+function auditRequiredApiEnv(): void {
+  const required = [
+    'DATABASE_URL',
+    'JWT_ACCESS_SECRET',
+    'JWT_REFRESH_SECRET',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'GOOGLE_REDIRECT_URI',
+    'WEB_URL',
+  ] as const;
+  const missing = required.filter((k) => !process.env[k]);
+  const kmsLocal = process.env.KMS_KEY_RESOURCE || process.env.ENCRYPTION_LOCAL_KEY;
+  if (!kmsLocal) missing.push('KMS_KEY_RESOURCE_or_ENCRYPTION_LOCAL_KEY' as never);
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      level: missing.length ? 'error' : 'info',
+      kind: 'api.boot.env_check',
+      missing,
+      present: required.filter((k) => process.env[k]).length,
+      nodeEnv: process.env.NODE_ENV ?? 'unset',
+    }),
+  );
+}
+
+/**
  * API bootstrap (D201). Global `api` prefix so every route is under
  * `/api/...` (matches the GOOGLE_REDIRECT_URI in .env.example). The
  * global exception filter maps every error to the D202 envelope.
@@ -68,6 +109,13 @@ async function bootstrap(): Promise<void> {
   if (process.env.NODE_ENV === 'production' && process.env.DEV_AUTH_ENABLED === 'true') {
     throw new Error('DEV_AUTH_ENABLED must never be set when NODE_ENV=production.');
   }
+
+  // Boot-time env audit (2026-06-08 session). Mirrors the worker's
+  // `worker.boot.env_check`. Emits one structured line listing every
+  // missing required env so a misconfigured Cloud Run service is one
+  // log search away. Optional envs (SENTRY_DSN, ANTHROPIC_API_KEY,
+  // POSTHOG_*, etc.) are excluded — their absence is by-design.
+  auditRequiredApiEnv();
 
   await initSentry();
 

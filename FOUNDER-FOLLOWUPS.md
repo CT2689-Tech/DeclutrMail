@@ -26,6 +26,26 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-08 — Vercel env-update should auto-trigger a redeploy
+**Source:** session 2026-06-08 (custom-domain prod smoke — OAuth state-cookie loop)
+**Why:** Updating `NEXT_PUBLIC_*` env vars via the Vercel REST API (or dashboard) applies to the NEXT build, not retroactively. The aliased preview build still runs with the OLD env baked into the bundle. In this session that surfaced as the FE hitting the OLD `*.run.app` host while the API was at `api.declutrmail.com` — cookies on `.declutrmail.com` weren't sent, AuthProvider redirected back to OAuth start on the wrong host, state cookie ended up on the wrong host, and the callback returned "Missing OAuth state cookie". An automated rebuild after env mutation closes the trap.
+**How:**
+1. Wrap the Vercel env PATCH in a tiny `scripts/vercel-update-env.sh` that, after a successful PATCH, also POSTs `https://api.vercel.com/v13/deployments` to redeploy the most recent commit on the target branch.
+2. Document in `docs/runbooks/secrets-inventory.md` under the Vercel rows: "Every env update MUST be paired with a redeploy — use `scripts/vercel-update-env.sh` or trigger Vercel Dashboard → Deployments → Redeploy on the latest preview/production after an env change."
+3. (Future) Vercel project setting "Automatically Redeploy on Environment Variable Changes" is not yet a built-in toggle; revisit if Vercel ships it.
+**Verifies by:** Edit any `NEXT_PUBLIC_*` env via the script + a Vercel build kicks off within ~10s + the new alias serves the updated env value.
+**Status:** Open
+
+### 2026-06-08 — Cloud Monitoring alert: provider_sync_state stuck > 5 min
+**Source:** session 2026-06-08 — worker silently scaled to 0 + initial-sync job queued for ~20 min without anyone noticing
+**Why:** A user signs up, the API enqueues an `initial-sync` job, then the worker isn't reachable (scaled to 0, crashed, OOM'd, secret missing). The FE sees `provider_sync_state.current_stage='queued'`/`progress_pct=0` indefinitely. We have NO active surface that pages the founder when this happens. The 2026-06-08 smoke surfaced it only because the founder noticed "no feedback on /senders".
+**How:**
+1. Add a Cloud Monitoring log-based metric `sync_stage_stuck` derived from a custom log line. Worker should emit a `sync.stuck_check` log line every ~5 min for each mailbox whose `current_stage` hasn't advanced. OR — simpler — query Supabase from a Cloud Run Job on a 5-min cron.
+2. Alternative: a Sentry-side rule — any `provider_sync_state` row older than 30 min without `progress_pct` change triggers a Slack/email alert via a periodic check.
+3. Document the runbook for "sync stuck" in `docs/runbooks/` — first action is always `gcloud run services describe declutrmail-worker --format="value(status.latestReadyRevisionName)"` + check worker logs.
+**Verifies by:** Pause the worker + watch a sync get stuck + receive the alert within 5-10 min.
+**Status:** Open
+
 ### 2026-06-08 — Atlas state-sync on Supabase for migration 0026
 **Source:** session 2026-06-08 (RLS deny-anon applied via MCP)
 **Why:** Migration `0026_rls_deny_anon.sql` was applied via the Supabase MCP `apply_migration` tool (which writes to `supabase_migrations.schema_migrations`), not via the Atlas CLI (which tracks state in `atlas_schema_revisions`). Atlas does not know 0026 is applied. The next `atlas migrate apply` against Supabase will try to re-execute 0026; `ENABLE ROW LEVEL SECURITY` is idempotent so it would no-op cleanly, but Atlas will fail on hash mismatch unless told.
