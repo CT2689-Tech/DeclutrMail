@@ -1,0 +1,61 @@
+# Sync-stuck watchdog (D38, D224, D159).
+#
+# Runs every 5 minutes (GitHub Actions' cron minimum) against the
+# Supabase prod DB. Flags mailbox syncs in `queued`/`connecting`/
+# `syncing` whose `provider_sync_state.updated_at` is older than the
+# threshold (default 5 min). A failed workflow run = email to the
+# founder via GH's "Send notifications for failed workflows" setting.
+#
+# Why GH Actions cron + psql vs Cloud Monitoring:
+#   * Cloud Monitoring can't directly query an external Supabase DB —
+#     it'd need a Cloud Run Job + Scheduler + IAM bindings. GH Actions
+#     cron is free + already authed via SUPABASE_SESSION_DSN secret.
+#   * GH cron has ~minute jitter under load (not guaranteed exact
+#     5-min ticks). Acceptable for a dev-phase watchdog — false-quiet
+#     windows of ≤ ~5 extra minutes are fine. Revisit if launch volume
+#     makes Cloud Monitoring's tighter cadence necessary.
+#
+# Privacy (D7 / D228): script reads ONLY `provider_sync_state`. No
+# `mail_messages` / `senders` / `triage_decisions` access. The alert
+# body carries mailbox_account_id (a UUID, not user-identifiable in
+# isolation) + stage + progress + stuck_seconds.
+
+name: Sync-stuck watchdog
+
+on:
+  schedule:
+    # Every 5 min. GitHub may delay by up to several minutes under
+    # platform load; the script's threshold accommodates that
+    # (STUCK_MINUTES default = 5).
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-stuck-watchdog-${{ github.ref }}
+  # NEVER cancel an in-flight check — that masks real stuck syncs.
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install psql
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+
+      - name: Check for stuck syncs
+        env:
+          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+          STUCK_MINUTES: '5'
+        run: |
+          set -euo pipefail
+          chmod +x scripts/check-sync-stuck.sh
+          ./scripts/check-sync-stuck.sh
