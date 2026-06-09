@@ -148,6 +148,67 @@ describe('InitialSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it("first_seen_at / last_seen_at span every sender's actual MIN / MAX internal_date (regression: 2026-06-09 prod data integrity bug)", async () => {
+    // Prod sync 2026-06-09 produced senders.last_seen_at = first_seen_at
+    // for 99.94% of senders despite each sender having multiple unique
+    // internal_dates in mail_messages. Root cause was not isolated; the
+    // initial-sync rebuild now runs a SQL post-pass that recomputes
+    // first/last from the canonical mail_messages aggregation. This
+    // test guards the post-pass.
+    //
+    // Seed 3 senders × 5 messages each across 5 different days. After
+    // the rebuild every sender's first_seen_at MUST equal the earliest
+    // of its messages and last_seen_at MUST equal the latest.
+    const senderCount = 3;
+    const msgsPerSender = 5;
+    const dayMs = 86_400_000;
+    const baseUtc = Date.UTC(2026, 4, 1); // 2026-05-01 UTC
+    const messages: GmailMessageMetadata[] = [];
+    for (let i = 0; i < senderCount * msgsPerSender; i += 1) {
+      const senderIdx = i % senderCount;
+      const dayIdx = Math.floor(i / senderCount); // 0..4
+      messages.push({
+        id: `regress-${i}`,
+        threadId: `regress-thread-${i}`,
+        labelIds: ['INBOX'],
+        snippet: `snippet ${i}`,
+        internalDate: String(baseUtc + dayIdx * dayMs),
+        from: `Sender ${senderIdx} <s${senderIdx}@regress.test>`,
+        subject: `subj ${i}`,
+        to: null,
+        cc: null,
+        listUnsubscribe: null,
+        listUnsubscribePost: null,
+      });
+    }
+
+    const client = new FakeGmailClient(messages);
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const rows = await db
+      .select({
+        email: senders.email,
+        first: senders.firstSeenAt,
+        last: senders.lastSeenAt,
+        total: senders.totalReceived,
+      })
+      .from(senders);
+
+    expect(rows.length).toBe(senderCount);
+    const expectedFirst = new Date(baseUtc).getTime();
+    const expectedLast = new Date(baseUtc + (msgsPerSender - 1) * dayMs).getTime();
+    for (const row of rows) {
+      // SQL post-pass guarantees: first = MIN(internal_date), last = MAX(internal_date).
+      expect(row.first.getTime()).toBe(expectedFirst);
+      expect(row.last.getTime()).toBe(expectedLast);
+      expect(row.total).toBe(msgsPerSender);
+      // The actual prod bug: last_seen_at silently collapsed to first_seen_at.
+      // Pin the discriminator so a regression fails this assertion FIRST.
+      expect(row.last.getTime()).not.toBe(row.first.getTime());
+    }
+  });
+
   it('fresh sync — mirrors every message and materializes senders', async () => {
     const client = new FakeGmailClient(makeMessages(30, 6));
     const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
