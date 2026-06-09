@@ -974,11 +974,55 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       };
       aggregates.set(row.senderKey, agg);
     }
-    if (row.internalDate < agg.firstSeen) {
+    // Capture BEFORE state for the optional diagnostic (D38). The bug
+    // observed in prod 2026-06-09 (99.94% of senders ended up with
+    // last_seen_at = first_seen_at) did NOT reproduce on PGlite or
+    // local drizzle-orm/postgres-js. The fold guards are symmetric in
+    // pure JS — `<` working while `>` not is structurally impossible —
+    // so the prod-only divergence points at a runtime-specific quirk
+    // (Supabase tx pooler + Cloud Run + postgres-js with prepare:false).
+    // Landing a permanent env-gated diagnostic lets a single deploy
+    // capture the fold's actual behavior under prod conditions without
+    // churning the code each time. Default OFF — zero overhead.
+    const debugFold = process.env.WORKER_DEBUG_FOLD === 'true';
+    const prevFirstSeen = debugFold ? agg.firstSeen : null;
+    const prevLastSeen = debugFold ? agg.lastSeen : null;
+    const isOlder = row.internalDate < agg.firstSeen;
+    const isNewer = row.internalDate > agg.lastSeen;
+    if (isOlder) {
       agg.firstSeen = row.internalDate;
     }
-    if (row.internalDate > agg.lastSeen) {
+    if (isNewer) {
       agg.lastSeen = row.internalDate;
+    }
+    if (debugFold) {
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          level: 'debug',
+          kind: 'worker.fold_debug',
+          senderKey: row.senderKey,
+          row: {
+            internalDate: row.internalDate?.toISOString?.() ?? String(row.internalDate),
+            type: typeof row.internalDate,
+            isDate: row.internalDate instanceof Date,
+            valueOf:
+              typeof row.internalDate?.valueOf === 'function' ? row.internalDate.valueOf() : null,
+          },
+          before: {
+            firstSeen: prevFirstSeen?.toISOString?.() ?? String(prevFirstSeen),
+            lastSeen: prevLastSeen?.toISOString?.() ?? String(prevLastSeen),
+            firstSeenValueOf: prevFirstSeen?.valueOf?.() ?? null,
+            lastSeenValueOf: prevLastSeen?.valueOf?.() ?? null,
+            sameRefAsRow: row.internalDate === prevLastSeen,
+          },
+          comparison: {
+            isOlder,
+            isNewer,
+          },
+          totalReceivedBefore: agg.totalReceived,
+        }),
+      );
     }
     // Inbound-only: the page query filters `is_outbound = false`, so
     // every fold here contributes +1 to the sender's lifetime received

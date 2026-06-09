@@ -503,6 +503,94 @@ describe('IncrementalSyncWorker', () => {
     ).rejects.toThrow(/startHistoryId/);
   });
 
+  it('symmetric LEAST/GREATEST: a backdated incremental message lowers first_seen_at; a newer one raises last_seen_at', async () => {
+    // Pre-seed a sender at a middle date. Then deliver two history
+    // events: one with an OLDER internal_date (e.g. Gmail surfaces a
+    // backdated `labelChanged` for an older thread) and one with a
+    // NEWER internal_date. After both, first_seen_at MUST be the
+    // older date and last_seen_at MUST be the newer date — the UPSERT
+    // ON CONFLICT clause uses LEAST + GREATEST to keep both bounds
+    // monotonic in their natural direction regardless of arrival order.
+    const senderEmail = 'sym@example.com';
+    const senderKey = await deriveSenderKey(senderEmail);
+    const middle = Date.UTC(2026, 5, 15); // 2026-06-15
+    const older = Date.UTC(2026, 4, 1); // 2026-05-01
+    const newer = Date.UTC(2026, 6, 1); // 2026-07-01
+
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: 'Sym',
+      email: senderEmail,
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(middle),
+      lastSeenAt: new Date(middle),
+      totalReceived: 1,
+    });
+
+    // Deliver backdated message first.
+    const olderMeta = makeMetadata('sym-old', 'thread-old', senderEmail, ['INBOX'], older);
+    await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [
+            {
+              forCursor: '1000',
+              page: {
+                records: [
+                  {
+                    kind: 'added',
+                    messageId: 'sym-old',
+                    threadId: 'thread-old',
+                    labelIds: ['INBOX'],
+                  },
+                ],
+                historyId: '1500',
+              },
+            },
+          ],
+          new Map([['sym-old', olderMeta]]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    // Then a newer message via a second history window.
+    const newerMeta = makeMetadata('sym-new', 'thread-new', senderEmail, ['INBOX'], newer);
+    await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [
+            {
+              forCursor: '1500',
+              page: {
+                records: [
+                  {
+                    kind: 'added',
+                    messageId: 'sym-new',
+                    threadId: 'thread-new',
+                    labelIds: ['INBOX'],
+                  },
+                ],
+                historyId: '2000',
+              },
+            },
+          ],
+          new Map([['sym-new', newerMeta]]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1500', endHistoryId: '2000' }, CTX);
+
+    const [row] = await db
+      .select({ first: senders.firstSeenAt, last: senders.lastSeenAt })
+      .from(senders)
+      .where(eq(senders.senderKey, senderKey));
+    expect(row!.first.getTime()).toBe(older); // LEAST kept lowering
+    expect(row!.last.getTime()).toBe(newer); // GREATEST kept raising
+  });
+
   it('updates `sender_timeseries` on a new INBOUND message', async () => {
     const meta = makeMetadata(
       'ts-001',
