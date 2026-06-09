@@ -127,7 +127,7 @@ export const followupTracker = pgTable(
       .on(table.mailboxAccountId, table.sentAt)
       .where(sql`${table.status} = 'awaiting'`),
   }),
-);
+).enableRLS();
 
 export type FollowupTracker = typeof followupTracker.$inferSelect;
 export type NewFollowupTracker = typeof followupTracker.$inferInsert;

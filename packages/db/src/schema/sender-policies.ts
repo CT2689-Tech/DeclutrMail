@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { mailboxAccounts } from './mailbox-accounts';
 
@@ -102,8 +111,18 @@ export const senderPolicies = pgTable(
       table.mailboxAccountId,
       table.senderKey,
     ),
+    /**
+     * DB invariant added in migration 0023 — "if protected, reason MUST
+     * be recorded." One-way (not biconditional) so the
+     * `is_protected=false AND protection_reason='engagement_based'`
+     * memory-pin state remains legal.
+     */
+    protectionReasonWhenProtectedChk: check(
+      'sender_policies_protection_reason_when_protected_chk',
+      sql`NOT ${table.isProtected} OR ${table.protectionReason} IS NOT NULL`,
+    ),
   }),
-);
+).enableRLS();
 
 export type SenderPolicy = typeof senderPolicies.$inferSelect;
 export type NewSenderPolicy = typeof senderPolicies.$inferInsert;

@@ -118,7 +118,7 @@ export const outboxEvents = pgTable(
     /** Ops + dead-letter inspection by topic. */
     topicCreatedIdx: index('outbox_events_topic_created_idx').on(table.topic, table.createdAt),
   }),
-);
+).enableRLS();
 
 export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type NewOutboxEvent = typeof outboxEvents.$inferInsert;

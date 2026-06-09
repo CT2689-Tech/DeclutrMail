@@ -135,7 +135,7 @@ export const triageDecisions = pgTable(
       table.mailboxAccountId,
     ),
   }),
-);
+).enableRLS();
 
 export type TriageDecision = typeof triageDecisions.$inferSelect;
 export type NewTriageDecision = typeof triageDecisions.$inferInsert;

@@ -64,7 +64,7 @@ export const webhookDedup = pgTable(
   (table) => ({
     expiresAtIdx: index('webhook_dedup_expires_at_idx').on(table.expiresAt),
   }),
-);
+).enableRLS();
 
 export type WebhookDedup = typeof webhookDedup.$inferSelect;
 export type NewWebhookDedup = typeof webhookDedup.$inferInsert;

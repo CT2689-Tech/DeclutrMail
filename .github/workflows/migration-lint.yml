@@ -80,3 +80,52 @@ jobs:
             exit 1
           fi
           echo "✓ All forward migrations have rollback companions."
+
+  schema-drift:
+    # Drift gate (D38) — fail PR if the Drizzle TS schema disagrees with
+    # the migrated DB shape captured by the latest meta/ snapshot. The
+    # whole point: a column added in `src/schema/*.ts` without a matching
+    # Atlas migration (or vice-versa) breaks production silently. This
+    # job catches it at PR time.
+    #
+    # How: `drizzle-kit generate` reads the schema files + the latest
+    # snapshot in `migrations/meta/` and emits a NEW SQL file when they
+    # disagree. We snapshot the migrations dir before + after; any new
+    # `.sql` file is drift.
+    name: Drizzle schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Detect schema drift via drizzle-kit generate
+        run: |
+          set -euo pipefail
+          before=$(ls packages/db/migrations/*.sql 2>/dev/null | sort)
+          pnpm --filter @declutrmail/db db:generate
+          after=$(ls packages/db/migrations/*.sql 2>/dev/null | sort)
+          new_files=$(comm -13 <(echo "$before") <(echo "$after") || true)
+          if [ -n "$new_files" ]; then
+            echo "::error::Drizzle schema drift detected — TS schema disagrees with migrations/meta/ snapshot."
+            echo "drizzle-kit generate emitted new migration file(s):"
+            echo "$new_files"
+            echo ""
+            echo "Either:"
+            echo "  1. The schema annotation is missing (add it to packages/db/src/schema/*.ts), or"
+            echo "  2. A real DDL change is needed — add a numbered Atlas migration AND run"
+            echo "     'pnpm --filter @declutrmail/db db:generate' locally to capture the snapshot."
+            echo ""
+            echo "--- Diff ---"
+            for f in $new_files; do
+              echo ">>> $f"
+              cat "$f"
+            done
+            exit 1
+          fi
+          echo "No schema drift — Drizzle TS schema matches migrations/meta/ snapshot."

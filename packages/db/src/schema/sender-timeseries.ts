@@ -51,7 +51,7 @@ export const senderTimeseries = pgTable(
       columns: [table.mailboxAccountId, table.senderKey, table.yearMonth],
     }),
   }),
-);
+).enableRLS();
 
 export type SenderTimeseries = typeof senderTimeseries.$inferSelect;
 export type NewSenderTimeseries = typeof senderTimeseries.$inferInsert;

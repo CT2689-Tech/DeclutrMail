@@ -88,7 +88,7 @@ export const providerSyncState = pgTable(
       table.historyIdUpdatedAt,
     ),
   }),
-);
+).enableRLS();
 
 export type ProviderSyncState = typeof providerSyncState.$inferSelect;
 export type NewProviderSyncState = typeof providerSyncState.$inferInsert;

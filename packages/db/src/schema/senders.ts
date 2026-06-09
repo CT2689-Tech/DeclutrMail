@@ -174,7 +174,7 @@ export const senders = pgTable(
       table.id.desc(),
     ),
   }),
-);
+).enableRLS();
 
 export type Sender = typeof senders.$inferSelect;
 export type NewSender = typeof senders.$inferInsert;

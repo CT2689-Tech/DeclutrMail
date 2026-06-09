@@ -207,7 +207,7 @@ export const briefRuns = pgTable(
       table.runDateLocal,
     ),
   }),
-);
+).enableRLS();
 
 export type BriefRun = typeof briefRuns.$inferSelect;
 export type NewBriefRun = typeof briefRuns.$inferInsert;

@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   index,
   integer,
   jsonb,
@@ -161,8 +162,16 @@ export const actionJobs = pgTable(
      *
      * FK enforced at DB level via 0020 migration (DEFERRABLE INITIALLY
      * DEFERRED). NULL skips the FK check per standard SQL semantics.
+     *
+     * NOTE: Drizzle's `.references()` declares the self-FK + `ON DELETE
+     * CASCADE` so the schema mirrors DB state, but it cannot express
+     * `DEFERRABLE INITIALLY DEFERRED` — that timing is enforced by the
+     * 0020 migration only. The forward-only `AnyPgColumn` annotation is
+     * the standard Drizzle self-reference pattern.
      */
-    compositeId: uuid('composite_id'),
+    compositeId: uuid('composite_id').references((): AnyPgColumn => actionJobs.id, {
+      onDelete: 'cascade',
+    }),
     /**
      * Time-window filter applied at worker resolution (ADR-0020).
      * Used by Archive + Delete verbs (and the secondary historic
@@ -192,7 +201,7 @@ export const actionJobs = pgTable(
     /** Composite cascade-undo lookup (ADR-0020). */
     compositeIdIdx: index('action_jobs_composite_id_idx').on(table.compositeId),
   }),
-);
+).enableRLS();
 
 export type ActionJob = typeof actionJobs.$inferSelect;
 export type NewActionJob = typeof actionJobs.$inferInsert;

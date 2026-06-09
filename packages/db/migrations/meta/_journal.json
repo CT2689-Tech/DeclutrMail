@@ -64,6 +64,13 @@
       "when": 1780026399979,
       "tag": "0015_action_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781041236994,
+      "tag": "0016_schema_sync_baseline",
+      "breakpoints": true
     }
   ]
 }

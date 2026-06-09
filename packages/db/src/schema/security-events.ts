@@ -71,7 +71,7 @@ export const securityEvents = pgTable(
       sql`${table.severity} IN ('info', 'warning', 'critical')`,
     ),
   }),
-);
+).enableRLS();
 
 export type SecurityEvent = typeof securityEvents.$inferSelect;
 export type NewSecurityEvent = typeof securityEvents.$inferInsert;

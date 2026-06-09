@@ -187,7 +187,7 @@ export const automationRules = pgTable(
       sql`(${table.isPreset} = true AND ${table.presetKey} IS NOT NULL) OR (${table.isPreset} = false AND ${table.presetKey} IS NULL)`,
     ),
   }),
-);
+).enableRLS();
 
 export type AutomationRule = typeof automationRules.$inferSelect;
 export type NewAutomationRule = typeof automationRules.$inferInsert;

@@ -53,7 +53,7 @@ export const users = pgTable(
     emailIdx: uniqueIndex('users_email_uniq').on(table.email),
     workspaceIdx: index('users_workspace_id_idx').on(table.workspaceId),
   }),
-);
+).enableRLS();
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

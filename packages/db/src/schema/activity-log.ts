@@ -93,7 +93,7 @@ export const activityLog = pgTable(
     /** Activity-row → undo lookup (D58 "Undo" affordance per row). */
     undoTokenIdx: index('activity_log_undo_token_idx').on(table.undoToken),
   }),
-);
+).enableRLS();
 
 export type ActivityLogEntry = typeof activityLog.$inferSelect;
 export type NewActivityLogEntry = typeof activityLog.$inferInsert;

@@ -167,7 +167,7 @@ export const ruleMatchLog = pgTable(
       .on(table.ruleId, table.senderKey)
       .where(sql`${table.resolution} = 'pending'`),
   }),
-);
+).enableRLS();
 
 export type RuleMatchLog = typeof ruleMatchLog.$inferSelect;
 export type NewRuleMatchLog = typeof ruleMatchLog.$inferInsert;

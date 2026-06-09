@@ -70,7 +70,7 @@ export const activeSessions = pgTable(
     /** D116 "list active sessions" surface — scoped per user. */
     userRevokedIdx: index('active_sessions_user_revoked_idx').on(table.userId, table.isRevoked),
   }),
-);
+).enableRLS();
 
 export type ActiveSession = typeof activeSessions.$inferSelect;
 export type NewActiveSession = typeof activeSessions.$inferInsert;

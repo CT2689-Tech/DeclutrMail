@@ -121,7 +121,7 @@ export const undoJournal = pgTable(
       table.createdAt,
     ),
   }),
-);
+).enableRLS();
 
 export type UndoJournalEntry = typeof undoJournal.$inferSelect;
 export type NewUndoJournalEntry = typeof undoJournal.$inferInsert;

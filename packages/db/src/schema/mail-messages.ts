@@ -207,7 +207,7 @@ export const mailMessages = pgTable(
       table.internalDate,
     ),
   }),
-);
+).enableRLS();
 
 export type MailMessage = typeof mailMessages.$inferSelect;
 export type NewMailMessage = typeof mailMessages.$inferInsert;

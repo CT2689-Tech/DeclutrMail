@@ -84,7 +84,7 @@ export const mailboxAccounts = pgTable(
     workspaceIdx: index('mailbox_accounts_workspace_id_idx').on(table.workspaceId),
     userIdx: index('mailbox_accounts_user_id_idx').on(table.userId),
   }),
-);
+).enableRLS();
 
 export type MailboxAccount = typeof mailboxAccounts.$inferSelect;
 export type NewMailboxAccount = typeof mailboxAccounts.$inferInsert;
