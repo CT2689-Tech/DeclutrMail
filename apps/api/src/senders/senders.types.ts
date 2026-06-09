@@ -13,7 +13,9 @@
 // labels, read state, derived counts. NO body, NO attachments, NO
 // non-allowlisted headers.
 
-import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import type { GmailCategory, TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+
+export type { GmailCategory };
 
 /**
  * Bucketed month-over-month volume trend, computed BE-side from
@@ -71,14 +73,6 @@ export interface LastReview {
    */
   confidence: number;
 }
-
-/**
- * Gmail's own category enum mirrored from the `gmail_category` Postgres
- * enum. Kept in sync with `packages/db/src/schema/senders.ts` — adding
- * a value requires touching both the migration and this union (one
- * source of truth per type-design principle).
- */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
 /**
  * Derived unsubscribe capability (D9, RFC 8058). Mirror of the

@@ -22,10 +22,17 @@
  * Fixtures are static so Storybook variants stay byte-stable.
  */
 
+import type { GmailCategory } from '@declutrmail/shared/contracts';
+
 import type { TriageVerdict } from './types';
 
-/** Gmail-side category — surfaces in row chrome (read-only). */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/**
+ * Gmail-side category — surfaces in row chrome (read-only). Re-exported
+ * from `@declutrmail/shared/contracts` (mirror of the `gmail_category`
+ * pg_enum). The cross-package contract test in `apps/api` keeps it
+ * aligned with the DB source of truth.
+ */
+export type { GmailCategory };
 
 /**
  * RFC 8058 unsubscribe capability per sender (mirrors

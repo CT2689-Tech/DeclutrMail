@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+import type { ActionJobStatus } from '@declutrmail/db';
+
+export type { ActionJobStatus };
+
 /**
  * Action API contracts (D226).
  *
@@ -35,8 +39,6 @@ export const archiveRequestSchema = z
   })
   .strict();
 export type ArchiveRequest = z.infer<typeof archiveRequestSchema>;
-
-export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
 
 export interface ActionEnqueueResult {
   actionId: string;

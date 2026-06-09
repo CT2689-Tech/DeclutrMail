@@ -20,13 +20,18 @@
  * the server gave us on the previous response.
  */
 
-import type { Envelope, PaginatedEnvelope } from '@declutrmail/shared/contracts';
+import type { Envelope, GmailCategory, PaginatedEnvelope } from '@declutrmail/shared/contracts';
 import { apiGet } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
-/** Gmail-side category enum — matches `mail_senders.gmail_category`. */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/**
+ * Gmail-side category enum — re-exported from
+ * `@declutrmail/shared/contracts` (mirror of the `gmail_category`
+ * pg_enum). The cross-package contract test in `apps/api` keeps it
+ * aligned with the DB source of truth.
+ */
+export type { GmailCategory };
 
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';

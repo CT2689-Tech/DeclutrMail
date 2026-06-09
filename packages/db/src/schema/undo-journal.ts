@@ -120,3 +120,10 @@ export const undoJournal = pgTable(
 
 export type UndoJournalEntry = typeof undoJournal.$inferSelect;
 export type NewUndoJournalEntry = typeof undoJournal.$inferInsert;
+/**
+ * Closed string union derived from the `undo_action_kind` pg_enum
+ * (the source of truth). Replaces hand-rolled mirrors at the API
+ * undo service / FE wire layers — adding a verb requires touching
+ * the migration + this enum, which is the contract we want.
+ */
+export type UndoActionKind = (typeof undoActionKind.enumValues)[number];

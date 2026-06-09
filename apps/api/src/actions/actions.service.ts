@@ -9,7 +9,7 @@ import { Queue } from 'bullmq';
 import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
 import { actionJobs, mailMessages, senderPolicies, senders } from '@declutrmail/db';
-import type { LabelActionSelector } from '@declutrmail/db';
+import type { ActionJobStatus, LabelActionSelector } from '@declutrmail/db';
 import { LABEL_ACTION_JOB, labelActionJobOptions } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
 
@@ -223,7 +223,7 @@ export class ActionsService {
     token: string;
     verb: 'archive';
     messageIds: string[];
-  }): Promise<{ actionId: string; status: 'queued' | 'executing' | 'done' | 'failed' }> {
+  }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -323,8 +323,14 @@ export class ActionsService {
     mailboxAccountId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
     try {
-      await this.queue!.add(
+      await this.queue.add(
         LABEL_ACTION_JOB,
         { actionId, mailboxAccountId, idempotencyKey },
         labelActionJobOptions(idempotencyKey),

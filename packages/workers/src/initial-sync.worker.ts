@@ -1,5 +1,11 @@
 import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
-import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
+import type {
+  GmailCategory,
+  NewMailMessage,
+  NewSender,
+  NewSenderTimeseries,
+  schema,
+} from '@declutrmail/db';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -13,9 +19,6 @@ import type { InitialSyncJobData } from './queue.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
-
-/** The five `senders.gmail_category` enum values (D222 — Gmail's own labels). */
-type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
 /** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222). */
 const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {

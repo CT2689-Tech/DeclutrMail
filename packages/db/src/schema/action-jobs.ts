@@ -157,3 +157,10 @@ export const actionJobs = pgTable(
 
 export type ActionJob = typeof actionJobs.$inferSelect;
 export type NewActionJob = typeof actionJobs.$inferInsert;
+/**
+ * Closed string union derived from the `action_job_status` pg_enum
+ * (the source of truth). Replaces hand-rolled mirrors at the API
+ * service + FE wire layers — adding a value requires touching the
+ * migration + this enum, which is the contract we want.
+ */
+export type ActionJobStatus = (typeof actionJobStatus.enumValues)[number];

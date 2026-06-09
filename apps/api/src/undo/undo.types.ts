@@ -1,13 +1,14 @@
 /**
  * Undo journal action-kind types (D35, D58, D232).
  *
- * Closed string union matched 1:1 against the `undo_action_kind` Postgres
- * enum (see `packages/db/src/schema/undo-journal.ts`). Type-design
- * principle: ONE source of truth — adding a verb requires touching this
- * union AND the migration AND the enum, which is exactly the contract
- * we want.
+ * Re-exported from `@declutrmail/db` — the `undo_action_kind` pg_enum
+ * is the source of truth (`packages/db/src/schema/undo-journal.ts`).
+ * Adding a verb requires touching the migration + the enum; this
+ * re-export keeps the API contract aligned at compile time.
  */
-export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule';
+import type { UndoActionKind } from '@declutrmail/db';
+
+export type { UndoActionKind };
 
 /**
  * Per-action payload shape (D232).

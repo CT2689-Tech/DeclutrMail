@@ -15,10 +15,17 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
+import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
+
 import { apiGet, apiPost } from './client';
 
-/** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
-export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
+/**
+ * Lifecycle of an `action_jobs` row — re-exported from
+ * `@declutrmail/shared/contracts` (the FE-facing mirror of the BE
+ * `action_job_status` pg_enum). The cross-package contract test in
+ * `apps/api` asserts the mirror stays aligned with the DB source.
+ */
+export type { ActionJobStatus };
 
 /** A status is terminal once the worker has finished (success or failure). */
 export function isTerminalStatus(status: ActionJobStatus): boolean {
@@ -52,7 +59,7 @@ export interface ArchivePreviewResult {
 /** Returned by `POST /api/undo/:token` — the reverse handle to poll. */
 export interface UndoRevertResult {
   token: string;
-  actionKind: string;
+  actionKind: UndoActionKind;
   /** True when the reverse already completed (idempotent repeat POST). */
   reverted: boolean;
   expired: boolean;

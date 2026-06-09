@@ -139,3 +139,10 @@ export const senders = pgTable(
 
 export type Sender = typeof senders.$inferSelect;
 export type NewSender = typeof senders.$inferInsert;
+/**
+ * Closed string union derived from the `gmail_category` pg_enum
+ * (the source of truth). Replaces hand-rolled mirrors at the workers
+ * + API senders + FE wire layers — adding a value requires touching
+ * the migration + this enum.
+ */
+export type GmailCategory = (typeof gmailCategory.enumValues)[number];

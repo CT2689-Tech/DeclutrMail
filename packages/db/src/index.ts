@@ -1,6 +1,11 @@
 export * as schema from './schema';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
-export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
+export type {
+  ActionJob,
+  ActionJobStatus,
+  LabelActionSelector,
+  NewActionJob,
+} from './schema/action-jobs';
 export { activeSessions } from './schema/active-sessions';
 export type { ActiveSession, NewActiveSession } from './schema/active-sessions';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
@@ -61,7 +66,7 @@ export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
 export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
 export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';
-export type { NewSender, Sender } from './schema/senders';
+export type { GmailCategory, NewSender, Sender } from './schema/senders';
 export { triageDecisions, triageReasoningSource, triageVerdict } from './schema/triage-decisions';
 export type {
   NewTriageDecision,
@@ -70,7 +75,7 @@ export type {
   TriageVerdict,
 } from './schema/triage-decisions';
 export { undoActionKind, undoJournal } from './schema/undo-journal';
-export type { NewUndoJournalEntry, UndoJournalEntry } from './schema/undo-journal';
+export type { NewUndoJournalEntry, UndoActionKind, UndoJournalEntry } from './schema/undo-journal';
 export { users } from './schema/users';
 export type { NewUser, User } from './schema/users';
 export { webhookDedup } from './schema/webhook-dedup';

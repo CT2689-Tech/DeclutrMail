@@ -24,6 +24,12 @@ export { ERROR_CODES, isErrorCode } from './error-codes';
 export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
 export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
 
+// pg_enum mirrors — closed string unions that mirror `@declutrmail/db`
+// pg_enums for FE consumers (the FE has no `@declutrmail/db` dep). A
+// cross-package `satisfies` contract test in `apps/api` keeps these in
+// lock-step with the DB source of truth at compile time.
+export type { ActionJobStatus, GmailCategory, UndoActionKind } from './enum-mirrors';
+
 // ADR-0015 verb vocabulary — the shared SoT for the action verb enum,
 // imported by the DB pg_enum (P5) and the Action Registry descriptors.
 export {
