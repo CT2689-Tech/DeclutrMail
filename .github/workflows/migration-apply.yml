@@ -1,0 +1,90 @@
+# Auto-apply Atlas migrations to Supabase on merge to main.
+#
+# Trigger:
+#   - push to main where a file under packages/db/migrations/ changed
+#   - workflow_dispatch (manual) — useful when a migration was applied
+#     via the Supabase MCP `apply_migration` tool (which writes to
+#     `supabase_migrations.schema_migrations`, NOT Atlas's
+#     `atlas_schema_revisions`). Manual dispatch syncs Atlas state by
+#     re-running `migrate apply --allow-dirty`; ENABLE-RLS-style DDL
+#     is idempotent so the actual DB effect is a no-op.
+#
+# Auth: a Supabase **session-pooler** DSN stored as the GH Actions
+# secret `SUPABASE_SESSION_DSN`. Session-mode is required because Atlas
+# uses LISTEN/NOTIFY + advisory locks for migration coordination — both
+# are blocked by the transaction pooler (port 6543). The Cloud Run
+# runtime still uses the transaction pooler for short-lived queries;
+# only migrations need the session pooler.
+#
+# Workflow safety:
+#   - `migrate lint` is the gate on the PR side
+#     (.github/workflows/migration-lint.yml). By the time a push reaches
+#     main, the migration has already been linted against an empty
+#     Postgres 16.
+#   - `--allow-dirty` is needed because Supabase pre-installs
+#     `auth`/`storage`/`extensions` schemas. Our migrations only touch
+#     `public`; the dirty schemas are external.
+#   - Atlas writes to its own revisions table (`atlas_schema_revisions`).
+#     If a migration was applied out-of-band (e.g. via MCP), the next
+#     run reapplies it idempotently + syncs state. RLS toggles + most
+#     DDL we author are idempotent.
+
+name: Migration apply (Atlas → Supabase)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/db/migrations/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Serialize concurrent runs. Two migrations applying simultaneously
+# against the same DB would race on the Atlas advisory lock.
+concurrency:
+  group: migration-apply-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Atlas
+        # Same pinned version as the lint workflow — v0.38+ gates `lint`
+        # behind Atlas Pro. `apply` is still community-free at any
+        # recent version, but pinning keeps the two workflows in sync.
+        uses: ariga/setup-atlas@v0
+        with:
+          version: v0.37.0
+
+      - name: Apply migrations to Supabase
+        env:
+          # Session-mode pooler DSN (port 5432 on
+          # aws-0-us-west-2.pooler.supabase.com). Stored as a GH
+          # Actions secret. Rotation procedure: change the Supabase
+          # DB password, regenerate the DSN, `gh secret set
+          # SUPABASE_SESSION_DSN`. See docs/runbooks/secrets-inventory.md.
+          SUPABASE_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+        run: |
+          set -euo pipefail
+          echo "Running atlas migrate apply against Supabase…"
+          atlas migrate apply \
+            --url "$SUPABASE_DSN?sslmode=require" \
+            --dir 'file://packages/db/migrations' \
+            --allow-dirty
+
+      - name: Verify post-apply state
+        env:
+          SUPABASE_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+        run: |
+          set -euo pipefail
+          atlas migrate status \
+            --url "$SUPABASE_DSN?sslmode=require" \
+            --dir 'file://packages/db/migrations'
+          # Successful exit code means status is OK; any pending or
+          # failed migration will fail the workflow.
