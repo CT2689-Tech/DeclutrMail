@@ -91,13 +91,165 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Boot-time env audit (2026-06-08 session — closes the "worker missed
+ * GOOGLE_CLIENT_SECRET silently" bug). Emits one structured
+ * `worker.boot.env_check` log line at the very start of bootstrap
+ * listing every required env that's missing. With this line in place,
+ * an operator searching Cloud Logging for `worker.boot.env_check`
+ * always sees the full set of misconfigured envs before any
+ * `requireEnv()` call throws, instead of having to backtrack from a
+ * generic boot-failed error.
+ *
+ * Kept as a pre-flight check rather than wired into `requireEnv()`
+ * itself because we want a SINGLE consolidated log line, not one per
+ * missing var; and because some envs the worker checks lazily later
+ * (e.g. KMS_KEY_RESOURCE inside the KMS provider factory) — listing
+ * them up-front catches them before any other code path runs.
+ *
+ * Optional envs (SENTRY_DSN, ANTHROPIC_API_KEY) are excluded — their
+ * absence is part of the no-op contract, not a misconfiguration.
+ */
+function auditRequiredEnv(): void {
+  const required = [
+    'DATABASE_URL',
+    'REDIS_URL',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    // KMS or local-fallback — exactly one is fine; flag if both missing.
+  ] as const;
+  const missing = required.filter((k) => !process.env[k]);
+  const kmsLocal = process.env.KMS_KEY_RESOURCE || process.env.ENCRYPTION_LOCAL_KEY;
+  if (!kmsLocal) missing.push('KMS_KEY_RESOURCE_or_ENCRYPTION_LOCAL_KEY' as never);
+  console.log(
+    JSON.stringify({
+      level: missing.length ? 'error' : 'info',
+      kind: 'worker.boot.env_check',
+      missing,
+      present: required.filter((k) => process.env[k]).length,
+      nodeEnv: process.env.NODE_ENV ?? 'unset',
+    }),
+  );
+}
+
+/**
+ * Cloud Run health probe (D158). Cloud Run requires every Service to
+ * listen on `$PORT` and pass a startup probe within ~4 minutes, even
+ * for headless workers. This tiny HTTP server responds 200 to anything,
+ * 503 only while `bootstrapComplete` is still false. Kept local — not
+ * a NestJS app — so a Nest framework error never breaks the health
+ * signal that keeps the revision serving.
+ *
+ * Has no effect locally (the local worker is started directly and
+ * Cloud Run isn't probing it). PORT defaults to 8080 to match the
+ * Cloud Run default but is respected if injected.
+ */
+let bootstrapComplete = false;
+function startHealthServer(): void {
+  // Lazy import keeps the import surface unchanged for local + tests.
+  import('node:http')
+    .then(({ createServer }) => {
+      const port = Number.parseInt(process.env.PORT ?? '8080', 10);
+      createServer((_req, res) => {
+        res.statusCode = bootstrapComplete ? 200 : 503;
+        res.end(bootstrapComplete ? 'ok' : 'starting');
+      }).listen(port, () => {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'worker.health_listening',
+            port,
+          }),
+        );
+      });
+    })
+    .catch((err: unknown) => {
+      // Never let a health-server failure block worker boot — the boot
+      // itself is the source of truth. Cloud Run will fail the revision
+      // if the probe never succeeds; log it loudly.
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.health_server_failed',
+          message: error.message,
+        }),
+      );
+    });
+}
+
+/**
+ * Per-step boot tracer (2026-06-08 session). Emits one
+ * `worker.boot.step` log line per major bootstrap phase so the
+ * specific line that hangs is visible in Cloud Logging. Without this,
+ * a bootstrap hang between `worker.health_listening` and
+ * `worker.listening` is opaque — Cloud Run keeps the instance alive
+ * (the health-server thread is fine) but BullMQ never attaches and no
+ * downstream logs surface. With per-step traces, the LAST step ever
+ * logged is the one that's hanging.
+ */
+function bootStep(name: string, extra?: Record<string, unknown>): void {
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.boot.step',
+      step: name,
+      ts: Date.now(),
+      ...extra,
+    }),
+  );
+}
+
 async function bootstrap(): Promise<void> {
+  // Start the Cloud Run health server FIRST so the platform can probe
+  // /any-path while the rest of bootstrap runs. The handler reports
+  // 503 until `bootstrapComplete` flips at the end of this function,
+  // so a half-booted worker never reports healthy. Critical: without
+  // this, Cloud Run's startup probe on port 8080 times out at 4 min
+  // and the revision is marked failed even though BullMQ is healthy.
+  startHealthServer();
+  bootStep('health_server_started');
+
+  // Env audit BEFORE any `requireEnv()` call. Emits a single
+  // `worker.boot.env_check` log line with the full list of missing
+  // required envs — so a misconfigured deployment is one log search
+  // away instead of "worker silently never logs `worker.listening`".
+  auditRequiredEnv();
+  bootStep('env_audit_complete');
+
   // D159: initialise Sentry before anything else so the worker process —
   // including the boot-time reconciler sweep — has the SDK installed for
   // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
   // process; local dev + tests are unaffected).
-  await initSentry();
-  const observer = await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) });
+  //
+  // Gated behind `WORKER_SENTRY_ENABLED=true` (default OFF) because
+  // `@sentry/node` v10's OTel default integrations monkey-patch
+  // already-loaded modules at `Sentry.init()` time. The worker
+  // entrypoint imports the full NestJS + Drizzle + BullMQ + Anthropic +
+  // googleapis graph at the TOP of `worker.ts` before any code runs,
+  // so by the time `initSentry()` executes those modules are already
+  // in `require.cache`. Sentry's late-monkey-patch hangs the
+  // bootstrap — observed live on Cloud Run worker revs that timed out
+  // at 4 min. The proper fix is `node --import @sentry/node/preload …`
+  // BEFORE `@swc-node/register` (tracked in FOUNDER-FOLLOWUPS as
+  // "Sentry preload on worker"); until then this env gate keeps boot
+  // reliable. Default OFF emits structured `worker.*` logs only,
+  // which Cloud Logging captures normally. Privacy (D7) unchanged —
+  // Sentry on the worker was always best-effort.
+  const workerSentryEnabled = process.env.WORKER_SENTRY_ENABLED === 'true';
+  bootStep('initSentry_begin', {
+    dsnSet: Boolean(process.env.SENTRY_DSN),
+    enabled: workerSentryEnabled,
+  });
+  if (workerSentryEnabled) {
+    await initSentry();
+  }
+  bootStep('initSentry_done', { skipped: !workerSentryEnabled });
+  bootStep('createSentryWorkerObserver_begin');
+  const observer = workerSentryEnabled
+    ? await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) })
+    : await createSentryWorkerObserver({ dsnSet: false });
+  bootStep('createSentryWorkerObserver_done');
 
   // `prepare: false` is REQUIRED when `DATABASE_URL` points at Supabase's
   // transaction-mode pooler (`*.pooler.supabase.com:6543`). The pooler
@@ -786,6 +938,14 @@ async function bootstrap(): Promise<void> {
       queue: SENDERS_COUNTER_RECONCILIATION_QUEUE,
     }),
   );
+
+  // Flip the health-server gate AFTER all BullMQ workers report
+  // `worker.listening`. The HTTP server has been answering 503 since
+  // `startHealthServer()` ran at the top of bootstrap; from this
+  // point forward it answers 200 — Cloud Run's startup probe sees
+  // healthy and the revision is marked Ready.
+  bootstrapComplete = true;
+  bootStep('bootstrap_complete');
 
   // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
   // sweep, then drain BullMQ and release connections. Closing the
