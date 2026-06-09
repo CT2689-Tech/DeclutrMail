@@ -70,4 +70,17 @@ EXPOSE 8080
 # without this flag every stack frame in the issue feed shows minified
 # offsets that have to be reverse-mapped manually. Cost is a few
 # microseconds per thrown error — negligible vs the debug-time win.
-CMD ["node", "--enable-source-maps", "--import", "@swc-node/register/esm-register", "src/main.ts"]
+#
+# `--import @sentry/node/preload` MUST come BEFORE
+# `@swc-node/register/esm-register` so Sentry's OpenTelemetry-based
+# auto-instrumentation patches the standard library + http/postgres/
+# ioredis modules BEFORE user code loads them. Without this preload
+# step, the worker entrypoint imports the full NestJS+Drizzle+BullMQ+
+# Anthropic+googleapis graph at the top of the file, then
+# `Sentry.init()` tries to monkey-patch already-loaded modules → boot
+# hangs (verified Cloud Run worker rev 22-25 — Sentry init never
+# returned, startup probe timed out at 4 min). The preload flag
+# inverts the order: OTel hooks fire as modules import, no
+# late-patch retry needed. Closes the FOUNDER-FOLLOWUPS "Sentry
+# preload on worker" item.
+CMD ["node", "--enable-source-maps", "--import", "@sentry/node/preload", "--import", "@swc-node/register/esm-register", "src/main.ts"]
