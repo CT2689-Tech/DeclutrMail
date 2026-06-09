@@ -49,3 +49,8 @@ export type {
   PreviewMode,
   SelectorType,
 } from './verb-constants';
+
+// D35 / D58 / D232 undo journal verb mirror — kept here (server-safe)
+// so apps/api can import it without dragging JSX. The DB pg_enum is
+// canonical; this type is contract-tested in apps/api/src/undo/undo.types.ts.
+export type { UndoActionKind } from './undo-action-kind';

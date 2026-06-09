@@ -15,6 +15,8 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
+import type { UndoActionKind } from '@declutrmail/shared/contracts';
+
 import { apiGet, apiPost } from './client';
 
 /** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
@@ -52,7 +54,14 @@ export interface ArchivePreviewResult {
 /** Returned by `POST /api/undo/:token` — the reverse handle to poll. */
 export interface UndoRevertResult {
   token: string;
-  actionKind: string;
+  /**
+   * The verb being reverted — closed enum mirrored from the BE
+   * `UndoActionKind` (and ultimately the `undo_action_kind` pg_enum).
+   * Tightening this from `string` keeps the discriminated-union story
+   * intact at the wire seam: a future consumer that branches on
+   * `actionKind` will fail-compile if it forgets a case.
+   */
+  actionKind: UndoActionKind;
   /** True when the reverse already completed (idempotent repeat POST). */
   reverted: boolean;
   expired: boolean;

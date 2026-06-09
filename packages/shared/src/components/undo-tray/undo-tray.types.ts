@@ -1,14 +1,14 @@
 /**
  * Public types for the persistent undo tray (D35).
  *
- * Mirrored from the API's `UndoActionKind` enum (D227 destructive
- * verbs + Autopilot rule application). Replicated here instead of
- * imported from `@declutrmail/api` so the design-system package keeps
- * its zero-server-dependency posture — the apps/web layer will assert
- * the contracts match via a small contract test once both surfaces
- * land in the same PR slice.
+ * `UndoActionKind` is re-exported from `@declutrmail/shared/contracts`
+ * (server-safe; zero-server-dep posture preserved). The literal-union
+ * mirror of the DB pg_enum is asserted equal to the API type in
+ * `apps/api/src/undo/undo.types.ts`. Adding a verb without updating
+ * that one mirror fails-compile.
  */
-export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule' | 'delete';
+export type { UndoActionKind } from '../../contracts/undo-action-kind';
+import type { UndoActionKind } from '../../contracts/undo-action-kind';
 
 /** One row in the tray — what the API returns per active token. */
 export interface UndoTrayEntry {

@@ -1,13 +1,18 @@
+import { undoActionKind } from '@declutrmail/db';
+
 /**
  * Undo journal action-kind types (D35, D58, D232).
  *
- * Closed string union matched 1:1 against the `undo_action_kind` Postgres
- * enum (see `packages/db/src/schema/undo-journal.ts`). Type-design
- * principle: ONE source of truth — adding a verb requires touching this
- * union AND the migration AND the enum, which is exactly the contract
- * we want.
+ * Derived directly from the `undo_action_kind` Postgres enum
+ * (see `packages/db/src/schema/undo-journal.ts`) — ONE source of truth.
+ * Adding a verb is a single schema edit; the migration that lands the
+ * pgEnum value automatically widens this type without a coordinated
+ * literal-union edit here.
+ *
+ * Pattern reference: `VERDICT_RUNTIME_VALUES = triageVerdict.enumValues`
+ * (`packages/workers/src/reasoning.ts`) + exhaustiveness test.
  */
-export type UndoActionKind = 'archive' | 'unsubscribe' | 'later' | 'apply-rule' | 'delete';
+export type UndoActionKind = (typeof undoActionKind.enumValues)[number];
 
 /**
  * Per-action payload shape (D232).
@@ -90,3 +95,22 @@ export interface UndoResult {
    */
   actionId: string | null;
 }
+
+/**
+ * Cross-package contract — apps/web + the shared design-system package
+ * carry their own `UndoActionKind` mirror because shared is zero-server-
+ * dep. These two compile-time assertions fail-compile if the API and
+ * shared types ever drift: adding a verb to one without the other lights
+ * up the build immediately rather than degrading silently to `string`.
+ *
+ * Pattern echoes the `as const satisfies Record<...>` shape in
+ * `packages/events/src/events.ts:333`.
+ */
+import type { UndoActionKind as SharedUndoActionKind } from '@declutrmail/shared/contracts';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _UNDO_KIND_API_EXTENDS_SHARED: UndoActionKind extends SharedUndoActionKind ? true : false =
+  true;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _UNDO_KIND_SHARED_EXTENDS_API: SharedUndoActionKind extends UndoActionKind ? true : false =
+  true;
