@@ -158,6 +158,42 @@ interface SenderAggregate {
  * NOT from an in-fetch in-memory pass — the in-memory pass could not see
  * messages fetched by a prior attempt.
  */
+/**
+ * Structured log emitter for the initial-sync pipeline (2026-06-08
+ * session). Every stage transition + every long-running loop iteration
+ * (Gmail listMessageIds page, fetch chunk, DB upsert flush) calls
+ * this. The output lands in Cloud Logging as a single JSON line per
+ * event that's easy to filter by `kind=initial_sync.*` + by
+ * `mailbox_account_id`.
+ *
+ * Why a plain function instead of `BaseDeclutrWorker.log`: the base
+ * class's observer is Sentry-bound + gated on worker lifecycle events
+ * (started/succeeded/failed/retried). For in-loop progress checkpoints
+ * we want a lighter no-allocations path that goes straight to stdout
+ * + Cloud Logging. Logs are sparse — emitted at stage boundaries +
+ * every ~50 list pages / 1000 fetch chunks — so log spam isn't a risk.
+ *
+ * Privacy (D7, D228): structured payload is metadata-only — mailbox
+ * UUID, counts, byte counts, page counters. No subject lines, no
+ * sender emails, no body bytes.
+ */
+function initialSyncLog(
+  event: string,
+  mailboxAccountId: string,
+  extra?: Record<string, unknown>,
+): void {
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: `initial_sync.${event}`,
+      mailboxAccountId,
+      ts: Date.now(),
+      ...extra,
+    }),
+  );
+}
+
 export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, InitialSyncResult> {
   override readonly workerName = 'InitialSyncWorker';
   override readonly policy = 'perMailboxPolicy' as const;
@@ -190,20 +226,34 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     };
 
     // Stage 1 — fetching_metadata (resumable).
+    // 2026-06-08 session: structured progress logs added so a stalled
+    // sync surfaces immediately. Previously zero log output between
+    // `worker.started` and `worker.succeeded` made "is it hung or just
+    // slow?" unanswerable. Each emit costs ~1 line; benign.
+    initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
+    initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
+    initialSyncLog('getClient_done', mailboxAccountId);
 
     // Snapshot the user-level historyId BEFORE the fetch (D5 — PR-D
     // incremental sync starts from here). Snapshotting BEFORE the fetch
     // means any change during the fetch is replayed by the first
     // incremental run — upserts are idempotent so re-processing is safe.
+    initialSyncLog('getProfile_begin', mailboxAccountId);
     const profile = await client.getProfile();
+    initialSyncLog('getProfile_done', mailboxAccountId, { historyId: profile.historyId });
     const snapshotHistoryId = profile.historyId;
 
+    initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
     const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
       mailboxAccountId,
       client,
     );
+    initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
+      messagesSynced,
+      gmailApiCalls: fetchCalls,
+    });
     const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
@@ -318,15 +368,34 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const orderedIds: string[] = [];
     const gmailIdSet = new Set<string>();
     let pageToken: string | undefined;
+    let listPageCount = 0;
+    initialSyncLog('listMessageIds_loop_begin', mailboxAccountId);
     do {
       const page = await client.listMessageIds(pageToken);
       gmailApiCalls += 1;
+      listPageCount += 1;
       for (const id of page.ids) {
         orderedIds.push(id);
         gmailIdSet.add(id);
       }
+      // Heartbeat every 25 pages (~2500 message IDs). At Gmail's per-
+      // user rate this is roughly every 10 seconds — comparable to
+      // BullMQ's lock renewal cadence. Without these checkpoints,
+      // a stalled listMessageIds loop produces zero log output and is
+      // indistinguishable from a healthy long fetch.
+      if (listPageCount % 25 === 0) {
+        initialSyncLog('listMessageIds_progress', mailboxAccountId, {
+          pages: listPageCount,
+          enumeratedIds: orderedIds.length,
+          hasMore: Boolean(page.nextPageToken),
+        });
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
+    initialSyncLog('listMessageIds_loop_done', mailboxAccountId, {
+      pages: listPageCount,
+      enumeratedIds: orderedIds.length,
+    });
     orderedIds.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
     const total = orderedIds.length;
 
@@ -426,9 +495,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
         await this.updateProgress(mailboxAccountId, processed, total);
+        initialSyncLog('fetch_flush', mailboxAccountId, {
+          processed,
+          total,
+          gmailApiCalls,
+        });
       }
     };
 
+    initialSyncLog('fetch_loop_begin', mailboxAccountId, {
+      total,
+      toFetch: total - skipSet.size,
+    });
     for (const id of orderedIds) {
       if (skipSet.has(id)) {
         continue;
@@ -440,6 +518,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
     await processChunk();
     await flush();
+    initialSyncLog('fetch_loop_done', mailboxAccountId, {
+      total,
+      gmailApiCalls,
+    });
 
     return { messagesSynced: total, gmailApiCalls };
   }

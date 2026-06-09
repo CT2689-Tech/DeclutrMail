@@ -344,20 +344,63 @@ async function bootstrap(): Promise<void> {
   // implements both, so the SAME factory (and the same decrypt path —
   // §9 reuse-only) serves the metadata sync and the label-action worker.
   const getGmailClient = async (mailboxAccountId: string): Promise<GmailClientService> => {
+    // 2026-06-08 session: structured trace per phase so a hang in
+    // `getClient` (was opaque between `worker.started` and `worker.
+    // failed/stalled`) is visible at single-line granularity. Phases:
+    //   db_lookup  → SELECT mailbox row from Supabase
+    //   kms_decrypt → unwrap encrypted OAuth refresh token via KMS
+    //   oauth_init → build OAuth2Client + set credentials
+    const t0 = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.begin',
+        mailboxAccountId,
+      }),
+    );
     const [account] = await db
       .select()
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.db_lookup_done',
+        mailboxAccountId,
+        durationMs: Date.now() - t0,
+        found: Boolean(account),
+      }),
+    );
     if (!account) {
       throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
     }
     if (!account.encryptedRefreshToken || !account.dekEncrypted) {
       throw new InvalidGrantError(`mailbox account ${mailboxAccountId} has no stored OAuth token`);
     }
+    const tKms = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.kms_decrypt_begin',
+        mailboxAccountId,
+      }),
+    );
     const refreshToken = await tokenCrypto.decrypt(
       account.encryptedRefreshToken,
       account.dekEncrypted,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.kms_decrypt_done',
+        mailboxAccountId,
+        kmsDurationMs: Date.now() - tKms,
+      }),
     );
     const oauth = new OAuth2Client(clientId, clientSecret);
     oauth.setCredentials({ refresh_token: refreshToken });
