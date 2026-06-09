@@ -186,28 +186,85 @@ function startHealthServer(): void {
     });
 }
 
+/**
+ * Per-step boot tracer (2026-06-08 session). Emits one
+ * `worker.boot.step` log line per major bootstrap phase so the
+ * specific line that hangs is visible in Cloud Logging. Without this,
+ * a bootstrap hang between `worker.health_listening` and
+ * `worker.listening` is opaque — Cloud Run keeps the instance alive
+ * (the health-server thread is fine) but BullMQ never attaches and no
+ * downstream logs surface. With per-step traces, the LAST step ever
+ * logged is the one that's hanging.
+ */
+function bootStep(name: string, extra?: Record<string, unknown>): void {
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.boot.step',
+      step: name,
+      ts: Date.now(),
+      ...extra,
+    }),
+  );
+}
+
 async function bootstrap(): Promise<void> {
   // Start the Cloud Run health server FIRST so the platform can probe
   // /any-path while the rest of bootstrap runs. The handler reports
   // 503 until `bootstrapComplete` flips at the end of this function,
   // so a half-booted worker never reports healthy.
   startHealthServer();
+  bootStep('health_server_started');
 
   // Env audit BEFORE any `requireEnv()` call. Emits a single
   // `worker.boot.env_check` log line with the full list of missing
   // required envs — so a misconfigured deployment is one log search
   // away instead of "worker silently never logs `worker.listening`".
   auditRequiredEnv();
+  bootStep('env_audit_complete');
 
   // D159: initialise Sentry before anything else so the worker process —
   // including the boot-time reconciler sweep — has the SDK installed for
   // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
   // process; local dev + tests are unaffected).
-  await initSentry();
-  const observer = await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) });
+  //
+  // 2026-06-08 session: `@sentry/node` v10 hangs the worker bootstrap
+  // when initialized AFTER the NestJS / Drizzle / BullMQ / Anthropic
+  // module graph is loaded (which `worker.ts` does at top-of-file
+  // imports). Cloud Run worker rev 12 + 13 hung at `initSentry_begin`;
+  // rev 14 + 15 hung at `createSentryWorkerObserver_begin` even with
+  // `defaultIntegrations: false`. The correct long-term fix is to
+  // preload Sentry via `node --import @sentry/node/preload …` BEFORE
+  // `@swc-node/register` so OTel auto-instrumentation patches modules
+  // at load time, not after. Tracked in FOUNDER-FOLLOWUPS as the
+  // "Sentry preload on worker" item.
+  //
+  // Until then this gate keeps the worker boot reliable: set
+  // `WORKER_SENTRY_ENABLED=true` to opt in once the preload flag is
+  // wired. Default OFF emits structured `worker.*` logs only, which
+  // Cloud Logging captures normally and which we wire alerts off via
+  // log-based metrics. Privacy posture unchanged (D7) — Sentry on
+  // the worker was always best-effort; structured logs are the canonical
+  // signal.
+  const workerSentryEnabled = process.env.WORKER_SENTRY_ENABLED === 'true';
+  bootStep('initSentry_begin', {
+    dsnSet: Boolean(process.env.SENTRY_DSN),
+    enabled: workerSentryEnabled,
+  });
+  if (workerSentryEnabled) {
+    await initSentry();
+  }
+  bootStep('initSentry_done', { skipped: !workerSentryEnabled });
+  bootStep('createSentryWorkerObserver_begin');
+  const observer = workerSentryEnabled
+    ? await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) })
+    : await createSentryWorkerObserver({ dsnSet: false });
+  bootStep('createSentryWorkerObserver_done');
 
+  bootStep('postgres_pool_init');
   const pg = postgres(requireEnv('DATABASE_URL'));
   const db = drizzle(pg, { schema });
+  bootStep('postgres_pool_done');
 
   /**
    * Concurrency cap for the destructive label-action worker. Modest by
@@ -239,6 +296,7 @@ async function bootstrap(): Promise<void> {
   // unwrap failures on the worker's `tokenCrypto.decrypt(...)` path
   // (every getGmailClient call) surface as `kms.access_error` rows —
   // matches the Nest auth-crypto module's recorder for symmetry.
+  bootStep('kms_provider_init');
   const tokenCrypto = new TokenCryptoService(
     createKmsProvider(process.env, {
       onAccessError: ({ operation, reason, keyResource }) => {
@@ -250,8 +308,10 @@ async function bootstrap(): Promise<void> {
       },
     }),
   );
+  bootStep('kms_provider_done');
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
+  bootStep('google_oauth_env_loaded');
 
   /**
    * Per-mailbox `RateLimiter`s, cached by `mailboxAccountId` for the
@@ -364,7 +424,9 @@ async function bootstrap(): Promise<void> {
     },
   };
 
+  bootStep('redis_connection_init');
   const connection = createRedisConnection(requireEnv('REDIS_URL'));
+  bootStep('redis_connection_done');
 
   // Score-queue PRODUCER (D25 sync_complete trigger). The initial sync
   // enqueues one all-senders score sweep here once the sender index is
@@ -1222,11 +1284,16 @@ bootstrap().catch((err: unknown) => {
   );
   void (async () => {
     try {
-      await initSentry();
-      const obs = await createSentryWorkerObserver({
-        dsnSet: Boolean(process.env.SENTRY_DSN),
-      });
-      obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+      // Gate Sentry in the failure path the same way bootstrap does —
+      // without this, a Sentry init hang in the boot-failure recovery
+      // path leaves the process stuck rather than exiting with code 1.
+      if (process.env.WORKER_SENTRY_ENABLED === 'true') {
+        await initSentry();
+        const obs = await createSentryWorkerObserver({
+          dsnSet: Boolean(process.env.SENTRY_DSN),
+        });
+        obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+      }
     } catch {
       // Capturing the boot failure must never itself crash the exit
       // path — better to lose the Sentry event than hang the process.
