@@ -23,9 +23,20 @@ type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction'
 /**
  * Result of {@link SyncService.advanceHistoryId}.
  *
- *   - `advanced`: row existed, incoming > last_history_id, UPDATE applied
+ *   - `advanced`: row existed with NON-NULL last_history_id, incoming > last_history_id, UPDATE applied
  *   - `stale`:    row existed but incoming <= last_history_id (last value returned)
  *   - `uninitialized`: no provider_sync_state row exists for this mailbox
+ *   - `deferred_initial_sync_in_flight`: row existed but `last_history_id IS NULL`.
+ *     InitialSync has NOT yet written its snapshot S via `markReady` (the row
+ *     was created by `markQueued` in OAuth-connect and `markReady` runs AFTER
+ *     the metadata fetch). Advancing the cursor NULL → H here would strand the
+ *     (S, H] range: InitialSync's `markReady` uses GREATEST(stored, snapshot),
+ *     so its later write of S would be rejected once the webhook had already
+ *     written H>S, and the history events in (S, H] would never be paged.
+ *     The deferred path leaves the cursor NULL so InitialSync writes S
+ *     unimpeded; the next webhook (or the 10-min drift sweep, which uses the
+ *     stored cursor as both start and end) then enqueues from S, recovering
+ *     the range. (D38 webhook-vs-InitialSync race fix, 2026-06-09.)
  *
  * Bootstrap of a missing row is the OAuth-connect / InitialSyncWorker
  * flow's responsibility (D109, D224) — `advanceHistoryId` never creates
@@ -33,9 +44,10 @@ type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction'
  * stops retrying a delivery that initial sync wouldn't fix.
  */
 export type AdvanceHistoryIdResult =
-  | { kind: 'advanced'; previousHistoryId: bigint | null }
+  | { kind: 'advanced'; previousHistoryId: bigint }
   | { kind: 'stale'; lastHistoryId: bigint | null }
-  | { kind: 'uninitialized' };
+  | { kind: 'uninitialized' }
+  | { kind: 'deferred_initial_sync_in_flight' };
 
 /** NestJS DI token for the initial-sync BullMQ queue (D157). */
 export const INITIAL_SYNC_QUEUE_TOKEN = 'INITIAL_SYNC_QUEUE';
@@ -201,7 +213,16 @@ export class SyncService {
       return { kind: 'uninitialized' };
     }
     const previousHistoryId = rows[0]!.lastHistoryId ?? null;
-    if (previousHistoryId !== null && previousHistoryId >= args.incomingHistoryId) {
+    // D38 race fix: cursor IS NULL means InitialSync's `markReady` has not
+    // yet written the snapshot S. Advancing NULL → H here would orphan
+    // (S, H] because `markReady`'s GREATEST(stored=H, snapshot=S) keeps H
+    // and never writes S. Leave the cursor NULL; InitialSync will write S
+    // when it finishes, and the next webhook / drift sweep will enqueue
+    // from S, which covers all history events including (S, H].
+    if (previousHistoryId === null) {
+      return { kind: 'deferred_initial_sync_in_flight' };
+    }
+    if (previousHistoryId >= args.incomingHistoryId) {
       return { kind: 'stale', lastHistoryId: previousHistoryId };
     }
     await executor

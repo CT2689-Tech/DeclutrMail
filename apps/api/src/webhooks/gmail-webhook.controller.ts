@@ -184,9 +184,10 @@ export class GmailWebhookController {
           `pubsub.history_advanced mailbox=${outcome.mailboxAccountId} from=${outcome.previousHistoryId} to=${outcome.historyId}`,
         );
         break;
-      case 'first_advance_skipped_enqueue':
+      case 'deferred_initial_sync_in_flight':
         this.logger.log(
-          `pubsub.history_advanced_first mailbox=${outcome.mailboxAccountId} to=${outcome.historyId}`,
+          `pubsub.history_deferred_initial_sync mailbox=${outcome.mailboxAccountId} ` +
+            `incoming=${outcome.incomingHistoryId}`,
         );
         break;
     }
