@@ -17,10 +17,12 @@ import {
   renderTemplate,
   resolveExplainTimeoutMs,
   resolveReasoningConcurrency,
+  resolveReasoningRatePerMin,
   runWithTimeout,
   type ConcurrencyLimiter,
   type ReasoningLlmPort,
 } from './reasoning.js';
+import { RateLimiter } from './rate-limiter.js';
 import { runCascade, type SenderSignals } from './score-cascade.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
@@ -105,6 +107,18 @@ export interface ScoreWorkerDeps {
    * rate limit and keeps the worker's peak memory bounded.
    */
   reasoningConcurrency?: number;
+  /**
+   * Sustained `llm.explain()` calls per minute. Complements
+   * `reasoningConcurrency`: that caps IN-FLIGHT calls, this caps the
+   * SUSTAINED RATE. Tier 1 Anthropic = 50 RPM org cap (verified
+   * 2026-06-09 — a 6627-sender sweep produced ~25% `template` rows
+   * because the burst saturated the org quota in seconds). Default
+   * `Infinity` (no pacing) so unit tests run at full speed; the prod
+   * composition root reads `REASONING_RATE_PER_MIN` and passes 40 to
+   * stay under Tier 1 with safety margin. See `createRateLimiter` in
+   * `reasoning.ts` for the leaky-bucket pacing model.
+   */
+  reasoningRatePerMin?: number;
 }
 
 /**
@@ -147,6 +161,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
   /** Bounded fan-out for the all-senders sweep; built once at construction. */
   private readonly limiter: ConcurrencyLimiter;
+  /**
+   * Sustained-rate limiter for `llm.explain()` calls. Sequenced before
+   * the concurrency limiter wraps the work — pacing decides WHEN a call
+   * may go out, concurrency decides HOW MANY may be in-flight at once.
+   * `null` means "no pacing" (the test-default and the env-unset path).
+   */
+  private readonly rateLimiter: RateLimiter | null;
   /** Per-call timeout for `llm.explain()`. */
   private readonly explainTimeoutMs: number;
 
@@ -156,6 +177,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       deps.reasoningConcurrency ??
         resolveReasoningConcurrency(process.env['REASONING_CONCURRENCY']),
     );
+    const ratePerMin =
+      deps.reasoningRatePerMin ?? resolveReasoningRatePerMin(process.env['REASONING_RATE_PER_MIN']);
+    // `Infinity` is the sentinel for "no pacing" — the test-default so
+    // unit tests don't crawl through 1.5s spacing. Prod opts in via
+    // `REASONING_RATE_PER_MIN` env (see runbook + composition root).
+    this.rateLimiter = Number.isFinite(ratePerMin) ? new RateLimiter(ratePerMin, 60_000) : null;
     this.explainTimeoutMs =
       deps.explainTimeoutMs ?? resolveExplainTimeoutMs(process.env['REASONING_TIMEOUT_MS']);
   }
@@ -246,6 +273,15 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let timedOut = false;
     if (this.deps.llm) {
       const port = this.deps.llm;
+      // Pace BEFORE the timeout race starts. If pacing were inside the
+      // raced task, the wall-clock budget would include rate-limiter
+      // wait time and a short timeout (e.g. 5_000ms) could surface as a
+      // `reasoning.timeout` even though the port itself never started.
+      // Pacing OUTSIDE the race makes the timeout measure only the
+      // port's own latency, which is what the budget is meant to bound.
+      if (this.rateLimiter) {
+        await this.rateLimiter.acquire(1);
+      }
       const raced = await runWithTimeout(
         () =>
           port.explain({
