@@ -352,6 +352,13 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         .onConflictDoUpdate({
           target: [senders.mailboxAccountId, senders.senderKey],
           set: {
+            // Symmetric LEAST / GREATEST: first/last_seen track MIN/MAX
+            // of every observed internal_date for this sender. The
+            // existing-row guard means an older message arriving via
+            // incremental sync correctly lowers first_seen_at (rare
+            // but possible: out-of-order history events from Gmail's
+            // labelChanged / messageAdded with backdated internal_date).
+            firstSeenAt: sql`LEAST(${senders.firstSeenAt}, EXCLUDED.first_seen_at)`,
             lastSeenAt: sql`GREATEST(${senders.lastSeenAt}, EXCLUDED.last_seen_at)`,
             totalReceived: sql`${senders.totalReceived} + 1`,
             updatedAt: new Date(),
