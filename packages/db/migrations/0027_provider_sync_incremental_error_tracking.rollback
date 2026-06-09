@@ -1,0 +1,10 @@
+-- Rollback for 0027_provider_sync_incremental_error_tracking.sql
+--
+-- Drops the two additive nullable error-tracking columns. Safe — no
+-- read or write path requires them; consumers tolerate "column not
+-- present" by skipping the banner check after rollback. No data loss
+-- beyond the columns themselves (a re-applied 0027 starts fresh; the
+-- next worker terminal failure repopulates).
+
+ALTER TABLE "provider_sync_state" DROP COLUMN "last_incremental_error_code";--> statement-breakpoint
+ALTER TABLE "provider_sync_state" DROP COLUMN "last_incremental_error_at";

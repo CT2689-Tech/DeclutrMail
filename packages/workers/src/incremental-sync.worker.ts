@@ -118,6 +118,47 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     return `${payload.mailboxAccountId}__${payload.endHistoryId}`;
   }
 
+  /**
+   * On terminal failure (BullMQ retries exhausted), record the error on
+   * `provider_sync_state` so ops + the future sticky-banner FE
+   * (FOUNDER-FOLLOWUPS) see the failure. Do NOT flip `readiness_status`
+   * to 'failed' — that's the InitialSync UI's enum and would mis-route
+   * an onboarded user back to /onboarding.
+   *
+   * The structured `worker.incremental.terminal_failed` log line is the
+   * Cloud Logging hook ops dashboards consume; Sentry capture lives
+   * one level up in the BullMQ failed-event observer
+   * (apps/api/src/worker.ts), so this override only persists the DB
+   * marker. The cron drift sweep re-enqueues on its 5-min cadence; a
+   * subsequent success clears these columns at the cursor advance
+   * above.
+   */
+  protected override async onTerminalFailure(
+    payload: IncrementalSyncJobData,
+    error: Error,
+  ): Promise<void> {
+    const mailboxAccountId = payload?.mailboxAccountId;
+    if (!mailboxAccountId) return;
+    const errorCode = error.name || 'UnknownError';
+    await this.deps.db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date(),
+        lastIncrementalErrorCode: errorCode,
+        updatedAt: new Date(),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'worker.incremental.terminal_failed',
+        mailboxAccountId,
+        errorCode,
+        message: error.message,
+      }),
+    );
+  }
+
   override async processJob(
     payload: IncrementalSyncJobData,
     _ctx: WorkerContext,
@@ -218,9 +259,26 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // cannot import the Nest `SyncService` (D204 boundary).
     if (lastPageHistoryId !== null) {
       const candidate = BigInt(lastPageHistoryId);
+      // Set `historyIdUpdatedAt` alongside `lastHistoryId` to match
+      // `SyncService.advanceHistoryIdWithExecutor` — otherwise the
+      // cron drift-sweep (worker.ts:1084) selects on
+      // `history_id_updated_at < cutoff` and keeps re-enqueuing this
+      // mailbox even though we just advanced the cursor (D38).
+      //
+      // A successful run also clears any prior incremental terminal-
+      // failure marker so the FE sticky-banner surface (FOUNDER-
+      // FOLLOWUPS) drops back to a clean state without a separate
+      // recovery write.
+      const now = new Date();
       await this.deps.db
         .update(providerSyncState)
-        .set({ lastHistoryId: candidate, updatedAt: new Date() })
+        .set({
+          lastHistoryId: candidate,
+          historyIdUpdatedAt: now,
+          lastIncrementalErrorAt: null,
+          lastIncrementalErrorCode: null,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(providerSyncState.mailboxAccountId, mailboxAccountId),

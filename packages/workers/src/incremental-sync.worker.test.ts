@@ -615,4 +615,67 @@ describe('IncrementalSyncWorker', () => {
     expect(rows[0]!.yearMonth).toBe('2026-06-01');
     expect(rows[0]!.volume).toBe(1);
   });
+
+  it('onTerminalFailure stamps last_incremental_error_at/_code without flipping readiness_status', async () => {
+    // Per finding: a fully-onboarded mailbox must NOT be flipped to
+    // readiness='failed' on an incremental terminal failure — that
+    // would mis-route the user to /onboarding mid-session. The
+    // distinct columns surface the error without disturbing the
+    // readiness lifecycle.
+    const worker = new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient([], new Map())),
+    });
+    const error = new Error('cursor advance failed after retries');
+    error.name = 'CursorStaleError';
+
+    // onTerminalFailure is protected; cast to access it directly.
+    await (
+      worker as unknown as {
+        onTerminalFailure: (
+          payload: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
+          err: Error,
+        ) => Promise<void>;
+      }
+    ).onTerminalFailure({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, error);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastIncrementalErrorCode).toBe('CursorStaleError');
+    expect(state!.lastIncrementalErrorAt).toBeInstanceOf(Date);
+    // Readiness intentionally NOT touched.
+    expect(state!.readinessStatus).toBe('ready');
+  });
+
+  it('successful cursor advance clears any prior incremental terminal-failure marker', async () => {
+    // Seed the error marker as if a prior terminal failure ran.
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date(Date.UTC(2026, 5, 1)),
+        lastIncrementalErrorCode: 'PriorError',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records: [], historyId: '1500' } }],
+      new Map(),
+    );
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastIncrementalErrorAt).toBeNull();
+    expect(state!.lastIncrementalErrorCode).toBeNull();
+    // Cursor + freshness updated alongside.
+    expect(state!.lastHistoryId).toBe(1500n);
+    expect(state!.historyIdUpdatedAt).toBeInstanceOf(Date);
+  });
 });
