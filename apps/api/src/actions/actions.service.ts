@@ -958,15 +958,35 @@ export class ActionsService {
             updatedAt: sql`now()`,
           })
           .where(eq(actionJobs.id, inserted.row.id));
+        if (!this.queue) {
+          // Re-coupled to the fail-open `Queue | null` contract — guarded
+          // by the caller at line 904, but a future caller of this retry
+          // block must hit the same wall rather than silently NPE'ing on
+          // `this.queue!`.
+          throw new ServiceUnavailableException({
+            code: 'ACTION_QUEUE_UNAVAILABLE',
+            message: 'Action queue is unavailable.',
+          });
+        }
         try {
-          const stale = await this.queue!.getJob(idempotencyKey);
+          const stale = await this.queue.getJob(idempotencyKey);
           if (stale) {
             await stale.remove();
           }
-        } catch {
+        } catch (err) {
           // Don't block retry on a stale-hash cleanup failure; if
           // the prior job is active (locked), the next call recovers
-          // after the worker finishes / dead-letters.
+          // after the worker finishes / dead-letters. Surface the
+          // reason so a persistent Redis fault is observable rather
+          // than a pure empty catch (CLAUDE.md §10).
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'action.stale_cleanup_failed',
+              idempotencyKey,
+              reason: err instanceof Error ? err.message : String(err),
+            }),
+          );
         }
         await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
         return { actionId: inserted.row.id, status: 'queued' };
@@ -1069,8 +1089,19 @@ export class ActionsService {
     mailboxAccountId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    if (!this.queue) {
+      // Re-coupled to the fail-open `Queue | null` contract — every
+      // current caller guards (lines 94, 388, 810, 904), but the
+      // private method must not depend on that. A new caller that
+      // forgets the guard hits this fail-fast instead of NPE'ing on
+      // `this.queue!`.
+      throw new ServiceUnavailableException({
+        code: 'ACTION_QUEUE_UNAVAILABLE',
+        message: 'Action queue is unavailable.',
+      });
+    }
     try {
-      await this.queue!.add(
+      await this.queue.add(
         LABEL_ACTION_JOB,
         { actionId, mailboxAccountId, idempotencyKey },
         labelActionJobOptions(idempotencyKey),
