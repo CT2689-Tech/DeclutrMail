@@ -47,25 +47,31 @@ export type ProcessOutcome =
   | {
       kind: 'enqueued';
       mailboxAccountId: string;
-      // Non-null — `previousHistoryId === null` is now the dedicated
-      // `first_advance_skipped_enqueue` variant below (architecture-
-      // guardian 2026-06-05). `enqueued` always means "job dispatched
-      // to Redis or its enqueue was attempted post-commit."
+      // Non-null — the null case is now the dedicated
+      // `deferred_initial_sync_in_flight` variant below.
+      // `enqueued` always means "job dispatched to Redis or its
+      // enqueue was attempted post-commit."
       previousHistoryId: bigint;
       historyId: bigint;
     }
   | {
-      // First-advance skip — webhook arrived for a mailbox whose
-      // `last_history_id` was just seeded by initial-sync (the snapshot
-      // taken at sync start) and no prior cursor existed. The
-      // InitialSyncWorker already covered messages up to its snapshot,
-      // so this delta is empty by construction — the worker would have
-      // nothing to page. Cursor advance still commits durably; this
-      // variant exists so observability counters split "actually
-      // enqueued" from "deliberately skipped first-advance."
-      kind: 'first_advance_skipped_enqueue';
+      // Deferred — webhook arrived while InitialSync is still mid-flight
+      // (the `provider_sync_state` row exists with `last_history_id IS
+      // NULL`; the row was created by `markQueued` in OAuth-connect but
+      // `markReady` has not yet written InitialSync's snapshot S).
+      //
+      // D38 race fix (2026-06-09): advancing the cursor NULL → H here
+      // would strand the (S, H] range. InitialSync's `markReady` uses
+      // GREATEST(stored, snapshot), so a webhook-written H>S would cause
+      // `markReady`'s S to be silently rejected, and the events in (S, H]
+      // would never be paged via `history.list`. The deferred path
+      // leaves the cursor NULL; InitialSync writes S unimpeded; the next
+      // webhook (or the 10-min drift sweep) then enqueues from S, which
+      // covers all events including those in (S, H]. No enqueue happens
+      // on this path — there's no valid start cursor to page from.
+      kind: 'deferred_initial_sync_in_flight';
       mailboxAccountId: string;
-      historyId: bigint;
+      incomingHistoryId: bigint;
     };
 
 /** TTL for dedup rows — 24h, well beyond Pub/Sub's 10-minute ack deadline. */
@@ -187,18 +193,19 @@ export class GmailWebhookService {
         };
       }
 
-      // Split here so the outcome's discriminator HONESTLY reflects
-      // whether an enqueue will be attempted. `previousHistoryId ===
-      // null` is the first-advance case where the InitialSyncWorker
-      // already covers the delta — never attempt the enqueue (the
-      // worker can't page from a null cursor).
-      if (advance.previousHistoryId === null) {
+      // D38 webhook-vs-InitialSync race: the deferred path leaves the
+      // cursor NULL so InitialSync's `markReady` can write its snapshot
+      // S without being overwritten by H>S. The next webhook (or the
+      // drift sweep) then enqueues from S, covering (S, H]. No enqueue
+      // happens here — there is no valid start cursor.
+      if (advance.kind === 'deferred_initial_sync_in_flight') {
         return {
-          kind: 'first_advance_skipped_enqueue',
+          kind: 'deferred_initial_sync_in_flight',
           mailboxAccountId: mailbox.id,
-          historyId: incomingHistoryId,
+          incomingHistoryId,
         };
       }
+
       return {
         kind: 'enqueued',
         mailboxAccountId: mailbox.id,
@@ -233,10 +240,10 @@ export class GmailWebhookService {
             `error=${err instanceof Error ? err.message : String(err)}`,
         );
       }
-    } else if (outcome.kind === 'first_advance_skipped_enqueue') {
+    } else if (outcome.kind === 'deferred_initial_sync_in_flight') {
       this.logger.log(
-        `webhook.skipped_first_enqueue mailbox=${outcome.mailboxAccountId} ` +
-          `historyId=${outcome.historyId}`,
+        `webhook.deferred_initial_sync_in_flight mailbox=${outcome.mailboxAccountId} ` +
+          `incomingHistoryId=${outcome.incomingHistoryId}`,
       );
     }
 
