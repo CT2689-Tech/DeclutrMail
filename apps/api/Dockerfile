@@ -62,4 +62,12 @@ WORKDIR /app/apps/api
 EXPOSE 8080
 # Default CMD = API. Worker service overrides via gcloud's
 # `--command`/`--args`. Both services share this image.
-CMD ["node", "--import", "@swc-node/register/esm-register", "src/main.ts"]
+#
+# `--enable-source-maps` makes V8 walk the swc-node-emitted inline
+# source maps when building `error.stack`, so unhandled exceptions
+# bubble up with the original TS file + line + column instead of the
+# transpiled JS positions. Sentry (D159) reads `error.stack` verbatim;
+# without this flag every stack frame in the issue feed shows minified
+# offsets that have to be reverse-mapped manually. Cost is a few
+# microseconds per thrown error — negligible vs the debug-time win.
+CMD ["node", "--enable-source-maps", "--import", "@swc-node/register/esm-register", "src/main.ts"]
