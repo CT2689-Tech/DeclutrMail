@@ -99,7 +99,16 @@ async function bootstrap(): Promise<void> {
   await initSentry();
   const observer = await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) });
 
-  const pg = postgres(requireEnv('DATABASE_URL'));
+  // `prepare: false` is REQUIRED when `DATABASE_URL` points at Supabase's
+  // transaction-mode pooler (`*.pooler.supabase.com:6543`). The pooler
+  // routes per-statement to whatever backend is free, so cached prepared-
+  // statement names from a prior backend trigger
+  // `prepared statement "X" does not exist` mid-tx → silent ROLLBACK of
+  // multi-statement rebuilds (root cause of senders.total_received=0
+  // shipping to prod 2026-06-08; ADR-0022). Setting prepare:false on
+  // every `postgres()` call here forces simple-protocol queries. No-op
+  // on direct connections (local dev `:5432`).
+  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false });
   const db = drizzle(pg, { schema });
 
   /**
@@ -119,7 +128,11 @@ async function bootstrap(): Promise<void> {
    * needing the N+1th). Separate pools = no hold-and-wait, regardless of
    * any concurrency number.
    */
-  const lockPg = postgres(requireEnv('DATABASE_URL'), { max: LABEL_ACTION_CONCURRENCY });
+  // prepare:false — same Supabase tx-pooler reason as `pg` above.
+  const lockPg = postgres(requireEnv('DATABASE_URL'), {
+    max: LABEL_ACTION_CONCURRENCY,
+    prepare: false,
+  });
   /** Advisory-lock namespace (first key) — isolates label-action locks. */
   const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
   // D181 audit writer. The worker is standalone (no Nest DI), so the
