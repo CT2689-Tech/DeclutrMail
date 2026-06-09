@@ -1,0 +1,110 @@
+# Daily infrastructure drift detector (D38, D159).
+#
+# Captures every external resource DeclutrMail depends on into a JSON
+# blob committed to docs/infra-snapshots/YYYY-MM-DD.json. Only commits
+# when the snapshot differs from the most recent one — identical days
+# stay silent so the git log doesn't fill with noise.
+#
+# Trigger:
+#   * Cron @ 06:00 UTC daily — quiet hour for the founder, lines up
+#     with the European morning if collaborators join.
+#   * workflow_dispatch — manual run, useful after a deploy where you
+#     want the new state captured immediately.
+#
+# Auth model:
+#   * GCP: Workload Identity Federation (same provider + SA the deploy
+#     workflow uses).
+#   * Supabase: SUPABASE_SESSION_DSN secret (same one Atlas uses).
+#   * GitHub: GITHUB_TOKEN (default scope is enough for `gh secret list`
+#     with `actions:read`).
+#
+# Privacy posture (D7 / D228): the script reads ONLY infra metadata.
+# No row reads of mail_messages / senders / triage_decisions. Atlas
+# touches only `atlas_schema_revisions`.
+
+name: Infra snapshot
+
+on:
+  schedule:
+    # 06:00 UTC every day. GitHub may delay cron runs by minutes during
+    # peak load — that's fine, snapshot precision doesn't matter at the
+    # second level.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: infra-snapshot-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - name: Install gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install Atlas
+        uses: ariga/setup-atlas@v0
+        with:
+          version: v0.37.0
+
+      - name: Run snapshot
+        env:
+          GCP_PROJECT: declutrmail-ai-prod
+          GCP_REGION: us-central1
+          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DATE=$(date -u +%Y-%m-%d)
+          OUT="docs/infra-snapshots/${DATE}.json"
+          ./scripts/infra-snapshot.sh > "$OUT"
+          echo "DATE=$DATE" >> "$GITHUB_ENV"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+
+      - name: Skip commit if identical to prior snapshot
+        run: |
+          set -euo pipefail
+          # Find the most recent snapshot OTHER than today's.
+          PRIOR=$(ls docs/infra-snapshots/*.json 2>/dev/null \
+            | grep -v "$(basename "$OUT")" \
+            | sort -r \
+            | head -1 || true)
+          if [ -n "$PRIOR" ] && diff -q "$PRIOR" "$OUT" >/dev/null 2>&1; then
+            echo "No drift since $PRIOR — removing today's snapshot."
+            rm "$OUT"
+            echo "DRIFT=false" >> "$GITHUB_ENV"
+          else
+            echo "Drift detected (or first snapshot) — keeping $OUT."
+            echo "DRIFT=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit if drift
+        if: env.DRIFT == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "$OUT"
+          # Skip commit if `git add` produced no staged change (e.g.
+          # the file existed identical from a prior dispatch in the
+          # same UTC day).
+          if git diff --cached --quiet; then
+            echo "No staged change — skipping commit."
+            exit 0
+          fi
+          git commit -m "chore(infra): snapshot $DATE drift detected (D38)"
+          git push
