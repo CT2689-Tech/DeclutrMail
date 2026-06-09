@@ -473,10 +473,12 @@ gcloud run deploy declutrmail-worker \
   --image=$REGION-docker.pkg.dev/$PROJECT/declutrmail/worker:bootstrap \
   --region=$REGION \
   --service-account=$RUNTIME_SA \
-  --min-instances=0 \
+  --min-instances=1 \
   --max-instances=3 \
-  --memory=1Gi \
-  --cpu=1 \
+  --memory=2Gi \
+  --cpu=2 \
+  --cpu-boost \
+  --no-cpu-throttling \
   --no-allow-unauthenticated \
   --set-env-vars="NODE_ENV=production" \
   --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,SENTRY_DSN=sentry-dsn-api:latest" \

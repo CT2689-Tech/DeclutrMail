@@ -26,6 +26,43 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-08 — Cloud Run worker MUST run with `--no-cpu-throttling` (D158, D193 amendment)
+**Source:** session 2026-06-08 — 90-minute prod sync stall traced to CPU throttling
+**Why:** Cloud Run's default request-only CPU allocation throttles idle CPU. For HTTP services (which our API is), that's fine — CPU spins up on each request. For BACKGROUND workers (BullMQ consumer with no inbound HTTP traffic), it's catastrophic: CPU drops to ~0.1 cores between job ticks → gRPC connection pools to KMS / Gmail / Supabase die → next API call goes through a cold network handshake (this session: KMS decrypt = 68 SECONDS vs 284ms warm). Then BullMQ's 30s stalled-lock check fires + the job is marked stalled + retried + the new attempt hits the same cold start. Eternal stall spiral.
+Fix landed mid-session via `gcloud run services update declutrmail-worker --no-cpu-throttling --quiet`. After the flip: KMS decrypt 284ms, listMessageIds enumerated 50,000 IDs in seconds, mail_messages rows started accumulating immediately. **D158's worker spec implicitly assumes always-allocated CPU; document explicitly.**
+**Cost note:** CPU is billed when allocated, so always-on doubles the worker baseline from ~$15-25/mo to ~$30-50/mo. Worth it — the alternative is the worker never makes progress.
+**How (codify):**
+1. Update `docs/runbooks/prod-infra-bootstrap.md` Step 8: every `gcloud run deploy declutrmail-worker` command MUST include `--no-cpu-throttling`.
+2. Update `.github/workflows/deploy-cloud-run.yml` worker block: include `--no-cpu-throttling`.
+3. Add explicit note in `docs/adr/0022` (or a new ADR) — "Cloud Run worker is a CPU-always-allocated service per D158's BullMQ consumer requirement; cost ~2x request-only baseline."
+4. The API service stays at request-only allocation (HTTP-driven — request-only is correct).
+**Verifies by:** A fresh Cloud Run worker revision created without `--no-cpu-throttling` reproduces the 60+s cold-API-call symptom in `gcloud logging read … "gmail.getClient.kms_decrypt_done"`. Same revision flipped to `--no-cpu-throttling` returns sub-300ms.
+**Status:** Open — flipped live this session; doc + workflow updates still pending commit.
+
+### 2026-06-08 — Sentry preload on worker via Node `--import @sentry/node/preload`
+**Source:** session 2026-06-08 (Cloud Run worker rev 12-16 — Sentry init hangs bootstrap)
+**Why:** `@sentry/node` v10 ships with OpenTelemetry-based default integrations that monkey-patch already-loaded modules at `Sentry.init()` time. The worker entrypoint imports the full NestJS / Drizzle / BullMQ / Anthropic / googleapis graph at the TOP of `worker.ts`. By the time `initSentry()` executes, those modules are already in `require.cache`. Sentry's late-monkey-patch hangs the bootstrap indefinitely; the worker never reaches `worker.listening`. Worked around for now by gating Sentry behind `WORKER_SENTRY_ENABLED=true` (default OFF) — the worker is otherwise observable via structured Cloud Logging entries. Real fix is to load Sentry BEFORE other modules.
+**How:**
+1. Update `apps/api/Dockerfile.worker` (or the worker's Cloud Run `--command`/`--args`) so the entrypoint becomes:
+   `node --import @sentry/node/preload --import @swc-node/register/esm-register src/worker.ts`
+2. The `@sentry/node/preload` flag installs OTel auto-instrumentation BEFORE any user code runs, so all subsequent module imports get patched at load time, not retroactively.
+3. Flip `WORKER_SENTRY_ENABLED=true` in Cloud Run env once the preload is in place.
+4. Smoke: confirm `worker.listening` for all 5 queues + a triggered worker error lands in Sentry's inbox with `runtime:node` tag.
+**Verifies by:** `gcloud logging read … jsonPayload.kind="worker.listening"` continues to return 5 queues after the preload flag + `WORKER_SENTRY_ENABLED=true` are both live; force a worker error + Sentry inbox shows it within 30s.
+**Status:** Open
+
+### 2026-06-08 — Cloud Run worker `min_instances=1` cost note ($15-25/mo)
+**Source:** session 2026-06-08 — D193 launch posture flipped at end of prod end-to-end smoke
+**Why:** Worker was at `min=0` pre-launch for cost savings (Tier A bootstrap), then flipped to `min=1, max=3` per D193 to ensure BullMQ consumers stay attached for incoming Gmail Pub/Sub pushes + Cloud Scheduler ticks. A min=1 Cloud Run worker bills $15-25/mo even idle. Acceptable in prod (1k+ users is the planning horizon) but the founder should be aware the post-launch monthly burn is now closer to ~$30-40 baseline.
+**How:**
+1. After first 7 days of real usage, review `Cloud Run → declutrmail-worker → Metrics` for actual CPU + memory utilization.
+2. If utilization is < 5% sustained, consider:
+   - Reducing memory from 1Gi → 512Mi (halves the cost per second)
+   - Switching to Cloud Run Worker Pools (no min instances, billed per-job — Preview as of 2026-06-08)
+3. The hard $60 billing cap (separate followup) is the safety net if anything spikes.
+**Verifies by:** monthly Cloud Run worker bill < $30 sustained at 0-100 users.
+**Status:** Open
+
 ### 2026-06-08 — Vercel env-update should auto-trigger a redeploy
 **Source:** session 2026-06-08 (custom-domain prod smoke — OAuth state-cookie loop)
 **Why:** Updating `NEXT_PUBLIC_*` env vars via the Vercel REST API (or dashboard) applies to the NEXT build, not retroactively. The aliased preview build still runs with the OLD env baked into the bundle. In this session that surfaced as the FE hitting the OLD `*.run.app` host while the API was at `api.declutrmail.com` — cookies on `.declutrmail.com` weren't sent, AuthProvider redirected back to OAuth start on the wrong host, state cookie ended up on the wrong host, and the callback returned "Missing OAuth state cookie". An automated rebuild after env mutation closes the trap.
