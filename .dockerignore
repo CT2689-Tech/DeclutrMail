@@ -1,0 +1,58 @@
+# Keep build context small. Anything not needed inside the image goes here.
+# Order matches Docker's `.gitignore`-style precedence (later rules win).
+
+# Node + build artifacts
+**/node_modules
+**/dist
+**/.next
+**/build
+**/coverage
+
+# Local dev state
+.env
+.env.local
+.env.local.*
+.env.production.local
+.env*.local
+.local-logs
+.atlas
+.husky
+
+# Worktrees + VCS
+.git
+.gitignore
+**/.git
+.claude
+.claude-flow
+
+# Tests + stories
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/*.stories.ts
+**/*.stories.tsx
+**/__tests__
+**/test
+**/tests
+
+# Docs (image doesn't need markdown)
+docs
+*.md
+**/*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Web app (separate Vercel deploy; not in Cloud Run image)
+apps/web
+
+# CI + meta
+.github
+scripts
+storybook-static
+playwright-report
+test-results
