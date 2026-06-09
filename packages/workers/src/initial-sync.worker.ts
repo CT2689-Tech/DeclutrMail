@@ -673,6 +673,41 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         }
       }
 
+      // first_seen / last_seen post-pass. The in-memory fold above
+      // computes `agg.firstSeen` / `agg.lastSeen` from the same
+      // mail_messages rows, but the JS path has shipped at least once
+      // (prod sync 2026-06-09) where 99.94% of senders ended up with
+      // `last_seen_at == first_seen_at` despite multiple unique
+      // internal_dates per sender. Root cause was not localised; this
+      // SQL pass makes the canonical mail_messages aggregation the
+      // source of truth regardless of any JS-side compute drift. Runs
+      // inside the rebuild tx so any failure rolls back with the rest.
+      //
+      // No coalesce needed: a sender row reaches this post-pass only
+      // if `senderRows.push` fired for it above, which requires at
+      // least one matching mail_messages row in the fold. The MIN/MAX
+      // are guaranteed non-null. Idempotent — re-running yields the
+      // same values.
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET
+          ${sql.identifier('first_seen_at')} = sub.min_d,
+          ${sql.identifier('last_seen_at')} = sub.max_d
+        FROM (
+          SELECT
+            m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m.${sql.identifier('sender_key')} AS sender_key,
+            MIN(m.${sql.identifier('internal_date')}) AS min_d,
+            MAX(m.${sql.identifier('internal_date')}) AS max_d
+          FROM ${mailMessages} AS m
+          WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m.${sql.identifier('is_outbound')} = false
+          GROUP BY m.${sql.identifier('mailbox_account_id')}, m.${sql.identifier('sender_key')}
+        ) AS sub
+        WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND s.${sql.identifier('sender_key')} = sub.sender_key
+      `);
+
       // Reply-attribution post-pass. The aggregate counts DISTINCT
       // outbound `mail_messages.id` per `(sender_key)` whose thread
       // contains ≥1 inbound from that sender. Matches mig 0022's
