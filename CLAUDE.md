@@ -92,15 +92,17 @@ Enforced by `privacy-auditor` subagent + `verify-no-body-storage.sh` hook.
 The trust badge copy is: **"Full bodies fetched: 0"** + explicit storage list.
 **Never:** "Bodies read: 0 forever."
 
-### 2.2 Canonical verbs — K/A/U/L (D227)
+### 2.2 Canonical verbs — K/A/U/L/D (D227)
 
-Product-surface UI uses exactly four user-facing verbs:
-**Keep · Archive · Unsubscribe · Later** with shortcuts **K/A/U/L**.
+Product-surface UI uses exactly five user-facing verbs:
+**Keep · Archive · Unsubscribe · Later · Delete** with shortcuts **K/A/U/L/D**.
+
+Delete added per ADR-0019 (verb registry); see `docs/adr/0019-verb-registry-and-kauld.md`.
 
 - "Screen" is an INTERNAL enum only (`triage_decision.verdict='screen'`),
   never user-facing.
 - "Screener" refers ONLY to the Screener feature name.
-- Storybook stories, components, marketing copy must all use K/A/U/L.
+- Storybook stories, components, marketing copy must all use K/A/U/L/D.
 
 Enforced by `check-microcopy.sh --rule=canonical-verbs`.
 
@@ -207,6 +209,14 @@ If only the local path exists (pre-PR 1), use it.
 | Codex Grill Round 2 patches | D227–D235 | Implementation-contract fixes (line ~8880) |
 
 When uncertain about a decision, search the plan for the D-number.
+
+**D220 launch allowlist amendments.** Two `packages/shared` components
+are added to the D220 launch allowlist beyond the original set:
+
+- `NumericDisplay` — tabular-figure numeric primitive; see
+  `docs/adr/0016-senders-visual-language.md` (ADR-0016).
+- `ActionPopover` — verb-registry-driven action menu; see
+  `docs/adr/0019-verb-registry-and-kauld.md` (ADR-0019).
 
 ### Repo layout
 
