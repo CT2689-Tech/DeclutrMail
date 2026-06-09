@@ -12,6 +12,9 @@ import { SyncNowError, translateSyncNowError } from './use-sync-now';
  */
 describe('translateSyncNowError', () => {
   it('maps a 409 with SYNC_NOT_READY body to SYNC_NOT_READY', () => {
+    // SyncService raises ConflictException('SYNC_NOT_READY') when the
+    // initial-sync gate hasn't flipped to `ready` yet — 409 + this code
+    // is the SyncController's natural "come back later" envelope.
     const err = {
       status: 409,
       body: { error: { code: 'SYNC_NOT_READY', message: 'Not ready yet.' } },
@@ -21,17 +24,34 @@ describe('translateSyncNowError', () => {
     expect(out.code).toBe('SYNC_NOT_READY');
   });
 
-  it('maps a 400 with SYNC_NOT_READY body to SYNC_NOT_READY (Nest BadRequestException path)', () => {
-    // The controller throws `BadRequestException` which serialises as
-    // 400. The wire code is what discriminates SYNC_NOT_READY vs a
-    // generic 400. This guards the FE against a future Nest behavior
-    // change that flips between 400 and 409 — we don't want the
-    // discrimination to leak the HTTP status mapping.
+  it('maps a 409 with NO_ACTIVE_MAILBOX body to NO_ACTIVE_MAILBOX (not SYNC_NOT_READY)', () => {
+    // CurrentMailboxGuard throws ConflictException with this code when
+    // the workspace has no active mailbox — same 409 as SYNC_NOT_READY
+    // but a different recovery path (reconnect, not wait). Discriminating
+    // by `code` before `status` is the guard against the regression
+    // where every 409 collapsed to SYNC_NOT_READY.
     const err = {
-      status: 400,
-      body: { error: { code: 'SYNC_NOT_READY', message: 'Not ready yet.' } },
+      status: 409,
+      body: { error: { code: 'NO_ACTIVE_MAILBOX', message: 'No active mailbox.' } },
     };
-    expect(translateSyncNowError(err).code).toBe('SYNC_NOT_READY');
+    expect(translateSyncNowError(err).code).toBe('NO_ACTIVE_MAILBOX');
+  });
+
+  it('maps a 409 with MAILBOX_NOT_OWNED body to MAILBOX_NOT_OWNED (not SYNC_NOT_READY)', () => {
+    // Same guard, different leg: the X-Mailbox-Id header points at a
+    // mailbox not in the workspace's active set (typical: stale header
+    // during a switch race). Recovery is "switch your active mailbox",
+    // not "wait for sync".
+    const err = {
+      status: 409,
+      body: {
+        error: {
+          code: 'MAILBOX_NOT_OWNED',
+          message: 'Selected mailbox is not connected to your workspace.',
+        },
+      },
+    };
+    expect(translateSyncNowError(err).code).toBe('MAILBOX_NOT_OWNED');
   });
 
   it('maps a 429 with a Retry-After header into RATE_LIMITED + retryAfterSec', () => {
@@ -47,11 +67,6 @@ describe('translateSyncNowError', () => {
     const out = translateSyncNowError(err);
     expect(out.code).toBe('RATE_LIMITED');
     expect(out.retryAfterSec).toBeNull();
-  });
-
-  it('maps a 401 to NO_ACTIVE_MAILBOX', () => {
-    const err = { status: 401, body: { error: { code: 'NO_ACTIVE_MAILBOX' } } };
-    expect(translateSyncNowError(err).code).toBe('NO_ACTIVE_MAILBOX');
   });
 
   it('falls through to UNKNOWN for unrecognised shapes', () => {

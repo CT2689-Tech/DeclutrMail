@@ -35,10 +35,23 @@ export interface SyncNowResponse {
  *     re-enables after `Retry-After` seconds.
  *   - `NO_ACTIVE_MAILBOX` — the user has no connected mailbox; the
  *     app shell normally takes over before this fires, but kept here
- *     defensively.
+ *     defensively. `CurrentMailboxGuard` raises this as a 409 (not
+ *     401) with `code: 'NO_ACTIVE_MAILBOX'` — so the FE discriminates
+ *     by wire `code` before HTTP `status`, otherwise every 409 would
+ *     collapse to SYNC_NOT_READY and the picker/reconnect surface
+ *     would never render.
+ *   - `MAILBOX_NOT_OWNED` — the X-Mailbox-Id header points at a
+ *     mailbox not in the workspace's active set (typical: stale
+ *     header during a switch race). 409 + `code: 'MAILBOX_NOT_OWNED'`
+ *     from the same guard.
  *   - `UNKNOWN` — everything else, including 500s.
  */
-export type SyncNowErrorCode = 'SYNC_NOT_READY' | 'RATE_LIMITED' | 'NO_ACTIVE_MAILBOX' | 'UNKNOWN';
+export type SyncNowErrorCode =
+  | 'SYNC_NOT_READY'
+  | 'RATE_LIMITED'
+  | 'NO_ACTIVE_MAILBOX'
+  | 'MAILBOX_NOT_OWNED'
+  | 'UNKNOWN';
 
 export class SyncNowError extends Error {
   readonly code: SyncNowErrorCode;
@@ -79,7 +92,10 @@ type Source = EventPayloads['sync_now_clicked']['source'];
  *   - SYNC_NOT_READY → routes to the sync gate (toast says so + does
  *     not retry).
  *   - RATE_LIMITED → toast with the cooldown.
- *   - NO_ACTIVE_MAILBOX / UNKNOWN → generic toast.
+ *   - NO_ACTIVE_MAILBOX → "reconnect a mailbox" toast.
+ *   - MAILBOX_NOT_OWNED → "switch your active mailbox" toast (stale
+ *     header / cross-workspace mailbox id).
+ *   - UNKNOWN → generic toast.
  *
  * Sentry breadcrumbs trace every attempt (success + error) so a
  * production "I clicked but nothing happened" report has the full
@@ -151,6 +167,9 @@ export function useSyncNow(source: Source) {
         case 'NO_ACTIVE_MAILBOX':
           toast('Reconnect a mailbox to sync.', 'danger');
           break;
+        case 'MAILBOX_NOT_OWNED':
+          toast('That mailbox is no longer connected — switch accounts to sync.', 'danger');
+          break;
         case 'UNKNOWN':
           toast('Sync failed — please try again.', 'danger');
           break;
@@ -184,22 +203,29 @@ export function translateSyncNowError(err: unknown): SyncNowError {
 
   // The shared client throws ApiError with `{ status, body }`. The
   // body is the D202 error envelope: `{ error: { code, message } }`.
+  //
+  // Discriminate by wire `code` BEFORE HTTP `status`. `CurrentMailboxGuard`
+  // raises 409 with `code: 'NO_ACTIVE_MAILBOX' | 'MAILBOX_NOT_OWNED'`,
+  // and the SyncService raises 409 with `code: 'SYNC_NOT_READY'`. If we
+  // checked `status === 409` first, every guard 4xx would collapse to
+  // SYNC_NOT_READY and the picker/reconnect surface would never render
+  // (CLAUDE.md §8 "read guard 4xx is designed state").
   if (err !== null && typeof err === 'object' && 'status' in err) {
     const status = (err as { status?: number }).status;
     const body = (err as { body?: unknown }).body;
     const code = readErrorCode(body);
     const retryAfter = readRetryAfter(err);
-    if (status === 409 || code === 'SYNC_NOT_READY') {
+    if (code === 'NO_ACTIVE_MAILBOX') {
+      return new SyncNowError('NO_ACTIVE_MAILBOX', 'No active mailbox.');
+    }
+    if (code === 'MAILBOX_NOT_OWNED') {
+      return new SyncNowError('MAILBOX_NOT_OWNED', 'Selected mailbox not in workspace.');
+    }
+    if (code === 'SYNC_NOT_READY' || status === 409) {
       return new SyncNowError('SYNC_NOT_READY', 'Initial sync not complete yet.');
     }
     if (status === 429) {
       return new SyncNowError('RATE_LIMITED', 'Rate-limited.', retryAfter);
-    }
-    if (status === 400 && code === 'SYNC_NOT_READY') {
-      return new SyncNowError('SYNC_NOT_READY', 'Initial sync not complete yet.');
-    }
-    if (status === 401 || code === 'NO_ACTIVE_MAILBOX') {
-      return new SyncNowError('NO_ACTIVE_MAILBOX', 'No active mailbox.');
     }
   }
   const message = err instanceof Error ? err.message : 'Unknown sync error.';
