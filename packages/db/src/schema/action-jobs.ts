@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   index,
   integer,
   jsonb,
@@ -161,8 +162,17 @@ export const actionJobs = pgTable(
      *
      * FK enforced at DB level via 0020 migration (DEFERRABLE INITIALLY
      * DEFERRED). NULL skips the FK check per standard SQL semantics.
+     *
+     * Drizzle cannot express DEFERRABLE INITIALLY DEFERRED — that
+     * timing remains migration-only. The `.references()` annotation
+     * below records the ON DELETE CASCADE so the schema reflects the
+     * actual DB shape (introspection, type-safe joins, generate-no-diff
+     * gate). The self-reference uses the `AnyPgColumn` forward-ref
+     * pattern because `actionJobs` is the table being defined.
      */
-    compositeId: uuid('composite_id'),
+    compositeId: uuid('composite_id').references((): AnyPgColumn => actionJobs.id, {
+      onDelete: 'cascade',
+    }),
     /**
      * Time-window filter applied at worker resolution (ADR-0020).
      * Used by Archive + Delete verbs (and the secondary historic
