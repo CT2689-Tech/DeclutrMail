@@ -1,0 +1,15 @@
+{
+  "name": "billing-hard-cap",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Cloud Function: hard billing cap kill-switch for declutrmail-ai-prod.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@google-cloud/billing": "^4.0.0",
+    "@google-cloud/functions-framework": "^4.0.0"
+  }
+}
