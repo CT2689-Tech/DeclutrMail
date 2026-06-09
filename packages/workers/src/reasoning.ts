@@ -224,6 +224,48 @@ export function resolveReasoningConcurrency(raw: string | undefined): number {
 }
 
 /**
+ * Default + ceiling for the LLM-call rate cap (calls per minute).
+ *
+ * The concurrency limiter above caps IN-FLIGHT calls; the rate limiter
+ * in `score.worker.ts` (a `packages/workers/src/rate-limiter.ts`
+ * sliding-window instance) caps the SUSTAINED CALL RATE. Both matter
+ * because Anthropic enforces both: concurrent connections AND
+ * requests-per-minute. On Tier 1 the org cap is 50 RPM (verified
+ * 2026-06-09 — see [[reasoning.adapter_error]] 429 storm in prod),
+ * so a sweep over 6000+ senders with concurrency=4 and sub-second
+ * explain() latency burns through the budget in seconds and then
+ * drops every call onto the template fallback path.
+ *
+ * `DEFAULT_REASONING_RATE_PER_MIN = 40` sits BELOW Anthropic Tier 1's
+ * 50 RPM org cap to leave headroom for the brief-snapshot +
+ * followup-check workers that also call the same org's Anthropic key.
+ *
+ * SINGLE-INSTANCE STATE. The limiter lives in worker-process memory.
+ * Cloud Run worker scales `min=1, max=3` (D193); a multi-instance
+ * limit must be coordinated through Redis (BullMQ rate-limiter or a
+ * shared token bucket) — out of scope until multi-tenant sweep volume
+ * makes this a hot path. With single user / single mailbox today this
+ * is acceptable; revisit when `max_instances` is actually consumed.
+ */
+export const DEFAULT_REASONING_RATE_PER_MIN = 40;
+export const MAX_REASONING_RATE_PER_MIN = 1000;
+
+/**
+ * Read the reasoning rate-per-minute knob from env. Returns `Infinity`
+ * (no pacing) when env is unset — the test-default — so the worker test
+ * suite runs at full speed without touching `process.env`. Composition
+ * root opts into pacing by setting `REASONING_RATE_PER_MIN=40` in the
+ * Cloud Run worker env (see `docs/runbooks/prod-infra-bootstrap.md`).
+ * Clamped to `[1, MAX_REASONING_RATE_PER_MIN]` on parse success.
+ */
+export function resolveReasoningRatePerMin(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return Infinity;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_REASONING_RATE_PER_MIN;
+  return Math.min(n, MAX_REASONING_RATE_PER_MIN);
+}
+
+/**
  * Read the per-call timeout knob from env. Defaults to
  * `DEFAULT_EXPLAIN_TIMEOUT_MS` when unset or non-finite. No upper
  * clamp — a deployment can tolerate longer waits if it chooses.

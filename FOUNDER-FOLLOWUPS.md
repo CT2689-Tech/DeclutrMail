@@ -26,6 +26,18 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-09 — Bump Anthropic org to Tier 2 (50 → 1000 RPM, ~$40)
+**Source:** session 2026-06-09 — first real-prod score sweep hit Tier 1 cap mid-run
+**Why:** Anthropic Tier 1 = 50 RPM / org / model. A first-run score sweep over a 6627-sender mailbox burned through the budget in seconds → 70 × 429 in 15 min → ~25 % of `triage_decisions` rows written with `generated_by='template'` instead of `llm_haiku`. The product value prop (D24 — LLM-generated reasoning per sender) is diluted at exactly the moment the user is most attentive (first triage screen). Code-side defense landed this session: `REASONING_RATE_PER_MIN=40` env-driven sliding-window rate limiter in `ScoreWorker` (see `packages/workers/src/score.worker.ts` + `reasoning.ts`). That stops the 429 storm but caps the sweep wall-clock at ~6627 / 40 = 166 min per fresh mailbox. Tier 2 (1000 RPM) drops that to ~7 min — material to first-run UX. Cost: $40 prepaid credits unlock Tier 2 immediately; usage at $0.25 / $1.25 per Mtoken is trivial vs the operational benefit.
+**How:**
+1. Visit `https://console.anthropic.com/settings/billing` while signed into the DeclutrMail org (org id `385cc5e8-043e-4d4f-b68e-ccce418b4fed`).
+2. Purchase ≥$40 in prepaid credits OR enable auto-recharge with a $40 floor (Tier 2 requires either + 7 day org age — DeclutrMail org meets both as of 2026-06-09).
+3. Console will reflect Tier 2 — verify under "Plans & billing" the per-model row for `claude-haiku-4-5` shows 1000 RPM / 200000 ITPM / 80000 OTPM.
+4. After Tier 2 is live, bump `REASONING_RATE_PER_MIN` from `40` → `400` (still 60 % under the ceiling) in `.github/workflows/deploy-cloud-run.yml` worker env block + `docs/runbooks/prod-infra-bootstrap.md`. Redeploy the worker — env-var-only change is fast (`gcloud run services update declutrmail-worker --update-env-vars=REASONING_RATE_PER_MIN=400` is also valid).
+5. (Optional) Add `--update-env-vars` for `REASONING_CONCURRENCY=8` simultaneously — the existing concurrency limiter defaults to 4 and the higher rate now justifies more in-flight calls.
+**Verifies by:** Trigger a manual rescore sweep (POST `/api/triage/score-sender` with no `senderKey`, or wait for the cron sweep). `gcloud logging read … jsonPayload.kind="reasoning.adapter_error" AND jsonPayload.status=429` returns 0 results over a 15-min window during the sweep. Supabase `SELECT generated_by, COUNT(*) FROM triage_decisions GROUP BY 1` shows `template` count ≈ the number of "no-signal" senders only (verdict from cascade falls back to template when LLM call returns null for reasons other than rate limit).
+**Status:** Open
+
 ### 2026-06-08 — Cloud Run worker MUST run with `--no-cpu-throttling` (D158, D193 amendment)
 **Source:** session 2026-06-08 — 90-minute prod sync stall traced to CPU throttling
 **Why:** Cloud Run's default request-only CPU allocation throttles idle CPU. For HTTP services (which our API is), that's fine — CPU spins up on each request. For BACKGROUND workers (BullMQ consumer with no inbound HTTP traffic), it's catastrophic: CPU drops to ~0.1 cores between job ticks → gRPC connection pools to KMS / Gmail / Supabase die → next API call goes through a cold network handshake (this session: KMS decrypt = 68 SECONDS vs 284ms warm). Then BullMQ's 30s stalled-lock check fires + the job is marked stalled + retried + the new attempt hits the same cold start. Eternal stall spiral.
