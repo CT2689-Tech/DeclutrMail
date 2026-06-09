@@ -25,8 +25,10 @@ import { apiGet } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
-/** Gmail-side category enum — matches `mail_senders.gmail_category`. */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/** Gmail-side category enum — derived from `gmail_category` pg_enum via
+ * the shared contracts package. */
+export type { GmailCategory } from '@declutrmail/shared/contracts';
+import type { GmailCategory } from '@declutrmail/shared/contracts';
 
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';

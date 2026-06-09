@@ -66,7 +66,11 @@ export interface UnsubscribeIntentResult {
   activityLogId: string;
 }
 
-export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
+// Derived from the canonical pg_enum so adding a status is a single
+// migration edit. The contract block at the bottom of this file asserts
+// the API type matches the shared zero-server-dep mirror.
+export type { ActionJobStatus } from '@declutrmail/db';
+import type { ActionJobStatus } from '@declutrmail/db';
 
 export interface ActionEnqueueResult {
   actionId: string;
@@ -267,3 +271,20 @@ export interface CompositeActionPreviewResult {
   unsubAvailable: boolean;
   protected: boolean;
 }
+
+/**
+ * Cross-package contract — assert the DB-derived `ActionJobStatus`
+ * stays equal to the shared zero-server-dep mirror in
+ * `@declutrmail/shared/contracts`. If either narrows or widens, one
+ * of these two assertions fails-compile.
+ */
+import type { ActionJobStatus as SharedActionJobStatus } from '@declutrmail/shared/contracts';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _ACTION_JOB_STATUS_API_EXTENDS_SHARED: ActionJobStatus extends SharedActionJobStatus
+  ? true
+  : false = true;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _ACTION_JOB_STATUS_SHARED_EXTENDS_API: SharedActionJobStatus extends ActionJobStatus
+  ? true
+  : false = true;

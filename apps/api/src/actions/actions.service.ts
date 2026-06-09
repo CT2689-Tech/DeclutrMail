@@ -21,6 +21,7 @@ import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrm
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActionEnqueueResult,
+  ActionJobStatus,
   ActionStatusResult,
   ArchivePreviewResult,
   ArchiveSelector,
@@ -900,7 +901,7 @@ export class ActionsService {
     token: string;
     verb: 'archive' | 'later' | 'delete';
     messageIds: string[];
-  }): Promise<{ actionId: string; status: 'queued' | 'executing' | 'done' | 'failed' }> {
+  }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',

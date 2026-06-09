@@ -73,12 +73,14 @@ export interface LastReview {
 }
 
 /**
- * Gmail's own category enum mirrored from the `gmail_category` Postgres
- * enum. Kept in sync with `packages/db/src/schema/senders.ts` — adding
- * a value requires touching both the migration and this union (one
- * source of truth per type-design principle).
+ * Gmail's own category enum derived directly from the `gmail_category`
+ * Postgres enum (`packages/db/src/schema/senders.ts`). Adding a value
+ * is a single migration edit; this type widens automatically.
+ * Contract assertion at the bottom of this file keeps the API type in
+ * lockstep with the shared zero-server-dep mirror.
  */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+export type { GmailCategory } from '@declutrmail/db';
+import type { GmailCategory } from '@declutrmail/db';
 
 /**
  * Derived unsubscribe capability (D9, RFC 8058). Mirror of the
@@ -512,3 +514,18 @@ export interface DecisionHistoryRow {
   /** Provenance of `reasoning` — LLM call vs template fallback. */
   generatedBy: TriageReasoningSource;
 }
+
+/**
+ * Cross-package contract — the DB-derived `GmailCategory` must stay
+ * equal to the shared zero-server-dep mirror in
+ * `@declutrmail/shared/contracts`. Failing-compile is preferable to
+ * silently-wrong category fallback ('primary' default in worker code).
+ */
+import type { GmailCategory as SharedGmailCategory } from '@declutrmail/shared/contracts';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _GMAIL_CATEGORY_API_EXTENDS_SHARED: GmailCategory extends SharedGmailCategory ? true : false =
+  true;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _GMAIL_CATEGORY_SHARED_EXTENDS_API: SharedGmailCategory extends GmailCategory ? true : false =
+  true;

@@ -5,7 +5,7 @@ import {
   senders,
   senderTimeseries,
 } from '@declutrmail/db';
-import type { schema } from '@declutrmail/db';
+import type { GmailCategory, schema } from '@declutrmail/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -20,10 +20,8 @@ import type { WorkerContext } from './worker-context.js';
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
-/** The five `senders.gmail_category` enum values (mirror initial-sync). */
-type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
-
-/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222). */
+/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
+ * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */
 const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
   CATEGORY_PERSONAL: 'primary',
   CATEGORY_PROMOTIONS: 'promotions',

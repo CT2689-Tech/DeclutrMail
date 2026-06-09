@@ -24,8 +24,11 @@
 
 import type { TriageVerdict } from './types';
 
-/** Gmail-side category — surfaces in row chrome (read-only). */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/** Gmail-side category — surfaces in row chrome (read-only). Mirrored
+ * from the canonical `gmail_category` pg_enum via the shared contracts
+ * package so a migration that widens the enum widens this type. */
+export type { GmailCategory } from '@declutrmail/shared/contracts';
+import type { GmailCategory } from '@declutrmail/shared/contracts';
 
 /**
  * RFC 8058 unsubscribe capability per sender (mirrors

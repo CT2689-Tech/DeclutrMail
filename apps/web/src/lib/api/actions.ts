@@ -15,12 +15,12 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
-import type { UndoActionKind } from '@declutrmail/shared/contracts';
+import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
 
 import { apiGet, apiPost } from './client';
 
 /** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
-export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
+export type { ActionJobStatus };
 
 /** A status is terminal once the worker has finished (success or failure). */
 export function isTerminalStatus(status: ActionJobStatus): boolean {
