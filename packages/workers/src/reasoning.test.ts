@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createLimiter,
+  DEFAULT_REASONING_RATE_PER_MIN,
+  MAX_REASONING_RATE_PER_MIN,
+  resolveReasoningRatePerMin,
   runWithTimeout,
   VERDICT_LABEL,
   VERDICT_RUNTIME_VALUES,
@@ -67,6 +70,31 @@ describe('createLimiter — bounded concurrency', () => {
     await Promise.all(tasks);
     expect(peak).toBe(3);
     expect(limit.activeCount).toBe(0);
+  });
+});
+
+describe('resolveReasoningRatePerMin — env knob for LLM call pacing', () => {
+  it('returns Infinity (no pacing) when env is unset — the test-default', () => {
+    expect(resolveReasoningRatePerMin(undefined)).toBe(Infinity);
+    expect(resolveReasoningRatePerMin('')).toBe(Infinity);
+  });
+
+  it('parses a positive integer string and returns it clamped to MAX', () => {
+    expect(resolveReasoningRatePerMin('40')).toBe(40);
+    expect(resolveReasoningRatePerMin('1')).toBe(1);
+    expect(resolveReasoningRatePerMin(String(MAX_REASONING_RATE_PER_MIN + 500))).toBe(
+      MAX_REASONING_RATE_PER_MIN,
+    );
+  });
+
+  it('falls back to DEFAULT on a typo or non-positive value (defends against accidental Infinity)', () => {
+    // Distinguishes from `undefined`/`''`: a string that's present but
+    // bogus must NOT silently disable pacing — it falls back to the
+    // production-safe default so a prod env typo doesn't degrade to
+    // 50-RPM-storm.
+    expect(resolveReasoningRatePerMin('not-a-number')).toBe(DEFAULT_REASONING_RATE_PER_MIN);
+    expect(resolveReasoningRatePerMin('0')).toBe(DEFAULT_REASONING_RATE_PER_MIN);
+    expect(resolveReasoningRatePerMin('-5')).toBe(DEFAULT_REASONING_RATE_PER_MIN);
   });
 });
 
