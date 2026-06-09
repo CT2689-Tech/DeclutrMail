@@ -78,13 +78,8 @@ export async function onBudgetAlert(cloudEvent) {
   }
 
   const payload = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-  const {
-    budgetDisplayName,
-    costAmount,
-    budgetAmount,
-    currencyCode,
-    alertThresholdExceeded,
-  } = payload;
+  const { budgetDisplayName, costAmount, budgetAmount, currencyCode, alertThresholdExceeded } =
+    payload;
 
   const ratio = budgetAmount > 0 ? costAmount / budgetAmount : 0;
 
