@@ -26,7 +26,16 @@ export type DrizzleDb = PostgresJsDatabase<typeof schema>;
         if (!url) {
           throw new Error('DATABASE_URL is not set — see .env.example.');
         }
-        const client = postgres(url);
+        // `prepare: false` is REQUIRED for Supabase's transaction-mode
+        // pooler (`*.pooler.supabase.com:6543`): the pooler routes
+        // per-statement to whatever backend is free, so cached prepared-
+        // statement names from a prior backend throw `prepared statement
+        // "X" does not exist` mid-tx → silent ROLLBACK of multi-statement
+        // queries. Local dev uses direct 5432 where prepared statements
+        // work fine; setting prepare:false is a no-op there. See
+        // ADR-0022 + apps/api/src/worker.ts for the same rationale on
+        // the worker side.
+        const client = postgres(url, { prepare: false });
         return drizzle(client, { schema });
       },
     },
