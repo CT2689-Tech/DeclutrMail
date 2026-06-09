@@ -160,4 +160,19 @@ async function bootstrap(): Promise<void> {
   await app.listen(port);
 }
 
-void bootstrap();
+// Mirror the worker pattern (apps/api/src/worker.ts:1335) — emit a
+// structured `api.boot_failed` envelope before exiting non-zero so
+// Cloud Logging + dashboards see the failure shape ops alerts expect.
+// Without this, a failed bootstrap surfaces as a default-formatted
+// unhandled rejection and the process never sets exit code 1.
+bootstrap().catch((err: unknown) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      kind: 'api.boot_failed',
+      message: error.message,
+    }),
+  );
+  process.exit(1);
+});
