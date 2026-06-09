@@ -61,7 +61,7 @@ import type {
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
 import { track } from '@/lib/posthog';
-import { addBreadcrumb } from '@/lib/sentry';
+import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
 
 const { color, font } = tokens;
@@ -207,7 +207,9 @@ export function SendersScreen() {
   // do NOT silently fall back to the loaded-page derivation — the very
   // bug #145 set out to fix. Boolean flag drives a small "approximate"
   // badge in the KPI strip; the underlying error is breadcrumbed to the
-  // console (Sentry FE wiring queued separately — FOUNDER-FOLLOWUPS).
+  // captureFeatureException so a wire regression is queryable in Sentry
+  // alongside a console breadcrumb — matching the sister sender-detail-page
+  // pattern (apps/web/src/features/senders/detail/sender-detail-page.tsx).
   const summaryFailed = summaryQuery.isError;
   useEffect(() => {
     if (!summaryQuery.isError) return;
@@ -215,6 +217,7 @@ export function SendersScreen() {
     console.warn('[senders] summary fetch failed; KPI/hero fall back to loaded page', {
       message: err instanceof Error ? err.message : String(err),
     });
+    captureFeatureException(err, { surface: 'senders', reason: 'summary' });
   }, [summaryQuery.isError, summaryQuery.error]);
   // The page-1 `totalMatching` is the canonical "All N" chip count —
   // already on the wire and search-aware. Surfaced via `totalMatching`
@@ -385,6 +388,7 @@ function SendersScreenContent({
       senderId: archivePreviewSenderId,
       message: err instanceof Error ? err.message : String(err),
     });
+    captureFeatureException(err, { surface: 'senders', reason: 'composite_preview' });
   }, [compositePreviewQuery.isError, compositePreviewQuery.error, archivePreviewSenderId]);
   // Breadcrumb the underlying error before we collapse it to a boolean
   // for the modal — preview is D226-mandatory, so a sustained 5xx that
@@ -399,6 +403,7 @@ function SendersScreenContent({
       senderId: archivePreviewSenderId,
       message: err instanceof Error ? err.message : String(err),
     });
+    captureFeatureException(err, { surface: 'senders', reason: 'archive_preview' });
   }, [archivePreviewQuery.isError, archivePreviewQuery.error, archivePreviewSenderId]);
   const archivePreview =
     archivePreviewSenderId != null
@@ -573,15 +578,20 @@ function SendersScreenContent({
         enqueue.mutate(mutationArgs, {
           onSuccess: (res) =>
             setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
-          onError: (err) =>
+          onError: (err) => {
+            // 409 PROTECTED_SENDER is a designed conflict — skip Sentry to
+            // avoid noise. Every other failure (5xx, IDEMPOTENCY_KEY race,
+            // NO_ACTIVE_MAILBOX) is a real regression worth capturing.
+            if (!(err instanceof ApiError && err.status === 409)) {
+              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
+            }
             toast(
-              // Protected/VIP senders return 409 PROTECTED_SENDER (a
-              // ConflictException), not 403.
               err instanceof ApiError && err.status === 409
                 ? `${sender.name} is protected — unprotect it first`
                 : `Couldn't archive ${sender.name}`,
               'warn',
-            ),
+            );
+          },
         });
         return;
       }
@@ -637,13 +647,20 @@ function SendersScreenContent({
                       ? 'Later'
                       : 'Archive',
               }),
-            onError: (err) =>
+            onError: (err) => {
+              if (!(err instanceof ApiError && err.status === 409)) {
+                captureFeatureException(err, {
+                  surface: 'senders',
+                  reason: `enqueue_${primaryType}`,
+                });
+              }
               toast(
                 err instanceof ApiError && err.status === 409
                   ? `${sender.name} is protected — unprotect it first`
                   : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
-              ),
+              );
+            },
           },
         );
         return;
@@ -690,8 +707,9 @@ function SendersScreenContent({
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
                 void qc.invalidateQueries({ queryKey: activityKeys.all });
               },
-              onError: () => {
+              onError: (err) => {
                 failed++;
+                captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
                 if (succeeded + failed === senderRefs.length) {
                   toast(
                     isBulk
@@ -751,6 +769,7 @@ function SendersScreenContent({
         actionId: activeAction.actionId,
         message: err instanceof Error ? err.message : String(err),
       });
+      captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       setActiveAction(null);
       return;
@@ -813,6 +832,7 @@ function SendersScreenContent({
         revertActionId,
         message: err instanceof Error ? err.message : String(err),
       });
+      captureFeatureException(err, { surface: 'senders', reason: 'revert_status_poll' });
       toast("Couldn't confirm undo — see Activity", 'warn');
       setRevertActionId(null);
       return;
@@ -840,7 +860,11 @@ function SendersScreenContent({
   const onUndo = useCallback(() => {
     const token = receipt?.undoToken;
     if (!token) {
-      toast('Reverted — see Activity for the full log', 'info');
+      // Tokenless receipts shouldn't surface a fake "Reverted" — the
+      // unsub-intent path makes a real BE call and supplies a token; the
+      // tokenless branch is now defensive. Clear the receipt silently
+      // (matches sister sender-detail-page.tsx). No fake completion per
+      // CLAUDE.md §10.
       setReceipt(null);
       return;
     }
@@ -858,13 +882,20 @@ function SendersScreenContent({
             setRevertActionId(res.actionId);
           }
         },
-        onError: (err) =>
+        onError: (err) => {
+          // 410 is a designed state (undo window closed) — skip capture.
+          // Every other failure (5xx, transient network) is a real
+          // regression on the D226-mandatory undo surface.
+          if (!(err instanceof ApiError && err.status === 410)) {
+            captureFeatureException(err, { surface: 'senders', reason: 'revert_undo' });
+          }
           toast(
             err instanceof ApiError && err.status === 410
               ? 'Undo window has expired'
               : "Couldn't undo — see Activity",
             'warn',
-          ),
+          );
+        },
       },
     );
   }, [receipt, revert, qc]);
