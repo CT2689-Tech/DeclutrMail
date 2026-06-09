@@ -26,6 +26,17 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-09 — FE sticky-banner surface for IncrementalSyncWorker terminal failure
+**Source:** /code-review ultra against feat/d038-prod-ready-pass — verified HIGH finding
+**Why:** The BE half of the fix landed this session (migration 0027 + `provider_sync_state.last_incremental_error_at` / `_code` + `IncrementalSyncWorker.onTerminalFailure` writes them + structured `worker.incremental.terminal_failed` log + Sentry capture via the BullMQ failed-event observer). What's missing is the FE surface: when a user's active mailbox has `last_incremental_error_at` within the recent window, the app shell should render a sticky banner with a Retry CTA (or at minimum a "Sync errored — we're retrying every 5 min" affordance), distinct from the `SyncFailed` UI that only renders on `/onboarding`. Without it, the user still has no in-app signal that incremental sync is stuck; they only notice because new mail stops appearing.
+**How:**
+1. Add a thin column projection on the existing `/api/v1/sync/status` endpoint (already exposes `readinessStatus` + `currentStage` + `progressPct`) — include `lastIncrementalErrorAt` (ISO string or null) + `lastIncrementalErrorCode` (text or null). Reuse the same Zod schema (`packages/shared/src/contracts/sync-status.ts`).
+2. Add a sticky banner component (matches `AccountMenu` styling per `apps/web/src/features/sync/sync-now-button.tsx` precedent). Renders when `lastIncrementalErrorAt` is non-null and within (now − 60min). Copy: "We're still trying to sync new mail — last attempt errored." with a "Sync now" CTA that calls `POST /api/v1/sync/incremental` (same path as `SyncNowButton`).
+3. Mount the banner in the `(app)` layout above the page content so it persists across feature routes (matches the stale `NoActiveMailbox` pattern at `apps/web/src/app/(app)/layout.tsx`).
+4. Storybook story: hidden / banner-visible / banner-with-success-recovery transitions (D210).
+**Verifies by:** Manually flip a mailbox's `last_incremental_error_at` to `now()` via SQL, hit `/senders` — banner appears. Restore to NULL — banner disappears. Smoke also: kill Redis mid-sync to force a real terminal failure; banner renders within 1 polling cycle of `useSyncStatus()`.
+**Status:** Open
+
 ### 2026-06-09 — Bump Anthropic org to Tier 2 (50 → 1000 RPM, ~$40)
 **Source:** session 2026-06-09 — first real-prod score sweep hit Tier 1 cap mid-run
 **Why:** Anthropic Tier 1 = 50 RPM / org / model. A first-run score sweep over a 6627-sender mailbox burned through the budget in seconds → 70 × 429 in 15 min → ~25 % of `triage_decisions` rows written with `generated_by='template'` instead of `llm_haiku`. The product value prop (D24 — LLM-generated reasoning per sender) is diluted at exactly the moment the user is most attentive (first triage screen). Code-side defense landed this session: `REASONING_RATE_PER_MIN=40` env-driven sliding-window rate limiter in `ScoreWorker` (see `packages/workers/src/score.worker.ts` + `reasoning.ts`). That stops the 429 storm but caps the sweep wall-clock at ~6627 / 40 = 166 min per fresh mailbox. Tier 2 (1000 RPM) drops that to ~7 min — material to first-run UX. Cost: $40 prepaid credits unlock Tier 2 immediately; usage at $0.25 / $1.25 per Mtoken is trivial vs the operational benefit.
