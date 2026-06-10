@@ -1,29 +1,35 @@
 // apps/api/src/senders/senders.controller.ts — HTTP surface for the
-// Senders read endpoints (D39, D40, D44, D45, D46).
+// Senders read endpoints (D39, D40, D44, D45, D46) plus the standing-
+// policy write route (D40, D42, D43 — `PATCH :id/policy`).
 //
 // Thin per D201/D204: validates input, delegates to
-// `SendersReadService`, wraps the result in the D202 envelope. NO
-// business logic, NO database access, NO exception handling — the
-// shared `AllExceptionsFilter` (apps/api/src/common/all-
-// exceptions.filter.ts) handles the error envelope per D168.
+// `SendersReadService` / `SendersPolicyService`, wraps the result in
+// the D202 envelope. NO business logic, NO database access, NO
+// exception handling — the shared `AllExceptionsFilter` (apps/api/src/
+// common/all-exceptions.filter.ts) handles the error envelope per D168.
 //
 // AUTH (D155 + D205): every route requires `JwtGuard` to populate
 // `req.user`, then `CurrentMailboxGuard` to resolve the active mailbox
 // from session preferences (or the `X-Active-Mailbox-Id` override).
 // The mailbox id arrives via the `@CurrentMailbox()` param decorator.
+// The state-changing PATCH additionally requires `CsrfGuard`
+// (double-submit cookie), matching the actions mutation routes.
 //
-// PRIVACY (D7, D228): read-only path. Never fetches from Gmail,
-// never returns body content, never returns non-allowlisted headers.
-// The allowlisted `mail_messages.snippet` IS returned (cap enforced
-// at the schema column via `varchar(300)`).
+// PRIVACY (D7, D228): never fetches from Gmail, never returns body
+// content, never returns non-allowlisted headers. The allowlisted
+// `mail_messages.snippet` IS returned (cap enforced at the schema
+// column via `varchar(300)`). The policy write touches ONLY the
+// sha256 sender_key + standing-policy flags.
 
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   HttpException,
   HttpStatus,
   Param,
+  Patch,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -38,10 +44,13 @@ import {
   paginated,
 } from '@declutrmail/shared/contracts';
 
+import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { SendersPolicyService } from './senders-policy.service.js';
 import { SendersReadService } from './senders.read-service.js';
+import { senderPolicyPatchSchema } from './senders.types.js';
 import type {
   ActivityFilter,
   GmailCategory,
@@ -52,6 +61,7 @@ import type {
   SenderListQueryMeta,
   SenderListRow,
   SenderListSort,
+  SenderPolicyResult,
   SenderSummary,
   TimeseriesPoint,
   WeeklyHero,
@@ -95,7 +105,10 @@ const HISTORY_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 defau
 @Controller('senders')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SendersController {
-  constructor(private readonly reads: SendersReadService) {}
+  constructor(
+    private readonly reads: SendersReadService,
+    private readonly policies: SendersPolicyService,
+  ) {}
 
   /**
    * GET /api/senders — list senders for the caller's mailbox (D39).
@@ -320,6 +333,53 @@ export class SendersController {
       throw notFound('Sender not found.');
     }
     return ok(detail);
+  }
+
+  /**
+   * PATCH /api/senders/:id/policy — standing-policy write (D40, D42,
+   * D43). Set-state patch over `policy_type='keep'` / `is_vip` /
+   * `is_protected`; the service diffs against the current row, upserts
+   * only actual changes, and appends the D43 audit rows in the same
+   * transaction. Naturally idempotent — see `senderPolicyPatchSchema`.
+   *
+   * No preview (D40: "Keep applies immediately"; ADR-0015 routes `keep`
+   * to the `inline-confirm` surface, not a modal) and no undo token —
+   * a standing-policy flip is non-destructive; toggling back IS the
+   * undo. NOT part of the D226 destructive lifecycle.
+   *
+   * Auth: class guards + `CsrfGuard` (state-changing). Rate-limit
+   * (D156): `gmail-action` bucket — the mutation-surface bucket the
+   * sibling action routes use (no Gmail call happens here, but the
+   * abuse profile of a write endpoint matches).
+   *
+   * Errors:
+   *   - 400 INVALID_REQUEST (bad body) / non-UUID id
+   *   - 404 SENDER_NOT_FOUND (ownership mismatch collapses to 404)
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Patch(':id/policy')
+  @UseGuards(CsrfGuard)
+  async patchPolicy(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<Envelope<SenderPolicyResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException('Sender id must be a UUID.');
+    }
+    const parsed = senderPolicyPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid policy patch.',
+      });
+    }
+    const result = await this.policies.setPolicy({
+      mailboxAccountId: mailbox.id,
+      senderId: id,
+      patch: parsed.data,
+    });
+    return ok(result);
   }
 
   /**
