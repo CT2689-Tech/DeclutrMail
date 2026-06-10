@@ -135,10 +135,16 @@ function daysAgo(n: number): Date {
 }
 
 /**
- * Fake BullMQ queue — records enqueues AND mirrors BullMQ's real jobId
- * validation: a custom id containing `:` is rejected (BullMQ reserves it
- * as its Redis key separator). Without this the fake would let a colon
- * jobId through and the bug only surfaces against a live Redis.
+ * Fake BullMQ queue — records enqueues AND mirrors two real BullMQ
+ * jobId behaviors:
+ *   1. a custom id containing `:` is rejected (BullMQ reserves it as
+ *      its Redis key separator) — without this the fake would let a
+ *      colon jobId through and the bug only surfaces against live Redis;
+ *   2. `add` with a jobId that already exists is a no-op (BullMQ
+ *      returns the existing job) — the unsub replay path leans on this
+ *      dedup, so the fake must model it or count assertions diverge
+ *      from the wire. Tests that reset `jobIds` (simulating a lost /
+ *      never-enqueued job) reset the dedup state with it.
  */
 function fakeQueue() {
   const q = {
@@ -148,6 +154,7 @@ function fakeQueue() {
       if (opts?.jobId && opts.jobId.includes(':')) {
         throw new Error('Custom Id cannot contain :');
       }
+      if (opts?.jobId && q.jobIds.includes(opts.jobId)) return;
       q.count += 1;
       if (opts?.jobId) q.jobIds.push(opts.jobId);
     },
@@ -1296,7 +1303,7 @@ describe('ActionsService', () => {
       expect(queue.count).toBe(0);
     });
 
-    it('one_click replay: the SAME Idempotency-Key returns the same execution handle without re-enqueueing', async () => {
+    it('one_click replay: the SAME Idempotency-Key returns the same execution handle; the wire sees ONE job (jobId dedup)', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
       const service = svcWithUnsubQueue();
 
@@ -1314,13 +1321,57 @@ describe('ActionsService', () => {
       expect(second.executionActionId).toBe(first.executionActionId);
       expect(second.activityLogId).toBe(first.activityLogId);
       expect(second.method).toBe('one_click');
-      expect(unsubQueue.count).toBe(1); // ONE execution per intent
+      // The replay re-adds while the row is still 'queued' (crash-window
+      // self-heal below), but BullMQ's duplicate-jobId no-op means ONE
+      // execution per intent ever reaches the wire.
+      expect(unsubQueue.count).toBe(1);
 
       const execRows = await db
         .select()
         .from(actionJobs)
         .where(eq(actionJobs.idempotencyKey, 'unsubexec-replay-unsub-key'));
       expect(execRows).toHaveLength(1);
+    });
+
+    it('one_click replay re-enqueues an orphaned queued execution row (crash between commit and enqueue)', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+
+      const first = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+
+      // Simulate the crash window: the tx committed (execution row
+      // 'queued', policy 'pending') but the process died before the
+      // post-commit enqueue — Redis has NO job behind the row.
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+
+      const replay = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+      expect(replay.executionActionId).toBe(first.executionActionId);
+      expect(unsubQueue.count).toBe(1); // the orphan self-healed
+      expect(unsubQueue.jobIds).toEqual(['unsubexec-orphan-unsub-key']);
+
+      // Once the worker has flipped the row terminal, a replay must NOT
+      // re-enqueue — the list processor was already asked once.
+      await db
+        .update(actionJobs)
+        .set({ status: 'done' })
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-orphan-unsub-key'));
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+      expect(unsubQueue.count).toBe(0);
     });
 
     it('mailto: returns the mailto URL for the manual compose path; NO execution, NO pending status (D230)', async () => {

@@ -1061,10 +1061,21 @@ export class ActionsService {
       // Replay also re-projects the execution handle (if one was
       // persisted) so the retried caller can resume polling.
       const [execution] = await this.db
-        .select({ id: actionJobs.id })
+        .select({ id: actionJobs.id, status: actionJobs.status })
         .from(actionJobs)
         .where(eq(actionJobs.idempotencyKey, executionKey))
         .limit(1);
+      if (method === 'one_click' && execution && execution.status === 'queued') {
+        // Crash-window self-heal: the original request can commit the
+        // execution row, then die BEFORE the post-commit enqueue below —
+        // leaving a permanently-'pending' chip with no BullMQ job behind
+        // it (the exact stuck state the QUEUE_UNAVAILABLE pre-check
+        // guards against). A retried POST lands here, so re-enqueue when
+        // the row is still 'queued': BullMQ's jobId dedup makes the
+        // duplicate `add` a no-op on the happy path, and the orphan case
+        // self-heals.
+        await this.enqueueUnsubExecution(execution.id, mailboxAccountId, senderKey, executionKey);
+      }
       return {
         senderId,
         recordedAt: cached.createdAt.toISOString(),
