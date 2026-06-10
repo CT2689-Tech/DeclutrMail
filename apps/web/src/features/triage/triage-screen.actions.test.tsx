@@ -12,17 +12,42 @@
  *     toggle riding the real archive pipeline.
  *   - Busy state: the acted-on row renders aria-busy until the worker
  *     confirms.
+ *   - Failure paths (the kill-the-worker class): terminal `failed`
+ *     status, sustained poll error, Keep POST failure, the
+ *     unsubscribe-then-archive partial failure, and the global
+ *     single-in-flight re-entry guard. Each must warn-toast, release
+ *     the busy latch, and leave the queue un-invalidated (except the
+ *     partial-failure case, where the intent's success DID invalidate).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
 
-import { addFetchHandlers, installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import {
+  addFetchHandlers,
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+
+// Toast is the ONLY user-visible failure surface in this flow (D35 —
+// decisions never success-toast), so failure tests must assert the
+// exact message + tone. Partial mock: everything else from the shared
+// package stays real (Button, tokens, the sheet's primitives, …).
+const h = vi.hoisted(() => ({ toast: vi.fn(), captureFeatureException: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: h.toast };
+});
+vi.mock('@/lib/sentry', () => ({
+  captureFeatureException: h.captureFeatureException,
+}));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // archive verdict, unprotected
 const LINKEDIN = TRIAGE_QUEUE[1]!; // unsubscribe verdict, one_click
@@ -67,6 +92,8 @@ function expandRow(senderName: string) {
 describe('TriageScreen — D226 mutation wiring', () => {
   beforeEach(() => {
     resetTriageStore();
+    h.toast.mockClear();
+    h.captureFeatureException.mockClear();
     installFetchStub([
       {
         method: 'GET',
@@ -341,5 +368,260 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(container.querySelector('[aria-busy="true"]')).toBeNull();
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+  });
+
+  it('terminal FAILED: warn toast, busy latch releases, row stays, no invalidation', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        // The worker ran and the Gmail call failed — terminal `failed`.
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'failed',
+              requestedCount: 47,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: 'GMAIL_5XX',
+            },
+          }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // The failure is toasted (warn) — there is no other failure surface.
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't archive ${GROUPON.senderName} — see Activity`,
+        'warn',
+      ),
+    );
+    // The latch releases so the queue is usable again; the row STAYS
+    // (no invalidation — nothing moved server-side).
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+    // No success toast ever (D35 — the tray is the feedback channel).
+    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+  });
+
+  it('poll error (worker/API down mid-action): warn toast, latch releases, no invalidation', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        // Sustained poll failure — `useActionStatus` runs `retry: false`
+        // so this surfaces as `isError` on the first poll.
+        respond: () => jsonServerError('boom'),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't confirm ${GROUPON.senderName} — see Activity`,
+        'warn',
+      ),
+    );
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+  });
+
+  it('Keep failure: warn toast, row un-busies, no invalidation', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: () => jsonServerError('boom'),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't keep ${GROUPON.senderName} — try again`,
+        'warn',
+      ),
+    );
+    // `onSettled` releases the intent latch — the row is decidable again.
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+  });
+
+  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: LINKEDIN.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '77777777-7777-4777-8777-777777777777',
+            },
+          }),
+      },
+      {
+        // The backlog-archive enqueue fails AFTER the intent succeeded.
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => jsonServerError('boom'),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // The partial-failure copy is explicit: the unsubscribe DID queue,
+    // only the backlog archive did not (recoverable from Senders).
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Unsubscribe queued, but couldn't archive the backlog from ${LINKEDIN.senderName}`,
+        'warn',
+      ),
+    );
+    // The intent succeeded, so the queue WAS invalidated — the sender
+    // leaves the queue via the refetch even though the archive failed.
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    // No archive latch lingers (the enqueue never returned an actionId).
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+  });
+
+  it('re-entry guard: a 2nd decision while one confirms is deferred with an info toast', async () => {
+    const keeps: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        // Never terminal — the first decision stays confirming.
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'executing',
+              requestedCount: 47,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: async (req) => {
+          keeps.push(await req.json());
+          return jsonOk({
+            data: {
+              senderId: LINKEDIN.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '66666666-6666-4666-8666-666666666666',
+            },
+          });
+        },
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    const { container } = renderScreen(client);
+
+    // First decision: Archive GROUPON — stays in flight.
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
+
+    // Second decision on a DIFFERENT row while the first confirms:
+    // deferred with the quiet hint, and no second mutation fires.
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Still confirming your last decision — give it a moment.',
+        'info',
+      ),
+    );
+    expect(keeps).toHaveLength(0);
   });
 });
