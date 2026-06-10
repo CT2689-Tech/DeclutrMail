@@ -81,7 +81,7 @@ function useUndoEntries() {
  * tray IS the decision feedback. Undo completion and failures DO
  * toast: the tray row is already gone, so there is no other channel.
  */
-export function TriageUndoTray({ mailboxAccountId }: { mailboxAccountId: string }) {
+export function TriageUndoTray() {
   const qc = useQueryClient();
   const router = useRouter();
   const entriesQuery = useUndoEntries();
@@ -189,11 +189,5 @@ export function TriageUndoTray({ mailboxAccountId }: { mailboxAccountId: string 
     revert: revertToken,
   };
 
-  return (
-    <UndoTray
-      mailboxAccountId={mailboxAccountId}
-      dataSource={dataSource}
-      onViewActivity={() => router.push('/activity')}
-    />
-  );
+  return <UndoTray dataSource={dataSource} onViewActivity={() => router.push('/activity')} />;
 }

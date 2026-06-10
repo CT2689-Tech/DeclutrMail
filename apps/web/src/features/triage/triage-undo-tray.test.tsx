@@ -19,8 +19,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const MAILBOX = '00000000-0000-0000-0000-000000000000';
-
 const ENTRY_NEWEST = {
   token: '11111111-1111-4111-8111-111111111111',
   actionKind: 'archive' as const,
@@ -90,7 +88,7 @@ function renderTray() {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <TriageUndoTray mailboxAccountId={MAILBOX} />
+      <TriageUndoTray />
     </QueryWrapper>,
   );
 }
@@ -138,7 +136,7 @@ describe('TriageUndoTray (D35)', () => {
     render(
       <QueryWrapper client={client}>
         <input aria-label="search" />
-        <TriageUndoTray mailboxAccountId={MAILBOX} />
+        <TriageUndoTray />
       </QueryWrapper>,
     );
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
