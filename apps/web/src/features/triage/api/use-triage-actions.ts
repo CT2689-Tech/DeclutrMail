@@ -6,11 +6,9 @@
  * the decision via `POST /api/actions/keep-intent` — no Gmail
  * mutation, no worker job, no undo token. The destructive verbs ride
  * the shared pipeline hooks (`useEnqueueComposite`, `useActionStatus`,
- * `useRecordUnsubscribeIntent` from `features/senders/api/use-action`).
- * This is the FIRST cross-feature consumer of those hooks — the action
- * pipeline is genuinely shared infrastructure, so a follow-up should
- * lift them to a feature-agnostic home (e.g. `@/lib/api/use-action`)
- * rather than duplicating them here.
+ * `useRecordUnsubscribeIntent`) — the action pipeline is genuinely
+ * shared infrastructure, so those hooks live in the feature-agnostic
+ * `@/lib/api/use-action` rather than being duplicated per feature.
  *
  * Idempotency: keep-intent dedups semantically server-side (a Keep on
  * a sender already kept inside the decided window replays the original

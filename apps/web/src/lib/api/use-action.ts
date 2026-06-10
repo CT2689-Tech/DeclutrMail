@@ -1,5 +1,9 @@
 /**
- * Senders action hooks (D226) — the real single-sender Archive wire.
+ * Action pipeline hooks (D226) — the real single-sender Archive wire.
+ *
+ * Feature-agnostic home (D198/D199): the pipeline is consumed by both
+ * the Senders surfaces and Triage, so the hooks live in the lib layer
+ * alongside the `./actions` transport rather than inside one feature.
  *
  * `useEnqueueAction` enqueues an Archive (a fresh idempotency key per
  * mutate); `useActionStatus` polls the returned handle until the worker
@@ -36,7 +40,7 @@ import {
   type CompositeSecondaryVerb,
   type UndoRevertResult,
   type UnsubscribeIntentResult,
-} from '@/lib/api/actions';
+} from './actions';
 
 /** Poll cadence in ms while an action job is in flight. */
 export const ACTION_POLL_MS = 1_000;
@@ -233,5 +237,5 @@ export function useRecordUnsubscribeIntent() {
   });
 }
 
-/** Re-export the preview types so consumers don't import from the lib layer. */
+/** Re-export the preview types so hook consumers don't also import from the transport module. */
 export type { BulkActionPreviewResult, CompositeActionPreviewResult };

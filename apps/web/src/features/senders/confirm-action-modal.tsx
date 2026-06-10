@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import type { BulkActionPreviewResult, CompositeActionPreviewResult } from './api/use-action';
+import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { sampleSubjects, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
