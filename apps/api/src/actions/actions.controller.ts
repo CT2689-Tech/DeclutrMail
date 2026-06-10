@@ -19,12 +19,14 @@ import { ActionsService } from './actions.service.js';
 import {
   archiveRequestSchema,
   compositeActionRequestSchema,
+  keepIntentRequestSchema,
   unsubscribeIntentRequestSchema,
   type ActionEnqueueResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
+  type KeepIntentResult,
   type UnsubscribeIntentResult,
 } from './actions.types.js';
 
@@ -213,6 +215,44 @@ export class ActionsController {
       mailboxAccountId: mailbox.id,
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/keep-intent — record the user's Keep verdict for
+   * a sender (D40 + the D226 Triage wiring).
+   *
+   * Keep is policy/verdict-only (Action Registry: `policy-only`): the
+   * service writes the 0-affected `activity_log` decision row and
+   * emits the `triage.verdict_applied` outbox event whose consumer
+   * projects `sender_policies.policy_type='keep'`. No Gmail mutation,
+   * no worker job, no undo token.
+   *
+   * Idempotency: semantic — a Keep on a sender that already has a
+   * Keep decision inside the D30 decided window replays the original
+   * row (see `ActionsService.recordKeepIntent`). No `Idempotency-Key`
+   * header is required: the dedup key is the decision itself, and the
+   * sibling routes' action_jobs dedup-row trick is unavailable
+   * (`action_verb` pg_enum has no 'keep') and unnecessary here.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('keep-intent')
+  @UseGuards(CsrfGuard)
+  async keepIntent(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<KeepIntentResult>> {
+    const parsed = keepIntentRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid keep-intent request.',
+      });
+    }
+    const result = await this.actions.recordKeepIntent({
+      mailboxAccountId: mailbox.id,
+      senderId: parsed.data.senderId,
     });
     return ok(result);
   }

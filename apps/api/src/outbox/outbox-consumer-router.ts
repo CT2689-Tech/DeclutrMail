@@ -1,7 +1,14 @@
 import { eq, sql } from 'drizzle-orm';
 import { senderPolicies } from '@declutrmail/db';
-import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrmail/events';
-import type { ActionsUnsubscribeIntentRecordedPayload } from '@declutrmail/events';
+import {
+  ActionsUnsubscribeIntentRecordedPayloadSchema,
+  TOPICS,
+  TriageVerdictAppliedPayloadSchema,
+} from '@declutrmail/events';
+import type {
+  ActionsUnsubscribeIntentRecordedPayload,
+  TriageVerdictAppliedPayload,
+} from '@declutrmail/events';
 import type { DispatchedEvent } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
@@ -43,6 +50,12 @@ export function buildOutboxConsumer(db: DrizzleDb) {
         // "undefined is not an object."
         const payload = ActionsUnsubscribeIntentRecordedPayloadSchema.parse(event.payload);
         await handleUnsubscribeIntentRecorded(db, payload);
+        return;
+      }
+      case TOPICS.TRIAGE_VERDICT_APPLIED: {
+        // Same defense-in-depth re-parse as the unsubscribe case.
+        const payload = TriageVerdictAppliedPayloadSchema.parse(event.payload);
+        await handleTriageVerdictApplied(db, payload);
         return;
       }
       default:
@@ -100,11 +113,50 @@ async function handleUnsubscribeIntentRecorded(
 }
 
 /**
+ * Senders projection — `sender_policies.policy_type = 'keep'`.
+ *
+ * Produced by `ActionsService.recordKeepIntent` (the user's Keep
+ * verdict — D40's "records sender_policy(policy_type=keep)" contract).
+ * D204 boundary: the senders feature owns `sender_policies`, so the
+ * upsert lives here, not in ActionsService.
+ *
+ * Only `verdict='keep'` projects a policy today: Archive/Later/Delete
+ * decisions are one-time mutations (the label-action worker is their
+ * single effect-writer) and Unsubscribe has its own dedicated topic.
+ * A non-keep verdict event is valid but carries no projection — ACK
+ * and move on. The `is_protected` / `is_vip` modifiers are never
+ * touched (Keep ≠ Protect; manifest-entries.ts keep docstring).
+ */
+async function handleTriageVerdictApplied(
+  db: DrizzleDb,
+  payload: TriageVerdictAppliedPayload,
+): Promise<void> {
+  if (payload.verdict !== 'keep') {
+    return;
+  }
+  await db
+    .insert(senderPolicies)
+    .values({
+      mailboxAccountId: payload.mailboxAccountId,
+      senderKey: payload.senderKey,
+      policyType: 'keep',
+    })
+    .onConflictDoUpdate({
+      target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+      set: {
+        policyType: 'keep',
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
+/**
  * Exposed for tests so the consumer's handler logic can be exercised
  * without spinning up a dispatcher tick + an outbox_events row.
  */
 export const __internals = {
   handleUnsubscribeIntentRecorded,
+  handleTriageVerdictApplied,
 };
 
 // Drizzle eq import retained for future consumer handlers; keep tree-

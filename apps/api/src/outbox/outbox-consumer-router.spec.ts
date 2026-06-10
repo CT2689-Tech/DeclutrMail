@@ -169,4 +169,51 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     const rows = await db.select().from(senderPolicies);
     expect(rows).toHaveLength(0);
   });
+
+  it('projects triage.verdict_applied (keep) into sender_policies.policy_type=keep (D40)', async () => {
+    await consume({
+      id: 'evt-keep-1',
+      topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000005',
+      payload: {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        verdict: 'keep',
+        source: 'manual',
+        undoToken: null,
+        affectedCount: 0,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const rows = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.policyType).toBe('keep');
+    // Keep ≠ Protect (manifest keep docstring) — modifiers untouched.
+    expect(rows[0]!.isProtected).toBe(false);
+    expect(rows[0]!.isVip).toBe(false);
+  });
+
+  it('a non-keep verdict event is valid but projects nothing', async () => {
+    await consume({
+      id: 'evt-keep-2',
+      topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000006',
+      payload: {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_A,
+        verdict: 'archive',
+        source: 'manual',
+        undoToken: null,
+        affectedCount: 4,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const rows = await db.select().from(senderPolicies);
+    expect(rows).toHaveLength(0);
+  });
 });

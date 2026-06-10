@@ -66,6 +66,35 @@ export interface UnsubscribeIntentResult {
   activityLogId: string;
 }
 
+/**
+ * Keep-intent request shape — `POST /api/actions/keep-intent`.
+ *
+ * Records the user's Keep verdict for a sender (D40 — "Keep applies
+ * immediately, records sender_policy(policy_type=keep)"). Keep is
+ * policy/verdict-only per the Action Registry (manifest-entries.ts:
+ * `keep.execution.kind === 'policy-only'`): no Gmail mutation, no
+ * worker job, no undo token. Wired for the Triage daily ritual (D29 /
+ * D226) so a Keep decision durably leaves the queue.
+ */
+export const keepIntentRequestSchema = z
+  .object({
+    senderId: z.string().uuid(),
+  })
+  .strict();
+export type KeepIntentRequest = z.infer<typeof keepIntentRequestSchema>;
+
+/**
+ * Keep-intent response — mirrors `UnsubscribeIntentResult` so the FE
+ * intent hooks share one shape.
+ */
+export interface KeepIntentResult {
+  senderId: string;
+  /** ISO timestamp the verdict was recorded. */
+  recordedAt: string;
+  /** activity_log.id of the keep decision row (fresh or replayed). */
+  activityLogId: string;
+}
+
 // Derived from the canonical pg_enum so adding a status is a single
 // migration edit. The contract block at the bottom of this file asserts
 // the API type matches the shared zero-server-dep mirror.
