@@ -122,6 +122,58 @@ export function createRedisConnection(redisUrl: string): Redis {
 }
 
 /**
+ * Idle-poll ceiling for user-facing queues — env tuning can lower the
+ * re-poll below this but never raise it past 10s, so pickup stays
+ * snappy even on a fat-fingered env value.
+ */
+const USER_FACING_DRAIN_DELAY_MAX_SEC = 10;
+
+/** Parse a positive number from env; fall back on unset/garbage. */
+function envNumber(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Env-tunable polling opts shared by every BullMQ `Worker` (2026-06-10
+ * Upstash command-volume audit). An idle Worker burns 2 Redis commands
+ * per `drainDelay` — at bullmq's 5s default the 7 always-on workers
+ * cost ~242K idle commands/day, ~91% of the Upstash bill.
+ *
+ * Job pickup latency is NOT drainDelay-bound: `Queue.add` writes the
+ * `{queue}:marker` zset, which immediately unblocks the worker's
+ * blocking pop — `drainDelay` is only the idle re-poll safety net.
+ * `stalledInterval` only affects crash-recovery latency (re-queue of a
+ * job whose worker died mid-run), never healthy-path latency.
+ *
+ * Two profiles:
+ *   - `user-facing` (initial-sync, incremental-sync, score,
+ *     label-action): drainDelay clamped ≤10s; stalled check kept tight.
+ *   - `cron` (brief-snapshot, undo-expiry, senders-counter-
+ *     reconciliation): scheduler-driven, slow polling costs nothing.
+ *
+ * `drainDelay` is in SECONDS (bullmq's unit); `stalledInterval` in ms.
+ */
+export function workerTuningOptions(
+  profile: 'user-facing' | 'cron',
+  env: NodeJS.ProcessEnv = process.env,
+): { drainDelay: number; stalledInterval: number } {
+  if (profile === 'cron') {
+    return {
+      drainDelay: envNumber(env.WORKER_CRON_DRAIN_DELAY_SEC, 60),
+      stalledInterval: envNumber(env.WORKER_CRON_STALLED_INTERVAL_MS, 300_000),
+    };
+  }
+  return {
+    drainDelay: Math.min(
+      envNumber(env.WORKER_DRAIN_DELAY_SEC, USER_FACING_DRAIN_DELAY_MAX_SEC),
+      USER_FACING_DRAIN_DELAY_MAX_SEC,
+    ),
+    stalledInterval: envNumber(env.WORKER_STALLED_INTERVAL_MS, 60_000),
+  };
+}
+
+/**
  * Job options for an initial-sync enqueue.
  *
  * `jobId = mailboxAccountId` is the `perMailboxPolicy` idempotency key:

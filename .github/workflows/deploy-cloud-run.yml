@@ -201,6 +201,11 @@ jobs:
           # service stays request-only because it IS HTTP-driven.
           # Memory bumped to 2Gi + CPU 2 for the larger Drizzle/BullMQ
           # working set during initial-sync's listMessageIds pages.
+          #
+          # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
+          # tuning (2026-06-10 Upstash command-volume audit): user-facing
+          # queues poll at 10s/60s, cron queues at 60s/5min. See
+          # `workerTuningOptions` in `packages/workers/src/queue.ts`.
           gcloud run deploy declutrmail-worker \
             --image="$IMAGE" \
             --region="$REGION" \
@@ -216,7 +221,7 @@ jobs:
             --no-allow-unauthenticated \
             --command="node" \
             --args="src/worker.ts" \
-            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|REASONING_RATE_PER_MIN=400|WORKER_SENTRY_ENABLED=true" \
+            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|REASONING_RATE_PER_MIN=400|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=10|WORKER_STALLED_INTERVAL_MS=60000|WORKER_CRON_DRAIN_DELAY_SEC=60|WORKER_CRON_STALLED_INTERVAL_MS=300000" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest" \
             --quiet
 

@@ -38,6 +38,7 @@ import {
   UNDO_EXPIRY_QUEUE,
   UndoExpiryWorker,
   ValidationError,
+  workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
   BriefSnapshotJobData,
@@ -483,6 +484,19 @@ async function bootstrap(): Promise<void> {
   const connection = createRedisConnection(requireEnv('REDIS_URL'));
   bootStep('redis_connection_done');
 
+  // BullMQ idle-poll tuning (2026-06-10 Upstash command-volume audit).
+  // Resolved once; spread into every Worker constructor below. Pickup
+  // latency is unaffected — `Queue.add` unblocks the worker's blocking
+  // pop immediately via the `{queue}:marker` zset — so user-facing
+  // queues stay snappy while cron queues poll slowly. See
+  // `workerTuningOptions` in `packages/workers/src/queue.ts`.
+  const userFacingTuning = workerTuningOptions('user-facing');
+  const cronTuning = workerTuningOptions('cron');
+  // Echo effective values so a misconfigured env (e.g. cron drainDelay
+  // back at 5s, silently re-inflating Redis command volume) is
+  // diagnosable from boot logs instead of the Upstash bill.
+  bootStep('worker_tuning_resolved', { userFacingTuning, cronTuning });
+
   // Score-queue PRODUCER (D25 sync_complete trigger). The initial sync
   // enqueues one all-senders score sweep here once the sender index is
   // built, so `triage_decisions` populate after a fresh sync. The
@@ -513,7 +527,7 @@ async function bootstrap(): Promise<void> {
     (job) => initialSync.run(job),
     // concurrency = D203 global queue cap; per-mailbox=1 is enforced by
     // the `jobId = mailboxAccountId` dedup in `initialSyncJobOptions`.
-    { connection, concurrency: 20 },
+    { connection, concurrency: 20, ...userFacingTuning },
   );
 
   bullWorker.on('error', (err) => {
@@ -533,7 +547,7 @@ async function bootstrap(): Promise<void> {
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
     (job) => incrementalSync.run(job),
-    { connection, concurrency: 20 },
+    { connection, concurrency: 20, ...userFacingTuning },
   );
   incrementalBullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
@@ -613,7 +627,7 @@ async function bootstrap(): Promise<void> {
     // a single job. Outer concurrency=1 keeps ticks from overlapping
     // — D69's per-mailbox UNIQUE makes overlap safe, but skipping
     // duplicate work is cheaper.
-    { connection, concurrency: 1 },
+    { connection, concurrency: 1, ...cronTuning },
   );
 
   briefSnapshotBullWorker.on('error', (err) => {
@@ -666,7 +680,7 @@ async function bootstrap(): Promise<void> {
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
     (job) => scoreWorker.run(job),
-    { connection, concurrency: 20 },
+    { connection, concurrency: 20, ...userFacingTuning },
   );
 
   scoreBullWorker.on('error', (err) => {
@@ -702,7 +716,7 @@ async function bootstrap(): Promise<void> {
     (job) => labelActionWorker.run(job),
     // Bounded to the dedicated `lockPg` pool size — every job holds one
     // advisory-lock connection for its full duration.
-    { connection, concurrency: LABEL_ACTION_CONCURRENCY },
+    { connection, concurrency: LABEL_ACTION_CONCURRENCY, ...userFacingTuning },
   );
 
   labelActionBullWorker.on('error', (err) => {
@@ -927,7 +941,7 @@ async function bootstrap(): Promise<void> {
     // cronPolicy is global-scope; one DELETE per tick is cheap, so
     // concurrency=1 prevents overlapping ticks from racing the same
     // jobId-deduped pass.
-    { connection, concurrency: 1 },
+    { connection, concurrency: 1, ...cronTuning },
   );
 
   undoExpiryBullWorker.on('error', (err) => {
@@ -958,6 +972,7 @@ async function bootstrap(): Promise<void> {
   >(SENDERS_COUNTER_RECONCILIATION_QUEUE, (job) => sendersCounterReconciliationWorker.run(job), {
     connection,
     concurrency: 1,
+    ...cronTuning,
   });
 
   sendersCounterReconciliationBullWorker.on('error', (err) => {

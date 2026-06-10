@@ -26,6 +26,39 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-10 — Confirm Upstash Fixed plan + enable usage notifications
+**Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
+**Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. The Fixed plan ($10/mo flat, 250MB) removes the command cap. The payment method was being added at session close; the plan flip itself may still be pending.
+**How:**
+1. https://console.upstash.com/ → the DeclutrMail Redis database → confirm the payment method saved.
+2. Database → Choose Plan → select **Fixed 250MB** ($10/mo flat).
+3. Upstash console → account/billing settings → enable usage **email notifications** so any future approach to a plan limit emails the founder instead of silently rejecting commands.
+**Verifies by:** `bullmq.error` lines stop appearing in the worker logs (`gcloud logging read … jsonPayload.kind="bullmq.error"` returns nothing new) + `worker.listening` for all 5 queues resumes on the next worker boot.
+**Status:** Open
+
+### 2026-06-10 — Create vendor API tokens for the limits watchdog
+**Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)
+**Why:** The vendor-limits watchdog can only report usage for vendors it can authenticate against. Without these tokens every vendor reports UNCONFIGURED and the watchdog is blind — the exact gap that let Upstash quota exhaustion run unalerted for ~41h.
+**How:** create each token at the vendor console, then store it as a GH Actions secret:
+1. `UPSTASH_EMAIL` + `UPSTASH_API_KEY` — Upstash console → Account → Management API (https://console.upstash.com/account/api) → create API key. Then `gh secret set UPSTASH_EMAIL` + `gh secret set UPSTASH_API_KEY`.
+2. `ANTHROPIC_ADMIN_KEY` — Anthropic console → Settings → Admin keys (https://console.anthropic.com/settings/admin-keys) → create admin key (usage/billing read). Then `gh secret set ANTHROPIC_ADMIN_KEY`.
+3. `VERCEL_TOKEN` + `VERCEL_TEAM_ID` — Vercel → Account Settings → Tokens (https://vercel.com/account/tokens) → create token. Then `gh secret set VERCEL_TOKEN` + `gh secret set VERCEL_TEAM_ID`. The billing endpoint is team-scoped, so the check needs BOTH and only works on a team/Pro plan — **skip this step while on Hobby** (the check stays UNCONFIGURED, which is correct).
+4. `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` — Sentry → Settings → Auth Tokens → org-scoped token with org:read (a build-time token already exists per `docs/runbooks/secrets-inventory.md` — verify its scope covers org usage reads, reuse if so). Then `gh secret set SENTRY_AUTH_TOKEN` + `gh secret set SENTRY_ORG` (the org slug).
+5. `POSTHOG_API_KEY` + `POSTHOG_PROJECT_ID` — PostHog → Settings → Personal API keys → create key (billing read). Then `gh secret set POSTHOG_API_KEY` + `gh secret set POSTHOG_PROJECT_ID` (the numeric project id).
+6. `GH_BILLING_PAT` — GitHub → Settings → Developer settings → Fine-grained personal access tokens → new token with the **"Plan: read-only"** permission. Then `gh secret set GH_BILLING_PAT`.
+**Verifies by:** a vendor-limits-watchdog run shows each of those vendors as OK instead of UNCONFIGURED.
+**Status:** Open
+
+### 2026-06-10 — Enable vendor-side hard caps: Vercel Spend Management + PostHog billing limit + Sentry spike protection
+**Source:** session 2026-06-10 (Upstash billing incident — every metered vendor needs its own cap, not just GCP)
+**Why:** The Upstash incident showed what an uncapped/unalerted vendor limit does: the free tier enforced itself by silently killing the service for ~41h. On usage-billed vendors the same gap manifests as open-ended spend instead. Vendor-side caps turn a runaway into a bounded, alerting event.
+**How:**
+1. Vercel → Team → Settings → Billing → **Spend Management** → set a monthly spend amount + enable the "pause projects" action on breach.
+2. PostHog → Organization → Billing → set a **billing limit** on each metered product (events, recordings).
+3. Sentry → Settings → Subscription → confirm **Spike Protection** is enabled for the projects (on by default for new orgs — verify, don't assume).
+**Verifies by:** each console shows the cap/limit setting populated and enabled (settings page visible).
+**Status:** Open
+
 ### 2026-06-09 — Rewrite 8 skipped senders-screen tests post spec v1.2 D4 retirement
 **Source:** session 2026-06-09 (pre-merge gate-clearing for feat/d038-prod-ready-pass)
 **Why:** Eight `it.skip`'d tests in `apps/web/src/features/senders/senders-screen.test.tsx` cover functionality that was deliberately retired per spec v1.2 Decision 4 (Editorial Hero / InboxStoryHero + WeeklyHero moved to Brief). They've been failing on `feat/d038-prod-ready-pass` since long before the 2026-06-09 ultra-review fix slate landed (verified by checking out `e44201d` before any of my changes — same 8 fails). Skipping was the pragmatic path to unblock the CI gate; rewriting needs design clarity on which assertions still matter. The retired tests:

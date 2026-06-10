@@ -1,0 +1,75 @@
+# Vendor-limits watchdog (D156).
+#
+# Runs daily at 13:00 UTC (~6:30pm IST). Reads usage vs limits per
+# external vendor (Supabase, GCP, Upstash, Anthropic, Vercel, Sentry,
+# PostHog, GitHub Actions) via scripts/check-vendor-limits.mjs. A
+# failed workflow run = email to the founder via GH's "Send
+# notifications for failed workflows" setting — same alert channel as
+# the sync-stuck watchdog.
+#
+# Secrets resolve to empty strings when absent, which the script maps
+# to UNCONFIGURED (skipped, listed in the run summary). The watchdog is
+# useful from day 1 with only SUPABASE_SESSION_DSN and gets better as
+# the founder adds vendor tokens.
+#
+# GCP check activation (currently UNCONFIGURED by design): the org
+# policy blocks JSON SA keys, so it needs a google-github-actions/auth
+# WIF step here (exports GOOGLE_APPLICATION_CREDENTIALS) + a SA holding
+# `roles/billing.viewer` on the billing account + the
+# GCP_BILLING_ACCOUNT_ID secret.
+
+name: Vendor limits watchdog
+
+on:
+  schedule:
+    # Daily 13:00 UTC. GitHub may delay cron by several minutes under
+    # platform load — irrelevant for a daily spend check.
+    - cron: '0 13 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vendor-limits-watchdog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install psql
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client
+
+      - name: Check vendor limits
+        env:
+          # Day-1 working check (secret already exists for the
+          # sync-stuck watchdog + Atlas migrations).
+          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+          # Cred-gated checks — add the secret to activate each one.
+          GCP_BILLING_ACCOUNT_ID: ${{ secrets.GCP_BILLING_ACCOUNT_ID }}
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+          ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # Fine-grained PAT, "Plan: read-only" permission. The default
+          # GITHUB_TOKEN cannot read billing. GH_BILLING_ACCOUNT
+          # defaults to GITHUB_REPOSITORY_OWNER inside Actions.
+          GH_BILLING_PAT: ${{ secrets.GH_BILLING_PAT }}
+        run: node scripts/check-vendor-limits.mjs
