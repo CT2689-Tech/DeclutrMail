@@ -35,7 +35,7 @@ import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
-import { adaptSenderDetail } from '../api/adapters';
+import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
@@ -661,7 +661,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     setPolicy.mutate(
       { senderId: sender.id, patch: { isVip: next } },
       {
-        onSuccess: () => toast(next ? 'Marked VIP' : 'Removed VIP mark', 'success'),
+        onSuccess: (res) => {
+          // Reconcile from the server result — the persisted row is
+          // authoritative (the optimistic flip matches it today, but
+          // `protectionReason` is derived server-side).
+          setDetail((d) => ({
+            ...d,
+            isVip: res.isVip,
+            isProtected: res.isProtected,
+            protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
+          }));
+          toast(next ? 'Marked VIP' : 'Removed VIP mark', 'success');
+        },
         onError: (err) => {
           setDetail((d) => ({ ...d, isVip: !next }));
           captureFeatureException(err, { surface: 'senders', reason: 'policy_vip' });
@@ -683,7 +694,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     setPolicy.mutate(
       { senderId: sender.id, patch: { isProtected: next } },
       {
-        onSuccess: () => toast(next ? 'Protected' : 'Unprotected', 'success'),
+        onSuccess: (res) => {
+          // Reconcile from the server result (see toggleVip).
+          setDetail((d) => ({
+            ...d,
+            isVip: res.isVip,
+            isProtected: res.isProtected,
+            protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
+          }));
+          toast(next ? 'Protected' : 'Unprotected', 'success');
+        },
         onError: (err) => {
           setDetail((d) => ({ ...d, isProtected: !next, protectionReason: prevReason }));
           captureFeatureException(err, { surface: 'senders', reason: 'policy_protect' });
