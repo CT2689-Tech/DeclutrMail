@@ -29,6 +29,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   }),
 }));
 
+import { ToastHost } from '@declutrmail/shared';
 import { SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -61,6 +62,18 @@ function renderScreen() {
   return render(
     <QueryWrapper client={client}>
       <SendersScreen />
+    </QueryWrapper>,
+  );
+}
+
+/** Like `renderScreen`, with the shared `ToastHost` mounted so tests can
+ * assert toast copy (the app layout mounts it at the root). */
+function renderScreenWithToasts() {
+  const client = createTestQueryClient();
+  return render(
+    <QueryWrapper client={client}>
+      <SendersScreen />
+      <ToastHost />
     </QueryWrapper>,
   );
 }
@@ -684,6 +697,76 @@ describe('SendersScreen — edge states', () => {
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 
+  it('never advertises more sample subjects than the real total in "Show what will move" (live smoke 2026-06-09)', async () => {
+    // The disclosure used to hardcode "(5 of N)" — a sender with 3 mails
+    // rendered "Show what will move (5 of 3)". The label must read the
+    // ACTUAL sample length, trimmed to the bucket total, even when the
+    // wire returns more subjects than the count (drift defense).
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 3,
+              },
+              counts: {
+                all: 3,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              recentSubjects: {
+                // 5 subjects against a count of 3 — deliberate drift.
+                all: [
+                  'Subject one',
+                  'Subject two',
+                  'Subject three',
+                  'Subject four',
+                  'Subject five',
+                ],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // X = sample rows actually shown, Y = the real total; X <= Y always.
+    const disclosure = await screen.findByText(/show what will move \(3 of 3\)/i);
+    fireEvent.click(disclosure);
+    expect(screen.getByText('Subject one')).toBeInTheDocument();
+    expect(screen.getByText('Subject three')).toBeInTheDocument();
+    expect(screen.queryByText('Subject four')).toBeNull();
+    expect(screen.queryByText('Subject five')).toBeNull();
+  });
+
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
       weeklyHeroHandler(),
@@ -765,9 +848,10 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
 
-  it('no-ops a verb shortcut when the selection has no eligible senders', async () => {
+  it('explains why instead of opening a preview when no selected sender is eligible (D226)', async () => {
     // A standing-protected sender is ineligible for every bulk verb, so
-    // the eligible filter is empty and no preview opens.
+    // the eligible filter is empty. No preview opens — but the verb
+    // press must not be a SILENT no-op: a toast says why.
     const PROTECTED = {
       ...ROW,
       id: 'p',
@@ -789,12 +873,15 @@ describe('SendersScreen — edge states', () => {
           }),
       },
     ]);
-    renderScreen();
+    renderScreenWithToasts();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select protected co/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     expect(screen.queryByText(/unsubscribe from/i)).toBeNull();
+    expect(
+      await screen.findByText(/protected co is protected — unprotect it first/i),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1096,6 +1183,90 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(deleteBtn);
     // The click routes through the SAME mandatory preview.
     expect(await screen.findByText(/delete mail from 1 sender/i)).toBeInTheDocument();
+  });
+
+  const PROTECTED_B = {
+    ...ROW_B,
+    displayName: 'Protected Co',
+    protectionFlags: { ...ROW.protectionFlags, isProtected: true, protectionReason: 'manual' },
+  };
+
+  it('states how many senders the eligibility gate skipped, and why (D226 honesty)', async () => {
+    // Live smoke 2026-06-09: "2 senders selected" in the bar silently
+    // became "1 sender" in the sheet when one was protected. The preview
+    // must state the narrowing, never leave the user to spot it.
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW, PROTECTED_B],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+      },
+    ]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select protected co/i }));
+    expect(screen.getByText(/senders selected/i)).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    // The preview covers the 1 eligible sender AND says what it dropped.
+    await screen.findByText(/archive all mail from 1 sender/i);
+    expect(
+      screen.getByText(/1 protected sender skipped — unprotect to include it/i),
+    ).toBeInTheDocument();
+  });
+
+  it('toasts instead of opening a preview when the whole selection is protected', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                ...ROW,
+                displayName: 'Shielded A',
+                protectionFlags: {
+                  ...ROW.protectionFlags,
+                  isProtected: true,
+                  protectionReason: 'manual',
+                },
+              },
+              { ...PROTECTED_B, displayName: 'Shielded B' },
+            ],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select shielded a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select shielded b/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    // No (empty) preview opens; the toast explains the no-op.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      await screen.findByText(/all 2 selected senders are protected — unprotect to include them/i),
+    ).toBeInTheDocument();
   });
 });
 

@@ -16,6 +16,7 @@ import {
   canLater,
   canUnsubscribe,
   detectCohorts,
+  isStandingProtected,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
@@ -1089,6 +1090,51 @@ function SendersScreenContent({
     [performAction],
   );
 
+  // Bulk verbs (SelectionBar buttons + the selection-scoped shortcuts)
+  // share this one dispatch so the ELIGIBLE narrowing is never silent
+  // (D226 honesty): a partial drop rides the request for the preview to
+  // state ("N selected" must never silently become "1 sender" in the
+  // sheet), and a full drop explains itself in a toast instead of
+  // opening an empty preview.
+  const requestBulkAction = useCallback(
+    (verb: keyof typeof ELIGIBLE) => {
+      const eligible = selectedSenders.filter(ELIGIBLE[verb]);
+      if (eligible.length === 0) {
+        if (selectedSenders.length === 0) return;
+        const n = selectedSenders.length;
+        // Standing protection gates every bulk verb; the only other gate
+        // is Unsubscribe's people rule (canUnsubscribe), so a non-
+        // protected drop here can only mean primary-group senders.
+        const allProtected = selectedSenders.every(isStandingProtected);
+        toast(
+          allProtected
+            ? n === 1
+              ? `${selectedSenders[0]!.name} is protected — unprotect it first`
+              : `All ${n} selected senders are protected — unprotect to include them`
+            : n === 1
+              ? `${selectedSenders[0]!.name} is a person — Unsubscribe doesn't apply`
+              : 'Nothing to unsubscribe — these senders are protected or people',
+          'warn',
+        );
+        return;
+      }
+      const skippedTotal = selectedSenders.length - eligible.length;
+      if (skippedTotal === 0) {
+        requestAction({ verb, senders: eligible });
+        return;
+      }
+      const protectedCount = selectedSenders.filter(
+        (s) => !ELIGIBLE[verb](s) && isStandingProtected(s),
+      ).length;
+      requestAction({
+        verb,
+        senders: eligible,
+        skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
+      });
+    },
+    [selectedSenders, requestAction],
+  );
+
   const closePending = useCallback(() => setPendingAction(null), []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
@@ -1119,11 +1165,11 @@ function SendersScreenContent({
       const verb = VERB_BY_KEY[e.key.toLowerCase()];
       if (!verb) return;
       e.preventDefault();
-      requestAction({ verb, senders: selectedSenders.filter(ELIGIBLE[verb]) });
+      requestBulkAction(verb);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedSenders, requestAction]);
+  }, [selectedSenders, requestBulkAction]);
 
   const closeReview = useCallback(() => setReview(null), []);
   const applyReview = useCallback(
@@ -1485,7 +1531,7 @@ function SendersScreenContent({
         <SelectionBar
           senders={selectedSenders}
           onClear={() => setSelected(new Set())}
-          onAct={(verb) => requestAction({ verb, senders: selectedSenders.filter(ELIGIBLE[verb]) })}
+          onAct={requestBulkAction}
           busy={enqueueBulk.isPending}
         />
       )}

@@ -374,12 +374,43 @@ export function ConfirmActionModal({
   // so the panel never blanks during the load flash. Bulk flow (>1
   // sender) hides the panel entirely — per-sender drilldown is a
   // separate ticket.
+  //
+  // The sample is trimmed to the bucket's REAL total at the source —
+  // the fixture pool (and any wire drift) must never offer more rows
+  // than the count it previews (live smoke 2026-06-09 saw "5 of 3").
+  // 5 stays the display cap (the BE's per-bucket sample size); the
+  // disclosure label and the panel rows both read THIS array so the
+  // advertised count always equals what expanding shows.
   const subjectsFromWire =
     senders.length === 1
       ? pickBucketSubjects(compositePreview?.recentSubjects, olderThanDays)
       : undefined;
   const subjectsPreview =
-    senders.length === 1 ? (subjectsFromWire ?? sampleSubjects(senders[0]!)) : [];
+    senders.length === 1
+      ? (subjectsFromWire ?? sampleSubjects(senders[0]!)).slice(0, Math.min(5, compositeCount ?? 5))
+      : [];
+
+  // D226 honesty — when the eligibility gate narrowed the selection
+  // before this preview opened, say so: the user saw "N selected" in
+  // the bar and must not wonder why the sheet covers fewer senders.
+  const skippedNote = (() => {
+    const skipped = request.skipped;
+    if (!skipped) return null;
+    const parts: string[] = [];
+    if (skipped.protectedCount > 0) {
+      const p = skipped.protectedCount;
+      parts.push(
+        `${p} protected sender${p === 1 ? '' : 's'} skipped — unprotect to include ${p === 1 ? 'it' : 'them'}`,
+      );
+    }
+    if (skipped.peopleCount > 0) {
+      const q = skipped.peopleCount;
+      parts.push(
+        `${q === 1 ? '1 person' : `${q} people`} skipped — Unsubscribe doesn't apply to people`,
+      );
+    }
+    return parts.length > 0 ? parts.join(' · ') : null;
+  })();
 
   return (
     <>
@@ -482,6 +513,19 @@ export function ConfirmActionModal({
           >
             {lead}
           </p>
+          {skippedNote && (
+            <p
+              style={{
+                fontFamily: font.mono,
+                fontSize: 10.5,
+                color: color.fgMuted,
+                letterSpacing: '0.04em',
+                margin: '8px 0 0',
+              }}
+            >
+              {skippedNote}
+            </p>
+          )}
         </div>
 
         {/* Recovery banner (spec v1.2 Decision 15 — top of body). Tone
@@ -879,7 +923,7 @@ export function ConfirmActionModal({
               >
                 {showSubjects
                   ? 'Hide what will move ▴'
-                  : `Show what will move (5 of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
+                  : `Show what will move (${subjectsPreview.length.toLocaleString()} of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
               </button>
             )}
             {showSubjects && subjectsPreview.length > 0 && (
@@ -895,7 +939,7 @@ export function ConfirmActionModal({
                   marginTop: 4,
                 }}
               >
-                {subjectsPreview.slice(0, 5).map((s, i) => (
+                {subjectsPreview.map((s, i) => (
                   <div
                     key={i}
                     style={{
