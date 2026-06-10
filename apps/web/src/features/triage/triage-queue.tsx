@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import type { PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
 import { useTriageStore } from './store';
@@ -25,10 +26,20 @@ const { color, font } = tokens;
 export function TriageQueue({
   rows,
   onAction,
+  busyRowId = null,
+  previewInboxCount = 'loading',
 }: {
   rows: readonly TriageDecisionRow[];
   /** Dispatched when a row's toolbar fires K/A/U/L. */
   onAction: (verb: ActionVerb, row: TriageDecisionRow) => void;
+  /**
+   * Row whose decision is confirming server-side (D226 — the row
+   * stays in the queue, rendered busy, until the server confirms and
+   * the refetch drops it). `null` when nothing is in flight.
+   */
+  busyRowId?: string | null;
+  /** Live inbox count for the inline preview's impact figure (D226). */
+  previewInboxCount?: PreviewCount;
 }) {
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
@@ -79,13 +90,18 @@ export function TriageQueue({
             pendingAction != null &&
             pendingAction.rowId === row.id &&
             pendingAction.surface === 'inline'
-              ? { verb: pendingAction.verb, archiveHistoric: pendingAction.verb === 'Unsubscribe' }
+              ? {
+                  verb: pendingAction.verb,
+                  archiveHistoric: pendingAction.verb === 'Unsubscribe',
+                  inboxCount: previewInboxCount,
+                }
               : null;
           return (
             <div key={row.id} role="listitem">
               <TriageRow
                 row={row}
                 expanded={expanded}
+                busy={busyRowId === row.id}
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}

@@ -2,13 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
+import { useAuth } from '@/features/auth/auth-provider';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
+import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
-import type {
-  TriageDecisionRow,
-  TriageScreenState,
-  TriageSessionStats,
-} from '@/features/triage/data';
+import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 
 /**
  * Triage daily ritual route (D29, D33, D207).
@@ -28,11 +26,30 @@ import type {
 export default function TriagePage() {
   useConnectResultToast();
 
+  const { me } = useAuth();
   const queue = useTriageQueue();
   const stats = useTriageStats();
 
-  const state = composeState(queue.data, stats.data, queue.isLoading || stats.isLoading);
-  return <TriageScreen state={state} />;
+  const state = composeTriageState({
+    rows: queue.data,
+    stats: stats.data,
+    isLoading: queue.isLoading || stats.isLoading,
+    isError: queue.isError || stats.isError,
+    error: queue.error ?? stats.error,
+    retry: () => {
+      void queue.refetch();
+      void stats.refetch();
+    },
+  });
+  return (
+    <>
+      <TriageScreen state={state} />
+      {/* D35 — the persistent undo tray lives on the triage surface
+          across EVERY state (it must survive the queue emptying). The
+          (app) layout guarantees an active mailbox on this route. */}
+      {me.activeMailboxId != null && <TriageUndoTray mailboxAccountId={me.activeMailboxId} />}
+    </>
+  );
 }
 
 /** Human copy for each `connect_error` code the BE can redirect with. */
@@ -74,18 +91,4 @@ function useConnectResultToast(): void {
     const qs = params.toString();
     window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
   }, []);
-}
-
-function composeState(
-  rows: TriageDecisionRow[] | undefined,
-  stats: TriageSessionStats | undefined,
-  isLoading: boolean,
-): TriageScreenState {
-  if (isLoading || !stats) {
-    return { kind: 'loading' };
-  }
-  if (!rows || rows.length === 0) {
-    return { kind: 'empty', stats };
-  }
-  return { kind: 'ready', rows: [...rows], stats };
 }
