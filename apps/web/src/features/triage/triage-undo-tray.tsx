@@ -9,7 +9,7 @@ import type { UndoTrayDataSource, UndoTrayEntry } from '@declutrmail/shared';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
-import { useActionStatus, useRevertUndo } from '@/features/senders/api/use-action';
+import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
 

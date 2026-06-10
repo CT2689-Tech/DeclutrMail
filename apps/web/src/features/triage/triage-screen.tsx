@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
+// Cross-feature query-key imports are deliberate (not a D198/D199
+// boundary breach): each feature owns its keys, and exports them as the
+// invalidation contract other features use to mark its caches stale
+// after a mutation. Only the keys cross the boundary — never behavior.
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import {
@@ -11,7 +15,7 @@ import {
   useCompositePreview,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
-} from '@/features/senders/api/use-action';
+} from '@/lib/api/use-action';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { ApiError } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';

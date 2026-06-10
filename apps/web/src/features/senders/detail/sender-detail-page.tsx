@@ -29,7 +29,7 @@ import {
   useRecordUnsubscribeIntent,
   useActionStatus,
   useRevertUndo,
-} from '../api/use-action';
+} from '@/lib/api/use-action';
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
