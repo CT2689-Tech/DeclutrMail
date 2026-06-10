@@ -18,11 +18,15 @@ import { RateLimit } from '../common/rate-limit/index.js';
 import { ActionsService } from './actions.service.js';
 import {
   archiveRequestSchema,
+  bulkPreviewRequestSchema,
   compositeActionRequestSchema,
   unsubscribeIntentRequestSchema,
   type ActionEnqueueResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
+  type BatchStatusResult,
+  type BulkActionEnqueueResult,
+  type BulkActionPreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
   type UnsubscribeIntentResult,
@@ -136,7 +140,7 @@ export class ActionsController {
     @CurrentMailbox() mailbox: { id: string },
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() body: unknown,
-  ): Promise<Envelope<CompositeActionEnqueueResult>> {
+  ): Promise<Envelope<CompositeActionEnqueueResult | BulkActionEnqueueResult>> {
     if (!idempotencyKey || idempotencyKey.trim().length < 8) {
       throw new BadRequestException({
         code: 'IDEMPOTENCY_KEY_REQUIRED',
@@ -151,6 +155,22 @@ export class ActionsController {
       });
     }
     const req = parsed.data;
+    // D52 multi-sender bulk — same endpoint per ADR-0020 ("Bulk variant").
+    // Fans out server-side; the response is the batch handle the FE polls
+    // at GET /api/actions/batch/:batchId. The bulk surface has no
+    // Protected-override affordance, so no `override` is threaded.
+    if (req.selector.type === 'senders') {
+      const result = await this.actions.enqueueBulkComposite({
+        mailboxAccountId: mailbox.id,
+        senderIds: req.selector.senderIds,
+        primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+        secondary: req.secondary
+          ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
+          : undefined,
+        idempotencyKey: idempotencyKey.trim(),
+      });
+      return ok(result);
+    }
     const result = await this.actions.enqueueComposite({
       mailboxAccountId: mailbox.id,
       selector: req.selector,
@@ -241,6 +261,55 @@ export class ActionsController {
       mailboxAccountId: mailbox.id,
       senderId,
     });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/preview/bulk — aggregated multi-sender preview
+   * (D52 + ADR-0020 "Bulk variant"). POST because a 1,000-sender
+   * selection does not fit a query string; the call is READ-ONLY
+   * (no mutation, no enqueue). CsrfGuard kept so every POST under
+   * /actions carries the double-submit token uniformly.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Post('preview/bulk')
+  @UseGuards(CsrfGuard)
+  async bulkPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<BulkActionPreviewResult>> {
+    const parsed = bulkPreviewRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid bulk preview request.',
+      });
+    }
+    const result = await this.actions.previewBulkComposite({
+      mailboxAccountId: mailbox.id,
+      senderIds: parsed.data.senderIds,
+    });
+    return ok(result);
+  }
+
+  /**
+   * GET /api/actions/batch/:id — aggregate status for a multi-sender
+   * batch (D52). One poll covers every sibling row (anchor +
+   * `composite_id` children) instead of N per-row polls. Same poll
+   * rate-limit as the per-row status route. Mailbox-scoped → 404 if
+   * not owned. Declared before `:id` so the two-segment path is
+   * unambiguous.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Get('batch/:id')
+  async batchStatus(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<BatchStatusResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'id must be a UUID.' });
+    }
+    const result = await this.actions.getBatchStatus(id, mailbox.id);
     return ok(result);
   }
 

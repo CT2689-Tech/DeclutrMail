@@ -25,6 +25,10 @@ import type {
   ActionStatusResult,
   ArchivePreviewResult,
   ArchiveSelector,
+  BatchStatusResult,
+  BulkActionEnqueueResult,
+  BulkActionPreviewResult,
+  BulkPreviewBuckets,
   CompositeActionEnqueueResult,
   CompositeActionPreviewResult,
   CompositePrimaryVerb,
@@ -522,6 +526,359 @@ export class ActionsService {
       primaryCount: primaryRow.row.requestedCount,
       secondaryCount: secondaryRow.row.requestedCount,
     };
+  }
+
+  /**
+   * Bulk preview (D52 + ADR-0020 "Bulk variant") — per-sender breakdown
+   * + aggregate bucket counts across an explicit selection, so the D226
+   * preview for a multi-sender action states REAL numbers.
+   *
+   * Ownership: ids are resolved against the current mailbox; unknown /
+   * cross-mailbox ids drop silently (the forged-id-drop convention).
+   * `totals` excludes Protected/VIP senders because `enqueueBulkComposite`
+   * skips them — the preview must equal what the mutation will do. The
+   * per-sender rows keep protected senders (flagged) so the modal can
+   * show WHY a sender is excluded.
+   *
+   * Counts mirror the worker's resolver (`resolveSenderInboxIds`:
+   * mailbox + senderKey + INBOX + window) via ONE grouped query.
+   */
+  async previewBulkComposite(input: {
+    mailboxAccountId: string;
+    senderIds: string[];
+  }): Promise<BulkActionPreviewResult> {
+    const { mailboxAccountId } = input;
+    const uniqueIds = [...new Set(input.senderIds)];
+    const rows = await this.db
+      .select({
+        id: senders.id,
+        senderKey: senders.senderKey,
+        displayName: senders.displayName,
+      })
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), inArray(senders.id, uniqueIds)));
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    const keys = rows.map((r) => r.senderKey);
+
+    const protectedKeys = await this.protectedSenderKeys(mailboxAccountId, keys);
+
+    const ZERO: BulkPreviewBuckets = {
+      all: 0,
+      olderThan30d: 0,
+      olderThan90d: 0,
+      olderThan180d: 0,
+      olderThan365d: 0,
+    };
+    const countRows =
+      keys.length === 0
+        ? []
+        : await this.db
+            .select({
+              senderKey: mailMessages.senderKey,
+              all: sql<number>`count(*)::int`,
+              olderThan30d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '30 days')::int`,
+              olderThan90d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '90 days')::int`,
+              olderThan180d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '180 days')::int`,
+              olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
+            })
+            .from(mailMessages)
+            .where(
+              and(
+                eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                inArray(mailMessages.senderKey, keys),
+                sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+              ),
+            )
+            .groupBy(mailMessages.senderKey);
+    const countsByKey = new Map(countRows.map((r) => [r.senderKey, r] as const));
+
+    const totals: BulkPreviewBuckets = { ...ZERO };
+    const senderResults: BulkActionPreviewResult['senders'] = [];
+    // Walk the request order (deduped) so the FE's lozenge list maps
+    // positionally onto the user's selection.
+    for (const id of uniqueIds) {
+      const row = byId.get(id);
+      if (!row) continue; // unknown / cross-mailbox — dropped
+      const raw = countsByKey.get(row.senderKey);
+      const counts: BulkPreviewBuckets = raw
+        ? {
+            all: toCount(raw.all),
+            olderThan30d: toCount(raw.olderThan30d),
+            olderThan90d: toCount(raw.olderThan90d),
+            olderThan180d: toCount(raw.olderThan180d),
+            olderThan365d: toCount(raw.olderThan365d),
+          }
+        : { ...ZERO };
+      const isProtected = protectedKeys.has(row.senderKey);
+      if (!isProtected) {
+        totals.all += counts.all;
+        totals.olderThan30d += counts.olderThan30d;
+        totals.olderThan90d += counts.olderThan90d;
+        totals.olderThan180d += counts.olderThan180d;
+        totals.olderThan365d += counts.olderThan365d;
+      }
+      senderResults.push({
+        senderId: id,
+        name: row.displayName,
+        counts,
+        protected: isProtected,
+      });
+    }
+
+    return {
+      senders: senderResults,
+      totals,
+      protectedCount: senderResults.filter((s) => s.protected).length,
+    };
+  }
+
+  /**
+   * Multi-sender bulk enqueue (D52 + ADR-0020 "Bulk variant"). Fans the
+   * composite out to ONE `action_jobs` row per sender (plus one per
+   * sender for an optional secondary), so each sender is its own BullMQ
+   * job — one sender failing in the worker can never poison the batch.
+   *
+   * Batch linkage: the first actionable sender's primary row is the
+   * ANCHOR (`composite_id = NULL`, self-implicit); every other row —
+   * the remaining primaries AND all secondaries — carries
+   * `composite_id = anchor.id`. That flat one-level grouping is exactly
+   * what `enqueueCompositeRevert` walks (`id = anchor OR composite_id =
+   * anchor`), so ONE undo token reverts the whole batch, and
+   * `getBatchStatus` aggregates it with one query.
+   *
+   * Per-sender failure isolation at the ENQUEUE boundary: a sender that
+   * is Protected/VIP or no longer resolvable is SKIPPED (reported in
+   * `skipped`), never a batch-wide 409 — the single-sender override
+   * affordance does not exist on the bulk surface, and one stale row in
+   * the selection must not block the other N-1 decisions. When the
+   * whole selection is skipped there is nothing to enqueue → 409
+   * `NO_ACTIONABLE_SENDERS`.
+   *
+   * Idempotency: ONE client `Idempotency-Key` per bulk click; per-row
+   * keys derive deterministically as `${verb}-${key}-${senderId}` (+
+   * `-sec` for secondaries). Sender ids are sorted so a network-retried
+   * POST maps onto the SAME anchor + rows (insertJob dedups per row; no
+   * double-enqueue).
+   */
+  async enqueueBulkComposite(input: {
+    mailboxAccountId: string;
+    senderIds: string[];
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    secondary?:
+      | { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined }
+      | undefined;
+    idempotencyKey: string;
+  }): Promise<BulkActionEnqueueResult> {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+    const { mailboxAccountId, primary, secondary, idempotencyKey } = input;
+
+    // Sorted + deduped — the anchor must be deterministic across a
+    // network-retried POST with the same Idempotency-Key.
+    const uniqueIds = [...new Set(input.senderIds)].sort();
+    const rows = await this.db
+      .select({ id: senders.id, senderKey: senders.senderKey })
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), inArray(senders.id, uniqueIds)));
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    const protectedKeys = await this.protectedSenderKeys(
+      mailboxAccountId,
+      rows.map((r) => r.senderKey),
+    );
+
+    const skipped: BulkActionEnqueueResult['skipped'] = [];
+    const actionable: Array<{ id: string; senderKey: string }> = [];
+    for (const id of uniqueIds) {
+      const row = byId.get(id);
+      if (!row) {
+        skipped.push({ senderId: id, reason: 'not_found' });
+      } else if (protectedKeys.has(row.senderKey)) {
+        skipped.push({ senderId: id, reason: 'protected' });
+      } else {
+        actionable.push(row);
+      }
+    }
+    if (actionable.length === 0) {
+      throw new ConflictException({
+        code: 'NO_ACTIONABLE_SENDERS',
+        message: 'Every selected sender is Protected/VIP or no longer exists.',
+      });
+    }
+
+    // Per-sender counts for each verb's window — ONE grouped query per
+    // window, not N queries.
+    const keys = actionable.map((r) => r.senderKey);
+    const primaryCounts = await this.countSenderInboxGrouped(
+      mailboxAccountId,
+      keys,
+      primary.olderThanDays ?? null,
+    );
+    const secondaryCounts = secondary
+      ? await this.countSenderInboxGrouped(mailboxAccountId, keys, secondary.olderThanDays ?? null)
+      : null;
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    let anchorId: string | null = null;
+    let status: ActionJobStatus = 'queued';
+    let requestedTotal = 0;
+
+    for (const sender of actionable) {
+      const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
+      const primaryRow = await this.insertJob({
+        mailboxAccountId,
+        verb: primary.type,
+        direction: 'forward',
+        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+        resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
+        requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
+        idempotencyKey: primaryKey,
+        olderThanDays: primary.olderThanDays ?? null,
+        compositeId: anchorId, // null only for the anchor itself
+      });
+      if (anchorId === null) {
+        anchorId = primaryRow.row.id;
+        status = primaryRow.row.status;
+      }
+      if (!primaryRow.existing) {
+        await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryKey);
+      }
+      requestedTotal += primaryRow.row.requestedCount;
+
+      if (secondary) {
+        const secondaryKey = `${secondary.type}-${safeKey}-${sender.id}-sec`;
+        const secondaryRow = await this.insertJob({
+          mailboxAccountId,
+          verb: secondary.type,
+          direction: 'forward',
+          selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+          resolvedMessageIds: [],
+          requestedCount: secondaryCounts?.get(sender.senderKey) ?? 0,
+          idempotencyKey: secondaryKey,
+          olderThanDays: secondary.olderThanDays ?? null,
+          compositeId: anchorId,
+        });
+        if (!secondaryRow.existing) {
+          await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryKey);
+        }
+      }
+    }
+
+    return {
+      batchId: anchorId!,
+      status,
+      senderCount: actionable.length,
+      requestedTotal,
+      skipped,
+    };
+  }
+
+  /**
+   * Aggregate a batch's forward siblings into one pollable status (D52).
+   * Siblings = the anchor row (`id = batchId`) plus every row whose
+   * `composite_id = batchId` — the same group `enqueueCompositeRevert`
+   * walks, so the `undoToken` returned here cascade-reverts the batch.
+   * Mailbox-scoped → 404 for an unowned / unknown id.
+   */
+  async getBatchStatus(batchId: string, mailboxAccountId: string): Promise<BatchStatusResult> {
+    const rows = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+          sql`(${actionJobs.id} = ${batchId} OR ${actionJobs.compositeId} = ${batchId})`,
+        ),
+      );
+    if (rows.length === 0) {
+      throw new NotFoundException({ code: 'ACTION_NOT_FOUND', message: 'Action not found.' });
+    }
+    const total = rows.length;
+    const done = rows.filter((r) => r.status === 'done').length;
+    const failed = rows.filter((r) => r.status === 'failed').length;
+    const terminal = done + failed === total;
+    const anyProgress = done + failed > 0 || rows.some((r) => r.status === 'executing');
+    const status: ActionJobStatus = terminal
+      ? failed === total
+        ? 'failed'
+        : 'done'
+      : anyProgress
+        ? 'executing'
+        : 'queued';
+    const anchor = rows.find((r) => r.id === batchId);
+    const undoToken =
+      anchor?.undoToken ?? rows.map((r) => r.undoToken).find((t) => t !== null) ?? null;
+    return {
+      batchId,
+      status,
+      total,
+      done,
+      failed,
+      requestedCount: rows.reduce((sum, r) => sum + r.requestedCount, 0),
+      affectedCount: rows.reduce((sum, r) => sum + r.affectedCount, 0),
+      undoToken,
+    };
+  }
+
+  /**
+   * The Protected/VIP `sender_key`s among `senderKeys` for this mailbox
+   * (D42 defense-in-depth, read-only per D204). One query for the whole
+   * selection — shared by the bulk preview + bulk enqueue so the two
+   * can never disagree on who is skipped.
+   */
+  private async protectedSenderKeys(
+    mailboxAccountId: string,
+    senderKeys: string[],
+  ): Promise<Set<string>> {
+    if (senderKeys.length === 0) return new Set();
+    const rows = await this.db
+      .select({
+        senderKey: senderPolicies.senderKey,
+        isProtected: senderPolicies.isProtected,
+        isVip: senderPolicies.isVip,
+      })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          inArray(senderPolicies.senderKey, senderKeys),
+        ),
+      );
+    return new Set(rows.filter((r) => r.isProtected || r.isVip).map((r) => r.senderKey));
+  }
+
+  /**
+   * Per-sender INBOX counts narrowed by an optional time-window — the
+   * grouped sibling of `countSenderInboxWithWindow` for the bulk
+   * fan-out. Mirrors the worker resolver's predicates so each row's
+   * `requestedCount` matches what its job will actually move.
+   */
+  private async countSenderInboxGrouped(
+    mailboxAccountId: string,
+    senderKeys: string[],
+    olderThanDays: number | null,
+  ): Promise<Map<string, number>> {
+    if (senderKeys.length === 0) return new Map();
+    const predicates = [
+      eq(mailMessages.mailboxAccountId, mailboxAccountId),
+      inArray(mailMessages.senderKey, senderKeys),
+      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+    ];
+    if (olderThanDays !== null) {
+      predicates.push(
+        sql`${mailMessages.internalDate} <= now() - (${olderThanDays} || ' days')::interval`,
+      );
+    }
+    const rows = await this.db
+      .select({ senderKey: mailMessages.senderKey, n: count() })
+      .from(mailMessages)
+      .where(and(...predicates))
+      .groupBy(mailMessages.senderKey);
+    return new Map(rows.map((r) => [r.senderKey, toCount(r.n)]));
   }
 
   /**

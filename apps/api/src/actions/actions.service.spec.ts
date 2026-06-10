@@ -90,18 +90,38 @@ async function seedSender(db: Db, mailboxAccountId: string): Promise<string> {
   return s!.id;
 }
 
+/** Second distinct sender for the D52 multi-sender (bulk) cases. */
+const SENDER_KEY_2 = 'c'.repeat(64);
+
+async function seedSecondSender(db: Db, mailboxAccountId: string): Promise<string> {
+  const [s] = await db
+    .insert(senders)
+    .values({
+      mailboxAccountId,
+      senderKey: SENDER_KEY_2,
+      email: 'promo@brand.example',
+      domain: 'brand.example',
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2026-01-01'),
+      lastSeenAt: new Date('2026-05-01'),
+    })
+    .returning({ id: senders.id });
+  return s!.id;
+}
+
 async function seedMessage(
   db: Db,
   mailboxAccountId: string,
   pid: string,
   labels: string[],
   internalDate: Date = new Date('2026-05-01'),
+  senderKey: string = SENDER_KEY,
 ): Promise<void> {
   await db.insert(mailMessages).values({
     mailboxAccountId,
     providerMessageId: pid,
     providerThreadId: `t-${pid}`,
-    senderKey: SENDER_KEY,
+    senderKey,
     internalDate,
     isUnread: false,
     labelIds: labels,
@@ -697,6 +717,397 @@ describe('ActionsService', () => {
           token: '00000000-0000-4000-8000-000000000000',
         }),
       ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+    });
+  });
+
+  describe('previewBulkComposite (D52 aggregated preview)', () => {
+    it('aggregates bucket counts across the selection with a per-sender breakdown', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      // Sender 1: two INBOX messages (5d + 100d) and one archived (excluded).
+      await seedMessage(db, mailboxId, 's1-recent', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's1-old', ['INBOX'], daysAgo(100));
+      await seedMessage(db, mailboxId, 's1-archived', ['CATEGORY_PROMOTIONS'], daysAgo(10));
+      // Sender 2: one ancient INBOX message.
+      await seedMessage(db, mailboxId, 's2-ancient', ['INBOX'], daysAgo(400), SENDER_KEY_2);
+
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+      });
+
+      expect(res.totals).toEqual({
+        all: 3,
+        olderThan30d: 2, // 100d + 400d
+        olderThan90d: 2,
+        olderThan180d: 1, // 400d only
+        olderThan365d: 1,
+      });
+      // Per-sender breakdown follows the request order.
+      expect(res.senders.map((s) => s.senderId)).toEqual([senderId, sender2Id]);
+      expect(res.senders[0]!.counts.all).toBe(2);
+      expect(res.senders[1]!.counts.all).toBe(1);
+      expect(res.protectedCount).toBe(0);
+      // Preview never enqueues — it's a read.
+      expect(queue.count).toBe(0);
+    });
+
+    it('excludes Protected/VIP senders from totals but keeps them flagged in the breakdown', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-m', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's2-m', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_2,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+      });
+      // The enqueue will SKIP the protected sender, so the aggregate must
+      // exclude it — preview ≡ what will actually move.
+      expect(res.totals.all).toBe(1);
+      expect(res.protectedCount).toBe(1);
+      const protectedRow = res.senders.find((s) => s.senderId === sender2Id);
+      expect(protectedRow!.protected).toBe(true);
+      expect(protectedRow!.counts.all).toBe(1); // shown, just not totalled
+    });
+
+    it('drops forged / cross-mailbox sender ids silently', async () => {
+      await seedMessage(db, mailboxId, 's1-m', ['INBOX'], daysAgo(5));
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, '00000000-0000-4000-8000-000000000000'],
+      });
+      expect(res.senders).toHaveLength(1);
+      expect(res.senders[0]!.senderId).toBe(senderId);
+    });
+  });
+
+  describe('enqueueBulkComposite (D52 multi-sender fan-out)', () => {
+    it('fans out one row per sender linked to the anchor, with per-sender counts + keys', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's1-b', ['INBOX'], daysAgo(10));
+      await seedMessage(db, mailboxId, 's2-a', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-click-1',
+      });
+
+      expect(res.senderCount).toBe(2);
+      expect(res.requestedTotal).toBe(3);
+      expect(res.skipped).toEqual([]);
+      expect(res.status).toBe('queued');
+      expect(queue.count).toBe(2);
+      // Deterministic per-sender keys — `${verb}-${key}-${senderId}`.
+      expect([...queue.jobIds].sort()).toEqual(
+        [`archive-bulk-click-1-${senderId}`, `archive-bulk-click-1-${sender2Id}`].sort(),
+      );
+
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(2);
+      const anchor = rows.find((r) => r.id === res.batchId);
+      const other = rows.find((r) => r.id !== res.batchId);
+      expect(anchor!.compositeId).toBeNull(); // anchor is self-implicit
+      expect(other!.compositeId).toBe(anchor!.id); // sibling points at the anchor
+      // Per-sender requestedCount, not a shared total.
+      const bySelector = new Map(
+        rows.map((r) => [(r.selector as { senderId: string }).senderId, r] as const),
+      );
+      expect(bySelector.get(senderId)!.requestedCount).toBe(2);
+      expect(bySelector.get(sender2Id)!.requestedCount).toBe(1);
+    });
+
+    it('is idempotent on a repeated Idempotency-Key (same batch, no double enqueue)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+      const first = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-same-key',
+      });
+      const second = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [sender2Id, senderId], // order shuffled — same selection
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-same-key',
+      });
+      expect(second.batchId).toBe(first.batchId);
+      expect(queue.count).toBe(2); // no re-enqueue on replay
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(2);
+    });
+
+    it('skips a Protected sender without poisoning the rest of the batch', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's2-a', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_2,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'delete', olderThanDays: null },
+        idempotencyKey: 'bulk-prot-1',
+      });
+      expect(res.senderCount).toBe(1);
+      expect(res.skipped).toEqual([{ senderId: sender2Id, reason: 'protected' }]);
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(1); // ONLY the unprotected sender got a row
+      expect((rows[0]!.selector as { senderId: string }).senderId).toBe(senderId);
+    });
+
+    it('reports unknown ids as not_found and 409s when nothing is actionable', async () => {
+      const forged = '00000000-0000-4000-8000-000000000000';
+      // Mixed: one real, one forged → batch proceeds, forged reported.
+      const partial = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, forged],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-mixed-1',
+      });
+      expect(partial.skipped).toEqual([{ senderId: forged, reason: 'not_found' }]);
+      expect(partial.senderCount).toBe(1);
+
+      // All-skipped → 409, no rows written.
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await expect(
+        svc.enqueueBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, forged],
+          primary: { type: 'archive' },
+          idempotencyKey: 'bulk-none-1',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'NO_ACTIONABLE_SENDERS' } });
+    });
+
+    it('fans a secondary out per sender, linked to the SAME batch anchor', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-recent', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's1-old', ['INBOX'], daysAgo(400));
+      await seedMessage(db, mailboxId, 's2-old', ['INBOX'], daysAgo(400), SENDER_KEY_2);
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'later' },
+        secondary: { type: 'delete', olderThanDays: 365 },
+        idempotencyKey: 'bulk-comp-1',
+      });
+
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(4); // 2 primaries + 2 secondaries
+      // Flat one-level linkage: every non-anchor row points at the anchor,
+      // so ONE undo token cascades the whole batch (ADR-0020).
+      const anchor = rows.find((r) => r.id === res.batchId)!;
+      expect(anchor.compositeId).toBeNull();
+      for (const row of rows.filter((r) => r.id !== anchor.id)) {
+        expect(row.compositeId).toBe(anchor.id);
+      }
+      const secondaries = rows.filter((r) => r.verb === 'delete');
+      expect(secondaries).toHaveLength(2);
+      // Secondary windows narrow per sender: s1 has one 365d+ message, s2 has one.
+      for (const sec of secondaries) {
+        expect(sec.olderThanDays).toBe(365);
+        expect(sec.requestedCount).toBe(1);
+      }
+      expect(queue.count).toBe(4);
+    });
+
+    it('returns 503 when the queue is unavailable', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      const noQueue = new ActionsService(db as never, null);
+      await expect(
+        noQueue.enqueueBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          primary: { type: 'archive' },
+          idempotencyKey: 'bulk-noredis',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'QUEUE_UNAVAILABLE' } });
+    });
+  });
+
+  describe('getBatchStatus (D52 aggregate poll)', () => {
+    /** Build a 2-sender archive batch and return its handle + row ids. */
+    async function seedBatch(): Promise<{
+      batchId: string;
+      anchorId: string;
+      otherId: string;
+    }> {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's2-a', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-batch-1',
+      });
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      const other = rows.find((r) => r.id !== res.batchId)!;
+      return { batchId: res.batchId, anchorId: res.batchId, otherId: other.id };
+    }
+
+    it('walks queued → executing → done as siblings progress', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+
+      let status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status).toMatchObject({ batchId, status: 'queued', total: 2, done: 0, failed: 0 });
+
+      await db.update(actionJobs).set({ status: 'executing' }).where(eq(actionJobs.id, anchorId));
+      status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status.status).toBe('executing');
+
+      // Anchor completes with an undo token; sibling completes after.
+      const [u] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['s1-a'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1, undoToken: u!.token })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.id, otherId));
+
+      status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status).toMatchObject({
+        status: 'done',
+        total: 2,
+        done: 2,
+        failed: 0,
+        affectedCount: 2,
+        undoToken: u!.token,
+      });
+    });
+
+    it('reports a partial failure as done + failed count (isolation, never poisoned)', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      const [u] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['s1-a'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1, undoToken: u!.token })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'GmailError' })
+        .where(eq(actionJobs.id, otherId));
+
+      const status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status).toMatchObject({
+        status: 'done', // terminal; partial failure surfaces via `failed`
+        done: 1,
+        failed: 1,
+        affectedCount: 1,
+        undoToken: u!.token, // the succeeded sender remains undoable
+      });
+    });
+
+    it('reports all-failed as failed', async () => {
+      const { batchId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'GmailError' })
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      const status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status.status).toBe('failed');
+      expect(status.undoToken).toBeNull();
+    });
+
+    it('is mailbox-scoped (404 for a foreign mailbox)', async () => {
+      const { batchId } = await seedBatch();
+      await expect(
+        svc.getBatchStatus(batchId, '00000000-0000-0000-0000-000000000000'),
+      ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+    });
+
+    it('batch undo cascades across senders via the batch token (ADR-0020)', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      // Both siblings complete with their own undo tokens.
+      const [u1] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['s1-a'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      const [u2] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: ['s2-a'], priorLabels: ['INBOX'] },
+        })
+        .returning({ token: undoJournal.token });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1, undoToken: u1!.token })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1, undoToken: u2!.token })
+        .where(eq(actionJobs.id, otherId));
+      queue.count = 0;
+      queue.jobIds = [];
+
+      // The FE undoes with the batch token (= anchor's). The cascade must
+      // reach EVERY sender's forward row, not just the anchor's.
+      const status = await svc.getBatchStatus(batchId, mailboxId);
+      const reverts = await svc.enqueueCompositeRevert({
+        mailboxAccountId: mailboxId,
+        token: status.undoToken!,
+      });
+      expect(reverts).toHaveLength(2);
+      expect([...queue.jobIds].sort()).toEqual(
+        [`revert-${u1!.token}`, `revert-${u2!.token}`].sort(),
+      );
     });
   });
 
