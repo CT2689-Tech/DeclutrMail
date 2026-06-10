@@ -244,6 +244,27 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
 
+  // Server-truth re-seed: `useState(initial)` ignores prop updates after
+  // mount, so a refetch delivering DIVERGED data (policy changed in
+  // another tab / another session on the same mailbox) would otherwise
+  // be silently dropped until remount — the mutation-result reconciles
+  // in the handlers below only cover divergence caused by THIS tab's
+  // own writes. Re-seed whenever a new `initial` arrives (its identity
+  // changes per refetch via the `adapted` useMemo), EXCEPT while a
+  // policy write is in flight: the optimistic flip owns the chip until
+  // the mutation settles, and the post-settle invalidation refetch
+  // re-seeds with the committed row anyway. The ref guard keeps
+  // `isPending` flipping false from re-seeding a stale (pre-write)
+  // `initial` over the server-confirmed onSuccess reconcile — only a
+  // genuinely NEW fetch result seeds.
+  const lastSeededRef = useRef(initial);
+  useEffect(() => {
+    if (lastSeededRef.current === initial) return;
+    if (setPolicy.isPending) return;
+    lastSeededRef.current = initial;
+    setDetail(initial);
+  }, [initial, setPolicy.isPending]);
+
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
 
   // Fact-based Volume signal (spec v1.2 Decision 6 — ban editorial

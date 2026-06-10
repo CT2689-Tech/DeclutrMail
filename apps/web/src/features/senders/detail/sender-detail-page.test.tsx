@@ -347,6 +347,65 @@ describe('SenderDetailRoute', () => {
       );
     });
 
+    it('re-seeds header policy state when a refetch returns diverged data (cross-tab change)', async () => {
+      // Another tab / session marks this sender VIP. The detail query
+      // refetch must surface the server value without a remount —
+      // `useState(initial)` alone would silently drop it.
+      let serverIsVip = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                ...DETAIL,
+                protectionFlags: { ...DETAIL.protectionFlags, isVip: serverIsVip },
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/messages$/,
+          respond: () =>
+            jsonOk({
+              data: [MESSAGE],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: TIMESERIES }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/history$/,
+          respond: () =>
+            jsonOk({
+              data: [HISTORY_ROW],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SenderDetailRoute id="linkedin" />
+        </QueryWrapper>,
+      );
+      await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
+
+      // Server diverges, then any invalidation-driven refetch lands.
+      serverIsVip = true;
+      await client.invalidateQueries();
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument(),
+      );
+    });
+
     it('Keep verb PATCHes { policyType: "keep" } (D40 — applies immediately, no preview)', async () => {
       installHappyPath();
       let capturedBody: unknown = null;
