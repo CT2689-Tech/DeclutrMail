@@ -103,7 +103,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
-| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | ⬜ |  |  |  |
+| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  |  |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
