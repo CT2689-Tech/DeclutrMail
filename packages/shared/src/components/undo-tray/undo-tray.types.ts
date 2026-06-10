@@ -20,13 +20,14 @@ export interface UndoTrayEntry {
 }
 
 /**
- * Hook contract — the tray reads tokens, knows how to revert one.
+ * Injection contract — the tray reads tokens, knows how to revert one.
+ * Built by the host app on its own API client (CSRF, base URL,
+ * 401-refresh); see `apps/web/src/features/triage/triage-undo-tray.tsx`.
  *
- * `isError` + `error` are optional for backwards-compatibility with
- * static dataSource overrides (tests, Storybook) that don't simulate
- * failure. The TanStack-backed `useUndoTray` (D200) supplies both so
- * the tray can render a distinct error state — network failure must
- * NOT silently collapse the tray into the empty state (D211).
+ * `isError` + `error` are optional for static sources (tests,
+ * Storybook) that don't simulate failure. Live sources should supply
+ * both so the tray can render a distinct error state — network failure
+ * must NOT silently collapse the tray into the empty state (D211).
  */
 export interface UndoTrayDataSource {
   /** Active tokens for the current mailbox, newest first (D35). */

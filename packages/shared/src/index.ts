@@ -86,8 +86,9 @@ export type {
 export { ToastHost, toast } from './components/toast';
 export type { ToastTone } from './components/toast';
 
-// Persistent undo tray (D35, D58) + its data-source hook.
-export { UndoTray, useUndoTray } from './components/undo-tray';
+// Persistent undo tray (D35, D58). Data is injected via the
+// `dataSource` prop — the host app owns transport (CSRF, base URL).
+export { UndoTray } from './components/undo-tray';
 export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './components/undo-tray';
 
 // D166 — skeleton-first loading primitives + composite skeletons

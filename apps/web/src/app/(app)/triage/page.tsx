@@ -47,7 +47,7 @@ export default function TriagePage() {
       {/* D35 — the persistent undo tray lives on the triage surface
           across EVERY state (it must survive the queue emptying). The
           (app) layout guarantees an active mailbox on this route. */}
-      {me.activeMailboxId != null && <TriageUndoTray mailboxAccountId={me.activeMailboxId} />}
+      {me.activeMailboxId != null && <TriageUndoTray />}
     </>
   );
 }
