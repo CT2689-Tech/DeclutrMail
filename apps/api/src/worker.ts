@@ -34,9 +34,12 @@ import {
   SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   SendersCounterReconciliationWorker,
+  FETCH_UNSUB_HTTP_PORT,
   UNDO_EXPIRY_INTERVAL_MS,
   UNDO_EXPIRY_QUEUE,
   UndoExpiryWorker,
+  UNSUB_EXECUTION_QUEUE,
+  UnsubExecutionWorker,
   ValidationError,
 } from '@declutrmail/workers';
 import type {
@@ -57,6 +60,8 @@ import type {
   SendersCounterReconciliationResult,
   UndoExpiryJobData,
   UndoExpiryResult,
+  UnsubExecutionJobData,
+  UnsubExecutionResult,
 } from '@declutrmail/workers';
 
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
@@ -222,6 +227,17 @@ async function bootstrap(): Promise<void> {
   // away instead of "worker silently never logs `worker.listening`".
   auditRequiredEnv();
   bootStep('env_audit_complete');
+
+  // Boot-refusal (mirrors the DEV_AUTH_ENABLED guard in main.ts):
+  // `UNSUB_ALLOW_INSECURE_TARGETS` lets the unsub executor POST to
+  // plain-http / loopback targets for LOCAL smoke only. In production
+  // it would soften the SSRF posture, so the process refuses to start.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.UNSUB_ALLOW_INSECURE_TARGETS === 'true'
+  ) {
+    throw new Error('UNSUB_ALLOW_INSECURE_TARGETS must never be set when NODE_ENV=production.');
+  }
 
   // D159: initialise Sentry before anything else so the worker process —
   // including the boot-time reconciler sweep — has the SDK installed for
@@ -711,6 +727,43 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: LABEL_ACTION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * UnsubExecutionWorker consumer (D9 Wave 2). Executes RFC 8058
+   * one-click unsubscribes for senders whose intent was recorded
+   * against a `one_click` method. Producer side lives in
+   * `ActionsModule` (POST /api/actions/unsubscribe-intent). No Gmail
+   * client, no advisory lock — the worker POSTs to third-party list
+   * processors and writes its terminal tx against `pg`. Retry budget
+   * is the worker's own (`UNSUB_MAX_ATTEMPTS = 2`, network errors
+   * only) — a 4xx/5xx from the target is terminal on attempt 1.
+   * Modest concurrency: unsubscribes are click-paced, not a
+   * throughput path.
+   */
+  const unsubExecutionWorker = new UnsubExecutionWorker({
+    db,
+    http: FETCH_UNSUB_HTTP_PORT,
+    outbox: new OutboxPublisher(),
+    allowInsecureTargets: process.env.UNSUB_ALLOW_INSECURE_TARGETS === 'true',
+  });
+  unsubExecutionWorker.setObserver(observer);
+
+  const unsubExecutionBullWorker = new Worker<UnsubExecutionJobData, UnsubExecutionResult>(
+    UNSUB_EXECUTION_QUEUE,
+    (job) => unsubExecutionWorker.run(job),
+    { connection, concurrency: 5 },
+  );
+
+  unsubExecutionBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: UNSUB_EXECUTION_QUEUE,
         message: err.message,
       }),
     );
@@ -1278,6 +1331,7 @@ async function bootstrap(): Promise<void> {
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
       await labelActionBullWorker.close();
+      await unsubExecutionBullWorker.close();
       await undoExpiryBullWorker.close();
       await undoExpirySchedulerQueue.close();
       await sendersCounterReconciliationBullWorker.close();

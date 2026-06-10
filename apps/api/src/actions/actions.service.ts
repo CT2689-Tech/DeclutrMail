@@ -14,8 +14,14 @@ import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 // are explicitly allowed.
 import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import type { LabelActionSelector } from '@declutrmail/db';
-import { LABEL_ACTION_JOB, labelActionJobOptions, OutboxPublisher } from '@declutrmail/workers';
-import type { LabelActionJobData } from '@declutrmail/workers';
+import {
+  LABEL_ACTION_JOB,
+  labelActionJobOptions,
+  OutboxPublisher,
+  UNSUB_EXECUTION_JOB,
+  unsubExecutionJobOptions,
+} from '@declutrmail/workers';
+import type { LabelActionJobData, UnsubExecutionJobData } from '@declutrmail/workers';
 import {
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   TOPICS,
@@ -65,6 +71,14 @@ export const ACTION_QUEUE_TOKEN = 'ACTION_QUEUE';
 /** NestJS DI token for the OutboxPublisher singleton (D204). */
 export const OUTBOX_PUBLISHER_TOKEN = 'OUTBOX_PUBLISHER';
 
+/**
+ * NestJS DI token for the unsub-execution BullMQ queue (D9 Wave 2).
+ * Separate queue from the label-action pipeline: its consumer
+ * (`UnsubExecutionWorker`) POSTs to third-party RFC 8058 endpoints,
+ * not Gmail, and runs a tighter retry budget.
+ */
+export const UNSUB_QUEUE_TOKEN = 'UNSUB_QUEUE';
+
 @Injectable()
 export class ActionsService {
   private readonly outbox: OutboxPublisher;
@@ -86,6 +100,13 @@ export class ActionsService {
     // `new ActionsService(db, queue)` test wiring (no third arg) keeps
     // working unchanged.
     @Optional() outbox?: OutboxPublisher,
+    // Unsub-execution queue (D9 Wave 2). Same fail-open `Queue | null`
+    // contract as the label queue; `@Optional()` + trailing position so
+    // the existing `new ActionsService(db, queue)` test wiring keeps
+    // working unchanged.
+    @Optional()
+    @Inject(UNSUB_QUEUE_TOKEN)
+    private readonly unsubQueue: Queue<UnsubExecutionJobData> | null = null,
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
   }
@@ -921,27 +942,37 @@ export class ActionsService {
    * enqueue and the preview so both resolve identically.
    */
   /**
-   * Record the user's intent to unsubscribe from a sender (D38 +
-   * 2026-06-05 brainstorm). Unlike Archive/Delete/Later, this is NOT a
-   * Gmail mutation — the real RFC8058/mailto/manual pipeline lands per
-   * D230 in a follow-up. For now, we:
+   * Record the user's intent to unsubscribe from a sender (D38) AND —
+   * D9 Wave 2 — turn it into execution where a tracked channel exists:
    *
-   *   1. Upsert `sender_policies.policy_type='unsubscribe'` so the
-   *      Sender Detail surface can render a "Unsub queued" pill and the
-   *      future pipeline knows which senders to process.
+   *   1. Upsert `sender_policies.policy_type='unsubscribe'`, with
+   *      `unsub_status='pending'` when the sender is `one_click`
+   *      (the senders list/detail chips read this).
    *   2. Write a 0-affected `activity_log` row (`action='unsubscribe'`,
    *      `source='manual'`, `undo_token=null`) so /activity reflects
-   *      the DECISION — same precedent as Keep and the just-shipped
-   *      0-affected fix in label-action.worker.ts.
+   *      the DECISION — same precedent as Keep.
+   *   3. `one_click` senders only: persist an execution `action_jobs`
+   *      row + enqueue the RFC 8058 one-click job for
+   *      `UnsubExecutionWorker`. The returned `executionActionId` is
+   *      the FE's poll handle. Idempotency: ONE execution per intent —
+   *      the execution row's key derives deterministically from the
+   *      client `Idempotency-Key` (`unsubexec-<key>`), so a
+   *      network-retried POST maps onto the same row + the same BullMQ
+   *      jobId. A FRESH click (new key) is a new decision and a new
+   *      attempt — deliberate: re-clicking after a failure retries.
+   *   4. `mailto` senders: NO execution (D230 hard guardrail — manual
+   *      only; the user sends the opt-out from Gmail). The response
+   *      carries `mailtoUrl` so the FE renders the compose deep link.
+   *   5. `none`: decision recorded; nothing to execute.
+   *
+   * D58: no undo token is ever issued for the unsub itself.
    *
    * Autopilot is NOT blocked — pending unsub ≠ guaranteed unsub. If the
-   * brand ignores the future unsub, Autopilot still archives the new
-   * mail. If the brand honours it, no new mail arrives and Autopilot
-   * doesn't fire. User wins either way (founder design 2026-06-05).
+   * brand ignores the unsub, Autopilot still archives the new mail.
    *
    * Privacy (D7, D228). No body, snippet, or non-allowlisted header —
-   * the endpoint only writes the sender key + policy_type and the
-   * verb + count. Wire shape mirrors the existing intent endpoints.
+   * sender key + policy fields + the already-stored List-Unsubscribe
+   * URL derivative (ADR-0004 allowlist).
    */
   async recordUnsubscribeIntent(input: {
     mailboxAccountId: string;
@@ -949,7 +980,42 @@ export class ActionsService {
     idempotencyKey: string;
   }): Promise<UnsubscribeIntentResult> {
     const { mailboxAccountId, senderId, idempotencyKey } = input;
-    const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
+    const [senderRow] = await this.db
+      .select({
+        senderKey: senders.senderKey,
+        unsubscribeMethod: senders.unsubscribeMethod,
+        unsubscribeUrl: senders.unsubscribeUrl,
+      })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!senderRow) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+    const senderKey = senderRow.senderKey;
+    // ADR-0006 invariant: `(method, url)` always agree. Defensive
+    // narrowing anyway — a one_click row missing its URL degrades to
+    // 'none' rather than enqueueing a job that can only fail.
+    const method: 'one_click' | 'mailto' | 'none' =
+      senderRow.unsubscribeMethod === 'one_click' && senderRow.unsubscribeUrl
+        ? 'one_click'
+        : senderRow.unsubscribeMethod === 'mailto' && senderRow.unsubscribeUrl
+          ? 'mailto'
+          : 'none';
+    const mailtoUrl = method === 'mailto' ? senderRow.unsubscribeUrl : null;
+
+    // Fail BEFORE any write when the execution can't be enqueued —
+    // recording a 'pending' status with no job behind it would be the
+    // exact stuck-state CLAUDE.md §10 bans.
+    if (method === 'one_click' && !this.unsubQueue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Unsubscribe queue unavailable — REDIS_URL is not set.',
+      });
+    }
 
     // DB-level idempotency dedup (FOUNDER-FOLLOWUPS 2026-06-05; landed
     // via migration 0024 that extends `action_verb` with 'unsubscribe').
@@ -973,6 +1039,11 @@ export class ActionsService {
     //     the worker-driven verbs use, so /api/actions/:id readers don't
     //     need a special case.
     const namespacedKey = `unsub:${idempotencyKey}`;
+    // The execution row's key derives from the SAME client key — a
+    // retried POST resolves to the same execution (one per intent).
+    // `-` separator because the key doubles as the BullMQ jobId
+    // (BullMQ rejects ':' in custom ids).
+    const executionKey = `unsubexec-${idempotencyKey.replace(/:/g, '-')}`;
     const cachedRows = await this.db
       .select({
         resolvedMessageIds: actionJobs.resolvedMessageIds,
@@ -987,14 +1058,24 @@ export class ActionsService {
       // The replay path keeps the original `recordedAt` so the FE timeline
       // doesn't drift if a slow retry lands days later.
       const activityLogId = cached.resolvedMessageIds[0]!;
+      // Replay also re-projects the execution handle (if one was
+      // persisted) so the retried caller can resume polling.
+      const [execution] = await this.db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, executionKey))
+        .limit(1);
       return {
         senderId,
         recordedAt: cached.createdAt.toISOString(),
         activityLogId,
+        method,
+        executionActionId: execution?.id ?? null,
+        mailtoUrl,
       };
     }
 
-    return await this.db.transaction(async (tx) => {
+    const txResult = await this.db.transaction(async (tx) => {
       // D204 boundary fix (2026-06-06). `sender_policies` is owned by
       // the senders feature, so ActionsService MUST NOT write it
       // directly. We emit an outbox event inside this same transaction;
@@ -1014,17 +1095,23 @@ export class ActionsService {
       // Architecture-guardian: the cross-feature signal IS the event;
       // the direct write below is a temporary backstop, not the
       // permanent contract.
+      // `unsub_status` (D9 Wave 2): 'pending' when a one-click execution
+      // is about to be enqueued; NULL otherwise (the mailto path is
+      // manual per D230 — no claimed outcome — and re-intents reset any
+      // stale status from a prior derivation era).
       await tx
         .insert(senderPolicies)
         .values({
           mailboxAccountId,
           senderKey,
           policyType: 'unsubscribe',
+          unsubStatus: method === 'one_click' ? 'pending' : null,
         })
         .onConflictDoUpdate({
           target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
           set: {
             policyType: 'unsubscribe',
+            unsubStatus: method === 'one_click' ? 'pending' : null,
             updatedAt: sql`now()`,
           },
         });
@@ -1077,6 +1164,32 @@ export class ActionsService {
         })
         .onConflictDoNothing({ target: actionJobs.idempotencyKey });
 
+      // D9 Wave 2 — the EXECUTION row (one_click only). Distinct from
+      // the dedup row above: this one has a worker behind it.
+      // `status='queued'`; `UnsubExecutionWorker` flips it terminal.
+      // `requested_count=1` — an unsub acts on ONE sender, not on
+      // messages. Same-tx as the intent so the audit row and the job
+      // commit or roll back together; the BullMQ enqueue happens after
+      // commit (below) like every other producer path.
+      let executionActionId: string | null = null;
+      if (method === 'one_click') {
+        const [executionRow] = await tx
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId,
+            verb: 'unsubscribe',
+            direction: 'forward',
+            selector: { type: 'sender', senderId, senderKey },
+            resolvedMessageIds: [],
+            requestedCount: 1,
+            status: 'queued',
+            idempotencyKey: executionKey,
+          })
+          .onConflictDoNothing({ target: actionJobs.idempotencyKey })
+          .returning({ id: actionJobs.id });
+        executionActionId = executionRow?.id ?? null;
+      }
+
       // D204 boundary fix — emit the cross-feature signal. The senders-
       // owned consumer reads this and upserts sender_policies. Inside
       // the same tx as the audit row so the publish + audit are atomic
@@ -1090,16 +1203,95 @@ export class ActionsService {
           senderKey,
           activityLogId: inserted.id,
           recordedAt: inserted.occurredAt.toISOString(),
+          // D9 Wave 2 — lets the senders-owned consumer project
+          // `unsub_status='pending'` for one_click intents.
+          method,
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
       });
 
       return {
-        senderId,
         recordedAt: inserted.occurredAt.toISOString(),
         activityLogId: inserted.id,
+        executionActionId,
       };
     });
+
+    let executionActionId = txResult.executionActionId;
+    if (method === 'one_click' && executionActionId === null) {
+      // True concurrent race: another request with the same key won the
+      // execution-row insert (`onConflictDoNothing` returned no row).
+      // Re-project the winner's handle; its enqueue (BullMQ jobId
+      // dedup) covers ours.
+      const [winner] = await this.db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, executionKey))
+        .limit(1);
+      executionActionId = winner?.id ?? null;
+    } else if (executionActionId) {
+      await this.enqueueUnsubExecution(
+        executionActionId,
+        mailboxAccountId,
+        senderKey,
+        executionKey,
+      );
+    }
+
+    return {
+      senderId,
+      recordedAt: txResult.recordedAt,
+      activityLogId: txResult.activityLogId,
+      method,
+      executionActionId,
+      mailtoUrl,
+    };
+  }
+
+  /**
+   * Enqueue the RFC 8058 execution job (D9 Wave 2). On a Redis
+   * failure the durable rows are already committed, so record the
+   * honest terminal state — exec row 'failed' + `unsub_status='failed'`
+   * (never a 'pending' chip with no job behind it) — then 503.
+   */
+  private async enqueueUnsubExecution(
+    actionId: string,
+    mailboxAccountId: string,
+    senderKey: string,
+    idempotencyKey: string,
+  ): Promise<void> {
+    if (!this.unsubQueue) {
+      // Callers guard up front; fail-fast for any future path that forgets.
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Unsubscribe queue unavailable — REDIS_URL is not set.',
+      });
+    }
+    try {
+      await this.unsubQueue.add(
+        UNSUB_EXECUTION_JOB,
+        { actionId, mailboxAccountId, idempotencyKey },
+        unsubExecutionJobOptions(idempotencyKey),
+      );
+    } catch (err) {
+      await this.db
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+        .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)));
+      await this.db
+        .update(senderPolicies)
+        .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        );
+      throw new ServiceUnavailableException({
+        code: 'ENQUEUE_FAILED',
+        message: `Could not enqueue the unsubscribe: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   /**

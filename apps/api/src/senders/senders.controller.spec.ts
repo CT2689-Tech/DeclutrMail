@@ -55,6 +55,7 @@ function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
       protectionSetAt: null,
     },
     policyType: null,
+    unsubStatus: null,
     ...overrides,
   };
 }
@@ -521,6 +522,7 @@ describe('SendersController', () => {
           protectionReason: null,
           protectionSetAt: null,
         },
+        unsubscribeMailtoUrl: null,
       };
       reads.getSenderDetail.mockResolvedValue(detail);
       const res = await ctrl.detail(MAILBOX, SENDER_ID);
