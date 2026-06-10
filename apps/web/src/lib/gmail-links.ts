@@ -46,3 +46,59 @@ export function gmailAllFromSenderDeepLink(email: string): string {
 export function gmailSearchDeepLink(rawQuery: string): string {
   return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(rawQuery)}`;
 }
+
+/**
+ * Gmail COMPOSE deep link from a `mailto:` List-Unsubscribe URL —
+ * D230's manual unsubscribe path. DeclutrMail NEVER auto-sends the
+ * opt-out (hard guardrail): this link opens Gmail's compose window
+ * prefilled with the address + any `subject` / `body` query params
+ * the sender's header carried, and the USER hits Send. List
+ * processors verify the subscribed address, so the mail must come
+ * from the user's own mailbox.
+ *
+ * Parsing notes (RFC 6068): the part before `?` is the address
+ * (itself percent-encoded in the mailto); query params of interest
+ * are `subject` / `body` (matched case-insensitively per common
+ * practice). Returns null for anything that isn't a parseable
+ * `mailto:` with a non-empty address — callers skip the affordance
+ * rather than emit a broken compose link.
+ */
+export function gmailComposeUrlFromMailto(mailtoUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(mailtoUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'mailto:') {
+    return null;
+  }
+  // `URL.pathname` for a mailto carries the (possibly percent-encoded)
+  // address list. Decode defensively — a malformed escape must not
+  // throw out of a render path.
+  let address = parsed.pathname;
+  try {
+    address = decodeURIComponent(address);
+  } catch {
+    // Keep the raw form — still a usable recipient for Gmail.
+  }
+  address = address.trim();
+  if (address.length === 0) {
+    return null;
+  }
+
+  let subject: string | null = null;
+  let body: string | null = null;
+  for (const [key, value] of parsed.searchParams) {
+    const k = key.toLowerCase();
+    if (k === 'subject' && subject === null) subject = value;
+    if (k === 'body' && body === null) body = value;
+  }
+
+  // URLSearchParams re-encodes every value, so addresses with `+` tags
+  // and subjects with spaces / unicode survive round-trip.
+  const params = new URLSearchParams({ view: 'cm', fs: '1', to: address });
+  if (subject !== null && subject.length > 0) params.set('su', subject);
+  if (body !== null && body.length > 0) params.set('body', body);
+  return `https://mail.google.com/mail/?${params.toString()}`;
+}

@@ -242,10 +242,10 @@ export async function enqueueCompositeAction(
  */
 /**
  * Returned by `POST /api/actions/unsubscribe-intent` — the user's
- * recorded intent to unsubscribe from a sender. No Gmail mutation
- * fires; the real unsub pipeline (RFC8058 + mailto + manual per D230)
- * lands later. The endpoint upserts `sender_policies.policy_type=
- * 'unsubscribe'` + writes a 0-affected `activity_log` row.
+ * recorded intent to unsubscribe from a sender, plus the execution
+ * handle (D9 Wave 2). The endpoint upserts `sender_policies.policy_
+ * type='unsubscribe'`, writes a 0-affected `activity_log` row, and —
+ * for `one_click` senders — enqueues the real RFC 8058 execution.
  */
 export interface UnsubscribeIntentResult {
   senderId: string;
@@ -253,7 +253,30 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /**
+   * The sender's unsubscribe capability at intent time:
+   *   - `one_click` → an execution job is in flight; poll
+   *     `executionActionId` via `getActionStatus` for the outcome.
+   *   - `mailto`    → manual path (D230) — open the Gmail compose
+   *     deep link built from `mailtoUrl`; the USER sends it.
+   *   - `none`      → no unsubscribe channel; archive is the fallback.
+   */
+  method: 'one_click' | 'mailto' | 'none';
+  /**
+   * `action_jobs.id` of the RFC 8058 execution — poll until terminal.
+   * `done` = unsubscribed; `failed` + errorCode
+   * `UNSUB_AMBIGUOUS_REDIRECT` = unconfirmed (3xx); other `failed` =
+   * the list refused / unreachable. NO undo token ever accompanies it
+   * (D58 — a delivered network unsubscribe is one-way). Null unless
+   * `method === 'one_click'`.
+   */
+  executionActionId: string | null;
+  /** Raw `mailto:` URL for the manual path. Null unless `method === 'mailto'`. */
+  mailtoUrl: string | null;
 }
+
+/** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
+export const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
 
 /**
  * Record an unsubscribe intent for a sender. Replaces the prior

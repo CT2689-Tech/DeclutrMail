@@ -86,12 +86,19 @@ export interface Sender {
   /**
    * Standing-policy unsub state — `true` when the user has clicked
    * Unsubscribe and the BE has written `sender_policies.policy_type =
-   * 'unsubscribe'` (D38 + 2026-06-05 founder brainstorm). The FE
-   * renders a "Unsub queued" pill on the sender card while the real
-   * unsub pipeline (D230) is unbuilt. Optional because Weekly-Hero
-   * + storybook fixtures don't carry it; absent ⇒ no pill.
+   * 'unsubscribe'` (D38 + 2026-06-05 founder brainstorm). Drives the
+   * unsub pill on the sender card; `unsubStatus` refines the copy.
+   * Optional because Weekly-Hero + storybook fixtures don't carry it;
+   * absent ⇒ no pill.
    */
   unsubPending?: boolean;
+  /**
+   * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
+   * `pending` "confirming…" / `done` "Unsubscribed" / `failed`
+   * "Unsub failed" / `ambiguous` "Unsub unconfirmed". `null`/absent =
+   * no tracked execution (mailto-manual per D230, or method none).
+   */
+  unsubStatus?: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
   /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
    * route a sender into the "Protect" intent bucket (intentOf OR-s

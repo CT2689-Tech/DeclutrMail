@@ -625,3 +625,182 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(keeps).toHaveLength(0);
   });
 });
+
+/**
+ * D9 Wave 2 — the three unsubscribe method states + the honest
+ * execution outcomes + D58's no-undo copy.
+ */
+describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => {
+  const EXEC_ID = '99999999-9999-4999-8999-999999999999';
+
+  beforeEach(() => {
+    resetTriageStore();
+    h.toast.mockClear();
+    h.captureFeatureException.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+    ]);
+  });
+  afterEach(() => {
+    resetFetchStub();
+  });
+
+  /** Open the U sheet on LINKEDIN, untoggle the backlog archive, confirm. */
+  async function confirmUnsubWithoutBacklog() {
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    // Untoggle "also archive the backlog" so ONLY the unsub fires —
+    // these tests isolate the execution states.
+    fireEvent.click(screen.getByText(/Also archive the/));
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+  }
+
+  function intentHandler(data: Record<string, unknown>) {
+    return {
+      method: 'POST' as const,
+      path: '/api/actions/unsubscribe-intent',
+      respond: () =>
+        jsonOk({
+          data: {
+            senderId: LINKEDIN.senderId,
+            recordedAt: new Date().toISOString(),
+            activityLogId: '77777777-7777-4777-8777-777777777777',
+            ...data,
+          },
+        }),
+    };
+  }
+
+  function execStatusHandler(status: 'done' | 'failed', errorCode: string | null) {
+    return {
+      method: 'GET' as const,
+      path: `/api/actions/${EXEC_ID}`,
+      respond: () =>
+        jsonOk({
+          data: {
+            actionId: EXEC_ID,
+            status,
+            requestedCount: 1,
+            affectedCount: status === 'done' ? 1 : 0,
+            // D58 — a network unsub NEVER carries an undo token.
+            undoToken: null,
+            errorCode,
+          },
+        }),
+    };
+  }
+
+  it("D58: the sheet says the unsubscribe itself can't be undone", async () => {
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    expect(
+      screen.getByText(
+        "The unsubscribe itself can't be undone — an archived backlog is reversible for 7 days from Activity.",
+      ),
+    ).toBeDefined();
+  });
+
+  it('one_click → done: execution polled to done, queue refreshed, NO success toast (D35)', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('done', null),
+    ]);
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    // The intent invalidates the queue (decision recorded)…
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+    );
+    // …and the execution settles silently (tray discipline — no
+    // success toast, no warn toast). The done-handler re-invalidates
+    // so /activity picks up the worker's outcome row.
+    await waitFor(() => expect(invalidateSpy.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(h.toast).not.toHaveBeenCalled();
+  });
+
+  it('one_click → target refused (4xx/5xx): honest warn toast suggesting Archive', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('failed', 'UNSUB_TARGET_REJECTED'),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `${LINKEDIN.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        'warn',
+      ),
+    );
+  });
+
+  it('one_click → 3xx redirect: ambiguous copy ("may have worked"), never a claimed success', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('failed', 'UNSUB_AMBIGUOUS_REDIRECT'),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't confirm ${LINKEDIN.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        'warn',
+      ),
+    );
+  });
+
+  it('mailto → manual callout with the PREFILLED Gmail compose link (D230 — the user sends)', async () => {
+    addFetchHandlers([
+      intentHandler({
+        method: 'mailto',
+        executionActionId: null,
+        mailtoUrl: 'mailto:unsubscribe@linkedin.example?subject=Remove%20me',
+      }),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
+    const link = screen.getByRole('link', { name: 'Open Gmail compose' });
+    expect(link.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
+    );
+    // Dismissible.
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
+  });
+
+  it('none → no execution, no callout: the decision records and nothing is promised', async () => {
+    addFetchHandlers([intentHandler({ method: 'none', executionActionId: null, mailtoUrl: null })]);
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+    );
+    expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
+    expect(h.toast).not.toHaveBeenCalled();
+  });
+});
