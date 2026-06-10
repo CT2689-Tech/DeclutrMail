@@ -14,9 +14,9 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
@@ -45,14 +45,20 @@ const MIGRATIONS_DIR = join(import.meta.dirname, '..', '..', 'db', 'migrations')
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-async function freshDb(): Promise<Db> {
+/**
+ * ONE migrated PGlite for the whole file. Replaying every migration
+ * takes seconds per call, so a per-test (let alone per-loop-iteration)
+ * rebuild blows vitest's 30s budget under load. Tests isolate via
+ * `resetDb` (TRUNCATE) in `beforeEach` instead.
+ */
+async function migratedDb(): Promise<Db> {
   const pg = new PGlite({ extensions: { citext } });
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
   for (const file of files) {
-    const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
-    for (const stmt of sql.split('--> statement-breakpoint')) {
+    const migrationSql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    for (const stmt of migrationSql.split('--> statement-breakpoint')) {
       const trimmed = stmt.trim();
       if (trimmed) {
         await pg.query(trimmed);
@@ -60,6 +66,17 @@ async function freshDb(): Promise<Db> {
     }
   }
   return drizzle(pg, { schema });
+}
+
+/**
+ * Wipe every table this file touches (CASCADE catches FK dependents).
+ * No migration seeds reference rows (0022's backfill INSERT selects
+ * from `senders`, empty on a fresh DB), so TRUNCATE ≡ fresh schema.
+ */
+async function resetDb(db: Db): Promise<void> {
+  await db.execute(
+    sql`TRUNCATE workspaces, users, mailbox_accounts, senders, sender_policies, action_jobs, activity_log, outbox_events CASCADE`,
+  );
 }
 
 const SENDER_KEY = 'b'.repeat(64);
@@ -170,8 +187,12 @@ describe('UnsubExecutionWorker', () => {
   let mailboxId: string;
   const envBefore = { ...process.env };
 
+  beforeAll(async () => {
+    db = await migratedDb();
+  });
+
   beforeEach(async () => {
-    db = await freshDb();
+    await resetDb(db);
     mailboxId = await seedMailbox(db);
   });
 
@@ -484,8 +505,10 @@ describe('UnsubExecutionWorker', () => {
         const { result, http } = await runAgainst(url);
         expect(result.outcome).toBe('failed');
         expect(http.calls).toHaveLength(0);
-        // fresh db per loop iteration — re-seed
-        db = await freshDb();
+        // Wipe + re-seed between URLs — sharing the migrated db is safe
+        // (the SSRF check short-circuits before any HTTP call), and a
+        // per-iteration migration replay blows the 30s test budget.
+        await resetDb(db);
         mailboxId = await seedMailbox(db);
       }
     });
