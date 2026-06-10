@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ensureInitialSyncJob } from './queue.js';
+import { ensureInitialSyncJob, workerTuningOptions } from './queue.js';
 
 /**
  * `ensureInitialSyncJob` tests (Codex iter 5, 2026-05-22).
@@ -190,5 +190,47 @@ describe('ensureInitialSyncJob', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(await ensureInitialSyncJob(q as any, 'mailbox-1')).toBe('noop');
     expect(q.addCalls).toBe(1);
+  });
+});
+
+describe('workerTuningOptions', () => {
+  it('returns safe defaults per profile when env is unset', () => {
+    expect(workerTuningOptions('user-facing', {})).toEqual({
+      drainDelay: 10,
+      stalledInterval: 60_000,
+    });
+    expect(workerTuningOptions('cron', {})).toEqual({
+      drainDelay: 60,
+      stalledInterval: 300_000,
+    });
+  });
+
+  it('parses env overrides, clamps user-facing drainDelay to 10s, falls back on garbage', () => {
+    const env = {
+      WORKER_DRAIN_DELAY_SEC: '5',
+      WORKER_STALLED_INTERVAL_MS: 'not-a-number',
+      WORKER_CRON_DRAIN_DELAY_SEC: '120',
+      WORKER_CRON_STALLED_INTERVAL_MS: '600000',
+    };
+    expect(workerTuningOptions('user-facing', env)).toEqual({
+      drainDelay: 5,
+      stalledInterval: 60_000, // garbage env → fallback
+    });
+    expect(workerTuningOptions('cron', env)).toEqual({
+      drainDelay: 120,
+      stalledInterval: 600_000,
+    });
+    // Snappy-pickup invariant: env can never push user-facing past 10s.
+    expect(workerTuningOptions('user-facing', { WORKER_DRAIN_DELAY_SEC: '60' }).drainDelay).toBe(
+      10,
+    );
+  });
+
+  it('rejects zero, negative, and whitespace env (a 0s drainDelay is a hot-spin)', () => {
+    expect(workerTuningOptions('cron', { WORKER_CRON_DRAIN_DELAY_SEC: '0' }).drainDelay).toBe(60);
+    expect(workerTuningOptions('cron', { WORKER_CRON_DRAIN_DELAY_SEC: '-5' }).drainDelay).toBe(60);
+    expect(
+      workerTuningOptions('user-facing', { WORKER_STALLED_INTERVAL_MS: '  ' }).stalledInterval,
+    ).toBe(60_000);
   });
 });

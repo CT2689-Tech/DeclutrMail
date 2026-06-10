@@ -28,6 +28,7 @@ export {
   INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
   initialSyncJobOptions,
+  workerTuningOptions,
 } from './queue.js';
 export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {

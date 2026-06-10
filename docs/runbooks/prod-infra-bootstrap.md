@@ -480,7 +480,7 @@ gcloud run deploy declutrmail-worker \
   --cpu-boost \
   --no-cpu-throttling \
   --no-allow-unauthenticated \
-  --set-env-vars="NODE_ENV=production,REASONING_RATE_PER_MIN=40" \
+  --set-env-vars="NODE_ENV=production,REASONING_RATE_PER_MIN=400,WORKER_DRAIN_DELAY_SEC=10,WORKER_STALLED_INTERVAL_MS=60000,WORKER_CRON_DRAIN_DELAY_SEC=60,WORKER_CRON_STALLED_INTERVAL_MS=300000" \
   --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,SENTRY_DSN=sentry-dsn-api:latest" \
   --project=$PROJECT
 ```
@@ -495,17 +495,16 @@ gcloud run deploy declutrmail-worker \
 > needs — leaving any of these unmounted causes a silent bootstrap
 > hang (`worker.boot.env_check` line surfaces which ones are missing).
 
-> **`REASONING_RATE_PER_MIN=40` is mandatory on the worker (2026-06-09 session).**
+> **`REASONING_RATE_PER_MIN=400` is mandatory on the worker (2026-06-09 session).**
 > The score worker fans out one `llm.explain()` call per active sender;
-> a fresh mailbox can be 6000+ senders. Anthropic Tier 1 caps the org
-> at 50 RPM and a burst above that returns 429, which the adapter
-> catches → null → template fallback. Verified prod-degradation
-> 2026-06-09: 70 × 429 in 15min, ~25% of decisions written as
-> `generated_by='template'` even with a wired Haiku key. `40` leaves
-> headroom under Tier 1's 50; tune up if Tier is bumped (see
-> `FOUNDER-FOLLOWUPS.md` "Bump Anthropic to Tier 2"). Unit tests skip
-> pacing automatically — env-unset path returns `Infinity` from
-> `resolveReasoningRatePerMin`.
+> a fresh mailbox can be 6000+ senders. A burst above the org's
+> Anthropic RPM cap returns 429, which the adapter catches → null →
+> template fallback. Verified prod-degradation 2026-06-09: 70 × 429 in
+> 15min, ~25% of decisions written as `generated_by='template'` even
+> with a wired Haiku key. `400` is the Tier 2 value (Tier 2 is live;
+> matches `deploy-cloud-run.yml`) — the original `40` was calibrated to
+> Tier 1's 50 RPM cap. Unit tests skip pacing automatically —
+> env-unset path returns `Infinity` from `resolveReasoningRatePerMin`.
 
 **Note on `--no-allow-unauthenticated`**: requires IAM auth to invoke.
 For Gmail Pub/Sub push to reach the API, the Pub/Sub OIDC SA needs

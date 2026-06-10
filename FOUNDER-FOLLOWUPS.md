@@ -26,6 +26,37 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-10 — Upstash: enable usage notifications (plan flip DONE via PAYG + $20 budget)
+**Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
+**Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. RESOLVED 2026-06-10 ~22:15Z: founder flipped the DB to **Pay as You Go with a $20/mo hard budget** (chosen over Fixed 250MB — tuned command volume ≈ $2-3/mo is cheaper than the $10 flat; flip trigger: watchdog run-rate > $6/mo → switch to Fixed). Worker bounced; all queues listening, zero `bullmq.error` since 22:21Z.
+**How (remaining):**
+1. Upstash console → account/billing settings → enable usage **email notifications** so any future approach to the budget emails the founder instead of silently stopping the DB at $20.
+**Verifies by:** notification setting visible in the Upstash console; (recovery already verified — `worker.listening` for all queues on revision 00037-8w5, no `bullmq.error` after 22:21Z).
+**Status:** Open (notifications only)
+
+### 2026-06-10 — Create vendor API tokens for the limits watchdog
+**Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)
+**Why:** The vendor-limits watchdog can only report usage for vendors it can authenticate against. Without these tokens every vendor reports UNCONFIGURED and the watchdog is blind — the exact gap that let Upstash quota exhaustion run unalerted for ~41h.
+**How:** create each token at the vendor console, then store it as a GH Actions secret:
+1. ~~`UPSTASH_EMAIL` + `UPSTASH_API_KEY`~~ — **DONE 2026-06-10T22:32Z** (both secrets set).
+2. `ANTHROPIC_ADMIN_KEY` — Anthropic console → Settings → Admin keys (https://console.anthropic.com/settings/admin-keys) → create admin key (usage/billing read). Then `gh secret set ANTHROPIC_ADMIN_KEY`.
+3. `VERCEL_TOKEN` + `VERCEL_TEAM_ID` — Vercel → Account Settings → Tokens (https://vercel.com/account/tokens) → create token. Then `gh secret set VERCEL_TOKEN` + `gh secret set VERCEL_TEAM_ID`. The billing endpoint is team-scoped, so the check needs BOTH and only works on a team/Pro plan — **skip this step while on Hobby** (the check stays UNCONFIGURED, which is correct).
+4. `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` — Sentry → Settings → Auth Tokens → org-scoped token with org:read (a build-time token already exists per `docs/runbooks/secrets-inventory.md` — verify its scope covers org usage reads, reuse if so). Then `gh secret set SENTRY_AUTH_TOKEN` + `gh secret set SENTRY_ORG` (the org slug).
+5. `POSTHOG_API_KEY` + `POSTHOG_PROJECT_ID` — PostHog → Settings → Personal API keys → create key (billing read). Then `gh secret set POSTHOG_API_KEY` + `gh secret set POSTHOG_PROJECT_ID` (the numeric project id).
+6. `GH_BILLING_PAT` — GitHub → Settings → Developer settings → Fine-grained personal access tokens → new token with the **"Plan: read-only"** permission. Then `gh secret set GH_BILLING_PAT`.
+**Verifies by:** a vendor-limits-watchdog run shows each of those vendors as OK instead of UNCONFIGURED.
+**Status:** Open
+
+### 2026-06-10 — Enable vendor-side hard caps: Vercel Spend Management + PostHog billing limit + Sentry spike protection
+**Source:** session 2026-06-10 (Upstash billing incident — every metered vendor needs its own cap, not just GCP)
+**Why:** The Upstash incident showed what an uncapped/unalerted vendor limit does: the free tier enforced itself by silently killing the service for ~41h. On usage-billed vendors the same gap manifests as open-ended spend instead. Vendor-side caps turn a runaway into a bounded, alerting event.
+**How:**
+1. Vercel → Team → Settings → Billing → **Spend Management** → set a monthly spend amount + enable the "pause projects" action on breach.
+2. PostHog → Organization → Billing → set a **billing limit** on each metered product (events, recordings).
+3. Sentry → Settings → Subscription → confirm **Spike Protection** is enabled for the projects (on by default for new orgs — verify, don't assume).
+**Verifies by:** each console shows the cap/limit setting populated and enabled (settings page visible).
+**Status:** Open
+
 ### 2026-06-10 — D-CANDIDATE: disambiguate the two unsub `activity_log` rows on /activity
 **Source:** feat/d009-unsubscribe-execution review (implementer-flagged, confirmed by architecture review)
 **Why:** A single one-click unsubscribe writes TWO `action='unsubscribe'` activity rows that render identically on /activity: the intent decision row (`actions.service.ts` `recordUnsubscribeIntent`) and the worker's terminal outcome row (`unsub-execution.worker.ts` `recordOutcome`). Both are 0-affected, `source='manual'`, `undo_token=null` — the user sees the same line twice per unsub. Append-only is the correct schema contract; the duplicate is a display problem, not a data problem.

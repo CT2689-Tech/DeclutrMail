@@ -33,11 +33,13 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 2
 fi
 
-# Stuck = `current_stage` in {queued, connecting, syncing} AND
-# `updated_at` is older than the threshold AND `progress_pct < 100`.
-# `ready` and `failed` are terminal states; they should never trip the
-# check. `disconnected` rows are surfaced separately via the FE
-# reconnect gate; intentionally excluded here.
+# Stuck = any NON-TERMINAL `current_stage` (terminal = ready | failed)
+# whose `updated_at` is older than the threshold with `progress_pct
+# < 100`. NOT IN keeps the check correct if in-flight stages are added
+# to the enum later — the original allowlist hardcoded stage names
+# ('connecting', 'syncing') that never existed in `sync_stage`, so
+# Postgres rejected the query and the watchdog failed on every run
+# since birth (2026-06-10 incident review; see MISTAKES.md).
 QUERY=$(cat <<EOF
 SELECT
   mailbox_account_id,
@@ -46,16 +48,40 @@ SELECT
   updated_at,
   EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS stuck_seconds
 FROM provider_sync_state
-WHERE current_stage IN ('queued', 'connecting', 'syncing')
+WHERE current_stage NOT IN ('ready', 'failed')
   AND progress_pct < 100
   AND updated_at < NOW() - INTERVAL '${STUCK_MINUTES} minutes'
 ORDER BY updated_at ASC;
 EOF
 )
 
-OUT=$(psql "${SUPABASE_SESSION_DSN}?sslmode=require" \
+# Strip stray CR/LF a `gh secret set` pipe can smuggle into the DSN
+# (an embedded newline makes psql reject the URI with exit 1), and
+# append sslmode without double-`?` if the DSN already has params.
+DSN="$(printf '%s' "${SUPABASE_SESSION_DSN}" | tr -d '\r\n')"
+case "$DSN" in
+  *\?*) DSN="${DSN}&sslmode=require" ;;
+  *)    DSN="${DSN}?sslmode=require" ;;
+esac
+
+# psql failure MUST surface as a distinct config/connection error (exit
+# 2), never as a "stuck rows" exit 1 — and never silently via `set -e`
+# killing the assignment. Stderr stays separate from row output.
+PSQL_ERR="$(mktemp)"
+set +e
+OUT=$(psql "$DSN" \
   -At -F $'\t' --quiet \
-  -c "$QUERY" 2>&1)
+  -c "$QUERY" 2>"$PSQL_ERR")
+RC=$?
+set -e
+
+if [ "$RC" -ne 0 ]; then
+  echo "::error::psql failed (exit $RC) — watchdog could NOT check; this is a config/connection problem, not a stuck-sync signal" >&2
+  sed 's/^/  psql: /' "$PSQL_ERR" >&2 || true
+  rm -f "$PSQL_ERR"
+  exit 2
+fi
+rm -f "$PSQL_ERR"
 
 if [ -z "$OUT" ]; then
   echo "OK — no stuck syncs found (threshold ${STUCK_MINUTES} min)."
