@@ -16,7 +16,11 @@ import { getActionDescriptor } from '@declutrmail/shared/actions';
 import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import type { GmailMutationAccess, LabelChange } from './gmail-mutation-client.js';
+import type {
+  GmailMutationAccess,
+  GmailMutationClient,
+  LabelChange,
+} from './gmail-mutation-client.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import { ValidationError } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -80,6 +84,50 @@ const PIPELINE_COMPLETE_VERBS: ReadonlySet<ActionVerb> = new Set<ActionVerb>([
   'later',
   'delete',
 ]);
+
+/**
+ * Gmail SYSTEM label ids — these ARE their own ids and skip name→id
+ * resolution (`ensureLabelId` is for user labels like `DeclutrMail/Later`;
+ * Gmail rejects creating system labels). Mirrors the exclusion list on
+ * the `GmailMutationClient.ensureLabelId` port doc.
+ */
+const SYSTEM_LABEL_IDS: ReadonlySet<string> = new Set([
+  'INBOX',
+  'TRASH',
+  'UNREAD',
+  'SPAM',
+  'STARRED',
+  'IMPORTANT',
+  'SENT',
+  'DRAFT',
+]);
+
+/**
+ * Resolve every NON-system label NAME in a `LabelChange` to its Gmail
+ * label id via `ensureLabelId` (creating the label on first use). The
+ * registry's `buildLabelChange` emits the canonical symbolic NAME
+ * (`DeclutrMail/Later`); Gmail's batchModify accepts only IDS — live
+ * smoke 2026-06-09: the unresolved name produced `Gmail returned 400:
+ * Invalid label: DeclutrMail/Later`. Called on BOTH the forward and
+ * reverse paths, and the RESOLVED change feeds the local label mirror
+ * (`buildLabelMirrorExpr`) so `mail_messages.label_ids` stores the same
+ * raw Gmail ids that initial/incremental sync stores.
+ */
+async function resolveLabelChange(
+  client: GmailMutationClient,
+  change: LabelChange,
+): Promise<LabelChange> {
+  const resolveAll = (labels: string[]): Promise<string[]> =>
+    Promise.all(
+      labels.map((label) =>
+        SYSTEM_LABEL_IDS.has(label) ? Promise.resolve(label) : client.ensureLabelId(label),
+      ),
+    );
+  return {
+    ...(change.addLabelIds ? { addLabelIds: await resolveAll(change.addLabelIds) } : {}),
+    ...(change.removeLabelIds ? { removeLabelIds: await resolveAll(change.removeLabelIds) } : {}),
+  };
+}
 
 /**
  * Resolve a verb's forward/reverse `LabelChange` from the Action Registry
@@ -278,7 +326,11 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     }
 
     const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
-    await client.batchModify(ids, change);
+    // Name→id resolution boundary: Gmail mutates by label ID, the
+    // registry speaks label NAMES. Everything downstream (batchModify,
+    // the local mirror) uses the RESOLVED change.
+    const resolved = await resolveLabelChange(client, change);
+    await client.batchModify(ids, resolved);
 
     const expiresAt = await this.undoExpiresAt(mailboxAccountId, job.verb);
     const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
@@ -308,13 +360,14 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 
       // Keep the local label mirror in step with Gmail so the UI + the
       // next sender-selector resolve see the post-action label set.
-      // Derived from `change` so every label-modify verb stays in sync
-      // without per-verb branching: archive removes INBOX; later removes
-      // INBOX + adds DeclutrMail/Later; delete removes INBOX + adds TRASH.
+      // Derived from the RESOLVED `change` (ids, not names) so the
+      // mirror stores the same raw Gmail label ids sync stores, without
+      // per-verb branching: archive removes INBOX; later removes INBOX +
+      // adds the resolved Later label id; delete removes INBOX + adds TRASH.
       await tx
         .update(mailMessages)
         .set({
-          labelIds: buildLabelMirrorExpr(change),
+          labelIds: buildLabelMirrorExpr(resolved),
           updatedAt: sql`now()`,
         })
         .where(
@@ -373,9 +426,16 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .where(eq(actionJobs.id, job.id));
 
     const ids = job.resolvedMessageIds;
+    // The reverse change is rebuilt from the registry, so it carries the
+    // same symbolic label NAMES the forward path did — resolve to ids
+    // before mutating + mirroring. `ensureLabelId` finds the existing
+    // label (the forward path created it), so the revert removes the
+    // SAME id the forward path added.
+    let resolved = change;
     if (ids.length > 0) {
       const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
-      await client.batchModify(ids, change);
+      resolved = await resolveLabelChange(client, change);
+      await client.batchModify(ids, resolved);
     }
 
     await db.transaction(async (tx) => {
@@ -387,16 +447,17 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .where(and(eq(undoJournal.token, token), sql`${undoJournal.revertedAt} IS NULL`));
 
       if (ids.length > 0) {
-        // Derived from `change` (the reverse `LabelChange`) so undoing
-        // any label-modify verb keeps the local mirror correct: archive
-        // re-adds INBOX; later re-adds INBOX + drops the Later label;
-        // delete re-adds INBOX + drops TRASH. The `CASE WHEN` branch in
-        // `buildLabelMirrorExpr` makes re-adding idempotent so a
-        // duplicate revert is a no-op on the mirror (matching Gmail).
+        // Derived from the RESOLVED reverse `LabelChange` (ids, not
+        // names) so undoing any label-modify verb keeps the local mirror
+        // correct: archive re-adds INBOX; later re-adds INBOX + drops the
+        // resolved Later label id; delete re-adds INBOX + drops TRASH.
+        // The `CASE WHEN` branch in `buildLabelMirrorExpr` makes
+        // re-adding idempotent so a duplicate revert is a no-op on the
+        // mirror (matching Gmail).
         await tx
           .update(mailMessages)
           .set({
-            labelIds: buildLabelMirrorExpr(change),
+            labelIds: buildLabelMirrorExpr(resolved),
             updatedAt: sql`now()`,
           })
           .where(

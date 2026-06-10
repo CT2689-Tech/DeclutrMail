@@ -2,6 +2,7 @@ import { OAuth2Client } from 'google-auth-library';
 import {
   AuthExpiredError,
   InvalidGrantError,
+  PermanentError,
   RateLimitError,
   type RateLimiter,
   TransientError,
@@ -107,6 +108,19 @@ interface GmailProfileResponse {
   historyId?: string;
 }
 
+/**
+ * Shape of a `users.labels.list` response (the fields we read). Label
+ * metadata only — id + name; no message content can appear here (D7).
+ */
+interface GmailLabelsListResponse {
+  labels?: { id?: string; name?: string }[];
+}
+
+/** Shape of a `users.labels.create` response (only the id is read). */
+interface GmailLabelCreateResponse {
+  id?: string;
+}
+
 /** Shape of a `users.history.list` response (only the fields we read). */
 interface GmailHistoryResponse {
   history?: GmailHistoryRecordRaw[];
@@ -176,6 +190,14 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
    * the audit emit.
    */
   private readonly onRefreshFailed: OauthRefreshFailureRecorder | undefined;
+
+  /**
+   * Resolved user-label name → Gmail label id (`ensureLabelId`). Cached
+   * per instance — one instance is bound to one mailbox, so a 1000-id
+   * batch (or a forward + reverse pair on the same client) resolves each
+   * name once instead of re-listing labels per chunk.
+   */
+  private readonly labelIdCache = new Map<string, string>();
 
   constructor(
     private readonly oauth: OAuth2Client,
@@ -401,6 +423,40 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
   }
 
   /**
+   * Authenticated POST that READS the JSON response — for the rare write
+   * whose result we need (`labels.create` returns the new label's id).
+   * Same limiter pacing, auth, timeout, and typed-error mapping as
+   * `post()`. D7-safe: only used against label endpoints, whose
+   * responses carry label metadata (id/name/visibility) — message
+   * content cannot appear in a labels resource.
+   */
+  private async postJson<T>(path: string, body: unknown): Promise<T> {
+    await this.limiter.acquire(UNITS_PER_CALL);
+    const token = await this.accessToken();
+
+    let res: Response;
+    try {
+      res = await fetch(`${GMAIL_API_BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      // Network failure or request timeout — retryable.
+      throw new TransientError(`Gmail request failed: ${errorMessage(err)}`);
+    }
+
+    if (res.ok) {
+      return (await res.json()) as T;
+    }
+    return this.handleStatus(res);
+  }
+
+  /**
    * Map a non-OK Gmail `Response` to the typed worker error that drives
    * `BaseDeclutrWorker`'s retry vs. dead-letter decision. Always throws —
    * the return type is `never`. Callers handle `res.ok` (and `get`'s
@@ -425,6 +481,13 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
     }
     if (res.status >= 500) {
       throw new TransientError(`Gmail returned ${res.status}`);
+    }
+    if (res.status === 400) {
+      // Gmail 400 (the `invalidArgument` family — e.g. a label NAME sent
+      // where an id is required) is deterministic: the identical request
+      // fails identically on every attempt. Permanent — the worker fails
+      // the job on attempt 1 instead of retrying to the cap.
+      throw new PermanentError(`Gmail returned 400: ${await safeBody(res)}`);
     }
     // Other 4xx — surface the body; the base class treats it as transient.
     throw new TransientError(`Gmail returned ${res.status}: ${await safeBody(res)}`);
@@ -457,6 +520,40 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
       const ids = messageIds.slice(i, i + BATCH_MODIFY_MAX_IDS);
       await this.post('/messages/batchModify', { ids, addLabelIds, removeLabelIds });
     }
+  }
+
+  /**
+   * Resolve a USER label name to its Gmail label id, creating the label
+   * if it does not exist (the `GmailMutationClient` port's name→id
+   * resolution boundary — see the port doc for the system-label
+   * exclusion). `labels.list` then exact-NAME match — Gmail label names
+   * are case-sensitive, so `declutrmail/later` is NOT `DeclutrMail/Later`.
+   * On a miss, `labels.create` with the standard show-everywhere
+   * visibility. Both calls are paced through the limiter like every
+   * other request (D5); resolved ids are cached per instance so bulk
+   * batches resolve each name once. D7-safe: label ids + names only.
+   */
+  async ensureLabelId(name: string): Promise<string> {
+    const cached = this.labelIdCache.get(name);
+    if (cached) {
+      return cached;
+    }
+    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    const match = (listed?.labels ?? []).find((l) => l.name === name);
+    if (match?.id) {
+      this.labelIdCache.set(name, match.id);
+      return match.id;
+    }
+    const created = await this.postJson<GmailLabelCreateResponse>('/labels', {
+      name,
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    });
+    if (!created.id) {
+      throw new TransientError('Gmail labels.create response missing id');
+    }
+    this.labelIdCache.set(name, created.id);
+    return created.id;
   }
 
   /** A fresh access token — `OAuth2Client` refreshes it if expired. */

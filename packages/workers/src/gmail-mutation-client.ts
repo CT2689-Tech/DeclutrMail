@@ -33,6 +33,24 @@ export interface GmailMutationClient {
    * the implementation chunks larger inputs into sequential calls.
    */
   batchModify(messageIds: string[], change: LabelChange): Promise<void>;
+  /**
+   * Resolve a USER label NAME (e.g. `DeclutrMail/Later`) to its Gmail
+   * label ID (`Label_123`), creating the label if it does not exist.
+   *
+   * THE NAME→ID RESOLUTION BOUNDARY. The Action Registry's
+   * `buildLabelChange` emits the canonical symbolic label NAME; Gmail's
+   * modify/batchModify endpoints accept only label IDS. Callers resolve
+   * names through this method immediately before mutating, and persist
+   * the RESOLVED ids (undo journal, local label mirror) so local state
+   * matches what sync stores — raw Gmail label ids.
+   *
+   * System labels (`INBOX`, `TRASH`, `UNREAD`, `SPAM`, `STARRED`,
+   * `IMPORTANT`, `SENT`, `DRAFT`) ARE their own ids and must NOT be
+   * passed through this method — Gmail rejects creating them and the
+   * lookup is wasted quota. Implementations cache resolved ids per
+   * instance so bulk batches do not re-list per chunk.
+   */
+  ensureLabelId(name: string): Promise<string>;
 }
 
 /**
