@@ -361,11 +361,16 @@ export function ConfirmActionModal({
 
   // Recovery-window banner (spec v1.2 Decision 15 — top of the modal).
   // Delete = 30 days (Gmail Trash physical guarantee); Archive/Later = 7d.
+  // Unsubscribe = NOT undoable (D58): a delivered opt-out can't be
+  // recalled, so the banner says so where the undo promise would
+  // normally sit — only a paired archive keeps its own undo.
   const recoveryCopy = isDeleteVerb
     ? 'Recoverable for 30 days in Gmail Trash.'
     : isArchiveVerb || isLaterVerb
       ? 'Reversible for 7 days from Activity.'
-      : null;
+      : verb === 'Unsubscribe'
+        ? "The unsubscribe itself can't be undone — only an archived backlog is reversible (7 days, from Activity)."
+        : null;
 
   // Subjects for the "Show what will move" panel (spec v1.3 — recent
   // beats oldest for 3-sec sender recognition). Single-sender single-

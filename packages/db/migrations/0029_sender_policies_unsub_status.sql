@@ -1,0 +1,35 @@
+-- 0029_sender_policies_unsub_status.sql
+--
+-- D9 / D58 / D230 — unsubscribe execution status on `sender_policies`.
+--
+-- The unsubscribe pipeline (PR for D9 Wave 2) turns the recorded
+-- intent (`policy_type='unsubscribe'`, migration 0024's dedup row)
+-- into a real RFC 8058 one-click POST executed by
+-- `UnsubExecutionWorker`. The worker's outcome must be durable and
+-- readable by the senders list/detail surfaces, so the status lives
+-- next to the policy row the intent already upserts:
+--
+--   - 'pending'   — intent recorded for a one_click sender; the
+--                   execution job is queued or in flight.
+--   - 'done'      — the list processor answered 2xx; unsubscribed.
+--   - 'failed'    — terminal: target 4xx/5xx, SSRF-blocked URL, or
+--                   network retries exhausted. Recorded honestly —
+--                   never retried beyond the one network retry.
+--   - 'ambiguous' — the target answered 3xx. Redirects are not
+--                   followed (SSRF posture), so the outcome is
+--                   unknown: it may have worked.
+--
+-- NULL = no tracked execution: senders with `unsubscribe_method =
+-- 'mailto'` (manual-only per D230 — the user sends the opt-out from
+-- Gmail; DeclutrMail never claims an outcome it cannot observe) or
+-- 'none', and rows that predate this pipeline.
+--
+-- No undo linkage (D58): a delivered network unsubscribe is one-way;
+-- no undo token exists for it by design.
+--
+-- Privacy (D7, D228): a four-state enum keyed by sender — no message
+-- content, no headers beyond what's already stored.
+
+CREATE TYPE "public"."unsub_status" AS ENUM('pending', 'done', 'failed', 'ambiguous');
+--> statement-breakpoint
+ALTER TABLE "sender_policies" ADD COLUMN "unsub_status" "public"."unsub_status";

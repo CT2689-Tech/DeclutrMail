@@ -1,0 +1,10 @@
+-- Rollback for 0029_sender_policies_unsub_status.sql
+--
+-- Dropping the column discards recorded unsubscribe outcomes — the
+-- execution audit trail in `action_jobs` / `activity_log` survives,
+-- but the senders surface loses the per-sender status chip until the
+-- forward migration is re-applied and new executions repopulate it.
+
+ALTER TABLE "sender_policies" DROP COLUMN "unsub_status";
+--> statement-breakpoint
+DROP TYPE "public"."unsub_status";

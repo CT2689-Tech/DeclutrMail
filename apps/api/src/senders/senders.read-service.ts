@@ -525,10 +525,12 @@ export class SendersReadService {
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
         // Standing policy verb (keep / archive / unsubscribe / later).
-        // Surfaces the "Unsub queued" pill on the sender row while the
-        // real unsub pipeline (D230) is unbuilt — written by
-        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        // Surfaces the "Unsub queued" pill on the sender row — written
+        // by POST /api/actions/unsubscribe-intent (D38 2026-06-05).
         policyType: senderPolicies.policyType,
+        // RFC 8058 execution outcome (D9 Wave 2) — drives the per-row
+        // unsub chip's pending/done/failed/ambiguous copy.
+        unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
       .leftJoin(
@@ -605,6 +607,7 @@ export class SendersReadService {
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
         },
         policyType: row.policyType ?? null,
+        unsubStatus: row.unsubStatus ?? null,
       };
     });
   }
@@ -1216,6 +1219,17 @@ export class SendersReadService {
         totalReceived: senders.totalReceived,
         repliedCount: senders.repliedCount,
         unsubscribeMethod: senders.unsubscribeMethod,
+        // The mailto: channel for D230's manual compose deep link —
+        // only surfaced on the wire when `unsubscribe_method='mailto'`
+        // (the column carries the https URL for one_click senders,
+        // which the FE never needs). Gated in SQL so the one_click
+        // https URL — which can embed per-recipient opt-out tokens —
+        // is never even materialized into a wire-bound result set;
+        // the mapping ternary below stays the contract's source of
+        // truth (defense in depth, not a second contract).
+        unsubscribeUrl: sql<
+          string | null
+        >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
         currentMonthVolume: currentMonthVolumeSql,
@@ -1232,10 +1246,13 @@ export class SendersReadService {
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
         // Standing policy verb (keep / archive / unsubscribe / later).
-        // Surfaces the "Unsub queued" pill on the sender row while the
-        // real unsub pipeline (D230) is unbuilt — written by
-        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        // Surfaces the "Unsub queued" pill on the sender row — written
+        // by POST /api/actions/unsubscribe-intent (D38 2026-06-05).
         policyType: senderPolicies.policyType,
+        // RFC 8058 execution outcome (D9 Wave 2, migration 0029) —
+        // pending / done / failed / ambiguous; NULL = no tracked
+        // execution (mailto manual per D230, or method none).
+        unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
       .leftJoin(
@@ -1280,6 +1297,10 @@ export class SendersReadService {
         row.historyMonthCount,
       ),
       unsubscribeMethod: row.unsubscribeMethod,
+      // D230 manual path — the raw mailto: URL the FE turns into a
+      // Gmail compose deep link. Only for mailto senders.
+      unsubscribeMailtoUrl:
+        row.unsubscribeMethod === 'mailto' ? (row.unsubscribeUrl ?? null) : null,
       lastReview: buildLastReview(
         row.lastDecisionAt,
         row.lastDecisionVerdict,
@@ -1288,6 +1309,7 @@ export class SendersReadService {
       ),
       protectionFlags,
       policyType: row.policyType ?? null,
+      unsubStatus: row.unsubStatus ?? null,
     };
   }
 

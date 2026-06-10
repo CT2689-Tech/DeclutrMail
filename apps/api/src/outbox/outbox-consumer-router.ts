@@ -58,6 +58,13 @@ export function buildOutboxConsumer(db: DrizzleDb) {
         await handleTriageVerdictApplied(db, payload);
         return;
       }
+      case TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED:
+        // Observability-only (D9 Wave 2): `UnsubExecutionWorker` writes
+        // the durable effects itself in its terminal tx; this event
+        // exists for Cloud Logging / future audit consumers. ACK
+        // explicitly so the dispatcher doesn't WARN `unknown_topic` on
+        // every unsubscribe.
+        return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
         // to `dispatched` rather than blocking the queue. A future
@@ -96,17 +103,34 @@ async function handleUnsubscribeIntentRecorded(
   db: DrizzleDb,
   payload: ActionsUnsubscribeIntentRecordedPayload,
 ): Promise<void> {
+  // D9 Wave 2 — `unsub_status` projection. 'pending' only for a
+  // one_click intent (an execution job is in flight); mailto/none and
+  // legacy events (no `method` field) project NULL — the manual path
+  // never claims an outcome (D230). Guarded with `coalesce` against
+  // the executed-before-intent dispatch race: the dispatcher processes
+  // rows in insert order, so in practice intent precedes execution,
+  // but a redelivered intent event must not stomp a terminal status
+  // back to 'pending' — see the WHERE-less upsert note below.
+  const unsubStatus = payload.method === 'one_click' ? ('pending' as const) : null;
   await db
     .insert(senderPolicies)
     .values({
       mailboxAccountId: payload.mailboxAccountId,
       senderKey: payload.senderKey,
       policyType: 'unsubscribe',
+      unsubStatus,
     })
     .onConflictDoUpdate({
       target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
       set: {
         policyType: 'unsubscribe',
+        // Redelivery safety: only move a NULL/'pending' status to
+        // 'pending' — never regress a terminal outcome the worker
+        // already recorded for THIS intent generation.
+        unsubStatus:
+          unsubStatus === 'pending'
+            ? sql`CASE WHEN ${senderPolicies.unsubStatus} IS NULL OR ${senderPolicies.unsubStatus} = 'pending' THEN 'pending'::unsub_status ELSE ${senderPolicies.unsubStatus} END`
+            : null,
         updatedAt: sql`now()`,
       },
     });

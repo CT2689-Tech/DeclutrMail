@@ -113,6 +113,18 @@ export const TOPICS = {
    *     to know which senders need the actual unsubscribe request.
    */
   ACTIONS_UNSUBSCRIBE_INTENT_RECORDED: 'actions.unsubscribe_intent_recorded',
+
+  /**
+   * UnsubExecutionWorker finished an RFC 8058 one-click unsubscribe
+   * attempt (D9 Wave 2; D230 keeps mailto manual — mailto senders
+   * never produce this event). Carries the terminal outcome
+   * (`done` / `failed` / `ambiguous`) + the target's HTTP status.
+   * Observability-only at this build: the worker writes the durable
+   * effects itself (sender_policies.unsub_status + activity_log +
+   * action_jobs); no consumer projection exists. NO undo token —
+   * a delivered network unsubscribe is one-way (D58).
+   */
+  ACTIONS_UNSUBSCRIBE_EXECUTED: 'actions.unsubscribe_executed',
 } as const;
 
 /** Closed string-literal union of every D204 topic. */

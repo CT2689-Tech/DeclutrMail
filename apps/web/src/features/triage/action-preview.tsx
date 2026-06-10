@@ -63,8 +63,9 @@ export function ActionPreview({
 
   // Copy per verb — literal, and TRUE to the pipeline each verb rides:
   // Archive/Later move the sender's current inbox mail via the worker;
-  // Unsubscribe records the queued intent (execution ships with the
-  // unsub pipeline; mailto stays manual per D230); Keep moves nothing.
+  // Unsubscribe sends the real one-click request (D9 Wave 2) or opens
+  // the manual Gmail-compose path (mailto stays manual per D230);
+  // Keep moves nothing.
   const title =
     verb === 'Archive'
       ? `Archive all inbox mail from ${subject}`
@@ -82,9 +83,10 @@ export function ActionPreview({
         : verb === 'Unsubscribe'
           ? row.unsubscribeMethod === 'one_click'
             ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058
-              // one-click" jargon → "one-click unsubscribe."
-              `Your unsubscribe from ${subject} is queued (one-click unsubscribe available). Nothing already in your inbox moves unless you ask below.`
-            : `Your unsubscribe from ${subject} is queued. Their list needs an email reply, so you send the final request from your mailbox — DeclutrMail never auto-sends from a no-reply address.`
+              // one-click" jargon → "one-click unsubscribe." D58: the
+              // request can't be recalled once their list takes it.
+              `DeclutrMail sends ${subject}'s one-click unsubscribe and confirms the result. The request itself can't be undone. Nothing already in your inbox moves unless you ask below.`
+            : `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
           : `${subject} stays in the inbox. No mail is moved.`;
 
   // What actually moves: Archive + Later act on the sender's current

@@ -94,6 +94,39 @@ export interface SenderCardProps {
   globalMaxTotal: number;
 }
 
+/**
+ * Unsub pill copy by execution state (D9 Wave 2 — honest states, never
+ * a promised outcome). Keyed by `Sender.unsubStatus`; `none` covers a
+ * recorded intent with NO tracked execution — a mailto sender whose
+ * manual send happens from Sender Detail (D230), or method-none.
+ */
+const UNSUB_PILL: Record<
+  'pending' | 'done' | 'failed' | 'ambiguous' | 'none',
+  { label: string; title: string }
+> = {
+  pending: {
+    label: 'Unsub confirming…',
+    title: "Unsubscribe requested — confirming with the sender's list",
+  },
+  done: {
+    label: 'Unsubscribed',
+    title: 'Unsubscribed — new mail should stop',
+  },
+  failed: {
+    label: 'Unsub failed',
+    title: 'Their list refused the unsubscribe — Archive is the reliable fallback',
+  },
+  ambiguous: {
+    label: 'Unsub unconfirmed',
+    title: "Couldn't confirm the unsubscribe — it may have worked; watch for new mail",
+  },
+  none: {
+    label: 'Unsub requested',
+    title:
+      'Unsubscribe requested — if this list takes email requests, finish from the sender page (you hit Send)',
+  },
+};
+
 export function SenderCard({
   sender,
   selected,
@@ -189,7 +222,7 @@ export function SenderCard({
             </span>
             {sender.unsubPending && (
               <span
-                title="Unsub queued — we'll process it when the pipeline ships"
+                title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
                 style={{
                   fontFamily: font.mono,
                   fontSize: 9.5,
@@ -203,7 +236,7 @@ export function SenderCard({
                   flex: '0 0 auto',
                 }}
               >
-                Unsub queued
+                {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
               </span>
             )}
           </div>

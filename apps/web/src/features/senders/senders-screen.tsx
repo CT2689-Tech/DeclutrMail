@@ -51,7 +51,8 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { UnsubMailtoCallout } from './unsub-mailto-callout';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -372,9 +373,26 @@ function SendersScreenContent({
     senderCount: number;
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution (single-
+  // sender path). Polled to terminal so the toast states the REAL
+  // outcome ("confirming…" → unsubscribed / refused / unconfirmed),
+  // never a promise. Bulk unsub doesn't poll per-execution — the
+  // per-row chips carry each sender's state on refetch.
+  const [activeUnsub, setActiveUnsub] = useState<{
+    actionId: string;
+    senderName: string;
+    domain: string;
+  } | null>(null);
+  // D230 manual path — the post-confirm "finish in Gmail" callout for
+  // a mailto sender. Dismissible; rendered next to the receipt strip.
+  const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderName: string;
+    mailtoUrl: string;
+  } | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const batchStatus = useBatchStatus(activeBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
+  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
 
   // Real inbox-count preview (D226): fetch the actual inbox count for any
   // single-sender verb whose preview depends on it — Archive (the headline
@@ -709,16 +727,13 @@ function SendersScreenContent({
         return;
       }
 
-      // Unsubscribe — record the intent honestly (D38 + 2026-06-05
-      // brainstorm). The real RFC8058 / mailto / manual pipeline (D230)
-      // lands later; for now we upsert sender_policies.policy_type=
-      // 'unsubscribe' + write a 0-affected activity_log row so /activity
-      // reflects the decision. Replaces the prior tracer-toast-with-fake-
-      // receipt path that violated CLAUDE.md §10 ("Unsubscribed from
-      // DKNY" was a lie with no BE call). Multi-sender Unsub fans the
-      // mutation across each sender so the audit trail captures every
-      // decision; we do NOT batch into a single tracer toast for the
-      // bulk case (same honesty rule).
+      // Unsubscribe (D9 Wave 2). The intent records server-side and —
+      // for a one_click sender — the REAL RFC 8058 execution enqueues;
+      // we poll it to a terminal state and toast the honest outcome.
+      // mailto senders get the D230 manual path: a "finish in Gmail"
+      // callout opens a prefilled compose THE USER sends (DeclutrMail
+      // never auto-sends an opt-out). No undo token exists for a
+      // network unsub (D58) — only a paired archive is reversible.
       if (verb === 'Unsubscribe') {
         // Guard against rapid double-confirmation. While a previous
         // recordUnsubIntent.mutate is in-flight we drop the click (the
@@ -726,11 +741,47 @@ function SendersScreenContent({
         if (recordUnsubIntent.isPending) return;
         setPendingAction(null);
         setSelected(new Set());
-        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
+        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name, domain: s.domain }));
         const isBulk = senderRefs.length > 1;
-        // Fire each intent. TanStack Query dedupes invalidations into
-        // one refetch, so the toast burst + per-success invalidation
-        // collapse to a single Activity refresh at the end of the run.
+
+        if (!isBulk) {
+          const sref = senderRefs[0]!;
+          recordUnsubIntent.mutate(
+            { senderId: sref.id },
+            {
+              onSuccess: (res) => {
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                void qc.invalidateQueries({ queryKey: activityKeys.all });
+                if (res.method === 'one_click' && res.executionActionId) {
+                  toast(`Unsubscribe requested — confirming with ${sref.domain}…`, 'info');
+                  setActiveUnsub({
+                    actionId: res.executionActionId,
+                    senderName: sref.name,
+                    domain: sref.domain,
+                  });
+                } else if (res.method === 'mailto' && res.mailtoUrl) {
+                  // The callout is the feedback — it carries the manual
+                  // step the toast can't (a compose link).
+                  setMailtoFollowup({ senderName: sref.name, mailtoUrl: res.mailtoUrl });
+                } else {
+                  toast(
+                    `${sref.name} offers no unsubscribe channel — Archive is the reliable fallback`,
+                    'info',
+                  );
+                }
+              },
+              onError: (err) => {
+                captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
+                toast(`Couldn't request the unsubscribe from ${sref.name}`, 'warn');
+              },
+            },
+          );
+          return;
+        }
+
+        // Bulk fan-out — each sender is its own intent (+execution for
+        // one_click senders). No per-execution polling at this scale:
+        // each row's chip carries its sender's state on refetch.
         let succeeded = 0;
         let failed = 0;
         for (const sref of senderRefs) {
@@ -741,9 +792,7 @@ function SendersScreenContent({
                 succeeded++;
                 if (succeeded + failed === senderRefs.length) {
                   toast(
-                    isBulk
-                      ? `Unsubscribe queued for ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''} — we'll process when the pipeline ships.`
-                      : `Unsubscribe queued for ${sref.name} — we'll process it when the pipeline ships.`,
+                    `Unsubscribe requested for ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''} — each sender's chip shows the result; email-based lists finish from the sender's page.`,
                     failed > 0 ? 'warn' : 'success',
                   );
                 }
@@ -755,9 +804,7 @@ function SendersScreenContent({
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
                 if (succeeded + failed === senderRefs.length) {
                   toast(
-                    isBulk
-                      ? `${failed} of ${senderRefs.length} unsubscribes failed to queue — try again.`
-                      : `Couldn't queue unsubscribe for ${sref.name}`,
+                    `${failed} of ${senderRefs.length} unsubscribe requests failed — try again.`,
                     'warn',
                   );
                 }
@@ -979,6 +1026,42 @@ function SendersScreenContent({
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // D9 Wave 2 — drive the unsubscribe execution off the polled action
+  // status, then toast the HONEST outcome. No receipt strip: a network
+  // unsub issues no undo token by design (D58 — it can't be recalled),
+  // so there is nothing to offer an Undo for.
+  useEffect(() => {
+    if (!activeUnsub) return;
+    if (unsubExecStatus.isError) {
+      const err = unsubExecStatus.error;
+      captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
+      toast(
+        `Couldn't confirm the unsubscribe from ${activeUnsub.senderName} — the sender's chip will show the result`,
+        'warn',
+      );
+      setActiveUnsub(null);
+      return;
+    }
+    const data = unsubExecStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        'warn',
+      );
+    } else {
+      toast(
+        `${activeUnsub.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        'warn',
+      );
+    }
+    void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    setActiveUnsub(null);
+  }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
 
   // D52 — drive the bulk-batch lifecycle off the aggregate poll. On
   // terminal: real receipt (real undo token covering the batch via the
@@ -1305,6 +1388,16 @@ function SendersScreenContent({
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+
+      {/* D230 manual path — the post-confirm "finish in Gmail" step for
+          a mailto sender. The user sends the opt-out; never auto-sent. */}
+      {mailtoFollowup && (
+        <UnsubMailtoCallout
+          senderName={mailtoFollowup.senderName}
+          mailtoUrl={mailtoFollowup.mailtoUrl}
+          onDismiss={() => setMailtoFollowup(null)}
+        />
+      )}
 
       {/*
         Weekly Hero, InboxStoryHero, WeeklyProgress, CohortRail

@@ -33,12 +33,13 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
+import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -241,8 +242,24 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Polled to
+  // terminal so the toast states the real outcome. The mailto manual
+  // path needs no poll: its callout renders persistently below the
+  // toolbar off `detail.unsubscribeMailtoUrl` + the standing policy.
+  const [activeUnsub, setActiveUnsub] = useState<{
+    actionId: string;
+    senderName: string;
+  } | null>(null);
+  // Transient mailto callout right after THIS tab's confirm — covers
+  // the gap until the invalidation refetch flips `detail.policyType`
+  // (which then renders the persistent callout below).
+  const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderName: string;
+    mailtoUrl: string;
+  } | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
+  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
 
   // Server-truth re-seed: `useState(initial)` ignores prop updates after
   // mount, so a refetch delivering DIVERGED data (policy changed in
@@ -464,36 +481,46 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         return;
       }
 
-      // Unsubscribe — record the intent honestly (D38 + 2026-06-05).
-      // Single-sender by design here; no bulk fan-out needed. The
-      // top-level re-entry guard already covers `activeAction != null`;
-      // the additional `recordUnsubIntent.isPending` check stops a
-      // double-fire while the unsub mutation itself is in flight (unsub
-      // doesn't go through `activeAction` so it has its own latch).
+      // Unsubscribe (D9 Wave 2). one_click → the REAL RFC 8058 execution
+      // enqueues; poll it and toast the honest outcome. mailto → the
+      // D230 manual path: a "finish in Gmail" callout with a prefilled
+      // compose THE USER sends (never auto-sent). No undo token exists
+      // for a network unsub (D58). Single-sender by design here; the
+      // additional `recordUnsubIntent.isPending` check stops a
+      // double-fire while the unsub mutation itself is in flight.
       if (verb === 'Unsubscribe') {
-        if (recordUnsubIntent.isPending) return;
+        if (recordUnsubIntent.isPending || activeUnsub != null) return;
         setPendingAction(null);
         recordUnsubIntent.mutate(
           { senderId: sender.id },
           {
-            onSuccess: () => {
-              toast(
-                `Unsubscribe queued for ${sender.name} — we'll process it when the pipeline ships.`,
-                'success',
-              );
+            onSuccess: (res) => {
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
+              if (res.method === 'one_click' && res.executionActionId) {
+                toast(`Unsubscribe requested — confirming with ${sender.domain}…`, 'info');
+                setActiveUnsub({ actionId: res.executionActionId, senderName: sender.name });
+              } else if (res.method === 'mailto' && res.mailtoUrl) {
+                // The callout (rendered below the toolbar) is the
+                // feedback — it carries the compose link a toast can't.
+                setMailtoFollowup({ senderName: sender.name, mailtoUrl: res.mailtoUrl });
+              } else {
+                toast(
+                  `${sender.name} offers no unsubscribe channel — Archive is the reliable fallback`,
+                  'info',
+                );
+              }
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-              toast(`Couldn't queue unsubscribe for ${sender.name}`, 'warn');
+              toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
             },
           },
         );
         return;
       }
     },
-    [enqueue, enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction],
+    [enqueue, enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, activeUnsub],
   );
 
   // Route every destructive verb through the modal (D226 — preview is
@@ -587,6 +614,39 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // D9 Wave 2 — unsubscribe execution outcome (mirrors senders-screen).
+  // No receipt: a network unsub issues no undo token by design (D58).
+  useEffect(() => {
+    if (!activeUnsub) return;
+    if (unsubExecStatus.isError) {
+      captureFeatureException(unsubExecStatus.error, {
+        surface: 'senders',
+        reason: 'unsub_status_poll',
+      });
+      toast(`Couldn't confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
+      setActiveUnsub(null);
+      return;
+    }
+    const data = unsubExecStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        'warn',
+      );
+    } else {
+      toast(
+        `${activeUnsub.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        'warn',
+      );
+    }
+    void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    setActiveUnsub(null);
+  }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
 
   // Undo (revert) lifecycle — same retry-false / sustained-5xx hazard.
   useEffect(() => {
@@ -761,6 +821,29 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       }}
     >
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+
+      {/* D230 manual path — the "finish in Gmail" step for a mailto
+          sender. Transient right after this tab's confirm; persistent
+          (from the wire row) whenever the standing unsub policy exists
+          and the sender's channel is mailto, so a user returning later
+          still finds the send affordance. The USER sends — never
+          DeclutrMail. */}
+      {(() => {
+        const persistent =
+          detail.policyType === 'unsubscribe' &&
+          detail.unsubscribeMethod === 'mailto' &&
+          detail.unsubscribeMailtoUrl
+            ? { senderName: sender.name, mailtoUrl: detail.unsubscribeMailtoUrl }
+            : null;
+        const callout = mailtoFollowup ?? persistent;
+        return callout ? (
+          <UnsubMailtoCallout
+            senderName={callout.senderName}
+            mailtoUrl={callout.mailtoUrl}
+            {...(mailtoFollowup ? { onDismiss: () => setMailtoFollowup(null) } : {})}
+          />
+        ) : null;
+      })()}
 
       {/* 1. Editorial hero card — name, narrative, ROI, recommendation, actions */}
       <section

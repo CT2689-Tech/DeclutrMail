@@ -26,6 +26,15 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-10 — D-CANDIDATE: disambiguate the two unsub `activity_log` rows on /activity
+**Source:** feat/d009-unsubscribe-execution review (implementer-flagged, confirmed by architecture review)
+**Why:** A single one-click unsubscribe writes TWO `action='unsubscribe'` activity rows that render identically on /activity: the intent decision row (`actions.service.ts` `recordUnsubscribeIntent`) and the worker's terminal outcome row (`unsub-execution.worker.ts` `recordOutcome`). Both are 0-affected, `source='manual'`, `undo_token=null` — the user sees the same line twice per unsub. Append-only is the correct schema contract; the duplicate is a display problem, not a data problem.
+**How:** Founder picks ONE:
+1. New `activity_action` enum value (e.g. `unsubscribe_confirmed`) so the outcome row is distinct on the wire and the FE renders "Unsubscribe requested" vs "Unsubscribe confirmed/failed" — needs a migration extending the enum + copy.
+2. Render-layer collapse: /activity groups same-sender `unsubscribe` rows within the execution window into one line with the outcome chip — no schema change, dedup logic lives in the FE read.
+**Verifies by:** one one-click unsub on a real sender produces ONE visible /activity line (with its outcome state), while `activity_log` keeps both audit rows.
+**Status:** Open
+
 ### 2026-06-09 — Rewrite 8 skipped senders-screen tests post spec v1.2 D4 retirement
 **Source:** session 2026-06-09 (pre-merge gate-clearing for feat/d038-prod-ready-pass)
 **Why:** Eight `it.skip`'d tests in `apps/web/src/features/senders/senders-screen.test.tsx` cover functionality that was deliberately retired per spec v1.2 Decision 4 (Editorial Hero / InboxStoryHero + WeeklyHero moved to Brief). They've been failing on `feat/d038-prod-ready-pass` since long before the 2026-06-09 ultra-review fix slate landed (verified by checking out `e44201d` before any of my changes — same 8 fails). Skipping was the pragmatic path to unblock the CI gate; rewriting needs design clarity on which assertions still matter. The retired tests:

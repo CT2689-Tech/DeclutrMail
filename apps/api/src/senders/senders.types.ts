@@ -184,7 +184,22 @@ export interface SenderListRow {
    * the unified action manifest once D230 lands.
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
+  /**
+   * RFC 8058 execution outcome from `sender_policies.unsub_status`
+   * (D9 Wave 2, migration 0029):
+   *   - `pending`   — execution job queued / in flight.
+   *   - `done`      — the list processor answered 2xx.
+   *   - `failed`    — terminal failure, recorded honestly.
+   *   - `ambiguous` — the target answered 3xx (redirects never
+   *                   followed); may have worked.
+   * `null` = no tracked execution: mailto senders (manual per D230),
+   * method `none`, or no unsub intent yet. Drives the per-row chip copy.
+   */
+  unsubStatus: UnsubExecutionStatus | null;
 }
+
+/** `sender_policies.unsub_status` pg_enum mirror (migration 0029). */
+export type UnsubExecutionStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
 
 /**
  * Standing protection / VIP flags for `GET /api/senders/:id` (D42).
@@ -213,6 +228,14 @@ export interface ProtectionFlags {
  */
 export interface SenderDetail extends SenderListRow {
   protectionFlags: ProtectionFlags;
+  /**
+   * Raw `mailto:` URL from the sender's List-Unsubscribe header —
+   * D230's manual path. The FE parses it into a Gmail compose deep
+   * link (the user sends the opt-out themselves; DeclutrMail never
+   * auto-sends). `null` unless `unsubscribeMethod === 'mailto'`.
+   * Detail-only: the list grid never renders the compose affordance.
+   */
+  unsubscribeMailtoUrl: string | null;
 }
 
 /**

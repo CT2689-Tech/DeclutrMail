@@ -169,8 +169,10 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     isVip: row.protectionFlags?.isVip ?? false,
     // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
     // when the BE has the sender's policy at `'unsubscribe'`. Drives
-    // the "Unsub queued" pill on the sender card.
+    // the unsub pill on the sender card; `unsubStatus` (D9 Wave 2)
+    // refines the pill copy with the real execution outcome.
     unsubPending: row.policyType === 'unsubscribe',
+    unsubStatus: row.unsubStatus ?? null,
   };
   return sender;
 }
@@ -256,6 +258,12 @@ export function adaptSenderDetail(args: {
     // reads it directly. Default `null` keeps existing tests that don't
     // set the field from breaking.
     policyType: args.detail.policyType ?? null,
+    // D9 Wave 2 — unsub execution outcome + the D230 manual-path
+    // mailto URL (detail-only wire field). Both default null for
+    // fixtures that predate the pipeline.
+    unsubStatus: args.detail.unsubStatus ?? null,
+    unsubscribeMethod: args.detail.unsubscribeMethod ?? null,
+    unsubscribeMailtoUrl: args.detail.unsubscribeMailtoUrl ?? null,
     recommendation: seeded.recommendation,
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
