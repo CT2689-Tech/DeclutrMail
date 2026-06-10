@@ -3,6 +3,7 @@
 import { tokens } from '@declutrmail/shared';
 import {
   canArchive,
+  canDelete,
   canLater,
   canUnsubscribe,
   verbDisplay,
@@ -12,15 +13,25 @@ import {
 
 const { color, font } = tokens;
 
+/** The bulk verbs the bar offers (D52 + ADR-0019 K/A/U/L/D order). */
+export type SelectionBarVerb = Extract<ActionVerb, 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'>;
+
 /** Sticky bulk-action bar — appears while one or more senders are checked. */
 export function SelectionBar({
   senders,
   onClear,
   onAct,
+  busy = false,
 }: {
   senders: Sender[];
   onClear: () => void;
-  onAct: (verb: Extract<ActionVerb, 'Archive' | 'Later' | 'Unsubscribe'>) => void;
+  onAct: (verb: SelectionBarVerb) => void;
+  /**
+   * True while a bulk enqueue is in flight (D52). Disables every verb
+   * button so a slow round-trip can't double-fire; the selection stays
+   * visible until the server confirms.
+   */
+  busy?: boolean;
 }) {
   if (senders.length === 0) return null;
 
@@ -28,6 +39,7 @@ export function SelectionBar({
     Archive: senders.filter(canArchive).length,
     Later: senders.filter(canLater).length,
     Unsubscribe: senders.filter(canUnsubscribe).length,
+    Delete: senders.filter(canDelete).length,
   };
 
   return (
@@ -78,10 +90,13 @@ export function SelectionBar({
 
       <span style={{ flex: 1 }} />
 
-      {(['Archive', 'Later', 'Unsubscribe'] as const).map((verb) => {
+      {(['Archive', 'Later', 'Unsubscribe', 'Delete'] as const).map((verb) => {
         const n = eligible[verb];
-        const disabled = n === 0;
+        const disabled = n === 0 || busy;
         const primary = verb === 'Unsubscribe';
+        // Delete carries the destructive treatment — same `color.danger`
+        // the single-sender Delete confirm uses (spec v1.2 Decision 1).
+        const danger = verb === 'Delete';
         // Label + shortcut from the Action Registry (ADR-0015) — the
         // shortcut stays invisible inline (§3.1), surfaced only via the
         // hover tooltip + the `?` cheatsheet. `aria-keyshortcuts` advertises
@@ -100,9 +115,9 @@ export function SelectionBar({
               gap: 6,
               height: 32,
               padding: '0 14px',
-              background: primary ? color.amber : 'rgba(255,255,255,0.10)',
+              background: danger ? color.danger : primary ? color.amber : 'rgba(255,255,255,0.10)',
               color: '#FFFFFF',
-              border: `1px solid ${primary ? color.amber : 'rgba(255,255,255,0.18)'}`,
+              border: `1px solid ${danger ? color.danger : primary ? color.amber : 'rgba(255,255,255,0.18)'}`,
               borderRadius: 7,
               fontFamily: font.sans,
               fontSize: 12.5,

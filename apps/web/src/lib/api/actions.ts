@@ -292,3 +292,120 @@ export async function getCompositePreview(
   });
   return env.data;
 }
+
+/* ─────────────────────── D52 — multi-sender bulk client ─────────────────────── */
+
+/** Per-time-window bucket counts (same shape as the single-sender preview). */
+export interface BulkPreviewBuckets {
+  all: number;
+  olderThan30d: number;
+  olderThan90d: number;
+  olderThan180d: number;
+  olderThan365d: number;
+}
+
+/**
+ * Returned by `POST /api/actions/preview/bulk` — per-sender breakdown +
+ * aggregate bucket counts across the selection (D52: the action sheet
+ * shows AGGREGATED impact). `totals` excludes Protected/VIP senders
+ * because the bulk enqueue skips them — the preview equals what will
+ * actually move.
+ */
+export interface BulkActionPreviewResult {
+  senders: Array<{
+    senderId: string;
+    name: string;
+    counts: BulkPreviewBuckets;
+    protected: boolean;
+  }>;
+  totals: BulkPreviewBuckets;
+  protectedCount: number;
+}
+
+/**
+ * Returned by `POST /api/actions` with the `senders` selector — the
+ * batch handle to poll at `GET /api/actions/batch/:batchId`. `skipped`
+ * reports senders the fan-out did not enqueue (protected / not found).
+ */
+export interface BulkActionEnqueueResult {
+  batchId: string;
+  status: ActionJobStatus;
+  senderCount: number;
+  requestedTotal: number;
+  skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
+}
+
+/**
+ * Returned by `GET /api/actions/batch/:id` — aggregate batch state.
+ * Terminal when `status` is `done` or `failed`; partial failures keep
+ * `status: 'done'` and surface via `failed > 0`. `undoToken` cascade-
+ * reverts the WHOLE batch via the existing `POST /api/undo/:token`
+ * (ADR-0020 cascade-undo walks the `composite_id` siblings).
+ */
+export interface BatchStatusResult {
+  batchId: string;
+  status: ActionJobStatus;
+  total: number;
+  done: number;
+  failed: number;
+  requestedCount: number;
+  affectedCount: number;
+  undoToken: string | null;
+}
+
+/**
+ * Aggregated multi-sender preview (D226-mandatory before any bulk
+ * mutation). POST because the selection does not fit a query string —
+ * the call itself is read-only.
+ */
+export async function getBulkActionPreview(
+  senderIds: string[],
+  options: ActionRequestOptions = {},
+): Promise<BulkActionPreviewResult> {
+  const env = await apiPost<BulkActionPreviewResult>(
+    '/api/actions/preview/bulk',
+    { senderIds },
+    { ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}) },
+  );
+  return env.data;
+}
+
+/**
+ * Enqueue a multi-sender bulk action (D52). Same `POST /api/actions`
+ * endpoint as the single-sender composite (ADR-0020 "Bulk variant"),
+ * with the `senders` selector. One Idempotency-Key per bulk click —
+ * the BE derives deterministic per-sender row keys from it.
+ */
+export async function enqueueBulkAction(
+  input: {
+    senderIds: string[];
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
+    idempotencyKey: string;
+  } & ActionRequestOptions,
+): Promise<BulkActionEnqueueResult> {
+  const env = await apiPost<BulkActionEnqueueResult>(
+    '/api/actions',
+    {
+      selector: { type: 'senders', senderIds: input.senderIds },
+      primary: input.primary,
+      ...(input.secondary ? { secondary: input.secondary } : {}),
+    },
+    {
+      headers: { 'Idempotency-Key': input.idempotencyKey },
+      ...(input.mailboxId ? { mailboxId: input.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
+/** Poll a batch's aggregate status. Mailbox-scoped → 404 if not owned. */
+export async function getBatchStatus(
+  batchId: string,
+  options: ActionRequestOptions = {},
+): Promise<BatchStatusResult> {
+  const env = await apiGet<BatchStatusResult>(`/api/actions/batch/${batchId}`, {
+    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+  });
+  return env.data;
+}

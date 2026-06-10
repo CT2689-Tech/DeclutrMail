@@ -29,6 +29,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   }),
 }));
 
+import { ToastHost } from '@declutrmail/shared';
 import { SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -61,6 +62,18 @@ function renderScreen() {
   return render(
     <QueryWrapper client={client}>
       <SendersScreen />
+    </QueryWrapper>,
+  );
+}
+
+/** Like `renderScreen`, with the shared `ToastHost` mounted so tests can
+ * assert toast copy (the app layout mounts it at the root). */
+function renderScreenWithToasts() {
+  const client = createTestQueryClient();
+  return render(
+    <QueryWrapper client={client}>
+      <SendersScreen />
+      <ToastHost />
     </QueryWrapper>,
   );
 }
@@ -684,6 +697,76 @@ describe('SendersScreen — edge states', () => {
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 
+  it('never advertises more sample subjects than the real total in "Show what will move" (live smoke 2026-06-09)', async () => {
+    // The disclosure used to hardcode "(5 of N)" — a sender with 3 mails
+    // rendered "Show what will move (5 of 3)". The label must read the
+    // ACTUAL sample length, trimmed to the bucket total, even when the
+    // wire returns more subjects than the count (drift defense).
+    installFetchStub([
+      weeklyHeroHandler(),
+      oneSenderHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 3 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              sender: {
+                id: 'a',
+                name: 'Sender A',
+                domain: 'example.com',
+                lastSeenDays: 2,
+                repliedCount: 0,
+                monthly: 3,
+              },
+              counts: {
+                all: 3,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              recentSubjects: {
+                // 5 subjects against a count of 3 — deliberate drift.
+                all: [
+                  'Subject one',
+                  'Subject two',
+                  'Subject three',
+                  'Subject four',
+                  'Subject five',
+                ],
+                olderThan30d: [],
+                olderThan90d: [],
+                olderThan180d: [],
+                olderThan365d: [],
+              },
+              unsubAvailable: true,
+              protected: false,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive all mail from 1 sender/i);
+
+    // X = sample rows actually shown, Y = the real total; X <= Y always.
+    const disclosure = await screen.findByText(/show what will move \(3 of 3\)/i);
+    fireEvent.click(disclosure);
+    expect(screen.getByText('Subject one')).toBeInTheDocument();
+    expect(screen.getByText('Subject three')).toBeInTheDocument();
+    expect(screen.queryByText('Subject four')).toBeNull();
+    expect(screen.queryByText('Subject five')).toBeNull();
+  });
+
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
       weeklyHeroHandler(),
@@ -765,9 +848,10 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getAllByRole('dialog')).toHaveLength(1);
   });
 
-  it('no-ops a verb shortcut when the selection has no eligible senders', async () => {
+  it('explains why instead of opening a preview when no selected sender is eligible (D226)', async () => {
     // A standing-protected sender is ineligible for every bulk verb, so
-    // the eligible filter is empty and no preview opens.
+    // the eligible filter is empty. No preview opens — but the verb
+    // press must not be a SILENT no-op: a toast says why.
     const PROTECTED = {
       ...ROW,
       id: 'p',
@@ -789,12 +873,400 @@ describe('SendersScreen — edge states', () => {
           }),
       },
     ]);
-    renderScreen();
+    renderScreenWithToasts();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select protected co/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     expect(screen.queryByText(/unsubscribe from/i)).toBeNull();
+    expect(
+      await screen.findByText(/protected co is protected — unprotect it first/i),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Multi-sender bulk actions (D52, D32). The selection-bar A/L/D verbs
+ * ride the real pipeline: aggregated D226 preview → one bulk enqueue
+ * (per-sender fan-out server-side) → batch poll → real receipt + undo.
+ * Selection clears ONLY on server confirmation; nothing is fabricated.
+ */
+describe('SendersScreen — multi-sender bulk actions (D52)', () => {
+  beforeEach(() => {
+    useSendersStore.setState({ view: 'grid', sort: 'total', direction: 'desc' });
+  });
+  afterEach(() => resetFetchStub());
+
+  const ROW_B = { ...ROW, id: 'b', displayName: 'Sender B', email: 'b@example.com' };
+
+  const TWO_SENDER_LIST = {
+    method: 'GET' as const,
+    path: '/api/senders',
+    respond: () =>
+      jsonOk({
+        data: [ROW, ROW_B],
+        meta: {
+          pagination: { nextCursor: null, hasMore: false, limit: 25 },
+          query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+        },
+      }),
+  };
+
+  const BULK_PREVIEW_OK = {
+    method: 'POST' as const,
+    path: '/api/actions/preview/bulk',
+    respond: () =>
+      jsonOk({
+        data: {
+          senders: [
+            {
+              senderId: 'a',
+              name: 'Sender A',
+              counts: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protected: false,
+            },
+            {
+              senderId: 'b',
+              name: 'Sender B',
+              counts: {
+                all: 18,
+                olderThan30d: 9,
+                olderThan90d: 6,
+                olderThan180d: 4,
+                olderThan365d: 2,
+              },
+              protected: false,
+            },
+          ],
+          totals: {
+            all: 30,
+            olderThan30d: 17,
+            olderThan90d: 11,
+            olderThan180d: 7,
+            olderThan365d: 3,
+          },
+          protectedCount: 0,
+        },
+      }),
+  };
+
+  /** Select both senders and open the bulk preview for `key`. */
+  async function selectBothAndPress(key: string) {
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+    fireEvent.keyDown(document.body, { key });
+  }
+
+  it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
+    let bulkBody: unknown = null;
+    let undoPosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bulkBody = await req.json();
+          return jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 30,
+              skipped: [],
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'done',
+              total: 2,
+              done: 2,
+              failed: 0,
+              requestedCount: 30,
+              affectedCount: 30,
+              undoToken: 'tok-b',
+            },
+          }),
+      },
+      {
+        // The undo's reverse job polls the single-action route.
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'rev-1',
+              status: 'done',
+              requestedCount: 30,
+              affectedCount: 30,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-b',
+        respond: () => {
+          undoPosted = true;
+          return jsonOk({
+            data: {
+              token: 'tok-b',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    // Mandatory D226 preview with the AGGREGATED real count (never the
+    // fabricated tracer numbers).
+    await screen.findByText(/archive all mail from 2 senders/i);
+    await screen.findByText(/will move to Archive/i);
+    // The aggregated total (12 + 18) renders in the modal — headline +
+    // the "All inbox" chip count both read 30.
+    expect(within(screen.getByRole('dialog')).getAllByText('30').length).toBeGreaterThan(0);
+    // Per-window chips read the AGGREGATED totals too (8 + 9 = 17 for
+    // "30 days+") — never the single-sender composite preview, which is
+    // absent on bulk flows.
+    expect(
+      within(screen.getByRole('dialog')).getByRole('radio', { name: /30 days\+/i }),
+    ).toHaveTextContent('17');
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // Real receipt appears only after the batch poll reports done.
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent(/archived 2 senders/i);
+    expect(receipt).toHaveTextContent(/30 emails archived/i);
+    // Wire shape — ONE bulk POST carrying the senders selector.
+    expect(bulkBody).toMatchObject({
+      selector: { type: 'senders', senderIds: ['a', 'b'] },
+      primary: { type: 'archive' },
+    });
+    // Selection cleared on server confirmation (the bar is gone).
+    expect(screen.queryByText(/senders selected/i)).toBeNull();
+
+    // Undo reverses the WHOLE batch via the cascade token.
+    fireEvent.click(screen.getByRole('button', { name: /^undo$/i }));
+    await waitFor(() => expect(screen.queryByText(/archived 2 senders/i)).toBeNull());
+    expect(undoPosted).toBe(true);
+  });
+
+  it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
+    let enqueueAttempted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          enqueueAttempted = true;
+          return jsonServerError('boom');
+        },
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    await screen.findByText(/will move to Archive/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(enqueueAttempted).toBe(true));
+    // The selection survives the failure so the user can retry.
+    expect(await screen.findByText(/senders selected/i)).toBeInTheDocument();
+    // And no receipt was fabricated.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('surfaces a partial batch failure but keeps the succeeded portion undoable', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-2',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 30,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-2',
+              status: 'done',
+              total: 2,
+              done: 1,
+              failed: 1,
+              requestedCount: 30,
+              affectedCount: 12,
+              undoToken: 'tok-partial',
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    await screen.findByText(/will move to Archive/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // One sender failing never hides the other's real result — the
+    // receipt reflects what DID move and stays undoable.
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent(/12 emails archived/i);
+    expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+  });
+
+  it('routes bulk Delete through the destructive preview and blocks confirm when the preview fails', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () => jsonServerError('preview_down'),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('d');
+    // Destructive treatment — same Trash copy as single-sender Delete.
+    await screen.findByText(/delete mail from 2 senders/i);
+    await screen.findByText(/moves to gmail trash/i);
+    // D226: a failed preview must BLOCK the destructive confirm.
+    await screen.findByText(/couldn't load preview/i);
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
+    expect(confirmBtn).toBeDisabled();
+  });
+
+  it('offers Delete on the selection bar with the registry shortcut advertised', async () => {
+    installFetchStub([weeklyHeroHandler(), TWO_SENDER_LIST, BULK_PREVIEW_OK]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    const deleteBtn = screen.getByTitle('Delete (D)');
+    expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
+    fireEvent.click(deleteBtn);
+    // The click routes through the SAME mandatory preview.
+    expect(await screen.findByText(/delete mail from 1 sender/i)).toBeInTheDocument();
+  });
+
+  const PROTECTED_B = {
+    ...ROW_B,
+    displayName: 'Protected Co',
+    protectionFlags: { ...ROW.protectionFlags, isProtected: true, protectionReason: 'manual' },
+  };
+
+  it('states how many senders the eligibility gate skipped, and why (D226 honesty)', async () => {
+    // Live smoke 2026-06-09: "2 senders selected" in the bar silently
+    // became "1 sender" in the sheet when one was protected. The preview
+    // must state the narrowing, never leave the user to spot it.
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW, PROTECTED_B],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/archive/preview',
+        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+      },
+    ]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select protected co/i }));
+    expect(screen.getByText(/senders selected/i)).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    // The preview covers the 1 eligible sender AND says what it dropped.
+    await screen.findByText(/archive all mail from 1 sender/i);
+    expect(
+      screen.getByText(/1 protected sender skipped — unprotect to include it/i),
+    ).toBeInTheDocument();
+  });
+
+  it('toasts instead of opening a preview when the whole selection is protected', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                ...ROW,
+                displayName: 'Shielded A',
+                protectionFlags: {
+                  ...ROW.protectionFlags,
+                  isProtected: true,
+                  protectionReason: 'manual',
+                },
+              },
+              { ...PROTECTED_B, displayName: 'Shielded B' },
+            ],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select shielded a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select shielded b/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+
+    // No (empty) preview opens; the toast explains the no-op.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      await screen.findByText(/all 2 selected senders are protected — unprotect to include them/i),
+    ).toBeInTheDocument();
   });
 });
 

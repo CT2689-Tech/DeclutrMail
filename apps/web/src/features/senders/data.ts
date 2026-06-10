@@ -682,6 +682,13 @@ export function canLater(s: Sender): boolean {
   return !isStandingProtected(s);
 }
 
+/** Delete (Gmail Trash, 30-day recovery) — gated like the other
+ * destructive verbs: blocked only for standing-protected senders
+ * (D42/D43). */
+export function canDelete(s: Sender): boolean {
+  return !isStandingProtected(s);
+}
+
 /** Compact large-number display: 12480 → "12.5k". */
 export function fmtCompact(n: number): string {
   if (n < 1000) return n.toLocaleString();
@@ -758,6 +765,18 @@ export function verbDisplay(verb: ActionVerb): { label: string; shortcut: string
 export interface ActionRequest {
   verb: ActionVerb;
   senders: Sender[];
+  /**
+   * Senders the eligibility gate dropped from the user's selection
+   * before this request was built (D226 honesty — the preview must say
+   * why it covers fewer senders than the selection bar showed). Only
+   * two gates exist: standing protection (every bulk verb, D42/D43)
+   * and the people rule (Unsubscribe never applies to primary-group
+   * senders). Omitted when the request covers the full selection.
+   */
+  skipped?: {
+    protectedCount: number;
+    peopleCount: number;
+  };
 }
 
 /** Recent-subject samples for the expanded row detail. */

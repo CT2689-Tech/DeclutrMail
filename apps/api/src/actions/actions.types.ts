@@ -203,6 +203,31 @@ export const compositeSecondaryVerbSchema = z.enum(
 export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
 
 /**
+ * Max senders accepted by one bulk (multi-sender) action / preview
+ * request. ADR-0020 "Bulk variant" caps the resolved sender set at
+ * 1,000 (D-Q1).
+ */
+export const BULK_SENDERS_MAX = 1000;
+
+/**
+ * Composite selector — the single-sender / messages selectors plus the
+ * D52 multi-sender `senders` variant. `senders` fans out server-side to
+ * one `action_jobs` row per sender (per-sender failure isolation) linked
+ * via `composite_id` so the batch shares one cascade-undo group
+ * (ADR-0020). Min 2 — a single sender uses the `sender` selector.
+ */
+export const compositeSelectorSchema = z.discriminatedUnion('type', [
+  ...archiveSelectorSchema.options,
+  z
+    .object({
+      type: z.literal('senders'),
+      senderIds: z.array(z.string().uuid()).min(2).max(BULK_SENDERS_MAX),
+    })
+    .strict(),
+]);
+export type CompositeSelector = z.infer<typeof compositeSelectorSchema>;
+
+/**
  * Composite action request body — spec v1.2 Decision 15 wire shape.
  *
  *   {
@@ -211,13 +236,17 @@ export type CompositeSecondaryVerb = (typeof COMPOSITE_SECONDARY_VERBS)[number];
  *     secondary: { type: 'delete',  olderThanDays: 365 }   // optional
  *   }
  *
+ * The D52 bulk variant uses the same endpoint with
+ * `selector: { type: 'senders', senderIds: [...] }` per ADR-0020
+ * ("Bulk-action enqueue uses the same POST /api/actions endpoint").
+ *
  * Time-window range (1..3650 days) matches the DB CHECK constraint on
  * `action_jobs.older_than_days` so a client value outside the range
  * 400s here instead of failing at INSERT.
  */
 export const compositeActionRequestSchema = z
   .object({
-    selector: archiveSelectorSchema,
+    selector: compositeSelectorSchema,
     primary: z
       .object({
         type: compositePrimaryVerbSchema,
@@ -252,6 +281,91 @@ export interface CompositeActionEnqueueResult {
   primaryCount: number;
   /** Resolved secondary count, or null when no secondary fired. */
   secondaryCount: number | null;
+}
+
+/**
+ * Bulk enqueue response (D52 + ADR-0020 bulk variant). `batchId` is the
+ * anchor row's id — every other row in the batch carries
+ * `composite_id = batchId`, so `GET /api/actions/batch/:batchId`
+ * aggregates the whole fan-out and `POST /api/undo/:token` (any sibling
+ * token) cascade-reverts the batch.
+ *
+ * `skipped` reports senders the fan-out did NOT enqueue — per-sender
+ * failure isolation at the enqueue boundary: a Protected/VIP or
+ * unknown sender never poisons the rest of the selection.
+ */
+export interface BulkActionEnqueueResult {
+  batchId: string;
+  status: ActionJobStatus;
+  /** Senders actually enqueued (after skips). */
+  senderCount: number;
+  /** Sum of per-sender primary `requestedCount`s. */
+  requestedTotal: number;
+  skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
+}
+
+/**
+ * Bulk preview request — `POST /api/actions/preview/bulk` (ADR-0020
+ * "Bulk variant"; D52 aggregated-impact action sheet). Explicit
+ * sender ids only at this build — the filter-object variant lands with
+ * bulk-by-filter.
+ */
+export const bulkPreviewRequestSchema = z
+  .object({
+    senderIds: z.array(z.string().uuid()).min(2).max(BULK_SENDERS_MAX),
+  })
+  .strict();
+export type BulkPreviewRequest = z.infer<typeof bulkPreviewRequestSchema>;
+
+/** Per-time-window bucket counts (same shape as the single-sender preview). */
+export interface BulkPreviewBuckets {
+  all: number;
+  olderThan30d: number;
+  olderThan90d: number;
+  olderThan180d: number;
+  olderThan365d: number;
+}
+
+/**
+ * Bulk preview response (D52): per-sender breakdown + aggregate counts
+ * across the selection so the D226 preview states REAL numbers, never a
+ * client estimate. `totals` excludes Protected/VIP senders — the
+ * enqueue skips them, so the preview must match what will actually
+ * move. Unknown / cross-mailbox ids are dropped (ownership), mirroring
+ * the messages-selector forged-id drop.
+ */
+export interface BulkActionPreviewResult {
+  senders: Array<{
+    senderId: string;
+    name: string;
+    counts: BulkPreviewBuckets;
+    protected: boolean;
+  }>;
+  totals: BulkPreviewBuckets;
+  protectedCount: number;
+}
+
+/**
+ * Batch status (D52) — `GET /api/actions/batch/:batchId`. Aggregates
+ * every forward sibling of the batch (anchor + `composite_id` children)
+ * so the FE polls ONE handle per batch instead of N. `undoToken` is the
+ * anchor's token when present, else the first sibling token — any
+ * sibling token cascade-reverts the whole batch (ADR-0020 cascade-undo).
+ *
+ * `status` derivation: all-queued → 'queued'; any progress → 'executing';
+ * all terminal → 'failed' when every row failed, else 'done' (partial
+ * failures surface via `failed`).
+ */
+export interface BatchStatusResult {
+  batchId: string;
+  status: ActionJobStatus;
+  /** Forward sibling rows in the batch (primaries + any secondaries). */
+  total: number;
+  done: number;
+  failed: number;
+  requestedCount: number;
+  affectedCount: number;
+  undoToken: string | null;
 }
 
 /**
