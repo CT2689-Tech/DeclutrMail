@@ -14,7 +14,13 @@
  * `hashKey` produces consistent hashes.
  */
 
-import type { GmailCategory, SenderListDirection, SenderListSort } from '@/lib/api/senders';
+import type {
+  ActivityBucket,
+  GmailCategory,
+  SenderListDirection,
+  SenderListSort,
+  TriStateFilter,
+} from '@/lib/api/senders';
 
 export const sendersKeys = {
   all: ['senders'] as const,
@@ -36,12 +42,20 @@ export const sendersKeys = {
     params: {
       category?: GmailCategory | undefined;
       limit?: number | undefined;
-      isProtected?: boolean | undefined;
+      isProtected?: TriStateFilter | undefined;
       sort?: SenderListSort | undefined;
       direction?: SenderListDirection | undefined;
       /** Search term (#145) — in the key so each query caches separately
        *  and a new search resets to page 1 (cursor is search-scoped). */
       q?: string | undefined;
+      /** D38 compose strip — each axis is in the key so distinct
+       *  composes cache independently and a new compose resets to
+       *  page 1 (cursor is compose-scoped). */
+      activity?: ActivityBucket | undefined;
+      activityNegate?: boolean | undefined;
+      unsubReady?: TriStateFilter | undefined;
+      windowDays?: number | undefined;
+      domain?: string | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */

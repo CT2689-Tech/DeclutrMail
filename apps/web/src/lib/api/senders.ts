@@ -25,8 +25,10 @@ import { apiGet } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
-/** Gmail-side category enum — matches `mail_senders.gmail_category`. */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/** Gmail-side category enum — derived from `gmail_category` pg_enum via
+ * the shared contracts package. */
+export type { GmailCategory } from '@declutrmail/shared/contracts';
+import type { GmailCategory } from '@declutrmail/shared/contracts';
 
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
@@ -93,6 +95,12 @@ export interface SenderListRow {
    * A on every full rebuild and reconciled nightly.
    */
   totalReceived: number;
+  /**
+   * "You replied N×" count (Senders V2 spec v1.3 + mig 0022) — distinct
+   * outbound messages whose thread contains ≥1 inbound from this sender.
+   * Auto-protect threshold is ≥3. Engine default `0` (never null).
+   */
+  repliedCount: number;
   /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
   monthlyVolume: number | null;
   /**
@@ -128,6 +136,15 @@ export interface SenderListRow {
     protectionReason: ProtectionReasonWire | null;
     protectionSetAt: string | null;
   };
+  /**
+   * Standing policy verb (`keep | archive | unsubscribe | later`).
+   * `null` = no policy row (engine default). FE renders a "Unsub queued"
+   * pill when this equals `'unsubscribe'` (D38 2026-06-05 brainstorm).
+   *
+   * Optional on the type because legacy test fixtures + Weekly-Hero
+   * wire shapes don't carry it; absent ⇒ adapter treats as `null`.
+   */
+  policyType?: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
 }
 
 /**
@@ -172,6 +189,13 @@ export interface MailMessageRow {
   /** ISO-8601 — Gmail `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  /**
+   * Whole-message byte estimate from Gmail `sizeEstimate` (D7
+   * amendment per ADR-0021). `null` for rows synced before the
+   * amendment OR rows where Gmail omitted the field; the renderer
+   * shows an em-dash on null rather than "0B".
+   */
+  sizeBytes: number | null;
 }
 
 /** Row shape on `GET /api/senders/:id/timeseries` — 12-month volume + read counts. */
@@ -234,6 +258,36 @@ export interface WeeklyHeroDto {
 /** GET /api/senders/weekly-hero — Weekly Hero slices (D47, D48). */
 export function fetchWeeklyHero(signal?: AbortSignal): Promise<Envelope<WeeklyHeroDto, unknown>> {
   return apiGet<WeeklyHeroDto>('/api/senders/weekly-hero', { signal });
+}
+
+/**
+ * Minimal-shape suggestion row for the `/senders/suggest` typeahead.
+ * Lighter than `SenderListRow` by design — the dropdown only needs
+ * enough to render one line per match.
+ */
+export interface SenderSuggestionDto {
+  id: string;
+  name: string;
+  email: string;
+  domain: string;
+  totalReceived: number;
+}
+
+/**
+ * GET /api/senders/suggest — typeahead autocomplete (autosuggest).
+ * Mailbox-scoped; ranked by `total_received DESC` so the biggest
+ * matches surface first. Empty / whitespace query → empty array.
+ */
+export function fetchSenderSuggestions(
+  q: string,
+  options: { limit?: number; signal?: AbortSignal } = {},
+): Promise<Envelope<{ senders: SenderSuggestionDto[] }, unknown>> {
+  const query: Record<string, string> = { q };
+  if (options.limit !== undefined) query.limit = String(options.limit);
+  return apiGet<{ senders: SenderSuggestionDto[] }>('/api/senders/suggest', {
+    query,
+    ...(options.signal ? { signal: options.signal } : {}),
+  });
 }
 
 /**
@@ -340,12 +394,12 @@ export interface ListSendersParams {
   limit?: number | undefined;
   cursor?: string | undefined;
   /**
-   * When `true`, request only standing-protected senders (D42/D43) —
-   * the BE filters server-side instead of the FE fetching the whole
-   * mailbox and filtering in JS (which storms at 5k+ senders). Maps to
-   * the wire param `?protected=true`. ADR-0014 + senders list contract.
+   * Tri-state standing-protected filter (D38). `true` = only protected;
+   * `false` = exclude protected; omit = no constraint. Maps to wire
+   * `?protected=true` / `?protected=not`. ADR-0014 + senders list
+   * contract.
    */
-  isProtected?: boolean | undefined;
+  isProtected?: TriStateFilter | undefined;
   /** Sortable column. Omit to take the BE default (`total`). */
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
@@ -355,6 +409,23 @@ export interface ListSendersParams {
    * email / domain, mailbox-wide. Maps to `?q=`. Omit/empty = no search.
    */
   q?: string | undefined;
+  /**
+   * D38 activity bucket — `active | quiet | dormant`. Use the special
+   * `not-active | not-quiet | not-dormant` form on the wire to negate.
+   * Omit = no constraint.
+   */
+  activity?: ActivityBucket | undefined;
+  /** When true, send the negated form of `activity` on the wire. */
+  activityNegate?: boolean | undefined;
+  /**
+   * D38 unsub-readiness tri-state. `true` = require unsubscribe method
+   * present; `false` = exclude; omit = no constraint.
+   */
+  unsubReady?: TriStateFilter | undefined;
+  /** D38 — "quiet for N days+" filter. 30 / 90 / 180 / 365 + raw number. */
+  windowDays?: number | undefined;
+  /** D38 — case-insensitive domain substring (mailbox-wide). */
+  domain?: string | undefined;
 }
 
 /**
@@ -374,9 +445,37 @@ export interface SenderListQueryMeta {
   globalMaxTotal: number;
   /** Optional per-chip counts for the filter UI (Slice 3); omitted today. */
   counts?: Record<string, number>;
+  /**
+   * D38 powerful filters — mailbox-wide absolute counts per axis,
+   * stable across the active compose (ignores other filter axes). The
+   * compose strip's chip counts use this so picking a chip is
+   * predictable: numbers don't shift under the user's cursor.
+   */
+  filterCounts?: {
+    total: number;
+    active: number;
+    quiet: number;
+    dormant: number;
+    unsubReady: number;
+    repliedTo: number;
+    protected: number;
+  };
   /** ISO-8601 — when the meta was computed server-side (observational). */
   asOf: string;
 }
+
+/**
+ * Activity bucket (D38). Mirrors the BE `ActivityBucket` union.
+ * Mutually exclusive — exactly one bucket per sender at any moment.
+ */
+export type ActivityBucket = 'active' | 'quiet' | 'dormant';
+
+/**
+ * Tri-state filter — required / negated / absent. Mirrors the BE
+ * `TriStateFilter`. `true` = include only matches; `false` = exclude
+ * matches (NOT this); `null` = no constraint.
+ */
+export type TriStateFilter = boolean | null;
 
 /**
  * Paginated envelope variant that also carries the `meta.query` block —
@@ -402,15 +501,26 @@ export function fetchSenders(
       category: params.category,
       limit: params.limit,
       cursor: params.cursor,
-      // Only the literal `'true'` enables the filter on the wire; the
-      // BE silently drops anything else. We map an undefined `isProtected`
-      // to an omitted param so cache keys for "no filter" stay stable.
-      protected: params.isProtected === true ? 'true' : undefined,
+      // D38 — tri-state protected: 'true' / 'not' / omitted. The BE
+      // accepts both 'not' and 'false' forms; we send 'not' so the
+      // wire reads as the compose-strip negation primitive.
+      protected:
+        params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
       sort: params.sort,
       direction: params.direction,
       // Empty string collapses to omitted so a cleared search keys the
       // same cache entry as "no search".
       q: params.q ? params.q : undefined,
+      // D38 compose strip params.
+      activity: params.activity
+        ? params.activityNegate
+          ? `not-${params.activity}`
+          : params.activity
+        : undefined,
+      unsub_ready:
+        params.unsubReady === true ? 'true' : params.unsubReady === false ? 'not' : undefined,
+      window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
+      domain: params.domain ? params.domain : undefined,
     },
     signal,
   }) as Promise<SenderListEnvelope>;

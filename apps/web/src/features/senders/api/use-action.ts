@@ -14,14 +14,22 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
   enqueueArchiveSender,
+  enqueueCompositeAction,
   getActionStatus,
   getArchivePreview,
+  getCompositePreview,
   isTerminalStatus,
   newIdempotencyKey,
+  recordUnsubscribeIntent,
   revertUndo,
   type ActionEnqueueResult,
   type ActionStatusResult,
+  type CompositeActionEnqueueResult,
+  type CompositeActionPreviewResult,
+  type CompositePrimaryVerb,
+  type CompositeSecondaryVerb,
   type UndoRevertResult,
+  type UnsubscribeIntentResult,
 } from '@/lib/api/actions';
 
 /** Poll cadence in ms while an action job is in flight. */
@@ -91,3 +99,64 @@ export function useRevertUndo() {
     mutationFn: ({ token }) => revertUndo(token),
   });
 }
+
+/**
+ * Enqueue a unified composite action via `POST /api/actions` (ADR-0020).
+ * Carries the per-verb time-window + optional secondary historic verb
+ * through to the BE in one call. A fresh idempotency key per mutate so a
+ * network-retry dedupes while a fresh click is a new action.
+ */
+export function useEnqueueComposite() {
+  return useMutation<
+    CompositeActionEnqueueResult,
+    Error,
+    {
+      senderId: string;
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
+      override?: boolean;
+    }
+  >({
+    mutationFn: ({ senderId, primary, secondary, override }) =>
+      enqueueCompositeAction({
+        senderId,
+        primary,
+        ...(secondary ? { secondary } : {}),
+        ...(override !== undefined ? { override } : {}),
+        idempotencyKey: newIdempotencyKey(),
+      }),
+  });
+}
+
+/**
+ * Fetch the composite preview — sender context strip + per-time-window
+ * bucket counts — so the confirm modal opens with accurate chip counts in
+ * one round-trip. Enabled only while the modal is open. `retry: false`
+ * keeps a 4xx (404 unowned) a designed state, never a poll storm.
+ * `staleTime: 0` so reopening re-counts (the inbox moves under us).
+ */
+export function useCompositePreview(senderId: string | null) {
+  return useQuery({
+    queryKey: ['composite-preview', senderId] as const,
+    queryFn: () => getCompositePreview(senderId as string),
+    enabled: senderId !== null,
+    retry: false,
+    staleTime: 0,
+  });
+}
+
+/**
+ * Record an unsubscribe intent for a single sender. Used by the
+ * sender action sheet (replaces the prior tracer toast that violated
+ * CLAUDE.md §10 no-fake-completion 2026-06-05). The mutation writes
+ * BOTH the sender_policies pending row + the activity_log audit row
+ * in a single transaction on the BE.
+ */
+export function useRecordUnsubscribeIntent() {
+  return useMutation<UnsubscribeIntentResult, Error, { senderId: string }>({
+    mutationFn: ({ senderId }) => recordUnsubscribeIntent(senderId),
+  });
+}
+
+/** Re-export the preview type so consumers don't import from the lib layer. */
+export type { CompositeActionPreviewResult };

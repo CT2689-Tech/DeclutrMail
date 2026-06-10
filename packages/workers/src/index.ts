@@ -19,14 +19,20 @@ export { WORKER_POLICIES } from './worker-policies.js';
 export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
 export {
   createRedisConnection,
+  ensureIncrementalSyncJob,
   ensureInitialSyncJob,
+  INCREMENTAL_SYNC_JOB,
+  INCREMENTAL_SYNC_QUEUE,
+  incrementalSyncJobOptions,
   INITIAL_SYNC_JOB,
   INITIAL_SYNC_QUEUE,
   initialSyncJobOptions,
 } from './queue.js';
-export type { InitialSyncJobData } from './queue.js';
+export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {
   GmailAccess,
+  GmailHistoryPage,
+  GmailHistoryRecord,
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,
@@ -57,6 +63,8 @@ export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
+export { IncrementalSyncWorker } from './incremental-sync.worker.js';
+export type { IncrementalSyncDeps, IncrementalSyncResult } from './incremental-sync.worker.js';
 export {
   createLimiter,
   DEFAULT_EXPLAIN_TIMEOUT_MS,

@@ -74,6 +74,21 @@ export const providerSyncState = pgTable(
       mode: 'date',
     }),
     errorCode: text('error_code'),
+    /**
+     * Wall-clock of the most recent IncrementalSyncWorker terminal
+     * failure (BullMQ exhausted retries). Distinct from `readiness_status
+     * ='failed'` because flipping readiness on a fully-onboarded mailbox
+     * routes the user back to /onboarding. NULL = steady state. The cron
+     * drift sweep re-enqueues every 5 min; a subsequent successful run
+     * clears both columns on the next cursor advance (D38, D159).
+     */
+    lastIncrementalErrorAt: timestamp('last_incremental_error_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /** Classified worker error name (e.g. 'GmailAuthError'). Metadata
+     * only (D7); never body / snippet / header content. */
+    lastIncrementalErrorCode: text('last_incremental_error_code'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()

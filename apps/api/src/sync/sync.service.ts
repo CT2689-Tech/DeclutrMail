@@ -1,8 +1,12 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
-import { ensureInitialSyncJob } from '@declutrmail/workers';
+import {
+  ensureIncrementalSyncJob,
+  ensureInitialSyncJob,
+  type IncrementalSyncJobData,
+} from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
 
@@ -19,9 +23,20 @@ type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction'
 /**
  * Result of {@link SyncService.advanceHistoryId}.
  *
- *   - `advanced`: row existed, incoming > last_history_id, UPDATE applied
+ *   - `advanced`: row existed with NON-NULL last_history_id, incoming > last_history_id, UPDATE applied
  *   - `stale`:    row existed but incoming <= last_history_id (last value returned)
  *   - `uninitialized`: no provider_sync_state row exists for this mailbox
+ *   - `deferred_initial_sync_in_flight`: row existed but `last_history_id IS NULL`.
+ *     InitialSync has NOT yet written its snapshot S via `markReady` (the row
+ *     was created by `markQueued` in OAuth-connect and `markReady` runs AFTER
+ *     the metadata fetch). Advancing the cursor NULL → H here would strand the
+ *     (S, H] range: InitialSync's `markReady` uses GREATEST(stored, snapshot),
+ *     so its later write of S would be rejected once the webhook had already
+ *     written H>S, and the history events in (S, H] would never be paged.
+ *     The deferred path leaves the cursor NULL so InitialSync writes S
+ *     unimpeded; the next webhook (or the 10-min drift sweep, which uses the
+ *     stored cursor as both start and end) then enqueues from S, recovering
+ *     the range. (D38 webhook-vs-InitialSync race fix, 2026-06-09.)
  *
  * Bootstrap of a missing row is the OAuth-connect / InitialSyncWorker
  * flow's responsibility (D109, D224) — `advanceHistoryId` never creates
@@ -29,12 +44,40 @@ type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction'
  * stops retrying a delivery that initial sync wouldn't fix.
  */
 export type AdvanceHistoryIdResult =
-  | { kind: 'advanced'; previousHistoryId: bigint | null }
+  | { kind: 'advanced'; previousHistoryId: bigint }
   | { kind: 'stale'; lastHistoryId: bigint | null }
-  | { kind: 'uninitialized' };
+  | { kind: 'uninitialized' }
+  | { kind: 'deferred_initial_sync_in_flight' };
 
 /** NestJS DI token for the initial-sync BullMQ queue (D157). */
 export const INITIAL_SYNC_QUEUE_TOKEN = 'INITIAL_SYNC_QUEUE';
+
+/**
+ * NestJS DI token for the incremental-sync BullMQ queue (D8, D229).
+ *
+ * Owned by SyncModule — the sync feature is the canonical producer
+ * (D204 boundary; provider_sync_state is its table). WebhooksModule
+ * imports SyncModule and consumes via this same token, so a Pub/Sub
+ * push and a "Sync now" button click both share one Queue instance
+ * (= one Redis connection, one observability surface).
+ */
+export const INCREMENTAL_SYNC_QUEUE_TOKEN = 'INCREMENTAL_SYNC_QUEUE';
+
+/**
+ * Result of {@link SyncService.enqueueManualIncrementalSync}.
+ *
+ *   - `enqueued`   — new job added; reconciler will pick up + advance cursor.
+ *   - `noop`       — a job for the same cursor is already in-flight (BullMQ
+ *                    dedups by `${mailbox}:${historyId}`). The button still
+ *                    feels "successful" but it does not double-enqueue.
+ *   - `not_ready`  — initial sync has not completed for this mailbox yet, so
+ *                    there is no `last_history_id` to advance from. The
+ *                    controller maps this to a 409 with `code: 'SYNC_NOT_READY'`.
+ */
+export type ManualIncrementalSyncResult =
+  | { kind: 'enqueued'; cursorHistoryId: string }
+  | { kind: 'noop'; cursorHistoryId: string }
+  | { kind: 'not_ready' };
 
 /**
  * SyncService — the sync feature's facade (D201/D204).
@@ -46,8 +89,12 @@ export const INITIAL_SYNC_QUEUE_TOKEN = 'INITIAL_SYNC_QUEUE';
  */
 @Injectable()
 export class SyncService {
+  private readonly logger = new Logger(SyncService.name);
+
   constructor(
     @Inject(INITIAL_SYNC_QUEUE_TOKEN) private readonly queue: Queue<InitialSyncJobData>,
+    @Inject(INCREMENTAL_SYNC_QUEUE_TOKEN)
+    private readonly incrementalQueue: Queue<IncrementalSyncJobData>,
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
   ) {}
 
@@ -166,7 +213,16 @@ export class SyncService {
       return { kind: 'uninitialized' };
     }
     const previousHistoryId = rows[0]!.lastHistoryId ?? null;
-    if (previousHistoryId !== null && previousHistoryId >= args.incomingHistoryId) {
+    // D38 race fix: cursor IS NULL means InitialSync's `markReady` has not
+    // yet written the snapshot S. Advancing NULL → H here would orphan
+    // (S, H] because `markReady`'s GREATEST(stored=H, snapshot=S) keeps H
+    // and never writes S. Leave the cursor NULL; InitialSync will write S
+    // when it finishes, and the next webhook / drift sweep will enqueue
+    // from S, which covers all history events including (S, H].
+    if (previousHistoryId === null) {
+      return { kind: 'deferred_initial_sync_in_flight' };
+    }
+    if (previousHistoryId >= args.incomingHistoryId) {
       return { kind: 'stale', lastHistoryId: previousHistoryId };
     }
     await executor
@@ -237,4 +293,103 @@ export class SyncService {
       .where(inArray(providerSyncState.mailboxAccountId, mailboxAccountIds));
     return new Map(rows.map((r) => [r.mailboxAccountId, r.readinessStatus]));
   }
+
+  /**
+   * Enqueue an on-demand incremental sync for one mailbox.
+   *
+   * Surfaces:
+   *   - `POST /api/v1/sync/incremental` (the user-facing "Sync now" button).
+   *   - The 5-min reconciliation cron in `apps/api/src/worker.ts`
+   *     (catch-up path while Pub/Sub is still being wired in prod, and
+   *     drift safety net even after Pub/Sub lands).
+   *
+   * Contract:
+   *   1. Look up the mailbox's current cursor (`provider_sync_state.last_history_id`).
+   *      Null cursor → `{ kind: 'not_ready' }`; initial sync hasn't completed.
+   *   2. Use the cursor as BOTH `startHistoryId` and `endHistoryId` so the
+   *      BullMQ `jobId = ${mailbox}:${cursor}` dedups consecutive clicks
+   *      against the same cursor (returns `noop`). Once the worker advances
+   *      the cursor, a new click yields a fresh `jobId` → `enqueued`.
+   *   3. Failure to enqueue propagates as a thrown error — the controller
+   *      maps it to 500; the reconciler swallows + logs.
+   *
+   * No body data, no PII, no message-derived state — this method only
+   * speaks to BullMQ + `provider_sync_state` (privacy posture §2.1).
+   */
+  async enqueueManualIncrementalSync(
+    mailboxAccountId: string,
+    trigger: 'manual' | 'cron',
+  ): Promise<ManualIncrementalSyncResult> {
+    const rows = await this.db
+      .select({ lastHistoryId: providerSyncState.lastHistoryId })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+
+    const lastHistoryId = rows[0]?.lastHistoryId ?? null;
+    if (lastHistoryId === null) {
+      return { kind: 'not_ready' };
+    }
+
+    const cursor = lastHistoryId.toString();
+    const outcome = await ensureIncrementalSyncJob(this.incrementalQueue, {
+      mailboxAccountId,
+      startHistoryId: cursor,
+      endHistoryId: cursor,
+    });
+
+    // Structured log so the cron path is observable in Cloud Logging
+    // without a separate metrics surface. `trigger` lets us distinguish
+    // user clicks from drift recovery.
+    this.logger.log(
+      JSON.stringify({
+        kind: 'sync.manual_enqueue',
+        mailboxAccountId,
+        trigger,
+        outcome,
+        cursorHistoryId: cursor,
+      }),
+    );
+
+    return outcome === 'added'
+      ? { kind: 'enqueued', cursorHistoryId: cursor }
+      : { kind: 'noop', cursorHistoryId: cursor };
+  }
+
+  /**
+   * Drift sweep — for the cron in `apps/api/src/worker.ts`. Returns the
+   * list of mailbox ids that have a `last_history_id` AND haven't been
+   * advanced in `staleAfterMs`. The cron then walks each one through
+   * `enqueueManualIncrementalSync` with `trigger='cron'`.
+   *
+   * Predicate (Drizzle SQL, see `provider_sync_state.history_id_updated_at`
+   * idx D229): `last_history_id IS NOT NULL AND history_id_updated_at < now() - staleAfterMs`.
+   */
+  async listMailboxesNeedingDriftSweep(staleAfterMs: number): Promise<string[]> {
+    const cutoff = sql`now() - ${sql.raw(`interval '${staleAfterMs} milliseconds'`)}`;
+    const rows = await this.db
+      .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+      .from(providerSyncState)
+      .where(
+        sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+      );
+    return rows.map((r) => r.mailboxAccountId);
+  }
+}
+
+/**
+ * Throw a 409 with a structured `code` for the FE to render a real
+ * state. Mirrors the `CurrentMailboxGuard` 409s the FE already handles
+ * (SELECT_MAILBOX / NO_ACTIVE_MAILBOX) — `SYNC_NOT_READY` is a designed
+ * state per CLAUDE.md §8 "guard-4xx-as-designed-state".
+ *
+ * `ConflictException` maps to HTTP 409 in Nest (not `BadRequestException`'s
+ * 400 — earlier draft of this code used BadRequestException by mistake;
+ * architecture-guardian flagged the contract drift 2026-06-06).
+ */
+export function syncNotReady(): ConflictException {
+  return new ConflictException({
+    code: 'SYNC_NOT_READY',
+    message: 'Initial sync has not completed for this mailbox yet.',
+  });
 }

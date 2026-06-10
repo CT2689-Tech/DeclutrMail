@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   EmptyState,
@@ -15,7 +15,6 @@ import {
   canLater,
   canUnsubscribe,
   detectCohorts,
-  isStandingProtected,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
@@ -23,8 +22,9 @@ import {
   type ReviewKind,
   type Sender,
 } from './data';
-import { CohortRail } from './cohort-rail';
 import { SenderSearch } from './sender-search';
+import { ComposeStrip, type ComposeState } from './compose-strip';
+import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
@@ -33,36 +33,55 @@ import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
-import { useWeeklyHero } from './api/use-weekly-hero';
-import { adaptHeroSender, adaptSenderListRow } from './api/adapters';
+import { adaptSenderListRow } from './api/adapters';
 import {
   useEnqueueAction,
   useActionStatus,
   useRevertUndo,
   useArchivePreview,
+  useCompositePreview,
+  useEnqueueComposite,
+  useRecordUnsubscribeIntent,
 } from './api/use-action';
 import { sendersKeys } from './api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
-import { WeeklyHeroLive } from './weekly-hero/weekly-hero-live';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type { SenderListRow, SenderSummaryDto, WeeklyHeroSliceKind } from '@/lib/api/senders';
+import type {
+  SenderListDirection,
+  SenderListRow,
+  SenderListSort,
+  SenderSummaryDto,
+} from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
-import {
-  InboxStoryHero,
-  KpiStrip,
-  WeeklyProgress,
-  groupByIntent,
-  intentOf,
-  INTENT_META,
-  type SenderIntent,
-} from './uplift-d';
+import { groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import type { Verb } from '@declutrmail/shared/observability';
 
 const { color, font } = tokens;
+
+/**
+ * FE verb labels → PostHog closed-union verb tokens. Keeps the
+ * 'bulk_action_taken' event's `verb` field schema-aligned with the
+ * canonical KAULD set (D227 / verb-registry). 'Protect' is internal
+ * (standing-policy toggle, not a verb-fire) so it maps to 'keep' for
+ * the funnel; the protect-specific event lands when the surface
+ * deserves a dedicated event.
+ */
+const VERB_TO_POSTHOG: Record<ActionVerb, Verb> = {
+  Keep: 'keep',
+  Archive: 'archive',
+  Unsubscribe: 'unsubscribe',
+  Later: 'later',
+  Delete: 'delete',
+  Protect: 'keep',
+};
 
 const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boolean> = {
   Archive: canArchive,
@@ -134,7 +153,21 @@ export function SendersScreen() {
   // the two share ONE infinite-query cache entry per (category, limit,
   // isProtected, sort, direction, q) — page sizes stay uniform across the
   // surface as the user pulls more pages here.
-  const sendersQuery = useSenders({ limit: 50, sort, direction, q: debouncedQuery });
+  // D38 compose state — every axis lives on the URL. Wired to the BE
+  // list query below so chips narrow mailbox-wide (not loaded-page).
+  const { compose, setCompose, clearCompose } = useComposeState();
+  const sendersQuery = useSenders({
+    limit: 50,
+    sort,
+    direction,
+    q: debouncedQuery,
+    activity: compose.activity ?? undefined,
+    activityNegate: compose.activity ? compose.activityNegate : undefined,
+    unsubReady: compose.unsubReady,
+    windowDays: compose.windowDays ?? undefined,
+    domain: compose.domain ?? undefined,
+    isProtected: compose.protectedFlag,
+  });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
@@ -153,6 +186,15 @@ export function SendersScreen() {
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
   const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
+  // and is preserved across the scroll (subsequent pages recompute on
+  // the server but the FE caches the page-1 snapshot so chip counts
+  // don't shift mid-scroll).
+  const filterCounts = sendersQuery.data?.pages[0]?.meta.query?.filterCounts;
+  // D38 — total mailbox-wide matching count for the active compose
+  // (the BE-honest "X senders match"). Falls back to the loaded length
+  // while page 1 is in flight.
+  const totalMatching = sendersQuery.data?.pages[0]?.meta.query?.totalMatching ?? undefined;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -165,7 +207,9 @@ export function SendersScreen() {
   // do NOT silently fall back to the loaded-page derivation — the very
   // bug #145 set out to fix. Boolean flag drives a small "approximate"
   // badge in the KPI strip; the underlying error is breadcrumbed to the
-  // console (Sentry FE wiring queued separately — FOUNDER-FOLLOWUPS).
+  // captureFeatureException so a wire regression is queryable in Sentry
+  // alongside a console breadcrumb — matching the sister sender-detail-page
+  // pattern (apps/web/src/features/senders/detail/sender-detail-page.tsx).
   const summaryFailed = summaryQuery.isError;
   useEffect(() => {
     if (!summaryQuery.isError) return;
@@ -173,12 +217,11 @@ export function SendersScreen() {
     console.warn('[senders] summary fetch failed; KPI/hero fall back to loaded page', {
       message: err instanceof Error ? err.message : String(err),
     });
+    captureFeatureException(err, { surface: 'senders', reason: 'summary' });
   }, [summaryQuery.isError, summaryQuery.error]);
   // The page-1 `totalMatching` is the canonical "All N" chip count —
-  // already on the wire and search-aware. Prefer it over the summary's
-  // `totalSenders` so the chip stays consistent with the list pagination
-  // banner (`X of N senders`).
-  const totalMatchingFromList = sendersQuery.data?.pages[0]?.meta.query?.totalMatching;
+  // already on the wire and search-aware. Surfaced via `totalMatching`
+  // above (D38) — drives the hero number + the compose summary line.
 
   if (sendersQuery.isLoading) {
     return <LoadingState />;
@@ -198,7 +241,11 @@ export function SendersScreen() {
       onQueryChange={setQuery}
       summary={summary}
       summaryFailed={summaryFailed}
-      totalMatchingFromList={totalMatchingFromList}
+      totalMatching={totalMatching}
+      filterCounts={filterCounts}
+      compose={compose}
+      setCompose={setCompose}
+      clearCompose={clearCompose}
     />
   );
 }
@@ -219,9 +266,13 @@ function SendersScreenContent({
   onLoadMore,
   query,
   onQueryChange: setQuery,
-  summary,
+  summary: _summary,
   summaryFailed,
-  totalMatchingFromList,
+  totalMatching,
+  filterCounts,
+  compose,
+  setCompose,
+  clearCompose,
 }: {
   senders: Sender[];
   wireRows: SenderListRow[];
@@ -247,8 +298,24 @@ function SendersScreenContent({
    * derived from ≤50 loaded rows when the mailbox is bigger.
    */
   summaryFailed: boolean;
-  /** Page-1 `meta.query.totalMatching` — the canonical "All N" chip count. */
-  totalMatchingFromList: number | undefined;
+  /** D38 — BE-honest count for the active compose (page-1 snapshot). */
+  totalMatching: number | undefined;
+  /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
+  filterCounts:
+    | {
+        total: number;
+        active: number;
+        quiet: number;
+        dormant: number;
+        unsubReady: number;
+        repliedTo: number;
+        protected: number;
+      }
+    | undefined;
+  /** D38 — URL-backed compose state. */
+  compose: ComposeState;
+  setCompose: (next: ComposeState) => void;
+  clearCompose: () => void;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
@@ -259,8 +326,9 @@ function SendersScreenContent({
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
   const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
-  const [doneThisWeek] = useState(0); // wired by the activity-log feed in a follow-up PR
-  const [heroDismissed, setHeroDismissed] = useState(false);
+  // State previously holding doneThisWeek + heroDismissed retired
+  // with the Senders Weekly Hero + WeeklyProgress render (spec v1.2
+  // Decision 4). Engagement loop ships on Brief.
 
   // P6 — real single-sender Archive (D226). `enqueue` fires the action;
   // `activeAction` holds the in-flight handle that `actionStatus` polls to
@@ -268,10 +336,20 @@ function SendersScreenContent({
   // in-flight action at a time is sufficient for the single-sender wire.
   const qc = useQueryClient();
   const enqueue = useEnqueueAction();
+  // ADR-0020 unified composite endpoint — covers Delete primary + Later
+  // primary + composite secondary (Later/Unsub + Archive/Delete past).
+  // The per-verb `enqueueArchiveSender` stays for the single-sender
+  // Archive path until Phase 5 dead-code sweep retires it.
+  const enqueueComposite = useEnqueueComposite();
+  const recordUnsubIntent = useRecordUnsubscribeIntent();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
     senderName: string;
+    // Carried through the polled lifecycle so the done-handler can render
+    // a verb-correct receipt + toast (Delete must NOT say "Archived",
+    // Later must NOT say "Archived" — composite path mistake 2026-06-05).
+    verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
@@ -290,11 +368,28 @@ function SendersScreenContent({
   const previewFirstSender =
     pendingAction != null &&
     pendingAction.senders.length === 1 &&
-    (previewVerb === 'Archive' || previewVerb === 'Unsubscribe' || previewVerb === 'Later')
+    (previewVerb === 'Archive' ||
+      previewVerb === 'Unsubscribe' ||
+      previewVerb === 'Later' ||
+      previewVerb === 'Delete')
       ? (pendingAction.senders[0] ?? null)
       : null;
   const archivePreviewSenderId = previewFirstSender?.id ?? null;
   const archivePreviewQuery = useArchivePreview(archivePreviewSenderId);
+  // ADR-0020 composite preview — single round-trip for sender ctx strip
+  // + per-time-window bucket counts. Powers the chip row + summary line
+  // for every primary verb (archive/delete/later/unsub) without the FE
+  // having to fetch 5 buckets separately.
+  const compositePreviewQuery = useCompositePreview(archivePreviewSenderId);
+  useEffect(() => {
+    if (!compositePreviewQuery.isError || archivePreviewSenderId == null) return;
+    const err = compositePreviewQuery.error;
+    console.warn('[senders] composite preview fetch failed', {
+      senderId: archivePreviewSenderId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    captureFeatureException(err, { surface: 'senders', reason: 'composite_preview' });
+  }, [compositePreviewQuery.isError, compositePreviewQuery.error, archivePreviewSenderId]);
   // Breadcrumb the underlying error before we collapse it to a boolean
   // for the modal — preview is D226-mandatory, so a sustained 5xx that
   // forces the modal into "we'll archive whatever's there" copy without
@@ -308,6 +403,7 @@ function SendersScreenContent({
       senderId: archivePreviewSenderId,
       message: err instanceof Error ? err.message : String(err),
     });
+    captureFeatureException(err, { surface: 'senders', reason: 'archive_preview' });
   }, [archivePreviewQuery.isError, archivePreviewQuery.error, archivePreviewSenderId]);
   const archivePreview =
     archivePreviewSenderId != null
@@ -329,33 +425,14 @@ function SendersScreenContent({
   // returns to Table without a re-click.
   const isMobile = useIsAtMost('sm');
   const view = isMobile ? 'grid' : storeView;
-  // Weekly Hero (D47, D48). Always fetched; only RENDERED when
-  // `data.isMonday=true` per D47 ("refreshes Monday morning per user
-  // timezone"). The single in-flight fetch is cheap and keeps the
-  // cache warm so a same-week revisit is instant.
-  const heroQuery = useWeeklyHero();
+  // useWeeklyHero retired from Senders (spec v1.2 Decision 4); the
+  // Weekly Hero now lives on Brief. The hook + its observability
+  // effect move to apps/web/src/features/brief/ in the Brief redesign.
 
-  // D211/D212: a fetch failure must NOT be silently swallowed. Surface
-  // through structured `console.warn` (the observability seam picks it
-  // up downstream) so a Monday-morning hero outage is visible in logs
-  // even though the UI itself stays calm — we never block the senders
-  // list on the hero, which is a value-add card. The fallback render
-  // below shows a single-line inline notice on Mondays so the user
-  // knows the slot is "loading failed" rather than "you have nothing
-  // to review".
-  useEffect(() => {
-    if (heroQuery.error) {
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'senders.weekly_hero.fetch_failed',
-          message: heroQuery.error.message,
-        }),
-      );
-    }
-  }, [heroQuery.error]);
-
-  const cohorts = useMemo(() => detectCohorts(senders), [senders]);
+  // CohortRail render removed per spec v1.2 Decision 4. Cohort
+  // detection retained internally for potential resurrect as
+  // "Saved filters" post-launch (no production consumer today).
+  const _cohorts = useMemo(() => detectCohorts(senders), [senders]);
 
   // Search is now server-side (#145) — `senders` already arrives filtered
   // by the active `q`, so the base for downstream counts + grouping is
@@ -375,7 +452,10 @@ function SendersScreenContent({
   // via the KPI strip + new bucket chips below. The two are coexisting
   // until the chip-click-to-filter wiring is rewritten to honor the
   // 8-bucket priority server-side.
-  const intentCounts = useMemo<Record<SenderIntent, number>>(() => {
+  // intentCounts retained as `_intentCounts` for the in-Grid intent
+  // bucket headers; chip-row consumer retired with the fact-chip
+  // replacement (spec v1.2 Decision 2). Phase 2 PR-FE3 deletes both.
+  const _intentCounts = useMemo<Record<SenderIntent, number>>(() => {
     const counts: Record<SenderIntent, number> = {
       cleanup: 0,
       later: 0,
@@ -386,9 +466,26 @@ function SendersScreenContent({
     return counts;
   }, [intentBuckets]);
 
+  // Fact filter chip (spec v1.2 Decision 2 + Decision 3). Replaces the
+  // legacy intent chip row. Each chip is a fact predicate (no inference)
+  // applied client-side over the loaded page; Phase 1 BE adds matching
+  // server-side filter params (`?activity` etc.) so the chip narrows
+  // mailbox-wide. Predicates use existing Sender fields:
+  //   - active   = lastDays <= 30 && monthly > 0
+  //   - quiet    = lastDays > 30 && lastDays <= 180
+  //   - dormant  = lastDays > 180
+  //   - replied  = repliedCount > 0
+  //   - unsub_ready = (proxy) lastReview.verdict === 'unsubscribe' until
+  //                   wire field lands in Phase 1 BE
+  // D38 — fact-chip row, matchFactChip helper, factChipCounts and
+  // factFilteredSenders retired here. The ComposeStrip (above) owns the
+  // multi-axis compose, the BE owns the predicate evaluation, and
+  // `senders` arrives already-filtered for the active scope.
+
   // Visible groups after the active-intent filter. When `activeIntent` is
   // null ('All' chip), every non-empty group renders; when set, only that
-  // group renders expanded.
+  // group renders expanded. Intent grouping retains for visual bucketing
+  // until Phase 2 PR-FE3 retires `intentOf` entirely.
   const visibleGroups = useMemo(
     () =>
       intentBuckets
@@ -409,23 +506,61 @@ function SendersScreenContent({
   // remains the fallback for the milliseconds before the summary
   // populates AND for the time-cost / avg-read / estSaved fields, which
   // still need per-sender read-rate (not on the summary wire).
-  const totals = useMemo(() => computeTotals(senders, summary), [senders, summary]);
+  // computeTotals + the local `totals` aggregate retired with the KPI
+  // strip (D38). `summary` still drives the in-flight banner; chip
+  // counts now come from `filterCounts` on the wire.
 
-  const applyCohort = (cohort: Cohort) => {
+  // applyCohort retired with CohortRail render (spec v1.2 Decision 4).
+  const _applyCohort = (cohort: Cohort) => {
     setActiveIntent(null);
     setQuery('');
     setSelected(new Set(cohort.ids));
     toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
   };
 
-  const onSearchPick = useCallback((s: Sender) => {
+  // Search suggestion picked. The BE typeahead spans the whole mailbox,
+  // so the chosen sender may not be on the current list page. Set the
+  // query to its name (BE list narrows to that single row) and drop the
+  // intent filter so the row is guaranteed visible.
+  const onSearchPick = useCallback((s: { id: string; name: string; domain: string }) => {
     setQuery(s.name);
     setActiveIntent(null);
   }, []);
 
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+
+      // Instrumentation single-entry — every verb-fire from this screen
+      // lands here (single + bulk + composite + unsub), so PostHog +
+      // Sentry attach exactly once per user intent. The 'invocation'
+      // discriminator (single vs multi) distinguishes one-sender clicks
+      // from selection-fanned bulks at the source so the funnel reads
+      // cleanly. `bulk_in_filter` is reserved for a future surface that
+      // tracks the bulk-by-filter selection state explicitly.
+      const invocation: 'single' | 'multi' = senders.length === 1 ? 'single' : 'multi';
+      const phVerb = VERB_TO_POSTHOG[verb];
+      void track('bulk_action_taken', {
+        verb: phVerb,
+        selected_count: senders.length,
+        // We don't know the affected_messages count at fire-time
+        // (composite preview resolves it server-side). Conservatively
+        // report sender count; downstream Activity action_completed
+        // events carry the real message count.
+        affected_messages: senders.length,
+        source: 'senders_bulk_bar',
+      });
+      addBreadcrumb({
+        category: 'action',
+        message: `senders: ${verb} fire (n=${senders.length}, inv=${invocation})`,
+        level: 'info',
+        data: {
+          verb: phVerb,
+          sender_count: senders.length,
+          has_secondary: opts?.secondary != null,
+          older_than_days: opts?.olderThanDays ?? null,
+        },
+      });
 
       // P6 — real single-sender Archive (D226). The preview already ran
       // (this fires post-confirm), so enqueue the action, then poll its
@@ -434,36 +569,170 @@ function SendersScreenContent({
       // Other verbs + multi-sender bulk stay on the tracer path: their BE
       // pipeline isn't built (the worker rejects them fail-closed) and the
       // multi-sender selector is P7.
-      if (verb === 'Archive' && senders.length === 1) {
+      if (verb === 'Archive' && senders.length === 1 && opts?.secondary == null) {
         const sender = senders[0]!;
         setPendingAction(null);
         setSelected(new Set());
         toast(`Archiving mail from ${sender.name}…`, 'info');
-        enqueue.mutate(
-          { senderId: sender.id },
+        const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
+        enqueue.mutate(mutationArgs, {
+          onSuccess: (res) =>
+            setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
+          onError: (err) => {
+            // 409 PROTECTED_SENDER is a designed conflict — skip Sentry to
+            // avoid noise. Every other failure (5xx, IDEMPOTENCY_KEY race,
+            // NO_ACTIVE_MAILBOX) is a real regression worth capturing.
+            if (!(err instanceof ApiError && err.status === 409)) {
+              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
+            }
+            toast(
+              err instanceof ApiError && err.status === 409
+                ? `${sender.name} is protected — unprotect it first`
+                : `Couldn't archive ${sender.name}`,
+              'warn',
+            );
+          },
+        });
+        return;
+      }
+
+      // Composite path (ADR-0020 + spec v1.2 Decision 15) — single-sender
+      // Delete primary OR Later primary OR Archive/Later with a secondary
+      // historic verb. Routes through `POST /api/actions` so the BE
+      // composite executor persists primary + secondary as two linked
+      // rows when relevant. Unsubscribe primary stays tracer at this
+      // build (no BE composite primary support for unsub) — the secondary
+      // chip on Unsub also tracers until the unsub pipeline lands.
+      if (
+        senders.length === 1 &&
+        (verb === 'Delete' || (verb === 'Archive' && opts?.secondary != null) || verb === 'Later')
+      ) {
+        const sender = senders[0]!;
+        const primaryType: 'archive' | 'later' | 'delete' =
+          verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
+        const inFlightCopy =
+          primaryType === 'delete'
+            ? `Moving mail from ${sender.name} to Trash…`
+            : primaryType === 'later'
+              ? `Moving ${sender.name} to Later…`
+              : `Archiving mail from ${sender.name}…`;
+        setPendingAction(null);
+        setSelected(new Set());
+        toast(inFlightCopy, 'info');
+        enqueueComposite.mutate(
+          {
+            senderId: sender.id,
+            primary: {
+              type: primaryType,
+              olderThanDays: opts?.olderThanDays ?? null,
+            },
+            ...(opts?.secondary
+              ? {
+                  secondary: {
+                    type: opts.secondary.type,
+                    olderThanDays: opts.secondary.olderThanDays ?? null,
+                  },
+                }
+              : {}),
+          },
           {
             onSuccess: (res) =>
-              setActiveAction({ actionId: res.actionId, senderName: sender.name }),
-            onError: (err) =>
+              setActiveAction({
+                actionId: res.actionId,
+                senderName: sender.name,
+                verb:
+                  primaryType === 'delete'
+                    ? 'Delete'
+                    : primaryType === 'later'
+                      ? 'Later'
+                      : 'Archive',
+              }),
+            onError: (err) => {
+              if (!(err instanceof ApiError && err.status === 409)) {
+                captureFeatureException(err, {
+                  surface: 'senders',
+                  reason: `enqueue_${primaryType}`,
+                });
+              }
               toast(
-                // Protected/VIP senders return 409 PROTECTED_SENDER (a
-                // ConflictException), not 403.
                 err instanceof ApiError && err.status === 409
                   ? `${sender.name} is protected — unprotect it first`
-                  : `Couldn't archive ${sender.name}`,
+                  : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
-              ),
+              );
+            },
           },
         );
+        return;
+      }
+
+      // Unsubscribe — record the intent honestly (D38 + 2026-06-05
+      // brainstorm). The real RFC8058 / mailto / manual pipeline (D230)
+      // lands later; for now we upsert sender_policies.policy_type=
+      // 'unsubscribe' + write a 0-affected activity_log row so /activity
+      // reflects the decision. Replaces the prior tracer-toast-with-fake-
+      // receipt path that violated CLAUDE.md §10 ("Unsubscribed from
+      // DKNY" was a lie with no BE call). Multi-sender Unsub fans the
+      // mutation across each sender so the audit trail captures every
+      // decision; we do NOT batch into a single tracer toast for the
+      // bulk case (same honesty rule).
+      if (verb === 'Unsubscribe') {
+        // Guard against rapid double-confirmation. While a previous
+        // recordUnsubIntent.mutate is in-flight we drop the click (the
+        // modal has already closed; the button is no longer visible).
+        if (recordUnsubIntent.isPending) return;
+        setPendingAction(null);
+        setSelected(new Set());
+        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
+        const isBulk = senderRefs.length > 1;
+        // Fire each intent. TanStack Query dedupes invalidations into
+        // one refetch, so the toast burst + per-success invalidation
+        // collapse to a single Activity refresh at the end of the run.
+        let succeeded = 0;
+        let failed = 0;
+        for (const sref of senderRefs) {
+          recordUnsubIntent.mutate(
+            { senderId: sref.id },
+            {
+              onSuccess: () => {
+                succeeded++;
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `Unsubscribe queued for ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''} — we'll process when the pipeline ships.`
+                      : `Unsubscribe queued for ${sref.name} — we'll process it when the pipeline ships.`,
+                    failed > 0 ? 'warn' : 'success',
+                  );
+                }
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                void qc.invalidateQueries({ queryKey: activityKeys.all });
+              },
+              onError: (err) => {
+                failed++;
+                captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `${failed} of ${senderRefs.length} unsubscribes failed to queue — try again.`
+                      : `Couldn't queue unsubscribe for ${sref.name}`,
+                    'warn',
+                  );
+                }
+              },
+            },
+          );
+        }
         return;
       }
 
       // Tracer path — toast + fake receipt until the verb's BE lands. No
       // email count is shown here: the true number is only known once the
       // verb's worker runs (P6 wired that for single-sender Archive).
+      // NOTE: Keep is intentionally tracer (no Gmail mutation needed);
+      // multi-sender bulk for non-Unsub verbs is still tracer (P7).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
-        verb === 'Unsubscribe' ? 'warn' : 'success',
+        'success',
       );
       if (verb !== 'Keep') {
         setReceipt({
@@ -500,6 +769,7 @@ function SendersScreenContent({
         actionId: activeAction.actionId,
         message: err instanceof Error ? err.message : String(err),
       });
+      captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       setActiveAction(null);
       return;
@@ -507,29 +777,44 @@ function SendersScreenContent({
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
+      // Verb-correct copy — the composite path runs the SAME done-handler
+      // for Archive / Delete / Later, so the receipt + toast must read
+      // from the polled handle's recorded verb, not a hardcoded one.
+      const verbPast = VERB_PAST[activeAction.verb];
+      const verbLowercase = activeAction.verb.toLowerCase();
       if (data.affectedCount === 0 || !data.undoToken) {
         // No-op: the sender is in the directory by LIFETIME volume but has
-        // no mail in the inbox right now, so the worker archived nothing and
+        // no mail in the inbox right now, so the worker did nothing and
         // issued no undo token. Never show a "reversible" receipt with a
-        // dead Undo — say plainly that there was nothing to archive.
-        toast(`No inbox mail from ${activeAction.senderName} to archive`, 'info');
+        // dead Undo — say plainly that there was nothing to do.
+        toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        // The worker still wrote a 0-affected `activity_log` row
+        // (label-action.worker.ts:248 — the audit-trail consistency
+        // fix 2026-06-05). Invalidate Activity so a user navigating
+        // to /activity sees the audit row instead of an empty feed.
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         setReceipt({
           id: `r${++receiptSeq}`,
-          verb: 'Archive',
+          verb: activeAction.verb,
           count: 1,
           historicTotal: data.affectedCount,
           timeLeft: '',
           undoToken: data.undoToken,
         });
         toast(
-          `Archived ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
           'success',
         );
+        // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
+        // Activity feed (new activity_log row from the worker). Missing
+        // the activity invalidation left /activity stale on Delete done
+        // 2026-06-05.
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
       }
     } else {
-      toast(`Couldn't archive ${activeAction.senderName}`, 'warn');
+      toast(`Couldn't ${activeAction.verb.toLowerCase()} ${activeAction.senderName}`, 'warn');
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
@@ -547,6 +832,7 @@ function SendersScreenContent({
         revertActionId,
         message: err instanceof Error ? err.message : String(err),
       });
+      captureFeatureException(err, { surface: 'senders', reason: 'revert_status_poll' });
       toast("Couldn't confirm undo — see Activity", 'warn');
       setRevertActionId(null);
       return;
@@ -557,6 +843,10 @@ function SendersScreenContent({
       toast('Restored to your inbox', 'success');
       setReceipt(null);
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      // Revert wrote a fresh activity_log row + flipped the original
+      // row's undoState to `executed`. Surface both on /activity by
+      // invalidating the feed alongside senders.
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
     } else {
       toast("Couldn't undo — see Activity", 'warn');
     }
@@ -570,7 +860,11 @@ function SendersScreenContent({
   const onUndo = useCallback(() => {
     const token = receipt?.undoToken;
     if (!token) {
-      toast('Reverted — see Activity for the full log', 'info');
+      // Tokenless receipts shouldn't surface a fake "Reverted" — the
+      // unsub-intent path makes a real BE call and supplies a token; the
+      // tokenless branch is now defensive. Clear the receipt silently
+      // (matches sister sender-detail-page.tsx). No fake completion per
+      // CLAUDE.md §10.
       setReceipt(null);
       return;
     }
@@ -583,28 +877,41 @@ function SendersScreenContent({
             toast('Restored to your inbox', 'success');
             setReceipt(null);
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
+            void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
             setRevertActionId(res.actionId);
           }
         },
-        onError: (err) =>
+        onError: (err) => {
+          // 410 is a designed state (undo window closed) — skip capture.
+          // Every other failure (5xx, transient network) is a real
+          // regression on the D226-mandatory undo surface.
+          if (!(err instanceof ApiError && err.status === 410)) {
+            captureFeatureException(err, { surface: 'senders', reason: 'revert_undo' });
+          }
           toast(
             err instanceof ApiError && err.status === 410
               ? 'Undo window has expired'
               : "Couldn't undo — see Activity",
             'warn',
-          ),
+          );
+        },
       },
     );
   }, [receipt, revert, qc]);
 
-  // Archive / Unsubscribe / Later move mail, so they route through the
-  // mandatory preview (D226). Keep / Protect change nothing and fire
-  // directly.
+  // Archive / Unsubscribe / Later / Delete move mail, so they route
+  // through the mandatory preview (D226 + spec v1.2 Decision 15). Keep /
+  // Protect change nothing and fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
-      if (req.verb === 'Archive' || req.verb === 'Unsubscribe' || req.verb === 'Later') {
+      if (
+        req.verb === 'Archive' ||
+        req.verb === 'Unsubscribe' ||
+        req.verb === 'Later' ||
+        req.verb === 'Delete'
+      ) {
         setPendingAction(req);
       } else {
         performAction(req.verb, req.senders);
@@ -632,6 +939,14 @@ function SendersScreenContent({
       if (isTypingTarget(e.target)) return;
       if (selectedSenders.length === 0) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      // ADR-0019 + silent-failure-hunter 2026-06-03 — when an
+      // ActionPopover is open on any card, its window-level keydown
+      // listener also fires shortcut picks. Without this guard
+      // pressing 'A' with both an open popover AND a bulk selection
+      // would enqueue BOTH a single-sender Archive (popover) AND a
+      // bulk Archive preview (this handler). Suppress the bulk
+      // handler while any popover is open.
+      if (document.querySelector('[role="menu"]')) return;
       const verb = VERB_BY_KEY[e.key.toLowerCase()];
       if (!verb) return;
       e.preventDefault();
@@ -665,23 +980,10 @@ function SendersScreenContent({
     [review, performAction],
   );
 
-  // Hero CTA opens the review session over the senders the engine
-  // wants to clean up — same Wave-1 review primitive, new entry point.
-  //
-  // Filter via `intentOf()` (NOT the raw `lastReview.verdict`) so the
-  // X2 confidence gate is honored end-to-end: low-confidence
-  // `unsubscribe` verdicts that get suppressed from the Cleanup bucket
-  // also stay out of the hero CTA's review slice. Per Codex review of
-  // PR #82 (finding #4) — the gate previously affected `groupByIntent`
-  // only, leaving the hero + KPI totals counting raw verdicts.
-  const onStartReview = useCallback(() => {
-    const cleanup = senders.filter((s) => intentOf(s) === 'cleanup');
-    if (cleanup.length === 0) {
-      toast('No cleanup recommendations right now — your inbox is in shape.', 'info');
-      return;
-    }
-    setReview({ slice: cleanup, kind: 'promo' });
-  }, [senders]);
+  // onStartReview retired with InboxStoryHero render (spec v1.2
+  // Decision 4). Brief screen reframes the "start review" flow as
+  // its own hero CTA. The ReviewSession primitive remains available
+  // for direct invocation from chip rows or saved filters post-launch.
 
   return (
     <div
@@ -737,73 +1039,16 @@ function SendersScreenContent({
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
 
       {/*
-        Weekly Hero (D47, D48) — visible ONLY on Mondays per D47.
-        Hidden when the user has dismissed for the week (D47 — "Hero
-        auto-dismisses for the week after user reviews any slice OR
-        clicks 'Not now.'"). Dismissal state is local-only at launch
-        (no `weekly_hero_runs.dismissed_at` table yet — that schema is
-        deferred); refreshing the page brings the hero back, which is
-        acceptable for V2 launch.
+        Weekly Hero, InboxStoryHero, WeeklyProgress, CohortRail
+        ALL REMOVED from Senders per spec v1.2 Decision 4.
+        WeeklyHero moves to Brief (separate ADR + PR); InboxStoryHero
+        retired entirely (editorial inference banned per Decision 6);
+        WeeklyProgress moves to Brief; CohortRail retire-then-resurrect
+        as "Saved filters" post-launch.
+
+        Senders becomes a lean power tool: header → KPI strip → chips
+        + sort + result-count strip → grid/table. No editorial frame.
       */}
-      {/* Suggestions rail — was Monday-only per D47; founder reframed
-          as "always visible when slices exist" since the surface is the
-          premium look the rest of the screen aspires to and BE
-          recomputes slices every fetch. Dismissal still works per
-          session. */}
-      {!heroDismissed && heroQuery.data && heroQuery.data.data.slices.length > 0 && (
-        <WeeklyHeroLive
-          data={heroQuery.data.data}
-          onReview={(kind, sliceSenders) => {
-            const reviewKind = mapHeroSliceToReviewKind(kind);
-            // PR #115 P2: review the full hero slice directly. The
-            // paginated `senders` list only contains the first page
-            // (~50 rows); larger mailboxes have hero slice members
-            // OUTSIDE that page, so the prior `senders.filter(...)`
-            // intersection silently dropped most of the slice. Adapt
-            // the hero DTOs into the `Sender` shape via
-            // `adaptHeroSender` so the review session sees every row
-            // the BE returned for the slice, regardless of pagination.
-            const slice = sliceSenders.map(adaptHeroSender);
-            if (slice.length === 0) {
-              // Defensive: the BE should never emit an empty slice
-              // (we don't render slices with < SLICE_MIN), but if it
-              // does, fall through with a calm toast rather than
-              // opening an empty review session.
-              toast('No senders to review in this slice.', 'info');
-              return;
-            }
-            setReview({ slice, kind: reviewKind });
-            setHeroDismissed(true);
-          }}
-          onSkip={() => setHeroDismissed(true)}
-        />
-      )}
-
-      {senders.length > 0 && (
-        <InboxStoryHero
-          eyebrow="Your senders, last 30 days"
-          story={renderHeroStory(totals)}
-          meta={[
-            {
-              value: `${summary?.activeSenders ?? 0}`,
-              label: 'Active senders',
-            },
-          ]}
-          ctaCopy={renderCtaCopy(totals)}
-          ctaLabel="Start review"
-          onCtaClick={onStartReview}
-        />
-      )}
-
-      <WeeklyProgress
-        label="This week"
-        done={doneThisWeek}
-        total={totals.cleanupCount}
-        // "Estimated savings" copy DROPPED — rode the placeholder
-        // 1.6 min/msg coefficient + the broken monthlyVolume sum.
-        // Will return when a calibrated coefficient lands.
-        caption={undefined}
-      />
 
       {/*
         Honest-failure banner — appears only when the mailbox-wide summary
@@ -838,67 +1083,113 @@ function SendersScreenContent({
         </div>
       )}
 
+      {/* Hero — single editorial number replaces the 3-cell KPI strip.
+          Counts the senders matching the active compose (mailbox-wide,
+          BE-honest). Fraunces italic gives the page one anchor moment;
+          everything below is the body of the article. */}
       {senders.length > 0 && (
-        <KpiStrip
-          cells={[
-            // KPI strip — 5 mailbox-wide cells from the rolling-window
-            // summary. Time-cost cell DROPPED (rode a placeholder
-            // 1.6-min/msg coefficient on top of the broken monthlyVolume
-            // sum — would render fiction). Restore when calibrated.
-            {
-              label: 'Senders',
-              value: totalMatchingFromList ?? summary?.totalSenders ?? senders.length,
-            },
-            {
-              label: 'Active',
-              value: summary?.activeSenders ?? 0,
-              micro: summary?.activeSenders ? 'last 30 days' : undefined,
-            },
-            {
-              label: 'Needs review',
-              value: totals.needsReview,
-            },
-            {
-              label: 'Protected',
-              value: totals.protectedCount,
-              micro: totals.protectedCount > 0 ? 'VIPs · receipts' : undefined,
-            },
-            {
-              label: 'Noise reducible',
-              value: `~${totals.noiseReductionPct}`,
-              unit: '%',
-            },
-          ]}
+        <div style={{ margin: '8px 0 4px' }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-display, "Fraunces", serif)',
+              fontStyle: 'italic',
+              fontWeight: 400,
+              fontSize: 56,
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              color: 'var(--color-fg)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {(totalMatching ?? senders.length).toLocaleString()}
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--font-display, "Fraunces", serif)',
+              fontSize: 22,
+              color: 'var(--color-fg-soft)',
+              marginLeft: 12,
+              letterSpacing: '-0.005em',
+            }}
+          >
+            senders
+          </span>
+        </div>
+      )}
+
+      {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
+          Counts on chips are mailbox-wide absolutes (filterCounts),
+          NOT loaded-page derivations. URL state via useComposeState
+          makes the scope shareable + refresh-stable. */}
+      {senders.length > 0 && (
+        <ComposeStrip
+          state={compose}
+          counts={
+            filterCounts
+              ? {
+                  total: filterCounts.total,
+                  active: filterCounts.active,
+                  quiet: filterCounts.quiet,
+                  dormant: filterCounts.dormant,
+                  unsubReady: filterCounts.unsubReady,
+                  repliedTo: filterCounts.repliedTo,
+                  protected: filterCounts.protected,
+                }
+              : undefined
+          }
+          onChange={(next: ComposeState) => setCompose(next)}
+          onClear={clearCompose}
+          domainSuggestions={topDomains(senders)}
+          sort={tableSort}
+          direction={tableDirection}
+          onSortChange={(next) => setTableSort(next)}
         />
       )}
 
-      {cohorts.length > 0 && <CohortRail cohorts={cohorts} onApply={applyCohort} />}
-
-      {/* Intent filter chips — replaces the Gmail-category chips per ADR-0012 */}
+      {/* Compose summary line — replaces the old result-count strip.
+          Reads as a sentence: "47 senders match. sorted [biggest first ▾]."
+          Sort menu inline. Bulk select + clear ride the same line. */}
       {senders.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {/*
-            "All" chip counts every matching sender (mailbox-wide, search-
-            aware). Sourced from the list's page-1 `meta.query.totalMatching`
-            (already on the wire) — falls back to the loaded-page length only
-            while page 1 is in flight. Loaded `queryBase.length` would
-            understate the count on mailboxes larger than one page.
-          */}
-          <IntentChip
-            label="All"
-            count={totalMatchingFromList ?? summary?.totalSenders ?? queryBase.length}
-            active={activeIntent === null}
-            onClick={() => setActiveIntent(null)}
-          />
-          {(Object.keys(INTENT_META) as SenderIntent[]).map((intent) => (
-            <IntentChip
-              key={intent}
-              label={INTENT_META[intent].label}
-              count={intentCounts[intent]}
-              active={activeIntent === intent}
-              onClick={() => setActiveIntent(activeIntent === intent ? null : intent)}
-            />
-          ))}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 16,
+            margin: '12px 0 4px',
+            flexWrap: 'wrap',
+            fontFamily: 'var(--font-display, "Fraunces", serif)',
+            fontSize: 16,
+            color: 'var(--color-fg)',
+          }}
+        >
+          <span>
+            <strong
+              style={{
+                fontStyle: 'italic',
+                fontWeight: 600,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {(totalMatching ?? senders.length).toLocaleString()}
+            </strong>{' '}
+            senders match.
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11.5,
+              letterSpacing: '0.04em',
+              color: 'var(--color-fg-soft)',
+              display: 'inline-flex',
+              gap: 14,
+              alignItems: 'baseline',
+            }}
+          >
+            {senders.length > 0 && (
+              <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
+            )}
+          </span>
         </div>
       )}
 
@@ -928,12 +1219,12 @@ function SendersScreenContent({
           }
         />
       ) : view === 'grid' ? (
-        // D49 default — grid of cards. Flatten the intent buckets so
-        // the responsive `auto-fit` layout fills the row evenly; the
-        // intent chips (above) still apply via `visibleGroups`'
-        // filtering.
+        // D49 default — grid of cards. `senders` arrives already
+        // BE-filtered for the active compose (D38). The legacy
+        // `visibleGroups` intent bucketing is no longer consulted for
+        // the card grid render.
         <SenderGrid
-          senders={visibleGroups.flatMap((b) => b.items)}
+          senders={senders}
           selectedIds={selected}
           onToggleSelect={(id) =>
             setSelected((prev) => {
@@ -944,6 +1235,7 @@ function SendersScreenContent({
             })
           }
           onAction={requestAction}
+          globalMaxTotal={globalMaxTotal}
         />
       ) : (
         // Slice 1 Step 7a — flat-sortable SenderTable (ADR-0014,
@@ -1031,6 +1323,8 @@ function SendersScreenContent({
         onCancel={closePending}
         onConfirm={confirmPending}
         archivePreview={archivePreview}
+        compositePreview={compositePreviewQuery.data}
+        compositePreviewError={compositePreviewQuery.isError}
       />
 
       <ReviewSession
@@ -1061,7 +1355,280 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
+  // Spec v1.2 Decision 1 (ADR-0019) — Delete joins the row verb set;
+  // routes through the same composite confirm modal as Archive/Later.
+  delete: 'Delete',
 };
+
+// SortMenu retired — replaced by the `SortChip` axis inside
+// `ComposeStrip`. The (column × direction) vocabulary + grouping
+// lives in `compose-strip.tsx` alongside the other axis chips so the
+// strip reads as one filter+sort surface. Removing it from this file
+// trimmed ~150 LOC of inline menu code.
+
+// Placeholder type kept so any imports elsewhere keep compiling; the
+// chip surface in compose-strip declares its own narrower union.
+type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
+
+/**
+ * Every (column × direction) pair the menu offers, in render order,
+ * grouped by column. Labels are user-intent copy — "Most emails ever"
+ * reads more naturally than "total ↓" for the value the column holds,
+ * "Newest / Oldest" for dates, "A → Z / Z → A" for name. The wire
+ * `direction` ('asc' | 'desc') stays the BE truth; this map is the
+ * menu's display layer only.
+ */
+const SORT_OPTIONS: ReadonlyArray<{
+  sort: GridSortColumn;
+  direction: SenderListDirection;
+  label: string;
+  group: string;
+}> = [
+  { sort: 'total', direction: 'desc', label: 'Most emails ever', group: 'Volume' },
+  { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
+  { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
+  { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
+  { sort: 'first_seen', direction: 'desc', label: 'Newest senders', group: 'First seen' },
+  { sort: 'first_seen', direction: 'asc', label: 'Oldest senders', group: 'First seen' },
+  { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
+  { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
+];
+
+/** Trigger-label fallback for any sort outside `GridSortColumn`. */
+const COLUMN_FALLBACK_LABEL: Record<GridSortColumn, string> = {
+  total: 'volume',
+  last_seen: 'last seen',
+  first_seen: 'first seen',
+  name: 'name',
+};
+
+/** Resolve the trigger-label for the currently active sort + direction. */
+function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
+  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
+  if (match) return match.label;
+  // Reserved-but-unsupported column or an unhandled direction — fall
+  // back to the raw column id with an arrow so the strip never goes
+  // blank if a URL or store seeds an odd value.
+  const colLabel = (COLUMN_FALLBACK_LABEL as Record<string, string>)[sort] ?? sort;
+  return `${colLabel} ${direction === 'desc' ? '↓' : '↑'}`;
+}
+
+// Inline `SortMenu` retired with the result-count strip (D38).
+// `ComposeStrip` now owns the sort affordance via its `SortChip`.
+// The block below is the dead body, sliced into a no-op so the file
+// is one well-defined export per concern; Phase 5 dead-code sweep
+// removes it.
+function _retiredSortMenu({
+  sort,
+  direction,
+  onPick,
+}: {
+  sort: SenderListSort;
+  direction: SenderListDirection;
+  onPick: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  // Group options by `group` for render. Insertion order preserved
+  // because the source array is already grouped (Object.entries on a
+  // plain object preserves insertion order for string keys).
+  const groups = SORT_OPTIONS.reduce<Record<string, (typeof SORT_OPTIONS)[number][]>>(
+    (acc, opt) => {
+      const arr = acc[opt.group] ?? [];
+      arr.push(opt);
+      acc[opt.group] = arr;
+      return acc;
+    },
+    {},
+  );
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Change sort"
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          color: 'var(--color-fg-soft)',
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          letterSpacing: '0.04em',
+        }}
+      >
+        sorted by {activeSortLabel(sort, direction).toLowerCase()} ▾
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 60,
+            minWidth: 220,
+            background: color.card,
+            border: `1px solid ${color.border}`,
+            borderRadius: 9,
+            boxShadow: tokens.shadow.pop,
+            padding: 4,
+            fontFamily: font.sans,
+          }}
+        >
+          {Object.entries(groups).map(([groupLabel, options]) => (
+            <div key={groupLabel}>
+              <div
+                style={{
+                  padding: '6px 10px 2px',
+                  fontFamily: font.mono,
+                  fontSize: 10,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: color.fgMuted,
+                }}
+              >
+                {groupLabel}
+              </div>
+              {options.map((opt) => {
+                const active = opt.sort === sort && opt.direction === direction;
+                return (
+                  <button
+                    key={`${opt.sort}-${opt.direction}`}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={active}
+                    onClick={() => {
+                      onPick({ sort: opt.sort, direction: opt.direction });
+                      setOpen(false);
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      width: '100%',
+                      padding: '7px 10px',
+                      background: active ? color.primarySoft : 'transparent',
+                      border: 'none',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontFamily: font.sans,
+                      fontSize: 12.5,
+                      color: color.fg,
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 12,
+                        color: active ? color.primary : 'transparent',
+                        fontWeight: 600,
+                      }}
+                    >
+                      ✓
+                    </span>
+                    <span style={{ flex: 1 }}>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * D38 — derive the top-N domain suggestions for the ComposeStrip's
+ * domain popover. Reads from the loaded senders only (cheap, no extra
+ * round-trip); the BE `/api/senders/suggest` endpoint backs the search
+ * box's mailbox-wide typeahead.
+ */
+function topDomains(senders: readonly Sender[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of senders) {
+    const d = s.domain;
+    if (!d || seen.has(d)) continue;
+    seen.add(d);
+    out.push(d);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+/**
+ * D38 — bulk-select toggle on the compose summary line. Acts on the
+ * currently loaded senders (BE-filtered, so the set already matches
+ * the active compose). `select all N` ↔ `deselect all N`.
+ */
+function BulkSelectButton({
+  senders,
+  selected,
+  setSelected,
+}: {
+  senders: readonly Sender[];
+  selected: ReadonlySet<string>;
+  setSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
+}) {
+  if (senders.length === 0) return null;
+  const allSelected = senders.every((s) => selected.has(s.id));
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (allSelected) {
+          setSelected((prev) => {
+            const next = new Set(prev);
+            for (const s of senders) next.delete(s.id);
+            return next;
+          });
+        } else {
+          setSelected((prev) => {
+            const next = new Set(prev);
+            for (const s of senders) next.add(s.id);
+            return next;
+          });
+        }
+      }}
+      aria-pressed={allSelected}
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11.5,
+        color: allSelected ? 'var(--color-amber)' : 'var(--color-fg-soft)',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        letterSpacing: '0.04em',
+      }}
+    >
+      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
+    </button>
+  );
+}
 
 /**
  * Filter the wire-shape rows for the flat-table view.
@@ -1089,190 +1656,25 @@ function filterTableRows(
   });
 }
 
-interface SenderTotals {
-  totalMonthly: number;
-  avgReadPct: number;
-  readingHrs: number;
-  noiseReductionPct: number;
-  cleanupCount: number;
-  protectedCount: number;
-  needsReview: number;
-  estSavedHrs: number;
-}
+// SenderTotals + computeTotals retired with the KPI strip (D38). The
+// hero number rides `meta.query.totalMatching` (BE-honest, scope-
+// aware) and the chip counts ride `meta.query.filterCounts` — both
+// computed server-side. Intent-derived aggregates (cleanup / needs_
+// review) belong on Brief per spec v1.2 Decision 4.
 
-/**
- * Compute hero / KPI / progress totals.
- *
- * Mailbox-wide aggregates (`totalMonthly`, `noiseReductionPct`,
- * `protectedCount`, `needsReview`, `cleanupCount`) come from the
- * server-side summary (#145) when present — the loaded-page derivation
- * is the fallback only until the summary populates (initial load).
- *
- * Read-rate and reading-time fields still ride the loaded page: the
- * summary does not carry per-sender read counts on the wire today
- * (privacy posture — counts only, no per-sender opens). These values
- * approximate the mailbox from the loaded slice; promoting them to the
- * summary is a follow-up if the approximation drifts at large scale.
- */
-function computeTotals(senders: Sender[], summary?: SenderSummaryDto): SenderTotals {
-  if (senders.length === 0 && !summary) {
-    return {
-      totalMonthly: 0,
-      avgReadPct: 0,
-      readingHrs: 0,
-      noiseReductionPct: 0,
-      cleanupCount: 0,
-      protectedCount: 0,
-      needsReview: 0,
-      estSavedHrs: 0,
-    };
-  }
-  // Loaded-page sums — feed the read-rate-derived KPIs and act as the
-  // fallback for the mailbox-wide ones until the summary populates.
-  const loadedMonthly = senders.reduce((a, s) => a + s.monthly, 0);
-  const totalRead = senders.reduce((a, s) => a + s.monthly * s.read, 0);
-  const avgReadPct = loadedMonthly === 0 ? 0 : Math.round((totalRead / loadedMonthly) * 100);
+// renderHeroStory, renderCtaCopy, mapHeroSliceToReviewKind RETIRED
+// alongside the InboxStoryHero + WeeklyHeroLive renders (spec v1.2
+// Decisions 4, 6). Hero copy moves to Brief per Decision 5; editorial
+// inference like "About 29% was noise" banned. Phase 5 dead-code
+// sweep deletes them from this file entirely; the comment marker
+// preserves the deletion intent for the next agent.
 
-  // `intentOf()` honors the X2 confidence gate (and protect-wins) — the
-  // raw `verdict === 'unsubscribe'` check would surface low-confidence
-  // recommendations the user shouldn't act on, contradicting the
-  // Cleanup-bucket suppression. Codex finding #4 on PR #82.
-  const loadedCleanup = senders.filter((s) => intentOf(s) === 'cleanup');
-  const loadedCleanupMonthly = loadedCleanup.reduce((a, s) => a + s.monthly, 0);
-  const loadedProtectedCount = senders.filter(isStandingProtected).length;
-  const loadedNeedsReview = senders.filter((s) => s.lastReview != null).length;
+// IntentChip RETIRED in favor of FactChip (spec v1.2 Decision 2 +
+// Decision 3). Phase 5 dead-code sweep removes the empty signature.
 
-  // Mailbox-wide values — read from the rolling-window summary; fall
-  // back to loaded sums only until the summary populates. The summary's
-  // `byBucket.needs_review` is the same predicate the per-row bucket
-  // computation will use server-side, so chip / KPI / row stay
-  // consistent (CLAUDE.md §8 invariant).
-  const totalMonthly = summary?.last30dVolume ?? loadedMonthly;
-  const noiseReductionPct =
-    summary?.noiseReducible ??
-    (loadedMonthly === 0 ? 0 : Math.round((loadedCleanupMonthly / loadedMonthly) * 100));
-  // `cleanupCount` displayed as "decisions to act on" — maps to the
-  // mailbox-wide `needs_review` bucket (engine recs at conf ≥ 0.75 AND
-  // active in last 30d). Falls back to loaded-page cleanup-intent count.
-  const cleanupCount = summary?.byBucket.needs_review ?? loadedCleanup.length;
-  const protectedCount = summary?.protected ?? loadedProtectedCount;
-  const needsReview = summary?.needsReview ?? loadedNeedsReview;
-
-  // Reading-time and est-saved — RETURN ZERO. Both rode a placeholder
-  // 1.6 min/msg coefficient that was never calibrated against real user
-  // data, AND were built on top of the previously-broken monthlyVolume
-  // sum. Returning 0 silences downstream UI that would otherwise render
-  // fiction; the KPI cells that consumed these get dropped in this PR.
-  const readingHrs = 0;
-  const estSavedHrs = 0;
-  return {
-    totalMonthly,
-    avgReadPct,
-    readingHrs,
-    noiseReductionPct,
-    cleanupCount,
-    protectedCount,
-    needsReview,
-    estSavedHrs,
-  };
-}
-
-/**
- * Editorial hero story per ADR-0011 (hero-surface relaxation). One
- * editorial framing phrase ("worth reading") is permitted; D209
- * forbidden words remain forbidden. Renders two paragraphs.
- */
-function renderHeroStory(totals: SenderTotals) {
-  return [
-    <>
-      <span style={{ color: color.amber, fontWeight: 600 }}>{totals.totalMonthly}</span> emails
-      reached you in the last 30 days.
-    </>,
-    totals.noiseReductionPct > 0 ? (
-      <>
-        About{' '}
-        <span style={{ color: color.primary, fontWeight: 600 }}>{totals.noiseReductionPct}%</span>{' '}
-        of that was noise you could let go.
-      </>
-    ) : (
-      <>You&rsquo;re mostly receiving signal — nice.</>
-    ),
-  ];
-}
-
-function renderCtaCopy(totals: SenderTotals) {
-  if (totals.cleanupCount === 0) {
-    return (
-      <>
-        <strong>No cleanup recommendations this week.</strong> Your inbox is in shape — next review
-        when new senders arrive.
-      </>
-    );
-  }
-  return (
-    <>
-      <strong>
-        {totals.cleanupCount} decision{totals.cleanupCount === 1 ? '' : 's'} can cut next week's
-        inbox by ~{totals.noiseReductionPct}%.
-      </strong>{' '}
-      We'll guide you one at a time. {totals.cleanupCount <= 5 ? '3' : '5'} minutes.
-    </>
-  );
-}
-
-/**
- * Map a wire Hero slice kind (`high_confidence` / `spike` / `quiet`)
- * to the existing FE `ReviewKind` enum (`promo` / `quiet` / `protect`).
- * The mappings are pragmatic: high-confidence cleanups and spikes both
- * route through the "promo" review flow (Unsubscribe / Archive); the
- * long-quiet slice routes through the softer "quiet" flow.
- */
-function mapHeroSliceToReviewKind(kind: WeeklyHeroSliceKind): ReviewKind {
-  switch (kind) {
-    case 'high_confidence':
-      return 'promo';
-    case 'spike':
-      return 'promo';
-    case 'quiet':
-      return 'quiet';
-  }
-}
-
-interface IntentChipProps {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}
-
-function IntentChip({ label, count, active, onClick }: IntentChipProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        padding: '6px 14px',
-        borderRadius: 999,
-        fontSize: 12.5,
-        fontWeight: 500,
-        background: active ? color.fg : color.card,
-        color: active ? '#FFFFFF' : color.fgSoft,
-        border: `1px solid ${active ? color.fg : color.line}`,
-        cursor: 'pointer',
-        transition: 'background 120ms, color 120ms, border-color 120ms',
-        fontFamily: font.sans,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-      }}
-    >
-      {label}
-      <span style={{ color: active ? 'rgba(255,255,255,0.65)' : color.fgMuted, fontWeight: 500 }}>
-        {count}
-      </span>
-    </button>
-  );
-}
+// FactChip retired with the fact-chip row (D38). The ComposeStrip
+// owns the multi-axis filter surface. Phase 5 dead-code sweep can
+// drop this comment marker when it lands.
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
 function LoadingState() {

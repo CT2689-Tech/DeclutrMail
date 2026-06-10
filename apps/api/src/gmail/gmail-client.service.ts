@@ -7,6 +7,8 @@ import {
   TransientError,
 } from '@declutrmail/workers';
 import type {
+  GmailHistoryPage,
+  GmailHistoryRecord,
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,
@@ -90,11 +92,50 @@ interface GmailGetResponse {
   snippet?: string;
   internalDate?: string;
   payload?: { headers?: { name: string; value: string }[] };
+  /**
+   * Rough byte-count of the encoded message — D7 storage-allowlist
+   * amendment per ADR-0021 (2026-06-06). In Gmail's metadata envelope,
+   * not the body; the call shape is unchanged (`format=metadata`).
+   * Gmail occasionally omits the field; tolerate undefined and persist
+   * the column as NULL when absent.
+   */
+  sizeEstimate?: number;
 }
 
 /** Shape of a `users.getProfile` response (only the historyId is read). */
 interface GmailProfileResponse {
   historyId?: string;
+}
+
+/** Shape of a `users.history.list` response (only the fields we read). */
+interface GmailHistoryResponse {
+  history?: GmailHistoryRecordRaw[];
+  nextPageToken?: string;
+  historyId?: string;
+}
+
+/**
+ * One Gmail history record on the wire. Each record carries any
+ * combination of the four event arrays — Gmail does NOT split records
+ * per event kind. Our `GmailHistoryRecord` normalisation flattens the
+ * arrays into a single ordered list per page.
+ *
+ * Privacy: every nested message reference is id+threadId+labelIds — no
+ * header, snippet, body, or attachment.
+ */
+interface GmailHistoryRecordRaw {
+  id?: string;
+  messages?: { id?: string; threadId?: string }[];
+  messagesAdded?: { message?: GmailHistoryMessageRef }[];
+  messagesDeleted?: { message?: GmailHistoryMessageRef }[];
+  labelsAdded?: { message?: GmailHistoryMessageRef; labelIds?: string[] }[];
+  labelsRemoved?: { message?: GmailHistoryMessageRef; labelIds?: string[] }[];
+}
+
+interface GmailHistoryMessageRef {
+  id?: string;
+  threadId?: string;
+  labelIds?: string[];
 }
 
 /**
@@ -187,6 +228,13 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
       cc: findHeader(json, 'Cc'),
       listUnsubscribe: findHeader(json, 'List-Unsubscribe'),
       listUnsubscribePost: findHeader(json, 'List-Unsubscribe-Post'),
+      // ADR-0021 — pass through Gmail's `sizeEstimate` when present.
+      // Gmail occasionally omits the field on certain message shapes;
+      // a finite-number guard avoids surfacing `NaN`/`Infinity` into
+      // the persisted integer column.
+      ...(typeof json.sizeEstimate === 'number' && Number.isFinite(json.sizeEstimate)
+        ? { sizeBytes: json.sizeEstimate }
+        : {}),
     };
   }
 
@@ -201,6 +249,91 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
       throw new TransientError('Gmail profile response missing historyId');
     }
     return { historyId: json.historyId };
+  }
+
+  /**
+   * Page through `users.history.list` from `startHistoryId`. Each page
+   * normalises Gmail's four nested event arrays into a flat
+   * `GmailHistoryRecord[]`; the worker pattern-matches by `kind` so it
+   * never depends on Gmail's wire shape.
+   *
+   * Privacy (D7): every event surfaces id+threadId+labelIds only — no
+   * `metadataHeaders`, no `format=full`. Snippets, subjects, bodies,
+   * and attachment data are NEVER fetched by this path.
+   *
+   * Returns `null` when Gmail responds 404 with reason
+   * `notFound` — the canonical signal that `startHistoryId` is older
+   * than the 7-day Gmail retention window. The worker recovers by
+   * snapshotting `getProfile()` + scheduling a full re-sync rather
+   * than blindly retrying.
+   */
+  async listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null> {
+    const params = new URLSearchParams({ startHistoryId, maxResults: String(PAGE_SIZE) });
+    if (pageToken) {
+      params.set('pageToken', pageToken);
+    }
+    const json = await this.get<GmailHistoryResponse>(`/history?${params.toString()}`, true);
+    if (json === null) {
+      // 404 — `startHistoryId` too old. Caller falls back to full re-sync.
+      return null;
+    }
+    if (!json.historyId) {
+      throw new TransientError('Gmail history response missing historyId');
+    }
+    const records: GmailHistoryRecord[] = [];
+    for (const raw of json.history ?? []) {
+      if (raw.messagesAdded) {
+        for (const added of raw.messagesAdded) {
+          const m = added.message;
+          if (m?.id && m.threadId) {
+            records.push({
+              kind: 'added',
+              messageId: m.id,
+              threadId: m.threadId,
+              labelIds: Array.isArray(m.labelIds) ? m.labelIds : [],
+            });
+          }
+        }
+      }
+      if (raw.messagesDeleted) {
+        for (const deleted of raw.messagesDeleted) {
+          const m = deleted.message;
+          if (m?.id && m.threadId) {
+            records.push({
+              kind: 'deleted',
+              messageId: m.id,
+              threadId: m.threadId,
+            });
+          }
+        }
+      }
+      if (raw.labelsAdded) {
+        for (const added of raw.labelsAdded) {
+          const m = added.message;
+          if (m?.id && Array.isArray(added.labelIds) && added.labelIds.length > 0) {
+            records.push({
+              kind: 'labels_added',
+              messageId: m.id,
+              labelIds: added.labelIds,
+            });
+          }
+        }
+      }
+      if (raw.labelsRemoved) {
+        for (const removed of raw.labelsRemoved) {
+          const m = removed.message;
+          if (m?.id && Array.isArray(removed.labelIds) && removed.labelIds.length > 0) {
+            records.push({
+              kind: 'labels_removed',
+              messageId: m.id,
+              labelIds: removed.labelIds,
+            });
+          }
+        }
+      }
+    }
+    const page: GmailHistoryPage = { records, historyId: json.historyId };
+    return json.nextPageToken ? { ...page, nextPageToken: json.nextPageToken } : page;
   }
 
   /**

@@ -1,0 +1,34 @@
+-- 0027_provider_sync_incremental_error_tracking.sql
+--
+-- Add `last_incremental_error_at` (nullable TIMESTAMPTZ) and
+-- `last_incremental_error_code` (nullable TEXT) to `provider_sync_state`
+-- so a terminal-failure on `IncrementalSyncWorker` (BullMQ exhausted
+-- retries) is observable instead of silently invisible (D38, D159).
+--
+-- Why distinct columns instead of reusing `readiness_status='failed'`:
+-- the existing `failed` enum value is consumed by `SyncFailed` UI on
+-- the `/onboarding` route — flipping a fully-onboarded mailbox to
+-- `failed` would route the user back to onboarding mid-session. The
+-- incremental-error track is a separate per-mailbox signal that ops
+-- + the future sticky-banner FE can consume without disturbing the
+-- `readiness_status` lifecycle (queued → syncing → ready).
+--
+-- Nullable on purpose:
+--   - NULL means "no recent incremental terminal failure" — the steady
+--     state for every healthy mailbox.
+--   - `last_incremental_error_at` SET → the FE banner (FOUNDER-FOLLOWUPS
+--     follow-up) renders the actionable state; the cron drift-sweep
+--     re-enqueues every 5 min, and a successful run clears the columns
+--     (NULL) on the worker's next cursor advance.
+--
+-- Privacy (D7, D228): both columns are metadata only. `*_code` carries
+-- the worker's classified error name (e.g. 'GmailAuthError',
+-- 'CursorTooOldError') — never body, snippet, or any header value.
+--
+-- No index — read pattern is per-mailbox by primary key (already
+-- unique-indexed) for the FE banner and per-mailbox by the cron sweep.
+-- A bare scan over the small `provider_sync_state` table (one row per
+-- mailbox) is cheap.
+
+ALTER TABLE "provider_sync_state" ADD COLUMN "last_incremental_error_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "provider_sync_state" ADD COLUMN "last_incremental_error_code" text;

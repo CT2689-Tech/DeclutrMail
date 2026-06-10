@@ -82,6 +82,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/require-pr-template.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-destructive-cloud-ops.sh"
           }
         ]
       }

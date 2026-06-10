@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
@@ -12,15 +12,20 @@ import {
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
   createRedisConnection,
+  ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   enqueueBriefSnapshotTick,
   enqueueSendersCounterReconciliationTick,
   enqueueUndoExpiryTick,
+  INCREMENTAL_SYNC_QUEUE,
+  IncrementalSyncWorker,
   INITIAL_SYNC_QUEUE,
   InitialSyncWorker,
   InvalidGrantError,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
+  OUTBOX_NOTIFY_CHANNEL,
+  OutboxDispatcherWorker,
   OutboxPublisher,
   RateLimiter,
   SCORE_JOB,
@@ -39,6 +44,8 @@ import type {
   BriefSnapshotResult,
   GmailAccess,
   GmailMutationAccess,
+  IncrementalSyncJobData,
+  IncrementalSyncResult,
   InitialSyncJobData,
   InitialSyncResult,
   LabelActionJobData,
@@ -60,6 +67,7 @@ import { GmailClientService } from './gmail/gmail-client.service.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
+import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
 
 /**
  * Worker process composition root (D157).
@@ -204,9 +212,7 @@ async function bootstrap(): Promise<void> {
   // Start the Cloud Run health server FIRST so the platform can probe
   // /any-path while the rest of bootstrap runs. The handler reports
   // 503 until `bootstrapComplete` flips at the end of this function,
-  // so a half-booted worker never reports healthy. Critical: without
-  // this, Cloud Run's startup probe on port 8080 times out at 4 min
-  // and the revision is marked failed even though BullMQ is healthy.
+  // so a half-booted worker never reports healthy.
   startHealthServer();
   bootStep('health_server_started');
 
@@ -222,20 +228,24 @@ async function bootstrap(): Promise<void> {
   // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
   // process; local dev + tests are unaffected).
   //
-  // Gated behind `WORKER_SENTRY_ENABLED=true` (default OFF) because
-  // `@sentry/node` v10's OTel default integrations monkey-patch
-  // already-loaded modules at `Sentry.init()` time. The worker
-  // entrypoint imports the full NestJS + Drizzle + BullMQ + Anthropic +
-  // googleapis graph at the TOP of `worker.ts` before any code runs,
-  // so by the time `initSentry()` executes those modules are already
-  // in `require.cache`. Sentry's late-monkey-patch hangs the
-  // bootstrap — observed live on Cloud Run worker revs that timed out
-  // at 4 min. The proper fix is `node --import @sentry/node/preload …`
-  // BEFORE `@swc-node/register` (tracked in FOUNDER-FOLLOWUPS as
-  // "Sentry preload on worker"); until then this env gate keeps boot
-  // reliable. Default OFF emits structured `worker.*` logs only,
-  // which Cloud Logging captures normally. Privacy (D7) unchanged —
-  // Sentry on the worker was always best-effort.
+  // 2026-06-08 session: `@sentry/node` v10 hangs the worker bootstrap
+  // when initialized AFTER the NestJS / Drizzle / BullMQ / Anthropic
+  // module graph is loaded (which `worker.ts` does at top-of-file
+  // imports). Cloud Run worker rev 12 + 13 hung at `initSentry_begin`;
+  // rev 14 + 15 hung at `createSentryWorkerObserver_begin` even with
+  // `defaultIntegrations: false`. The correct long-term fix is to
+  // preload Sentry via `node --import @sentry/node/preload …` BEFORE
+  // `@swc-node/register` so OTel auto-instrumentation patches modules
+  // at load time, not after. Tracked in FOUNDER-FOLLOWUPS as the
+  // "Sentry preload on worker" item.
+  //
+  // Until then this gate keeps the worker boot reliable: set
+  // `WORKER_SENTRY_ENABLED=true` to opt in once the preload flag is
+  // wired. Default OFF emits structured `worker.*` logs only, which
+  // Cloud Logging captures normally and which we wire alerts off via
+  // log-based metrics. Privacy posture unchanged (D7) — Sentry on
+  // the worker was always best-effort; structured logs are the canonical
+  // signal.
   const workerSentryEnabled = process.env.WORKER_SENTRY_ENABLED === 'true';
   bootStep('initSentry_begin', {
     dsnSet: Boolean(process.env.SENTRY_DSN),
@@ -251,6 +261,7 @@ async function bootstrap(): Promise<void> {
     : await createSentryWorkerObserver({ dsnSet: false });
   bootStep('createSentryWorkerObserver_done');
 
+  bootStep('postgres_pool_init');
   // `prepare: false` is REQUIRED when `DATABASE_URL` points at Supabase's
   // transaction-mode pooler (`*.pooler.supabase.com:6543`). The pooler
   // routes per-statement to whatever backend is free, so cached prepared-
@@ -258,10 +269,10 @@ async function bootstrap(): Promise<void> {
   // `prepared statement "X" does not exist` mid-tx → silent ROLLBACK of
   // multi-statement rebuilds (root cause of senders.total_received=0
   // shipping to prod 2026-06-08; ADR-0022). Setting prepare:false on
-  // every `postgres()` call here forces simple-protocol queries. No-op
-  // on direct connections (local dev `:5432`).
+  // every `postgres()` call here forces simple-protocol queries.
   const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false });
   const db = drizzle(pg, { schema });
+  bootStep('postgres_pool_done');
 
   /**
    * Concurrency cap for the destructive label-action worker. Modest by
@@ -297,6 +308,7 @@ async function bootstrap(): Promise<void> {
   // unwrap failures on the worker's `tokenCrypto.decrypt(...)` path
   // (every getGmailClient call) surface as `kms.access_error` rows —
   // matches the Nest auth-crypto module's recorder for symmetry.
+  bootStep('kms_provider_init');
   const tokenCrypto = new TokenCryptoService(
     createKmsProvider(process.env, {
       onAccessError: ({ operation, reason, keyResource }) => {
@@ -308,8 +320,10 @@ async function bootstrap(): Promise<void> {
       },
     }),
   );
+  bootStep('kms_provider_done');
   const clientId = requireEnv('GOOGLE_CLIENT_ID');
   const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
+  bootStep('google_oauth_env_loaded');
 
   /**
    * Per-mailbox `RateLimiter`s, cached by `mailboxAccountId` for the
@@ -342,20 +356,63 @@ async function bootstrap(): Promise<void> {
   // implements both, so the SAME factory (and the same decrypt path —
   // §9 reuse-only) serves the metadata sync and the label-action worker.
   const getGmailClient = async (mailboxAccountId: string): Promise<GmailClientService> => {
+    // 2026-06-08 session: structured trace per phase so a hang in
+    // `getClient` (was opaque between `worker.started` and `worker.
+    // failed/stalled`) is visible at single-line granularity. Phases:
+    //   db_lookup  → SELECT mailbox row from Supabase
+    //   kms_decrypt → unwrap encrypted OAuth refresh token via KMS
+    //   oauth_init → build OAuth2Client + set credentials
+    const t0 = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.begin',
+        mailboxAccountId,
+      }),
+    );
     const [account] = await db
       .select()
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.db_lookup_done',
+        mailboxAccountId,
+        durationMs: Date.now() - t0,
+        found: Boolean(account),
+      }),
+    );
     if (!account) {
       throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
     }
     if (!account.encryptedRefreshToken || !account.dekEncrypted) {
       throw new InvalidGrantError(`mailbox account ${mailboxAccountId} has no stored OAuth token`);
     }
+    const tKms = Date.now();
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.kms_decrypt_begin',
+        mailboxAccountId,
+      }),
+    );
     const refreshToken = await tokenCrypto.decrypt(
       account.encryptedRefreshToken,
       account.dekEncrypted,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'gmail.getClient.kms_decrypt_done',
+        mailboxAccountId,
+        kmsDurationMs: Date.now() - tKms,
+      }),
     );
     const oauth = new OAuth2Client(clientId, clientSecret);
     oauth.setCredentials({ refresh_token: refreshToken });
@@ -422,7 +479,9 @@ async function bootstrap(): Promise<void> {
     },
   };
 
+  bootStep('redis_connection_init');
   const connection = createRedisConnection(requireEnv('REDIS_URL'));
+  bootStep('redis_connection_done');
 
   // Score-queue PRODUCER (D25 sync_complete trigger). The initial sync
   // enqueues one all-senders score sweep here once the sender index is
@@ -459,6 +518,68 @@ async function bootstrap(): Promise<void> {
 
   bullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
+  });
+
+  // IncrementalSyncWorker consumer (D8, D229 follow-up). Producer side
+  // is the webhook (`WebhooksModule` enqueues on every verified Pub/Sub
+  // push); consumer runs here in the same worker process so the
+  // observer/D159 seam shares wiring with InitialSyncWorker. Per-mailbox
+  // serialisation is enforced by the `jobId =
+  // ${mailboxAccountId}:${endHistoryId}` namespacing at enqueue time —
+  // two webhooks for the same mailbox at different historyIds CAN run
+  // concurrently, which is correct: each processes its own delta.
+  const incrementalSync = new IncrementalSyncWorker({ db, gmailAccess });
+  incrementalSync.setObserver(observer);
+  const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
+    INCREMENTAL_SYNC_QUEUE,
+    (job) => incrementalSync.run(job),
+    { connection, concurrency: 20 },
+  );
+  incrementalBullWorker.on('error', (err) => {
+    console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
+  });
+  // Cursor-too-old recovery (flow-completeness-auditor 2026-06-05 🔴-1):
+  // when Gmail's history.list returns 404 (startHistoryId older than D5's
+  // 7-day retention window), the IncrementalSyncWorker returns
+  // `{ cursorTooOld: true, advancedToHistoryId: null }` and exits — the
+  // cursor stays put deliberately. Without a consumer of that signal the
+  // mailbox stays stale until manual reconnect. This onCompleted hook
+  // re-enqueues a forced InitialSyncWorker run to fetch the full mailbox
+  // from a fresh historyId snapshot (`force: true` reaps any stale
+  // pending initial-sync job so the new attempt isn't blocked).
+  // Best-effort — a failed re-enqueue is WARN-logged; the nightly
+  // reconciler is the backup recovery surface.
+  incrementalBullWorker.on('completed', (job, result: IncrementalSyncResult) => {
+    if (!result?.cursorTooOld) {
+      return;
+    }
+    const { mailboxAccountId } = job.data as IncrementalSyncJobData;
+    void (async () => {
+      try {
+        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId, {
+          force: true,
+        });
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'sync.cursor_recovery_scheduled',
+            mailboxAccountId,
+            jobId: job.id,
+            initialSyncOutcome: outcome,
+          }),
+        );
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'sync.cursor_recovery_failed',
+            mailboxAccountId,
+            jobId: job.id,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    })();
   });
 
   /**
@@ -917,8 +1038,142 @@ async function bootstrap(): Promise<void> {
   }, SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS);
   sendersCounterReconciliationSchedulerHandle.unref();
 
+  /**
+   * Incremental-sync drift sweeper (D38 prod-ready pass).
+   *
+   * Every `INCREMENTAL_DRIFT_INTERVAL_MS`, enqueue an incremental-sync
+   * job for every mailbox whose `provider_sync_state.last_history_id`
+   * hasn't advanced in `INCREMENTAL_DRIFT_STALE_AFTER_MS` (10 minutes
+   * by default). This handles:
+   *   1. **Local dev** — no Pub/Sub topic is registered, so without
+   *      this sweep new emails are never reconciled until the user
+   *      clicks "Sync now".
+   *   2. **Pub/Sub outage** — if a push delivery is lost (Pub/Sub is
+   *      at-least-once but not exactly-once across retries), the drift
+   *      sweep catches it within 10 minutes.
+   *   3. **Pub/Sub still rolling out** — until `users.watch` is wired,
+   *      every mailbox is in this state.
+   *
+   * Idempotent end-to-end:
+   *   - `ensureIncrementalSyncJob` dedups by `${mailbox}:${cursor}` so
+   *     a sweep that fires while the previous one's job is still in
+   *     flight is a no-op.
+   *   - The worker advances the cursor on success, so the NEXT sweep
+   *     sees a different `${cursor}` and (correctly) enqueues a new
+   *     job — Gmail history may have advanced since.
+   */
+  const incrementalReconcilerQueue = new Queue<IncrementalSyncJobData>(INCREMENTAL_SYNC_QUEUE, {
+    connection,
+  });
+  const INCREMENTAL_DRIFT_INTERVAL_MS = 5 * 60 * 1000;
+  const INCREMENTAL_DRIFT_STALE_AFTER_MS = 10 * 60 * 1000;
+  const INCREMENTAL_DRIFT_BATCH = 100;
+
+  async function driftSweepIncrementalSync(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      const cutoff = sql`now() - interval '${sql.raw(
+        String(INCREMENTAL_DRIFT_STALE_AFTER_MS),
+      )} milliseconds'`;
+      const rows = await db
+        .select({
+          mailboxAccountId: providerSyncState.mailboxAccountId,
+          lastHistoryId: providerSyncState.lastHistoryId,
+        })
+        .from(providerSyncState)
+        .where(
+          sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+        )
+        .limit(INCREMENTAL_DRIFT_BATCH);
+
+      let enqueued = 0;
+      let noop = 0;
+      for (const row of rows) {
+        if (shuttingDown) break;
+        if (row.lastHistoryId === null) continue;
+        const cursor = row.lastHistoryId.toString();
+        const outcome = await ensureIncrementalSyncJob(incrementalReconcilerQueue, {
+          mailboxAccountId: row.mailboxAccountId,
+          startHistoryId: cursor,
+          endHistoryId: cursor,
+        });
+        if (outcome === 'added') enqueued += 1;
+        else noop += 1;
+      }
+
+      if (enqueued > 0 || noop > 0) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'incremental_drift.swept',
+            enqueued,
+            noop,
+            scanned: rows.length,
+          }),
+        );
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'incremental_drift.failed',
+          message: error.message,
+        }),
+      );
+      // D159 seam — same as the initial-sync reconciler above.
+      observer.captureBackgroundFailure(error, { kind: 'incremental_drift.failed' });
+    }
+  }
+
+  /**
+   * Overlap + defense-in-depth wrapper for the drift-sweep tick.
+   * Mirrors the initial-sync reconciler's `inFlight + tick + .catch`
+   * pattern (silent-failure-hunter 2026-06-06 — the drift sweep was
+   * missing both guards; a future refactor that moves a line out of
+   * `driftSweepIncrementalSync`'s inner try/catch would leak an
+   * unhandled rejection straight to Node, and a slow sweep that
+   * exceeds the 5-min interval would race itself).
+   */
+  let driftInFlight: Promise<void> | null = null;
+  function driftTick(): void {
+    if (shuttingDown || driftInFlight) return;
+    const p = driftSweepIncrementalSync()
+      .then(() => undefined)
+      .finally(() => {
+        driftInFlight = null;
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'incremental_drift.tick_unexpected',
+            message: error.message,
+          }),
+        );
+        observer.captureBackgroundFailure(error, {
+          kind: 'incremental_drift.tick_unexpected',
+        });
+      });
+    driftInFlight = p;
+  }
+
+  // Boot sweep so a worker restart immediately catches up any mailbox
+  // that drifted during the deploy gap. Routed through the same
+  // `driftTick` so the inFlight slot is honored at shutdown.
+  driftTick();
+  if (driftInFlight) {
+    await driftInFlight;
+  }
+  const incrementalDriftHandle = setInterval(driftTick, INCREMENTAL_DRIFT_INTERVAL_MS);
+  incrementalDriftHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }),
   );
   console.log(
     JSON.stringify({
@@ -939,13 +1194,53 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // Flip the health-server gate AFTER all BullMQ workers report
-  // `worker.listening`. The HTTP server has been answering 503 since
-  // `startHealthServer()` ran at the top of bootstrap; from this
-  // point forward it answers 200 — Cloud Run's startup probe sees
-  // healthy and the revision is marked Ready.
-  bootstrapComplete = true;
-  bootStep('bootstrap_complete');
+  /**
+   * OutboxDispatcherWorker (D13, D204) — the single consumer pipeline
+   * for every cross-feature event the API publishes (LabelActionWorker's
+   * action.label_action_applied, ActionsService's actions.unsubscribe
+   * _intent_recorded, future topics). Started here so an `outbox_events`
+   * row written by any publisher lands in the senders / activity /
+   * autopilot projection within seconds.
+   *
+   * Wake-up path:
+   *   - LISTEN/NOTIFY via a dedicated pg connection (`outboxListenPg`)
+   *     so the dispatcher wakes on commit instead of polling.
+   *   - Polling fallback every 5s catches any missed NOTIFY (worker
+   *     restart, network blip, Postgres failover).
+   *
+   * The consumer router (`buildOutboxConsumer`) dispatches by topic.
+   * Each handler is idempotent on the event id (at-least-once delivery
+   * is the dispatcher's guarantee; at-most-once is the consumer's
+   * responsibility).
+   */
+  // prepare:false — same Supabase tx-pooler reason as `pg` above.
+  const outboxListenPg = postgres(process.env.DATABASE_URL ?? '', {
+    max: 1,
+    prepare: false,
+  });
+  const outboxDispatcher = new OutboxDispatcherWorker({
+    db,
+    consumer: buildOutboxConsumer(db),
+    observer: {
+      captureBackgroundFailure: (err, ctx) =>
+        observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), ctx),
+    },
+    listen: async (handler) => {
+      // Dedicated connection for the LISTEN — the dispatcher's own
+      // pg pool is shared with feature reads/writes. A LISTEN holds
+      // the connection for the worker's full lifetime; we don't want
+      // that to starve the pool.
+      await outboxListenPg.listen(OUTBOX_NOTIFY_CHANNEL, () => handler());
+      // Return the unsubscribe — the dispatcher calls this on shutdown.
+      return async () => {
+        await outboxListenPg.end({ timeout: 5 });
+      };
+    },
+  });
+  await outboxDispatcher.start();
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: 'outbox-dispatcher' }),
+  );
 
   // Graceful shutdown — stop the reconciler tick, AWAIT any in-flight
   // sweep, then drain BullMQ and release connections. Closing the
@@ -964,11 +1259,21 @@ async function bootstrap(): Promise<void> {
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
+    clearInterval(incrementalDriftHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
       }
+      // Await any mid-flight drift sweep so its pg.select doesn't race
+      // pg.end() (silent-failure-hunter 2026-06-06).
+      if (driftInFlight) {
+        await driftInFlight;
+      }
+      // Stop the outbox dispatcher first so a draining BullMQ Worker
+      // doesn't race a fresh dispatch tick that touched the same db.
+      await outboxDispatcher.stop();
       await bullWorker.close();
+      await incrementalBullWorker.close();
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
@@ -978,6 +1283,7 @@ async function bootstrap(): Promise<void> {
       await sendersCounterReconciliationBullWorker.close();
       await sendersCounterReconciliationSchedulerQueue.close();
       await reconcilerQueue.close();
+      await incrementalReconcilerQueue.close();
       await connection.quit();
       await lockPg.end();
       await pg.end();
@@ -1006,6 +1312,11 @@ async function bootstrap(): Promise<void> {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Cloud Run health probe: flip to 200 only after every BullMQ worker
+  // is listening + the outbox dispatcher is wired. Probes before this
+  // point return 503 so a half-booted revision isn't routed traffic.
+  bootstrapComplete = true;
 }
 
 // Boot-time errors (bad `DATABASE_URL`, Redis TLS failure, KMS
@@ -1032,11 +1343,16 @@ bootstrap().catch((err: unknown) => {
   );
   void (async () => {
     try {
-      await initSentry();
-      const obs = await createSentryWorkerObserver({
-        dsnSet: Boolean(process.env.SENTRY_DSN),
-      });
-      obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+      // Gate Sentry in the failure path the same way bootstrap does —
+      // without this, a Sentry init hang in the boot-failure recovery
+      // path leaves the process stuck rather than exiting with code 1.
+      if (process.env.WORKER_SENTRY_ENABLED === 'true') {
+        await initSentry();
+        const obs = await createSentryWorkerObserver({
+          dsnSet: Boolean(process.env.SENTRY_DSN),
+        });
+        obs.captureBackgroundFailure(error, { kind: 'worker.boot_failed' });
+      }
     } catch {
       // Capturing the boot failure must never itself crash the exit
       // path — better to lose the Sentry event than hang the process.

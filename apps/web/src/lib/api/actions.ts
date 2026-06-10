@@ -15,10 +15,12 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
+import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
+
 import { apiGet, apiPost } from './client';
 
 /** Lifecycle of an `action_jobs` row — mirrors the BE `ActionJobStatus`. */
-export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
+export type { ActionJobStatus };
 
 /** A status is terminal once the worker has finished (success or failure). */
 export function isTerminalStatus(status: ActionJobStatus): boolean {
@@ -52,7 +54,14 @@ export interface ArchivePreviewResult {
 /** Returned by `POST /api/undo/:token` — the reverse handle to poll. */
 export interface UndoRevertResult {
   token: string;
-  actionKind: string;
+  /**
+   * The verb being reverted — closed enum mirrored from the BE
+   * `UndoActionKind` (and ultimately the `undo_action_kind` pg_enum).
+   * Tightening this from `string` keeps the discriminated-union story
+   * intact at the wire seam: a future consumer that branches on
+   * `actionKind` will fail-compile if it forgets a case.
+   */
+  actionKind: UndoActionKind;
   /** True when the reverse already completed (idempotent repeat POST). */
   reverted: boolean;
   expired: boolean;
@@ -134,6 +143,151 @@ export async function revertUndo(
   options: ActionRequestOptions = {},
 ): Promise<UndoRevertResult> {
   const env = await apiPost<UndoRevertResult>(`/api/undo/${token}`, undefined, {
+    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+  });
+  return env.data;
+}
+
+/* ─────────────────────── ADR-0020 — unified composite client ─────────────────────── */
+
+/** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */
+// Derived from the shared const so FE/BE cannot drift (type-design-
+// analyzer 2026-06-05).
+import type { CompositePrimaryVerb, CompositeSecondaryVerb } from '@declutrmail/shared/contracts';
+export type { CompositePrimaryVerb, CompositeSecondaryVerb };
+/** Secondary historic verb — applies on Unsubscribe / Later primaries. */
+// CompositeSecondaryVerb re-exported above.
+
+/** Returned by `POST /api/actions` — composite enqueue handle. */
+export interface CompositeActionEnqueueResult {
+  actionId: string;
+  compositeId: string;
+  secondaryId: string | null;
+  status: ActionJobStatus;
+  primaryCount: number;
+  secondaryCount: number | null;
+}
+
+/** Returned by `GET /api/actions/preview` — composite preview shape. */
+export interface CompositeActionPreviewResult {
+  sender: {
+    id: string;
+    name: string;
+    domain: string;
+    lastSeenDays: number | null;
+    /** `senders.replied_count` from mig 0022 — drives the
+     *  sender-context-strip "you replied N×" copy. */
+    repliedCount: number | null;
+    monthly: number | null;
+  };
+  counts: {
+    all: number;
+    olderThan30d: number;
+    olderThan90d: number;
+    olderThan180d: number;
+    olderThan365d: number;
+  };
+  /**
+   * Top 5 most-recent subjects per time-window for the "Show what will
+   * move" trust panel (spec v1.3). Each array is ordered by
+   * `internal_date DESC`, capped at 5. Empty when no INBOX messages
+   * match the window. `subject` is D7-allowlisted; no body, no
+   * attachment, no header-outside-allowlist surfaces here.
+   */
+  recentSubjects: {
+    all: string[];
+    olderThan30d: string[];
+    olderThan90d: string[];
+    olderThan180d: string[];
+    olderThan365d: string[];
+  };
+  unsubAvailable: boolean;
+  protected: boolean;
+}
+
+/**
+ * Enqueue a unified composite action (ADR-0020). Single-verb shape omits
+ * `secondary`; composite shape includes it. The BE handles both through
+ * one path so the FE can talk to ONE endpoint regardless of selection.
+ */
+export async function enqueueCompositeAction(
+  input: {
+    senderId: string;
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
+    override?: boolean;
+    idempotencyKey: string;
+  } & ActionRequestOptions,
+): Promise<CompositeActionEnqueueResult> {
+  const env = await apiPost<CompositeActionEnqueueResult>(
+    '/api/actions',
+    {
+      selector: { type: 'sender', senderId: input.senderId },
+      primary: input.primary,
+      ...(input.secondary ? { secondary: input.secondary } : {}),
+      override: input.override ?? false,
+    },
+    {
+      headers: { 'Idempotency-Key': input.idempotencyKey },
+      ...(input.mailboxId ? { mailboxId: input.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
+/**
+ * Composite preview — sender context strip + per-time-window bucket counts
+ * for the confirm modal chip row. One round-trip pulls every chip count so
+ * the modal opens without a second fetch (ADR-0020).
+ */
+/**
+ * Returned by `POST /api/actions/unsubscribe-intent` — the user's
+ * recorded intent to unsubscribe from a sender. No Gmail mutation
+ * fires; the real unsub pipeline (RFC8058 + mailto + manual per D230)
+ * lands later. The endpoint upserts `sender_policies.policy_type=
+ * 'unsubscribe'` + writes a 0-affected `activity_log` row.
+ */
+export interface UnsubscribeIntentResult {
+  senderId: string;
+  /** ISO timestamp the intent was recorded server-side. */
+  recordedAt: string;
+  /** activity_log.id of the freshly-written row. */
+  activityLogId: string;
+}
+
+/**
+ * Record an unsubscribe intent for a sender. Replaces the prior
+ * tracer toast (which lied — said "Unsubscribed" with no BE call) per
+ * the 2026-06-05 founder brainstorm. CLAUDE.md §10 no-fake-completion.
+ *
+ * Idempotency-Key (D202): every call sends a fresh key by default; a
+ * network-retry of the SAME mutation dedups at the BE (action_jobs
+ * idempotency_key unique). The caller may supply a key explicitly to
+ * collapse multiple click handlers — TanStack Query's retry path passes
+ * the same key automatically.
+ */
+export async function recordUnsubscribeIntent(
+  senderId: string,
+  options: ActionRequestOptions & { idempotencyKey?: string } = {},
+): Promise<UnsubscribeIntentResult> {
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
+  const env = await apiPost<UnsubscribeIntentResult>(
+    '/api/actions/unsubscribe-intent',
+    { senderId },
+    {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+    },
+  );
+  return env.data;
+}
+
+export async function getCompositePreview(
+  senderId: string,
+  options: ActionRequestOptions = {},
+): Promise<CompositeActionPreviewResult> {
+  const env = await apiGet<CompositeActionPreviewResult>('/api/actions/preview', {
+    query: { senderId },
     ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
   });
   return env.data;

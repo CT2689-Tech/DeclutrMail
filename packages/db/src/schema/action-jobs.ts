@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   index,
   integer,
   jsonb,
@@ -56,20 +57,34 @@ import { undoJournal } from './undo-journal';
 
 /**
  * Verbs the label-modify pipeline can apply. Append-only. `archive`
- * drops INBOX; `later` swaps INBOX for the DeclutrMail/Later label —
- * both are also valid `undo_action_kind` + `activity_action` values, so
- * the worker can write a job's verb straight into the undo journal +
- * activity log.
+ * drops INBOX; `later` swaps INBOX for the DeclutrMail/Later label;
+ * `delete` moves messages to Gmail Trash (recoverable for 30 days,
+ * after which Gmail auto-empties). All three are valid
+ * `undo_action_kind` + `activity_action` values, so the worker can
+ * write a job's verb straight into the undo journal + activity log.
  *
- * `keep` (policy-only) and `unsubscribe` (its own pipeline) never produce
- * an `action_jobs` row, so they are not here. `unarchive` is in the
- * Action Registry (ADR-0015) as a label-modify verb but is intentionally
- * NOT added to this enum yet: the worker writes the verb into
- * `undo_action_kind` + `activity_action`, which do not include
- * `unarchive`. Adding it is the restore-pipeline change (those two enums
- * + worker support) and has no producer at this stage.
+ * `delete` was added in 2026-06-03 per ADR-0019 + spec v1.2 Decision 1
+ * (extends D227's K/A/U/L to K/A/U/L/D). The Trash worker calls
+ * Gmail `messages.trash` (NOT `messages.delete` — Trash is the
+ * 30-day recovery window the spec relies on).
+ *
+ * `keep` (policy-only) never produces an `action_jobs` row.
+ *
+ * `unsubscribe` was added in 2026-06-06 (migration 0024 per FOUNDER-
+ * FOLLOWUPS 2026-06-05 'DB-level Idempotency-Key dedup for unsubscribe
+ * -intent'). The verb does NOT enqueue a worker job — the row is
+ * persisted directly at status='done' with `resolved_message_ids =
+ * [activityLogId]`, so the unique `action_jobs_idempotency_key_uniq`
+ * constraint dedups a retried POST. The real unsub execution pipeline
+ * (D9, D230) reads the activity_log row, never the action_jobs row.
+ *
+ * `unarchive` is in the Action Registry (ADR-0015) as a label-modify
+ * verb but is intentionally NOT added to this enum yet: the worker
+ * writes the verb into `undo_action_kind` + `activity_action`, which do
+ * not include `unarchive`. Adding it is the restore-pipeline change
+ * (those two enums + worker support) and has no producer at this stage.
  */
-export const actionVerb = pgEnum('action_verb', ['archive', 'later']);
+export const actionVerb = pgEnum('action_verb', ['archive', 'later', 'delete', 'unsubscribe']);
 
 /** Forward action vs. its reverse (undo). */
 export const actionDirection = pgEnum('action_direction', ['forward', 'reverse']);
@@ -134,6 +149,38 @@ export const actionJobs = pgTable(
     }),
     /** Classified failure code, set when `status='failed'`. */
     errorCode: text('error_code'),
+    /**
+     * Composite action linkage (ADR-0020). For a composite secondary
+     * action (e.g. the Delete part of "Unsubscribe + Delete past"),
+     * `compositeId` references the primary row's `id` so the cascade-
+     * undo path can read `WHERE composite_id = $1` and reverse every
+     * sibling row in REVERSE ORDER (secondary first, then primary).
+     *
+     * NULL for single-verb actions (no composite linkage) and for
+     * the primary row of a composite (the primary refers to itself
+     * implicitly via `id`; only secondaries fill this column).
+     *
+     * FK enforced at DB level via 0020 migration (DEFERRABLE INITIALLY
+     * DEFERRED). NULL skips the FK check per standard SQL semantics.
+     *
+     * Drizzle cannot express DEFERRABLE INITIALLY DEFERRED — that
+     * timing remains migration-only. The `.references()` annotation
+     * below records the ON DELETE CASCADE so the schema reflects the
+     * actual DB shape (introspection, type-safe joins, generate-no-diff
+     * gate). The self-reference uses the `AnyPgColumn` forward-ref
+     * pattern because `actionJobs` is the table being defined.
+     */
+    compositeId: uuid('composite_id').references((): AnyPgColumn => actionJobs.id, {
+      onDelete: 'cascade',
+    }),
+    /**
+     * Time-window filter applied at worker resolution (ADR-0020).
+     * Used by Archive + Delete verbs (and the secondary historic
+     * action on Unsubscribe + Later composites). NULL = no time
+     * filter; act on all messages matching the selector. Range
+     * 1–3650 days enforced by DB CHECK constraint (0020 migration).
+     */
+    olderThanDays: integer('older_than_days'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -152,6 +199,8 @@ export const actionJobs = pgTable(
     ),
     /** Symmetric with `activity_log_undo_token_idx` — action ↔ undo join. */
     undoTokenIdx: index('action_jobs_undo_token_idx').on(table.undoToken),
+    /** Composite cascade-undo lookup (ADR-0020). */
+    compositeIdIdx: index('action_jobs_composite_id_idx').on(table.compositeId),
   }),
 );
 

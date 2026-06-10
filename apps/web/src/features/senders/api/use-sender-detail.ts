@@ -15,7 +15,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchSenderDetail } from '@/lib/api/senders';
 import { sendersKeys } from './query-keys';
-import { retryUnless404 } from './retry';
+import { retryUnless4xx } from './retry';
 
 export function useSenderDetail(id: string) {
   return useQuery({
@@ -26,7 +26,7 @@ export function useSenderDetail(id: string) {
     // make the not-found branch appear to "hang" for ~5 seconds. The
     // sibling sender-scoped hooks share this predicate so all four
     // panes short-circuit consistently when the id is stale.
-    retry: retryUnless404,
+    retry: retryUnless4xx,
     // Don't fetch on an empty id — guards against a routing edge case
     // where the page mounts before params resolve.
     enabled: id.length > 0,

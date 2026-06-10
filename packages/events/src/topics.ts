@@ -97,6 +97,22 @@ export const TOPICS = {
    * 2026-05-22 "limiter cache eviction tied to D232").
    */
   MAILBOX_DELETED: 'mailbox.deleted',
+
+  /**
+   * User clicked Unsubscribe on a sender (D38; D204 boundary fix
+   * 2026-06-06). ActionsService records the intent + activity_log
+   * row but DOES NOT write `sender_policies` directly (per D204 — the
+   * senders feature owns that table). Instead this event is emitted
+   * inside the same tx as the audit-row insert; a senders-owned
+   * consumer projects the event into `sender_policies.policy_type =
+   * 'unsubscribe'`.
+   *
+   * Consumers:
+   *   - SendersPolicyAttributionWorker — upserts sender_policies.
+   *   - Future RFC 8058 unsub pipeline (D9, D230) reads this stream
+   *     to know which senders need the actual unsubscribe request.
+   */
+  ACTIONS_UNSUBSCRIBE_INTENT_RECORDED: 'actions.unsubscribe_intent_recorded',
 } as const;
 
 /** Closed string-literal union of every D204 topic. */

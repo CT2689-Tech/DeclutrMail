@@ -43,6 +43,7 @@ import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbo
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SendersReadService } from './senders.read-service.js';
 import type {
+  ActivityFilter,
   GmailCategory,
   DecisionHistoryRow,
   MailMessageRow,
@@ -87,6 +88,7 @@ interface SenderListEnvelope extends Envelope<
 
 /** Page-size bounds — see each route's clamp call for the route-specific defaults. */
 const LIST_LIMIT = { def: 25, min: 1, max: 100 } as const;
+const SUGGEST_LIMIT = { def: 8, min: 1, max: 20 } as const;
 const MESSAGES_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 default
 const HISTORY_LIMIT = { def: 10, min: 1, max: 50 } as const; // D46 — 10 default
 
@@ -125,6 +127,11 @@ export class SendersController {
     @Query('sort') rawSort: string | undefined,
     @Query('direction') rawDirection: string | undefined,
     @Query('q') rawQ: string | undefined,
+    @Query('activity') rawActivity: string | undefined,
+    @Query('unsub_ready') rawUnsubReady: string | undefined,
+    @Query('replied') rawReplied: string | undefined,
+    @Query('window') rawWindow: string | undefined,
+    @Query('domain') rawDomain: string | undefined,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -133,6 +140,12 @@ export class SendersController {
     const sort = parseSort(rawSort);
     const direction = parseDirection(rawDirection);
     const q = parseSearch(rawQ);
+    // D38 compose strip params.
+    const activity = parseActivity(rawActivity);
+    const unsubReady = parseTriState(rawUnsubReady);
+    const repliedTo = parseTriState(rawReplied);
+    const quietForDays = parseWindow(rawWindow);
+    const domain = parseSearch(rawDomain); // share the search trimmer
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -157,12 +170,22 @@ export class SendersController {
         cursor,
         limit,
         q,
+        activity,
+        unsubReady,
+        repliedTo,
+        quietForDays,
+        domain,
       }),
       this.reads.getSenderListQueryMeta({
         mailboxAccountId: accountId,
         category,
         isProtected,
         q,
+        activity,
+        unsubReady,
+        repliedTo,
+        quietForDays,
+        domain,
       }),
     ]);
 
@@ -230,6 +253,47 @@ export class SendersController {
   async weeklyHero(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<WeeklyHero>> {
     const hero = await this.reads.listWeeklyHero({ mailboxAccountId: mailbox.id });
     return ok(hero);
+  }
+
+  /**
+   * GET /api/senders/suggest — typeahead autocomplete for the senders
+   * search input. Returns up to `limit` minimal-shape rows ordered by
+   * `total_received DESC`. Mailbox-scoped.
+   *
+   * NOTE on route ORDER. Declared BEFORE `GET :id` — NestJS matches in
+   * declaration order; otherwise `suggest` is interpreted as an `:id`
+   * param and falls into the UUID-validation 400 path.
+   *
+   * Rate-limit: `triage-load` bucket overridden to 120/min (typing
+   * fires 1-3 calls per term with the FE's 150ms debounce; 120/min
+   * absorbs an aggressive typist plus their backspace).
+   */
+  @Get('suggest')
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  async suggest(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('q') rawQ: string | undefined,
+    @Query('limit') rawLimit: string | undefined,
+  ): Promise<
+    Envelope<{
+      senders: Array<{
+        id: string;
+        name: string;
+        email: string;
+        domain: string;
+        totalReceived: number;
+      }>;
+    }>
+  > {
+    const q = parseSearch(rawQ);
+    if (q === null) return ok({ senders: [] });
+    const limit = clampLimit(rawLimit, SUGGEST_LIMIT);
+    const rows = await this.reads.suggestSenders({
+      mailboxAccountId: mailbox.id,
+      q,
+      limit,
+    });
+    return ok({ senders: rows });
   }
 
   /**
@@ -485,7 +549,72 @@ function encodeCursorKey(sort: SenderListSort, row: SenderListRow): string {
  * it on the wire and instead leave that bit to a later slice.
  */
 function parseProtectedFlag(raw: string | undefined): boolean | null {
-  return raw === 'true' ? true : null;
+  // D38 — `not` (and `false`) now surfaces explicitly as the negated
+  // form ("NOT protected") so the compose strip can ride the same
+  // predicate as the toggle chip.
+  if (raw === 'true') return true;
+  if (raw === 'not' || raw === 'false') return false;
+  return null;
+}
+
+/**
+ * Parse `?activity=` (D38 compose strip).
+ *
+ * Accepted forms:
+ *   - `active | quiet | dormant`         → require the bucket
+ *   - `not-active | not-quiet | not-dormant` → exclude the bucket
+ *   - missing / empty                     → no filter
+ *
+ * Any other value 400s so a typo doesn't silently widen the result.
+ */
+function parseActivity(raw: string | undefined): ActivityFilter | null {
+  if (!raw) return null;
+  let negate = false;
+  let value = raw;
+  if (raw.startsWith('not-')) {
+    negate = true;
+    value = raw.slice(4);
+  }
+  if (value !== 'active' && value !== 'quiet' && value !== 'dormant') {
+    throw new BadRequestException(`Unsupported activity: ${raw}`);
+  }
+  return { bucket: value, negate };
+}
+
+/**
+ * Parse a tri-state filter query param (D38).
+ *
+ *   `true`           → required (matches)
+ *   `false` | `not`  → negated (excludes)
+ *   missing / empty  → no filter
+ */
+function parseTriState(raw: string | undefined): boolean | null {
+  if (!raw) return null;
+  if (raw === 'true') return true;
+  if (raw === 'false' || raw === 'not') return false;
+  throw new BadRequestException(`Unsupported tri-state value: ${raw}`);
+}
+
+/**
+ * Parse `?window=` (D38) into `quietForDays`. Accepts the spec's
+ * presets (`30d | 90d | 180d | 365d`) plus a bare number (clamped to
+ * the action_jobs CHECK range 1..3650 to keep wire shape consistent
+ * across surfaces). Missing → null (no constraint).
+ */
+function parseWindow(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const map: Record<string, number> = {
+    '30d': 30,
+    '90d': 90,
+    '180d': 180,
+    '365d': 365,
+    '6mo': 180,
+    '1yr': 365,
+  };
+  if (map[raw] !== undefined) return map[raw]!;
+  const n = Number.parseInt(raw, 10);
+  if (Number.isFinite(n) && n >= 1 && n <= 3650) return n;
+  throw new BadRequestException(`Unsupported window: ${raw}`);
 }
 
 /**

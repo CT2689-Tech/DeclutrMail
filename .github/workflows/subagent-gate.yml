@@ -5,6 +5,11 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
 
+  # Manual trigger fallback — PR #178 hit a case on 2026-06-10 where
+  # pull_request silently did not dispatch despite base + branch matching
+  # and no path/draft/concurrency exclusion. Lets the founder fire CI by
+  # hand on a branch when needed.
+  workflow_dispatch:
 concurrency:
   group: subagent-gate-${{ github.ref }}
   cancel-in-progress: true

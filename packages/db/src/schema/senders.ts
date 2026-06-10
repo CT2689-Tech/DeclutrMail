@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   index,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -107,6 +108,44 @@ export const senders = pgTable(
      * the senders list contract is a JSON number, not a `bigint` string.
      */
     totalReceived: bigint('total_received', { mode: 'number' }).notNull().default(0),
+    /**
+     * Denormalised count of OUTBOUND messages whose thread contains
+     * ≥1 inbound message from this sender — the "user replied to this
+     * sender" signal materialised for hot-path reads (Senders V2 spec
+     * v1.3 §"Trust-canary CI fixture", compose-strip `you replied` axis,
+     * score-cascade Rule 2 future fast path). Counts DISTINCT outbound
+     * `mail_messages.id` per sender; equals
+     * `SUM(sender_timeseries.reply_count)` across months so the two
+     * denorms reconcile arithmetically.
+     *
+     * Maintained on two write paths (mirrors `totalReceived`):
+     *   A. authoritatively on `InitialSyncWorker.buildSenderIndex`
+     *      (full rebuild — closes drift atomically), and
+     *   B. idempotently on incremental ingest by
+     *      `IncrementalSyncWorker` (per-job upsert deltas).
+     *
+     * Auto-protect rule (spec v1.3 §"Trust-canary CI fixture" L488):
+     * any sender with `replied_count >= 3` is upserted into
+     * `sender_policies` with `is_protected = true` +
+     * `protection_reason = 'engagement_based'`. The flip is sticky —
+     * subsequent drops below 3 do NOT unprotect.
+     *
+     * User-agency-wins semantic (flow-completeness-auditor 2026-06-05
+     * 🔴-3, founder-defaulted): the auto-protect UPSERT respects a
+     * MANUAL demote of an engagement_based-protected row. If the user
+     * flips `is_protected=false` on a row whose
+     * `protection_reason='engagement_based'`, subsequent worker passes
+     * do NOT re-protect — the user's decision survives. Fresh
+     * unprotected rows (NULL reason) still pick up engagement_based
+     * normally. Encoded in both worker `runReplyAttributionPostPass`
+     * SQL blocks via
+     * `WHERE is_protected = false AND (reason IS NULL OR reason <> 'engagement_based')`.
+     *
+     * `mode: 'number'` because counts are bounded far below 2^53 and
+     * the wire shape per the senders list contract is a JSON number,
+     * not a `bigint` string.
+     */
+    repliedCount: integer('replied_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

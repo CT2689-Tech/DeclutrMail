@@ -44,6 +44,8 @@ const STATS: ActivityStatsWire = {
   unsubscribed: 12,
   kept: 8,
   later: 3,
+
+  deleted: 0,
   followupsDismissed: 2,
   needsAttention: 0,
 };
@@ -137,13 +139,18 @@ function makeClient(
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
   if (rows) {
-    client.setQueryData(activityKeys.list(window, source), {
+    client.setQueryData(activityKeys.list({ window, source }), {
       data: rows,
       meta: {
         pagination: { nextCursor: null, hasMore: false, limit: 25 },
         stats: STATS,
+        allTimeStats: STATS,
         window,
         source,
+        verbs: [],
+        senderQuery: '',
+        dateFrom: null,
+        dateTo: null,
       },
     });
   }

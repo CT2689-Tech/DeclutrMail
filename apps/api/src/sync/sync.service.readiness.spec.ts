@@ -3,7 +3,7 @@ import type { Queue } from 'bullmq';
 
 import { SyncService } from './sync.service.js';
 import type { DrizzleDb } from '../db/db.module.js';
-import type { InitialSyncJobData } from '@declutrmail/workers';
+import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
 
 /**
  * `SyncService.getReadinessByMailbox` — the batch facade the account
@@ -19,6 +19,7 @@ describe('SyncService.getReadinessByMailbox', () => {
     };
     const svc = new SyncService(
       {} as unknown as Queue<InitialSyncJobData>,
+      {} as unknown as Queue<IncrementalSyncJobData>,
       db as unknown as DrizzleDb,
     );
     return { svc, db };

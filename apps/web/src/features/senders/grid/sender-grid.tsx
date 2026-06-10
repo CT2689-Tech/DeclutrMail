@@ -23,9 +23,24 @@ export interface SenderGridProps {
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onAction: (req: ActionRequest) => void;
+  /**
+   * Mailbox-wide MAX(total_received) — the magnitude under-bar's
+   * denominator per ADR-0016 §B1. Threaded from the senders list query
+   * meta (`meta.query.globalMaxTotal`) so a filtered view does NOT
+   * rescale to its own max — bars stay comparable across filter
+   * changes. `0` is the "no senders yet" edge case; SenderCard treats
+   * it as "no bar" rather than dividing by zero.
+   */
+  globalMaxTotal: number;
 }
 
-export function SenderGrid({ senders, selectedIds, onToggleSelect, onAction }: SenderGridProps) {
+export function SenderGrid({
+  senders,
+  selectedIds,
+  onToggleSelect,
+  onAction,
+  globalMaxTotal,
+}: SenderGridProps) {
   return (
     <div
       data-testid="sender-grid"
@@ -42,6 +57,7 @@ export function SenderGrid({ senders, selectedIds, onToggleSelect, onAction }: S
           selected={selectedIds.has(sender.id)}
           onToggleSelect={onToggleSelect}
           onAction={onAction}
+          globalMaxTotal={globalMaxTotal}
         />
       ))}
     </div>

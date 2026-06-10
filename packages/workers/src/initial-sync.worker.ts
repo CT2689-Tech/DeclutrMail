@@ -1,5 +1,17 @@
-import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
-import type { NewMailMessage, NewSender, NewSenderTimeseries, schema } from '@declutrmail/db';
+import {
+  mailMessages,
+  providerSyncState,
+  senderPolicies,
+  senders,
+  senderTimeseries,
+} from '@declutrmail/db';
+import type {
+  GmailCategory,
+  NewMailMessage,
+  NewSender,
+  NewSenderTimeseries,
+  schema,
+} from '@declutrmail/db';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -14,10 +26,8 @@ import type { InitialSyncJobData } from './queue.js';
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
-/** The five `senders.gmail_category` enum values (D222 — Gmail's own labels). */
-type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
-
-/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222). */
+/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
+ * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */
 const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
   CATEGORY_PERSONAL: 'primary',
   CATEGORY_PROMOTIONS: 'promotions',
@@ -152,6 +162,42 @@ interface SenderAggregate {
  * NOT from an in-fetch in-memory pass — the in-memory pass could not see
  * messages fetched by a prior attempt.
  */
+/**
+ * Structured log emitter for the initial-sync pipeline (2026-06-08
+ * session). Every stage transition + every long-running loop iteration
+ * (Gmail listMessageIds page, fetch chunk, DB upsert flush) calls
+ * this. The output lands in Cloud Logging as a single JSON line per
+ * event that's easy to filter by `kind=initial_sync.*` + by
+ * `mailbox_account_id`.
+ *
+ * Why a plain function instead of `BaseDeclutrWorker.log`: the base
+ * class's observer is Sentry-bound + gated on worker lifecycle events
+ * (started/succeeded/failed/retried). For in-loop progress checkpoints
+ * we want a lighter no-allocations path that goes straight to stdout
+ * + Cloud Logging. Logs are sparse — emitted at stage boundaries +
+ * every ~50 list pages / 1000 fetch chunks — so log spam isn't a risk.
+ *
+ * Privacy (D7, D228): structured payload is metadata-only — mailbox
+ * UUID, counts, byte counts, page counters. No subject lines, no
+ * sender emails, no body bytes.
+ */
+function initialSyncLog(
+  event: string,
+  mailboxAccountId: string,
+  extra?: Record<string, unknown>,
+): void {
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: `initial_sync.${event}`,
+      mailboxAccountId,
+      ts: Date.now(),
+      ...extra,
+    }),
+  );
+}
+
 export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, InitialSyncResult> {
   override readonly workerName = 'InitialSyncWorker';
   override readonly policy = 'perMailboxPolicy' as const;
@@ -184,20 +230,34 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     };
 
     // Stage 1 — fetching_metadata (resumable).
+    // 2026-06-08 session: structured progress logs added so a stalled
+    // sync surfaces immediately. Previously zero log output between
+    // `worker.started` and `worker.succeeded` made "is it hung or just
+    // slow?" unanswerable. Each emit costs ~1 line; benign.
+    initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
+    initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
+    initialSyncLog('getClient_done', mailboxAccountId);
 
     // Snapshot the user-level historyId BEFORE the fetch (D5 — PR-D
     // incremental sync starts from here). Snapshotting BEFORE the fetch
     // means any change during the fetch is replayed by the first
     // incremental run — upserts are idempotent so re-processing is safe.
+    initialSyncLog('getProfile_begin', mailboxAccountId);
     const profile = await client.getProfile();
+    initialSyncLog('getProfile_done', mailboxAccountId, { historyId: profile.historyId });
     const snapshotHistoryId = profile.historyId;
 
+    initialSyncLog('fetchAndStoreMetadata_begin', mailboxAccountId);
     const { messagesSynced, gmailApiCalls: fetchCalls } = await this.fetchAndStoreMetadata(
       mailboxAccountId,
       client,
     );
+    initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
+      messagesSynced,
+      gmailApiCalls: fetchCalls,
+    });
     const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
@@ -312,15 +372,34 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const orderedIds: string[] = [];
     const gmailIdSet = new Set<string>();
     let pageToken: string | undefined;
+    let listPageCount = 0;
+    initialSyncLog('listMessageIds_loop_begin', mailboxAccountId);
     do {
       const page = await client.listMessageIds(pageToken);
       gmailApiCalls += 1;
+      listPageCount += 1;
       for (const id of page.ids) {
         orderedIds.push(id);
         gmailIdSet.add(id);
       }
+      // Heartbeat every 25 pages (~2500 message IDs). At Gmail's per-
+      // user rate this is roughly every 10 seconds — comparable to
+      // BullMQ's lock renewal cadence. Without these checkpoints,
+      // a stalled listMessageIds loop produces zero log output and is
+      // indistinguishable from a healthy long fetch.
+      if (listPageCount % 25 === 0) {
+        initialSyncLog('listMessageIds_progress', mailboxAccountId, {
+          pages: listPageCount,
+          enumeratedIds: orderedIds.length,
+          hasMore: Boolean(page.nextPageToken),
+        });
+      }
       pageToken = page.nextPageToken;
     } while (pageToken);
+    initialSyncLog('listMessageIds_loop_done', mailboxAccountId, {
+      pages: listPageCount,
+      enumeratedIds: orderedIds.length,
+    });
     orderedIds.reverse(); // oldest → newest (fork #5); Gmail lists newest-first.
     const total = orderedIds.length;
 
@@ -420,9 +499,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
         await this.updateProgress(mailboxAccountId, processed, total);
+        initialSyncLog('fetch_flush', mailboxAccountId, {
+          processed,
+          total,
+          gmailApiCalls,
+        });
       }
     };
 
+    initialSyncLog('fetch_loop_begin', mailboxAccountId, {
+      total,
+      toFetch: total - skipSet.size,
+    });
     for (const id of orderedIds) {
       if (skipSet.has(id)) {
         continue;
@@ -434,6 +522,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
     await processChunk();
     await flush();
+    initialSyncLog('fetch_loop_done', mailboxAccountId, {
+      total,
+      gmailApiCalls,
+    });
 
     return { messagesSynced: total, gmailApiCalls };
   }
@@ -559,6 +651,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // for this mailbox is a fresh write from the recomputed aggregate.
     // PG rolls back if any insert throws → last known-good state
     // preserved, never a partial teardown.
+    //
+    // Reply attribution post-pass (spec v1.3 + mig 0022).
+    // After the rebuild's INSERTs, recompute `senders.replied_count` +
+    // `sender_timeseries.reply_count` from `mail_messages` via the SAME
+    // SQL as 0022's backfill — the migration IS the formula, single
+    // source of truth. Then upsert `sender_policies` for any sender
+    // whose `replied_count` crossed the auto-protect threshold (≥3,
+    // spec L488). Both run inside the rebuild tx so a partial reply
+    // pass rolls back with the rest.
     await this.deps.db.transaction(async (tx) => {
       await tx
         .delete(senderTimeseries)
@@ -575,6 +676,155 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
         }
       }
+
+      // first_seen / last_seen post-pass. The in-memory fold above
+      // computes `agg.firstSeen` / `agg.lastSeen` from the same
+      // mail_messages rows, but the JS path has shipped at least once
+      // (prod sync 2026-06-09) where 99.94% of senders ended up with
+      // `last_seen_at == first_seen_at` despite multiple unique
+      // internal_dates per sender. Root cause was not localised; this
+      // SQL pass makes the canonical mail_messages aggregation the
+      // source of truth regardless of any JS-side compute drift. Runs
+      // inside the rebuild tx so any failure rolls back with the rest.
+      //
+      // No coalesce needed: a sender row reaches this post-pass only
+      // if `senderRows.push` fired for it above, which requires at
+      // least one matching mail_messages row in the fold. The MIN/MAX
+      // are guaranteed non-null. Idempotent — re-running yields the
+      // same values.
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET
+          ${sql.identifier('first_seen_at')} = sub.min_d,
+          ${sql.identifier('last_seen_at')} = sub.max_d
+        FROM (
+          SELECT
+            m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m.${sql.identifier('sender_key')} AS sender_key,
+            MIN(m.${sql.identifier('internal_date')}) AS min_d,
+            MAX(m.${sql.identifier('internal_date')}) AS max_d
+          FROM ${mailMessages} AS m
+          WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m.${sql.identifier('is_outbound')} = false
+          GROUP BY m.${sql.identifier('mailbox_account_id')}, m.${sql.identifier('sender_key')}
+        ) AS sub
+        WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND s.${sql.identifier('sender_key')} = sub.sender_key
+      `);
+
+      // Reply-attribution post-pass. The aggregate counts DISTINCT
+      // outbound `mail_messages.id` per `(sender_key)` whose thread
+      // contains ≥1 inbound from that sender. Matches mig 0022's
+      // backfill semantic exactly — drift-free across migration apply
+      // + every initial-sync run.
+      await tx.execute(sql`
+        UPDATE ${senders} AS s
+        SET ${sql.identifier('replied_count')} = sub.cnt
+        FROM (
+          SELECT
+            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m1.${sql.identifier('sender_key')} AS sender_key,
+            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m1
+          JOIN ${mailMessages} AS m2
+            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
+           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
+           AND m2.${sql.identifier('is_outbound')} = true
+          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m1.${sql.identifier('is_outbound')} = false
+          GROUP BY m1.${sql.identifier('mailbox_account_id')}, m1.${sql.identifier('sender_key')}
+        ) AS sub
+        WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND s.${sql.identifier('sender_key')} = sub.sender_key
+      `);
+
+      // Per-month reply attribution into `sender_timeseries.reply_count`
+      // (column existed since schema; populator was the missing piece
+      // per the schema doc on sender-timeseries.ts L26-27). Same
+      // distinct-outbound-id semantic as above, but bucketed by
+      // `date_trunc('month', m2.internal_date)` so the row keyed by
+      // `(mailbox_account_id, sender_key, year_month)` already exists
+      // from the timeseries insert above — UPDATE in place.
+      await tx.execute(sql`
+        UPDATE ${senderTimeseries} AS st
+        SET ${sql.identifier('reply_count')} = sub.cnt
+        FROM (
+          SELECT
+            m1.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+            m1.${sql.identifier('sender_key')} AS sender_key,
+            date_trunc('month', m2.${sql.identifier('internal_date')})::date AS year_month,
+            COUNT(DISTINCT m2.${sql.identifier('id')})::integer AS cnt
+          FROM ${mailMessages} AS m1
+          JOIN ${mailMessages} AS m2
+            ON m2.${sql.identifier('mailbox_account_id')} = m1.${sql.identifier('mailbox_account_id')}
+           AND m2.${sql.identifier('provider_thread_id')} = m1.${sql.identifier('provider_thread_id')}
+           AND m2.${sql.identifier('is_outbound')} = true
+          WHERE m1.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND m1.${sql.identifier('is_outbound')} = false
+          GROUP BY
+            m1.${sql.identifier('mailbox_account_id')},
+            m1.${sql.identifier('sender_key')},
+            date_trunc('month', m2.${sql.identifier('internal_date')})
+        ) AS sub
+        WHERE st.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+          AND st.${sql.identifier('sender_key')} = sub.sender_key
+          AND st.${sql.identifier('year_month')} = sub.year_month
+      `);
+
+      // Auto-protect on replied ≥ 3 (spec v1.3 §"Trust-canary CI
+      // fixture" L488). Engagement-based provenance — the cascade
+      // audit copy reads `protection_reason` to render the audit
+      // string (score-cascade.ts:159-173). The WHERE-clause guard on
+      // UPSERT preserves prior user_defined / vip provenance.
+      //
+      // User-agency-wins guard (flow-completeness-auditor 2026-06-05
+      // 🔴-3): if a user manually demoted an `engagement_based`-
+      // protected row (`is_protected=false` but the prior
+      // `protection_reason='engagement_based'`), the re-protect path
+      // would silently flip them back on every sync — overriding the
+      // user's decision. The extra
+      // `protection_reason != 'engagement_based'` clause respects the
+      // demote: an engagement_based-then-demoted row stays demoted
+      // until the underlying signal (replied_count) is reset OR the
+      // user manually re-protects. Fresh rows (no prior reason) are
+      // untouched by this clause and still pick up engagement_based.
+      await tx.execute(sql`
+        INSERT INTO ${senderPolicies} (
+          ${sql.identifier('mailbox_account_id')},
+          ${sql.identifier('sender_key')},
+          ${sql.identifier('policy_type')},
+          ${sql.identifier('is_protected')},
+          ${sql.identifier('protection_reason')},
+          ${sql.identifier('protection_set_at')}
+        )
+        SELECT
+          s.${sql.identifier('mailbox_account_id')},
+          s.${sql.identifier('sender_key')},
+          'keep'::sender_policy_type,
+          true,
+          'engagement_based'::protection_reason,
+          now()
+        FROM ${senders} AS s
+        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+          AND s.${sql.identifier('replied_count')} >= 3
+        ON CONFLICT (${sql.identifier('mailbox_account_id')}, ${sql.identifier('sender_key')}) DO UPDATE
+        SET
+          ${sql.identifier('is_protected')} = true,
+          ${sql.identifier('protection_reason')} = COALESCE(
+            sender_policies.${sql.identifier('protection_reason')},
+            'engagement_based'::protection_reason
+          ),
+          ${sql.identifier('protection_set_at')} = COALESCE(
+            sender_policies.${sql.identifier('protection_set_at')},
+            now()
+          ),
+          ${sql.identifier('updated_at')} = now()
+        WHERE sender_policies.${sql.identifier('is_protected')} = false
+          AND (
+            sender_policies.${sql.identifier('protection_reason')} IS NULL
+            OR sender_policies.${sql.identifier('protection_reason')} <> 'engagement_based'::protection_reason
+          )
+      `);
     });
 
     if (orphans > 0) {
@@ -660,6 +910,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       unsubscribeUrl: httpsUrl,
       unsubscribeMailtoUrl: mailtoUrl,
       unsubscribeOneClick,
+      // ADR-0021 — pass through Gmail's `sizeEstimate` when present.
+      // Drizzle's `integer` column tolerates `undefined` (lands NULL).
+      sizeBytes: meta.sizeBytes ?? null,
     };
 
     return {
@@ -725,11 +978,55 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       };
       aggregates.set(row.senderKey, agg);
     }
-    if (row.internalDate < agg.firstSeen) {
+    // Capture BEFORE state for the optional diagnostic (D38). The bug
+    // observed in prod 2026-06-09 (99.94% of senders ended up with
+    // last_seen_at = first_seen_at) did NOT reproduce on PGlite or
+    // local drizzle-orm/postgres-js. The fold guards are symmetric in
+    // pure JS — `<` working while `>` not is structurally impossible —
+    // so the prod-only divergence points at a runtime-specific quirk
+    // (Supabase tx pooler + Cloud Run + postgres-js with prepare:false).
+    // Landing a permanent env-gated diagnostic lets a single deploy
+    // capture the fold's actual behavior under prod conditions without
+    // churning the code each time. Default OFF — zero overhead.
+    const debugFold = process.env.WORKER_DEBUG_FOLD === 'true';
+    const prevFirstSeen = debugFold ? agg.firstSeen : null;
+    const prevLastSeen = debugFold ? agg.lastSeen : null;
+    const isOlder = row.internalDate < agg.firstSeen;
+    const isNewer = row.internalDate > agg.lastSeen;
+    if (isOlder) {
       agg.firstSeen = row.internalDate;
     }
-    if (row.internalDate > agg.lastSeen) {
+    if (isNewer) {
       agg.lastSeen = row.internalDate;
+    }
+    if (debugFold) {
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          level: 'debug',
+          kind: 'worker.fold_debug',
+          senderKey: row.senderKey,
+          row: {
+            internalDate: row.internalDate?.toISOString?.() ?? String(row.internalDate),
+            type: typeof row.internalDate,
+            isDate: row.internalDate instanceof Date,
+            valueOf:
+              typeof row.internalDate?.valueOf === 'function' ? row.internalDate.valueOf() : null,
+          },
+          before: {
+            firstSeen: prevFirstSeen?.toISOString?.() ?? String(prevFirstSeen),
+            lastSeen: prevLastSeen?.toISOString?.() ?? String(prevLastSeen),
+            firstSeenValueOf: prevFirstSeen?.valueOf?.() ?? null,
+            lastSeenValueOf: prevLastSeen?.valueOf?.() ?? null,
+            sameRefAsRow: row.internalDate === prevLastSeen,
+          },
+          comparison: {
+            isOlder,
+            isNewer,
+          },
+          totalReceivedBefore: agg.totalReceived,
+        }),
+      );
     }
     // Inbound-only: the page query filters `is_outbound = false`, so
     // every fold here contributes +1 to the sender's lifetime received
@@ -805,6 +1102,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
             unsubscribeUrl: sql`excluded.unsubscribe_url`,
             unsubscribeMailtoUrl: sql`excluded.unsubscribe_mailto_url`,
             unsubscribeOneClick: sql`excluded.unsubscribe_one_click`,
+            // ADR-0021 — mirror incremental-sync's defensive shape.
+            // When Gmail omits `sizeEstimate` on a re-fetch (rare but
+            // observed on some message shapes) `excluded.size_bytes`
+            // arrives NULL; COALESCE preserves any prior stored value
+            // so a resumed initial-sync doesn't silently clobber a
+            // backfilled column. Symmetric with incremental's
+            // conditional-spread guard at incremental-sync.worker.ts.
+            sizeBytes: sql`coalesce(excluded.size_bytes, mail_messages.size_bytes)`,
             updatedAt: sql`now()`,
           },
         });
@@ -866,6 +1171,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * Final transition — stage `ready`, 100%, sync timestamp set, AND the
    * historyId snapshot captured at sync-start persisted to
    * `last_history_id` so PR-D's incremental sync starts from there.
+   *
+   * Monotonic cursor guard (architecture-guardian 2026-06-05 [WARNING]):
+   * the historyId snapshot was captured BEFORE the fetch started, so
+   * a concurrent IncrementalSyncWorker that ran during the fetch could
+   * have advanced the cursor past this snapshot. Writing the snapshot
+   * unconditionally would regress the cursor and orphan that worker's
+   * delta. The CASE expression on `last_history_id` picks
+   * GREATEST(stored, snapshot) — the state-machine fields (stage,
+   * readiness, progress, errorCode, lastSyncedAt) always commit so the
+   * sync gate transitions correctly; only the cursor field is
+   * monotonic-guarded.
    */
   private async markReady(mailboxAccountId: string, historyId: string): Promise<void> {
     const lastHistoryId = BigInt(historyId);
@@ -885,7 +1201,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           readinessStatus: 'ready',
           progressPct: 100,
           errorCode: null,
-          lastHistoryId,
+          // GREATEST(stored, snapshot) — never regress on a concurrent
+          // IncrementalSyncWorker's already-advanced cursor.
+          lastHistoryId: sql`CASE
+            WHEN ${providerSyncState.lastHistoryId} IS NULL
+              OR EXCLUDED.${sql.identifier('last_history_id')} > ${providerSyncState.lastHistoryId}
+            THEN EXCLUDED.${sql.identifier('last_history_id')}
+            ELSE ${providerSyncState.lastHistoryId}
+          END`,
           lastSyncedAt: sql`now()`,
           updatedAt: sql`now()`,
         },

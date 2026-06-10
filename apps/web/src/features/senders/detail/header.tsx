@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Eyebrow, tokens } from '@declutrmail/shared';
+import { Avatar, Eyebrow, NumericDisplay, tokens } from '@declutrmail/shared';
 import type { Sender, SenderLastReview } from '../data';
 import type { ProtectionReason } from './types';
 
@@ -100,14 +100,14 @@ export function SenderDetailHeader({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, flex: 1 }}>
         <div>
           <Eyebrow>Sender</Eyebrow>
+          {/* ADR-0016 §A1 — sender name uses `NumericDisplay
+              variant="display"` (Fraunces 28/400/-0.025em) so the
+              h1 scale on Detail mirrors the SenderTable total cell
+              + Hero slice headline. Card↔Detail navigation now lands
+              on a consistent display-numeric scale. */}
           <h1
             style={{
               margin: '4px 0 0',
-              fontFamily: font.display,
-              fontSize: 22,
-              fontWeight: 600,
-              letterSpacing: '-0.02em',
-              color: color.fg,
               display: 'flex',
               alignItems: 'center',
               gap: 10,
@@ -115,7 +115,11 @@ export function SenderDetailHeader({
               minWidth: 0,
             }}
           >
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{sender.name}</span>
+            <NumericDisplay
+              value={sender.name}
+              variant="display"
+              style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}
+            />
             {/* D43 — small VIP/Protect icons sit next to the name, not in the toolbar. */}
             <span
               style={{

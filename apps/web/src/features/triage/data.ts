@@ -24,8 +24,11 @@
 
 import type { TriageVerdict } from './types';
 
-/** Gmail-side category — surfaces in row chrome (read-only). */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+/** Gmail-side category — surfaces in row chrome (read-only). Mirrored
+ * from the canonical `gmail_category` pg_enum via the shared contracts
+ * package so a migration that widens the enum widens this type. */
+export type { GmailCategory } from '@declutrmail/shared/contracts';
+import type { GmailCategory } from '@declutrmail/shared/contracts';
 
 /**
  * RFC 8058 unsubscribe capability per sender (mirrors
@@ -76,6 +79,14 @@ export interface TriageDecisionRow {
 
   /** Volume signal — messages/month, recent cadence (4-week average). */
   monthlyVolume: number;
+  /**
+   * Raw last-90-day message count. Lets the FE render an honest
+   * rolling-window signal ("N in last 90d") instead of the derived
+   * `monthlyVolume = round(last90 / 3)`, which rounds to 0 for senders
+   * quiet within the window (FOUNDER 2026-06-06 smoke — every row read
+   * "0/mo" because the only mail from those senders was older than 90d).
+   */
+  last90dMessages: number;
   /** Read rate in `[0, 1]`. */
   readRate: number;
   /** Days since the sender's most recent message. */
@@ -161,6 +172,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     ],
     protectionReason: null,
     monthlyVolume: 52,
+    last90dMessages: 156,
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1745,
@@ -182,10 +194,12 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
       'Read rate: 0% over the last 90 days',
       'Volume: 64 messages/month (4-week trailing average)',
       "Volume spike: 2× the sender's usual cadence",
-      'List-Unsubscribe header present (RFC 8058 one-click)',
+      // Locked-copy ban per spec v1.2 Decision 15: jargon-free phrasing.
+      'One-click unsubscribe available',
     ],
     protectionReason: null,
     monthlyVolume: 64,
+    last90dMessages: 192,
     readRate: 0,
     lastDays: 0,
     totalAllTime: 2432,
@@ -210,6 +224,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     ],
     protectionReason: null,
     monthlyVolume: 48,
+    last90dMessages: 144,
     readRate: 0,
     lastDays: 0,
     totalAllTime: 1056,
@@ -230,11 +245,13 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 4% over the last 90 days',
       'Volume: 46 messages/month',
-      'List-Unsubscribe header is mailto-only (RFC 8058 one-click not offered)',
+      // Locked-copy ban per spec v1.2 Decision 15: jargon-free phrasing.
+      'Unsubscribe is by reply only (no one-click option)',
       'No reply from you to this thread in the last 6 months',
     ],
     protectionReason: null,
     monthlyVolume: 46,
+    last90dMessages: 138,
     readRate: 0.04,
     lastDays: 0,
     totalAllTime: 4692,
@@ -255,6 +272,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: ['Read rate: 30% over the last 90 days', 'Volume: 12 messages/month'],
     protectionReason: null,
     monthlyVolume: 12,
+    last90dMessages: 36,
     readRate: 0.3,
     lastDays: 4,
     totalAllTime: 264,
@@ -280,6 +298,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     ],
     protectionReason: null,
     monthlyVolume: 8,
+    last90dMessages: 24,
     readRate: 0.85,
     lastDays: 3,
     totalAllTime: 96,
@@ -304,6 +323,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     ],
     protectionReason: 'vip',
     monthlyVolume: 17,
+    last90dMessages: 51,
     readRate: 1,
     lastDays: 0,
     totalAllTime: 306,
@@ -328,6 +348,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     ],
     protectionReason: 'engagement',
     monthlyVolume: 6,
+    last90dMessages: 18,
     readRate: 0.95,
     lastDays: 2,
     totalAllTime: 84,

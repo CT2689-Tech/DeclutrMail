@@ -1,7 +1,16 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
-import { Avatar, Button, EmptyState, tokens, toast } from '@declutrmail/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  NumericDisplay,
+  Spark,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
 import { type ActionRequest, type ActionVerb, type Sender, VERB_PAST } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
@@ -13,13 +22,26 @@ import { useSenderDetail } from '../api/use-sender-detail';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import { useSenderHistory } from '../api/use-sender-history';
+import {
+  useCompositePreview,
+  useEnqueueAction,
+  useEnqueueComposite,
+  useRecordUnsubscribeIntent,
+  useActionStatus,
+  useRevertUndo,
+} from '../api/use-action';
+import { sendersKeys } from '../api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
+import { isTerminalStatus } from '@/lib/api/actions';
+import { useQueryClient } from '@tanstack/react-query';
 import { adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
+import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
 const { color, font, radius, shadow, space } = tokens;
-
-let receiptSeq = 0;
 
 /**
  * Sender Detail page — Variant D composition per ADR-0012 (amends D39).
@@ -69,13 +91,67 @@ const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
  * the KPI strip stay consistent. Per-user calibration tracked in
  * FOUNDER-FOLLOWUPS as a follow-up.
  */
-const READ_MIN_PER_MSG = 1.6;
+// READ_MIN_PER_MSG (the 1.6 min/email coefficient) RETIRED per spec
+// v1.2 Decision 6. Was never calibrated against real user data and
+// fed an editorial inference line ("Estimated reading cost: X min")
+// that contradicted the founder's "we don't guess" stance. Re-add
+// when a per-user calibration ships from analytics.
+const _READ_MIN_PER_MSG = 1.6;
+
+/**
+ * Source-tag enum carried in the `?from=` query param for
+ * `sender_detail_opened`. Mirrors the closed union in
+ * `packages/shared/src/observability/events.ts`. Anything else is
+ * coerced to the `'search'` fallback (unknown / external entry).
+ *
+ * Link sites tag themselves via the query param — see
+ * `apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx`
+ * for the canonical example. Untagged entries (typed URL, bookmark)
+ * land as `'search'`; that's the least-misleading default in the
+ * existing closed enum.
+ */
+const SENDER_DETAIL_SOURCES = [
+  'senders_grid',
+  'senders_table',
+  'activity_row',
+  'brief_card',
+  'search',
+] as const;
+type SenderDetailSource = (typeof SENDER_DETAIL_SOURCES)[number];
+
+function parseSenderDetailSource(raw: string | null): SenderDetailSource {
+  if (raw != null && (SENDER_DETAIL_SOURCES as readonly string[]).includes(raw)) {
+    return raw as SenderDetailSource;
+  }
+  return 'search';
+}
 
 export function SenderDetailRoute({ id }: { id: string }) {
   const detail = useSenderDetail(id);
   const messages = useSenderMessages(id);
   const timeseries = useSenderTimeseries(id);
   const history = useSenderHistory(id);
+
+  // `sender_detail_opened` (D38 session-3): fire exactly once per
+  // mounted sender id. Source comes from the `?from=` querystring at
+  // link sites; untagged entries fall back to `'search'`. The ref guard
+  // makes the effect idempotent across React StrictMode double-mount +
+  // any re-render that doesn't change the resolved id.
+  const search = useSearchParams();
+  const fromParam = search?.get('from') ?? null;
+  const firedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (firedFor.current === id) return;
+    firedFor.current = id;
+    const source = parseSenderDetailSource(fromParam);
+    void track('sender_detail_opened', { sender_id: id, source });
+    addBreadcrumb({
+      category: 'navigation',
+      message: `sender-detail-opened ${id}`,
+      level: 'info',
+      data: { source },
+    });
+  }, [id, fromParam]);
 
   const isLoading =
     detail.isLoading || messages.isLoading || timeseries.isLoading || history.isLoading;
@@ -144,37 +220,249 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const [detail, setDetail] = useState<SenderDetail>(initial);
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
+  // D226 + D232 real-mutation wiring (FOUNDER-FOLLOWUPS 2026-06-06 —
+  // performAction tracer retirement). Mirrors senders-screen.tsx:330-352.
+  // `activeAction` holds the in-flight handle that `actionStatus` polls
+  // until terminal; `revertActionId` does the same for the undo loop.
+  // The sender-detail path is single-sender by design (the route is
+  // per-sender), so no bulk-fan-out is needed.
+  const qc = useQueryClient();
+  const enqueue = useEnqueueAction();
+  const enqueueComposite = useEnqueueComposite();
+  const recordUnsubIntent = useRecordUnsubscribeIntent();
+  const revert = useRevertUndo();
+  const [activeAction, setActiveAction] = useState<{
+    actionId: string;
+    senderName: string;
+    verb: 'Archive' | 'Delete' | 'Later';
+  } | null>(null);
+  const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  const revertStatus = useActionStatus(revertActionId);
 
-  const { sender, recommendation, recentMessages, stats, history } = detail;
+  const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
 
+  // Fact-based Volume signal (spec v1.2 Decision 6 — ban editorial
+  // inference; founder 2026-06-06): the "X/mo" cadence shown both in
+  // the hero narrative and the KPI cell was `stats.monthlyVolume`,
+  // a single-month value labelled "/mo" — a sender mailing 50 last
+  // month and 5 the month before averaged to "13/mo" which the user
+  // read as a steady cadence. We now display the LATEST month's
+  // count plus its actual month name, and a 12-month sparkline below.
+  // No averages, no derived /mo unit. `volumes` is reused by the
+  // KpiStrip cell's Spark and the hero count.
+  const volumes = useMemo(() => timeseries.map((p) => p.volume), [timeseries]);
+  const latestPoint = timeseries.length > 0 ? timeseries[timeseries.length - 1] : null;
+  const latestMonthAbbrev = latestPoint != null ? monthAbbrev(latestPoint.yearMonth) : null;
+
+  // ADR-0020 composite preview (mirrors senders-screen.tsx:380).
+  // Without this prop, ConfirmActionModal's time-window pills + summary
+  // count fall back to a static `historic` total — pill clicks become
+  // inert. Single-sender path only; bulk flows aren't reachable from
+  // this surface anyway (Sender Detail acts on one sender at a time).
+  // Hook is enabled only while the modal is open + the verb depends on
+  // a per-window count (Archive / Delete / Unsub / Later).
+  const previewVerb = pendingAction?.verb;
+  const previewSenderId =
+    pendingAction != null &&
+    pendingAction.senders.length === 1 &&
+    (previewVerb === 'Archive' ||
+      previewVerb === 'Delete' ||
+      previewVerb === 'Unsubscribe' ||
+      previewVerb === 'Later')
+      ? (pendingAction.senders[0]?.id ?? null)
+      : null;
+  const compositePreviewQuery = useCompositePreview(previewSenderId);
+  useEffect(() => {
+    if (!compositePreviewQuery.isError || previewSenderId == null) return;
+    // architecture-guardian 2026-06-06: route the failure through
+    // captureFeatureException so the rate is queryable in Sentry.
+    // Was console.warn-only — preview is D226-mandatory; a sustained
+    // 5xx that quietly falls back to no-counts in the modal MUST be
+    // observable, not invisible. `console.warn` is kept alongside so
+    // local dev (no DSN) still sees the failure in the browser console.
+    const err = compositePreviewQuery.error;
+    console.warn('[sender-detail] composite preview fetch failed', {
+      senderId: previewSenderId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    captureFeatureException(err, { surface: 'senders', reason: 'composite_preview' });
+  }, [compositePreviewQuery.isError, compositePreviewQuery.error, previewSenderId]);
+
+  /**
+   * Real-mutation `performAction` (FOUNDER-FOLLOWUPS 2026-06-06 — retires
+   * the prior tracer toast + synthetic `timeLeft: '6d 23h'` receipt that
+   * never called the BE). Mirrors senders-screen.tsx single-sender flow:
+   *
+   *   - **Keep** is a no-op locally (no Gmail mutation; no BE pipeline).
+   *   - **Archive** without secondary → `useEnqueueAction` (direct path).
+   *   - **Archive (w/ secondary), Delete, Later** → `useEnqueueComposite`
+   *     (ADR-0020 composite executor handles primary + secondary in one
+   *     row pair).
+   *   - **Unsubscribe** → `useRecordUnsubscribeIntent` (writes the
+   *     pending policy + activity_log audit row; the RFC8058 / mailto /
+   *     manual pipeline lands per D230).
+   *
+   * The receipt is set lazily by the polled `actionStatus` lifecycle
+   * (effect below) so it always carries the REAL `undoToken` from the
+   * worker — never an optimistic stub.
+   *
+   * Re-entry guard (flow-completeness-auditor 2026-06-06): every
+   * destructive branch returns early when `activeAction != null` or the
+   * relevant mutation is in flight. Without this guard, a rapid second
+   * click overwrote `activeAction` and silently dropped the first
+   * action's undo token from the UI — the action still ran server-side
+   * but the receipt strip never showed.
+   */
   const performAction = useCallback(
-    (verb: ActionVerb, senders: Sender[], _opts?: ConfirmOptions) => {
+    (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
-      // Tracer path — fake receipt until this surface's verb BE lands. No
-      // fabricated email count (the former `monthly × 12`); the true number
-      // comes from the worker once the verb is wired.
-      toast(
-        `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
-        verb === 'Unsubscribe' ? 'warn' : 'success',
-      );
-      if (verb !== 'Keep') {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb,
-          count: senders.length,
-          historicTotal: 0,
-          timeLeft: '6d 23h',
-        });
+      const sender = senders[0]!;
+
+      // Keep — non-destructive, no Gmail mutation, no receipt.
+      if (verb === 'Keep') {
+        toast('Kept', 'success');
+        setPendingAction(null);
+        return;
       }
-      setPendingAction(null);
+
+      // Re-entry guard for every destructive branch — see jsdoc above.
+      // Composite + direct-enqueue share the same `activeAction` slot,
+      // so a single guard covers both.
+      if (activeAction != null || enqueue.isPending || enqueueComposite.isPending) {
+        toast('Still confirming your last action — give it a moment.', 'info');
+        setPendingAction(null);
+        return;
+      }
+
+      // Archive without a secondary historic verb → direct enqueue path
+      // (the only verb with a `useEnqueueAction` wire; composite handles
+      // every other shape).
+      if (verb === 'Archive' && opts?.secondary == null) {
+        setPendingAction(null);
+        toast(`Archiving mail from ${sender.name}…`, 'info');
+        enqueue.mutate(
+          { senderId: sender.id },
+          {
+            onSuccess: (res) =>
+              setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
+            onError: (err) => {
+              captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
+              toast(
+                err instanceof ApiError && err.status === 409
+                  ? `${sender.name} is protected — unprotect it first`
+                  : `Couldn't archive ${sender.name}`,
+                'warn',
+              );
+            },
+          },
+        );
+        return;
+      }
+
+      // Composite path — Delete primary, Later primary, or Archive with
+      // a secondary historic verb. ADR-0020 single round-trip.
+      if (
+        verb === 'Delete' ||
+        verb === 'Later' ||
+        (verb === 'Archive' && opts?.secondary != null)
+      ) {
+        const primaryType: 'archive' | 'later' | 'delete' =
+          verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
+        const inFlightCopy =
+          primaryType === 'delete'
+            ? `Moving mail from ${sender.name} to Trash…`
+            : primaryType === 'later'
+              ? `Moving ${sender.name} to Later…`
+              : `Archiving mail from ${sender.name}…`;
+        setPendingAction(null);
+        toast(inFlightCopy, 'info');
+        enqueueComposite.mutate(
+          {
+            senderId: sender.id,
+            primary: { type: primaryType, olderThanDays: opts?.olderThanDays ?? null },
+            ...(opts?.secondary
+              ? {
+                  secondary: {
+                    type: opts.secondary.type,
+                    olderThanDays: opts.secondary.olderThanDays ?? null,
+                  },
+                }
+              : {}),
+          },
+          {
+            onSuccess: (res) =>
+              setActiveAction({
+                actionId: res.actionId,
+                senderName: sender.name,
+                verb:
+                  primaryType === 'delete'
+                    ? 'Delete'
+                    : primaryType === 'later'
+                      ? 'Later'
+                      : 'Archive',
+              }),
+            onError: (err) => {
+              captureFeatureException(err, {
+                surface: 'senders',
+                reason: `enqueue_${primaryType}`,
+              });
+              toast(
+                err instanceof ApiError && err.status === 409
+                  ? `${sender.name} is protected — unprotect it first`
+                  : `Couldn't ${primaryType} ${sender.name}`,
+                'warn',
+              );
+            },
+          },
+        );
+        return;
+      }
+
+      // Unsubscribe — record the intent honestly (D38 + 2026-06-05).
+      // Single-sender by design here; no bulk fan-out needed. The
+      // top-level re-entry guard already covers `activeAction != null`;
+      // the additional `recordUnsubIntent.isPending` check stops a
+      // double-fire while the unsub mutation itself is in flight (unsub
+      // doesn't go through `activeAction` so it has its own latch).
+      if (verb === 'Unsubscribe') {
+        if (recordUnsubIntent.isPending) return;
+        setPendingAction(null);
+        recordUnsubIntent.mutate(
+          { senderId: sender.id },
+          {
+            onSuccess: () => {
+              toast(
+                `Unsubscribe queued for ${sender.name} — we'll process it when the pipeline ships.`,
+                'success',
+              );
+              void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              void qc.invalidateQueries({ queryKey: activityKeys.all });
+            },
+            onError: (err) => {
+              captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
+              toast(`Couldn't queue unsubscribe for ${sender.name}`, 'warn');
+            },
+          },
+        );
+        return;
+      }
     },
-    [],
+    [enqueue, enqueueComposite, recordUnsubIntent, qc, activeAction],
   );
 
+  // Route every destructive verb through the modal (D226 — preview is
+  // mandatory). `Delete` was missing from this list pre-fix and would
+  // have skipped the preview — typescript-reviewer 2026-06-06 [SUG].
   const requestAction = useCallback(
     (req: ActionRequest) => {
       if (req.senders.length === 0) return;
-      if (req.verb === 'Archive' || req.verb === 'Unsubscribe' || req.verb === 'Later') {
+      if (
+        req.verb === 'Archive' ||
+        req.verb === 'Unsubscribe' ||
+        req.verb === 'Later' ||
+        req.verb === 'Delete'
+      ) {
         setPendingAction(req);
       } else {
         performAction(req.verb, req.senders);
@@ -190,6 +478,146 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     },
     [pendingAction, performAction],
   );
+
+  // Drive the action lifecycle off the polled status (mirrors
+  // senders-screen.tsx:746-801). On `done`: emit the REAL receipt
+  // carrying the real undo token + invalidate Senders and Activity.
+  // On `failed` or sustained poll-5xx: warn + clear the in-flight
+  // state so the UI doesn't get stuck. `useActionStatus` runs with
+  // `retry: false` (CLAUDE.md §8 — 4xx-as-designed-state), so a
+  // sustained 5xx leaves `data` undefined; the isError branch breaks
+  // that latch explicitly.
+  useEffect(() => {
+    if (!activeAction) return;
+    if (actionStatus.isError) {
+      captureFeatureException(actionStatus.error, {
+        surface: 'senders',
+        reason: 'action_status_poll',
+      });
+      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      setActiveAction(null);
+      return;
+    }
+    const data = actionStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      const verbPast = VERB_PAST[activeAction.verb];
+      const verbLowercase = activeAction.verb.toLowerCase();
+      if (data.affectedCount === 0 || !data.undoToken) {
+        // No-op: the sender has no inbox mail in the window, so the
+        // worker did nothing and issued no undo token. Never show a
+        // "reversible" receipt with a dead Undo.
+        toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      } else {
+        setReceipt({
+          // Use the undo token as the receipt id — it's the only
+          // stable identifier the BE can give us. The previous
+          // `receiptSeq` counter was module-scoped, so ids collided
+          // across SPA mounts and React reconciliation saw different
+          // keys for the same logical receipt (flow-completeness-
+          // auditor 2026-06-06). The token is per-action unique
+          // (UUIDv4 from `undo.service`).
+          id: data.undoToken,
+          verb: activeAction.verb,
+          count: 1,
+          historicTotal: data.affectedCount,
+          // `timeLeft` is the strip's countdown caption. The current
+          // strip implementation renders the literal as-is and does
+          // NOT derive from `undoToken`'s `expiresAt` — surfacing a
+          // 7-day countdown is FOUNDER-FOLLOWUPS work. An empty
+          // string collapses the suffix gracefully.
+          timeLeft: '',
+          undoToken: data.undoToken,
+        });
+        toast(
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          'success',
+        );
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      }
+    } else {
+      toast(`Couldn't ${activeAction.verb.toLowerCase()} ${activeAction.senderName}`, 'warn');
+    }
+    setActiveAction(null);
+  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // Undo (revert) lifecycle — same retry-false / sustained-5xx hazard.
+  useEffect(() => {
+    if (!revertActionId) return;
+    if (revertStatus.isError) {
+      captureFeatureException(revertStatus.error, {
+        surface: 'senders',
+        reason: 'revert_status_poll',
+      });
+      toast("Couldn't confirm undo — see Activity", 'warn');
+      setRevertActionId(null);
+      return;
+    }
+    const data = revertStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      toast('Restored to your inbox', 'success');
+      setReceipt(null);
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    } else {
+      toast("Couldn't undo — see Activity", 'warn');
+    }
+    setRevertActionId(null);
+  }, [revertStatus.data, revertStatus.isError, revertStatus.error, revertActionId, qc]);
+
+  /**
+   * Receipt Undo — reverse the real action by token (D226 undo loop).
+   * The reverse is itself async: a fresh token enqueues a reverse job
+   * we poll; an already-reverted token resolves immediately. Tracer
+   * receipts (no token) — none exist on this surface after the FOLLOWUP
+   * fix — would have fallen back to the log-only path.
+   */
+  const onUndo = useCallback(() => {
+    const token = receipt?.undoToken;
+    if (!token) {
+      // Defensive: no real-mutation path leaves a tokenless receipt;
+      // a null `undoToken` here means a worker no-op (affectedCount=0)
+      // already cleared the receipt before this could fire.
+      setReceipt(null);
+      return;
+    }
+    toast('Restoring…', 'info');
+    revert.mutate(
+      { token },
+      {
+        onSuccess: (res) => {
+          if (res.reverted) {
+            toast('Restored to your inbox', 'success');
+            setReceipt(null);
+            void qc.invalidateQueries({ queryKey: sendersKeys.all });
+            void qc.invalidateQueries({ queryKey: activityKeys.all });
+          } else if (res.actionId) {
+            setRevertActionId(res.actionId);
+          } else {
+            // BE-designed terminal: nothing to revert (the composite
+            // resolved to zero rows). Without this branch the receipt
+            // stayed mounted forever after the "Restoring…" toast
+            // faded (flow-completeness-auditor 2026-06-06).
+            toast('Nothing to undo — already restored.', 'info');
+            setReceipt(null);
+            void qc.invalidateQueries({ queryKey: activityKeys.all });
+          }
+        },
+        onError: (err) => {
+          captureFeatureException(err, { surface: 'senders', reason: 'revert_undo' });
+          toast(
+            err instanceof ApiError && err.status === 410
+              ? 'Undo window has expired'
+              : "Couldn't undo — see Activity",
+            'warn',
+          );
+        },
+      },
+    );
+  }, [receipt, revert, qc]);
 
   const toggleVip = useCallback(() => {
     setDetail((d) => ({ ...d, isVip: !d.isVip }));
@@ -210,8 +638,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
   // Derived ROI sentence numbers. Reading-cost in minutes/month;
   // yearly savings if the user unsubscribes (cleanup cohort only).
-  const monthlyMins = Math.round(stats.monthlyVolume * READ_MIN_PER_MSG);
-  const yearlySavedHrs = ((stats.monthlyVolume * 12 * READ_MIN_PER_MSG) / 60).toFixed(1);
+  // monthlyMins + yearlySavedHrs RETIRED with the Reading cost KPI
+  // cell + the editorial ROI line (spec v1.2 Decision 6 — ban editorial
+  // inference). Re-add when calibration ships.
 
   // Adapt history rows to the DecisionTimeline shape. Newest first; the
   // most-recent row carries the `current` flag so its node renders
@@ -233,14 +662,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         fontFamily: font.sans,
       }}
     >
-      <ReceiptStrip
-        receipt={receipt}
-        onUndo={() => {
-          toast('Reverted — see Activity for the full log', 'info');
-          setReceipt(null);
-        }}
-        onDismiss={() => setReceipt(null)}
-      />
+      <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
 
       {/* 1. Editorial hero card — name, narrative, ROI, recommendation, actions */}
       <section
@@ -286,16 +708,14 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             >
               {detail.gmailCategory}
             </span>
-            <h1
-              style={{
-                fontSize: 28,
-                fontWeight: 600,
-                letterSpacing: '-0.025em',
-                margin: 0,
-                color: color.fg,
-              }}
-            >
-              {sender.name}
+            {/* ADR-0016 §A1 — sender name uses `NumericDisplay
+                variant="display"` (Fraunces 28/400/-0.025em) so the
+                Detail h1 scale matches the SenderTable total cell +
+                Hero slice headline. Card↔Detail navigation now lands
+                on a consistent display-numeric scale. Was ad-hoc
+                28px/600 w/ system default font fallback. */}
+            <h1 style={{ margin: 0 }}>
+              <NumericDisplay value={sender.name} variant="display" />
             </h1>
             <span
               style={{
@@ -307,7 +727,66 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               {sender.domain}
             </span>
           </div>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: space[2] }}>
+          <div
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              gap: space[2],
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+            }}
+          >
+            {/* Unsub-queued pill (FOUNDER-FOLLOWUPS 2026-06-05).
+                Mirrors the senders-list row pill: shown when a
+                standing unsubscribe policy is in flight but the
+                provider hasn't acted on the RFC 8058 endpoint yet.
+                Reads `policyType` directly so the Detail header is
+                consistent with the list — same source of truth. */}
+            {detail.policyType === 'unsubscribe' && <UnsubQueuedPill />}
+
+            {/* Open-all-in-Gmail (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
+                DeclutrMail never renders message bodies (D7); the
+                fastest path to "see every email from this sender" is
+                to deep-link the user into Gmail's own search UI.
+                PostHog tag identifies which surface drove the click;
+                Sentry breadcrumb is the trace handle. */}
+            <a
+              href={gmailAllFromSenderDeepLink(detail.email)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                void track('gmail_deep_link_opened', {
+                  source: 'sender_detail_open_all',
+                  deep_link_kind: 'all_from_sender',
+                });
+                addBreadcrumb({
+                  category: 'navigation',
+                  message: `gmail-deep-link: all-from-sender ${sender.id}`,
+                  level: 'info',
+                });
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 30,
+                padding: '0 12px',
+                borderRadius: radius.pill,
+                background: color.card,
+                border: `1px solid ${color.line}`,
+                color: color.fg,
+                fontFamily: font.sans,
+                fontSize: 12.5,
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+              aria-label="Open all messages from this sender in Gmail"
+              title="Search every email from this sender in Gmail"
+            >
+              Open all in Gmail
+              <ExternalLinkIcon />
+            </a>
             <Button
               tone={detail.isVip ? 'primary' : 'default'}
               size="sm"
@@ -340,28 +819,32 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             position: 'relative',
           }}
         >
-          Mails you{' '}
-          <span style={{ color: color.fg, fontWeight: 600 }}>{stats.monthlyVolume}×/mo</span>. You
-          read{' '}
-          <span style={{ color: color.fg, fontWeight: 600 }}>
-            {Math.round(stats.readRate * 100)}%
-          </span>{' '}
-          of what they send.
+          {/* Fact-based hero (founder 2026-06-06): pre-fix this read
+              "Mails you 13×/mo" — a derived monthly-average over the
+              last 12 buckets, which lied for any sender with a recent
+              spike or quiet stretch. Now: latest month's actual count
+              + month name; no averages, no /mo unit. Falls back to
+              "Hasn't mailed you yet." when there is no timeseries. */}
+          {latestPoint != null ? (
+            <>
+              Sent <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span> in{' '}
+              {latestMonthAbbrev}. You read{' '}
+              <span style={{ color: color.fg, fontWeight: 600 }}>
+                {Math.round(stats.readRate * 100)}%
+              </span>{' '}
+              of what they send.
+            </>
+          ) : (
+            <>Hasn&rsquo;t mailed you yet.</>
+          )}
         </p>
 
-        {/* ROI sentence */}
-        <p
-          style={{
-            fontSize: 13.5,
-            color: color.amber,
-            fontWeight: 500,
-            margin: '0 0 18px',
-            position: 'relative',
-          }}
-        >
-          ↘ Estimated reading cost: {monthlyMins} min/month. Unsubscribing saves ~{yearlySavedHrs}h
-          /year.
-        </p>
+        {/* "Estimated reading cost" line RETIRED per spec v1.2 Decision 6
+            (ban editorial inference). The 1.6 min/msg coefficient was
+            never calibrated against real user data; rendering it inside
+            an editorial Fraunces moment made the guess feel authoritative.
+            The fact half ("Mails you 2x/mo. You read 0% of what they
+            send") above stays. */}
 
         {/* Recommendation banner (existing component, sits inside hero now) */}
         <div style={{ position: 'relative', marginBottom: 18 }}>
@@ -399,11 +882,26 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       {/* 2. 4-cell KPI strip — replaces D44 5-stat strip; absorbs open-rate footnote */}
       <KpiStrip
         cells={[
+          // Volume cell — fact-based (founder 2026-06-06). Was:
+          // `value=stats.monthlyVolume`, `unit='/mo'`,
+          // `micro=trendCaption(volumeTrend)` — all three were derived
+          // from a single calendar-month query labelled as monthly
+          // cadence, plus a trend bucket computed against a 3-month
+          // average. Now: latest month's actual count + month name,
+          // with the 12-month sparkline + a "12 mo" caption beneath.
+          // When timeseries is empty the cell renders an em-dash so
+          // the strip's grid stays intact without faking a zero.
           {
             label: 'Volume',
-            value: stats.monthlyVolume,
-            unit: '/mo',
-            micro: trendCaption(stats.volumeTrend),
+            value: latestPoint != null ? latestPoint.volume : '—',
+            unit: latestPoint != null ? latestMonthAbbrev : null,
+            micro:
+              latestPoint != null && volumes.length > 0 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Spark values={volumes} />
+                  <span>12 mo</span>
+                </div>
+              ) : null,
           },
           {
             label: 'Read rate',
@@ -420,12 +918,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             unit: relationshipDisplay(stats.relationshipMonths).unit,
             micro: relationshipDisplay(stats.relationshipMonths).since,
           },
-          {
-            label: 'Reading cost',
-            value: monthlyMins,
-            unit: 'min/mo',
-            micro: `~${yearlySavedHrs}h/year`,
-          },
+          // "Reading cost" KPI cell RETIRED per spec v1.2 Decision 6.
+          // Was the same uncalibrated 1.6 min/msg estimate as the
+          // editorial line above. Cell may return when a calibrated
+          // per-user coefficient lands.
         ]}
       />
 
@@ -439,6 +935,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         request={pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
+        compositePreview={compositePreviewQuery.data}
+        compositePreviewError={compositePreviewQuery.isError}
       />
     </div>
   );
@@ -446,21 +944,30 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
 /* ────────────────── HELPERS ────────────────── */
 
-function trendCaption(trend: SenderDetail['stats']['volumeTrend']): string | undefined {
-  if (trend == null) return undefined;
-  switch (trend) {
-    case 'new':
-      return 'New sender';
-    case 'up':
-      return '↑ up vs prior 3mo';
-    case 'down':
-      return '↓ down vs prior 3mo';
-    case 'dormant':
-      return 'Dormant — no recent volume';
-    case 'steady':
-      return 'Steady vs prior 3mo';
-  }
+/**
+ * `YYYY-MM` (timeseries axis key) maps to a short month name
+ * (`May`, `Jun`). Pure JS Date — no timezone subtlety since the
+ * timeseries buckets are month-resolution. Returns `''` for malformed
+ * input so the hero copy gracefully degrades rather than rendering
+ * `undefined` next to the count. `Intl.DateTimeFormat` is locale-aware;
+ * explicit `en-US` keeps the abbrev stable across deploys.
+ */
+function monthAbbrev(yearMonth: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+  if (m == null) return '';
+  const year = Number(m[1]);
+  const month = Number(m[2]) - 1;
+  if (Number.isNaN(year) || month < 0 || month > 11) return '';
+  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(year, month, 1));
 }
+
+// `trendCaption` retired (founder 2026-06-06): the bucket strings
+// ("↑ up vs prior 3mo") leaned on the same misleading derivation as
+// the original Volume cell. The sparkline now carries the temporal
+// signal; the latest-month count carries the magnitude. If we ever
+// want a textual trend chip back, derive it from a rolling window
+// the user can compute themselves from the sparkline (e.g. "5 in May
+// vs 12 avg prior 11mo") rather than a bucketed adjective.
 
 function relationshipDisplay(months: number) {
   if (months < 12) {
@@ -587,5 +1094,73 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
         }
       />
     </div>
+  );
+}
+
+/**
+ * "Unsub queued" pill — Sender Detail header surface (FOUNDER-FOLLOWUPS
+ * 2026-06-05). Mirrors the senders-list row pill so a user navigating
+ * between list ↔ detail never sees a contradiction. Wired off
+ * `detail.policyType === 'unsubscribe'`.
+ *
+ * Visual: pale-amber wash so it reads alongside the VIP (warm) chip
+ * without competing with the deep-teal primary actions. Uses the
+ * canonical `color.amberBg` token (no hand-rolled rgba).
+ */
+function UnsubQueuedPill() {
+  return (
+    <span
+      role="status"
+      aria-label="Unsubscribe queued"
+      title="Unsubscribe sent — Gmail will remove this sender shortly. (RFC 8058)"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        height: 26,
+        padding: '0 10px',
+        borderRadius: radius.pill,
+        background: color.amberBg,
+        color: color.amber,
+        border: `1px solid ${color.amber}`,
+        fontFamily: font.sans,
+        fontSize: 11.5,
+        fontWeight: 600,
+        letterSpacing: '0.01em',
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'inline-block',
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: color.amber,
+        }}
+      />
+      Unsub queued
+    </span>
+  );
+}
+
+/** Small chevron-out glyph for the "Open all in Gmail" CTA. */
+function ExternalLinkIcon() {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
   );
 }

@@ -18,6 +18,8 @@ import { usePauseAll } from './api/use-pause-all';
 import { usePendingSuggestions } from './api/use-pending-suggestions';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import { PausedBanner } from './paused-banner';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { PendingSuggestionRow } from './pending-suggestion-row';
 import type { AutopilotScreenState, SuggestionWithRule } from './types';
 
@@ -107,6 +109,15 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const hasRunningRules = rules.some((r) => r.mode !== 'paused');
 
   const onDismiss = (matchId: string) => {
+    void track('autopilot_suggestion_decided', {
+      decision: 'rejected',
+      suggestion_kind: 'preset_rule',
+    });
+    addBreadcrumb({
+      category: 'action',
+      message: `autopilot: suggestion dismissed`,
+      level: 'info',
+    });
     dismissMatch.mutate(matchId, {
       onSuccess: () => {
         toast('Suggestion dismissed', 'info');
@@ -114,15 +125,25 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       onError: (err) => {
         const msg = err instanceof ApiError ? `Dismiss failed (${err.status})` : 'Dismiss failed';
         toast(msg, 'warn');
+        captureFeatureException(err, { surface: 'autopilot', reason: 'dismiss_failed' });
       },
     });
   };
 
   const onConfirmPauseAll = () => {
+    void track('autopilot_paused', { duration_kind: 'until_resumed' });
+    addBreadcrumb({
+      category: 'action',
+      message: 'autopilot: pause-all confirmed',
+      level: 'info',
+    });
     pauseAll.mutate(undefined, {
       onSuccess: (result) => {
         setPauseConfirmOpen(false);
         toast(`Paused ${result.pausedCount} rule${result.pausedCount === 1 ? '' : 's'}`, 'info');
+      },
+      onError: (err) => {
+        captureFeatureException(err, { surface: 'autopilot', reason: 'pause_all_failed' });
       },
     });
   };

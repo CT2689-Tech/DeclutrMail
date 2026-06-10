@@ -87,6 +87,7 @@ export const Default: Story<typeof SenderCard> = {
     selected: false,
     onToggleSelect: noop,
     onAction: noop,
+    globalMaxTotal: 1000,
   },
   render: frame,
 };
@@ -98,6 +99,7 @@ export const Selected: Story<typeof SenderCard> = {
     selected: true,
     onToggleSelect: noop,
     onAction: noop,
+    globalMaxTotal: 1000,
   },
   render: frame,
 };
@@ -109,6 +111,7 @@ export const Protected: Story<typeof SenderCard> = {
     selected: false,
     onToggleSelect: noop,
     onAction: noop,
+    globalMaxTotal: 1000,
   },
   render: frame,
 };

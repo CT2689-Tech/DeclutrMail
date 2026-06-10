@@ -8,6 +8,7 @@ import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
 import { useSenders } from '@/features/senders/api/use-senders';
+import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 
 /**
  * Authed app chrome. Wires the routing-agnostic AppShell to the
@@ -57,11 +58,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <SyncNowAnimationStyle />
       <AppShell
         active={active}
         onNavigate={(id) => router.push(`/${id}`)}
         counts={sendersCount === undefined ? {} : { senders: sendersCount }}
-        topbarRight={<AccountMenu />}
+        topbarRight={
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <SyncNowButton />
+            <AccountMenu />
+          </div>
+        }
       >
         {children}
       </AppShell>

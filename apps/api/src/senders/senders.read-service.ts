@@ -59,6 +59,7 @@ import {
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
+  ActivityFilter,
   DecisionHistoryRow,
   GmailCategory,
   LastReview,
@@ -71,6 +72,7 @@ import type {
   SenderListSort,
   SenderSummary,
   TimeseriesPoint,
+  TriStateFilter,
   VolumeTrendBucket,
   WeeklyHero,
   WeeklyHeroSenderRow,
@@ -113,6 +115,33 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
  * match-all. PG's default LIKE escape is backslash, so no ESCAPE clause
  * is needed (and PGlite honors the same default in tests).
  */
+/**
+ * Build the activity-bucket predicate (D38) — derived from
+ * `senders.last_seen_at` against `WINDOWS.ACTIVE_DAYS` (30) and
+ * `WINDOWS.DORMANT_DAYS` (180). `negate` inverts the predicate.
+ *
+ *   active   = last_seen_at >= now - 30d
+ *   quiet    = last_seen_at <  now - 30d AND >= now - 180d
+ *   dormant  = last_seen_at <  now - 180d
+ */
+function buildActivityPredicate(filter: ActivityFilter): SQL {
+  const activeCutoff = sql`now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval`;
+  const dormantCutoff = sql`now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval`;
+  let pred: SQL;
+  switch (filter.bucket) {
+    case 'active':
+      pred = sql`${senders.lastSeenAt} >= ${activeCutoff}`;
+      break;
+    case 'quiet':
+      pred = sql`${senders.lastSeenAt} < ${activeCutoff} AND ${senders.lastSeenAt} >= ${dormantCutoff}`;
+      break;
+    case 'dormant':
+      pred = sql`${senders.lastSeenAt} < ${dormantCutoff}`;
+      break;
+  }
+  return filter.negate ? sql`NOT (${pred})` : pred;
+}
+
 function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
   const pattern = buildSenderSearchPattern(q);
   if (pattern === null) return null;
@@ -228,6 +257,36 @@ export class SendersReadService {
      * filters + cursor. `null`/omitted = no search.
      */
     q?: string | null;
+    /**
+     * Activity-bucket filter (D38 compose strip). When set, restricts
+     * (or excludes — `negate:true`) the list to the bucket's
+     * `last_seen_at` window. Buckets use WINDOWS.ACTIVE_DAYS (30) and
+     * WINDOWS.DORMANT_DAYS (180) as cutoffs.
+     */
+    activity?: ActivityFilter | null;
+    /**
+     * Unsubscribe-readiness filter (D38). `true` requires
+     * `unsubscribe_method IS NOT NULL`; `false` requires the column
+     * to be NULL (i.e. NOT unsub-ready); `null` = no constraint.
+     */
+    unsubReady?: TriStateFilter;
+    /**
+     * "Quiet for N days+" filter (D38). When set, requires
+     * `last_seen_at < now - N days`. Composes with `activity` (a 90d
+     * window + `quiet` bucket narrows further).
+     */
+    quietForDays?: number | null;
+    /**
+     * Domain-substring filter (D38). Case-insensitive substring match
+     * on `senders.domain`. `null` / empty = no constraint.
+     */
+    domain?: string | null;
+    /**
+     * "You replied" filter (D38 + spec v1.3). `true` requires
+     * `replied_count > 0`; `false` requires `replied_count = 0`;
+     * `null` = no constraint. Mirrors `unsubReady` tri-state shape.
+     */
+    repliedTo?: TriStateFilter;
     /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
@@ -394,6 +453,39 @@ export class SendersReadService {
       // join (NULL for senders without a policy row → excluded, which is
       // the correct default for a "show only protected" surface).
       conditions.push(eq(senderPolicies.isProtected, true));
+    } else if (isProtected === false) {
+      // Negated standing-protected — "NOT protected". The left join
+      // makes the column NULL for senders without a policy row, so
+      // require `is_protected IS NULL OR is_protected = false`.
+      conditions.push(
+        sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
+      );
+    }
+    if (args.activity) {
+      const pred = buildActivityPredicate(args.activity);
+      conditions.push(pred);
+    }
+    if (args.unsubReady === true) {
+      conditions.push(
+        sql`${senders.unsubscribeMethod} IS NOT NULL AND ${senders.unsubscribeMethod} <> 'none'`,
+      );
+    } else if (args.unsubReady === false) {
+      conditions.push(
+        sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
+      );
+    }
+    if (args.repliedTo === true) {
+      conditions.push(sql`${senders.repliedCount} > 0`);
+    } else if (args.repliedTo === false) {
+      conditions.push(sql`${senders.repliedCount} = 0`);
+    }
+    if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
+      conditions.push(
+        sql`${senders.lastSeenAt} < now() - (${args.quietForDays} || ' days')::interval`,
+      );
+    }
+    if (args.domain && args.domain.trim().length > 0) {
+      conditions.push(ilike(senders.domain, `%${args.domain.trim()}%`));
     }
     const cursorPredicate = cursor ? buildCursorPredicate(sort, direction, cursor) : null;
     if (cursorPredicate) {
@@ -414,6 +506,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        repliedCount: senders.repliedCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
@@ -431,6 +524,11 @@ export class SendersReadService {
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
+        // Standing policy verb (keep / archive / unsubscribe / later).
+        // Surfaces the "Unsub queued" pill on the sender row while the
+        // real unsub pipeline (D230) is unbuilt — written by
+        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        policyType: senderPolicies.policyType,
       })
       .from(senders)
       .leftJoin(
@@ -476,6 +574,9 @@ export class SendersReadService {
         // `mode: 'number'` coerces to a JS number at the boundary. The
         // assertion makes a violation explicit at the wire boundary.
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+        // `replied_count` — mig 0022 integer column, NOT NULL DEFAULT 0.
+        // Drives the Sender Detail "you replied N×" copy.
+        repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
         // `monthlyVolume` wire field now carries last-30-days msg count
         // (rolling). Replaces the per-sender-latest-year_month sum that
         // varied across decades. FE renders as "47 in last 30d".
@@ -503,8 +604,63 @@ export class SendersReadService {
           protectionReason: row.protectionReason ?? null,
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
         },
+        policyType: row.policyType ?? null,
       };
     });
+  }
+
+  /**
+   * Sender typeahead — minimal-shape search for the `/senders/suggest`
+   * autocomplete dropdown. Returns up to `limit` senders whose
+   * `display_name`, `email`, or `domain` matches `q` (case-insensitive
+   * substring), ranked by `total_received DESC` so the highest-volume
+   * matches surface first. Mailbox-scoped.
+   *
+   * Light read by design: no correlated subqueries, no monthly stats —
+   * just the columns the dropdown row needs (id / name / domain /
+   * total). The Senders list endpoint stays the source of truth for
+   * full row state; suggest only powers the picker.
+   *
+   * PRIVACY (D7): every returned column is on the storage allowlist.
+   */
+  async suggestSenders(args: {
+    mailboxAccountId: string;
+    q: string;
+    limit: number;
+  }): Promise<
+    Array<{ id: string; name: string; email: string; domain: string; totalReceived: number }>
+  > {
+    const trimmed = args.q.trim();
+    if (trimmed.length === 0) return [];
+    const pattern = `%${trimmed}%`;
+    const rows = await this.db
+      .select({
+        id: senders.id,
+        name: senders.displayName,
+        email: senders.email,
+        domain: senders.domain,
+        totalReceived: senders.totalReceived,
+      })
+      .from(senders)
+      .where(
+        and(
+          eq(senders.mailboxAccountId, args.mailboxAccountId),
+          or(
+            ilike(senders.displayName, pattern),
+            ilike(senders.email, pattern),
+            ilike(senders.domain, pattern),
+          ),
+        ),
+      )
+      .orderBy(desc(senders.totalReceived), asc(senders.displayName))
+      .limit(args.limit);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      domain: r.domain,
+      totalReceived: Number(r.totalReceived ?? 0),
+    }));
   }
 
   /**
@@ -534,6 +690,13 @@ export class SendersReadService {
      *  the list scan uses, so "All N" counts the search hits, not the
      *  whole mailbox. */
     q?: string | null;
+    /** D38 filter axes — mirrored from the list scan. */
+    activity?: ActivityFilter | null;
+    unsubReady?: TriStateFilter;
+    quietForDays?: number | null;
+    domain?: string | null;
+    /** D38 + spec v1.3 — `you replied N` filter (tri-state). */
+    repliedTo?: TriStateFilter;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -543,6 +706,35 @@ export class SendersReadService {
     }
     if (isProtected === true) {
       totalMatchingConditions.push(eq(senderPolicies.isProtected, true));
+    } else if (isProtected === false) {
+      totalMatchingConditions.push(
+        sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
+      );
+    }
+    if (args.activity) {
+      totalMatchingConditions.push(buildActivityPredicate(args.activity));
+    }
+    if (args.unsubReady === true) {
+      totalMatchingConditions.push(
+        sql`${senders.unsubscribeMethod} IS NOT NULL AND ${senders.unsubscribeMethod} <> 'none'`,
+      );
+    } else if (args.unsubReady === false) {
+      totalMatchingConditions.push(
+        sql`(${senders.unsubscribeMethod} IS NULL OR ${senders.unsubscribeMethod} = 'none')`,
+      );
+    }
+    if (args.repliedTo === true) {
+      totalMatchingConditions.push(sql`${senders.repliedCount} > 0`);
+    } else if (args.repliedTo === false) {
+      totalMatchingConditions.push(sql`${senders.repliedCount} = 0`);
+    }
+    if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
+      totalMatchingConditions.push(
+        sql`${senders.lastSeenAt} < now() - (${args.quietForDays} || ' days')::interval`,
+      );
+    }
+    if (args.domain && args.domain.trim().length > 0) {
+      totalMatchingConditions.push(ilike(senders.domain, `%${args.domain.trim()}%`));
     }
     const searchCondition = buildSenderSearchCondition(args.q);
     if (searchCondition) {
@@ -574,14 +766,75 @@ export class SendersReadService {
       .from(senders)
       .where(eq(senders.mailboxAccountId, mailboxAccountId));
 
-    const [totalRow, maxRow] = await Promise.all([totalMatchingQuery, globalMaxQuery]);
+    // D38 — per-axis ABSOLUTE counts (mailbox-wide, ignoring compose).
+    // One aggregate with `COUNT(*) FILTER (WHERE ...)` per axis. The
+    // join to `sender_policies` is left so the `is_protected` filter
+    // resolves against the same nullable column the list scan sees.
+    const activeCutoff = sql`now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval`;
+    const dormantCutoff = sql`now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval`;
+    const filterCountsQuery = this.db
+      .select({
+        total: sql<string | number>`COUNT(*)::bigint`,
+        active: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.lastSeenAt} >= ${activeCutoff})::bigint`,
+        quiet: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.lastSeenAt} < ${activeCutoff} AND ${senders.lastSeenAt} >= ${dormantCutoff})::bigint`,
+        dormant: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.lastSeenAt} < ${dormantCutoff})::bigint`,
+        unsubReady: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.unsubscribeMethod} IS NOT NULL AND ${senders.unsubscribeMethod} <> 'none')::bigint`,
+        // D38 + Senders V2 spec v1.3 — `you replied N` compose chip count.
+        // Backed by `senders.replied_count` (mig 0022) which materialises
+        // `COUNT(DISTINCT outbound m.id WHERE m.thread has inbound from
+        // sender)` so the predicate stays index-friendly + O(1) per row.
+        repliedToCount: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senders.repliedCount} > 0)::bigint`,
+        protectedCount: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senderPolicies.isProtected} = true)::bigint`,
+      })
+      .from(senders)
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, senders.mailboxAccountId),
+          eq(senderPolicies.senderKey, senders.senderKey),
+        ),
+      )
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+
+    const [totalRow, maxRow, countsRow] = await Promise.all([
+      totalMatchingQuery,
+      globalMaxQuery,
+      filterCountsQuery,
+    ]);
     const totalMatching = ensureSafeIntegerNumber(totalRow[0]?.count ?? 0, 'totalMatching');
     const globalMaxTotal = ensureSafeIntegerNumber(maxRow[0]?.max ?? 0, 'globalMaxTotal');
+    const counts = countsRow[0];
+    const filterCounts = counts
+      ? {
+          total: ensureSafeIntegerNumber(counts.total ?? 0, 'filterCounts.total'),
+          active: ensureSafeIntegerNumber(counts.active ?? 0, 'filterCounts.active'),
+          quiet: ensureSafeIntegerNumber(counts.quiet ?? 0, 'filterCounts.quiet'),
+          dormant: ensureSafeIntegerNumber(counts.dormant ?? 0, 'filterCounts.dormant'),
+          unsubReady: ensureSafeIntegerNumber(counts.unsubReady ?? 0, 'filterCounts.unsubReady'),
+          // D38 honest count — `senders.replied_count > 0` (mig 0022 +
+          // buildSenderIndex/IncrementalSyncWorker write paths).
+          repliedTo: ensureSafeIntegerNumber(counts.repliedToCount ?? 0, 'filterCounts.repliedTo'),
+          protected: ensureSafeIntegerNumber(counts.protectedCount ?? 0, 'filterCounts.protected'),
+        }
+      : undefined;
 
     return {
       totalMatching,
       globalMaxTotal,
       asOf: (args as { now?: Date }).now?.toISOString() ?? new Date().toISOString(),
+      ...(filterCounts ? { filterCounts } : {}),
     };
   }
 
@@ -961,6 +1214,7 @@ export class SendersReadService {
         firstSeenAt: senders.firstSeenAt,
         lastSeenAt: senders.lastSeenAt,
         totalReceived: senders.totalReceived,
+        repliedCount: senders.repliedCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
@@ -977,6 +1231,11 @@ export class SendersReadService {
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
+        // Standing policy verb (keep / archive / unsubscribe / later).
+        // Surfaces the "Unsub queued" pill on the sender row while the
+        // real unsub pipeline (D230) is unbuilt — written by
+        // POST /api/actions/unsubscribe-intent (D38 2026-06-05).
+        policyType: senderPolicies.policyType,
       })
       .from(senders)
       .leftJoin(
@@ -1009,6 +1268,7 @@ export class SendersReadService {
       firstSeenAt: row.firstSeenAt.toISOString(),
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
+      repliedCount: ensureSafeIntegerNumber(row.repliedCount, 'senders.replied_count'),
       monthlyVolume: row.latestVolume,
       readRate: computeReadRate(row.latestVolume, row.latestReadCount),
       // Detail endpoint still rides the legacy timeseries shape; sparkline
@@ -1027,6 +1287,7 @@ export class SendersReadService {
         row.lastDecisionConfidence,
       ),
       protectionFlags,
+      policyType: row.policyType ?? null,
     };
   }
 
@@ -1077,6 +1338,10 @@ export class SendersReadService {
         snippet: mailMessages.snippet,
         internalDate: mailMessages.internalDate,
         isUnread: mailMessages.isUnread,
+        // ADR-0021 storage-allowlist amendment — surface Gmail's
+        // `sizeEstimate` so Sender Detail can render real KB/MB on the
+        // Recent Messages row size cell. NULL for pre-amendment rows.
+        sizeBytes: mailMessages.sizeBytes,
       })
       .from(mailMessages)
       .where(and(...conditions))
@@ -1091,6 +1356,7 @@ export class SendersReadService {
       snippet: row.snippet,
       internalDate: row.internalDate.toISOString(),
       isUnread: row.isUnread,
+      sizeBytes: row.sizeBytes,
     }));
   }
 

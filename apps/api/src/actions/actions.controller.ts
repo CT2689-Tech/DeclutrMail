@@ -18,9 +18,14 @@ import { RateLimit } from '../common/rate-limit/index.js';
 import { ActionsService } from './actions.service.js';
 import {
   archiveRequestSchema,
+  compositeActionRequestSchema,
+  unsubscribeIntentRequestSchema,
   type ActionEnqueueResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
+  type CompositeActionEnqueueResult,
+  type CompositeActionPreviewResult,
+  type UnsubscribeIntentResult,
 } from './actions.types.js';
 
 /**
@@ -99,6 +104,143 @@ export class ActionsController {
       throw new BadRequestException({ code: 'INVALID_ID', message: 'senderId must be a UUID.' });
     }
     const result = await this.actions.previewArchive({ mailboxAccountId: mailbox.id, senderId });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions — unified composite action endpoint per ADR-0020.
+   *
+   * Request body: `CompositeActionRequest` (selector + primary verb +
+   * optional secondary historic verb + optional time-window filter).
+   * Single-verb action (e.g. just Archive) omits `secondary` and yields
+   * ONE `action_jobs` row (`composite_id = NULL`). A composite (e.g.
+   * Later + Delete past) yields TWO linked rows — primary's
+   * `composite_id` stays NULL (self-implicit via `id`); secondary's
+   * `composite_id` references the primary's id. The cascade-undo path
+   * (`POST /api/undo/:token`) walks `composite_id` to reverse siblings.
+   *
+   * Rate-limit (D156): same `gmail-action` bucket as per-verb routes.
+   * Auth: JwtGuard + CurrentMailboxGuard + CsrfGuard (state-changing).
+   *
+   * Errors:
+   *   - 400 INVALID_REQUEST / IDEMPOTENCY_KEY_REQUIRED
+   *   - 404 SENDER_NOT_FOUND (sender selector, ownership mismatch)
+   *   - 409 PROTECTED_SENDER (sender is Protected/VIP, `override:false`)
+   *   - 409 IDEMPOTENCY_KEY_CONFLICT (key reused across mailboxes)
+   *   - 503 QUEUE_UNAVAILABLE (REDIS_URL unset)
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post()
+  @UseGuards(CsrfGuard)
+  async composite(
+    @CurrentMailbox() mailbox: { id: string },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ): Promise<Envelope<CompositeActionEnqueueResult>> {
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for actions.',
+      });
+    }
+    const parsed = compositeActionRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid composite action request.',
+      });
+    }
+    const req = parsed.data;
+    const result = await this.actions.enqueueComposite({
+      mailboxAccountId: mailbox.id,
+      selector: req.selector,
+      primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+      secondary: req.secondary
+        ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
+        : undefined,
+      idempotencyKey: idempotencyKey.trim(),
+      override: req.override ?? false,
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/unsubscribe-intent — record the user's intent to
+   * unsubscribe from a sender (D38 + 2026-06-05 founder brainstorm).
+   *
+   * Unlike Archive/Delete/Later, this does NOT enqueue a Gmail
+   * mutation; the real unsub pipeline (RFC8058 + mailto + manual
+   * fallback per D230) lands later. The endpoint just:
+   *
+   *   1. Upserts `sender_policies.policy_type='unsubscribe'` so the
+   *      Sender Detail "Unsub queued" pill has its source-of-truth.
+   *   2. Writes a 0-affected `activity_log` row so the user sees their
+   *      decision in /activity — replaces the prior tracer toast that
+   *      LIED ("Unsubscribed from DKNY") with no BE call (CLAUDE.md §10
+   *      no-fake-completion violation).
+   *
+   * Idempotency (D202). Requires `Idempotency-Key` header (≥8 chars)
+   * matching the sibling routes. A network-retried POST with the same
+   * key returns the prior result without writing a second audit row;
+   * a fresh user click (new key) writes a new audit row — that's the
+   * "each click is a decision" semantic, kept honest via the key.
+   * Added 2026-06-05 after architecture-guardian flagged the prior
+   * "no idempotency at all" stance as an invitation for phantom audit
+   * rows from flaky-network retries.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('unsubscribe-intent')
+  @UseGuards(CsrfGuard)
+  async unsubscribeIntent(
+    @CurrentMailbox() mailbox: { id: string },
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ): Promise<Envelope<UnsubscribeIntentResult>> {
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for actions.',
+      });
+    }
+    const parsed = unsubscribeIntentRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid unsubscribe-intent request.',
+      });
+    }
+    const result = await this.actions.recordUnsubscribeIntent({
+      mailboxAccountId: mailbox.id,
+      senderId: parsed.data.senderId,
+      idempotencyKey: idempotencyKey.trim(),
+    });
+    return ok(result);
+  }
+
+  /**
+   * GET /api/actions/preview — composite preview per ADR-0020.
+   *
+   * Returns the sender context strip (used by ConfirmActionModal's
+   * "Acting on {sender}" header) + counts per time-window bucket
+   * (30d / 90d / 180d / 365d) for the chip row. One aggregate query in
+   * the service computes all four buckets + the un-windowed `all` + the
+   * monthly figure for the context strip, so the modal opens in a single
+   * round-trip. Read-only → no CsrfGuard. Mailbox-scoped → 404 if the
+   * sender isn't owned.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Get('preview')
+  async compositePreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('senderId') senderId: string | undefined,
+  ): Promise<Envelope<CompositeActionPreviewResult>> {
+    if (!senderId || !isUuid(senderId)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'senderId must be a UUID.' });
+    }
+    const result = await this.actions.previewComposite({
+      mailboxAccountId: mailbox.id,
+      senderId,
+    });
     return ok(result);
   }
 

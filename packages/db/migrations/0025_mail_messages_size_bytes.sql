@@ -1,0 +1,34 @@
+-- 0025_mail_messages_size_bytes.sql
+--
+-- Add `size_bytes` (nullable INTEGER) to `mail_messages` (D7 storage-
+-- allowlist amendment per ADR-0021).
+--
+-- Persists Gmail's `sizeEstimate` integer — the rough byte size of the
+-- encoded message — pulled from the existing `messages.get?format=metadata`
+-- envelope. NO new Gmail call shape; NO body fetch. The "Full bodies
+-- fetched: 0" trust artifact is unchanged.
+--
+-- Powers the Sender Detail Recent Messages size column. Before this
+-- amendment the adapter hardcoded `sizeBytes: 0` so every row read
+-- "0B" — fake data shipped on every refresh. The Recent Messages list
+-- now renders a real KB / MB label on forward-going syncs and an
+-- em-dash on pre-amendment rows (NULL).
+--
+-- Nullable on purpose:
+--   - Pre-amendment rows persist NULL until an optional backfill worker
+--     (FOUNDER-FOLLOWUPS 2026-06-06) fills them, OR forever if no
+--     backfill is run. The FE renders em-dash on NULL — honest absence
+--     vs misleading zero.
+--   - Gmail occasionally omits `sizeEstimate` on some message shapes;
+--     a nullable column lets the worker pass through whatever the API
+--     returns without a brittle "default to 0" coercion.
+--
+-- No index — display-only data; no read path filters / sorts on size.
+-- Adding one would pay a write-amplification tax for zero read win.
+--
+-- Forward-only-friendly: every existing query still works (the column
+-- is additive and nullable). The Drizzle inferred insert type now
+-- carries `sizeBytes?: number | null | undefined`; existing inserts
+-- that omit the field land NULL.
+
+ALTER TABLE "mail_messages" ADD COLUMN "size_bytes" integer;

@@ -128,14 +128,30 @@ export const ActionLabelAppliedPayloadSchema = z
     mailboxAccountId: UuidSchema,
     /** `action_jobs.id` — the aggregate this event is about. */
     actionId: UuidSchema,
-    /** Label-modify verb that applied. */
-    verb: z.enum(['archive']),
+    /**
+     * Label-modify verb that applied. Mirrors the `action_verb` pg_enum
+     * (archive + later + delete). `delete` joined per ADR-0019 + spec
+     * v1.2 Decision 1 — Gmail TRASH is a label, so it rides the same
+     * label-modify pipeline; the worker is the single producer.
+     */
+    verb: z.enum(['archive', 'later', 'delete']),
     /** Present for a sender selector; null for a message selector. */
     senderKey: SenderKeySchema.nullable(),
-    /** Undo token issued for this action (always set — archive is undoable). */
+    /**
+     * Undo token issued for this action — always set for label-modify
+     * verbs (archive/later/delete are all undoable; delete via Gmail
+     * Trash recovery within 30d per D81/D232).
+     */
     undoToken: UuidSchema,
     /** Messages the action moved. */
     affectedCount: z.number().int().nonnegative(),
+    /**
+     * Composite linkage (ADR-0020). For a composite secondary action
+     * (e.g. the Delete part of "Later + Delete past"), this carries the
+     * primary row's id so audit consumers can join siblings. Null for
+     * single-verb actions and for the primary row of a composite.
+     */
+    compositeId: UuidSchema.nullable(),
   })
   .strict();
 export type ActionLabelAppliedPayload = z.infer<typeof ActionLabelAppliedPayloadSchema>;
@@ -257,6 +273,40 @@ export const MailboxDeletedPayloadSchema = z
 export type MailboxDeletedPayload = z.infer<typeof MailboxDeletedPayloadSchema>;
 
 // ──────────────────────────────────────────────────────────────────────
+// actions.unsubscribe_intent_recorded
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Emitted by ActionsService.recordUnsubscribeIntent inside the same
+ * transaction as the activity_log + action_jobs writes (D38; D204
+ * boundary fix 2026-06-06). Per D204 the senders feature owns
+ * `sender_policies` — ActionsService must NOT write that table
+ * directly. Instead this event ships sender identification + the
+ * captured intent timestamp; a senders-owned consumer
+ * (SendersPolicyAttributionWorker) projects the policy upsert.
+ *
+ * The activity_log row is the durable audit trail (FE renders from
+ * there); this event is the cross-feature signal.
+ *
+ * Privacy (D7, D228): metadata only — mailbox id + sender_key +
+ * activity_log id + ISO timestamp. No sender email, no subject, no
+ * snippet.
+ */
+export const ActionsUnsubscribeIntentRecordedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    senderKey: SenderKeySchema,
+    /** FE-facing audit-row id — handle for cross-feature joins. */
+    activityLogId: UuidSchema,
+    /** ISO-8601 — when the activity_log row's `occurred_at` landed. */
+    recordedAt: z.string().datetime(),
+  })
+  .strict();
+export type ActionsUnsubscribeIntentRecordedPayload = z.infer<
+  typeof ActionsUnsubscribeIntentRecordedPayloadSchema
+>;
+
+// ──────────────────────────────────────────────────────────────────────
 // Topic ↔ payload map — typed lookup for publishers + dispatcher
 // ──────────────────────────────────────────────────────────────────────
 
@@ -279,6 +329,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
+  [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
 } as const satisfies Record<EventTopic, z.ZodSchema>;
 
 /**
@@ -295,4 +346,5 @@ export type EventPayloadByTopic = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;
+  [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayload;
 };

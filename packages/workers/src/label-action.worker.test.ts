@@ -19,6 +19,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { ActionVerb } from '@declutrmail/shared/actions';
+
 import type {
   GmailMutationAccess,
   GmailMutationClient,
@@ -253,7 +255,7 @@ describe('LabelActionWorker', () => {
     });
   });
 
-  it('forward archive — empty resolve issues no undo token', async () => {
+  it('forward archive — empty resolve writes 0-affected activity_log row but issues no undo token', async () => {
     // Sender has no INBOX messages.
     await seedMessage(db, mailboxId, 'm9', ['CATEGORY_PROMOTIONS']);
     const [job] = await db
@@ -276,6 +278,19 @@ describe('LabelActionWorker', () => {
     expect(gmail.calls).toHaveLength(0);
     const undos = await db.select().from(undoJournal);
     expect(undos).toHaveLength(0);
+    // 2026-06-05 — audit-trail consistency: the user MADE a decision
+    // (Archive on this sender). Even when nothing matched, the
+    // activity_log row exists so /activity surfaces the intent —
+    // matches the Keep precedent (0-message decisions logged).
+    const acts = await db
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+    expect(acts).toHaveLength(1);
+    expect(acts[0]!.action).toBe('archive');
+    expect(acts[0]!.affectedCount).toBe(0);
+    expect(acts[0]!.senderKey).toBe(SENDER_KEY);
+    expect(acts[0]!.undoToken).toBeNull();
   });
 
   it('forward archive — messages selector uses the frozen set', async () => {
@@ -344,6 +359,121 @@ describe('LabelActionWorker', () => {
     expect(j!.status).toBe('done');
   });
 
+  it('forward delete — applies TRASH + drops INBOX from local mirror', async () => {
+    // Spec v1.2 Decision 1 — delete = batchModify add TRASH + remove INBOX.
+    // Two messages currently in INBOX, plus one not in inbox (skipped).
+    await seedMessage(db, mailboxId, 'd1', ['INBOX', 'CATEGORY_PROMOTIONS']);
+    await seedMessage(db, mailboxId, 'd2', ['INBOX']);
+    await seedMessage(db, mailboxId, 'd3', ['CATEGORY_PROMOTIONS']);
+
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        idempotencyKey: 'idem-del-1',
+      })
+      .returning();
+
+    const result = await worker.processJob(
+      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-del-1' },
+      CTX,
+    );
+
+    // Only the two INBOX messages, with the composite TRASH-add + INBOX-remove change.
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids.sort()).toEqual(['d1', 'd2']);
+    expect(gmail.calls[0]!.change).toEqual({
+      addLabelIds: ['TRASH'],
+      removeLabelIds: ['INBOX'],
+    });
+    expect(result.affectedCount).toBe(2);
+    expect(result.undoToken).not.toBeNull();
+
+    // Activity log + undo journal kind both record `delete`.
+    const [act] = await db
+      .select()
+      .from(activityLog)
+      .where(eq(activityLog.mailboxAccountId, mailboxId));
+    expect(act!.action).toBe('delete');
+    const [undo] = await db
+      .select()
+      .from(undoJournal)
+      .where(eq(undoJournal.token, result.undoToken!));
+    expect(undo!.actionKind).toBe('delete');
+    // Delete undo payload omits priorLabels — reverse `LabelChange` is the
+    // restoration step (no `priorLabels` lookup needed by the worker).
+    const payload = undo!.payload as { kind: string; messageIds: string[] };
+    expect(payload).toEqual({ kind: 'delete', messageIds: expect.arrayContaining(['d1', 'd2']) });
+    // Delete undo window = 30 days regardless of tier (Gmail Trash physical
+    // window; tier-shorter would falsely show "expired" while the mail is
+    // still trivially recoverable in Gmail).
+    expect(undo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 25 * 24 * 60 * 60 * 1000);
+
+    // Local label mirror: INBOX gone from d1/d2; TRASH added; d3 untouched.
+    const msgs = await db
+      .select()
+      .from(mailMessages)
+      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+    const byId = Object.fromEntries(msgs.map((m) => [m.providerMessageId, m.labelIds]));
+    expect(byId['d1']).toContain('TRASH');
+    expect(byId['d1']).not.toContain('INBOX');
+    expect(byId['d1']).toContain('CATEGORY_PROMOTIONS'); // unrelated labels preserved
+    expect(byId['d2']).toContain('TRASH');
+    expect(byId['d2']).not.toContain('INBOX');
+    expect(byId['d3']).toEqual(['CATEGORY_PROMOTIONS']);
+  });
+
+  it('forward delete — olderThanDays narrows the sender resolution', async () => {
+    // The worker reads `older_than_days` and applies it to the sender
+    // resolver via `internal_date <= now() - interval 'N days'`.
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    await seedMessage(db, mailboxId, 'd-recent', ['INBOX']);
+    // Manually backdate one message so the resolver picks ONLY it.
+    await db
+      .update(mailMessages)
+      .set({ internalDate: new Date(now - 200 * oneDay) })
+      .where(eq(mailMessages.providerMessageId, 'd-recent'));
+    const [oldMsg] = await db
+      .insert(mailMessages)
+      .values({
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'd-old',
+        providerThreadId: 't-old',
+        senderKey: SENDER_KEY,
+        internalDate: new Date(now - 400 * oneDay),
+        isUnread: false,
+        labelIds: ['INBOX'],
+      })
+      .returning();
+    expect(oldMsg).toBeTruthy();
+
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        olderThanDays: 365,
+        idempotencyKey: 'idem-del-365',
+      })
+      .returning();
+
+    const result = await worker.processJob(
+      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-del-365' },
+      CTX,
+    );
+
+    // 200-day-old message is NOT picked up; 400-day-old IS.
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual(['d-old']);
+    expect(result.affectedCount).toBe(1);
+  });
+
   it('records status=failed on a terminal (non-retryable) error', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
     gmail.shouldThrow = new InvalidGrantError('grant gone');
@@ -390,17 +520,42 @@ describe('labelChangeForVerb (registry-routed, ADR-0015)', () => {
     });
   });
 
+  it('returns the later forward/reverse delta from the registry', () => {
+    // ADR-0019 + spec v1.2: later pipeline is now complete (local mirror
+    // derived from `LabelChange`, undo payload union covers it, event
+    // schema accepts the verb).
+    expect(labelChangeForVerb('later')).toEqual({
+      forward: { removeLabelIds: ['INBOX'], addLabelIds: ['DeclutrMail/Later'] },
+      reverse: { addLabelIds: ['INBOX'], removeLabelIds: ['DeclutrMail/Later'] },
+    });
+  });
+
+  it('returns the delete forward/reverse TRASH delta from the registry', () => {
+    // Spec v1.2 Decision 1 — delete = batchModify add TRASH + remove
+    // INBOX; reverse restores INBOX + removes TRASH. Gmail Trash 30-day
+    // recovery window is the physical guarantee.
+    expect(labelChangeForVerb('delete')).toEqual({
+      forward: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] },
+      reverse: { addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] },
+    });
+  });
+
   it('refuses a policy-only verb (pipeline isolation, consensus §5)', () => {
     // `keep` is policy-only — it must never reach the label worker.
     expect(() => labelChangeForVerb('keep')).toThrow(ValidationError);
   });
 
   it('refuses a label-modify verb whose pipeline is incomplete (F1)', () => {
-    // `later` IS label-modify and joined the `action_verb` enum in P4, so
-    // (unlike `keep`) a `later` row CAN be inserted and reach this chokepoint.
-    // Its local mirror / undo / event-schema support is archive-only, so the
-    // guard must refuse it fail-closed before any Gmail mutation.
-    expect(() => labelChangeForVerb('later')).toThrow(ValidationError);
-    expect(() => labelChangeForVerb('later')).toThrow(/archive-only/);
+    // The `action_verb` pg_enum currently lists only verbs whose
+    // pipeline IS complete (archive/later/delete), so we synthetically
+    // probe the guard by calling it with a verb that is in the Action
+    // Registry but NOT in `PIPELINE_COMPLETE_VERBS` — `unarchive` is the
+    // live candidate (label-modify in the registry, not in the pg_enum
+    // or `undo_action_kind`/`activity_action`, so its pipeline is by
+    // definition incomplete). This documents the guard's role for any
+    // future verb added to the enum without all four surfaces wired up.
+    const unarchive = 'unarchive' as ActionVerb;
+    expect(() => labelChangeForVerb(unarchive)).toThrow(ValidationError);
+    expect(() => labelChangeForVerb(unarchive)).toThrow(/archive-only/);
   });
 });

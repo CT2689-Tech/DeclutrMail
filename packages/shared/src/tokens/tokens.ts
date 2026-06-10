@@ -41,6 +41,43 @@ export const color = {
   redBorder: 'rgba(220,38,38,0.25)',
 
   /**
+   * Canonical danger family (FOUNDER-FOLLOWUPS 2026-06-05).
+   *
+   * Replaces three drifted call sites: `#A12525` (compose-strip +
+   * confirm-action-modal), `#DC2626` (action-popover), and the legacy
+   * `color.red = #B91C1C`. The verb-registry header says `color.danger`
+   * is the planned token for the Delete verb — this is that token.
+   *
+   * Surfaces:
+   *   - `danger`        — text + icon stroke (AA on white surfaces).
+   *   - `dangerBg`      — soft wash for danger banners + chips.
+   *   - `dangerBorder`  — outline for danger chips + outlines.
+   *   - `dangerDeep`    — pressed/hover state, darker than `danger`.
+   *
+   * Migration plan: new code uses these; an ESLint rule in the
+   * Storybook lint phase blocks new `#A12525` / `#DC2626` literals.
+   * Legacy `color.red` stays for one release for backward-compat, then
+   * gets removed in the follow-up distill PR.
+   */
+  danger: '#A12525',
+  dangerBg: 'rgba(161,37,37,0.06)',
+  dangerBorder: 'rgba(161,37,37,0.30)',
+  dangerDeep: '#7A1A1A',
+
+  /**
+   * Inverse-surface tokens (FOUNDER-FOLLOWUPS 2026-06-05).
+   *
+   * Used on dark surfaces — BulkActionBar, confirm-action-modal's
+   * danger header, undo-tray. Replaces hand-rolled `rgba(255,255,255,
+   * 0.55|0.65|0.7|0.16)` literals scattered across ~6 call sites with
+   * three named alphas + an inverse line.
+   */
+  fgInverse: '#FFFFFF',
+  fgInverseSoft: 'rgba(255,255,255,0.70)',
+  fgInverseMuted: 'rgba(255,255,255,0.55)',
+  lineInverse: 'rgba(255,255,255,0.16)',
+
+  /**
    * Dashboard-surface palette extension per ADR-0009 (amends D2).
    *
    * SCOPE: Senders, Activity, Brief, future Insights surfaces ONLY.

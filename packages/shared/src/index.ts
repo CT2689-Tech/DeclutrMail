@@ -8,6 +8,26 @@ export { clampLimit, decodeCursor, encodeCursor, ok, paginated, withMeta } from 
 export { tokens } from './tokens/tokens';
 export type { Tokens } from './tokens/tokens';
 
+// Branded identifiers (FOUNDER-FOLLOWUPS 2026-06-05).
+export type {
+  SenderId,
+  MailboxId,
+  UserId,
+  ActionId,
+  UndoToken,
+  SenderKey,
+  IdempotencyKey,
+} from './ids/branded';
+export {
+  asSenderId,
+  asMailboxId,
+  asUserId,
+  asActionId,
+  asUndoToken,
+  asSenderKey,
+  asIdempotencyKey,
+} from './ids/branded';
+
 export { useLocalState } from './hooks/use-local-state';
 export { useIsAtMost } from './hooks/use-is-at-most';
 export type { Breakpoint } from './hooks/use-is-at-most';
@@ -36,6 +56,23 @@ export type {
   EmptyStateTierNudge,
 } from './components/empty-state';
 export { ScreenIntro } from './components/screen-intro';
+
+// ADR-0016 — shared numeric primitive for Senders + Sender-Detail
+// surfaces. Variants: hero / display / stat / data. Replaces ad-hoc
+// `font.display` + fontSize combos at every callsite that renders a
+// primary numeric. See docs/adr/0016-senders-visual-language.md.
+export { NumericDisplay } from './components/numeric-display';
+export type {
+  NumericDisplayProps,
+  NumericDisplayTone,
+  NumericDisplayVariant,
+} from './components/numeric-display';
+
+// ADR-0019 — K/A/U/L/D action popover surface. Replaces hand-rolled
+// verb-to-button rows on SenderCard / SenderTable / SenderDetail /
+// SelectionBar. See docs/adr/0019-verb-registry-and-kauld.md.
+export { ActionPopover, ActionPopoverTrigger } from './components/action-popover';
+export type { ActionPopoverProps } from './components/action-popover';
 
 // D211 — typed edge-state inventory. Enforces that every launch screen
 // has designed coverage for every edge state it can enter.

@@ -16,7 +16,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Queue } from 'bullmq';
-import type { InitialSyncJobData } from '@declutrmail/workers';
+import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { SyncService } from '../../sync/sync.service.js';
@@ -106,8 +106,17 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // queue, so a never-called stub is sufficient. `enqueueInitialSync`
     // / `schedule` are exercised by SyncService's own specs.
     const queueStub = {} as Queue<InitialSyncJobData>;
-    const sync = new SyncService(queueStub, db);
-    service = new GmailWebhookService(db, sync);
+    // `ensureIncrementalSyncJob` is exercised by the IncrementalSyncWorker
+    // spec; here we just need an object whose `getJob`/`add` shape is
+    // present at call time. A bare stub with both methods returning
+    // resolved promises is enough — the webhook test asserts on the
+    // dedup + cursor side of `processVerifiedPush`, not the enqueue.
+    const incrementalQueueStub = {
+      getJob: async () => null,
+      add: async () => undefined,
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const sync = new SyncService(queueStub, incrementalQueueStub, db);
+    service = new GmailWebhookService(db, sync, incrementalQueueStub);
   });
 
   it('advances historyId, writes a dedup row, returns enqueued', async () => {
@@ -249,7 +258,15 @@ describe('GmailWebhookService.processVerifiedPush', () => {
         throw new Error('simulated crash mid-advance');
       }
     }
-    const crashingService = new GmailWebhookService(db, new CrashingSync(queueStub, db));
+    const incrementalQueueStub = {
+      getJob: async () => null,
+      add: async () => undefined,
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const crashingService = new GmailWebhookService(
+      db,
+      new CrashingSync(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      incrementalQueueStub,
+    );
 
     // First push crashes — the transaction must roll back.
     await expect(
@@ -275,7 +292,11 @@ describe('GmailWebhookService.processVerifiedPush', () => {
 
     // A Pub/Sub retry with the SAME messageId re-enters the critical
     // section (not deduped to no-op) and successfully advances the cursor.
-    const healthyService = new GmailWebhookService(db, new SyncService(queueStub, db));
+    const healthyService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, incrementalQueueStub, db),
+      incrementalQueueStub,
+    );
     const retry = await healthyService.processVerifiedPush({
       messageId: 'msg-crash',
       payload: { emailAddress: 'alice@example.com', historyId: '1500' },
@@ -320,5 +341,240 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     expect(err).not.toBeNull();
     const messages = [err?.message, err?.cause?.message].filter(Boolean).join(' | ');
     expect(messages).toMatch(/value too long|length|varying\(512\)/i);
+  });
+
+  it('returns deferred_initial_sync_in_flight when last_history_id IS NULL — cursor NOT advanced, no enqueue', async () => {
+    // D38 webhook-vs-InitialSync race fix (2026-06-09): a webhook
+    // arriving while InitialSync is mid-flight (row exists with
+    // `last_history_id IS NULL`, created by `markQueued`) MUST NOT
+    // advance the cursor. Doing so would orphan InitialSync's snapshot
+    // S, because `markReady`'s `GREATEST(stored=H, snapshot=S)` would
+    // keep H>S and never write S — leaving (S, H] never paged via
+    // `history.list`.
+    //
+    // Seed shape: a `provider_sync_state` row EXISTS (syncing) with
+    // `last_history_id` NULL — the realistic mid-InitialSync state.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', null);
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: mailboxId,
+      readinessStatus: 'syncing',
+      currentStage: 'fetching_metadata',
+      progressPct: 5,
+      lastHistoryId: null,
+    });
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    let addCalled = false;
+    const trackingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        addCalled = true;
+        return undefined;
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const skipService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      trackingQueue,
+    );
+    const outcome = await skipService.processVerifiedPush({
+      messageId: 'msg-first',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(outcome.kind).toBe('deferred_initial_sync_in_flight');
+    if (outcome.kind === 'deferred_initial_sync_in_flight') {
+      expect(outcome.mailboxAccountId).toBe(mailboxId);
+      expect(outcome.incomingHistoryId).toBe(1500n);
+    }
+    // CRITICAL: no enqueue happened.
+    expect(addCalled).toBe(false);
+    // CRITICAL: cursor was NOT advanced — stays NULL so InitialSync's
+    // later `markReady` writes its snapshot unimpeded.
+    const state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBeNull();
+  });
+
+  it('preserves the [snapshot, webhook] range when webhook races InitialSync (D38)', async () => {
+    // D38 race regression: this test exercises the actual race sequence
+    // from the finding rather than just the discriminator branch.
+    //
+    //   T1: markQueued writes last_history_id=NULL.
+    //   T2: InitialSync snapshots S (in memory; not yet in DB).
+    //   T3: Mail arrives; webhook fires with H>S, hits processVerifiedPush.
+    //   T4: InitialSync's markReady writes S via GREATEST(stored, S).
+    //   T5: Next webhook arrives with H'>H, should enqueue from S.
+    //
+    // Before the fix: T3 advanced cursor NULL→H, T4's GREATEST(H, S)=H
+    // kept H, and T5 enqueued from H, stranding (S, H].
+    //
+    // After the fix: T3 returns 'deferred' WITHOUT advancing; T4
+    // writes S unimpeded; T5 enqueues from S, covering (S, H'].
+    const { mailboxId } = await seedMailbox(db, 'racer@example.com', null);
+    // T1: markQueued (mid-InitialSync).
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: mailboxId,
+      readinessStatus: 'syncing',
+      currentStage: 'fetching_metadata',
+      progressPct: 5,
+      lastHistoryId: null,
+    });
+    // T2: snapshot S (just a variable here — InitialSync wouldn't have
+    // written it to PSS yet at this point in real life).
+    const snapshotS = 1000n;
+    const webhookH = 1500n;
+    const laterWebhookHPrime = 1700n;
+
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const enqueuedJobs: IncrementalSyncJobData[] = [];
+    const recordingQueue = {
+      getJob: async () => null,
+      add: async (_name: string, data: IncrementalSyncJobData) => {
+        enqueuedJobs.push(data);
+        return undefined;
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const raceService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      recordingQueue,
+    );
+
+    // T3: webhook arrives mid-InitialSync — must be deferred.
+    const t3 = await raceService.processVerifiedPush({
+      messageId: 'msg-race-t3',
+      payload: { emailAddress: 'racer@example.com', historyId: webhookH.toString() },
+    });
+    expect(t3.kind).toBe('deferred_initial_sync_in_flight');
+    expect(enqueuedJobs.length).toBe(0);
+
+    // Cursor must still be NULL after T3 — the whole point of the fix.
+    let state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBeNull();
+
+    // T4: simulate InitialSync.markReady writing snapshot S via
+    // GREATEST(stored=NULL, S)=S.
+    await db
+      .update(providerSyncState)
+      .set({
+        readinessStatus: 'ready',
+        currentStage: 'ready',
+        progressPct: 100,
+        lastHistoryId: snapshotS,
+        historyIdUpdatedAt: new Date(),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+
+    // T5: next webhook arrives — must enqueue from S, covering (S, H']
+    // which subsumes the (S, H] range from T3.
+    const t5 = await raceService.processVerifiedPush({
+      messageId: 'msg-race-t5',
+      payload: { emailAddress: 'racer@example.com', historyId: laterWebhookHPrime.toString() },
+    });
+    expect(t5.kind).toBe('enqueued');
+    if (t5.kind === 'enqueued') {
+      expect(t5.previousHistoryId).toBe(snapshotS);
+      expect(t5.historyId).toBe(laterWebhookHPrime);
+    }
+    // Job was enqueued with startHistoryId=S (string of snapshotS) —
+    // the (S, H] range stranded by the original bug is now covered.
+    expect(enqueuedJobs.length).toBe(1);
+    expect(enqueuedJobs[0]!.startHistoryId).toBe(snapshotS.toString());
+    expect(enqueuedJobs[0]!.endHistoryId).toBe(laterWebhookHPrime.toString());
+
+    // Cursor advanced to H' durably.
+    state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBe(laterWebhookHPrime);
+  });
+
+  it('enqueue happens AFTER the tx commits — observable ordering', async () => {
+    // architecture-guardian 2026-06-05 [BLOCKING] fix: the BullMQ enqueue
+    // MUST run outside the PG transaction. If it ran inside, a commit
+    // failure after a successful `queue.add` would leave a durable job
+    // in Redis that points at a rolled-back cursor (silent regression).
+    //
+    // Asserts the observable ordering: when the enqueue stub is called,
+    // the dedup row + cursor advance are already visible in the DB —
+    // i.e. the tx has committed before `queue.add` is invoked.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    let dedupVisibleAtEnqueue = false;
+    let cursorAtEnqueue: bigint | null = null;
+    const observingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        const dedup = await db
+          .select()
+          .from(webhookDedup)
+          .where(eq(webhookDedup.messageId, 'msg-order'));
+        dedupVisibleAtEnqueue = dedup.length === 1;
+        const state = await db
+          .select()
+          .from(providerSyncState)
+          .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+        cursorAtEnqueue = state[0]?.lastHistoryId ?? null;
+        return undefined;
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const orderingService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      observingQueue,
+    );
+    const outcome = await orderingService.processVerifiedPush({
+      messageId: 'msg-order',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(outcome.kind).toBe('enqueued');
+    // Both invariants visible at enqueue time = tx committed FIRST.
+    expect(dedupVisibleAtEnqueue).toBe(true);
+    expect(cursorAtEnqueue).toBe(1500n);
+  });
+
+  it('enqueue failure does NOT roll back the tx (recovery via reconciler-on-redis-state)', async () => {
+    // webhook-security-auditor 2026-06-05 [WARNING] coverage gap: the
+    // try/catch around `ensureIncrementalSyncJob` is load-bearing — a
+    // Redis outage MUST leave the dedup row + cursor advance durable so
+    // (a) Pub/Sub doesn't retry forever against a non-idempotent cursor
+    // (the dedup row catches the redelivery) and (b) the future
+    // reconciler can backfill the range from the durable cursor.
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const failingQueue = {
+      getJob: async () => null,
+      add: async () => {
+        throw new Error('simulated redis down');
+      },
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const failingService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      failingQueue,
+    );
+    const outcome = await failingService.processVerifiedPush({
+      messageId: 'msg-redis-down',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    // Webhook contract: 200 to Pub/Sub regardless of Redis health.
+    expect(outcome.kind).toBe('enqueued');
+    // Dedup row durable — Pub/Sub redelivery will skip via step 7.
+    const dedup = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-redis-down'));
+    expect(dedup.length).toBe(1);
+    // Cursor advanced — the reconciler's recovery path reads this.
+    const state = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(state[0]!.lastHistoryId).toBe(1500n);
   });
 });

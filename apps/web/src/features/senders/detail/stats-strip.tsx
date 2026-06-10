@@ -1,6 +1,6 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import { NumericDisplay, tokens } from '@declutrmail/shared';
 import { relTime } from './data';
 import type { SenderStats } from './types';
 
@@ -20,17 +20,35 @@ function fmtRelationship(months: number): string {
  *
  * `null` (no timeseries history) collapses to "—" so the cell stays
  * the same visual size as the other stats.
+ *
+ * Exhaustive `switch` w/ `_exhaustive: never` default per
+ * MISTAKES.md pattern: typescript-reviewer advisory 2026-06-03
+ * caught the prior `if`-ladder silently labelling `'quiet'` as
+ * "Steady" (the union has six buckets, the ladder handled five).
  */
 function fmtTrend(bucket: SenderStats['volumeTrend']): {
   value: string;
   tone?: 'primary' | 'amber';
 } {
   if (bucket === null) return { value: '—' };
-  if (bucket === 'up') return { value: '↑ Up', tone: 'primary' };
-  if (bucket === 'down') return { value: '↓ Down', tone: 'amber' };
-  if (bucket === 'dormant') return { value: '○ Dormant', tone: 'amber' };
-  if (bucket === 'new') return { value: '• New' };
-  return { value: '→ Steady' };
+  switch (bucket) {
+    case 'up':
+      return { value: '↑ Up', tone: 'primary' };
+    case 'down':
+      return { value: '↓ Down', tone: 'amber' };
+    case 'dormant':
+      return { value: '○ Dormant', tone: 'amber' };
+    case 'quiet':
+      return { value: '~ Quiet', tone: 'amber' };
+    case 'new':
+      return { value: '• New' };
+    case 'steady':
+      return { value: '→ Steady' };
+    default: {
+      const _exhaustive: never = bucket;
+      return _exhaustive;
+    }
+  }
 }
 
 /**
@@ -86,37 +104,26 @@ export function StatsStrip({ stats }: { stats: SenderStats }) {
     >
       {items.map((item) => (
         <div key={item.label} style={{ minWidth: 0 }}>
+          {/* ADR-0016 §B2 — eyebrow label rule: Mono 10 / letter-
+              spacing 0.12em / uppercase / fgMuted. Was 9.5 / 0.14em;
+              tightened to match SenderCard stat strip + Detail
+              eyebrow elsewhere on the page. */}
           <div
             style={{
               fontFamily: font.mono,
-              fontSize: 9.5,
-              letterSpacing: '0.14em',
+              fontSize: 10,
+              letterSpacing: '0.12em',
               textTransform: 'uppercase',
               color: color.fgMuted,
             }}
           >
             {item.label}
           </div>
-          <div
-            style={{
-              fontFamily: font.display,
-              fontSize: 20,
-              fontWeight: 600,
-              letterSpacing: '-0.02em',
-              color:
-                item.tone === 'primary'
-                  ? color.primary
-                  : item.tone === 'amber'
-                    ? color.amber
-                    : color.fg,
-              marginTop: 4,
-              fontVariantNumeric: 'tabular-nums',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {item.value}
+          {/* ADR-0016 §A1 — values use `NumericDisplay variant="stat"`
+              (Fraunces 20 / 500 / -0.02em) so Detail stat values match
+              the cross-surface stat scale. */}
+          <div style={{ marginTop: 4, minWidth: 0 }}>
+            <NumericDisplay value={item.value} variant="stat" tone={item.tone ?? 'default'} />
           </div>
         </div>
       ))}

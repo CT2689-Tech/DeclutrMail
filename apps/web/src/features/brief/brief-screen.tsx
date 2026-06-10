@@ -9,6 +9,8 @@ import type { BriefItemWire, BriefSenderGroupWire, BriefWire } from '@/lib/api/b
 
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
+import { track } from '@/lib/posthog';
+import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
 const { color, font } = tokens;
 
@@ -66,9 +68,12 @@ export function BriefScreen() {
     // offsets). Branch on `ApiError.status === 404` so we render the
     // "Brief lands soon" message instead of the generic retry CTA.
     if (query.error instanceof ApiError && query.error.status === 404) {
-      return <NotYetState onRefresh={() => query.refetch()} />;
+      return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
     }
-    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+    // Non-404 → log to Sentry as a feature exception so the dashboard
+    // separates 'brief failed to load' from 'brief is just late'.
+    captureFeatureException(query.error, { surface: 'brief', reason: 'fetch_failed' });
+    return <ErrorState error={query.error} onRetry={() => handleBriefRefresh(query.refetch)} />;
   }
 
   const brief = query.data;
@@ -76,10 +81,24 @@ export function BriefScreen() {
     // Defensive: success + no data shouldn't happen (envelope contract
     // guarantees data on 2xx), but render the not-yet branch rather
     // than crashing if it does.
-    return <NotYetState onRefresh={() => query.refetch()} />;
+    return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
   }
 
   return <BriefBody brief={brief} />;
+}
+
+/**
+ * Shared refresh handler — instruments PostHog + Sentry on every Brief
+ * refresh click, regardless of which CTA path the user takes
+ * (NotYetState refresh / ErrorState retry / defensive fallback). The
+ * mailbox_id isn't reachable from this leaf component without a
+ * provider hop; PostHog `brief_refresh_clicked` ships an empty mailbox
+ * string and the FE proxies enrich via PostHog's identifyUser tag.
+ */
+function handleBriefRefresh(refetch: () => Promise<unknown>): void {
+  void track('brief_refresh_clicked', { mailbox_id: '' });
+  addBreadcrumb({ category: 'navigation', message: 'brief: refresh clicked', level: 'info' });
+  void refetch();
 }
 
 /**
@@ -399,6 +418,21 @@ function ReplyFyiRow({ row }: { row: BriefItemWire }) {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => {
+            void track('brief_cta_clicked', {
+              cta_kind: 'open_in_gmail',
+              target: 'gmail',
+            });
+            void track('gmail_deep_link_opened', {
+              source: 'activity_row',
+              deep_link_kind: 'thread',
+            });
+            addBreadcrumb({
+              category: 'navigation',
+              message: 'brief: reply-fyi → gmail',
+              level: 'info',
+            });
+          }}
           style={{
             fontSize: 12.5,
             color: color.primary,
@@ -466,6 +500,22 @@ function NoiseRow({ group }: { group: BriefSenderGroupWire }) {
           href={href}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => {
+            void track('brief_cta_clicked', {
+              cta_kind: 'open_in_gmail',
+              target: 'gmail',
+            });
+            void track('gmail_deep_link_opened', {
+              source: 'activity_row',
+              deep_link_kind: 'thread',
+            });
+            addBreadcrumb({
+              category: 'navigation',
+              message: 'brief: noise-row → gmail',
+              level: 'info',
+              data: { message_count: count },
+            });
+          }}
           style={{
             fontSize: 12.5,
             color: color.primary,

@@ -67,6 +67,18 @@ export interface AutopilotMatch {
   ruleId: string;
   /** The matched sender (sha256 hex — never the raw email). */
   senderKey: string;
+  /**
+   * Sender display name, joined from the senders table (D7 allowlist —
+   * sender identity is the FIRST item on the storage list). `null` only
+   * when the sender hasn't been materialised by `building_sender_index`
+   * yet (rare race; the row was logged before the senders projector
+   * caught up). The FE falls back to the senderKey hash in that case.
+   * Replaces the prior "hash-only" surface (FOUNDER 2026-06-06 smoke —
+   * users had no way to recognise the sender).
+   */
+  senderName: string | null;
+  /** Sender email, joined from senders. `null` for the same race window. */
+  senderEmail: string | null;
   /** ISO-8601. */
   matchedAt: string;
   modeAtMatch: AutopilotMatchMode;

@@ -22,12 +22,18 @@
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, gte, lt, or } from 'drizzle-orm';
+import { and, count, desc, eq, gte, ilike, inArray, lt, or } from 'drizzle-orm';
 
 import { activityLog, senders, undoJournal } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { ActivityRow, ActivityStats, ActivityWindow, UndoState } from './activity.types.js';
+import type {
+  ActivityRow,
+  ActivityStats,
+  ActivityVerbFilter,
+  ActivityWindow,
+  UndoState,
+} from './activity.types.js';
 import type { ActivityLogEntry } from '@declutrmail/db';
 
 /** D55 — number of days each window covers; `'all'` returns `null`. */
@@ -49,6 +55,29 @@ export interface ListActivityParams {
   mailboxAccountId: string;
   window: ActivityWindow;
   source: ActivityLogEntry['source'] | null;
+  /**
+   * Optional verb filter (B-track Activity power-options). Empty array
+   * = no verb filter (all verbs match). Multi-select on the wire — the
+   * controller parses CSV / repeat params into this list. Optional on
+   * the type so existing call sites that don't filter by verb stay
+   * compatible.
+   */
+  verbs?: ActivityVerbFilter[];
+  /**
+   * Optional sender substring filter — case-insensitive ILIKE against
+   * the joined `senders.display_name` and `senders.email`. Empty
+   * string = no filter. Trimmed by the controller before reaching here.
+   */
+  senderQuery?: string;
+  /**
+   * Custom date range overrides the `window`-derived lower bound:
+   *   - `dateFrom` non-null → `occurred_at >= dateFrom`
+   *   - `dateTo`   non-null → `occurred_at <  dateTo`  (exclusive upper)
+   * Either may be null/undefined. When set, the window param still
+   * echoes back to the FE but no longer affects the rows query.
+   */
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
   cursor: { occurredAt: Date; id: string } | null;
   limit: number;
   /**
@@ -66,6 +95,12 @@ export interface ListActivityResult {
    */
   rows: ActivityRow[];
   stats: ActivityStats;
+  /**
+   * All-time stats — ignores the window / verb / sender / date filters.
+   * Powers the B-track "all-time totals" line. Computed in the same
+   * call so the FE doesn't need a second round-trip.
+   */
+  allTimeStats: ActivityStats;
 }
 
 @Injectable()
@@ -93,12 +128,39 @@ export class ActivityReadService {
    * AND `executed_at IS NULL`).
    */
   async listActivity(params: ListActivityParams): Promise<ListActivityResult> {
-    const { mailboxAccountId, window, source, cursor, limit, nowMs } = params;
-    const windowStart = resolveWindowStart(window, nowMs);
+    const {
+      mailboxAccountId,
+      window,
+      source,
+      verbs = [],
+      senderQuery = '',
+      dateFrom = null,
+      dateTo = null,
+      cursor,
+      limit,
+      nowMs,
+    } = params;
+    // Custom date range, when supplied, REPLACES the window-derived
+    // lower bound — the FE picker shows whichever wins. When neither
+    // dateFrom nor dateTo is set, fall back to the window default
+    // (D55 behaviour unchanged).
+    const useCustomRange = dateFrom !== null || dateTo !== null;
+    const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
 
     const whereParts = [eq(activityLog.mailboxAccountId, mailboxAccountId)];
     if (windowStart) whereParts.push(gte(activityLog.occurredAt, windowStart));
+    if (dateFrom) whereParts.push(gte(activityLog.occurredAt, dateFrom));
+    if (dateTo) whereParts.push(lt(activityLog.occurredAt, dateTo));
     if (source) whereParts.push(eq(activityLog.source, source));
+    if (verbs.length > 0) whereParts.push(inArray(activityLog.action, verbs));
+    if (senderQuery.length > 0) {
+      // ILIKE pattern: match anywhere in display_name OR email.
+      // sender_key NULL rows (account-scoped actions) drop out — the
+      // sender join in the SELECT is a LEFT JOIN, so a sender_q filter
+      // implicitly narrows to rows with a resolved sender.
+      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
+    }
     if (cursor) {
       // Strict-after-cursor pagination on `(occurred_at DESC, id DESC)`.
       // Same OR-chain shape as senders.list — the boundary row belongs
@@ -174,12 +236,27 @@ export class ActivityReadService {
       };
     });
 
-    const stats = await this.aggregateStats({
-      mailboxAccountId,
-      windowStart,
-    });
+    // Stats follow the same window/date bound as the rows query, but
+    // IGNORE source/verb/sender so the line stays stable as chips toggle
+    // (the chip group narrows the rows; the stats line answers
+    // "in this window/date range, what HAPPENED?"). All-time stats
+    // ignore EVERY filter and provide a stable running total.
+    const statsLowerBound = useCustomRange ? dateFrom : windowStart;
+    const statsUpperBound = useCustomRange ? dateTo : null;
+    const [stats, allTimeStats] = await Promise.all([
+      this.aggregateStats({
+        mailboxAccountId,
+        lowerBound: statsLowerBound,
+        upperBound: statsUpperBound,
+      }),
+      this.aggregateStats({
+        mailboxAccountId,
+        lowerBound: null,
+        upperBound: null,
+      }),
+    ]);
 
-    return { rows: projected, stats };
+    return { rows: projected, stats, allTimeStats };
   }
 
   /**
@@ -194,10 +271,12 @@ export class ActivityReadService {
    */
   private async aggregateStats(args: {
     mailboxAccountId: string;
-    windowStart: Date | null;
+    lowerBound: Date | null;
+    upperBound: Date | null;
   }): Promise<ActivityStats> {
     const whereParts = [eq(activityLog.mailboxAccountId, args.mailboxAccountId)];
-    if (args.windowStart) whereParts.push(gte(activityLog.occurredAt, args.windowStart));
+    if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
+    if (args.upperBound) whereParts.push(lt(activityLog.occurredAt, args.upperBound));
 
     const rows = await this.db
       .select({
@@ -213,6 +292,8 @@ export class ActivityReadService {
     );
     return {
       archived: byVerb.get('archive') ?? 0,
+      // D227 K/A/U/L/D — Delete verb count (ADR-0019).
+      deleted: byVerb.get('delete') ?? 0,
       unsubscribed: byVerb.get('unsubscribe') ?? 0,
       kept: byVerb.get('keep') ?? 0,
       later: byVerb.get('later') ?? 0,
@@ -230,6 +311,16 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
   if (window === 'all') return null;
   const days = WINDOW_DAYS[window];
   return new Date(nowMs - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Escape `%` / `_` / `\` in a user-supplied ILIKE pattern so the search
+ * input is treated as a literal substring, not a glob. The pattern is
+ * wrapped with `%` at the call site for substring matching; the user
+ * can't smuggle their own wildcards through.
+ */
+function escapeIlikeWildcards(raw: string): string {
+  return raw.replace(/\\/g, '\\\\').replace(/[%_]/g, (m) => `\\${m}`);
 }
 
 /**

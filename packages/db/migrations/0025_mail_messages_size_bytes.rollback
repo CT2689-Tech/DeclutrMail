@@ -1,0 +1,9 @@
+-- Rollback for 0025_mail_messages_size_bytes.sql
+--
+-- Drops the additive nullable column. Safe — no read or write path
+-- requires the column; consumers that selected it tolerate NULL today
+-- and tolerate "column not present" by removing the field after
+-- rollback. No data loss beyond the column itself (Gmail can resupply
+-- via the next sync if the amendment is re-applied later).
+
+ALTER TABLE "mail_messages" DROP COLUMN "size_bytes";

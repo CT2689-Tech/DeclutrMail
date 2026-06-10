@@ -71,10 +71,27 @@ export interface Sender {
   lastDays: number;
   /** Currently unread in the inbox from this sender. */
   unread: number;
+  /**
+   * Count of outbound messages from the user to this sender, derived
+   * from Gmail's Sent label match. Pure fact (no inference). Surfaced
+   * on Sender Card stat strip as "You replied". Optional because the
+   * wire field lands in Phase 1 BE — absent ⇒ render em-dash via
+   * NumericDisplay's degraded-input guard.
+   */
+  repliedCount?: number;
   /** Months since first seen — rough relationship age. */
   firstSeenMo: number;
   /** Auto-protected (receipts / statements) — never bulk-acted. */
   protected?: boolean;
+  /**
+   * Standing-policy unsub state — `true` when the user has clicked
+   * Unsubscribe and the BE has written `sender_policies.policy_type =
+   * 'unsubscribe'` (D38 + 2026-06-05 founder brainstorm). The FE
+   * renders a "Unsub queued" pill on the sender card while the real
+   * unsub pipeline (D230) is unbuilt. Optional because Weekly-Hero
+   * + storybook fixtures don't carry it; absent ⇒ no pill.
+   */
+  unsubPending?: boolean;
   /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
    * route a sender into the "Protect" intent bucket (intentOf OR-s
@@ -696,7 +713,7 @@ export function gmailSearchUrl(domain: string): string {
 // Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
 // Protect — a distinct VIP/lock operation, not a triage verb.
 
-export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect';
+export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect' | 'Delete';
 
 /** Past-tense verb labels for toasts + receipts — single source. */
 export const VERB_PAST: Record<ActionVerb, string> = {
@@ -705,6 +722,9 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Unsubscribe: 'Unsubscribed from',
   Later: 'Moved to Later',
   Protect: 'Protected',
+  // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
+  // Past-tense surfaces in the receipt strip after the worker completes.
+  Delete: 'Deleted',
 };
 
 /**
@@ -718,6 +738,7 @@ const VERB_TO_REGISTRY: Partial<Record<ActionVerb, RegistryActionVerb>> = {
   Archive: 'archive',
   Unsubscribe: 'unsubscribe',
   Later: 'later',
+  Delete: 'delete',
 };
 
 /**

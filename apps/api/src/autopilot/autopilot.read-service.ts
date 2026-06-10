@@ -30,6 +30,7 @@ import {
   type AutopilotRuleScope,
   automationRules,
   ruleMatchLog,
+  senders,
 } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -170,9 +171,27 @@ export class AutopilotReadService {
    */
   async listPendingSuggestions(mailboxAccountId: string): Promise<AutopilotMatch[]> {
     const PAGE_SIZE = 50;
+    // LEFT JOIN senders so each match carries the sender's display name +
+    // email (D7 allowlist — sender identity is the FIRST item on the
+    // storage list; surfacing it is NOT a privacy violation). LEFT join
+    // because `building_sender_index` may not have materialised the row
+    // yet — the FE falls back to the senderKey hash in that race window
+    // (FOUNDER 2026-06-06 smoke — the Autopilot UI shipped hash-only and
+    // was unreadable to the user).
     const rows = await this.db
-      .select()
+      .select({
+        match: ruleMatchLog,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+      })
       .from(ruleMatchLog)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+          eq(senders.senderKey, ruleMatchLog.senderKey),
+        ),
+      )
       .where(
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
@@ -182,7 +201,9 @@ export class AutopilotReadService {
       )
       .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
       .limit(PAGE_SIZE);
-    return rows.map((r) => projectMatch(r));
+    return rows.map((r) =>
+      projectMatch(r.match, { senderName: r.senderDisplayName, senderEmail: r.senderEmail }),
+    );
   }
 
   /**
@@ -206,14 +227,27 @@ export class AutopilotReadService {
     if (!rule) return null;
 
     const rows = await this.db
-      .select()
+      .select({
+        match: ruleMatchLog,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+      })
       .from(ruleMatchLog)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+          eq(senders.senderKey, ruleMatchLog.senderKey),
+        ),
+      )
       .where(
         and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), eq(ruleMatchLog.ruleId, ruleId)),
       )
       .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
       .limit(Math.max(1, Math.min(50, limit)));
-    return rows.map((r) => projectMatch(r));
+    return rows.map((r) =>
+      projectMatch(r.match, { senderName: r.senderDisplayName, senderEmail: r.senderEmail }),
+    );
   }
 
   /**
@@ -317,11 +351,24 @@ function projectRule(row: typeof automationRules.$inferSelect): AutopilotRule {
   };
 }
 
-function projectMatch(row: typeof ruleMatchLog.$inferSelect): AutopilotMatch {
+function projectMatch(
+  row: typeof ruleMatchLog.$inferSelect,
+  joined: { senderName: string | null; senderEmail: string | null } = {
+    senderName: null,
+    senderEmail: null,
+  },
+): AutopilotMatch {
   return {
     id: row.id,
     ruleId: row.ruleId,
     senderKey: row.senderKey,
+    // Empty display_name (the schema default) collapses to null so the FE
+    // can apply its fallback uniformly (hash) rather than rendering an
+    // empty string between the rule chip and the verb.
+    senderName:
+      joined.senderName != null && joined.senderName.length > 0 ? joined.senderName : null,
+    senderEmail:
+      joined.senderEmail != null && joined.senderEmail.length > 0 ? joined.senderEmail : null,
     matchedAt: row.matchedAt.toISOString(),
     modeAtMatch: row.modeAtMatch,
     confidence: Number.parseFloat(row.confidence),

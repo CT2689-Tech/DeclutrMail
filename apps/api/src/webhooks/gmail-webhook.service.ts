@@ -1,9 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Queue } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { mailboxAccounts, webhookDedup } from '@declutrmail/db';
+import { ensureIncrementalSyncJob, type IncrementalSyncJobData } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { SyncService } from '../sync/sync.service.js';
+import { SyncService, INCREMENTAL_SYNC_QUEUE_TOKEN } from '../sync/sync.service.js';
+
+// `INCREMENTAL_SYNC_QUEUE_TOKEN` lives in SyncService as of the sync-now
+// PR (D38 prod-ready pass) — the sync feature owns the cursor + the
+// incremental-sync queue producer per the D204 boundary. WebhooksModule
+// imports SyncModule and reuses the same provider; re-exporting the
+// token here keeps existing imports from outside this file unchanged.
+export { INCREMENTAL_SYNC_QUEUE_TOKEN };
 
 /**
  * Gmail Pub/Sub webhook service (D8, D229).
@@ -38,8 +47,31 @@ export type ProcessOutcome =
   | {
       kind: 'enqueued';
       mailboxAccountId: string;
-      previousHistoryId: bigint | null;
+      // Non-null — the null case is now the dedicated
+      // `deferred_initial_sync_in_flight` variant below.
+      // `enqueued` always means "job dispatched to Redis or its
+      // enqueue was attempted post-commit."
+      previousHistoryId: bigint;
       historyId: bigint;
+    }
+  | {
+      // Deferred — webhook arrived while InitialSync is still mid-flight
+      // (the `provider_sync_state` row exists with `last_history_id IS
+      // NULL`; the row was created by `markQueued` in OAuth-connect but
+      // `markReady` has not yet written InitialSync's snapshot S).
+      //
+      // D38 race fix (2026-06-09): advancing the cursor NULL → H here
+      // would strand the (S, H] range. InitialSync's `markReady` uses
+      // GREATEST(stored, snapshot), so a webhook-written H>S would cause
+      // `markReady`'s S to be silently rejected, and the events in (S, H]
+      // would never be paged via `history.list`. The deferred path
+      // leaves the cursor NULL; InitialSync writes S unimpeded; the next
+      // webhook (or the 10-min drift sweep) then enqueues from S, which
+      // covers all events including those in (S, H]. No enqueue happens
+      // on this path — there's no valid start cursor to page from.
+      kind: 'deferred_initial_sync_in_flight';
+      mailboxAccountId: string;
+      incomingHistoryId: bigint;
     };
 
 /** TTL for dedup rows — 24h, well beyond Pub/Sub's 10-minute ack deadline. */
@@ -52,6 +84,8 @@ export class GmailWebhookService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly sync: SyncService,
+    @Inject(INCREMENTAL_SYNC_QUEUE_TOKEN)
+    private readonly incrementalSyncQueue: Queue<IncrementalSyncJobData>,
   ) {}
 
   /**
@@ -82,7 +116,18 @@ export class GmailWebhookService {
     // would then return `duplicate_message_id` and skip the cursor
     // advance forever. One transaction = both writes commit or neither
     // does; a Pub/Sub retry of a crashed run re-enters this block fresh.
-    return this.db.transaction(async (tx): Promise<ProcessOutcome> => {
+    //
+    // The BullMQ enqueue (D8) lives OUTSIDE this transaction
+    // (architecture-guardian 2026-06-05 [BLOCKING] fix). BullMQ does not
+    // participate in PG transactions; awaiting `queue.add` inside the
+    // tx would publish the job to Redis BEFORE the tx commits, so a
+    // commit failure (PG conn drop / serialization failure / statement
+    // timeout) would leave the job durable while the cursor advance is
+    // rolled back — the worker would then run against the OLD
+    // `last_history_id`, silently regressing the cursor. Symmetric to
+    // `SyncModule.connect` which enqueues `initial-sync` AFTER the
+    // OAuth tx commits.
+    const outcome = await this.db.transaction(async (tx): Promise<ProcessOutcome> => {
       // Step 7: messageId dedup. Atomic PK insert; conflict means
       // we've already processed this delivery. Insert FIRST, before
       // any other state lookup, so a duplicate burst from Pub/Sub
@@ -148,14 +193,18 @@ export class GmailWebhookService {
         };
       }
 
-      // TODO(D8 follow-up): enqueue an incremental-sync job over
-      // [previousHistoryId, incomingHistoryId]. The incremental-sync
-      // worker + queue land in the next PR; for now the cursor
-      // advance is the durable signal the reconciler will use to
-      // backfill the range. The dedup row + advanced cursor are the
-      // atomic effect; an enqueue failure cannot leave us in an
-      // inconsistent state because the reconciler will pick up any
-      // range gap on its next tick.
+      // D38 webhook-vs-InitialSync race: the deferred path leaves the
+      // cursor NULL so InitialSync's `markReady` can write its snapshot
+      // S without being overwritten by H>S. The next webhook (or the
+      // drift sweep) then enqueues from S, covering (S, H]. No enqueue
+      // happens here — there is no valid start cursor.
+      if (advance.kind === 'deferred_initial_sync_in_flight') {
+        return {
+          kind: 'deferred_initial_sync_in_flight',
+          mailboxAccountId: mailbox.id,
+          incomingHistoryId,
+        };
+      }
 
       return {
         kind: 'enqueued',
@@ -164,5 +213,40 @@ export class GmailWebhookService {
         historyId: incomingHistoryId,
       };
     });
+
+    // D8 enqueue — runs ONLY after the tx commits successfully, so a
+    // committed `enqueued` outcome is the canonical signal both
+    // (a) cursor advanced durably AND (b) job is/will-be in Redis.
+    //
+    // `ensureIncrementalSyncJob` is idempotent on
+    // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
+    // re-running this path cannot double-enqueue. BigInts are
+    // stringified — BullMQ's payload goes through `JSON.stringify`
+    // which throws on bigint; the worker parses back via `BigInt(...)`.
+    if (outcome.kind === 'enqueued') {
+      try {
+        await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
+          mailboxAccountId: outcome.mailboxAccountId,
+          startHistoryId: outcome.previousHistoryId.toString(),
+          endHistoryId: outcome.historyId.toString(),
+        });
+      } catch (err) {
+        // Cursor advance is durable; enqueue failure is recoverable
+        // via the future reconciler-on-redis-state tick. Surface the
+        // gap as a WARN so on-call can grep without losing the
+        // outcome — never rethrow past the webhook contract.
+        this.logger.warn(
+          `webhook.incremental_enqueue_failed mailbox=${outcome.mailboxAccountId} ` +
+            `error=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else if (outcome.kind === 'deferred_initial_sync_in_flight') {
+      this.logger.log(
+        `webhook.deferred_initial_sync_in_flight mailbox=${outcome.mailboxAccountId} ` +
+          `incomingHistoryId=${outcome.incomingHistoryId}`,
+      );
+    }
+
+    return outcome;
   }
 }

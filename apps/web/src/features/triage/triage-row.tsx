@@ -18,17 +18,33 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
   later: 'default',
 };
 
-/** Tight one-line "why" for the collapsed row (D36 — critical info default). */
+/**
+ * Tight one-line "why" for the collapsed row (D36 — critical info
+ * default). Uses `last90dMessages` instead of the derived
+ * `monthlyVolume = round(last90 / 3)` so a sender that mailed twice in
+ * the last 90d reads as "2 in last 90d", not "0/mo" — the lie pattern
+ * founder caught 2026-06-06 (same class as Sender Detail Bug 3).
+ *
+ * Quiet senders (no mail in 90d but real lifetime presence) get an
+ * explicit "Quiet 90d" copy instead of a fabricated "0/mo".
+ */
 function whyLine(row: TriageDecisionRow): string {
   const pct = Math.round(row.readRate * 100);
   if (row.protectionReason === 'vip') return 'VIP — always kept';
   if (row.protectionReason === 'engagement') return `${pct}% read · engagement-protected`;
   if (row.protectionReason === 'auto-receipts') return 'Auto-protected receipts sender';
   if (row.protectionReason === 'auto-financial') return 'Auto-protected financial sender';
-  if (row.readRate === 0 && row.monthlyVolume >= 8) return `Never opened · ${row.monthlyVolume}/mo`;
-  if (row.readRate < 0.2) return `${pct}% read · ${row.monthlyVolume}/mo`;
+  if (row.last90dMessages === 0) {
+    // Quiet within the rolling window — say so plainly. Lifetime total
+    // carries the "they DID mail you" context without faking cadence.
+    return `Quiet 90d · ${row.totalAllTime.toLocaleString()} lifetime`;
+  }
+  if (row.readRate === 0 && row.last90dMessages >= 8) {
+    return `Never opened · ${row.last90dMessages} in last 90d`;
+  }
+  if (row.readRate < 0.2) return `${pct}% read · ${row.last90dMessages} in last 90d`;
   if (row.readRate >= 0.7) return `${pct}% read · keep close`;
-  return `${pct}% read · ${row.monthlyVolume}/mo`;
+  return `${pct}% read · ${row.last90dMessages} in last 90d`;
 }
 
 /**

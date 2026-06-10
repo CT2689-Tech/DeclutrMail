@@ -19,9 +19,13 @@ const { color, font } = tokens;
  * lets the rule keep observing, dismisses individual matches that look
  * wrong, or flips the whole rule to Active.
  *
- * Privacy: `senderKey` is the sha256 hex digest (D7). We surface the
- * first 8 chars as a stable identifier so the founder can correlate
- * rows across sessions without ever exposing the underlying email.
+ * Privacy: `senderKey` is the sha256 hex digest (D7). `senderName` +
+ * `senderEmail` come from the senders table — both ARE on the D7
+ * storage allowlist (sender identity is the FIRST item). We render
+ * name + email when present and fall back to `sender·<hash>` only
+ * for the brief race window before `building_sender_index`
+ * materialises the senders row (FOUNDER 2026-06-06 — hash-only was
+ * unreadable to the user).
  */
 export function PendingSuggestionRow({
   match,
@@ -38,6 +42,7 @@ export function PendingSuggestionRow({
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
   const senderPreview = match.senderKey.slice(0, 8);
   const confidencePct = Math.round(match.confidence * 100);
+  const hasName = match.senderName != null && match.senderName.length > 0;
 
   return (
     <li
@@ -61,21 +66,38 @@ export function PendingSuggestionRow({
             flexWrap: 'wrap',
           }}
         >
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: 11.5,
-              fontWeight: 600,
-              color: color.fg,
-              padding: '2px 7px',
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 5,
-            }}
-            title={`Sender key (sha256, truncated): ${match.senderKey}`}
-          >
-            sender·{senderPreview}
-          </span>
+          {hasName ? (
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: color.fg,
+                maxWidth: 320,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={match.senderEmail ?? match.senderKey}
+            >
+              {match.senderName}
+            </span>
+          ) : (
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 11.5,
+                fontWeight: 600,
+                color: color.fg,
+                padding: '2px 7px',
+                background: color.paper,
+                border: `1px solid ${color.line}`,
+                borderRadius: 5,
+              }}
+              title={`Sender not yet materialised in the senders index (race) — key (sha256, truncated): ${match.senderKey}`}
+            >
+              sender·{senderPreview}
+            </span>
+          )}
           <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
           <Pill tone="default">{ruleName}</Pill>
         </div>
@@ -89,6 +111,22 @@ export function PendingSuggestionRow({
             color: color.fgMuted,
           }}
         >
+          {hasName && match.senderEmail != null && (
+            <>
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  maxWidth: 280,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {match.senderEmail}
+              </span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
           <span title="Engine confidence at match time">{confidencePct}% confidence</span>
           <span aria-hidden="true">·</span>
           <span>{match.reason}</span>

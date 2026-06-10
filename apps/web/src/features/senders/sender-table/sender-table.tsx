@@ -54,7 +54,7 @@
 
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { NumericDisplay, tokens } from '@declutrmail/shared';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
@@ -74,8 +74,13 @@ const { color, font, radius, text } = tokens;
 /** Discriminator for the empty-state cell when `rows.length === 0`. */
 export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search-match';
 
-/** Row-level verb the table emits up to the consumer. K/A/U/L (D227). */
-export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe';
+/**
+ * Row-level verb the table emits up to the consumer.
+ * Spec v1.2 Decision 1 (ADR-0019) widens the canonical set to K/A/U/L/D —
+ * Delete joins as a row verb so the popover row + bulk surface route the
+ * same shape end-to-end.
+ */
+export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe' | 'delete';
 
 export interface SenderTableProps {
   /** Page rows in the order the wire returned them (BE-sorted). */
@@ -503,19 +508,11 @@ function TotalCell({ value, max, accent }: { value: number; max: number; accent?
   const pct = Math.min(100, Math.round((safeValue / safeMax) * 100));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-      <span
-        style={{
-          fontFamily: font.display,
-          fontSize: 18,
-          fontWeight: 600,
-          letterSpacing: '-0.015em',
-          fontVariantNumeric: 'tabular-nums',
-          color: color.fg,
-          lineHeight: 1,
-        }}
-      >
-        {safeValue.toLocaleString()}
-      </span>
+      {/* ADR-0016 §A1 — total cell uses `NumericDisplay
+          variant="display"` (Fraunces 28/400/-0.025em) so the row
+          total scale matches the SenderDetailHeader h1 + Hero slice
+          headline. Was ad-hoc 18px/600. */}
+      <NumericDisplay value={safeValue.toLocaleString()} variant="display" />
       {max > 0 ? (
         <span
           aria-hidden="true"
@@ -790,6 +787,9 @@ function ExpandedRow({
     Archive: 'archive',
     Unsubscribe: 'unsubscribe',
     Later: 'later',
+    // Spec v1.2 Decision 1 — Delete routes through the composite modal
+    // (the row detail surface) the same as Archive/Later.
+    Delete: 'delete',
     Keep: null,
     Protect: null,
   };

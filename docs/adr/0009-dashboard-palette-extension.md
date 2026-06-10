@@ -1,8 +1,9 @@
 # ADR-0009: Dashboard-surface palette extension (amends D2)
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0017](./0017-retire-dashboard-violet.md) (2026-06-03)
 - **Date:** 2026-05-25
 - **Accepted:** 2026-05-25
+- **Superseded:** 2026-06-03 — founder review on senders-v2 spec v1.2 Decision 7 retired the violet accent in favor of single-accent discipline. Live/active affordances → emerald dot. Filter-chip active → teal fg/bg invert. The two ADR-0009 use cases both map cleanly into the existing palette.
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
 - **Related D-decisions:** D2 (cool / Vercel palette, restrained color),
   D38 (Senders surface), D199 (lazy promotion)

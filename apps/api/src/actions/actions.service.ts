@@ -3,22 +3,33 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { and, count, eq, inArray, sql } from 'drizzle-orm';
 
-import { actionJobs, mailMessages, senderPolicies, senders } from '@declutrmail/db';
+// `senderPolicies` is imported for READ-ONLY queries (Protect/VIP guards
+// on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
+// are explicitly allowed.
+import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import type { LabelActionSelector } from '@declutrmail/db';
-import { LABEL_ACTION_JOB, labelActionJobOptions } from '@declutrmail/workers';
+import { LABEL_ACTION_JOB, labelActionJobOptions, OutboxPublisher } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
+import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrmail/events';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActionEnqueueResult,
+  ActionJobStatus,
   ActionStatusResult,
   ArchivePreviewResult,
   ArchiveSelector,
+  CompositeActionEnqueueResult,
+  CompositeActionPreviewResult,
+  CompositePrimaryVerb,
+  CompositeSecondaryVerb,
+  UnsubscribeIntentResult,
 } from './actions.types.js';
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -41,15 +52,33 @@ export const ACTION_QUEUE_TOKEN = 'ACTION_QUEUE';
  *
  * Privacy (D7 / D228): only ids + the sha256 sender_key are read/stored.
  */
+/** NestJS DI token for the OutboxPublisher singleton (D204). */
+export const OUTBOX_PUBLISHER_TOKEN = 'OUTBOX_PUBLISHER';
+
 @Injectable()
 export class ActionsService {
+  private readonly outbox: OutboxPublisher;
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     // `Queue | null` — fail-open when REDIS_URL is unset (matches
     // TriageModule). Only the enqueue paths need it; `getStatus` works
     // without Redis so the FE can still poll.
     @Inject(ACTION_QUEUE_TOKEN) private readonly queue: Queue<LabelActionJobData> | null,
-  ) {}
+    // OutboxPublisher (D13, D204). `@Optional()` is REQUIRED for Nest
+    // DI: without it, the reflector reads `design:paramtypes` (a
+    // metadata-emitting tsconfig is on), sees `OutboxPublisher` as the
+    // class identity, fails to find a provider for it, and throws
+    // 'Nest can't resolve dependencies of the ActionsService' at boot.
+    // Marking the param optional tells Nest to pass `undefined` when no
+    // provider is registered, and we fall back to a fresh instance —
+    // the publisher is stateless (Zod parse + denylist + insert), so a
+    // per-instance OutboxPublisher is safe. The existing
+    // `new ActionsService(db, queue)` test wiring (no third arg) keeps
+    // working unchanged.
+    @Optional() outbox?: OutboxPublisher,
+  ) {
+    this.outbox = outbox ?? new OutboxPublisher();
+  }
 
   /**
    * Resolve + persist + enqueue a forward archive action. `idempotencyKey`
@@ -172,10 +201,544 @@ export class ActionsService {
   }
 
   /**
+   * Composite preview (ADR-0020) — sender context strip + per-time-window
+   * bucket counts for the confirm modal chip row. ONE query for all four
+   * buckets via `count(*) FILTER (WHERE internal_date <= …)` aggregates,
+   * matching the same `internal_date` column the worker resolver narrows
+   * on so the chip preview equals what the worker will actually move.
+   *
+   * `protected` is derived from `sender_policies` — drives the destructive
+   * confirm's "this sender is Protected" warning. `unsubAvailable` is
+   * true when the sender has any unsubscribe method recorded; used by the
+   * FE to know whether to render the Unsubscribe primary chip enabled.
+   * `monthly` is the inbound-message count for the past 30 days, used in
+   * the sender context strip ("12/mo").
+   */
+  async previewComposite(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<CompositeActionPreviewResult> {
+    const { mailboxAccountId, senderId } = input;
+    const [sender] = await this.db
+      .select({
+        id: senders.id,
+        senderKey: senders.senderKey,
+        displayName: senders.displayName,
+        email: senders.email,
+        domain: senders.domain,
+        lastSeenAt: senders.lastSeenAt,
+        unsubscribeMethod: senders.unsubscribeMethod,
+        repliedCount: senders.repliedCount,
+      })
+      .from(senders)
+      .where(and(eq(senders.id, senderId), eq(senders.mailboxAccountId, mailboxAccountId)))
+      .limit(1);
+    if (!sender) {
+      throw new NotFoundException({
+        code: 'SENDER_NOT_FOUND',
+        message: 'Sender not found in the current mailbox.',
+      });
+    }
+
+    const [policy] = await this.db
+      .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, sender.senderKey),
+        ),
+      )
+      .limit(1);
+
+    // ONE aggregate query: all four time-window buckets + the
+    // un-windowed `all` count + the past-30d `monthly` figure + the
+    // top-5 most-recent subjects per window for the "Show what will
+    // move" trust panel (spec v1.3 §"Show what will move" — recent
+    // beats oldest for 3-sec sender recognition).
+    //
+    // `array_agg(subject ORDER BY ... DESC) FILTER (WHERE rn <= 5 AND
+    // window_predicate)` collapses what would have been five separate
+    // LIMIT 5 queries into one aggregate — the window function picks
+    // top-5 per window, the FILTER clause selects per bucket. Single
+    // index seek on `mail_messages_account_sender_date_idx`.
+    const [counts] = await this.db
+      .select({
+        all: sql<number>`count(*)::int`,
+        olderThan30d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '30 days')::int`,
+        olderThan90d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '90 days')::int`,
+        olderThan180d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '180 days')::int`,
+        olderThan365d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '365 days')::int`,
+        monthly: sql<number>`count(*) FILTER (WHERE m.internal_date >= now() - interval '30 days')::int`,
+        recentAll: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), ARRAY[]::text[])`,
+        recent30d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_30 <= 5 AND m.internal_date <= now() - interval '30 days'), ARRAY[]::text[])`,
+        recent90d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_90 <= 5 AND m.internal_date <= now() - interval '90 days'), ARRAY[]::text[])`,
+        recent180d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_180 <= 5 AND m.internal_date <= now() - interval '180 days'), ARRAY[]::text[])`,
+        recent365d: sql<
+          string[]
+        >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_365 <= 5 AND m.internal_date <= now() - interval '365 days'), ARRAY[]::text[])`,
+      })
+      .from(
+        sql`(
+          SELECT
+            ${mailMessages.subject} AS subject,
+            ${mailMessages.internalDate} AS internal_date,
+            row_number() OVER (ORDER BY ${mailMessages.internalDate} DESC) AS rn_all,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '30 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_30,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '90 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_90,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '180 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_180,
+            row_number() OVER (PARTITION BY (${mailMessages.internalDate} <= now() - interval '365 days') ORDER BY ${mailMessages.internalDate} DESC) AS rn_365
+          FROM ${mailMessages}
+          WHERE ${mailMessages.mailboxAccountId} = ${mailboxAccountId}
+            AND ${mailMessages.senderKey} = ${sender.senderKey}
+            AND ${mailMessages.isOutbound} = false
+            AND 'INBOX' = ANY(${mailMessages.labelIds})
+        ) m`,
+      );
+
+    const nowMs = Date.now();
+    const lastSeenDays = Math.max(
+      0,
+      Math.floor((nowMs - sender.lastSeenAt.getTime()) / (24 * 60 * 60 * 1000)),
+    );
+
+    return {
+      sender: {
+        id: sender.id,
+        name: sender.displayName,
+        domain: sender.domain,
+        lastSeenDays,
+        // `senders.replied_count` from mig 0022 — populated
+        // authoritatively by `InitialSyncWorker.buildSenderIndex` and
+        // incrementally by `IncrementalSyncWorker`. The number IS the
+        // sender-context-strip "you replied N×" copy.
+        repliedCount: sender.repliedCount,
+        monthly: toCount(counts?.monthly),
+      },
+      counts: {
+        all: toCount(counts?.all),
+        olderThan30d: toCount(counts?.olderThan30d),
+        olderThan90d: toCount(counts?.olderThan90d),
+        olderThan180d: toCount(counts?.olderThan180d),
+        olderThan365d: toCount(counts?.olderThan365d),
+      },
+      // Spec v1.3 — top 5 most-recent subjects per window for the
+      // "Show what will move" trust panel. `subject` is D7-allowlisted
+      // (sender + subject + snippet + dates + labels + read state);
+      // no body, no attachment, no header-outside-allowlist surfaced.
+      recentSubjects: {
+        all: counts?.recentAll ?? [],
+        olderThan30d: counts?.recent30d ?? [],
+        olderThan90d: counts?.recent90d ?? [],
+        olderThan180d: counts?.recent180d ?? [],
+        olderThan365d: counts?.recent365d ?? [],
+      },
+      unsubAvailable: sender.unsubscribeMethod !== null,
+      protected: Boolean(policy?.isProtected || policy?.isVip),
+    };
+  }
+
+  /**
+   * Enqueue a composite action (ADR-0020). Handles both single-verb
+   * (no secondary) and composite (primary + secondary) cases through one
+   * code path so the FE can talk to ONE endpoint regardless of shape.
+   *
+   * Persistence (Option A — two linked records):
+   *   - Single-verb: ONE `action_jobs` row, `composite_id = NULL`.
+   *   - Composite:   TWO rows. Primary's `composite_id = NULL`
+   *                  (self-implicit via `id`); secondary's
+   *                  `composite_id = primary.id`. Cascade-undo finds
+   *                  siblings by `composite_id = $primary` ∪ `id = $primary`.
+   *
+   * Idempotency: the client's `Idempotency-Key` is one per "Apply" click;
+   * we namespace it per-row so the SAME key cannot collide across verbs:
+   *   - Primary key:   `${primary.type}-${idempotencyKey}`
+   *   - Secondary key: `${secondary.type}-${idempotencyKey}-sec`
+   * The `archive-${key}` shape is the SAME shape `enqueueArchive` uses,
+   * so the FE can migrate from `POST /api/actions/archive` to
+   * `POST /api/actions` without losing dedup on a network-retried click.
+   *
+   * Time-window: `olderThanDays` is persisted on the row (DB CHECK enforces
+   * 1..3650). The worker reads it during sender-selector resolution and
+   * narrows via `internal_date <= now() - interval 'N days'`, matching the
+   * `previewComposite` per-bucket query.
+   *
+   * Protected sender: BOTH primary and secondary share the override flag
+   * (one click = one consent decision). The sender selector enforces it
+   * up front — a non-overridden Protected sender 409s before either row
+   * is written.
+   */
+  async enqueueComposite(input: {
+    mailboxAccountId: string;
+    selector: ArchiveSelector;
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    secondary?:
+      | { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined }
+      | undefined;
+    idempotencyKey: string;
+    override: boolean;
+  }): Promise<CompositeActionEnqueueResult> {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+
+    // Resolve target set + ownership ONCE for the sender selector — both
+    // primary and secondary act on the same sender / same selector. The
+    // override check fires on the resolved senderKey so a Protected
+    // sender is blocked before any row is written (defense-in-depth, D42).
+    let storedSelector: LabelActionSelector;
+    let resolvedMessageIds: string[];
+    let primaryCount: number;
+
+    if (selector.type === 'sender') {
+      const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
+      const [policy] = await this.db
+        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
+      if (policy && (policy.isProtected || policy.isVip) && !override) {
+        throw new ConflictException({
+          code: 'PROTECTED_SENDER',
+          message: 'This sender is Protected or VIP. Confirm to apply the action anyway.',
+        });
+      }
+      primaryCount = await this.countSenderInboxWithWindow(
+        mailboxAccountId,
+        senderKey,
+        primary.olderThanDays ?? null,
+      );
+      resolvedMessageIds = []; // worker resolves "in INBOX now" at execute
+      storedSelector = { type: 'sender', senderId: selector.senderId, senderKey };
+    } else {
+      // messages selector — keep only owned, currently-INBOX ids. The
+      // per-row time-window does not apply to a messages selector (the
+      // caller already supplied the exact set).
+      const owned = await this.db
+        .select({ providerMessageId: mailMessages.providerMessageId })
+        .from(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            inArray(mailMessages.providerMessageId, selector.messageIds),
+            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+          ),
+        );
+      resolvedMessageIds = owned.map((r) => r.providerMessageId);
+      primaryCount = resolvedMessageIds.length;
+      storedSelector = { type: 'messages' };
+    }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const primaryStorageKey = `${primary.type}-${safeKey}`;
+
+    const primaryRow = await this.insertJob({
+      mailboxAccountId,
+      verb: primary.type,
+      direction: 'forward',
+      selector: storedSelector,
+      resolvedMessageIds,
+      requestedCount: primaryCount,
+      idempotencyKey: primaryStorageKey,
+      olderThanDays: primary.olderThanDays ?? null,
+    });
+
+    if (!primaryRow.existing) {
+      await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryStorageKey);
+    }
+
+    if (!secondary) {
+      return {
+        actionId: primaryRow.row.id,
+        // Single-verb: per the wire contract, `compositeId` mirrors
+        // `actionId` so the FE can carry it uniformly through undo
+        // (cascade-undo on a single-row composite is a no-op join).
+        compositeId: primaryRow.row.id,
+        secondaryId: null,
+        status: primaryRow.row.status,
+        primaryCount: primaryRow.row.requestedCount,
+        secondaryCount: null,
+      };
+    }
+
+    // Secondary acts on the SAME sender / messages selector but with its
+    // own time-window. Re-resolve the count for the secondary's window;
+    // resolved ids stay empty for sender selector (worker handles), and
+    // for messages selector the secondary shares the primary's frozen set.
+    const secondaryStorageKey = `${secondary.type}-${safeKey}-sec`;
+    let secondaryCount: number;
+    if (selector.type === 'sender') {
+      // The sender selector already resolved the senderKey above; reuse it
+      // via the stored selector.
+      const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
+      secondaryCount = await this.countSenderInboxWithWindow(
+        mailboxAccountId,
+        senderSel.senderKey,
+        secondary.olderThanDays ?? null,
+      );
+    } else {
+      secondaryCount = resolvedMessageIds.length;
+    }
+
+    const secondaryRow = await this.insertJob({
+      mailboxAccountId,
+      verb: secondary.type,
+      direction: 'forward',
+      selector: storedSelector,
+      resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+      requestedCount: secondaryCount,
+      idempotencyKey: secondaryStorageKey,
+      olderThanDays: secondary.olderThanDays ?? null,
+      compositeId: primaryRow.row.id,
+    });
+
+    if (!secondaryRow.existing) {
+      await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryStorageKey);
+    }
+
+    return {
+      actionId: primaryRow.row.id,
+      compositeId: primaryRow.row.id,
+      secondaryId: secondaryRow.row.id,
+      status: primaryRow.row.status,
+      primaryCount: primaryRow.row.requestedCount,
+      secondaryCount: secondaryRow.row.requestedCount,
+    };
+  }
+
+  /**
+   * Count a sender's INBOX messages narrowed by an optional time-window
+   * (ADR-0020). Mirrors the worker's resolver query so the
+   * enqueue-time `requestedCount` matches the worker's resolved set.
+   * NULL window = whole inbox.
+   */
+  private async countSenderInboxWithWindow(
+    mailboxAccountId: string,
+    senderKey: string,
+    olderThanDays: number | null,
+  ): Promise<number> {
+    const predicates = [
+      eq(mailMessages.mailboxAccountId, mailboxAccountId),
+      eq(mailMessages.senderKey, senderKey),
+      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+    ];
+    if (olderThanDays !== null) {
+      predicates.push(
+        sql`${mailMessages.internalDate} <= now() - (${olderThanDays} || ' days')::interval`,
+      );
+    }
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(mailMessages)
+      .where(and(...predicates));
+    return toCount(row?.n);
+  }
+
+  /**
    * Resolve a sender id → its sha256 `sender_key`, scoped to the mailbox.
    * 404s a forged / cross-mailbox id (ownership). Shared by the archive
    * enqueue and the preview so both resolve identically.
    */
+  /**
+   * Record the user's intent to unsubscribe from a sender (D38 +
+   * 2026-06-05 brainstorm). Unlike Archive/Delete/Later, this is NOT a
+   * Gmail mutation — the real RFC8058/mailto/manual pipeline lands per
+   * D230 in a follow-up. For now, we:
+   *
+   *   1. Upsert `sender_policies.policy_type='unsubscribe'` so the
+   *      Sender Detail surface can render a "Unsub queued" pill and the
+   *      future pipeline knows which senders to process.
+   *   2. Write a 0-affected `activity_log` row (`action='unsubscribe'`,
+   *      `source='manual'`, `undo_token=null`) so /activity reflects
+   *      the DECISION — same precedent as Keep and the just-shipped
+   *      0-affected fix in label-action.worker.ts.
+   *
+   * Autopilot is NOT blocked — pending unsub ≠ guaranteed unsub. If the
+   * brand ignores the future unsub, Autopilot still archives the new
+   * mail. If the brand honours it, no new mail arrives and Autopilot
+   * doesn't fire. User wins either way (founder design 2026-06-05).
+   *
+   * Privacy (D7, D228). No body, snippet, or non-allowlisted header —
+   * the endpoint only writes the sender key + policy_type and the
+   * verb + count. Wire shape mirrors the existing intent endpoints.
+   */
+  async recordUnsubscribeIntent(input: {
+    mailboxAccountId: string;
+    senderId: string;
+    idempotencyKey: string;
+  }): Promise<UnsubscribeIntentResult> {
+    const { mailboxAccountId, senderId, idempotencyKey } = input;
+    const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
+
+    // DB-level idempotency dedup (FOUNDER-FOLLOWUPS 2026-06-05; landed
+    // via migration 0024 that extends `action_verb` with 'unsubscribe').
+    //
+    // Strategy: namespace the FE-supplied key with the 'unsub:' prefix
+    // so worker-job rows (verb='archive'|'later'|'delete') and intent
+    // rows (verb='unsubscribe') can never collide on the existing
+    // `action_jobs_idempotency_key_uniq` index. A retried POST with the
+    // same FE key + same sender resolves back to the cached
+    // `activity_log_id` and returns the SAME shape — the FE never sees
+    // a duplicate audit row.
+    //
+    // The action_jobs row carries:
+    //   - verb='unsubscribe' (now valid per migration 0024)
+    //   - status='done' (no worker; the intent IS the durable outcome)
+    //   - resolved_message_ids=[activityLogId] — repurposes the column
+    //     to carry the cached identifier the replay needs to project.
+    //     The semantics fit: "resolved messages" for an intent IS the
+    //     single activity_log row that audits the click.
+    //   - selector={type:'sender', senderId, senderKey} — same shape as
+    //     the worker-driven verbs use, so /api/actions/:id readers don't
+    //     need a special case.
+    const namespacedKey = `unsub:${idempotencyKey}`;
+    const cachedRows = await this.db
+      .select({
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
+        createdAt: actionJobs.createdAt,
+      })
+      .from(actionJobs)
+      .where(eq(actionJobs.idempotencyKey, namespacedKey))
+      .limit(1);
+    if (cachedRows.length > 0 && cachedRows[0]!.resolvedMessageIds.length > 0) {
+      const cached = cachedRows[0]!;
+      // Project the cached activity_log id back into the response shape.
+      // The replay path keeps the original `recordedAt` so the FE timeline
+      // doesn't drift if a slow retry lands days later.
+      const activityLogId = cached.resolvedMessageIds[0]!;
+      return {
+        senderId,
+        recordedAt: cached.createdAt.toISOString(),
+        activityLogId,
+      };
+    }
+
+    return await this.db.transaction(async (tx) => {
+      // D204 boundary fix (2026-06-06). `sender_policies` is owned by
+      // the senders feature, so ActionsService MUST NOT write it
+      // directly. We emit an outbox event inside this same transaction;
+      // a senders-owned consumer (SendersPolicyAttributionConsumer +
+      // OutboxDispatcherWorker, wired in apps/api/src/worker.ts) reads
+      // the stream and upserts sender_policies.
+      //
+      // **DUAL-WRITE TRANSITION** — the direct sender_policies upsert
+      // below stays for one release so the "Unsub queued" pill on
+      // Sender Detail does not regress while the consumer pipeline is
+      // wired end-to-end. Once the dispatcher confirms it's running in
+      // prod (Cloud Logging shows `outbox.dispatch.event_dispatched`
+      // for the topic + `sender_policies` rows land within a couple of
+      // seconds of the audit row), the direct write below is removed
+      // in a follow-up commit. Tracked in FOUNDER-FOLLOWUPS 2026-06-06.
+      //
+      // Architecture-guardian: the cross-feature signal IS the event;
+      // the direct write below is a temporary backstop, not the
+      // permanent contract.
+      await tx
+        .insert(senderPolicies)
+        .values({
+          mailboxAccountId,
+          senderKey,
+          policyType: 'unsubscribe',
+        })
+        .onConflictDoUpdate({
+          target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+          set: {
+            policyType: 'unsubscribe',
+            updatedAt: sql`now()`,
+          },
+        });
+
+      const [inserted] = await tx
+        .insert(activityLog)
+        .values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: 'unsubscribe',
+          affectedCount: 0,
+          // No undo token — intent has no Gmail side-effect to reverse.
+          // The Activity row's undoState resolves to `unavailable`
+          // client-side. When the real unsub pipeline ships, the worker
+          // will write its OWN row (or update this one) with the actual
+          // affected count + undo token.
+          undoToken: null,
+        })
+        .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+
+      if (!inserted) {
+        throw new Error('activity_log insert returned no row');
+      }
+
+      // Persist the dedup partner — `idempotency_key=namespacedKey,
+      // verb='unsubscribe', status='done'`, with the activity_log id
+      // cached on `resolved_message_ids` so a replay can project it
+      // back into the response without re-writing the audit row.
+      //
+      // ON CONFLICT (idempotency_key) DO NOTHING handles the race where
+      // two concurrent requests with the same key both pass the
+      // cache-miss read above; the second insert is a no-op and the
+      // second caller's response is computed from the just-inserted
+      // activity_log row (their tx already committed it). Two rows in
+      // activity_log is the small, accepted cost of a true race; the
+      // common case (sequential retry) sees one row total.
+      await tx
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey },
+          resolvedMessageIds: [inserted.id],
+          requestedCount: 0,
+          affectedCount: 0,
+          status: 'done',
+          idempotencyKey: namespacedKey,
+        })
+        .onConflictDoNothing({ target: actionJobs.idempotencyKey });
+
+      // D204 boundary fix — emit the cross-feature signal. The senders-
+      // owned consumer reads this and upserts sender_policies. Inside
+      // the same tx as the audit row so the publish + audit are atomic
+      // (a tx rollback rolls back both — no orphaned policy projection,
+      // no audit row without a policy follow-up).
+      await this.outbox.publish(tx, {
+        topic: TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+        aggregateId: inserted.id,
+        payload: {
+          mailboxAccountId,
+          senderKey,
+          activityLogId: inserted.id,
+          recordedAt: inserted.occurredAt.toISOString(),
+        },
+        schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
+      });
+
+      return {
+        senderId,
+        recordedAt: inserted.occurredAt.toISOString(),
+        activityLogId: inserted.id,
+      };
+    });
+  }
+
   private async resolveSenderKey(mailboxAccountId: string, senderId: string): Promise<string> {
     const [sender] = await this.db
       .select({ senderKey: senders.senderKey })
@@ -218,12 +781,127 @@ export class ActionsService {
    * double-POST is idempotent at both the row and the BullMQ layers.
    * (`-` not `:` — BullMQ forbids `:` in a custom jobId.)
    */
+  /**
+   * Resolve composite siblings for a primary undo token and enqueue a
+   * reverse `action_jobs` row for each (ADR-0020 cascade-undo).
+   *
+   * Algorithm:
+   *   1. Look up the forward `action_jobs` row that issued `token`.
+   *   2. Compute the composite primary id — `row.id` if this token is
+   *      the primary, `row.compositeId` if it's a secondary.
+   *   3. Read every forward sibling in the composite (rows where
+   *      `id = primary_id` OR `composite_id = primary_id`) — for the
+   *      single-verb case this returns just the one row.
+   *   4. For each sibling that has its own undo token, enqueue a
+   *      reverse row keyed `revert-<token>`. BullMQ + the undo journal's
+   *      `reverted_at IS NULL` guard provide idempotency, so a repeat
+   *      cascade is safe.
+   *
+   * Returns the reverse-action handles in primary-then-secondary order
+   * — the FE polls the first entry as the user-visible undo progress;
+   * the rest tick over silently via the worker's local-mirror update.
+   */
+  async enqueueCompositeRevert(input: { mailboxAccountId: string; token: string }): Promise<
+    Array<{
+      token: string;
+      actionId: string;
+      status: ActionStatusResult['status'];
+    }>
+  > {
+    if (!this.queue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    const { mailboxAccountId, token } = input;
+
+    // The forward row that issued this token. `undoToken` is unique per
+    // forward row (one per action), so the limit-1 is a guard, not a tie
+    // break.
+    const [forwardRow] = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.undoToken, token),
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+        ),
+      )
+      .limit(1);
+    if (!forwardRow) {
+      throw new NotFoundException({
+        code: 'ACTION_NOT_FOUND',
+        message: 'No forward action matches this undo token.',
+      });
+    }
+
+    const primaryId = forwardRow.compositeId ?? forwardRow.id;
+
+    // Composite siblings: rows where id = primary (the primary itself)
+    // or composite_id = primary (every secondary). For a single-verb
+    // action this returns the one row.
+    const siblings = await this.db
+      .select()
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          eq(actionJobs.direction, 'forward'),
+          sql`(${actionJobs.id} = ${primaryId} OR ${actionJobs.compositeId} = ${primaryId})`,
+        ),
+      );
+
+    // Order primary-first so the FE polls the primary's reverse as the
+    // user-visible progress signal.
+    siblings.sort((a, b) => (a.id === primaryId ? -1 : b.id === primaryId ? 1 : 0));
+
+    const results: Array<{
+      token: string;
+      actionId: string;
+      status: ActionStatusResult['status'];
+    }> = [];
+
+    for (const sibling of siblings) {
+      if (!sibling.undoToken) {
+        // No undo token issued — the forward action completed with zero
+        // affected messages (e.g. the sender had no inbox mail in the
+        // window). Nothing to revert.
+        continue;
+      }
+      if (sibling.verb === 'unsubscribe') {
+        // Unsubscribe-intent rows live in action_jobs only for DB-level
+        // dedup of the FE-supplied Idempotency-Key (migration 0024).
+        // They have no worker, no Gmail side-effect, and intentionally
+        // no undo token (undoToken IS NULL above already covers this
+        // branch, but the explicit guard documents the contract: the
+        // reverter set is `archive | later | delete`).
+        continue;
+      }
+      const handle = await this.enqueueRevert({
+        mailboxAccountId,
+        token: sibling.undoToken,
+        verb: sibling.verb,
+        messageIds: sibling.resolvedMessageIds,
+      });
+      results.push({
+        token: sibling.undoToken,
+        actionId: handle.actionId,
+        status: handle.status,
+      });
+    }
+
+    return results;
+  }
+
   async enqueueRevert(input: {
     mailboxAccountId: string;
     token: string;
-    verb: 'archive';
+    verb: 'archive' | 'later' | 'delete';
     messageIds: string[];
-  }): Promise<{ actionId: string; status: 'queued' | 'executing' | 'done' | 'failed' }> {
+  }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -242,6 +920,78 @@ export class ActionsService {
       undoToken: input.token,
     });
     if (inserted.existing) {
+      // Existing revert row found. Dispatch by status:
+      //
+      // - 'done'                 → idempotent replay (revert already
+      //                            succeeded; undo_journal.reverted_at
+      //                            is set; controller returns
+      //                            already-reverted via findRevertable
+      //                            before reaching here, so this branch
+      //                            is a defensive no-op).
+      // - 'queued' / 'executing' / 'failed' → potentially stranded.
+      //   Reasons it might be stranded:
+      //     a. 'failed' — the prior reverse attempt terminated
+      //        terminally (worker dead-lettered; MISTAKES.md 2026-06-05
+      //        stale-worker class). undo_journal.reverted_at stayed
+      //        NULL by design (UndoService.findRevertable still returns
+      //        'ready' on the next click), so the action_jobs row IS
+      //        the sticky barrier. BullMQ keeps the failed job in
+      //        Redis (`removeOnFail: false`) so a fresh `queue.add`
+      //        with the same jobId silently dedups against it — the
+      //        new add looks like it succeeded but the worker never
+      //        runs. We must drop the stale Redis hash first.
+      //     b. 'queued' — a prior retry already reset the row but the
+      //        BullMQ enqueue silently no-op'd against a still-present
+      //        failed hash (the `'failed'` branch's first attempt
+      //        followed by a transient `getJob` miss). The row sits
+      //        forever waiting for a worker that won't pick it up.
+      //     c. 'executing' — rare; a crashed worker mid-job. Same
+      //        recovery: drop the stale hash + re-enqueue.
+      //   Recovery is the same for all three: reset the row state +
+      //   force-reap any prior BullMQ job + re-enqueue.
+      if (inserted.row.status !== 'done') {
+        await this.db
+          .update(actionJobs)
+          .set({
+            status: 'queued',
+            errorCode: null,
+            affectedCount: 0,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(actionJobs.id, inserted.row.id));
+        if (!this.queue) {
+          // Re-coupled to the fail-open `Queue | null` contract — guarded
+          // by the caller at line 904, but a future caller of this retry
+          // block must hit the same wall rather than silently NPE'ing on
+          // `this.queue!`.
+          throw new ServiceUnavailableException({
+            code: 'ACTION_QUEUE_UNAVAILABLE',
+            message: 'Action queue is unavailable.',
+          });
+        }
+        try {
+          const stale = await this.queue.getJob(idempotencyKey);
+          if (stale) {
+            await stale.remove();
+          }
+        } catch (err) {
+          // Don't block retry on a stale-hash cleanup failure; if
+          // the prior job is active (locked), the next call recovers
+          // after the worker finishes / dead-letters. Surface the
+          // reason so a persistent Redis fault is observable rather
+          // than a pure empty catch (CLAUDE.md §10).
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'action.stale_cleanup_failed',
+              idempotencyKey,
+              reason: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+        return { actionId: inserted.row.id, status: 'queued' };
+      }
       return { actionId: inserted.row.id, status: inserted.row.status };
     }
     await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
@@ -276,8 +1026,21 @@ export class ActionsService {
     resolvedMessageIds: string[];
     requestedCount: number;
     idempotencyKey: string;
-    verb?: 'archive';
+    /**
+     * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
+     * keep `enqueueArchive` source-compatible; composite + delete paths
+     * pass the verb explicitly.
+     */
+    verb?: 'archive' | 'later' | 'delete';
     undoToken?: string;
+    /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
+    olderThanDays?: number | null;
+    /**
+     * ADR-0020 composite linkage — set on a secondary row to the
+     * primary's `id`. NULL for single-verb actions + primary of a
+     * composite (per the schema's "primary is self-implicit" convention).
+     */
+    compositeId?: string | null;
   }): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
     const [inserted] = await this.db
       .insert(actionJobs)
@@ -290,6 +1053,10 @@ export class ActionsService {
         requestedCount: input.requestedCount,
         idempotencyKey: input.idempotencyKey,
         ...(input.undoToken ? { undoToken: input.undoToken } : {}),
+        ...(input.olderThanDays !== undefined && input.olderThanDays !== null
+          ? { olderThanDays: input.olderThanDays }
+          : {}),
+        ...(input.compositeId ? { compositeId: input.compositeId } : {}),
       })
       .onConflictDoNothing({ target: actionJobs.idempotencyKey })
       .returning();
@@ -323,8 +1090,19 @@ export class ActionsService {
     mailboxAccountId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    if (!this.queue) {
+      // Re-coupled to the fail-open `Queue | null` contract — every
+      // current caller guards (lines 94, 388, 810, 904), but the
+      // private method must not depend on that. A new caller that
+      // forgets the guard hits this fail-fast instead of NPE'ing on
+      // `this.queue!`.
+      throw new ServiceUnavailableException({
+        code: 'ACTION_QUEUE_UNAVAILABLE',
+        message: 'Action queue is unavailable.',
+      });
+    }
     try {
-      await this.queue!.add(
+      await this.queue.add(
         LABEL_ACTION_JOB,
         { actionId, mailboxAccountId, idempotencyKey },
         labelActionJobOptions(idempotencyKey),

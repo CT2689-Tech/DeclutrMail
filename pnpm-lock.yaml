@@ -59,6 +59,9 @@ importers:
       '@declutrmail/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@declutrmail/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@declutrmail/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -73,12 +73,14 @@ export interface LastReview {
 }
 
 /**
- * Gmail's own category enum mirrored from the `gmail_category` Postgres
- * enum. Kept in sync with `packages/db/src/schema/senders.ts` — adding
- * a value requires touching both the migration and this union (one
- * source of truth per type-design principle).
+ * Gmail's own category enum derived directly from the `gmail_category`
+ * Postgres enum (`packages/db/src/schema/senders.ts`). Adding a value
+ * is a single migration edit; this type widens automatically.
+ * Contract assertion at the bottom of this file keeps the API type in
+ * lockstep with the shared zero-server-dep mirror.
  */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+export type { GmailCategory } from '@declutrmail/db';
+import type { GmailCategory } from '@declutrmail/db';
 
 /**
  * Derived unsubscribe capability (D9, RFC 8058). Mirror of the
@@ -123,6 +125,20 @@ export interface SenderListRow {
    * sender ever sent me", not "how many are in inbox right now".
    */
   totalReceived: number;
+  /**
+   * Per-sender "you replied N×" count (Senders V2 spec v1.3 + mig 0022).
+   * Distinct outbound messages whose thread contains ≥1 inbound from
+   * this sender; reconciles arithmetically with
+   * `SUM(sender_timeseries.reply_count)`. Drives the per-row "you
+   * replied N" copy on Sender Detail + the future card badge. `0` is
+   * the engine default (no replies seen); never `null` because
+   * `senders.replied_count` is `NOT NULL DEFAULT 0`.
+   *
+   * The auto-protect rule fires at `repliedCount >= 3` —
+   * `protectionFlags.isProtected = true, protectionReason =
+   * 'engagement_based'` follow.
+   */
+  repliedCount: number;
   monthlyVolume: number | null;
   readRate: number | null;
   /**
@@ -157,6 +173,14 @@ export interface SenderListRow {
    * no `sender_policies` row — i.e. engine-default, not pinned.
    */
   protectionFlags: ProtectionFlags;
+  /**
+   * Standing policy verb (`keep | archive | unsubscribe | later`) from
+   * `sender_policies.policy_type`. `null` when no policy row exists
+   * (engine-default). The FE renders a "Unsub queued" pill when this
+   * equals `'unsubscribe'` (D38 2026-06-05 brainstorm). Will fold into
+   * the unified action manifest once D230 lands.
+   */
+  policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
 }
 
 /**
@@ -275,6 +299,56 @@ export interface SenderListQueryMeta {
   globalMaxTotal: number;
   asOf: string;
   counts?: Record<string, number>;
+  /**
+   * Mailbox-wide absolute counts per filter axis (D38 powerful filters).
+   *
+   * Computed once per list query and returned with every page. Counts
+   * are ABSOLUTE per axis — the number of senders matching JUST that
+   * axis predicate, ignoring the rest of the active compose. The hero
+   * "X senders match" reflects the composed scope (`totalMatching`);
+   * the chip counts here stay stable so the user sees what each axis
+   * holds independently and can predict the next click.
+   */
+  filterCounts?: {
+    total: number;
+    active: number;
+    quiet: number;
+    dormant: number;
+    unsubReady: number;
+    repliedTo: number;
+    protected: number;
+  };
+}
+
+/**
+ * Activity bucket — derived from `senders.last_seen_at` against
+ * `WINDOWS.ACTIVE_DAYS` (30d) and `WINDOWS.DORMANT_DAYS` (180d).
+ *
+ *   active   = last_seen_at >= now - 30d
+ *   quiet    = last_seen_at <  now - 30d AND last_seen_at >= now - 180d
+ *   dormant  = last_seen_at <  now - 180d
+ *
+ * Mutually exclusive — exactly one bucket per sender. Used by the
+ * Senders V2 compose strip (D38).
+ */
+export type ActivityBucket = 'active' | 'quiet' | 'dormant';
+
+/**
+ * Tri-state filter — a chip can be required (`true`), negated
+ * (`false` — exclude rows matching), or absent (`null` — no constraint).
+ * Mirrors the wire param parsing: `true | not | <absent>`.
+ */
+export type TriStateFilter = boolean | null;
+
+/**
+ * Activity filter — same tri-state semantics, applied per bucket.
+ * The wire shape carries the bucket and direction (`active | not-active
+ * | quiet | not-quiet | ...`); parsed into this struct.
+ */
+export interface ActivityFilter {
+  bucket: ActivityBucket;
+  /** When true, EXCLUDE the bucket instead of requiring it. */
+  negate: boolean;
 }
 
 /**
@@ -296,6 +370,13 @@ export interface MailMessageRow {
   /** ISO-8601 received-at — Gmail's `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  /**
+   * Whole-message byte estimate from Gmail's `sizeEstimate` (D7
+   * storage-allowlist amendment per ADR-0021). `null` for rows synced
+   * before the amendment OR rows where Gmail omitted the field; the FE
+   * renders an em-dash on null rather than a misleading "0B".
+   */
+  sizeBytes: number | null;
 }
 
 /**
@@ -433,3 +514,18 @@ export interface DecisionHistoryRow {
   /** Provenance of `reasoning` — LLM call vs template fallback. */
   generatedBy: TriageReasoningSource;
 }
+
+/**
+ * Cross-package contract — the DB-derived `GmailCategory` must stay
+ * equal to the shared zero-server-dep mirror in
+ * `@declutrmail/shared/contracts`. Failing-compile is preferable to
+ * silently-wrong category fallback ('primary' default in worker code).
+ */
+import type { GmailCategory as SharedGmailCategory } from '@declutrmail/shared/contracts';
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _GMAIL_CATEGORY_API_EXTENDS_SHARED: GmailCategory extends SharedGmailCategory ? true : false =
+  true;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _GMAIL_CATEGORY_SHARED_EXTENDS_API: SharedGmailCategory extends GmailCategory ? true : false =
+  true;

@@ -48,6 +48,11 @@ export const activityAction = pgEnum('activity_action', [
   // mirrors `undo_action_kind`'s `apply-rule` precedent for non-verb
   // feature-specific actions.
   'followup-dismiss',
+  // ADR-0019 + ADR-0020 (2026-06-03) — Delete verb added per spec v1.2
+  // Decision 1. Activity-log entry created when Delete worker
+  // completes the Gmail messages.trash mutation. DB enum mirror
+  // migration is packages/db/migrations/0021_delete_action_kinds.sql.
+  'delete',
 ]);
 
 export const activityLog = pgTable(

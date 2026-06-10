@@ -99,8 +99,13 @@ export interface RecentMessage {
   snippet: string;
   /** ISO-8601 received-at — relative-formatted in the UI. */
   receivedAt: string;
-  /** Bytes — surfaced as a compact KB label. */
-  sizeBytes: number;
+  /**
+   * Bytes — surfaced as a compact KB / MB label. `null` for rows synced
+   * before ADR-0021 (D7 storage-allowlist amendment, 2026-06-06) OR
+   * rows where Gmail omitted `sizeEstimate`; the renderer shows an
+   * em-dash on null rather than a misleading "0B".
+   */
+  sizeBytes: number | null;
   hasAttachment: boolean;
   unread: boolean;
 }
@@ -157,12 +162,31 @@ export interface SenderStats {
  */
 export interface SenderDetail {
   sender: Sender;
+  /**
+   * Sender email address from the wire DTO. Used by the "Open all in
+   * Gmail" deep link (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2). Kept on the
+   * Detail model rather than `Sender` because the senders-grid avatar
+   * row doesn't render the address; only Detail does.
+   */
+  email: string;
   /** Verbose Gmail-side category — e.g. "Gmail: Social". */
   gmailCategory: string;
   isVip: boolean;
   isProtected: boolean;
   /** Why the sender is protected — only set when `isProtected` is true. */
   protectionReason: ProtectionReason | null;
+  /**
+   * Standing policy applied to future mail from this sender, if any.
+   *
+   * `'unsubscribe'` powers the "Unsub queued" pill in the page header
+   * (FOUNDER-FOLLOWUPS 2026-06-05) — visible AFTER the user invokes
+   * Unsubscribe but BEFORE Gmail's RFC 8058 endpoint resolves the
+   * removal. The pill mirrors the senders-list row so the user knows
+   * the request is in flight regardless of which surface they land on.
+   *
+   * `null` = no standing policy; the engine recommendation drives the UI.
+   */
+  policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /** Engine recommendation. `null` = no recommendation (VIP / Protected). */
   recommendation: Recommendation | null;
   recentMessages: RecentMessage[];

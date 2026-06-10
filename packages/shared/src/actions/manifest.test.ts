@@ -68,6 +68,9 @@ describe('Action Registry (ADR-0015)', () => {
       archive: 'label-modify',
       later: 'label-modify',
       unsubscribe: 'unsubscribe',
+      // ADR-0019 + spec v1.2 Decision 1 — Delete routes via label-modify
+      // (Gmail TRASH is a label) so it rides the LabelActionWorker.
+      delete: 'label-modify',
       unarchive: 'label-modify',
     });
   });

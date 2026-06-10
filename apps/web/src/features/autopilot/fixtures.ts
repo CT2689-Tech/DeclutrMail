@@ -91,6 +91,8 @@ export const PENDING_SUGGESTIONS: AutopilotMatchDto[] = [
     id: '00000000-0000-0000-0000-0000000000a1',
     ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
     senderKey: 'a1b2c3d4e5f607080910111213141516171819202122232425262728293031ff',
+    senderName: 'Bargain Bulletin',
+    senderEmail: 'noreply@bargainbulletin.example',
     matchedAt: TWO_DAYS_AGO,
     modeAtMatch: 'observe',
     confidence: 0.92,
@@ -104,6 +106,8 @@ export const PENDING_SUGGESTIONS: AutopilotMatchDto[] = [
     id: '00000000-0000-0000-0000-0000000000a2',
     ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
     senderKey: 'b2c3d4e5f60708091011121314151617181920212223242526272829303132aa',
+    senderName: 'Quarterly Recap',
+    senderEmail: 'team@quarterly-recap.example',
     matchedAt: TWO_DAYS_AGO,
     modeAtMatch: 'observe',
     confidence: 0.78,
@@ -116,7 +120,11 @@ export const PENDING_SUGGESTIONS: AutopilotMatchDto[] = [
   {
     id: '00000000-0000-0000-0000-0000000000a3',
     ruleId: NEWSLETTER_GRAVEYARD.id,
+    // Race-window example — senders index hasn't materialised this row
+    // yet. The FE row falls back to the senderKey hash for these.
     senderKey: 'c3d4e5f60708091011121314151617181920212223242526272829303132aabb',
+    senderName: null,
+    senderEmail: null,
     matchedAt: WEEK_AGO,
     modeAtMatch: 'observe',
     confidence: 0.81,

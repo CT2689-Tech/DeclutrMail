@@ -8,8 +8,8 @@
  *   • Detail 500 → error UI with retry copy
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SenderDetailRoute } from './sender-detail-page';
 import {
   installFetchStub,
@@ -19,6 +19,24 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+
+// `useSearchParams` is read by the mount-event effect (D38 session-3).
+// The test toggles `currentSearch` per-case to exercise the `?from=`
+// parsing branches without re-mocking the module.
+let currentSearch = '';
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(currentSearch),
+}));
+
+const trackMock = vi.fn();
+vi.mock('@/lib/posthog', () => ({
+  track: (...args: unknown[]) => trackMock(...args),
+}));
+
+const addBreadcrumbMock = vi.fn();
+vi.mock('@/lib/sentry', () => ({
+  addBreadcrumb: (...args: unknown[]) => addBreadcrumbMock(...args),
+}));
 
 const DETAIL = {
   id: 'linkedin',
@@ -107,7 +125,12 @@ function renderDetail(id = 'linkedin') {
 }
 
 describe('SenderDetailRoute', () => {
-  beforeEach(() => installFetchStub([]));
+  beforeEach(() => {
+    installFetchStub([]);
+    currentSearch = '';
+    trackMock.mockClear();
+    addBreadcrumbMock.mockClear();
+  });
   afterEach(() => resetFetchStub());
 
   it('renders the page once all four queries resolve', async () => {
@@ -142,6 +165,58 @@ describe('SenderDetailRoute', () => {
 
     renderDetail('ghost');
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
+  });
+
+  // D38 session-3 — instrument coverage.
+
+  it('fires `sender_detail_opened` exactly once with source from ?from', async () => {
+    currentSearch = 'from=senders_table';
+    installHappyPath();
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+
+    const senderOpenedCalls = trackMock.mock.calls.filter(
+      ([name]) => name === 'sender_detail_opened',
+    );
+    expect(senderOpenedCalls).toHaveLength(1);
+    expect(senderOpenedCalls[0]?.[1]).toEqual({
+      sender_id: 'linkedin',
+      source: 'senders_table',
+    });
+
+    const breadcrumbCalls = addBreadcrumbMock.mock.calls.filter(([crumb]) =>
+      (crumb as { message?: string }).message?.startsWith('sender-detail-opened'),
+    );
+    expect(breadcrumbCalls).toHaveLength(1);
+  });
+
+  it('falls back to source="search" when ?from is missing or invalid', async () => {
+    currentSearch = 'from=not_in_enum';
+    installHappyPath();
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+
+    const call = trackMock.mock.calls.find(([name]) => name === 'sender_detail_opened');
+    expect(call?.[1]).toEqual({ sender_id: 'linkedin', source: 'search' });
+  });
+
+  it('fires `gmail_deep_link_opened` with source=recent_messages_row on row click', async () => {
+    installHappyPath();
+    renderDetail();
+
+    const subjectLink = await waitFor(() => screen.getByText(/top notifications this week/i));
+    fireEvent.click(subjectLink);
+
+    const deepLinkCalls = trackMock.mock.calls.filter(
+      ([name]) => name === 'gmail_deep_link_opened',
+    );
+    expect(deepLinkCalls).toHaveLength(1);
+    expect(deepLinkCalls[0]?.[1]).toEqual({
+      source: 'recent_messages_row',
+      deep_link_kind: 'thread',
+    });
   });
 
   it('renders the error UI when the detail endpoint returns 500', async () => {

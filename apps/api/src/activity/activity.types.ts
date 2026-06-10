@@ -90,6 +90,10 @@ export interface ActivityStats {
   unsubscribed: number;
   kept: number;
   later: number;
+  /** D227 K/A/U/L/D — Delete verb count (ADR-0019). Counts rows whose
+   *  `activity_log.action = 'delete'`. Zero when no Delete activity in
+   *  the window. */
+  deleted: number;
   followupsDismissed: number;
   /**
    * D59 "needing attention" — reserved for the failed-action surface
@@ -98,12 +102,38 @@ export interface ActivityStats {
   needsAttention: number;
 }
 
+/**
+ * Set of action verbs the user can filter Activity by (B-track Activity
+ * power-options). Identical to the `activity_log.action` enum.
+ *
+ * Multi-select on the wire — the FE chip group accepts any non-empty
+ * subset; an empty/missing param means "no verb filter" (all verbs).
+ */
+export type ActivityVerbFilter = ActivityLogEntry['action'];
+
 /** Pagination `meta` carries `total` so D59 stats can show the window total. */
 export interface ActivityListMeta {
-  /** Next-page cursor; omitted on the last page. */
-  nextCursor?: string;
+  // Pagination cursor lives on `meta.pagination.nextCursor` (D202).
+  // The prior top-level `nextCursor?` was dropped — duplicate fields
+  // are a contract drift surface (architecture-guardian 2026-06-05).
   stats: ActivityStats;
+  /**
+   * All-time stats — verb-aggregated counts across the user's ENTIRE
+   * activity history (ignores window + verb + sender + date filters).
+   * Powers the B-track "all-time totals" line so the user always sees
+   * a stable running total of every action ever taken on the mailbox.
+   *
+   * Computed once per request (no extra hot-path round-trip).
+   */
+  allTimeStats: ActivityStats;
   /** Echo back the resolved window + source so the FE renders chips correctly. */
   window: ActivityWindow;
   source: ActivitySourceFilter;
+  /** Echo back the resolved verb filter (empty = no filter). */
+  verbs: ActivityVerbFilter[];
+  /** Echo back the resolved sender search term (empty string = no filter). */
+  senderQuery: string;
+  /** Echo back the resolved custom date range (ISO strings); null if unset. */
+  dateFrom: string | null;
+  dateTo: string | null;
 }

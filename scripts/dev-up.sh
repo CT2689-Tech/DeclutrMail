@@ -51,6 +51,25 @@ stop() {
       lsof -ti:"$port" | xargs kill -9 2>/dev/null || true
     fi
   done
+  # MISTAKES.md 2026-06-05 — sweep any orphaned `node ... worker.ts` /
+  # `node ... main.ts` processes scoped to THIS repo's apps/api dir.
+  # Stale workers from a prior session keep their pre-edit module graph
+  # in memory and silently intercept BullMQ jobs alongside the freshly-
+  # restarted one — debugging that with `grep` for an error message that
+  # no longer exists in source is a nightmare. The `--cwd` grep keeps
+  # the sweep from touching workers in OTHER repos.
+  local repo_apps_api="$REPO_ROOT/apps/api/src"
+  for ptn in "src/worker\\.ts" "src/main\\.ts"; do
+    while read -r pid cwd; do
+      if [[ "$cwd" == "$repo_apps_api"* || "$cwd" == "$REPO_ROOT"* ]]; then
+        echo "→ sweeping orphan pid $pid ($ptn)"
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done < <(pgrep -lf "$ptn" 2>/dev/null | awk '{print $1}' | while read -r p; do
+      cwd=$(lsof -p "$p" 2>/dev/null | awk '$4 == "cwd" { print $9; exit }')
+      [[ -n "$cwd" ]] && echo "$p $cwd"
+    done)
+  done
 }
 
 if [[ "${1:-}" == "--stop" ]]; then

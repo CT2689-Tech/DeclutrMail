@@ -1,0 +1,21 @@
+-- Rollback for 0024_action_verb_unsubscribe.sql
+--
+-- Postgres has no `ALTER TYPE DROP VALUE`, so the rollback recreates the
+-- enum without `'unsubscribe'`. Procedure:
+--
+--   1. Switch `action_jobs.verb` to plain text so the enum type can be
+--      dropped (`DROP TYPE` with an in-use type errors).
+--   2. Drop the enum type.
+--   3. Recreate the type with the pre-0024 value set.
+--   4. Switch the column back, casting through text. The cast FAILS if
+--      any row carries `'unsubscribe'` — the correct safety: you cannot
+--      rollback if data depends on a removed value. Operators clean up
+--      the rows (DELETE or UPDATE to another verb) before retrying.
+
+ALTER TABLE "action_jobs" ALTER COLUMN "verb" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."action_verb";
+--> statement-breakpoint
+CREATE TYPE "public"."action_verb" AS ENUM('archive', 'later', 'delete');
+--> statement-breakpoint
+ALTER TABLE "action_jobs" ALTER COLUMN "verb" TYPE "public"."action_verb" USING verb::"public"."action_verb";

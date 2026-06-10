@@ -1,6 +1,16 @@
 export * as schema from './schema';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
 export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
+// Closed enums derived from the canonical pg_enum — adding a value to
+// the migration widens the type without a coordinated literal-union
+// edit at every consumer. Pattern: `triageVerdict.enumValues` in
+// `packages/workers/src/reasoning.ts`.
+import type {
+  actionJobStatus as _actionJobStatus,
+  actionVerb as _actionVerb,
+} from './schema/action-jobs';
+export type ActionJobStatus = (typeof _actionJobStatus.enumValues)[number];
+export type ActionVerb = (typeof _actionVerb.enumValues)[number];
 export { activeSessions } from './schema/active-sessions';
 export type { ActiveSession, NewActiveSession } from './schema/active-sessions';
 export { activityAction, activityLog, activitySource } from './schema/activity-log';
@@ -62,6 +72,8 @@ export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
 export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';
 export type { NewSender, Sender } from './schema/senders';
+import type { gmailCategory as _gmailCategory } from './schema/senders';
+export type GmailCategory = (typeof _gmailCategory.enumValues)[number];
 export { triageDecisions, triageReasoningSource, triageVerdict } from './schema/triage-decisions';
 export type {
   NewTriageDecision,

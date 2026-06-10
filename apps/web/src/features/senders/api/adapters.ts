@@ -166,6 +166,10 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     // block degrades to "not protected" rather than crashing the list.
     protected: row.protectionFlags?.isProtected ?? false,
     isVip: row.protectionFlags?.isVip ?? false,
+    // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
+    // when the BE has the sender's policy at `'unsubscribe'`. Drives
+    // the "Unsub queued" pill on the sender card.
+    unsubPending: row.policyType === 'unsubscribe',
   };
   return sender;
 }
@@ -227,10 +231,19 @@ export function adaptSenderDetail(args: {
 
   return {
     sender,
+    // Wire email address — drives the "Open all in Gmail" deep link.
+    // Sender.name may be the display name ("Robinhood") so we keep the
+    // raw email separate (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
+    email: args.detail.email,
     gmailCategory: seeded.gmailCategory,
     isVip,
     isProtected,
     protectionReason,
+    // Standing-policy pill on Sender Detail (FOUNDER-FOLLOWUPS
+    // 2026-06-05). The wire row carries `policyType`; the page header
+    // reads it directly. Default `null` keeps existing tests that don't
+    // set the field from breaking.
+    policyType: args.detail.policyType ?? null,
     recommendation: seeded.recommendation,
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
@@ -239,7 +252,20 @@ export function adaptSenderDetail(args: {
   };
 }
 
-/** Wire message row → FE recent-message row. `sizeBytes` placeholdered (wire omits). */
+/**
+ * Wire message row → FE recent-message row.
+ *
+ * `sizeBytes` is forwarded verbatim (nullable per ADR-0021). The render
+ * layer shows an em-dash on null OR zero; this adapter does NOT coerce.
+ *
+ * D7: `hasAttachment` stays a placeholder. The indicator would require
+ * either reading attachment metadata (banned by D7) OR inferring from
+ * `sizeEstimate` / MIME-boundary heuristics — which effectively
+ * reconstitutes attachment metadata from the allowlisted integer. Do
+ * NOT add such inference here, even if a future PR makes it tempting;
+ * surfacing "has attachment" as a derived signal is a privacy-posture
+ * change that needs its own ADR.
+ */
 export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
   return {
     id: row.id,
@@ -248,11 +274,8 @@ export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
     subject: row.subject,
     snippet: row.snippet,
     receivedAt: row.internalDate,
-    // Wire omits message size — render as 0B until BE adds the field.
-    // The UI gracefully shows "0B" rather than crashing, and the row
-    // height is unaffected.
-    sizeBytes: 0,
-    // Wire omits attachment indicator — default false. BE follow-up.
+    sizeBytes: row.sizeBytes,
+    // Wire omits attachment indicator — default false. Separate decision.
     hasAttachment: false,
     unread: row.isUnread,
   };

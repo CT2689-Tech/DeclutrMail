@@ -5,10 +5,15 @@ import { color, font } from '../tokens/tokens';
 import { Sidebar } from './sidebar';
 
 const TRUST_CLAIMS = [
-  { label: 'Nothing deleted', title: 'Every action is reversible inside Gmail for 7 days.' },
+  // D227 K/A/U/L/D — Delete IS a verb. The prior "Nothing deleted"
+  // claim was a flat lie once ADR-0019 landed Delete. Per CLAUDE.md
+  // §2.1, the canonical claim is the storage allowlist, not the
+  // mutation surface. "Recoverable" covers both Archive/Later (7d
+  // Activity undo) and Delete (30d Gmail Trash retention).
   {
-    label: 'Reversible for 7 days',
-    title: 'Open Activity to revert any single sender or a bulk action.',
+    label: 'Recoverable',
+    title:
+      'Archive + Later: 7 days from Activity. Delete: 30 days in Gmail Trash. Every action is reversible.',
   },
   {
     label: 'Metadata only',

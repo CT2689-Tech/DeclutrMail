@@ -31,6 +31,8 @@ export {
   ACTION_TIERS,
   ACTION_VERBS,
   CANONICAL_SHORTCUTS,
+  COMPOSITE_PRIMARY_VERBS,
+  COMPOSITE_SECONDARY_VERBS,
   EXECUTION_KINDS,
   isActionVerb,
   PREVIEW_MODES,
@@ -41,7 +43,22 @@ export type {
   ActionVerb,
   CanonicalShortcut,
   CanonicalVerb,
+  CompositePrimaryVerb,
+  CompositeSecondaryVerb,
   ExecutionKind,
   PreviewMode,
   SelectorType,
 } from './verb-constants';
+
+// D35 / D58 / D232 undo journal verb mirror — kept here (server-safe)
+// so apps/api can import it without dragging JSX. The DB pg_enum is
+// canonical; this type is contract-tested in apps/api/src/undo/undo.types.ts.
+export type { UndoActionKind } from './undo-action-kind';
+
+// D226 action job lifecycle — mirrored from `action_job_status` pg_enum.
+// Contract-tested in apps/api/src/actions/actions.types.ts.
+export type { ActionJobStatus } from './action-job-status';
+
+// Gmail category mirror — `gmail_category` pg_enum. Contract-tested in
+// apps/api/src/senders/senders.types.ts.
+export type { GmailCategory } from './gmail-category';

@@ -68,10 +68,24 @@ export const senderPolicies = pgTable(
     isVip: boolean('is_vip').notNull().default(false),
     isProtected: boolean('is_protected').notNull().default(false),
     /**
-     * Why protection is set (D22). NULL when `is_protected = false`;
-     * callers ensure non-null whenever `is_protected = true` (no DB
-     * CHECK — kept additive for the migration; the engine code path
-     * never sets one without the other).
+     * Why protection is set (D22). Populated whenever `is_protected = true`.
+     *
+     * MAY be non-NULL while `is_protected = false` — the
+     * **user-agency-wins memory pin**: when the user manually demotes
+     * an `engagement_based`-protected row, the worker leaves
+     * `protection_reason='engagement_based'` so the next sync skips
+     * re-protect (initial-sync.worker.ts:660-705,
+     * incremental-sync.worker.ts §3, schema/senders.ts:133-142,
+     * MISTAKES.md 2026-06-05 🔴-3).
+     *
+     * **DB INVARIANT** (migration 0023): a one-way CHECK enforces the
+     * only impossible-by-code state:
+     *
+     *     CHECK (NOT is_protected OR protection_reason IS NOT NULL)
+     *
+     * "If protected, reason MUST be recorded." The biconditional
+     * (`is_protected = (reason IS NOT NULL)`) is intentionally NOT
+     * enforced because it would forbid the memory-pin state.
      */
     protectionReason: protectionReason('protection_reason'),
     /** When `is_protected` last flipped true. NULL when not protected. */

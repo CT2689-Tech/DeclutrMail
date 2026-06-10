@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, lte, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -62,19 +62,24 @@ export const LABEL_ACTION_JOB = 'label-action';
 /**
  * Verbs whose FULL action pipeline is complete end-to-end: the worker
  * forward mutation, the local label mirror, the undo/reverse path, and the
- * `actions.label_action_applied` event schema. Only `archive` qualifies
- * today.
+ * `actions.label_action_applied` event schema.
  *
- * A verb can resolve a valid `LabelChange` from the registry yet still be
- * half-supported here. `later` is the live example: it is `label-modify`
- * and joined the `action_verb` enum in P4, but the local mirror only
- * strips `INBOX` (never adds the Later label), undo is archive-shaped, and
- * the event schema is `z.enum(['archive'])`. Executing it would mutate
- * Gmail and then fail or leave undo/local state wrong. Refuse it
- * fail-closed BEFORE any mutation until its pipeline lands (Codex review
- * of #142, F1). Add a verb here only once all four surfaces support it.
+ * Per ADR-0019 + spec v1.2 Decision 1 (2026-06-03), `delete` joined the
+ * pipeline alongside `archive` and `later`: the local mirror is now
+ * derived generically from `LabelChange` (no per-verb `INBOX` hardcoding),
+ * the undo payload union covers `delete`, and the event schema accepts
+ * `archive | later | delete`. `unarchive` (restore-pipeline) stays out —
+ * it is not in `action_verb` / `undo_action_kind` / `activity_action`.
+ *
+ * The guard remains because a new label-modify verb may still appear in
+ * the registry before its pipeline lands; the fail-closed default is
+ * "refuse" until explicitly added here.
  */
-const PIPELINE_COMPLETE_VERBS: ReadonlySet<ActionVerb> = new Set<ActionVerb>(['archive']);
+const PIPELINE_COMPLETE_VERBS: ReadonlySet<ActionVerb> = new Set<ActionVerb>([
+  'archive',
+  'later',
+  'delete',
+]);
 
 /**
  * Resolve a verb's forward/reverse `LabelChange` from the Action Registry
@@ -101,7 +106,7 @@ export function labelChangeForVerb(verb: ActionVerb): LabelChangePair {
   }
   if (!PIPELINE_COMPLETE_VERBS.has(verb)) {
     throw new ValidationError(
-      `verb "${verb}" is label-modify but its action pipeline (local mirror + undo + event schema) is archive-only today; refusing to mutate Gmail until it lands`,
+      `verb "${verb}" is label-modify but its action pipeline (local mirror + undo + event schema) is archive-only at this build; refusing to mutate Gmail until it lands`,
     );
   }
   return execution.buildLabelChange({});
@@ -217,9 +222,18 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // Resolve the durable execution set (sender selector resolves "in
     // INBOX now"; messages selector was frozen by the API). Persist it
     // BEFORE the mutation so a post-mutation retry reuses it.
+    //
+    // ADR-0020: `older_than_days` narrows the resolution window for the
+    // sender selector — `internal_date <= now() - interval 'N days'`.
+    // Applied during INITIAL resolution only; once `resolved_message_ids`
+    // is persisted, retries reuse it verbatim regardless of the column.
     let ids = job.resolvedMessageIds;
     if (ids.length === 0 && job.selector.type === 'sender') {
-      ids = await this.resolveSenderInboxIds(mailboxAccountId, job.selector.senderKey);
+      ids = await this.resolveSenderInboxIds(
+        mailboxAccountId,
+        job.selector.senderKey,
+        job.olderThanDays,
+      );
       await db
         .update(actionJobs)
         .set({ resolvedMessageIds: ids, status: 'executing', updatedAt: sql`now()` })
@@ -231,19 +245,42 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .where(eq(actionJobs.id, job.id));
     }
 
-    // Nothing to do — no undo token / activity row for a no-op action.
+    // No matching messages — nothing for Gmail to do, no undo token to
+    // issue (nothing to reverse), but the user MADE A DECISION and the
+    // audit trail must reflect that. Write a 0-affected activity_log
+    // row so the user can see "you clicked Delete on DKNY (older than
+    // 365d): nothing matched." Same precedent as Keep (also 0-message
+    // decisions).
+    //
+    // 2026-06-05 founder smoke surfaced this: POST 365d-delete on a
+    // sender with no aged INBOX rows ⇒ action_jobs done, activity_log
+    // silent ⇒ /activity appears broken (it isn't — it's empty by
+    // omission, which reads identically to broken).
     if (ids.length === 0) {
-      await db
-        .update(actionJobs)
-        .set({ status: 'done', affectedCount: 0, updatedAt: sql`now()` })
-        .where(eq(actionJobs.id, job.id));
+      const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
+      await db.transaction(async (tx) => {
+        await tx
+          .update(actionJobs)
+          .set({ status: 'done', affectedCount: 0, updatedAt: sql`now()` })
+          .where(eq(actionJobs.id, job.id));
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: job.verb,
+          affectedCount: 0,
+          // No undo token — there is nothing to reverse. The Activity
+          // row's undoState resolves to `unavailable` client-side.
+          undoToken: null,
+        });
+      });
       return { affectedCount: 0, undoToken: null, alreadyDone: false };
     }
 
     const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
     await client.batchModify(ids, change);
 
-    const expiresAt = await this.undoExpiresAt(mailboxAccountId);
+    const expiresAt = await this.undoExpiresAt(mailboxAccountId, job.verb);
     const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
 
     const undoToken = await db.transaction(async (tx) => {
@@ -252,7 +289,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .values({
           mailboxAccountId,
           actionKind: job.verb,
-          payload: { kind: job.verb, messageIds: ids, priorLabels: ['INBOX'] },
+          payload: buildUndoPayload(job.verb, ids),
           ...(expiresAt ? { expiresAt } : {}),
         })
         .returning({ token: undoJournal.token });
@@ -270,11 +307,14 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       });
 
       // Keep the local label mirror in step with Gmail so the UI + the
-      // next sender-selector resolve don't see stale INBOX membership.
+      // next sender-selector resolve see the post-action label set.
+      // Derived from `change` so every label-modify verb stays in sync
+      // without per-verb branching: archive removes INBOX; later removes
+      // INBOX + adds DeclutrMail/Later; delete removes INBOX + adds TRASH.
       await tx
         .update(mailMessages)
         .set({
-          labelIds: sql`array_remove(${mailMessages.labelIds}, 'INBOX')`,
+          labelIds: buildLabelMirrorExpr(change),
           updatedAt: sql`now()`,
         })
         .where(
@@ -294,6 +334,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           senderKey,
           undoToken: issued.token,
           affectedCount: ids.length,
+          compositeId: job.compositeId,
         },
         schema: ActionLabelAppliedPayloadSchema,
       });
@@ -346,17 +387,22 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .where(and(eq(undoJournal.token, token), sql`${undoJournal.revertedAt} IS NULL`));
 
       if (ids.length > 0) {
+        // Derived from `change` (the reverse `LabelChange`) so undoing
+        // any label-modify verb keeps the local mirror correct: archive
+        // re-adds INBOX; later re-adds INBOX + drops the Later label;
+        // delete re-adds INBOX + drops TRASH. The `CASE WHEN` branch in
+        // `buildLabelMirrorExpr` makes re-adding idempotent so a
+        // duplicate revert is a no-op on the mirror (matching Gmail).
         await tx
           .update(mailMessages)
           .set({
-            labelIds: sql`array_append(${mailMessages.labelIds}, 'INBOX')`,
+            labelIds: buildLabelMirrorExpr(change),
             updatedAt: sql`now()`,
           })
           .where(
             and(
               eq(mailMessages.mailboxAccountId, mailboxAccountId),
               inArray(mailMessages.providerMessageId, ids),
-              sql`NOT ('INBOX' = ANY(${mailMessages.labelIds}))`,
             ),
           );
       }
@@ -392,29 +438,55 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     }
   }
 
-  /** Sender selector → the `provider_message_id`s currently in INBOX. */
+  /**
+   * Sender selector → the `provider_message_id`s currently in INBOX,
+   * optionally narrowed to messages older than `olderThanDays` (ADR-0020
+   * time-window filter). When `olderThanDays` is null the full inbox set
+   * is returned (spec v1.2 "All inbox" preset).
+   */
   private async resolveSenderInboxIds(
     mailboxAccountId: string,
     senderKey: string,
+    olderThanDays: number | null,
   ): Promise<string[]> {
+    const predicates = [
+      eq(mailMessages.mailboxAccountId, mailboxAccountId),
+      eq(mailMessages.senderKey, senderKey),
+      sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+    ];
+    if (olderThanDays !== null && olderThanDays !== undefined) {
+      // `internal_date` is Gmail's authoritative "when did this hit
+      // your mailbox" timestamp — the same column the API's
+      // `previewComposite` per-bucket counts filter on, so the resolved
+      // set matches what the FE chip row showed.
+      predicates.push(
+        lte(mailMessages.internalDate, sql`now() - (${olderThanDays} || ' days')::interval`),
+      );
+    }
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.senderKey, senderKey),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
-      );
+      .where(and(...predicates));
     return rows.map((r) => r.providerMessageId);
   }
 
   /**
-   * D81 undo window: Pro (and higher) get 30 days; Free/Plus use the
-   * `undo_journal` 7-day column default (return `undefined` → omit).
+   * Undo window per verb + tier.
+   *
+   * - `delete` always returns 30 days regardless of tier — the physical
+   *   guarantee is Gmail's Trash retention (also 30d), so a tier-shorter
+   *   window would falsely show "expired" while the mail is still
+   *   trivially recoverable in Gmail. Spec v1.2 Decision 1.
+   * - `archive` / `later` use the D81 rule: Pro+ → 30d; Free/Plus →
+   *   the column default (7d) via `undefined`.
    */
-  private async undoExpiresAt(mailboxAccountId: string): Promise<Date | undefined> {
+  private async undoExpiresAt(
+    mailboxAccountId: string,
+    verb: ActionVerb,
+  ): Promise<Date | undefined> {
+    if (verb === 'delete') {
+      return new Date(Date.now() + PRO_UNDO_WINDOW_MS);
+    }
     const [row] = await this.deps.db
       .select({ tier: workspaces.tier })
       .from(mailboxAccounts)
@@ -427,4 +499,45 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     }
     return undefined;
   }
+}
+
+/**
+ * Build the local-mirror `labelIds` UPDATE expression from a
+ * `LabelChange`. Used by both forward and reverse paths so adding a
+ * label-modify verb is one descriptor edit, not a worker fork.
+ *
+ * Algorithm:
+ *   1. Chain `array_remove(prev, label)` for every label in
+ *      `removeLabelIds` — idempotent if the label is absent.
+ *   2. For every label in `addLabelIds`, wrap with a `CASE WHEN
+ *      label = ANY(prev) THEN prev ELSE array_append(prev, label) END` —
+ *      idempotent if the label is already present (no duplicates).
+ *
+ * Each label is bound as a scalar parameter — never interpolated as
+ * string text — so this is safe against label names that contain
+ * apostrophes or other SQL-meaningful characters.
+ */
+function buildLabelMirrorExpr(change: { addLabelIds?: string[]; removeLabelIds?: string[] }): SQL {
+  let expr: SQL = sql`${mailMessages.labelIds}`;
+  for (const label of change.removeLabelIds ?? []) {
+    expr = sql`array_remove(${expr}, ${label})`;
+  }
+  for (const label of change.addLabelIds ?? []) {
+    expr = sql`(CASE WHEN ${label} = ANY(${expr}) THEN ${expr} ELSE array_append(${expr}, ${label}) END)`;
+  }
+  return expr;
+}
+
+/**
+ * Build the `undo_journal.payload` for a label-modify forward action.
+ * Each verb's reverse is `LabelChange.reverse` applied to the same
+ * message ids — `priorLabels` is vestigial archive metadata kept only
+ * on the `archive` + `later` variants for backwards compatibility; the
+ * worker never reads it back. `delete` omits it entirely.
+ */
+function buildUndoPayload(verb: ActionVerb, messageIds: string[]) {
+  if (verb === 'delete') {
+    return { kind: 'delete' as const, messageIds };
+  }
+  return { kind: verb, messageIds, priorLabels: ['INBOX'] as string[] };
 }
