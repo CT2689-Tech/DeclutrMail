@@ -57,6 +57,22 @@ export type {
   LabelActionResult,
   MailboxActionLock,
 } from './label-action.worker.js';
+export {
+  FETCH_UNSUB_HTTP_PORT,
+  UNSUB_EXECUTION_JOB,
+  UNSUB_EXECUTION_QUEUE,
+  UNSUB_MAX_ATTEMPTS,
+  UNSUB_REQUEST_TIMEOUT_MS,
+  UnsubExecutionWorker,
+  unsubExecutionJobOptions,
+} from './unsub-execution.worker.js';
+export type {
+  UnsubExecutionDeps,
+  UnsubExecutionJobData,
+  UnsubExecutionResult,
+  UnsubHttpPort,
+  UnsubHttpResponse,
+} from './unsub-execution.worker.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
