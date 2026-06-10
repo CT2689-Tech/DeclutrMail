@@ -8,6 +8,7 @@ import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  outboxEvents,
   schema,
   senderPolicies,
   senders,
@@ -1234,6 +1235,92 @@ describe('ActionsService', () => {
           mailboxAccountId: mailboxId,
           senderId: '00000000-0000-4000-8000-000000000000',
           idempotencyKey: 'unsub-bogus-key',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
+    });
+  });
+
+  describe('recordKeepIntent (D40 + D226 triage wiring)', () => {
+    it('writes a 0-affected keep activity row + the triage.verdict_applied outbox event', async () => {
+      const result = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      expect(result.senderId).toBe(senderId);
+      expect(result.activityLogId).toMatch(/^[0-9a-f-]{36}$/);
+
+      // activity_log: 0-affected keep row, no undo token (Keep is a
+      // no-op to undo — D35).
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(1);
+      expect(acts[0]!.action).toBe('keep');
+      expect(acts[0]!.affectedCount).toBe(0);
+      expect(acts[0]!.undoToken).toBeNull();
+      expect(acts[0]!.senderKey).toBe(SENDER_KEY);
+
+      // The cross-feature policy write is the EVENT (D204) — the
+      // service never touches sender_policies directly. No dual-write
+      // backstop here (nothing reads the keep policy synchronously).
+      const policies = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policies).toHaveLength(0);
+
+      const events = await db.select().from(outboxEvents);
+      expect(events).toHaveLength(1);
+      expect(events[0]!.topic).toBe('triage.verdict_applied');
+      expect(events[0]!.payload).toMatchObject({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        verdict: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+      });
+    });
+
+    it('replays an existing keep decision inside the decided window (semantic idempotency)', async () => {
+      const first = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      const second = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      expect(second.activityLogId).toBe(first.activityLogId);
+      expect(second.recordedAt).toBe(first.recordedAt);
+
+      // ONE audit row, ONE outbox event — the replay writes nothing.
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(1);
+      const events = await db.select().from(outboxEvents);
+      expect(events).toHaveLength(1);
+    });
+
+    it('a keep decision OLDER than the window is a fresh decision, not a replay', async () => {
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        source: 'manual',
+        action: 'keep',
+        affectedCount: 0,
+        undoToken: null,
+        occurredAt: daysAgo(8),
+      });
+      const result = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId });
+      const acts = await db
+        .select()
+        .from(activityLog)
+        .where(eq(activityLog.mailboxAccountId, mailboxId));
+      expect(acts).toHaveLength(2);
+      // The fresh row is the one returned.
+      const fresh = acts.find((a) => a.id === result.activityLogId);
+      expect(fresh).toBeDefined();
+    });
+
+    it('404s a sender that does not exist in this mailbox', async () => {
+      await expect(
+        svc.recordKeepIntent({
+          mailboxAccountId: mailboxId,
+          senderId: '00000000-0000-4000-8000-000000000000',
         }),
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });

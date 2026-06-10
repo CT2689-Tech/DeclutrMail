@@ -10,6 +10,7 @@ export {
   AuthExpiredError,
   InvalidGrantError,
   isNonRetryable,
+  PermanentError,
   RateLimitError,
   TransientError,
   ValidationError,

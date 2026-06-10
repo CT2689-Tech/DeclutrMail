@@ -7,6 +7,15 @@ import type { ActionVerb } from './types';
 const { color, font } = tokens;
 
 /**
+ * The live "what moves" figure for the preview — the sender's
+ * current-inbox count from `GET /api/actions/preview` (ADR-0020).
+ * `loading` while the preview query is in flight; `unavailable` when
+ * it failed (the preview still renders — the count is best-effort,
+ * the verb copy is not).
+ */
+export type PreviewCount = number | 'loading' | 'unavailable';
+
+/**
  * The mandatory "what happens next" preview (D208, D226).
  *
  * Used in two places — same component, two mountings:
@@ -25,34 +34,40 @@ const { color, font } = tokens;
  * identical so the user sees the same "before anything changes"
  * surface either way. That same-surface guarantee is the load-bearing
  * piece of D226 — preview never silently downgrades.
+ *
+ * The impact figure is the REAL inbox count fetched server-side
+ * (`inboxCount`), never a client estimate — same D226 rule the
+ * senders confirm modal follows.
  */
 export function ActionPreview({
   verb,
   row,
   archiveHistoric,
+  inboxCount,
   mode,
 }: {
   verb: ActionVerb;
   row: TriageDecisionRow;
   /**
-   * Whether the historic backlog will also be archived. Set by the
-   * sheet's toggle; for inline mode the default is the same as the
-   * sheet would default (Unsubscribe defaults `true`, Later `false`,
-   * Archive ignores).
+   * Whether the historic backlog will also be archived (Unsubscribe
+   * only — set by the sheet's toggle; the inline path defaults `true`
+   * for Unsubscribe, matching the sheet's default).
    */
   archiveHistoric: boolean;
+  /** Live inbox count for the sender — see {@link PreviewCount}. */
+  inboxCount: PreviewCount;
   /** Chrome variant — modal (inside sheet) vs inline (no chrome). */
   mode: 'modal' | 'inline';
 }) {
   const subject = row.senderName;
-  const historic = row.totalAllTime;
 
-  // Copy per verb — kept literal so the wording matches the senders
-  // feature's `ConfirmActionModal` byte-for-byte. Both surfaces are
-  // the same "preview before anything changes" guarantee.
+  // Copy per verb — literal, and TRUE to the pipeline each verb rides:
+  // Archive/Later move the sender's current inbox mail via the worker;
+  // Unsubscribe records the queued intent (execution ships with the
+  // unsub pipeline; mailto stays manual per D230); Keep moves nothing.
   const title =
     verb === 'Archive'
-      ? `Archive all mail from ${subject}`
+      ? `Archive all inbox mail from ${subject}`
       : verb === 'Later'
         ? `Move ${subject} to Later`
         : verb === 'Unsubscribe'
@@ -61,25 +76,22 @@ export function ActionPreview({
 
   const lead =
     verb === 'Archive'
-      ? `Every message from ${subject} moves out of the inbox into Gmail's archive. Nothing is deleted.`
+      ? `Every message from ${subject} now in the inbox moves into Gmail's archive. Nothing is deleted, and you can undo for 7 days.`
       : verb === 'Later'
-        ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
+        ? `Mail from ${subject} now in the inbox moves into the DeclutrMail/Later label — out of your way, one click away. Nothing is unsubscribed or deleted, and you can undo for 7 days.`
         : verb === 'Unsubscribe'
           ? row.unsubscribeMethod === 'one_click'
             ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058
               // one-click" jargon → "one-click unsubscribe."
-              `Future mail from ${subject} stops arriving (one-click unsubscribe). Nothing already in your inbox moves unless you ask.`
-            : `Future mail from ${subject} stops arriving once you send the unsubscribe request from your mailbox. Mailto is queued as a draft — DeclutrMail never auto-sends from a no-reply address.`
+              `Your unsubscribe from ${subject} is queued (one-click unsubscribe available). Nothing already in your inbox moves unless you ask below.`
+            : `Your unsubscribe from ${subject} is queued. Their list needs an email reply, so you send the final request from your mailbox — DeclutrMail never auto-sends from a no-reply address.`
           : `${subject} stays in the inbox. No mail is moved.`;
 
-  // For Archive: every historic message is touched. For Unsubscribe /
-  // Later: only if the historic toggle is on. Keep: never.
-  const touched =
-    verb === 'Archive'
-      ? historic
-      : (verb === 'Unsubscribe' || verb === 'Later') && archiveHistoric
-        ? historic
-        : 0;
+  // What actually moves: Archive + Later act on the sender's current
+  // inbox mail; Unsubscribe only when the historic toggle is on;
+  // Keep never.
+  const counts: boolean =
+    verb === 'Archive' || verb === 'Later' || (verb === 'Unsubscribe' && archiveHistoric);
 
   const containerStyle: React.CSSProperties =
     mode === 'inline'
@@ -146,7 +158,7 @@ export function ActionPreview({
         </p>
       </div>
 
-      {/* Impact figure */}
+      {/* Impact figure — the REAL count, fetched server-side. */}
       <div
         style={{
           display: 'flex',
@@ -158,24 +170,7 @@ export function ActionPreview({
           borderRadius: 8,
         }}
       >
-        <strong
-          style={{
-            fontFamily: font.display,
-            fontSize: mode === 'modal' ? 22 : 18,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            color: color.fg,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {touched.toLocaleString()}
-        </strong>
-        <span style={{ fontSize: 12, color: color.fgSoft }}>
-          historic email{touched === 1 ? '' : 's'}
-          {touched === 0
-            ? ' will stay where they are (future mail only).'
-            : ' will move out of the inbox.'}
-        </span>
+        <ImpactFigure counts={counts} inboxCount={inboxCount} mode={mode} />
       </div>
 
       {/* Reasoning recap — the engine's "why this verdict" copy. */}
@@ -193,5 +188,63 @@ export function ActionPreview({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The "N emails move" strip. Four states, all rendered (D211 — edge
+ * states are first-class):
+ *
+ *   - `counts=false` — the verb touches nothing in the inbox.
+ *   - counting       — the live count is still loading.
+ *   - unavailable    — the count fetch failed; say so plainly rather
+ *                      than showing a stale or estimated number.
+ *   - n              — the real figure.
+ */
+function ImpactFigure({
+  counts,
+  inboxCount,
+  mode,
+}: {
+  counts: boolean;
+  inboxCount: PreviewCount;
+  mode: 'modal' | 'inline';
+}) {
+  const strongStyle: React.CSSProperties = {
+    fontFamily: font.display,
+    fontSize: mode === 'modal' ? 22 : 18,
+    fontWeight: 600,
+    letterSpacing: '-0.02em',
+    color: color.fg,
+    fontVariantNumeric: 'tabular-nums',
+  };
+  const captionStyle: React.CSSProperties = { fontSize: 12, color: color.fgSoft };
+
+  if (!counts) {
+    return (
+      <>
+        <strong style={strongStyle}>0</strong>
+        <span style={captionStyle}>emails move — everything in the inbox stays where it is.</span>
+      </>
+    );
+  }
+  if (inboxCount === 'loading') {
+    return <span style={captionStyle}>Counting the inbox…</span>;
+  }
+  if (inboxCount === 'unavailable') {
+    return (
+      <span style={captionStyle}>
+        Couldn't load the live count — nothing changes until you confirm.
+      </span>
+    );
+  }
+  return (
+    <>
+      <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
+      <span style={captionStyle}>
+        email{inboxCount === 1 ? '' : 's'} now in the inbox
+        {inboxCount === 0 ? ' — nothing to move.' : ' will move out of the inbox.'}
+      </span>
+    </>
   );
 }

@@ -1,0 +1,23 @@
+-- Rollback for 0028_activity_action_vip_protect.sql
+--
+-- Postgres has no `ALTER TYPE DROP VALUE`, so the rollback recreates
+-- the enum without the four D43 VIP/Protect audit values. Procedure
+-- (mirrors 0013's rollback):
+--
+--   1. Switch `activity_log.action` to plain text so the enum type can
+--      be dropped (`DROP TYPE` with an in-use type errors).
+--   2. Drop the enum type.
+--   3. Recreate the type with the prior value set (post-0021).
+--   4. Switch the column back, casting through text. The cast will
+--      FAIL if any row carries one of the removed values — which is
+--      the correct safety: you cannot rollback if data depends on the
+--      removed values. Operators can clean up the rows manually
+--      (DELETE) before retrying the rollback.
+
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."activity_action";
+--> statement-breakpoint
+CREATE TYPE "public"."activity_action" AS ENUM('keep', 'archive', 'unsubscribe', 'later', 'followup-dismiss', 'delete');
+--> statement-breakpoint
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE "public"."activity_action" USING action::"public"."activity_action";

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { ActionPreview } from './action-preview';
+import { ActionPreview, type PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import type { SheetableVerb } from './store';
 
@@ -35,6 +35,7 @@ export function ActionSheet({
   open,
   verb,
   row,
+  inboxCount,
   onCancel,
   onConfirm,
 }: {
@@ -42,14 +43,16 @@ export function ActionSheet({
   /** Sheetable verbs only — Keep is never previewed. */
   verb: SheetableVerb;
   row: TriageDecisionRow | null;
+  /** Live inbox count for the preview's impact figure (D226). */
+  inboxCount: PreviewCount;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
 }) {
   // Unsubscribe defaults to clearing the backlog (the common intent
-  // when cutting a sender off). Later defaults off — Later is
-  // future-only by definition; archiving history would be destructive
-  // against the modal's own copy. Archive ignores the toggle (every
-  // historic message is touched by definition).
+  // when cutting a sender off). Archive and Later ignore the toggle —
+  // both verbs already act on every inbox message from the sender
+  // (the worker resolves "in INBOX now"), so a separate historic
+  // toggle would be a no-op lie.
   const [archiveHistoric, setArchiveHistoric] = useState(false);
   const [rememberPreference, setRememberPreference] = useState(false);
 
@@ -79,7 +82,10 @@ export function ActionSheet({
   if (!open || !row) return null;
 
   const danger = verb === 'Unsubscribe';
-  const showHistoricToggle = verb === 'Unsubscribe' || verb === 'Later';
+  // Unsubscribe only: Archive/Later already move every inbox message
+  // from the sender, so the backlog toggle exists only where the
+  // primary verb does NOT touch past mail.
+  const showHistoricToggle = verb === 'Unsubscribe';
 
   return (
     <>
@@ -132,7 +138,13 @@ export function ActionSheet({
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {/* Mandatory preview (D226). Same component renders inline
               when the sheet is skipped via the remember-preference. */}
-          <ActionPreview verb={verb} row={row} archiveHistoric={archiveHistoric} mode="modal" />
+          <ActionPreview
+            verb={verb}
+            row={row}
+            archiveHistoric={archiveHistoric}
+            inboxCount={inboxCount}
+            mode="modal"
+          />
 
           {showHistoricToggle && (
             <button
@@ -153,8 +165,12 @@ export function ActionSheet({
             >
               <CheckSquare on={archiveHistoric} />
               <span style={{ fontSize: 12.5, color: color.fg }}>
-                Also archive the {row.totalAllTime.toLocaleString()} historic email
-                {row.totalAllTime === 1 ? '' : 's'} already in the inbox
+                {/* The live count (never a lifetime estimate — D226). */}
+                Also archive the
+                {typeof inboxCount === 'number'
+                  ? ` ${inboxCount.toLocaleString()} email${inboxCount === 1 ? '' : 's'}`
+                  : ' emails'}{' '}
+                already in the inbox
               </span>
             </button>
           )}
@@ -202,7 +218,12 @@ export function ActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            Reversible for 7 days from Activity.
+            {/* Honest reversibility: the unsub INTENT has no Gmail
+                side-effect to reverse; only the archived backlog is
+                undoable. Archive/Later are fully reversible (D232). */}
+            {verb === 'Unsubscribe'
+              ? 'An archived backlog is reversible for 7 days from Activity.'
+              : 'Reversible for 7 days from Activity.'}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button tone="default" onClick={onCancel}>

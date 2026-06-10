@@ -21,6 +21,13 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
  */
 export interface TriageQueueRow {
   id: string;
+  /**
+   * `senders.id` uuid — the selector the destructive-action pipeline
+   * takes (`POST /api/actions` resolves senderId → sender_key server-
+   * side). The row carries it so the FE never has to ask for a second
+   * lookup before enqueueing a verb (D226 wiring).
+   */
+  senderId: string;
   senderKey: string;
   senderName: string;
   senderEmail: string;
@@ -60,6 +67,17 @@ export interface TriageSessionStats {
 
 /** D77 — Free tier daily decision cap. */
 const FREE_TIER_DAILY_LIMIT = 25;
+
+/**
+ * D30 — "not seen by user in last 7 days". A sender the user has
+ * DECIDED on (a K/A/U/L/D `activity_log` row whose undo has not been
+ * reverted) within this window is excluded from the queue, so a row
+ * leaves the queue only once the server has durably confirmed the
+ * decision (D226 — no optimistic removal). Shared with
+ * `ActionsService.recordKeepIntent`'s replay window so "already
+ * decided" means the same thing on both the read and the write side.
+ */
+export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
 
 /** Average seconds saved per inbox message deflected — D33 worked example. */
 const SECONDS_SAVED_PER_DEFLECTED_EMAIL = 6;
@@ -110,9 +128,30 @@ export class TriageReadService {
         WHEN 'keep'        THEN 3
       END`;
 
+    // Exclude senders the user has already decided on within the D30
+    // window — the "decided" record is the K/A/U/L/D `activity_log` row
+    // (written by the label-action worker on `done` for Archive/Later/
+    // Delete, by the intent endpoints for Keep/Unsubscribe). A decision
+    // whose undo has been REVERTED no longer counts: the user changed
+    // their mind, so the sender returns to the queue. Raw SQL (no
+    // column interpolation) because a correlated `sql` template emits
+    // bare column names that mis-bind across the three tables
+    // (LEARNINGS 2026-06 — Drizzle correlated-subquery pitfall).
+    const notDecidedRecently = sql`NOT EXISTS (
+      SELECT 1
+      FROM activity_log al
+      LEFT JOIN undo_journal uj ON uj.token = al.undo_token
+      WHERE al.mailbox_account_id = triage_decisions.mailbox_account_id
+        AND al.sender_key = triage_decisions.sender_key
+        AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
+        AND al.occurred_at >= now() - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
+        AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
+    )`;
+
     const rows = await this.db
       .select({
         decisionId: triageDecisions.id,
+        senderId: senders.id,
         senderKey: triageDecisions.senderKey,
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
@@ -143,7 +182,7 @@ export class TriageReadService {
           eq(senderPolicies.senderKey, triageDecisions.senderKey),
         ),
       )
-      .where(eq(triageDecisions.mailboxAccountId, input.mailboxAccountId))
+      .where(and(eq(triageDecisions.mailboxAccountId, input.mailboxAccountId), notDecidedRecently))
       .orderBy(verdictPriority, desc(triageDecisions.confidence))
       .limit(input.limit);
 
@@ -203,6 +242,7 @@ export class TriageReadService {
 
       return {
         id: r.decisionId,
+        senderId: r.senderId,
         senderKey: r.senderKey,
         senderName: r.senderName || r.senderEmail,
         senderEmail: r.senderEmail,

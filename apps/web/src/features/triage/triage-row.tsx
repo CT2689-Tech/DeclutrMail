@@ -2,7 +2,7 @@
 
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
-import { ActionPreview } from './action-preview';
+import { ActionPreview, type PreviewCount } from './action-preview';
 import { ActionToolbar } from './action-toolbar';
 import type { TriageDecisionRow } from './data';
 import { verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
@@ -67,12 +67,19 @@ function whyLine(row: TriageDecisionRow): string {
 export function TriageRow({
   row,
   expanded,
+  busy = false,
   onToggleExpand,
   onAction,
   inlinePreview,
 }: {
   row: TriageDecisionRow;
   expanded: boolean;
+  /**
+   * True while this row's decision is confirming server-side (D226 —
+   * no optimistic removal). The row dims, the toolbar disables, and
+   * the K/A/U/L shortcuts release until the server confirms.
+   */
+  busy?: boolean;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -80,13 +87,14 @@ export function TriageRow({
    * expanded row body — the D34 remember-preference path where the
    * sheet is suppressed but D226's preview is still mandatory.
    */
-  inlinePreview?: { verb: ActionVerb; archiveHistoric: boolean } | null;
+  inlinePreview?: { verb: ActionVerb; archiveHistoric: boolean; inboxCount: PreviewCount } | null;
 }) {
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
   return (
     <div
+      aria-busy={busy}
       style={{
         background: color.card,
         border: `1px solid ${expanded ? color.primaryBorder : color.line}`,
@@ -95,7 +103,8 @@ export function TriageRow({
         boxShadow: expanded
           ? '0 8px 24px -8px rgba(20,30,50,0.10), 0 2px 6px -2px rgba(20,30,50,0.05)'
           : '0 1px 2px rgba(20,30,50,0.04)',
-        transition: 'border-color 0.15s, box-shadow 0.15s',
+        transition: 'border-color 0.15s, box-shadow 0.15s, opacity 0.15s',
+        opacity: busy ? 0.6 : 1,
       }}
     >
       {/* Collapsed header — always rendered. */}
@@ -245,7 +254,7 @@ export function TriageRow({
       {expanded && (
         <div id={`triage-row-body-${row.id}`} style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '12px 14px 0' }}>
-            <ActionToolbar row={row} onAction={onAction} />
+            <ActionToolbar row={row} onAction={onAction} keyboardEnabled={!busy} disabled={busy} />
           </div>
           <TriageRowExpanded row={row} />
           {inlinePreview != null && (
@@ -254,11 +263,18 @@ export function TriageRow({
                 verb={inlinePreview.verb}
                 row={row}
                 archiveHistoric={inlinePreview.archiveHistoric}
+                inboxCount={inlinePreview.inboxCount}
                 mode="inline"
               />
             </div>
           )}
         </div>
+      )}
+      {/* SR announcement while the decision confirms server-side. */}
+      {busy && (
+        <span role="status" style={{ position: 'absolute', left: -9999 }}>
+          Applying your decision for {row.senderName}
+        </span>
       )}
     </div>
   );

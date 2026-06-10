@@ -32,7 +32,7 @@ import {
   PASSTHROUGH_MAILBOX_LOCK,
 } from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
-import { InvalidGrantError, ValidationError } from './worker-errors.js';
+import { InvalidGrantError, PermanentError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -122,10 +122,23 @@ async function seedMessage(
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change: LabelChange }[] = [];
   shouldThrow: Error | null = null;
+  /** User labels known to the fake "Gmail" (name → id). */
+  labelIdsByName = new Map<string, string>();
+  ensureLabelIdCalls: string[] = [];
   async modifyLabels(): Promise<void> {}
   async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
     if (this.shouldThrow) throw this.shouldThrow;
     this.calls.push({ ids: [...messageIds], change });
+  }
+  async ensureLabelId(name: string): Promise<string> {
+    this.ensureLabelIdCalls.push(name);
+    const existing = this.labelIdsByName.get(name);
+    if (existing) {
+      return existing;
+    }
+    const id = `Label_${this.labelIdsByName.size + 1}`;
+    this.labelIdsByName.set(name, id);
+    return id;
   }
 }
 
@@ -357,6 +370,135 @@ describe('LabelActionWorker', () => {
     expect(u!.revertedAt).not.toBeNull();
     const [j] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
     expect(j!.status).toBe('done');
+  });
+
+  describe('later — label name→id resolution (live-smoke fix 2026-06-09)', () => {
+    // The registry's buildLabelChange emits the symbolic NAME
+    // `DeclutrMail/Later`; Gmail's batchModify accepts only IDS (live
+    // result: `Gmail returned 400: Invalid label: DeclutrMail/Later`).
+    // The worker resolves the name via ensureLabelId at the mutation
+    // seam, and the RESOLVED id feeds the local mirror so it matches
+    // what sync stores.
+    it('forward resolves DeclutrMail/Later to an id — batchModify + mirror carry only ids', async () => {
+      await seedMessage(db, mailboxId, 'l1', ['INBOX', 'CATEGORY_PROMOTIONS']);
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'later',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          idempotencyKey: 'idem-later-1',
+        })
+        .returning();
+
+      const result = await worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-later-1' },
+        CTX,
+      );
+
+      // Only the user label resolves; INBOX is a system id and must NOT
+      // pass through ensureLabelId.
+      expect(gmail.ensureLabelIdCalls).toEqual(['DeclutrMail/Later']);
+      expect(gmail.calls).toHaveLength(1);
+      expect(gmail.calls[0]!.change).toEqual({
+        removeLabelIds: ['INBOX'],
+        addLabelIds: ['Label_1'],
+      });
+      expect(result.affectedCount).toBe(1);
+
+      // The local mirror stores the RESOLVED id — the same raw Gmail
+      // label id sync stores — never the name.
+      const [m] = await db
+        .select()
+        .from(mailMessages)
+        .where(eq(mailMessages.providerMessageId, 'l1'));
+      expect(m!.labelIds).toContain('Label_1');
+      expect(m!.labelIds).not.toContain('DeclutrMail/Later');
+      expect(m!.labelIds).not.toContain('INBOX');
+      expect(m!.labelIds).toContain('CATEGORY_PROMOTIONS');
+    });
+
+    it('reverse (undo later) removes the resolved id from Gmail and the mirror', async () => {
+      // Forward already ran: the label exists in "Gmail" and the message
+      // mirror carries the resolved id (as sync would have stored it).
+      gmail.labelIdsByName.set('DeclutrMail/Later', 'Label_77');
+      await seedMessage(db, mailboxId, 'l1', ['Label_77', 'CATEGORY_PROMOTIONS']);
+      const [undo] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'later',
+          payload: { kind: 'later', messageIds: ['l1'], priorLabels: ['INBOX'] },
+        })
+        .returning();
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'later',
+          direction: 'reverse',
+          selector: { type: 'messages' },
+          resolvedMessageIds: ['l1'],
+          undoToken: undo!.token,
+          idempotencyKey: `revert:${undo!.token}`,
+        })
+        .returning();
+
+      await worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: `revert:${undo!.token}` },
+        CTX,
+      );
+
+      // The reverse resolves to the EXISTING id — the same one the
+      // forward path added — so the revert removes the right label.
+      expect(gmail.ensureLabelIdCalls).toEqual(['DeclutrMail/Later']);
+      expect(gmail.calls[0]!.change).toEqual({
+        addLabelIds: ['INBOX'],
+        removeLabelIds: ['Label_77'],
+      });
+      const [m] = await db
+        .select()
+        .from(mailMessages)
+        .where(eq(mailMessages.providerMessageId, 'l1'));
+      expect(m!.labelIds).toContain('INBOX');
+      expect(m!.labelIds).not.toContain('Label_77');
+      const [u] = await db.select().from(undoJournal).where(eq(undoJournal.token, undo!.token));
+      expect(u!.revertedAt).not.toBeNull();
+    });
+
+    it('fails permanently on attempt 1 for a Gmail 400 (no retry storm)', async () => {
+      await seedMessage(db, mailboxId, 'l1', ['INBOX']);
+      gmail.shouldThrow = new PermanentError(
+        'Gmail returned 400: Invalid label: DeclutrMail/Later',
+      );
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'later',
+          direction: 'forward',
+          selector: { type: 'messages' },
+          resolvedMessageIds: ['l1'],
+          idempotencyKey: 'idem-400',
+        })
+        .returning();
+
+      // attemptsMade=0 → attempt 1 of 5. A deterministic 4xx is terminal
+      // HERE: isNonRetryable(PermanentError) short-circuits the attempt
+      // cap and onTerminalFailure records status=failed immediately.
+      await expect(
+        worker.run({
+          id: 'job-400',
+          data: { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-400' },
+          attemptsMade: 0,
+        } as never),
+      ).rejects.toThrow('Invalid label');
+
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
+      expect(row!.status).toBe('failed');
+      expect(row!.errorCode).toBe('PermanentError');
+    });
   });
 
   it('forward delete — applies TRASH + drops INBOX from local mirror', async () => {

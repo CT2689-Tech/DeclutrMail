@@ -94,7 +94,10 @@ export function addBreadcrumb(crumb: AppBreadcrumb): void {
  */
 export function captureFeatureException(
   err: unknown,
-  ctx: { surface: 'sync' | 'senders' | 'activity' | 'brief' | 'autopilot'; reason: string },
+  ctx: {
+    surface: 'sync' | 'senders' | 'activity' | 'brief' | 'autopilot' | 'triage';
+    reason: string;
+  },
 ): void {
   if (typeof window === 'undefined') return;
   try {

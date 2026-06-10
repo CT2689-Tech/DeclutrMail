@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, count, eq, inArray, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 
 // `senderPolicies` is imported for READ-ONLY queries (Protect/VIP guards
 // on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
@@ -16,9 +16,14 @@ import { actionJobs, activityLog, mailMessages, senderPolicies, senders } from '
 import type { LabelActionSelector } from '@declutrmail/db';
 import { LABEL_ACTION_JOB, labelActionJobOptions, OutboxPublisher } from '@declutrmail/workers';
 import type { LabelActionJobData } from '@declutrmail/workers';
-import { ActionsUnsubscribeIntentRecordedPayloadSchema, TOPICS } from '@declutrmail/events';
+import {
+  ActionsUnsubscribeIntentRecordedPayloadSchema,
+  TOPICS,
+  TriageVerdictAppliedPayloadSchema,
+} from '@declutrmail/events';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
   ActionEnqueueResult,
   ActionJobStatus,
@@ -33,6 +38,7 @@ import type {
   CompositeActionPreviewResult,
   CompositePrimaryVerb,
   CompositeSecondaryVerb,
+  KeepIntentResult,
   UnsubscribeIntentResult,
 } from './actions.types.js';
 
@@ -1086,6 +1092,113 @@ export class ActionsService {
           recordedAt: inserted.occurredAt.toISOString(),
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
+      });
+
+      return {
+        senderId,
+        recordedAt: inserted.occurredAt.toISOString(),
+        activityLogId: inserted.id,
+      };
+    });
+  }
+
+  /**
+   * Record the user's Keep verdict for a sender (D40 + D226 Triage
+   * wiring). Keep is policy/verdict-only per the Action Registry
+   * (`keep.execution.kind === 'policy-only'`): no Gmail mutation, no
+   * worker job, no undo token. Two durable effects:
+   *
+   *   1. A 0-affected `activity_log` row (`action='keep'`) — the
+   *      decision record. The Triage queue read excludes senders with
+   *      a recent decision row, so the queue row leaves the queue only
+   *      once this insert has committed (server-confirmed removal).
+   *   2. A `triage.verdict_applied` outbox event (the topic existed
+   *      with zero producers; this is its first). The senders-owned
+   *      consumer (`outbox-consumer-router.ts`) projects it into
+   *      `sender_policies.policy_type='keep'` — D204 boundary: this
+   *      service does NOT write the senders-owned table directly.
+   *      Unlike `recordUnsubscribeIntent` there is no dual-write
+   *      backstop: nothing user-visible in this slice reads the keep
+   *      policy synchronously (the queue exclusion reads activity_log),
+   *      so the seconds-scale projection lag is invisible.
+   *
+   * Idempotency: semantic, not header-based. Keeping a sender that
+   * already has a non-stale Keep decision (an `action='keep'` row
+   * within the D30 decided window) is the SAME decision — the call
+   * replays the existing row instead of writing a duplicate. The
+   * sibling intent route's `Idempotency-Key` + action_jobs dedup-row
+   * trick is not available here (`action_verb` pg_enum has no 'keep'
+   * value) and is unnecessary: the replay window dedups retries AND
+   * double-clicks. A true concurrent race can write two rows — same
+   * accepted cost as the unsubscribe-intent race.
+   *
+   * Privacy (D7, D228): sender key + verb + count only.
+   */
+  async recordKeepIntent(input: {
+    mailboxAccountId: string;
+    senderId: string;
+  }): Promise<KeepIntentResult> {
+    const { mailboxAccountId, senderId } = input;
+    const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
+
+    const windowStart = new Date(Date.now() - TRIAGE_DECIDED_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const [existing] = await this.db
+      .select({ id: activityLog.id, occurredAt: activityLog.occurredAt })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.mailboxAccountId, mailboxAccountId),
+          eq(activityLog.senderKey, senderKey),
+          eq(activityLog.action, 'keep'),
+          gte(activityLog.occurredAt, windowStart),
+        ),
+      )
+      .orderBy(desc(activityLog.occurredAt))
+      .limit(1);
+    if (existing) {
+      // Replay — the decision already stands; return the original row
+      // so a retried POST never doubles the audit trail or the
+      // decided-today stats.
+      return {
+        senderId,
+        recordedAt: existing.occurredAt.toISOString(),
+        activityLogId: existing.id,
+      };
+    }
+
+    return await this.db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(activityLog)
+        .values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: 'keep',
+          affectedCount: 0,
+          // Keep is a no-op to undo (D35 — Keep issues no token).
+          undoToken: null,
+        })
+        .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
+      if (!inserted) {
+        throw new Error('activity_log insert returned no row');
+      }
+
+      // D204 — the cross-feature signal IS the event. The consumer
+      // upserts sender_policies.policy_type='keep' (D40's "records
+      // sender_policy" contract) without this service touching the
+      // senders-owned table.
+      await this.outbox.publish(tx, {
+        topic: TOPICS.TRIAGE_VERDICT_APPLIED,
+        aggregateId: inserted.id,
+        payload: {
+          mailboxAccountId,
+          senderKey,
+          verdict: 'keep',
+          source: 'manual',
+          undoToken: null,
+          affectedCount: 0,
+        },
+        schema: TriageVerdictAppliedPayloadSchema,
       });
 
       return {

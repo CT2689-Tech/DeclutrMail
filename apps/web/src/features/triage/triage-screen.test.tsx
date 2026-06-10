@@ -15,11 +15,14 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ReactElement } from 'react';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
   TRIAGE_SESSION_STATS_FREE,
   TRIAGE_SESSION_STATS_PRO,
+  type TriageScreenState,
 } from './data';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
@@ -28,24 +31,38 @@ beforeEach(() => {
   resetTriageStore();
 });
 
+/**
+ * The screen mounts TanStack hooks (the D226 mutation wiring), so the
+ * SSR renders need a QueryClientProvider. All queries inside are
+ * disabled until an action is pending, so no fetch fires during a
+ * static render.
+ */
+function render(el: ReactElement): string {
+  return renderToStaticMarkup(<QueryWrapper client={createTestQueryClient()}>{el}</QueryWrapper>);
+}
+
+function renderState(state: TriageScreenState): string {
+  return render(<TriageScreen state={state} />);
+}
+
 describe('TriageScreen — populated queue', () => {
   it('renders every fixture row by sender name', () => {
-    const html = renderToStaticMarkup(
-      <TriageScreen
-        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
-      />,
-    );
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
     for (const row of TRIAGE_QUEUE) {
       expect(html).toContain(row.senderName);
     }
   });
 
   it('surfaces the queue length in the header copy', () => {
-    const html = renderToStaticMarkup(
-      <TriageScreen
-        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
-      />,
-    );
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
     expect(html).toContain(`${TRIAGE_QUEUE.length} decisions, one at a time.`);
   });
 
@@ -55,20 +72,18 @@ describe('TriageScreen — populated queue', () => {
     // shortcut chips appear in the queue legend (K · A · U · L)
     // even when no row is expanded. That legend is the screen's
     // global cue.
-    const html = renderToStaticMarkup(
-      <TriageScreen
-        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
-      />,
-    );
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
     expect(html).toContain('K · A · U · L');
   });
 });
 
 describe('TriageScreen — empty / loading branches', () => {
   it('renders the empty state with stats summary when state.kind=empty', () => {
-    const html = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
-    );
+    const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     // D33 copy markers
     expect(html).toContain('cleared today');
     expect(html).toContain('Come back tomorrow');
@@ -82,51 +97,37 @@ describe('TriageScreen — empty / loading branches', () => {
   });
 
   it('renders the empty state when state.kind=ready but rows is []', () => {
-    const html = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS }} />,
-    );
+    const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
     expect(html).toContain('Come back tomorrow');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
-    const free = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE }} />,
-    );
+    const free = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE });
     expect(free).toContain('See Plus');
     expect(free).toContain('Plus removes the daily cap');
 
-    const paid = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
-    );
+    const paid = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(paid).not.toContain('See Plus');
   });
 
   it('surfaces the Pro nudge for Plus users only — single soft link (D33)', () => {
     // Plus user → soft "Pro could do this for you automatically" link.
-    const plus = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
-    );
+    const plus = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(plus).toContain('Pro could do this for you automatically');
 
     // Free user → Plus banner only; NO Pro link (the funnel is
     // Free → Plus → Pro, not Free → Pro).
-    const free = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE }} />,
-    );
+    const free = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE });
     expect(free).not.toContain('Pro could do this for you automatically');
 
     // Pro user → no nudge at all (D33 explicit: hidden for Pro).
-    const pro = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO }} />,
-    );
+    const pro = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO });
     expect(pro).not.toContain('Pro could do this for you automatically');
     expect(pro).not.toContain('See Plus');
   });
 
   it('renders the estimated impact projection when the user decided something today (D33)', () => {
-    const html = renderToStaticMarkup(
-      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
-    );
+    const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(html).toContain('Estimated impact');
     expect(html).toContain('future emails will skip your inbox');
     expect(html).toContain('min/week saved on email triage');
@@ -147,13 +148,29 @@ describe('TriageScreen — empty / loading branches', () => {
       minutesSavedPerWeek: 0,
       tier: 'plus' as const,
     };
-    const html = renderToStaticMarkup(<TriageScreen state={{ kind: 'empty', stats: empty }} />);
+    const html = renderState({ kind: 'empty', stats: empty });
     expect(html).not.toContain('Estimated impact');
   });
 
   it('renders the skeleton when state.kind=loading', () => {
-    const html = renderToStaticMarkup(<TriageScreen state={{ kind: 'loading' }} />);
+    const html = renderState({ kind: 'loading' });
     expect(html).toContain('Loading triage queue');
+  });
+
+  it('renders a real error state with a retry affordance when state.kind=error (D211)', () => {
+    // The launch-gap audit's row: a failed query used to render the
+    // skeleton forever. The error kind must surface real copy + an
+    // explicit "Try again" (reads never auto-retry 4xx — the
+    // makeQueryClient invariant).
+    const html = renderState({
+      kind: 'error',
+      error: new Error('network down'),
+      retry: () => {},
+    });
+    expect(html).toContain('Your queue didn');
+    expect(html).toContain('Try again');
+    // Never the skeleton alongside the error.
+    expect(html).not.toContain('Loading triage queue');
   });
 });
 
@@ -162,16 +179,14 @@ describe('TriageScreen — D227 hard rule + D32 no-bulk', () => {
     // D227 reserves "Screen" / "Screener" for the Screener feature
     // ONLY — the triage screen, its toolbar, its action sheet, and
     // its empty state must not surface that word.
-    const states = [
-      <TriageScreen
-        key="ready"
-        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
-      />,
-      <TriageScreen key="empty" state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS }} />,
-      <TriageScreen key="loading" state={{ kind: 'loading' }} />,
+    const states: TriageScreenState[] = [
+      { kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS },
+      { kind: 'empty', stats: TRIAGE_SESSION_STATS },
+      { kind: 'loading' },
+      { kind: 'error', error: new Error('boom'), retry: () => {} },
     ];
     for (const el of states) {
-      const html = renderToStaticMarkup(el).toLowerCase();
+      const html = renderState(el).toLowerCase();
       // "screen" is allowed only in the css class for SR-only
       // text — but our screen uses positional CSS, not classes.
       // Still, the word "screen" might appear in aria-label or
@@ -189,11 +204,11 @@ describe('TriageScreen — D227 hard rule + D32 no-bulk', () => {
     // a select-all checkbox or a multi-action bar. The senders feature
     // has those (`SelectionBar`, `RowCheckbox`); the triage feature
     // does not import them and never should.
-    const html = renderToStaticMarkup(
-      <TriageScreen
-        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
-      />,
-    );
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
     expect(html.toLowerCase()).not.toContain('select all');
     expect(html.toLowerCase()).not.toContain('selectionbar');
   });

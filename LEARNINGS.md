@@ -777,3 +777,9 @@ membership — `keep`, `unsubscribe`, and now `unarchive` are in the
 registry but not in `action_verb`, each for a documented reason.
 **Distillation trigger:** promote to CLAUDE.md §2 (DB invariants) if a
 verb-add breaks a downstream enum a 2nd time.
+
+## 2026-06-10 — TanStack refetchInterval silently pauses without window focus
+**Context:** Live smoke of the triage action-status poll (1s cadence until terminal) through the preview-browser harness.
+**Finding:** After confirming an action, exactly one status poll fired and then nothing for ~100s — looked like a polling bug. Root cause: TanStack Query's `refetchInterval` only ticks while the window has focus (default `refetchIntervalInBackground: false`), and the automated browser loses focus between scripted interactions. With focus held, the poll ran at the designed 1s and the whole confirm→done cycle took 3s. Two implications: (a) harness evals must keep the page active (or assert on eventual consistency) when testing poll-driven flows; (b) a real user who backgrounds the tab mid-action also gets no poll until refocus — the action completes server-side and reconciles on return, which is acceptable, but worth remembering before blaming the pipeline.
+**Rule (provisional):** When a poll-driven flow "hangs" in an automated browser, check `document.hasFocus()` semantics before debugging the query; consider `refetchIntervalInBackground: true` only for polls that must survive backgrounding (action status arguably qualifies — revisit if users report stuck receipts).
+**Distillation trigger:** promote to a §8 smoke-harness note if it costs another debugging session.

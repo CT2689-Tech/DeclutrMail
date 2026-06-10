@@ -48,6 +48,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from './api/use-action';
+import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
@@ -352,6 +353,9 @@ function SendersScreenContent({
   // (per-sender failure isolation); the FE polls ONE batch handle.
   const enqueueBulk = useEnqueueBulkAction();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
+  // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
+  // Gmail mutation. The hook owns the senders/activity invalidation.
+  const setPolicy = useSetSenderPolicy();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -764,6 +768,55 @@ function SendersScreenContent({
         return;
       }
 
+      // Keep — standing-policy write (D40: "Keep applies immediately,
+      // records sender_policy(policy_type=keep)"). No Gmail mutation,
+      // no preview, no receipt; the BE appends a 'keep' audit row and
+      // the hook invalidates senders + activity. Fans across senders
+      // like the Unsub intent path so the audit trail captures every
+      // decision — in practice n=1 today (only the card lead verb +
+      // table row action fire Keep; the SelectionBar binds A/L/U/D only).
+      if (verb === 'Keep') {
+        // Same double-confirmation guard as the Unsub path.
+        if (setPolicy.isPending) return;
+        setPendingAction(null);
+        setSelected(new Set());
+        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
+        const isBulk = senderRefs.length > 1;
+        let succeeded = 0;
+        let failed = 0;
+        for (const sref of senderRefs) {
+          setPolicy.mutate(
+            { senderId: sref.id, patch: { policyType: 'keep' } },
+            {
+              onSuccess: () => {
+                succeeded++;
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`
+                      : `Kept ${sref.name}`,
+                    failed > 0 ? 'warn' : 'success',
+                  );
+                }
+              },
+              onError: (err) => {
+                failed++;
+                captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `${failed} of ${senderRefs.length} keeps failed — try again.`
+                      : `Couldn't keep ${sref.name}`,
+                    'warn',
+                  );
+                }
+              },
+            },
+          );
+        }
+        return;
+      }
+
       // D52 — multi-sender bulk Archive / Later / Delete. ONE POST fans
       // out server-side to one action_jobs row per sender (per-sender
       // failure isolation), linked into a batch the effect below polls
@@ -835,24 +888,22 @@ function SendersScreenContent({
         return;
       }
 
-      // Tracer tail — Keep / Protect only (standing-policy verbs owned by
-      // Track B; no Gmail mutation fires). Every mail-moving verb above
-      // rides a real pipeline now: single Archive (P6), single
-      // Delete/Later/composite (ADR-0020), Unsubscribe intent (D38),
+      // Tracer tail — Protect only (standing-policy verb; no Gmail
+      // mutation fires). Every mail-moving verb above rides a real
+      // pipeline now: single Archive (P6), single Delete/Later/composite
+      // (ADR-0020), Unsubscribe intent (D38), Keep standing-policy (D40),
       // multi-sender A/L/D bulk (D52).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         'success',
       );
-      if (verb !== 'Keep') {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb,
-          count: senders.length,
-          historicTotal: 0,
-          timeLeft: '6d 23h',
-        });
-      }
+      setReceipt({
+        id: `r${++receiptSeq}`,
+        verb,
+        count: senders.length,
+        historicTotal: 0,
+        timeLeft: '6d 23h',
+      });
       setPendingAction(null);
       setSelected(new Set());
     },

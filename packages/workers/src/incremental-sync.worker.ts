@@ -593,9 +593,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
       // User-agency-wins guard — see InitialSyncWorker for full
-      // rationale. An engagement_based row that was manually demoted
-      // (is_protected=false) stays demoted on this incremental pass —
-      // the user's decision survives the next webhook.
+      // rationale. A manually demoted row (`is_protected=false` with
+      // the prior `protection_reason` preserved as the memory pin —
+      // ANY provenance: engagement_based, user_defined, or vip) stays
+      // demoted on this incremental pass — the user's decision
+      // survives the next webhook. Only `protection_reason IS NULL`
+      // rows may be auto-protected.
       await tx.execute(sql`
         INSERT INTO ${senderPolicies} (
           ${sql.identifier('mailbox_account_id')},
@@ -628,10 +631,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           ),
           ${sql.identifier('updated_at')} = now()
         WHERE sender_policies.${sql.identifier('is_protected')} = false
-          AND (
-            sender_policies.${sql.identifier('protection_reason')} IS NULL
-            OR sender_policies.${sql.identifier('protection_reason')} <> 'engagement_based'::protection_reason
-          )
+          AND sender_policies.${sql.identifier('protection_reason')} IS NULL
       `);
     });
   }

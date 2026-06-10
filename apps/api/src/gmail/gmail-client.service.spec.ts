@@ -2,6 +2,7 @@ import type { OAuth2Client } from 'google-auth-library';
 import {
   AuthExpiredError,
   InvalidGrantError,
+  PermanentError,
   RateLimitError,
   type RateLimiter,
   TransientError,
@@ -191,6 +192,78 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 
+  describe('ensureLabelId', () => {
+    it('resolves an existing user label by exact name via labels.list', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({
+          labels: [
+            { id: 'INBOX', name: 'INBOX' },
+            { id: 'Label_42', name: 'DeclutrMail/Later' },
+          ],
+        }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      const id = await client.ensureLabelId('DeclutrMail/Later');
+
+      expect(id).toBe('Label_42');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(acquireSpy).toHaveBeenCalledWith(5);
+      const [url] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(`${API}/labels`);
+    });
+
+    it('creates the label when missing and returns the new id', async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'Label_7', name: 'DeclutrMail/Later' }));
+      const client = new GmailClientService(oauth, limiter);
+
+      const id = await client.ensureLabelId('DeclutrMail/Later');
+
+      expect(id).toBe('Label_7');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(acquireSpy).toHaveBeenCalledTimes(2);
+      const [createUrl, createInit] = fetchMock.mock.calls[1]!;
+      expect(createUrl).toBe(`${API}/labels`);
+      expect(createInit.method).toBe('POST');
+      expect(bodyOf(1)).toEqual({
+        name: 'DeclutrMail/Later',
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'show',
+      });
+    });
+
+    it('matches case-sensitively (Gmail label names are case-sensitive)', async () => {
+      fetchMock
+        .mockResolvedValueOnce(jsonOk({ labels: [{ id: 'Label_1', name: 'declutrmail/later' }] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'Label_2' }));
+      const client = new GmailClientService(oauth, limiter);
+
+      const id = await client.ensureLabelId('DeclutrMail/Later');
+
+      // The lowercase near-miss does NOT match — a new label is created.
+      expect(id).toBe('Label_2');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('caches the resolved id per instance (no re-list on the second call)', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({ labels: [{ id: 'Label_42', name: 'DeclutrMail/Later' }] }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      const first = await client.ensureLabelId('DeclutrMail/Later');
+      const second = await client.ensureLabelId('DeclutrMail/Later');
+
+      expect(first).toBe('Label_42');
+      expect(second).toBe('Label_42');
+      // One fetch + one quota charge total — the cache served the second.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(acquireSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('mutation error mapping', () => {
     it('maps 401 to AuthExpiredError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(401, 'unauthorized'));
@@ -222,6 +295,17 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         TransientError,
       );
+    });
+
+    it('maps 400 (invalidArgument family) to PermanentError — never retried', async () => {
+      // Live smoke 2026-06-09: an unresolved label NAME in batchModify
+      // produced `400: Invalid label` and the worker retried it to the
+      // attempt cap. A deterministic 4xx must fail on attempt 1.
+      fetchMock.mockResolvedValueOnce(makeResponse(400, 'Invalid label: DeclutrMail/Later'));
+      const client = new GmailClientService(oauth, limiter);
+      await expect(
+        client.batchModify(['m1'], { addLabelIds: ['DeclutrMail/Later'] }),
+      ).rejects.toBeInstanceOf(PermanentError);
     });
 
     it('maps 5xx to TransientError', async () => {

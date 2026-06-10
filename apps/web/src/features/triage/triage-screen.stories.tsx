@@ -19,6 +19,7 @@
 //   • KeyboardFocus    — focus-state guard for the row chrome
 
 import type { ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import {
   TRIAGE_QUEUE,
@@ -69,9 +70,18 @@ type PageArgs = ComponentProps<typeof TriageScreen>;
 
 function frame(children: React.ReactNode) {
   // Each story resets the store so they don't leak state across
-  // the Storybook page transitions.
+  // the Storybook page transitions. The screen mounts TanStack hooks
+  // (the D226 mutation wiring), so a fresh QueryClient wraps every
+  // variant; the preview/status queries stay disabled until a pending
+  // action exists, so no network fires in Storybook.
   resetTriageStore();
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 /** Default — 8 decisions across all verdict types. */
@@ -89,6 +99,18 @@ export const Default: Story<typeof TriageScreen> = {
 /** Loading — skeleton stack on first paint. */
 export const Loading: Story<typeof TriageScreen> = {
   args: { state: { kind: 'loading' } },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/**
+ * Error — a failed queue/stats query (D211). Real copy + an explicit
+ * "Try again"; never the skeleton (the launch-gap audit's
+ * skeleton-forever row).
+ */
+export const ErrorState: Story<typeof TriageScreen> = {
+  args: {
+    state: { kind: 'error', error: new Error('500 from /api/triage/queue'), retry: () => {} },
+  },
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
 };
 
@@ -138,9 +160,7 @@ export const RowExpanded: Story<typeof TriageScreen> = {
     resetTriageStore();
     // Expand the first row (Groupon — high confidence Archive).
     useTriageStore.setState({ expandedRowId: TRIAGE_QUEUE[0]!.id });
-    return (
-      <div style={{ background: color.bg, minHeight: '100vh' }}>{<TriageScreen {...args} />}</div>
-    );
+    return frame(<TriageScreen {...args} />);
   },
 };
 
@@ -163,9 +183,7 @@ export const ActionSheetOpen: Story<typeof TriageScreen> = {
       expandedRowId: TRIAGE_QUEUE[0]!.id,
       pendingAction: { verb: 'Archive', rowId: TRIAGE_QUEUE[0]!.id, surface: 'sheet' },
     });
-    return (
-      <div style={{ background: color.bg, minHeight: '100vh' }}>{<TriageScreen {...args} />}</div>
-    );
+    return frame(<TriageScreen {...args} />);
   },
 };
 
@@ -189,9 +207,7 @@ export const InlinePreview: Story<typeof TriageScreen> = {
       pendingAction: { verb: 'Unsubscribe', rowId: TRIAGE_QUEUE[1]!.id, surface: 'inline' },
       rememberPreference: { Archive: false, Unsubscribe: true, Later: false },
     });
-    return (
-      <div style={{ background: color.bg, minHeight: '100vh' }}>{<TriageScreen {...args} />}</div>
-    );
+    return frame(<TriageScreen {...args} />);
   },
 };
 
