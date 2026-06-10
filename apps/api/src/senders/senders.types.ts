@@ -1,5 +1,6 @@
 // apps/api/src/senders/senders.types.ts — wire shapes for the Senders
-// read endpoints (D39, D40, D44, D45, D46).
+// read endpoints (D39, D40, D44, D45, D46) plus the standing-policy
+// write surface (D40, D42, D43 — `PATCH /api/senders/:id/policy`).
 //
 // Plain DTO module: no NestJS decorators, no class instances. The
 // types are consumed end-to-end — the controller composes them, and
@@ -12,6 +13,8 @@
 // sender identity, subject, Gmail-allowlisted `snippet`, dates,
 // labels, read state, derived counts. NO body, NO attachments, NO
 // non-allowlisted headers.
+
+import { z } from 'zod';
 
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
@@ -210,6 +213,63 @@ export interface ProtectionFlags {
  */
 export interface SenderDetail extends SenderListRow {
   protectionFlags: ProtectionFlags;
+}
+
+/**
+ * `PATCH /api/senders/:id/policy` — request body (D40, D42, D43).
+ *
+ * Partial set-state patch over the sender's standing policy. Each field
+ * is an explicit TARGET state (never a toggle), so a network-retried
+ * request is naturally idempotent: re-applying the same patch is a
+ * no-op (`changed: false`, no second audit row).
+ *
+ *   - `policyType` — only `'keep'` is writable on this route (D40:
+ *     "Keep applies immediately, records sender_policy(policy_type=
+ *     keep)"). `unsubscribe` has its own intent endpoint
+ *     (`POST /api/actions/unsubscribe-intent`); `archive` / `later`
+ *     standing policies have no write semantics yet — fail-closed.
+ *   - `isVip` / `isProtected` — the two distinct standing modifiers
+ *     (D42). Independent: a sender can be neither, either, or both.
+ *
+ * `.strict()` rejects unknown keys so a future field can't silently
+ * no-op; the refine requires at least one field so an empty body 400s
+ * instead of writing nothing while returning 200.
+ */
+export const senderPolicyPatchSchema = z
+  .object({
+    policyType: z.literal('keep').optional(),
+    isVip: z.boolean().optional(),
+    isProtected: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (p) => p.policyType !== undefined || p.isVip !== undefined || p.isProtected !== undefined,
+    { message: 'At least one of policyType, isVip, isProtected is required.' },
+  );
+export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
+
+/**
+ * `PATCH /api/senders/:id/policy` — response (D40, D42, D43).
+ *
+ * The resulting standing-policy state after the patch. Field names
+ * mirror `ProtectionFlags` + `policyType` on the list/detail rows so
+ * the FE can reconcile its caches without a refetch round-trip.
+ * `policyType` is `null` when the sender still has no policy row
+ * (a no-change patch never creates one).
+ */
+export interface SenderPolicyResult {
+  senderId: string;
+  policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
+  isVip: boolean;
+  isProtected: boolean;
+  protectionReason: 'user_defined' | 'engagement_based' | 'vip' | null;
+  /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
+  protectionSetAt: string | null;
+  /**
+   * True when this request changed at least one field (and wrote the
+   * matching D43 audit row(s)); false for the idempotent no-op replay.
+   */
+  changed: boolean;
 }
 
 /**

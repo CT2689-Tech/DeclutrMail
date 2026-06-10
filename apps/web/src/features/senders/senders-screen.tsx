@@ -43,6 +43,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from './api/use-action';
+import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
@@ -342,6 +343,9 @@ function SendersScreenContent({
   // Archive path until Phase 5 dead-code sweep retires it.
   const enqueueComposite = useEnqueueComposite();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
+  // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
+  // Gmail mutation. The hook owns the senders/activity invalidation.
+  const setPolicy = useSetSenderPolicy();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -725,24 +729,72 @@ function SendersScreenContent({
         return;
       }
 
+      // Keep — standing-policy write (D40: "Keep applies immediately,
+      // records sender_policy(policy_type=keep)"). No Gmail mutation,
+      // no preview, no receipt; the BE appends a 'keep' audit row and
+      // the hook invalidates senders + activity. Fans across senders
+      // like the Unsub intent path so the audit trail captures every
+      // decision — in practice n=1 today (only the card lead verb +
+      // table row action fire Keep; the SelectionBar binds A/L/U only).
+      if (verb === 'Keep') {
+        // Same double-confirmation guard as the Unsub path.
+        if (setPolicy.isPending) return;
+        setPendingAction(null);
+        setSelected(new Set());
+        const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
+        const isBulk = senderRefs.length > 1;
+        let succeeded = 0;
+        let failed = 0;
+        for (const sref of senderRefs) {
+          setPolicy.mutate(
+            { senderId: sref.id, patch: { policyType: 'keep' } },
+            {
+              onSuccess: () => {
+                succeeded++;
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`
+                      : `Kept ${sref.name}`,
+                    failed > 0 ? 'warn' : 'success',
+                  );
+                }
+              },
+              onError: (err) => {
+                failed++;
+                captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
+                if (succeeded + failed === senderRefs.length) {
+                  toast(
+                    isBulk
+                      ? `${failed} of ${senderRefs.length} keeps failed — try again.`
+                      : `Couldn't keep ${sref.name}`,
+                    'warn',
+                  );
+                }
+              },
+            },
+          );
+        }
+        return;
+      }
+
       // Tracer path — toast + fake receipt until the verb's BE lands. No
       // email count is shown here: the true number is only known once the
       // verb's worker runs (P6 wired that for single-sender Archive).
-      // NOTE: Keep is intentionally tracer (no Gmail mutation needed);
-      // multi-sender bulk for non-Unsub verbs is still tracer (P7).
+      // Only multi-sender bulk for the non-Unsub destructive verbs
+      // reaches this branch now (P7 / Track C owns it); Keep + every
+      // single-sender verb are real writes above.
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         'success',
       );
-      if (verb !== 'Keep') {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb,
-          count: senders.length,
-          historicTotal: 0,
-          timeLeft: '6d 23h',
-        });
-      }
+      setReceipt({
+        id: `r${++receiptSeq}`,
+        verb,
+        count: senders.length,
+        historicTotal: 0,
+        timeLeft: '6d 23h',
+      });
       setPendingAction(null);
       setSelected(new Set());
     },

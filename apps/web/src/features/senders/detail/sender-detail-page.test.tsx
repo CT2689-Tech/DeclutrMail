@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { SenderDetailRoute } from './sender-detail-page';
 import {
+  addFetchHandlers,
   installFetchStub,
   jsonNotFound,
   jsonOk,
@@ -34,8 +35,10 @@ vi.mock('@/lib/posthog', () => ({
 }));
 
 const addBreadcrumbMock = vi.fn();
+const captureFeatureExceptionMock = vi.fn();
 vi.mock('@/lib/sentry', () => ({
   addBreadcrumb: (...args: unknown[]) => addBreadcrumbMock(...args),
+  captureFeatureException: (...args: unknown[]) => captureFeatureExceptionMock(...args),
 }));
 
 const DETAIL = {
@@ -250,4 +253,182 @@ describe('SenderDetailRoute', () => {
       { timeout: 10000 },
     );
   }, 15000);
+
+  // D40 / D42 / D43 — standing-policy writes (Keep + VIP/Protect chips).
+
+  describe('standing-policy writes', () => {
+    function installPolicyPatch(respond: (req: Request) => Response | Promise<Response>) {
+      addFetchHandlers([
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: (req) => respond(req),
+        },
+      ]);
+    }
+
+    it('VIP chip PATCHes { isVip: true } and keeps the optimistic flip on success', async () => {
+      installHappyPath();
+      let capturedBody: unknown = null;
+      installPolicyPatch(async (req) => {
+        capturedBody = await req.json();
+        return jsonOk({
+          data: {
+            senderId: 'linkedin',
+            policyType: null,
+            isVip: true,
+            isProtected: false,
+            protectionReason: null,
+            protectionSetAt: null,
+            changed: true,
+          },
+        });
+      });
+      renderDetail();
+
+      const vipButton = await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
+      fireEvent.click(vipButton);
+
+      // Optimistic flip is immediate (non-destructive policy toggle —
+      // standard mutation UX, not the D226 destructive lifecycle).
+      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
+
+      await waitFor(() => expect(capturedBody).toEqual({ isVip: true }));
+      // Server confirmed — the flip stays.
+      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
+    });
+
+    it('VIP chip rolls the optimistic flip back when the PATCH fails', async () => {
+      installHappyPath();
+      installPolicyPatch(() => jsonServerError());
+      renderDetail();
+
+      const vipButton = await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
+      fireEvent.click(vipButton);
+      expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument();
+
+      // Failure → rollback to the unset chip.
+      await waitFor(() => expect(screen.getByRole('button', { name: 'VIP' })).toBeInTheDocument());
+    });
+
+    it('Protect chip PATCHes { isProtected: true } and rolls back on failure', async () => {
+      installHappyPath();
+      const bodies: unknown[] = [];
+      let fail = false;
+      installPolicyPatch(async (req) => {
+        bodies.push(await req.json());
+        if (fail) return jsonServerError();
+        return jsonOk({
+          data: {
+            senderId: 'linkedin',
+            policyType: null,
+            isVip: false,
+            isProtected: true,
+            protectionReason: 'user_defined',
+            protectionSetAt: '2026-06-09T00:00:00.000Z',
+            changed: true,
+          },
+        });
+      });
+      renderDetail();
+
+      const protectButton = await waitFor(() => screen.getByRole('button', { name: 'Protect' }));
+      fireEvent.click(protectButton);
+      await waitFor(() => expect(bodies).toEqual([{ isProtected: true }]));
+      expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument();
+
+      // Second toggle (unprotect) fails → rollback to the set chip.
+      fail = true;
+      fireEvent.click(screen.getByRole('button', { name: '◆ Protect' }));
+      await waitFor(() => expect(bodies).toHaveLength(2));
+      expect(bodies[1]).toEqual({ isProtected: false });
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument(),
+      );
+    });
+
+    it('re-seeds header policy state when a refetch returns diverged data (cross-tab change)', async () => {
+      // Another tab / session marks this sender VIP. The detail query
+      // refetch must surface the server value without a remount —
+      // `useState(initial)` alone would silently drop it.
+      let serverIsVip = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                ...DETAIL,
+                protectionFlags: { ...DETAIL.protectionFlags, isVip: serverIsVip },
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/messages$/,
+          respond: () =>
+            jsonOk({
+              data: [MESSAGE],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: TIMESERIES }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/history$/,
+          respond: () =>
+            jsonOk({
+              data: [HISTORY_ROW],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SenderDetailRoute id="linkedin" />
+        </QueryWrapper>,
+      );
+      await waitFor(() => screen.getByRole('button', { name: 'VIP' }));
+
+      // Server diverges, then any invalidation-driven refetch lands.
+      serverIsVip = true;
+      await client.invalidateQueries();
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: '★ VIP' })).toBeInTheDocument(),
+      );
+    });
+
+    it('Keep verb PATCHes { policyType: "keep" } (D40 — applies immediately, no preview)', async () => {
+      installHappyPath();
+      let capturedBody: unknown = null;
+      installPolicyPatch(async (req) => {
+        capturedBody = await req.json();
+        return jsonOk({
+          data: {
+            senderId: 'linkedin',
+            policyType: 'keep',
+            isVip: false,
+            isProtected: false,
+            protectionReason: null,
+            protectionSetAt: null,
+            changed: true,
+          },
+        });
+      });
+      renderDetail();
+
+      const keepButton = await waitFor(() => screen.getByRole('button', { name: 'Keep (K)' }));
+      fireEvent.click(keepButton);
+
+      await waitFor(() => expect(capturedBody).toEqual({ policyType: 'keep' }));
+    });
+  });
 });

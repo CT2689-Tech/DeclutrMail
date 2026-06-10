@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { SendersPolicyService } from './senders-policy.service.js';
 import { SendersController } from './senders.controller.js';
 import type { SendersReadService } from './senders.read-service.js';
 import type {
@@ -9,6 +10,7 @@ import type {
   MailMessageRow,
   SenderDetail,
   SenderListRow,
+  SenderPolicyResult,
   TimeseriesPoint,
 } from './senders.types.js';
 
@@ -106,7 +108,15 @@ const DEFAULT_QUERY_META = {
   asOf: '2026-05-29T12:00:00.000Z',
 } as const;
 
-function buildController(): { ctrl: SendersController; reads: MockReadService } {
+interface MockPolicyService {
+  setPolicy: ReturnType<typeof vi.fn>;
+}
+
+function buildController(): {
+  ctrl: SendersController;
+  reads: MockReadService;
+  policies: MockPolicyService;
+} {
   // Direct construction bypasses NestJS DI — `swc-node` does not
   // reliably emit `design:paramtypes` metadata that `Test.createTesting
   // Module()` relies on. The undo service spec follows the same
@@ -121,16 +131,23 @@ function buildController(): { ctrl: SendersController; reads: MockReadService } 
     listWeeklyHero: vi.fn(),
     getSenderSummary: vi.fn(),
   };
-  const ctrl = new SendersController(reads as unknown as SendersReadService);
-  return { ctrl, reads };
+  const policies: MockPolicyService = {
+    setPolicy: vi.fn(),
+  };
+  const ctrl = new SendersController(
+    reads as unknown as SendersReadService,
+    policies as unknown as SendersPolicyService,
+  );
+  return { ctrl, reads, policies };
 }
 
 describe('SendersController', () => {
   let ctrl: SendersController;
   let reads: MockReadService;
+  let policies: MockPolicyService;
 
   beforeEach(() => {
-    ({ ctrl, reads } = buildController());
+    ({ ctrl, reads, policies } = buildController());
   });
 
   describe('input validation', () => {
@@ -736,6 +753,65 @@ describe('SendersController', () => {
         mailboxAccountId: MAILBOX_ID,
         q: null,
         includeOneTime: false,
+      });
+    });
+  });
+
+  describe('patchPolicy — standing-policy write (D40, D42, D43)', () => {
+    const RESULT: SenderPolicyResult = {
+      senderId: SENDER_ID,
+      policyType: 'keep',
+      isVip: true,
+      isProtected: false,
+      protectionReason: null,
+      protectionSetAt: null,
+      changed: true,
+    };
+
+    it('throws 400 when the sender id is not a UUID', async () => {
+      await expect(ctrl.patchPolicy(MAILBOX, 'not-a-uuid', { isVip: true })).rejects.toThrow(
+        /UUID/,
+      );
+      expect(policies.setPolicy).not.toHaveBeenCalled();
+    });
+
+    it('throws 400 INVALID_REQUEST for an empty patch body', async () => {
+      await expect(ctrl.patchPolicy(MAILBOX, SENDER_ID, {})).rejects.toThrow(/At least one/);
+      expect(policies.setPolicy).not.toHaveBeenCalled();
+    });
+
+    it('throws 400 for an unknown key (strict schema)', async () => {
+      await expect(
+        ctrl.patchPolicy(MAILBOX, SENDER_ID, { isVip: true, nope: 1 }),
+      ).rejects.toThrow();
+      expect(policies.setPolicy).not.toHaveBeenCalled();
+    });
+
+    it('throws 400 for a non-keep policyType (fail-closed at this slice)', async () => {
+      await expect(
+        ctrl.patchPolicy(MAILBOX, SENDER_ID, { policyType: 'archive' }),
+      ).rejects.toThrow();
+      expect(policies.setPolicy).not.toHaveBeenCalled();
+    });
+
+    it('forwards the parsed patch + mailbox scope and wraps the result in the D202 envelope', async () => {
+      policies.setPolicy.mockResolvedValue(RESULT);
+      const res = await ctrl.patchPolicy(MAILBOX, SENDER_ID, { isVip: true });
+      expect(policies.setPolicy).toHaveBeenCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        senderId: SENDER_ID,
+        patch: { isVip: true },
+      });
+      expect(res.data).toEqual(RESULT);
+    });
+
+    it('accepts the keep verb patch (D40 — policy-only Keep)', async () => {
+      policies.setPolicy.mockResolvedValue({ ...RESULT, isVip: false });
+      await ctrl.patchPolicy(MAILBOX, SENDER_ID, { policyType: 'keep' });
+      expect(policies.setPolicy).toHaveBeenCalledWith({
+        mailboxAccountId: MAILBOX_ID,
+        senderId: SENDER_ID,
+        patch: { policyType: 'keep' },
       });
     });
   });

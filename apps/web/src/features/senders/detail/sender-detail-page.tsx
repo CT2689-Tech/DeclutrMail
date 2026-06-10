@@ -30,11 +30,12 @@ import {
   useActionStatus,
   useRevertUndo,
 } from '../api/use-action';
+import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
-import { adaptSenderDetail } from '../api/adapters';
+import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
@@ -213,10 +214,12 @@ export function SenderDetailRoute({ id }: { id: string }) {
 }
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
-  // TODO(D200): VIP/Protect toggles currently mutate local state and
-  // will be clobbered by a TanStack Query refetch (window focus,
-  // navigation). When the senders-mutations slice lands, wire these
-  // as useMutation calls that invalidate sendersKeys.detail(id).
+  // VIP/Protect/Keep are real mutations (D40, D42, D43): the chip flips
+  // optimistically (standard non-destructive mutation UX, not the D226
+  // lifecycle), `useSetSenderPolicy` persists the set-state patch +
+  // invalidates senders/activity caches, and `onError` rolls the local
+  // flip back. Local state is reconciled from the mutation result, so a
+  // refetch of `initial` agreeing with it is a no-op.
   const [detail, setDetail] = useState<SenderDetail>(initial);
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
@@ -230,6 +233,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const enqueue = useEnqueueAction();
   const enqueueComposite = useEnqueueComposite();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
+  const setPolicy = useSetSenderPolicy();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -239,6 +243,27 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
+
+  // Server-truth re-seed: `useState(initial)` ignores prop updates after
+  // mount, so a refetch delivering DIVERGED data (policy changed in
+  // another tab / another session on the same mailbox) would otherwise
+  // be silently dropped until remount — the mutation-result reconciles
+  // in the handlers below only cover divergence caused by THIS tab's
+  // own writes. Re-seed whenever a new `initial` arrives (its identity
+  // changes per refetch via the `adapted` useMemo), EXCEPT while a
+  // policy write is in flight: the optimistic flip owns the chip until
+  // the mutation settles, and the post-settle invalidation refetch
+  // re-seeds with the committed row anyway. The ref guard keeps
+  // `isPending` flipping false from re-seeding a stale (pre-write)
+  // `initial` over the server-confirmed onSuccess reconcile — only a
+  // genuinely NEW fetch result seeds.
+  const lastSeededRef = useRef(initial);
+  useEffect(() => {
+    if (lastSeededRef.current === initial) return;
+    if (setPolicy.isPending) return;
+    lastSeededRef.current = initial;
+    setDetail(initial);
+  }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
 
@@ -294,7 +319,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
    * the prior tracer toast + synthetic `timeLeft: '6d 23h'` receipt that
    * never called the BE). Mirrors senders-screen.tsx single-sender flow:
    *
-   *   - **Keep** is a no-op locally (no Gmail mutation; no BE pipeline).
+   *   - **Keep** → `useSetSenderPolicy` (D40: applies immediately,
+   *     records `sender_policy(policy_type=keep)` + a `keep` audit row;
+   *     no Gmail mutation, no preview — ADR-0015 `policy-only`).
    *   - **Archive** without secondary → `useEnqueueAction` (direct path).
    *   - **Archive (w/ secondary), Delete, Later** → `useEnqueueComposite`
    *     (ADR-0020 composite executor handles primary + secondary in one
@@ -319,10 +346,28 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       if (senders.length === 0) return;
       const sender = senders[0]!;
 
-      // Keep — non-destructive, no Gmail mutation, no receipt.
+      // Keep — non-destructive, no Gmail mutation, no receipt. Applies
+      // immediately (D40) via the standing-policy write; the toast fires
+      // on server confirmation, never optimistically.
       if (verb === 'Keep') {
-        toast('Kept', 'success');
+        if (setPolicy.isPending) return;
         setPendingAction(null);
+        setPolicy.mutate(
+          { senderId: sender.id, patch: { policyType: 'keep' } },
+          {
+            onSuccess: () => {
+              // Reconcile the local header state — a standing Keep
+              // supersedes a pending "Unsub queued" pill (latest
+              // decision wins on `policy_type`).
+              setDetail((d) => ({ ...d, policyType: 'keep' }));
+              toast(`Kept ${sender.name}`, 'success');
+            },
+            onError: (err) => {
+              captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
+              toast(`Couldn't keep ${sender.name}`, 'warn');
+            },
+          },
+        );
         return;
       }
 
@@ -448,7 +493,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         return;
       }
     },
-    [enqueue, enqueueComposite, recordUnsubIntent, qc, activeAction],
+    [enqueue, enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction],
   );
 
   // Route every destructive verb through the modal (D226 — preview is
@@ -619,22 +664,75 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     );
   }, [receipt, revert, qc]);
 
+  /**
+   * VIP / Protect toggles (D42, D43) — real `sender_policies` writes.
+   *
+   * Optimistic flip + rollback on failure: a standing-policy toggle is
+   * non-destructive (no Gmail mutation, no undo token; toggling back IS
+   * the undo), so standard mutation UX applies — NOT the D226
+   * destructive lifecycle. The wire carries the explicit TARGET state
+   * (`isVip: next`), so a network-retried request is idempotent
+   * server-side. `setPolicy.isPending` latches both chips while either
+   * write (or a Keep) is in flight so optimistic states can't interleave.
+   */
   const toggleVip = useCallback(() => {
-    setDetail((d) => ({ ...d, isVip: !d.isVip }));
-    toast(detail.isVip ? 'Removed VIP mark' : 'Marked VIP', 'info');
-  }, [detail.isVip]);
+    if (setPolicy.isPending) return;
+    const next = !detail.isVip;
+    setDetail((d) => ({ ...d, isVip: next }));
+    setPolicy.mutate(
+      { senderId: sender.id, patch: { isVip: next } },
+      {
+        onSuccess: (res) => {
+          // Reconcile from the server result — the persisted row is
+          // authoritative (the optimistic flip matches it today, but
+          // `protectionReason` is derived server-side).
+          setDetail((d) => ({
+            ...d,
+            isVip: res.isVip,
+            isProtected: res.isProtected,
+            protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
+          }));
+          toast(next ? 'Marked VIP' : 'Removed VIP mark', 'success');
+        },
+        onError: (err) => {
+          setDetail((d) => ({ ...d, isVip: !next }));
+          captureFeatureException(err, { surface: 'senders', reason: 'policy_vip' });
+          toast(next ? "Couldn't mark VIP — try again" : "Couldn't remove VIP — try again", 'warn');
+        },
+      },
+    );
+  }, [detail.isVip, sender.id, setPolicy]);
 
   const toggleProtect = useCallback(() => {
-    setDetail((d) => {
-      const next = !d.isProtected;
-      return {
-        ...d,
-        isProtected: next,
-        protectionReason: next ? (d.protectionReason ?? 'user-marked') : null,
-      };
-    });
-    toast(detail.isProtected ? 'Unprotected' : 'Protected', 'info');
-  }, [detail.isProtected]);
+    if (setPolicy.isPending) return;
+    const next = !detail.isProtected;
+    const prevReason = detail.protectionReason;
+    setDetail((d) => ({
+      ...d,
+      isProtected: next,
+      protectionReason: next ? (d.protectionReason ?? 'user-marked') : null,
+    }));
+    setPolicy.mutate(
+      { senderId: sender.id, patch: { isProtected: next } },
+      {
+        onSuccess: (res) => {
+          // Reconcile from the server result (see toggleVip).
+          setDetail((d) => ({
+            ...d,
+            isVip: res.isVip,
+            isProtected: res.isProtected,
+            protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
+          }));
+          toast(next ? 'Protected' : 'Unprotected', 'success');
+        },
+        onError: (err) => {
+          setDetail((d) => ({ ...d, isProtected: !next, protectionReason: prevReason }));
+          captureFeatureException(err, { surface: 'senders', reason: 'policy_protect' });
+          toast(next ? "Couldn't protect — try again" : "Couldn't unprotect — try again", 'warn');
+        },
+      },
+    );
+  }, [detail.isProtected, detail.protectionReason, sender.id, setPolicy]);
 
   // Derived ROI sentence numbers. Reading-cost in minutes/month;
   // yearly savings if the user unsubscribes (cleanup cohort only).
@@ -792,6 +890,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               size="sm"
               onClick={toggleVip}
               aria-pressed={detail.isVip}
+              disabled={setPolicy.isPending}
             >
               {detail.isVip ? '★ VIP' : 'VIP'}
             </Button>
@@ -800,6 +899,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               size="sm"
               onClick={toggleProtect}
               aria-pressed={detail.isProtected}
+              disabled={setPolicy.isPending}
             >
               {detail.isProtected ? '◆ Protect' : 'Protect'}
             </Button>

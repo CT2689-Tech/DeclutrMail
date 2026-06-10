@@ -21,7 +21,7 @@
  */
 
 import type { Envelope, PaginatedEnvelope } from '@declutrmail/shared/contracts';
-import { apiGet } from './client';
+import { apiGet, apiPatch } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
 
@@ -532,6 +532,62 @@ export function fetchSenderDetail(
   signal?: AbortSignal,
 ): Promise<Envelope<SenderDetailDto, unknown>> {
   return apiGet<SenderDetailDto>(`/api/senders/${encodeURIComponent(id)}`, { signal });
+}
+
+/**
+ * `PATCH /api/senders/:id/policy` — request body (D40, D42, D43).
+ *
+ * Partial SET-STATE patch over the sender's standing policy. Each field
+ * is an explicit target state (never a toggle on the wire), so a retried
+ * request is naturally idempotent — the BE diffs against the current row
+ * and a field already at its target writes nothing (no phantom audit
+ * row). Mirrors `senderPolicyPatchSchema` in
+ * `apps/api/src/senders/senders.types.ts`.
+ */
+export interface SenderPolicyPatch {
+  /** Only `'keep'` is writable on this route (D40). */
+  policyType?: 'keep';
+  isVip?: boolean;
+  isProtected?: boolean;
+}
+
+/**
+ * `PATCH /api/senders/:id/policy` — response (D40, D42, D43). The
+ * resulting standing-policy state; field names mirror
+ * `SenderListRow.protectionFlags` + `policyType` so callers can
+ * reconcile caches without a refetch round-trip. `policyType` is null
+ * when the sender still has no policy row.
+ */
+export interface SenderPolicyResultDto {
+  senderId: string;
+  policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
+  isVip: boolean;
+  isProtected: boolean;
+  protectionReason: ProtectionReasonWire | null;
+  protectionSetAt: string | null;
+  /** True when the patch changed at least one field (audit rows written). */
+  changed: boolean;
+}
+
+/**
+ * PATCH /api/senders/:id/policy — standing-policy write (D40, D42, D43).
+ *
+ * Non-destructive (no Gmail mutation, no undo token) — Keep applies
+ * immediately per D40 and the VIP / Protect chips are plain set-state
+ * toggles per D42/D43, so this does NOT ride the D226 destructive
+ * lifecycle (no preview, no Idempotency-Key header; idempotency is the
+ * set-state semantics).
+ */
+export function patchSenderPolicy(
+  id: string,
+  patch: SenderPolicyPatch,
+  signal?: AbortSignal,
+): Promise<Envelope<SenderPolicyResultDto, unknown>> {
+  return apiPatch<SenderPolicyResultDto>(
+    `/api/senders/${encodeURIComponent(id)}/policy`,
+    patch,
+    signal ? { signal } : {},
+  );
 }
 
 export interface ListSenderMessagesParams {

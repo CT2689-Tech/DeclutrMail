@@ -870,8 +870,8 @@ describe('InitialSyncWorker', () => {
         .where(eq(schema.senderPolicies.senderKey, senderKey));
 
       // Re-run the worker. Same fixture, same engagement signal — but
-      // the WHERE guard's `protection_reason != 'engagement_based'`
-      // clause must refuse the re-protect.
+      // the WHERE guard (only `protection_reason IS NULL` rows may be
+      // auto-protected) must refuse the re-protect.
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -884,6 +884,45 @@ describe('InitialSyncWorker', () => {
       // STAYED demoted — user agency preserved.
       expect(secondRun?.isProtected).toBe(false);
       expect(secondRun?.protectionReason).toBe('engagement_based'); // reason retained as audit trail
+    });
+
+    it('user-agency-wins — manually demoted user_defined row stays demoted on re-run (D40/D42 unprotect)', async () => {
+      // The D40/D42 PATCH endpoint's manual Unprotect demotes a
+      // user_defined-protected row to `is_protected=false` while
+      // PRESERVING `protection_reason='user_defined'` as the memory
+      // pin (senders-policy.service.ts). With replied_count >= 3 the
+      // engagement auto-protect MUST NOT silently re-protect the
+      // sender — the guard auto-protects only `protection_reason IS
+      // NULL` rows.
+      const fixture = makeRepliedSender(0, 5, false);
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+      const senderKey = deriveSenderKey('sender0@example.com');
+
+      // Simulate the endpoint's manual Protect → manual Unprotect:
+      // protect overwrites the reason with `user_defined`; the demote
+      // then clears the flag + `protection_set_at` but PINS the reason.
+      await db
+        .update(schema.senderPolicies)
+        .set({ isProtected: false, protectionReason: 'user_defined', protectionSetAt: null })
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+
+      // Re-run — same fixture, same engagement signal (5 replies ≥ 3).
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const [row] = await db
+        .select()
+        .from(schema.senderPolicies)
+        .where(eq(schema.senderPolicies.senderKey, senderKey));
+      // STAYED demoted — the user's explicit Unprotect is honored.
+      expect(row?.isProtected).toBe(false);
+      expect(row?.protectionReason).toBe('user_defined'); // memory pin retained
+      expect(row?.protectionSetAt).toBeNull();
     });
 
     it('idempotent — second run preserves engagement_based provenance + does not overwrite user_defined', async () => {
