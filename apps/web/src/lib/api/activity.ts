@@ -30,14 +30,20 @@ export type ActivitySourceWire = 'triage' | 'manual' | 'autopilot' | 'screener';
 export type ActivitySourceFilterWire = 'all' | ActivitySourceWire;
 
 /** Canonical verbs (D227 → K/A/U/L/D after ADR-0019) plus the D88
- *  followup-dismiss row variant. */
+ *  followup-dismiss row variant and the D43 VIP/Protect toggle audit
+ *  entries (written by the senders policy write path; snake_case
+ *  spelling follows D43's literal enum strings). */
 export type ActivityActionWire =
   | 'keep'
   | 'archive'
   | 'unsubscribe'
   | 'later'
   | 'delete'
-  | 'followup-dismiss';
+  | 'followup-dismiss'
+  | 'marked_vip'
+  | 'unmarked_vip'
+  | 'marked_protected'
+  | 'unmarked_protected';
 
 /** Verb filter (B-track power-options) — multi-select on the wire. */
 export type ActivityVerbFilterWire = ActivityActionWire;
