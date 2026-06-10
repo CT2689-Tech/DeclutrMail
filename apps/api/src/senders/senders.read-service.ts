@@ -1222,8 +1222,14 @@ export class SendersReadService {
         // The mailto: channel for D230's manual compose deep link —
         // only surfaced on the wire when `unsubscribe_method='mailto'`
         // (the column carries the https URL for one_click senders,
-        // which the FE never needs).
-        unsubscribeUrl: senders.unsubscribeUrl,
+        // which the FE never needs). Gated in SQL so the one_click
+        // https URL — which can embed per-recipient opt-out tokens —
+        // is never even materialized into a wire-bound result set;
+        // the mapping ternary below stays the contract's source of
+        // truth (defense in depth, not a second contract).
+        unsubscribeUrl: sql<
+          string | null
+        >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         latestVolume: latestVolumeSql,
         latestReadCount: latestReadCountSql,
         currentMonthVolume: currentMonthVolumeSql,
