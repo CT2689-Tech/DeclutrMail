@@ -51,6 +51,7 @@ export function ActionToolbar({
   row,
   onAction,
   keyboardEnabled = true,
+  disabled = false,
 }: {
   row: TriageDecisionRow;
   onAction: (verb: ActionVerb) => void;
@@ -60,6 +61,12 @@ export function ActionToolbar({
    * to true.
    */
   keyboardEnabled?: boolean;
+  /**
+   * True disables ALL four verbs regardless of the per-verb
+   * capability gates — used while the row's decision is confirming
+   * server-side (D226 busy state).
+   */
+  disabled?: boolean;
 }) {
   // Only emphasise when confidence is strictly > 0.85 (D31). The
   // ≥ vs > distinction matters: 0.85 exactly should NOT highlight
@@ -69,7 +76,7 @@ export function ActionToolbar({
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
   useEffect(() => {
-    if (!keyboardEnabled) return;
+    if (!keyboardEnabled || disabled) return;
     const onKey = (e: KeyboardEvent) => {
       // Don't hijack typing in inputs / textareas / contentEditable.
       const target = e.target as HTMLElement | null;
@@ -79,14 +86,13 @@ export function ActionToolbar({
       }
       const verb = resolveShortcut(e);
       if (verb == null) return;
-      const disabled = verbDisabled(verb, row);
-      if (disabled) return;
+      if (verbDisabled(verb, row)) return;
       e.preventDefault();
       onAction(verb);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [keyboardEnabled, row, onAction]);
+  }, [keyboardEnabled, disabled, row, onAction]);
 
   return (
     <div
@@ -105,8 +111,8 @@ export function ActionToolbar({
       }}
     >
       {VERB_ORDER.map((verb) => {
-        const disabled = verbDisabled(verb, row);
-        const isHighlighted = recommendedVerb === verb && !disabled;
+        const verbIsDisabled = disabled || verbDisabled(verb, row);
+        const isHighlighted = recommendedVerb === verb && !verbIsDisabled;
         const tone = isHighlighted
           ? verb === 'Unsubscribe'
             ? 'warn'
@@ -119,7 +125,7 @@ export function ActionToolbar({
             key={verb}
             tone={tone}
             size="md"
-            disabled={disabled}
+            disabled={verbIsDisabled}
             onClick={() => onAction(verb)}
             iconRight={
               isHighlighted ? (

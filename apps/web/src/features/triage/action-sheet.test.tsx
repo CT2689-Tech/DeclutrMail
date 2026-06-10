@@ -28,7 +28,14 @@ const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 describe('ActionSheet — D226 mandatory preview surface', () => {
   it('renders the modal title + preview body when open=true', () => {
     const html = renderToStaticMarkup(
-      <ActionSheet open={true} verb="Archive" row={row} onCancel={() => {}} onConfirm={() => {}} />,
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
     );
     // Sheet chrome
     expect(html).toContain('role="dialog"');
@@ -48,6 +55,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
         open={false}
         verb="Archive"
         row={row}
+        inboxCount={2}
         onCancel={() => {}}
         onConfirm={() => {}}
       />,
@@ -61,6 +69,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
         open={true}
         verb="Archive"
         row={null}
+        inboxCount={2}
         onCancel={() => {}}
         onConfirm={() => {}}
       />,
@@ -73,7 +82,14 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
   it('mentions the verb name so the user knows what they are persisting', () => {
     for (const verb of ['Archive', 'Unsubscribe', 'Later'] as const) {
       const html = renderToStaticMarkup(
-        <ActionSheet open={true} verb={verb} row={row} onCancel={() => {}} onConfirm={() => {}} />,
+        <ActionSheet
+          open={true}
+          verb={verb}
+          row={row}
+          inboxCount={2}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />,
       );
       expect(html).toContain(`Remember this for ${verb}`);
     }
@@ -81,7 +97,14 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
 
   it('flags that the preview still shows inline when the sheet is skipped', () => {
     const html = renderToStaticMarkup(
-      <ActionSheet open={true} verb="Archive" row={row} onCancel={() => {}} onConfirm={() => {}} />,
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.

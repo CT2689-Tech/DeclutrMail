@@ -52,6 +52,13 @@ export type ProtectionReason = 'vip' | 'engagement' | 'auto-receipts' | 'auto-fi
 export interface TriageDecisionRow {
   /** Stable id — `${senderKey}` in real data; opaque token in fixtures. */
   id: string;
+  /**
+   * `senders.id` uuid — the selector `POST /api/actions` takes (the BE
+   * resolves it to `sender_key` server-side, which also enforces
+   * ownership). Carried on the row so confirming a verb never needs a
+   * second lookup (D226 wiring). Opaque token in fixtures.
+   */
+  senderId: string;
   /** sha256("v1|" + normalized_email), hex — matches `senders.sender_key`. */
   senderKey: string;
   senderName: string;
@@ -132,11 +139,20 @@ export interface TriageSessionStats {
   tier: 'free' | 'plus' | 'pro';
 }
 
-/** Loading / empty / ready — closed union, no `string` fallback. */
+/**
+ * Loading / empty / ready / error — closed union, no `string` fallback.
+ *
+ * `error` carries the failed query's error (an `ApiError` in practice)
+ * plus a `retry` callback the page composes from the queries' refetch.
+ * Reads do NOT auto-retry 4xx (the `makeQueryClient` invariant — guard
+ * 409s are designed states handled at layout level); the explicit
+ * "Try again" affordance is the only retry path.
+ */
 export type TriageScreenState =
   | { kind: 'loading' }
   | { kind: 'empty'; stats: TriageSessionStats }
-  | { kind: 'ready'; rows: TriageDecisionRow[]; stats: TriageSessionStats };
+  | { kind: 'ready'; rows: TriageDecisionRow[]; stats: TriageSessionStats }
+  | { kind: 'error'; error: unknown; retry: () => void };
 
 /**
  * Deterministic fixture — 8 rows that cover the edge cases the
@@ -155,6 +171,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Archive · high confidence (0.94) ─────────────────────────────
   {
     id: 't-groupon',
+    senderId: 'sid-groupon',
     senderKey: 'sk_groupon',
     senderName: 'Groupon',
     senderEmail: 'noreply@groupon.com',
@@ -181,6 +198,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Unsubscribe · one-click (D9 happy path) ──────────────────────
   {
     id: 't-linkedin',
+    senderId: 'sid-linkedin',
     senderKey: 'sk_linkedin',
     senderName: 'LinkedIn',
     senderEmail: 'notifications-noreply@linkedin.com',
@@ -208,6 +226,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Archive · medium confidence (0.88) ───────────────────────────
   {
     id: 't-oldnavy',
+    senderId: 'sid-oldnavy',
     senderKey: 'sk_oldnavy',
     senderName: 'Old Navy',
     senderEmail: 'help@oldnavy.com',
@@ -233,6 +252,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Unsubscribe · mailto only (D230 deferred path) ───────────────
   {
     id: 't-django',
+    senderId: 'sid-django',
     senderKey: 'sk_django',
     senderName: 'django-users',
     senderEmail: 'django-users@googlegroups.com',
@@ -260,6 +280,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Archive · low confidence (0.66) — recommendation NOT highlighted
   {
     id: 't-nextdoor',
+    senderId: 'sid-nextdoor',
     senderKey: 'sk_nextdoor',
     senderName: 'Nextdoor',
     senderEmail: 'notifications@nextdoor.com',
@@ -281,6 +302,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Later — moderate engagement, low cadence ─────────────────────
   {
     id: 't-substack',
+    senderId: 'sid-substack',
     senderKey: 'sk_substack',
     senderName: 'Letters of Note',
     senderEmail: 'lon@substack.com',
@@ -307,6 +329,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Keep · VIP-protected ─────────────────────────────────────────
   {
     id: 't-sarah',
+    senderId: 'sid-sarah',
     senderKey: 'sk_sarah',
     senderName: 'Sarah Chen',
     senderEmail: 'sarah.chen@google.com',
@@ -332,6 +355,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Keep · engagement-protected (>=70% read) ─────────────────────
   {
     id: 't-priya',
+    senderId: 'sid-priya',
     senderKey: 'sk_priya',
     senderName: 'Priya Raman',
     senderEmail: 'priya@hey.com',

@@ -45,10 +45,24 @@ export class ValidationError extends Error {
   override readonly name = 'ValidationError';
 }
 
+/**
+ * NOT retryable: the provider rejected the request deterministically
+ * (e.g. Gmail 400 `invalidArgument` — bad label id, malformed request).
+ * The identical request fails identically on every attempt, so retrying
+ * only burns quota; the job must fail on attempt 1.
+ */
+export class PermanentError extends Error {
+  override readonly name = 'PermanentError';
+}
+
 /** Errors a retry can never fix — the base class dead-letters immediately. */
-export type NonRetryableError = InvalidGrantError | ValidationError;
+export type NonRetryableError = InvalidGrantError | ValidationError | PermanentError;
 
 /** True when retrying the job is pointless (D203 error classification). */
 export function isNonRetryable(err: unknown): err is NonRetryableError {
-  return err instanceof InvalidGrantError || err instanceof ValidationError;
+  return (
+    err instanceof InvalidGrantError ||
+    err instanceof ValidationError ||
+    err instanceof PermanentError
+  );
 }
