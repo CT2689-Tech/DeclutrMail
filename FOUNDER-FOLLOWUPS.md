@@ -26,21 +26,19 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-06-10 — Confirm Upstash Fixed plan + enable usage notifications
+### 2026-06-10 — Upstash: enable usage notifications (plan flip DONE via PAYG + $20 budget)
 **Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
-**Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. The Fixed plan ($10/mo flat, 250MB) removes the command cap. The payment method was being added at session close; the plan flip itself may still be pending.
-**How:**
-1. https://console.upstash.com/ → the DeclutrMail Redis database → confirm the payment method saved.
-2. Database → Choose Plan → select **Fixed 250MB** ($10/mo flat).
-3. Upstash console → account/billing settings → enable usage **email notifications** so any future approach to a plan limit emails the founder instead of silently rejecting commands.
-**Verifies by:** `bullmq.error` lines stop appearing in the worker logs (`gcloud logging read … jsonPayload.kind="bullmq.error"` returns nothing new) + `worker.listening` for all 5 queues resumes on the next worker boot.
-**Status:** Open
+**Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. RESOLVED 2026-06-10 ~22:15Z: founder flipped the DB to **Pay as You Go with a $20/mo hard budget** (chosen over Fixed 250MB — tuned command volume ≈ $2-3/mo is cheaper than the $10 flat; flip trigger: watchdog run-rate > $6/mo → switch to Fixed). Worker bounced; all queues listening, zero `bullmq.error` since 22:21Z.
+**How (remaining):**
+1. Upstash console → account/billing settings → enable usage **email notifications** so any future approach to the budget emails the founder instead of silently stopping the DB at $20.
+**Verifies by:** notification setting visible in the Upstash console; (recovery already verified — `worker.listening` for all queues on revision 00037-8w5, no `bullmq.error` after 22:21Z).
+**Status:** Open (notifications only)
 
 ### 2026-06-10 — Create vendor API tokens for the limits watchdog
 **Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)
 **Why:** The vendor-limits watchdog can only report usage for vendors it can authenticate against. Without these tokens every vendor reports UNCONFIGURED and the watchdog is blind — the exact gap that let Upstash quota exhaustion run unalerted for ~41h.
 **How:** create each token at the vendor console, then store it as a GH Actions secret:
-1. `UPSTASH_EMAIL` + `UPSTASH_API_KEY` — Upstash console → Account → Management API (https://console.upstash.com/account/api) → create API key. Then `gh secret set UPSTASH_EMAIL` + `gh secret set UPSTASH_API_KEY`.
+1. ~~`UPSTASH_EMAIL` + `UPSTASH_API_KEY`~~ — **DONE 2026-06-10T22:32Z** (both secrets set).
 2. `ANTHROPIC_ADMIN_KEY` — Anthropic console → Settings → Admin keys (https://console.anthropic.com/settings/admin-keys) → create admin key (usage/billing read). Then `gh secret set ANTHROPIC_ADMIN_KEY`.
 3. `VERCEL_TOKEN` + `VERCEL_TEAM_ID` — Vercel → Account Settings → Tokens (https://vercel.com/account/tokens) → create token. Then `gh secret set VERCEL_TOKEN` + `gh secret set VERCEL_TEAM_ID`. The billing endpoint is team-scoped, so the check needs BOTH and only works on a team/Pro plan — **skip this step while on Hobby** (the check stays UNCONFIGURED, which is correct).
 4. `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` — Sentry → Settings → Auth Tokens → org-scoped token with org:read (a build-time token already exists per `docs/runbooks/secrets-inventory.md` — verify its scope covers org usage reads, reuse if so). Then `gh secret set SENTRY_AUTH_TOKEN` + `gh secret set SENTRY_ORG` (the org slug).
@@ -57,6 +55,15 @@ section to the Done section. Do not delete entries — the trail matters.
 2. PostHog → Organization → Billing → set a **billing limit** on each metered product (events, recordings).
 3. Sentry → Settings → Subscription → confirm **Spike Protection** is enabled for the projects (on by default for new orgs — verify, don't assume).
 **Verifies by:** each console shows the cap/limit setting populated and enabled (settings page visible).
+**Status:** Open
+
+### 2026-06-10 — D-CANDIDATE: disambiguate the two unsub `activity_log` rows on /activity
+**Source:** feat/d009-unsubscribe-execution review (implementer-flagged, confirmed by architecture review)
+**Why:** A single one-click unsubscribe writes TWO `action='unsubscribe'` activity rows that render identically on /activity: the intent decision row (`actions.service.ts` `recordUnsubscribeIntent`) and the worker's terminal outcome row (`unsub-execution.worker.ts` `recordOutcome`). Both are 0-affected, `source='manual'`, `undo_token=null` — the user sees the same line twice per unsub. Append-only is the correct schema contract; the duplicate is a display problem, not a data problem.
+**How:** Founder picks ONE:
+1. New `activity_action` enum value (e.g. `unsubscribe_confirmed`) so the outcome row is distinct on the wire and the FE renders "Unsubscribe requested" vs "Unsubscribe confirmed/failed" — needs a migration extending the enum + copy.
+2. Render-layer collapse: /activity groups same-sender `unsubscribe` rows within the execution window into one line with the outcome chip — no schema change, dedup logic lives in the FE read.
+**Verifies by:** one one-click unsub on a real sender produces ONE visible /activity line (with its outcome state), while `activity_log` keeps both audit rows.
 **Status:** Open
 
 ### 2026-06-09 — Rewrite 8 skipped senders-screen tests post spec v1.2 D4 retirement

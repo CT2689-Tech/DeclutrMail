@@ -281,7 +281,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) |  |
 | D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
-| D230 | Mailto unsubscribe deferred to manual-only at launch | ⬜ |  |  |  |
+| D230 | Mailto unsubscribe deferred to manual-only at launch | 🔵 | #185 |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
 | D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🟢 | #33 | apps/api/src/account/deletion.service.spec.ts — D232 default window |  |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |

@@ -16,9 +16,14 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { ApiError } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
+// Cross-feature component import per ADR-0007's second-consumer rule —
+// the senders feature owns unsubscribe; D220's allowlist gates a
+// packages/shared promotion, so triage imports across the boundary
+// (same precedent as `sendersKeys` above).
+import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
@@ -134,6 +139,52 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const [intentRowId, setIntentRowId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
 
+  // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Watched
+  // OUTSIDE the single-slot re-entry latch: the decision row already
+  // left the queue on the intent POST; the execution confirms in the
+  // background. Toast discipline (D35) holds — `done` stays silent
+  // (the row leaving the queue was the feedback), failures DO toast.
+  const [unsubWatch, setUnsubWatch] = useState<{
+    actionId: string;
+    senderName: string;
+  } | null>(null);
+  const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
+  // D230 manual path — the "finish in Gmail" callout for a mailto
+  // sender, rendered above the queue after U confirms. Dismissible.
+  const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderName: string;
+    mailtoUrl: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!unsubWatch) return;
+    if (unsubExecStatus.isError) {
+      captureFeatureException(unsubExecStatus.error, {
+        surface: 'triage',
+        reason: 'unsub_status_poll',
+      });
+      setUnsubWatch(null);
+      return;
+    }
+    const data = unsubExecStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      // Silent success (D35) — refresh Activity so the outcome row shows.
+      invalidateAfterDecision(qc);
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `Couldn't confirm ${unsubWatch.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        'warn',
+      );
+    } else {
+      toast(
+        `${unsubWatch.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        'warn',
+      );
+    }
+    setUnsubWatch(null);
+  }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
+
   // Find the row the pending action targets — the sheet needs it for
   // the preview body.
   const pendingRow: TriageDecisionRow | null =
@@ -246,18 +297,27 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         return;
       }
 
-      // Unsubscribe — record the intent (the RFC8058/mailto execution
-      // pipeline is Wave 2; D230 keeps mailto manual). The "also
-      // archive the backlog" toggle rides the REAL archive pipeline so
-      // the preview's promise is kept, with its own undo token.
+      // Unsubscribe (D9 Wave 2). The intent records the decision AND —
+      // for a one_click sender — enqueues the REAL RFC 8058 execution,
+      // watched in the background (`unsubWatch`). mailto senders get
+      // the D230 manual callout: the USER sends the opt-out from a
+      // prefilled Gmail compose; DeclutrMail never auto-sends. The
+      // unsub itself is one-way (D58) — only the optional archived
+      // backlog below carries an undo token. The "also archive the
+      // backlog" toggle rides the REAL archive pipeline.
       if (verb === 'Unsubscribe') {
         setIntentRowId(row.id);
         unsubIntent.mutate(
           { senderId: row.senderId },
           {
-            onSuccess: () => {
+            onSuccess: (res) => {
               invalidateAfterDecision(qc);
               setExpandedRow(null);
+              if (res.method === 'one_click' && res.executionActionId) {
+                setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
+              } else if (res.method === 'mailto' && res.mailtoUrl) {
+                setMailtoFollowup({ senderName: row.senderName, mailtoUrl: res.mailtoUrl });
+              }
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
                   { senderId: row.senderId, primary: { type: 'archive', olderThanDays: null } },
@@ -446,6 +506,16 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         body="One row, one decision. K keeps, A archives, U unsubscribes, L moves to Later. Every destructive action shows a preview before anything changes."
         tip="We never read message bodies. The triage engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate read/volume stats — that's it."
       />
+
+      {/* D230 manual path — after U on a mailto sender, the user sends
+          the opt-out from a prefilled Gmail compose. Never auto-sent. */}
+      {mailtoFollowup && (
+        <UnsubMailtoCallout
+          senderName={mailtoFollowup.senderName}
+          mailtoUrl={mailtoFollowup.mailtoUrl}
+          onDismiss={() => setMailtoFollowup(null)}
+        />
+      )}
 
       {state.kind === 'loading' && <LoadingState />}
       {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}

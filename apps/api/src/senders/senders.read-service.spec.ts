@@ -1310,6 +1310,44 @@ describe('SendersReadService', () => {
       expect(detail).toBeNull();
     });
 
+    // D230 manual path + D7 defense-in-depth: `unsubscribe_url` holds a
+    // mailto: channel for mailto senders but an https URL (which can
+    // embed per-recipient opt-out tokens) for one_click senders. Only
+    // the mailto value may reach the wire — gated in BOTH the SQL CASE
+    // and the mapping ternary.
+    it('unsubscribeMailtoUrl: surfaced for mailto senders, NULL for one_click (token-bearing https URL never on the wire)', async () => {
+      const mailto = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'mailto-unsub@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        unsubscribeMethod: 'mailto',
+      });
+      await db
+        .update(senders)
+        .set({ unsubscribeUrl: 'mailto:opt-out@x.com?subject=unsubscribe' })
+        .where(eq(senders.id, mailto.id));
+      const oneClick = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'oneclick-unsub@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        unsubscribeMethod: 'one_click',
+      });
+      await db
+        .update(senders)
+        .set({ unsubscribeUrl: 'https://unsub.x.com/oc?recipient_token=SECRET' })
+        .where(eq(senders.id, oneClick.id));
+
+      const mailtoDetail = await svc.getSenderDetail(mailboxId, mailto.id);
+      expect(mailtoDetail!.unsubscribeMethod).toBe('mailto');
+      expect(mailtoDetail!.unsubscribeMailtoUrl).toBe('mailto:opt-out@x.com?subject=unsubscribe');
+
+      const oneClickDetail = await svc.getSenderDetail(mailboxId, oneClick.id);
+      expect(oneClickDetail!.unsubscribeMethod).toBe('one_click');
+      expect(oneClickDetail!.unsubscribeMailtoUrl).toBeNull();
+      // Nothing in the wire shape carries the token-bearing URL.
+      expect(JSON.stringify(oneClickDetail)).not.toContain('SECRET');
+    });
+
     // Regression — MISTAKES.md 2026-05-23. Mirror of the `listSenders`
     // regression: `getSenderDetail` runs the same correlated subquery,
     // so a second sender with its own timeseries row must NOT leak

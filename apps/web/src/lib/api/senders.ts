@@ -34,6 +34,16 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
 /**
+ * RFC 8058 execution outcome from `sender_policies.unsub_status`
+ * (D9 Wave 2): `pending` (job in flight) → `done` (2xx; unsubscribed)
+ * / `failed` (target refused or unreachable — recorded honestly) /
+ * `ambiguous` (3xx; redirects never followed, may have worked).
+ * `null` = no tracked execution (mailto-manual per D230, method
+ * `none`, or no unsub intent yet).
+ */
+export type UnsubStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
+
+/**
  * Bucketed volume trend mirrored from `senders.types.ts:VolumeTrendBucket`.
  * Surfaces as a chip on the Senders row evidence line. Bucketed
  * (rather than raw %) to avoid false precision on small baselines —
@@ -145,6 +155,13 @@ export interface SenderListRow {
    * wire shapes don't carry it; absent ⇒ adapter treats as `null`.
    */
   policyType?: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
+  /**
+   * RFC 8058 execution outcome (D9 Wave 2) — see `UnsubStatus`.
+   * Drives the per-row unsub chip copy (confirming / unsubscribed /
+   * failed / unconfirmed). Optional for fixture compatibility;
+   * absent ⇒ `null`.
+   */
+  unsubStatus?: UnsubStatus | null;
 }
 
 /**
@@ -176,6 +193,13 @@ export interface SenderDetailDto extends SenderListRow {
     /** ISO-8601 — when protection was last set. Null when not protected. */
     protectionSetAt: string | null;
   };
+  /**
+   * Raw `mailto:` URL from the sender's List-Unsubscribe header —
+   * D230's manual path. The page renders a Gmail compose deep link
+   * built from it (the USER sends; never auto-sent). Null unless
+   * `unsubscribeMethod === 'mailto'`. Optional for fixture compat.
+   */
+  unsubscribeMailtoUrl?: string | null;
 }
 
 /** Row shape on `GET /api/senders/:id/messages` — the recent-messages list. */

@@ -135,10 +135,16 @@ function daysAgo(n: number): Date {
 }
 
 /**
- * Fake BullMQ queue — records enqueues AND mirrors BullMQ's real jobId
- * validation: a custom id containing `:` is rejected (BullMQ reserves it
- * as its Redis key separator). Without this the fake would let a colon
- * jobId through and the bug only surfaces against a live Redis.
+ * Fake BullMQ queue — records enqueues AND mirrors two real BullMQ
+ * jobId behaviors:
+ *   1. a custom id containing `:` is rejected (BullMQ reserves it as
+ *      its Redis key separator) — without this the fake would let a
+ *      colon jobId through and the bug only surfaces against live Redis;
+ *   2. `add` with a jobId that already exists is a no-op (BullMQ
+ *      returns the existing job) — the unsub replay path leans on this
+ *      dedup, so the fake must model it or count assertions diverge
+ *      from the wire. Tests that reset `jobIds` (simulating a lost /
+ *      never-enqueued job) reset the dedup state with it.
  */
 function fakeQueue() {
   const q = {
@@ -148,6 +154,7 @@ function fakeQueue() {
       if (opts?.jobId && opts.jobId.includes(':')) {
         throw new Error('Custom Id cannot contain :');
       }
+      if (opts?.jobId && q.jobIds.includes(opts.jobId)) return;
       q.count += 1;
       if (opts?.jobId) q.jobIds.push(opts.jobId);
     },
@@ -1237,6 +1244,218 @@ describe('ActionsService', () => {
           idempotencyKey: 'unsub-bogus-key',
         }),
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
+    });
+  });
+
+  describe('recordUnsubscribeIntent — execution wiring (D9 Wave 2)', () => {
+    let unsubQueue: ReturnType<typeof fakeQueue>;
+
+    /** Service with BOTH queues wired (label + unsub-execution). */
+    function svcWithUnsubQueue(): ActionsService {
+      unsubQueue = fakeQueue();
+      return new ActionsService(db as never, queue as never, undefined, unsubQueue as never);
+    }
+
+    async function setSenderMethod(
+      method: 'one_click' | 'mailto' | 'none' | null,
+      url: string | null,
+    ): Promise<void> {
+      await db
+        .update(senders)
+        .set({ unsubscribeMethod: method, unsubscribeUrl: url })
+        .where(eq(senders.id, senderId));
+    }
+
+    it('one_click: returns the execution handle, persists the queued execution row, sets unsub_status=pending, enqueues', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+
+      const result = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'click-unsub-1',
+      });
+
+      expect(result.method).toBe('one_click');
+      expect(result.mailtoUrl).toBeNull();
+      expect(result.executionActionId).toMatch(/^[0-9a-f-]{36}$/);
+
+      // Execution row: queued, verb=unsubscribe, ONE-sender semantics.
+      const [execRow] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-click-unsub-1'));
+      expect(execRow!.id).toBe(result.executionActionId);
+      expect(execRow!.status).toBe('queued');
+      expect(execRow!.requestedCount).toBe(1);
+      expect(execRow!.undoToken).toBeNull(); // D58 — never an undo token
+
+      // Policy chip state: pending until the worker records the outcome.
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policy!.unsubStatus).toBe('pending');
+
+      // Enqueued on the UNSUB queue (not the label queue), jobId = row key.
+      expect(unsubQueue.count).toBe(1);
+      expect(unsubQueue.jobIds).toEqual(['unsubexec-click-unsub-1']);
+      expect(queue.count).toBe(0);
+    });
+
+    it('one_click replay: the SAME Idempotency-Key returns the same execution handle; the wire sees ONE job (jobId dedup)', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+
+      const first = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'replay-unsub-key',
+      });
+      const second = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'replay-unsub-key',
+      });
+
+      expect(second.executionActionId).toBe(first.executionActionId);
+      expect(second.activityLogId).toBe(first.activityLogId);
+      expect(second.method).toBe('one_click');
+      // The replay re-adds while the row is still 'queued' (crash-window
+      // self-heal below), but BullMQ's duplicate-jobId no-op means ONE
+      // execution per intent ever reaches the wire.
+      expect(unsubQueue.count).toBe(1);
+
+      const execRows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-replay-unsub-key'));
+      expect(execRows).toHaveLength(1);
+    });
+
+    it('one_click replay re-enqueues an orphaned queued execution row (crash between commit and enqueue)', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+
+      const first = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+
+      // Simulate the crash window: the tx committed (execution row
+      // 'queued', policy 'pending') but the process died before the
+      // post-commit enqueue — Redis has NO job behind the row.
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+
+      const replay = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+      expect(replay.executionActionId).toBe(first.executionActionId);
+      expect(unsubQueue.count).toBe(1); // the orphan self-healed
+      expect(unsubQueue.jobIds).toEqual(['unsubexec-orphan-unsub-key']);
+
+      // Once the worker has flipped the row terminal, a replay must NOT
+      // re-enqueue — the list processor was already asked once.
+      await db
+        .update(actionJobs)
+        .set({ status: 'done' })
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-orphan-unsub-key'));
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'orphan-unsub-key',
+      });
+      expect(unsubQueue.count).toBe(0);
+    });
+
+    it('mailto: returns the mailto URL for the manual compose path; NO execution, NO pending status (D230)', async () => {
+      await setSenderMethod('mailto', 'mailto:opt-out@shop.example?subject=unsubscribe');
+      const service = svcWithUnsubQueue();
+
+      const result = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'mailto-unsub-1',
+      });
+
+      expect(result.method).toBe('mailto');
+      expect(result.mailtoUrl).toBe('mailto:opt-out@shop.example?subject=unsubscribe');
+      expect(result.executionActionId).toBeNull();
+      expect(unsubQueue.count).toBe(0); // D230 hard guardrail — no auto-send
+
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policy!.policyType).toBe('unsubscribe');
+      expect(policy!.unsubStatus).toBeNull(); // no claimed outcome
+    });
+
+    it('none: decision recorded, nothing to execute', async () => {
+      await setSenderMethod('none', null);
+      const service = svcWithUnsubQueue();
+
+      const result = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'none-unsub-1',
+      });
+
+      expect(result.method).toBe('none');
+      expect(result.mailtoUrl).toBeNull();
+      expect(result.executionActionId).toBeNull();
+      expect(unsubQueue.count).toBe(0);
+    });
+
+    it('one_click missing its URL degrades to none (defensive — ADR-0006 says the pair always agrees)', async () => {
+      await setSenderMethod('one_click', null);
+      const service = svcWithUnsubQueue();
+
+      const result = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'broken-pair-1',
+      });
+      expect(result.method).toBe('none');
+      expect(result.executionActionId).toBeNull();
+      expect(unsubQueue.count).toBe(0);
+    });
+
+    it('503 QUEUE_UNAVAILABLE before ANY write when the unsub queue is down and the sender is one_click', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const noUnsubQueue = new ActionsService(db as never, queue as never);
+
+      await expect(
+        noUnsubQueue.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'no-queue-1',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'QUEUE_UNAVAILABLE' } });
+
+      // No half-written state: no policy row, no audit row, no jobs.
+      expect(await db.select().from(senderPolicies)).toHaveLength(0);
+      expect(await db.select().from(activityLog)).toHaveLength(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+    });
+
+    it('intent event carries the method so the senders consumer can project pending', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'event-method-1',
+      });
+      const events = await db.select().from(outboxEvents);
+      const intent = events.find((e) => e.topic === 'actions.unsubscribe_intent_recorded');
+      expect(intent?.payload).toMatchObject({ method: 'one_click' });
     });
   });
 

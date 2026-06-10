@@ -367,6 +367,11 @@ export function buildSenderDetail(
     // Fixture senders have no standing policy by default; stories that
     // need the Unsub-queued pill flip this through their overrides.
     policyType: null,
+    // No tracked unsub execution / mailto channel in fixtures (D9
+    // Wave 2) — the adapter path overlays the wire values.
+    unsubStatus: null,
+    unsubscribeMethod: null,
+    unsubscribeMailtoUrl: null,
     gmailCategory: GMAIL_CATEGORY[sender.group],
     isVip,
     isProtected,

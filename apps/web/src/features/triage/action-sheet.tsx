@@ -218,11 +218,12 @@ export function ActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            {/* Honest reversibility: the unsub INTENT has no Gmail
-                side-effect to reverse; only the archived backlog is
-                undoable. Archive/Later are fully reversible (D232). */}
+            {/* Honest reversibility (D58): a delivered network
+                unsubscribe can't be recalled — no undo token exists for
+                it by design. Only the archived backlog is undoable.
+                Archive/Later are fully reversible (D232). */}
             {verb === 'Unsubscribe'
-              ? 'An archived backlog is reversible for 7 days from Activity.'
+              ? "The unsubscribe itself can't be undone — an archived backlog is reversible for 7 days from Activity."
               : 'Reversible for 7 days from Activity.'}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

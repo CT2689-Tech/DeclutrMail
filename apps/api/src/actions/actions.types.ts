@@ -64,6 +64,30 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /**
+   * The sender's unsubscribe capability at intent time (ADR-0006
+   * derivation; `none` when the sender carries no method). Drives the
+   * FE's three-state copy (D9 Wave 2):
+   *   - `one_click` → "confirming with <domain>…" + poll
+   *     `executionActionId` for the outcome.
+   *   - `mailto`    → manual Gmail-compose affordance (D230 — the
+   *     user sends the opt-out themselves; `mailtoUrl` is the address).
+   *   - `none`      → no unsubscribe channel; archive is the fallback.
+   */
+  method: 'one_click' | 'mailto' | 'none';
+  /**
+   * `action_jobs.id` of the enqueued RFC 8058 execution job — poll at
+   * `GET /api/actions/:id` until terminal. NULL unless `method` is
+   * `one_click`. NO undo token will ever accompany the terminal state
+   * (D58 — a delivered network unsubscribe is one-way).
+   */
+  executionActionId: string | null;
+  /**
+   * Raw `mailto:` URL from the sender's List-Unsubscribe header (D230
+   * manual path). NULL unless `method` is `mailto`. The FE parses it
+   * into a Gmail compose deep link — DeclutrMail never auto-sends.
+   */
+  mailtoUrl: string | null;
 }
 
 /**

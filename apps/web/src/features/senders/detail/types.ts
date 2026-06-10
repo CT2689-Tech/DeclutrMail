@@ -187,6 +187,24 @@ export interface SenderDetail {
    * `null` = no standing policy; the engine recommendation drives the UI.
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
+  /**
+   * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
+   * `pending` (confirming) / `done` / `failed` / `ambiguous`. `null`
+   * = no tracked execution (mailto-manual per D230, method none, or
+   * no unsub intent yet).
+   */
+  unsubStatus: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  /**
+   * The sender's unsubscribe channel (ADR-0006 derivation). Drives
+   * which post-intent affordance the page renders.
+   */
+  unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
+  /**
+   * Raw `mailto:` List-Unsubscribe URL (D230 manual path) — parsed
+   * into the Gmail compose deep link by the persistent "Finish in
+   * Gmail" callout. `null` unless `unsubscribeMethod === 'mailto'`.
+   */
+  unsubscribeMailtoUrl: string | null;
   /** Engine recommendation. `null` = no recommendation (VIP / Protected). */
   recommendation: Recommendation | null;
   recentMessages: RecentMessage[];

@@ -300,10 +300,59 @@ export const ActionsUnsubscribeIntentRecordedPayloadSchema = z
     activityLogId: UuidSchema,
     /** ISO-8601 — when the activity_log row's `occurred_at` landed. */
     recordedAt: z.string().datetime(),
+    /**
+     * Sender's unsubscribe capability at intent time (D9 Wave 2,
+     * additive). `one_click` ⇒ the consumer projects
+     * `sender_policies.unsub_status = 'pending'` (an execution job is
+     * in flight); `mailto` / `none` ⇒ no tracked execution (D230
+     * manual path). Optional so events published before this field
+     * existed still parse.
+     */
+    method: z.enum(['one_click', 'mailto', 'none']).optional(),
   })
   .strict();
 export type ActionsUnsubscribeIntentRecordedPayload = z.infer<
   typeof ActionsUnsubscribeIntentRecordedPayloadSchema
+>;
+
+// ──────────────────────────────────────────────────────────────────────
+// actions.unsubscribe_executed
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Emitted by `UnsubExecutionWorker` inside the terminal transaction
+ * of an RFC 8058 one-click unsubscribe attempt (D9 Wave 2). The
+ * worker itself writes the durable effects (sender_policies.
+ * unsub_status, the activity_log outcome row, the action_jobs
+ * terminal state) — this event is the observability signal; no
+ * consumer projection exists at this build.
+ *
+ * `outcome`:
+ *   - `done`      — target answered 2xx.
+ *   - `failed`    — target 4xx/5xx, blocked/invalid URL, or network
+ *                   retries exhausted (`httpStatus` null then).
+ *   - `ambiguous` — target answered 3xx; redirects are never
+ *                   followed, so the result is unknown.
+ *
+ * Privacy (D7, D228): metadata only — ids, enum outcome, HTTP status
+ * code. The target URL is deliberately NOT carried (it can embed
+ * per-recipient tokens).
+ */
+export const ActionsUnsubscribeExecutedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    senderKey: SenderKeySchema,
+    /** The execution's `action_jobs.id` — the FE poll handle. */
+    actionId: UuidSchema,
+    outcome: z.enum(['done', 'failed', 'ambiguous']),
+    /** HTTP status from the target; null when the request never completed. */
+    httpStatus: z.number().int().nullable(),
+    /** ISO-8601 — when the terminal outcome was recorded. */
+    executedAt: z.string().datetime(),
+  })
+  .strict();
+export type ActionsUnsubscribeExecutedPayload = z.infer<
+  typeof ActionsUnsubscribeExecutedPayloadSchema
 >;
 
 // ──────────────────────────────────────────────────────────────────────
@@ -330,6 +379,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
+  [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayloadSchema,
 } as const satisfies Record<EventTopic, z.ZodSchema>;
 
 /**
@@ -347,4 +397,5 @@ export type EventPayloadByTopic = {
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayload;
+  [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayload;
 };
