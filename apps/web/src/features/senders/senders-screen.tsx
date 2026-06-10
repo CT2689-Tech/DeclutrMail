@@ -1135,18 +1135,20 @@ function SendersScreenContent({
         ['Later', slice.filter((s) => result.decisions[s.id] === 'later')],
         ['Protect', slice.filter((s) => result.decisions[s.id] === 'lock')],
       ];
+      // Destructive buckets route through `requestAction` so the
+      // mandatory D226 preview gates the mutation — `performAction`
+      // directly would skip the preview and (post-D52) reach the REAL
+      // bulk pipeline. The preview modal owns the historic-mail choice
+      // (secondary chip row), superseding the session's archiveHistoric
+      // flag. `requestAction` previews ONE request at a time, so a
+      // multi-bucket result keeps only the last destructive bucket
+      // pending — conservative: nothing ever fires un-previewed.
       for (const [verb, list] of buckets) {
         if (list.length === 0) continue;
-        performAction(
-          verb,
-          list,
-          verb === 'Unsubscribe' || verb === 'Later'
-            ? { archiveHistoric: result.archiveHistoric }
-            : undefined,
-        );
+        requestAction({ verb, senders: list });
       }
     },
-    [review, performAction],
+    [review, requestAction],
   );
 
   // onStartReview retired with InboxStoryHero render (spec v1.2

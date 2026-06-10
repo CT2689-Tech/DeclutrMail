@@ -960,6 +960,12 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // The aggregated total (12 + 18) renders in the modal — headline +
     // the "All inbox" chip count both read 30.
     expect(within(screen.getByRole('dialog')).getAllByText('30').length).toBeGreaterThan(0);
+    // Per-window chips read the AGGREGATED totals too (8 + 9 = 17 for
+    // "30 days+") — never the single-sender composite preview, which is
+    // absent on bulk flows.
+    expect(
+      within(screen.getByRole('dialog')).getByRole('radio', { name: /30 days\+/i }),
+    ).toHaveTextContent('17');
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // Real receipt appears only after the batch poll reports done.

@@ -636,7 +636,7 @@ export function ConfirmActionModal({
               >
                 {TIME_WINDOW_PRESETS.map((preset) => {
                   const active = olderThanDays === preset.days;
-                  const bucketCount = pickBucketCount(compositePreview?.counts, preset.days);
+                  const bucketCount = pickBucketCount(bucketCounts, preset.days);
                   return (
                     <button
                       key={preset.label}
