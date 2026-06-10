@@ -4,7 +4,6 @@ import type { CSSProperties } from 'react';
 
 import { Button } from '../button';
 import { color, font, radius, shadow } from '../../tokens/tokens';
-import { useUndoTray } from './use-undo-tray';
 import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
 
 /**
@@ -13,16 +12,26 @@ import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
  *
  * What it does:
  *
- *   - Reads active undo tokens from `GET /api/undo` (via
- *     `useUndoTray`) and lists them newest-first.
- *   - Per-row "Undo" affordance (D58) — POST `/api/undo/:token`,
- *     optimistically removes the row from the tray on click. Server
- *     remains the source of truth (D226 — no optimistic UI on
- *     destructive *mutations*; this is the REVERT path and the row
- *     simply disappears from the tray either way).
+ *   - Lists the active undo entries supplied via `dataSource`,
+ *     newest-first.
+ *   - Per-row "Undo" affordance (D58) — delegates to
+ *     `dataSource.revert(token)`. Server remains the source of truth
+ *     (D226 — no optimistic UI on destructive *mutations*; this is
+ *     the REVERT path and the row simply disappears from the tray
+ *     either way).
  *   - "View Activity" link (D35 footer copy) — handed to the
  *     consumer via `onViewActivity` because shared components do not
  *     own the route.
+ *
+ * Data contract: the tray owns NO transport. The host app injects a
+ * `UndoTrayDataSource` built on its own API client — which is what
+ * carries the CSRF double-submit header, the API base URL, and the
+ * 401-refresh behavior the shared package cannot know about (see
+ * `apps/web/src/features/triage/triage-undo-tray.tsx`). A previous
+ * revision embedded a raw-fetch live path here; it could never have
+ * worked against the CsrfGuard-protected `POST /api/undo/:token` and
+ * was removed rather than fixed (founder call: no dead transport in
+ * shared pre-launch).
  *
  * What it deliberately does NOT do (PR-scope-bounded):
  *
@@ -41,25 +50,17 @@ import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
  * a new verb requires touching this AND the API action-kind enum.
  */
 export function UndoTray({
-  mailboxAccountId,
   dataSource,
   onViewActivity,
-  apiBaseUrl,
   style,
 }: {
-  mailboxAccountId: string;
-  /** Test/Storybook override (skips the network fetch). */
-  dataSource?: UndoTrayDataSource;
+  /** Entries + revert callback, built on the host app's API client. */
+  dataSource: UndoTrayDataSource;
   /** Click handler for the "View Activity" link in the tray footer. */
   onViewActivity?: () => void;
-  apiBaseUrl?: string;
   style?: CSSProperties;
 }) {
-  const source = useUndoTray({
-    mailboxAccountId,
-    ...(dataSource ? { dataSource } : {}),
-    ...(apiBaseUrl ? { apiBaseUrl } : {}),
-  });
+  const source = dataSource;
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.

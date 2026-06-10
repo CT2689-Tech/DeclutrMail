@@ -32,7 +32,7 @@ const meta: StoryMeta<typeof UndoTray> = {
     docs: {
       description: {
         component:
-          'Persistent undo tray (D35) — the post-action feedback channel. Each row maps to one undo_journal entry; "Undo" calls POST /api/undo/:token. Verbs are K/A/U/L (D227) plus "Rule applied" for Autopilot reverts.',
+          'Persistent undo tray (D35) — the post-action feedback channel. Each row maps to one undo_journal entry; "Undo" delegates to the injected dataSource.revert (the host app owns transport). Verbs are K/A/U/L (D227) plus "Rule applied" for Autopilot reverts.',
       },
     },
   },
@@ -87,9 +87,6 @@ export const SingleAction: Story<typeof UndoTray> = {
         ])}
       />,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
 
 /** Multiple decisions queued — the "3 decisions applied" D35 case. */
@@ -123,9 +120,6 @@ export const ThreeDecisions: Story<typeof UndoTray> = {
         }}
       />,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
 
 /** Autopilot rule application — D99 / "Rule applied" label. */
@@ -144,9 +138,6 @@ export const RuleApplied: Story<typeof UndoTray> = {
         ])}
       />,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
 
 /** Loading state — initial fetch before the API responds. */
@@ -164,9 +155,6 @@ export const Loading: Story<typeof UndoTray> = {
         }}
       />,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
 
 /** Empty — no active tokens; the tray renders nothing (correct UX). */
@@ -188,9 +176,6 @@ export const Empty: Story<typeof UndoTray> = {
         <UndoTray {...args} dataSource={staticSource([])} />
       </div>,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
 
 /**
@@ -217,7 +202,4 @@ export const ErrorState: Story<typeof UndoTray> = {
         }}
       />,
     ),
-  args: {
-    mailboxAccountId: '00000000-0000-0000-0000-000000000000',
-  },
 };
