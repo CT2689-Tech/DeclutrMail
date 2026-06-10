@@ -682,6 +682,13 @@ export function canLater(s: Sender): boolean {
   return !isStandingProtected(s);
 }
 
+/** Delete (Gmail Trash, 30-day recovery) — gated like the other
+ * destructive verbs: blocked only for standing-protected senders
+ * (D42/D43). */
+export function canDelete(s: Sender): boolean {
+  return !isStandingProtected(s);
+}
+
 /** Compact large-number display: 12480 → "12.5k". */
 export function fmtCompact(n: number): string {
   if (n < 1000) return n.toLocaleString();

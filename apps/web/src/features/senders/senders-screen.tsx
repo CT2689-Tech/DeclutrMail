@@ -12,6 +12,7 @@ import {
 } from '@declutrmail/shared';
 import {
   canArchive,
+  canDelete,
   canLater,
   canUnsubscribe,
   detectCohorts,
@@ -37,9 +38,12 @@ import { adaptSenderListRow } from './api/adapters';
 import {
   useEnqueueAction,
   useActionStatus,
+  useBatchStatus,
+  useBulkActionPreview,
   useRevertUndo,
   useArchivePreview,
   useCompositePreview,
+  useEnqueueBulkAction,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from './api/use-action';
@@ -83,22 +87,24 @@ const VERB_TO_POSTHOG: Record<ActionVerb, Verb> = {
   Protect: 'keep',
 };
 
-const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe', (s: Sender) => boolean> = {
+const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe' | 'Delete', (s: Sender) => boolean> = {
   Archive: canArchive,
   Later: canLater,
   Unsubscribe: canUnsubscribe,
+  Delete: canDelete,
 };
 
 /**
- * Selection-scoped bulk-action shortcuts (D227 K/A/U/L). These mirror the
- * SelectionBar buttons exactly — a press routes through the SAME
+ * Selection-scoped bulk-action shortcuts (D227 K/A/U/L/D). These mirror
+ * the SelectionBar buttons exactly — a press routes through the SAME
  * `requestAction` (the mandatory D226 preview), never a direct mutation.
- * Keep (K) has no bulk affordance on this surface, so only A/L/U bind.
+ * Keep (K) has no bulk affordance on this surface, so A/L/U/D bind.
  */
-const VERB_BY_KEY: Record<string, 'Archive' | 'Later' | 'Unsubscribe'> = {
+const VERB_BY_KEY: Record<string, 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'> = {
   a: 'Archive',
   l: 'Later',
   u: 'Unsubscribe',
+  d: 'Delete',
 };
 
 let receiptSeq = 0;
@@ -341,6 +347,9 @@ function SendersScreenContent({
   // The per-verb `enqueueArchiveSender` stays for the single-sender
   // Archive path until Phase 5 dead-code sweep retires it.
   const enqueueComposite = useEnqueueComposite();
+  // D52 — multi-sender bulk pipeline. One POST fans out server-side
+  // (per-sender failure isolation); the FE polls ONE batch handle.
+  const enqueueBulk = useEnqueueBulkAction();
   const recordUnsubIntent = useRecordUnsubscribeIntent();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
@@ -351,8 +360,15 @@ function SendersScreenContent({
     // Later must NOT say "Archived" — composite path mistake 2026-06-05).
     verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
+  // D52 — the in-flight bulk batch the status effect polls to terminal.
+  const [activeBatch, setActiveBatch] = useState<{
+    batchId: string;
+    verb: 'Archive' | 'Delete' | 'Later';
+    senderCount: number;
+  } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  const batchStatus = useBatchStatus(activeBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
 
   // Real inbox-count preview (D226): fetch the actual inbox count for any
@@ -413,6 +429,30 @@ function SendersScreenContent({
           error: archivePreviewQuery.isError,
         }
       : undefined;
+  // D52 — aggregated multi-sender preview. Enabled only while a bulk
+  // (>1 sender) A/L/D preview is open; supplies the REAL per-window
+  // bucket totals + per-sender breakdown the D226 modal renders.
+  const bulkPreviewSenderIds = useMemo(
+    () =>
+      pendingAction != null &&
+      pendingAction.senders.length > 1 &&
+      (pendingAction.verb === 'Archive' ||
+        pendingAction.verb === 'Later' ||
+        pendingAction.verb === 'Delete')
+        ? pendingAction.senders.map((s) => s.id)
+        : null,
+    [pendingAction],
+  );
+  const bulkPreviewQuery = useBulkActionPreview(bulkPreviewSenderIds);
+  useEffect(() => {
+    if (!bulkPreviewQuery.isError || bulkPreviewSenderIds == null) return;
+    const err = bulkPreviewQuery.error;
+    console.warn('[senders] bulk preview fetch failed', {
+      senderCount: bulkPreviewSenderIds.length,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    captureFeatureException(err, { surface: 'senders', reason: 'bulk_preview' });
+  }, [bulkPreviewQuery.isError, bulkPreviewQuery.error, bulkPreviewSenderIds]);
   const storeView = useSendersStore((s) => s.view);
   const tableSort = useSendersStore((s) => s.sort);
   const tableDirection = useSendersStore((s) => s.direction);
@@ -566,9 +606,7 @@ function SendersScreenContent({
       // (this fires post-confirm), so enqueue the action, then poll its
       // handle to a terminal state in the effect below. The real receipt
       // (with the real undo token) appears on `done`, never optimistically.
-      // Other verbs + multi-sender bulk stay on the tracer path: their BE
-      // pipeline isn't built (the worker rejects them fail-closed) and the
-      // multi-sender selector is P7.
+      // Multi-sender Archive/Later/Delete ride the bulk branch below (D52).
       if (verb === 'Archive' && senders.length === 1 && opts?.secondary == null) {
         const sender = senders[0]!;
         setPendingAction(null);
@@ -725,11 +763,82 @@ function SendersScreenContent({
         return;
       }
 
-      // Tracer path — toast + fake receipt until the verb's BE lands. No
-      // email count is shown here: the true number is only known once the
-      // verb's worker runs (P6 wired that for single-sender Archive).
-      // NOTE: Keep is intentionally tracer (no Gmail mutation needed);
-      // multi-sender bulk for non-Unsub verbs is still tracer (P7).
+      // D52 — multi-sender bulk Archive / Later / Delete. ONE POST fans
+      // out server-side to one action_jobs row per sender (per-sender
+      // failure isolation), linked into a batch the effect below polls
+      // via GET /api/actions/batch/:id. Replaces the prior tracer path
+      // that toasted success + fabricated a receipt with NO backend call.
+      // Selection clears ONLY on server confirmation (D226 — no
+      // optimistic UI for destructive actions); an enqueue failure keeps
+      // the selection so the user can retry.
+      if (senders.length > 1 && (verb === 'Archive' || verb === 'Later' || verb === 'Delete')) {
+        // Guard against rapid double-confirmation while the enqueue
+        // round-trip is in flight (the bar is also disabled via `busy`).
+        if (enqueueBulk.isPending) return;
+        const primaryType: 'archive' | 'later' | 'delete' =
+          verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
+        const n = senders.length;
+        setPendingAction(null);
+        toast(
+          primaryType === 'delete'
+            ? `Moving mail from ${n} senders to Trash…`
+            : primaryType === 'later'
+              ? `Moving ${n} senders to Later…`
+              : `Archiving mail from ${n} senders…`,
+          'info',
+        );
+        enqueueBulk.mutate(
+          {
+            senderIds: senders.map((s) => s.id),
+            primary: { type: primaryType, olderThanDays: opts?.olderThanDays ?? null },
+            ...(opts?.secondary
+              ? {
+                  secondary: {
+                    type: opts.secondary.type,
+                    olderThanDays: opts.secondary.olderThanDays ?? null,
+                  },
+                }
+              : {}),
+          },
+          {
+            onSuccess: (res) => {
+              // The server accepted the batch — NOW the selection clears.
+              setSelected(new Set());
+              if (res.skipped.length > 0) {
+                toast(
+                  `${res.skipped.length} sender${res.skipped.length === 1 ? '' : 's'} skipped (protected or no longer present)`,
+                  'warn',
+                );
+              }
+              setActiveBatch({ batchId: res.batchId, verb, senderCount: res.senderCount });
+            },
+            onError: (err) => {
+              // 409 NO_ACTIONABLE_SENDERS is a designed conflict (whole
+              // selection protected / gone) — skip Sentry, mirror the
+              // single-sender PROTECTED_SENDER convention.
+              if (!(err instanceof ApiError && err.status === 409)) {
+                captureFeatureException(err, {
+                  surface: 'senders',
+                  reason: `enqueue_bulk_${primaryType}`,
+                });
+              }
+              toast(
+                err instanceof ApiError && err.status === 409
+                  ? 'Nothing to do — the selected senders are protected or gone'
+                  : `Couldn't ${primaryType} mail from ${n} senders`,
+                'warn',
+              );
+            },
+          },
+        );
+        return;
+      }
+
+      // Tracer tail — Keep / Protect only (standing-policy verbs owned by
+      // Track B; no Gmail mutation fires). Every mail-moving verb above
+      // rides a real pipeline now: single Archive (P6), single
+      // Delete/Later/composite (ADR-0020), Unsubscribe intent (D38),
+      // multi-sender A/L/D bulk (D52).
       toast(
         `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
         'success',
@@ -746,7 +855,7 @@ function SendersScreenContent({
       setPendingAction(null);
       setSelected(new Set());
     },
-    [enqueue],
+    [enqueue, enqueueBulk],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -818,6 +927,66 @@ function SendersScreenContent({
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+
+  // D52 — drive the bulk-batch lifecycle off the aggregate poll. On
+  // terminal: real receipt (real undo token covering the batch via the
+  // ADR-0020 cascade) + verb-correct toasts; partial failures surface
+  // explicitly (one sender failing never hides the rest succeeding).
+  // Same retry-false / sustained-5xx hazard as the single-action poll.
+  useEffect(() => {
+    if (!activeBatch) return;
+    if (batchStatus.isError) {
+      const err = batchStatus.error;
+      console.warn('[senders] batchStatus poll failed', {
+        batchId: activeBatch.batchId,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
+      toast(`Couldn't confirm the bulk ${activeBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      setActiveBatch(null);
+      return;
+    }
+    const data = batchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    const verbPast = VERB_PAST[activeBatch.verb];
+    const verbLowercase = activeBatch.verb.toLowerCase();
+    if (data.status === 'failed') {
+      // Every sibling failed — nothing moved, nothing to undo.
+      toast(
+        `Couldn't ${verbLowercase} mail from ${activeBatch.senderCount} senders — see Activity`,
+        'warn',
+      );
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+    } else {
+      if (data.failed > 0) {
+        // Partial failure — name it; the receipt below still covers the
+        // senders that DID move (their undo tokens are in the cascade).
+        toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
+      }
+      if (data.affectedCount === 0 || !data.undoToken) {
+        // No-op batch: nothing was in the inbox for any selected sender,
+        // so no undo token exists. Never show a receipt with a dead Undo.
+        toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      } else {
+        setReceipt({
+          id: `r${++receiptSeq}`,
+          verb: activeBatch.verb,
+          count: activeBatch.senderCount,
+          historicTotal: data.affectedCount,
+          timeLeft: '',
+          undoToken: data.undoToken,
+        });
+        toast(
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders`,
+          'success',
+        );
+        void qc.invalidateQueries({ queryKey: sendersKeys.all });
+        void qc.invalidateQueries({ queryKey: activityKeys.all });
+      }
+    }
+    setActiveBatch(null);
+  }, [batchStatus.data, batchStatus.isError, batchStatus.error, activeBatch, qc]);
 
   // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
   // refresh; on `failed`, a warn toast. Same retry-false / sustained-5xx
@@ -1315,6 +1484,7 @@ function SendersScreenContent({
           senders={selectedSenders}
           onClear={() => setSelected(new Set())}
           onAct={(verb) => requestAction({ verb, senders: selectedSenders.filter(ELIGIBLE[verb]) })}
+          busy={enqueueBulk.isPending}
         />
       )}
 
@@ -1325,6 +1495,15 @@ function SendersScreenContent({
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
         compositePreviewError={compositePreviewQuery.isError}
+        bulkPreview={
+          bulkPreviewSenderIds != null
+            ? {
+                data: bulkPreviewQuery.data,
+                loading: bulkPreviewQuery.isLoading,
+                error: bulkPreviewQuery.isError,
+              }
+            : undefined
+        }
       />
 
       <ReviewSession

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import type { CompositeActionPreviewResult } from './api/use-action';
+import type { BulkActionPreviewResult, CompositeActionPreviewResult } from './api/use-action';
 import { sampleSubjects, verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
@@ -66,6 +66,18 @@ const TIME_WINDOW_PRESETS = [
  */
 export interface ArchivePreviewState {
   inboxCount: number | undefined;
+  loading: boolean;
+  error: boolean;
+}
+
+/**
+ * Aggregated multi-sender preview state (D52). Drives the chip-row
+ * bucket counts, the headline figure, and the per-sender breakdown for
+ * a bulk action. `loading` gates confirm exactly like the single-sender
+ * preview; `error` blocks Delete confirm (D226 preview mandate).
+ */
+export interface BulkPreviewState {
+  data: BulkActionPreviewResult | undefined;
   loading: boolean;
   error: boolean;
 }
@@ -143,6 +155,7 @@ export function ConfirmActionModal({
   archivePreview,
   compositePreview,
   compositePreviewError,
+  bulkPreview,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -166,6 +179,12 @@ export function ConfirmActionModal({
    * enabled with `compositeCount === undefined`).
    */
   compositePreviewError?: boolean | undefined;
+  /**
+   * Aggregated multi-sender preview (D52). Present only for bulk
+   * (>1 sender) flows — supplies the chip-row bucket totals, the
+   * headline figure, and the per-sender breakdown list.
+   */
+  bulkPreview?: BulkPreviewState | undefined;
 }) {
   const verb = request?.verb;
   // Composite secondary (chip row) — applies only on Unsubscribe + Later
@@ -177,12 +196,16 @@ export function ConfirmActionModal({
   const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
   // "Show what will move" expand panel state (spec v1.2 Decision 15).
   const [showSubjects, setShowSubjects] = useState(false);
+  // Per-sender breakdown expand state (D52 — "Per-sender breakdown"
+  // expandable list for verification on bulk flows).
+  const [showAllSenders, setShowAllSenders] = useState(false);
 
   useEffect(() => {
     if (!request) return;
     setSecondaryVerb(null);
     setOlderThanDays(defaultWindow(request.verb));
     setShowSubjects(false);
+    setShowAllSenders(false);
   }, [request]);
 
   // The historic-bucket count for the current chip selection — used by
@@ -204,11 +227,20 @@ export function ConfirmActionModal({
   // time-window applies to the secondary's historic mail.
   const showWindowRow = primaryActsOnInbox || hasSecondaryAction;
 
-  // Composite preview bucket count under the current chip selection.
-  const compositeCount = pickBucketCount(compositePreview?.counts, olderThanDays);
-  const previewLoading = archivePreview?.loading ?? false;
-  const inboxNow =
-    archivePreview != null && !previewLoading && !archivePreview.error
+  // Multi-sender bulk (D52) — the aggregated preview replaces the
+  // single-sender composite preview as the bucket-count source. The
+  // confirm-gating rules below are IDENTICAL across both shapes.
+  const isBulk = (request?.senders.length ?? 0) > 1;
+  const bucketCounts = isBulk ? bulkPreview?.data?.totals : compositePreview?.counts;
+
+  // Preview bucket count under the current chip selection.
+  const compositeCount = pickBucketCount(bucketCounts, olderThanDays);
+  const previewLoading = isBulk
+    ? (bulkPreview?.loading ?? false)
+    : (archivePreview?.loading ?? false);
+  const inboxNow = isBulk
+    ? bulkPreview?.data?.totals.all
+    : archivePreview != null && !previewLoading && !archivePreview.error
       ? archivePreview.inboxCount
       : (compositePreview?.counts?.all ?? undefined);
 
@@ -218,9 +250,11 @@ export function ConfirmActionModal({
   const nothingToActOn =
     (isArchiveVerb && inboxNow === 0) ||
     (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
-  // Block confirm on Delete primary when the composite preview failed —
-  // D226 requires the preview to inform the destructive choice.
-  const previewBlocksDelete = isDeleteVerb && (compositePreviewError ?? false);
+  // Block confirm on Delete primary when the preview failed — D226
+  // requires the preview to inform the destructive choice (bulk reads
+  // the aggregated preview's error, single the composite preview's).
+  const previewBlocksDelete =
+    isDeleteVerb && (isBulk ? (bulkPreview?.error ?? false) : (compositePreviewError ?? false));
   const confirmDisabled =
     ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) || previewBlocksDelete;
 
@@ -476,45 +510,98 @@ export function ConfirmActionModal({
         )}
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Bulk sender lozenges (kept for multi-sender flows). */}
-          {senders.length > 1 && (
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 6,
-              }}
-            >
-              {senders.slice(0, 6).map((s) => (
-                <span
-                  key={s.id}
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgSoft,
-                    background: color.paper,
-                    border: `1px solid ${color.line}`,
-                    borderRadius: 6,
-                    padding: '3px 8px',
-                  }}
-                >
-                  {s.name}
-                </span>
-              ))}
-              {senders.length > 6 && (
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgMuted,
-                    alignSelf: 'center',
-                  }}
-                >
-                  +{senders.length - 6} more
-                </span>
-              )}
-            </div>
-          )}
+          {/* Per-sender breakdown (D52) — each lozenge carries the REAL
+              count for the active time-window from the aggregated
+              preview; protected senders are flagged (the BE skips them).
+              The "+N more" toggle expands the full list for verification. */}
+          {senders.length > 1 &&
+            (() => {
+              const breakdownById = new Map(
+                (bulkPreview?.data?.senders ?? []).map((s) => [s.senderId, s] as const),
+              );
+              const visible = showAllSenders ? senders : senders.slice(0, 6);
+              const protectedCount = bulkPreview?.data?.protectedCount ?? 0;
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}
+                  >
+                    {visible.map((s) => {
+                      const row = breakdownById.get(s.id);
+                      const n = row ? pickBucketCount(row.counts, olderThanDays) : undefined;
+                      return (
+                        <span
+                          key={s.id}
+                          style={{
+                            fontFamily: font.mono,
+                            fontSize: 11,
+                            color: color.fgSoft,
+                            background: color.paper,
+                            border: `1px solid ${color.line}`,
+                            borderRadius: 6,
+                            padding: '3px 8px',
+                          }}
+                        >
+                          {s.name}
+                          {row?.protected ? (
+                            <span style={{ color: color.fgMuted }}> · protected</span>
+                          ) : (
+                            n !== undefined && (
+                              <span
+                                style={{
+                                  color: color.fg,
+                                  fontVariantNumeric: 'tabular-nums',
+                                }}
+                              >
+                                {' '}
+                                · {n.toLocaleString()}
+                              </span>
+                            )
+                          )}
+                        </span>
+                      );
+                    })}
+                    {senders.length > 6 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllSenders((v) => !v)}
+                        aria-expanded={showAllSenders}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          fontFamily: font.mono,
+                          fontSize: 11,
+                          color: color.fgMuted,
+                          alignSelf: 'center',
+                          letterSpacing: '0.04em',
+                        }}
+                      >
+                        {showAllSenders ? 'show fewer ▴' : `+${senders.length - 6} more ▾`}
+                      </button>
+                    )}
+                  </div>
+                  {protectedCount > 0 && (
+                    <span
+                      style={{
+                        fontFamily: font.mono,
+                        fontSize: 10.5,
+                        color: color.fgMuted,
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      {protectedCount} protected sender{protectedCount === 1 ? '' : 's'} won&apos;t
+                      be touched.
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
           {/* Time-window chip row (spec v1.2 Decision 15). Visible when
               the action acts on historic mail — Archive/Delete primary
@@ -747,7 +834,7 @@ export function ConfirmActionModal({
                 if (previewLoading) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Checking how much of this sender’s mail is in your inbox…
+                      Checking how much mail from {subject} is in your inbox…
                     </span>
                   );
                 }

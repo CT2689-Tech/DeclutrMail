@@ -41,6 +41,11 @@ export function ReceiptStrip({
     verb === 'Archive' || verb === 'Unsubscribe' || verb === 'Protect' || verb === 'Keep'
       ? `${VERB_PAST[verb]} ${count} sender${count === 1 ? '' : 's'}`
       : `${VERB_PAST[verb]} · ${count} sender${count === 1 ? '' : 's'}`;
+  // Where the historic mail went — verb-correct (a Delete receipt must
+  // never claim the mail was "archived"; D52 bulk wired Delete/Later
+  // receipts through this strip).
+  const historicSuffix =
+    verb === 'Delete' ? 'moved to Trash' : verb === 'Later' ? 'moved to Later' : 'archived';
 
   return (
     <div
@@ -88,7 +93,8 @@ export function ReceiptStrip({
         {historicTotal > 0 && (
           <span style={{ color: color.fgSoft }}>
             {' '}
-            · {historicTotal.toLocaleString()} email{historicTotal === 1 ? '' : 's'} archived
+            · {historicTotal.toLocaleString()} email{historicTotal === 1 ? '' : 's'}{' '}
+            {historicSuffix}
           </span>
         )}
         <span

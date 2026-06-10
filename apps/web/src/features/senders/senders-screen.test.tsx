@@ -799,6 +799,301 @@ describe('SendersScreen — edge states', () => {
 });
 
 /**
+ * Multi-sender bulk actions (D52, D32). The selection-bar A/L/D verbs
+ * ride the real pipeline: aggregated D226 preview → one bulk enqueue
+ * (per-sender fan-out server-side) → batch poll → real receipt + undo.
+ * Selection clears ONLY on server confirmation; nothing is fabricated.
+ */
+describe('SendersScreen — multi-sender bulk actions (D52)', () => {
+  beforeEach(() => {
+    useSendersStore.setState({ view: 'grid', sort: 'total', direction: 'desc' });
+  });
+  afterEach(() => resetFetchStub());
+
+  const ROW_B = { ...ROW, id: 'b', displayName: 'Sender B', email: 'b@example.com' };
+
+  const TWO_SENDER_LIST = {
+    method: 'GET' as const,
+    path: '/api/senders',
+    respond: () =>
+      jsonOk({
+        data: [ROW, ROW_B],
+        meta: {
+          pagination: { nextCursor: null, hasMore: false, limit: 25 },
+          query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+        },
+      }),
+  };
+
+  const BULK_PREVIEW_OK = {
+    method: 'POST' as const,
+    path: '/api/actions/preview/bulk',
+    respond: () =>
+      jsonOk({
+        data: {
+          senders: [
+            {
+              senderId: 'a',
+              name: 'Sender A',
+              counts: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protected: false,
+            },
+            {
+              senderId: 'b',
+              name: 'Sender B',
+              counts: {
+                all: 18,
+                olderThan30d: 9,
+                olderThan90d: 6,
+                olderThan180d: 4,
+                olderThan365d: 2,
+              },
+              protected: false,
+            },
+          ],
+          totals: {
+            all: 30,
+            olderThan30d: 17,
+            olderThan90d: 11,
+            olderThan180d: 7,
+            olderThan365d: 3,
+          },
+          protectedCount: 0,
+        },
+      }),
+  };
+
+  /** Select both senders and open the bulk preview for `key`. */
+  async function selectBothAndPress(key: string) {
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+    fireEvent.keyDown(document.body, { key });
+  }
+
+  it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
+    let bulkBody: unknown = null;
+    let undoPosted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          bulkBody = await req.json();
+          return jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 30,
+              skipped: [],
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'done',
+              total: 2,
+              done: 2,
+              failed: 0,
+              requestedCount: 30,
+              affectedCount: 30,
+              undoToken: 'tok-b',
+            },
+          }),
+      },
+      {
+        // The undo's reverse job polls the single-action route.
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'rev-1',
+              status: 'done',
+              requestedCount: 30,
+              affectedCount: 30,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-b',
+        respond: () => {
+          undoPosted = true;
+          return jsonOk({
+            data: {
+              token: 'tok-b',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-1',
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    // Mandatory D226 preview with the AGGREGATED real count (never the
+    // fabricated tracer numbers).
+    await screen.findByText(/archive all mail from 2 senders/i);
+    await screen.findByText(/will move to Archive/i);
+    // The aggregated total (12 + 18) renders in the modal — headline +
+    // the "All inbox" chip count both read 30.
+    expect(within(screen.getByRole('dialog')).getAllByText('30').length).toBeGreaterThan(0);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // Real receipt appears only after the batch poll reports done.
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent(/archived 2 senders/i);
+    expect(receipt).toHaveTextContent(/30 emails archived/i);
+    // Wire shape — ONE bulk POST carrying the senders selector.
+    expect(bulkBody).toMatchObject({
+      selector: { type: 'senders', senderIds: ['a', 'b'] },
+      primary: { type: 'archive' },
+    });
+    // Selection cleared on server confirmation (the bar is gone).
+    expect(screen.queryByText(/senders selected/i)).toBeNull();
+
+    // Undo reverses the WHOLE batch via the cascade token.
+    fireEvent.click(screen.getByRole('button', { name: /^undo$/i }));
+    await waitFor(() => expect(screen.queryByText(/archived 2 senders/i)).toBeNull());
+    expect(undoPosted).toBe(true);
+  });
+
+  it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
+    let enqueueAttempted = false;
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          enqueueAttempted = true;
+          return jsonServerError('boom');
+        },
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    await screen.findByText(/will move to Archive/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(enqueueAttempted).toBe(true));
+    // The selection survives the failure so the user can retry.
+    expect(await screen.findByText(/senders selected/i)).toBeInTheDocument();
+    // And no receipt was fabricated.
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('surfaces a partial batch failure but keeps the succeeded portion undoable', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-2',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 30,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-2',
+              status: 'done',
+              total: 2,
+              done: 1,
+              failed: 1,
+              requestedCount: 30,
+              affectedCount: 12,
+              undoToken: 'tok-partial',
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('a');
+    await screen.findByText(/will move to Archive/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    // One sender failing never hides the other's real result — the
+    // receipt reflects what DID move and stays undoable.
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent(/12 emails archived/i);
+    expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+  });
+
+  it('routes bulk Delete through the destructive preview and blocks confirm when the preview fails', async () => {
+    installFetchStub([
+      weeklyHeroHandler(),
+      TWO_SENDER_LIST,
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () => jsonServerError('preview_down'),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('d');
+    // Destructive treatment — same Trash copy as single-sender Delete.
+    await screen.findByText(/delete mail from 2 senders/i);
+    await screen.findByText(/moves to gmail trash/i);
+    // D226: a failed preview must BLOCK the destructive confirm.
+    await screen.findByText(/couldn't load preview/i);
+    const dialog = screen.getByRole('dialog');
+    const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
+    expect(confirmBtn).toBeDisabled();
+  });
+
+  it('offers Delete on the selection bar with the registry shortcut advertised', async () => {
+    installFetchStub([weeklyHeroHandler(), TWO_SENDER_LIST, BULK_PREVIEW_OK]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    const deleteBtn = screen.getByTitle('Delete (D)');
+    expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
+    fireEvent.click(deleteBtn);
+    // The click routes through the SAME mandatory preview.
+    expect(await screen.findByText(/delete mail from 1 sender/i)).toBeInTheDocument();
+  });
+});
+
+/**
  * Weekly Hero (D47, D48) + grid/table toggle (D49). These tests
  * exercise the BE-driven Hero visibility branch and the per-session
  * view toggle.

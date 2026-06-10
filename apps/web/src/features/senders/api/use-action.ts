@@ -14,9 +14,12 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
   enqueueArchiveSender,
+  enqueueBulkAction,
   enqueueCompositeAction,
   getActionStatus,
   getArchivePreview,
+  getBatchStatus,
+  getBulkActionPreview,
   getCompositePreview,
   isTerminalStatus,
   newIdempotencyKey,
@@ -24,6 +27,9 @@ import {
   revertUndo,
   type ActionEnqueueResult,
   type ActionStatusResult,
+  type BatchStatusResult,
+  type BulkActionEnqueueResult,
+  type BulkActionPreviewResult,
   type CompositeActionEnqueueResult,
   type CompositeActionPreviewResult,
   type CompositePrimaryVerb,
@@ -146,6 +152,75 @@ export function useCompositePreview(senderId: string | null) {
 }
 
 /**
+ * Enqueue a multi-sender bulk action via `POST /api/actions` with the
+ * `senders` selector (D52). One fresh idempotency key per mutate so a
+ * network-retried click maps onto the SAME batch rows server-side while
+ * a fresh click is a new batch.
+ */
+export function useEnqueueBulkAction() {
+  return useMutation<
+    BulkActionEnqueueResult,
+    Error,
+    {
+      senderIds: string[];
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
+    }
+  >({
+    mutationFn: ({ senderIds, primary, secondary }) =>
+      enqueueBulkAction({
+        senderIds,
+        primary,
+        ...(secondary ? { secondary } : {}),
+        idempotencyKey: newIdempotencyKey(),
+      }),
+  });
+}
+
+/**
+ * Aggregated bulk preview for the D226-mandatory confirm modal (D52).
+ * Enabled only while a multi-sender preview is open. Key is the sorted
+ * id list so reordering the same selection reuses the cache entry;
+ * `staleTime: 0` so reopening re-counts (the inbox moves under us);
+ * `retry: false` per the read-guard-4xx rule (§8).
+ */
+export function useBulkActionPreview(senderIds: string[] | null) {
+  const key = senderIds ? [...senderIds].sort().join(',') : null;
+  return useQuery({
+    queryKey: ['bulk-action-preview', key] as const,
+    queryFn: () => getBulkActionPreview(senderIds as string[]),
+    enabled: senderIds !== null && senderIds.length > 1,
+    retry: false,
+    staleTime: 0,
+  });
+}
+
+/**
+ * Poll-cadence policy for a batch — same shape as `actionRefetchInterval`
+ * but over the aggregate batch status (terminal = every sibling row
+ * terminal, surfaced as `done` / `failed`). Exported pure for tests.
+ */
+export function batchRefetchInterval(data: BatchStatusResult | undefined): number | false {
+  if (!data) return ACTION_POLL_MS;
+  return isTerminalStatus(data.status) ? false : ACTION_POLL_MS;
+}
+
+/**
+ * Poll a batch's aggregate status until terminal (D52). One poll covers
+ * every sibling row of the fan-out. `retry: false` — a read 4xx is a
+ * designed state, never something to hammer (§8).
+ */
+export function useBatchStatus(batchId: string | null) {
+  return useQuery({
+    queryKey: ['batch-status', batchId] as const,
+    queryFn: () => getBatchStatus(batchId as string),
+    enabled: batchId !== null,
+    refetchInterval: (query) => batchRefetchInterval(query.state.data),
+    retry: false,
+  });
+}
+
+/**
  * Record an unsubscribe intent for a single sender. Used by the
  * sender action sheet (replaces the prior tracer toast that violated
  * CLAUDE.md §10 no-fake-completion 2026-06-05). The mutation writes
@@ -158,5 +233,5 @@ export function useRecordUnsubscribeIntent() {
   });
 }
 
-/** Re-export the preview type so consumers don't import from the lib layer. */
-export type { CompositeActionPreviewResult };
+/** Re-export the preview types so consumers don't import from the lib layer. */
+export type { BulkActionPreviewResult, CompositeActionPreviewResult };
