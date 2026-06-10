@@ -20,6 +20,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
+  buildPinnedLookup,
   classifyAddress,
   UNSUB_MAX_ATTEMPTS,
   UnsubExecutionWorker,
@@ -151,15 +152,34 @@ async function seedExecutionJob(db: Db, mailboxAccountId: string): Promise<strin
   return row!.id;
 }
 
-/** Fake HTTP port — records calls, returns scripted statuses / throws. */
+/**
+ * Fake HTTP port — records calls, returns scripted statuses / throws.
+ * `calls` keeps the legacy `{ url, timeoutMs }` shape; `pinCalls` records
+ * the full opts (incl. the pinned address/family) so a test can prove the
+ * pre-validated IP is what the port is told to dial.
+ */
 function fakeHttp(script: Array<number | Error>): UnsubHttpPort & {
   calls: Array<{ url: string; timeoutMs: number }>;
+  pinCalls: Array<{ url: string; timeoutMs: number; pinnedAddress: string; family: 4 | 6 }>;
 } {
   const calls: Array<{ url: string; timeoutMs: number }> = [];
+  const pinCalls: Array<{
+    url: string;
+    timeoutMs: number;
+    pinnedAddress: string;
+    family: 4 | 6;
+  }> = [];
   return {
     calls,
+    pinCalls,
     async postOneClick(url, opts) {
       calls.push({ url, timeoutMs: opts.timeoutMs });
+      pinCalls.push({
+        url,
+        timeoutMs: opts.timeoutMs,
+        pinnedAddress: opts.pinnedAddress,
+        family: opts.family,
+      });
       const next = script.shift();
       if (next === undefined) throw new Error('fakeHttp script exhausted');
       if (next instanceof Error) throw next;
@@ -558,6 +578,75 @@ describe('UnsubExecutionWorker', () => {
       expect(http.calls).toHaveLength(0);
       expect(state.job.errorCode).toBe('UNSUB_DNS_FAILURE');
     });
+
+    it('pins the port to the pre-flight-validated address (DNS-rebinding TOCTOU closed)', async () => {
+      // The pre-flight resolver returns ONE public IP. The port must be
+      // told to dial exactly that address — so even if a hostile
+      // authoritative server returned a different (private/metadata) IP on
+      // a second resolution, the socket can only reach the validated one.
+      const { result, http } = await runAgainst('https://unsub.shop.example/oneclick?u=42', {
+        resolveHost: async () => ['93.184.216.34'],
+      });
+      expect(result.outcome).toBe('done');
+      expect(http.pinCalls).toEqual([
+        {
+          url: 'https://unsub.shop.example/oneclick?u=42',
+          timeoutMs: 10_000,
+          pinnedAddress: '93.184.216.34',
+          family: 4,
+        },
+      ]);
+    });
+
+    it('pins the FIRST validated address when DNS returns multiple A records', async () => {
+      // All resolved addresses pass classifyAddress; the port is pinned to
+      // the first so the dialed IP is deterministic and pre-validated.
+      const { result, http } = await runAgainst('https://multi.shop.example/x', {
+        resolveHost: async () => ['203.0.113.7', '198.51.100.9'],
+      });
+      expect(result.outcome).toBe('done');
+      expect(http.pinCalls[0]!.pinnedAddress).toBe('203.0.113.7');
+      expect(http.pinCalls[0]!.family).toBe(4);
+    });
+
+    it('pins an IPv6 literal host with family 6', async () => {
+      const { result, http } = await runAgainst('https://[2606:4700::6810:84e5]/x');
+      expect(result.outcome).toBe('done');
+      expect(http.pinCalls[0]!.pinnedAddress).toBe('2606:4700::6810:84e5');
+      expect(http.pinCalls[0]!.family).toBe(6);
+    });
+  });
+});
+
+describe('buildPinnedLookup', () => {
+  it('always yields the pinned address + family, ignoring the requested hostname', () => {
+    const lookup = buildPinnedLookup('93.184.216.34', 4);
+    const seen: Array<{ err: unknown; address: unknown; family: unknown }> = [];
+    lookup('attacker-controlled.example', {}, (err, address, family) => {
+      seen.push({ err, address, family });
+    });
+    expect(seen).toEqual([{ err: null, address: '93.184.216.34', family: 4 }]);
+  });
+
+  it('honors the undici-style `all` option (array form) when asked', () => {
+    const lookup = buildPinnedLookup('2606:4700::1', 6);
+    const seen: Array<{ err: unknown; result: unknown }> = [];
+    lookup('attacker-controlled.example', { all: true }, (err, result) => {
+      seen.push({ err, result });
+    });
+    expect(seen).toEqual([{ err: null, result: [{ address: '2606:4700::1', family: 6 }] }]);
+  });
+
+  it('accepts the (hostname, callback) two-arg form', () => {
+    const lookup = buildPinnedLookup('10.0.0.0', 4); // value is opaque here — pinning is verbatim
+    const seen: Array<{ err: unknown; address: unknown; family: unknown }> = [];
+    (lookup as (h: string, cb: (e: unknown, a: string, f: number) => void) => void)(
+      'attacker-controlled.example',
+      (err, address, family) => {
+        seen.push({ err, address, family });
+      },
+    );
+    expect(seen).toEqual([{ err: null, address: '10.0.0.0', family: 4 }]);
   });
 });
 

@@ -1,5 +1,8 @@
-import { isIP } from 'node:net';
+import type { LookupAddress } from 'node:dns';
 import { lookup } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { isIP } from 'node:net';
 
 import { and, eq, sql } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
@@ -51,13 +54,17 @@ import type { WorkerContext } from './worker-context.js';
  *     fc00::/7, fe80::/10, v4-mapped forms). `allowInsecureTargets`
  *     exempts LOOPBACK only (so local smoke can hit a 127.0.0.1
  *     fake), never the broader private ranges.
- *   - Redirects are never followed (cross-origin or otherwise) — the
- *     http port uses `redirect: 'manual'` and a 3xx is terminal
- *     'ambiguous'.
- *   - Known DNS-rebinding caveat: the pre-flight resolve and fetch's
- *     own resolve are two lookups. Accepted for this surface — the
- *     response body is never read, no credentials are attached, and
- *     the request shape is a fixed 26-byte form POST.
+ *   - Redirects are never followed (cross-origin or otherwise) —
+ *     `node:http(s).request` does not auto-follow, so a 3xx comes back
+ *     as-is and classifies terminal 'ambiguous'.
+ *   - DNS-rebinding TOCTOU closed: the pre-flight's validated address is
+ *     PINNED into the connection via a custom `lookup` (the port dials
+ *     the pre-validated IP, never re-resolving). No second resolution
+ *     occurs, so a hostile authoritative server cannot return a public
+ *     IP to the pre-flight and a private/metadata IP to the socket. TLS
+ *     SNI / `servername` stays the hostname, so certificate validation
+ *     is unchanged (the cert is validated against the hostname, never
+ *     the IP).
  *
  * Privacy (D7, D228): the worker reads only ids + the stored
  * `unsubscribe_url` (an allowlisted-header derivative, ADR-0004). The
@@ -108,30 +115,118 @@ export interface UnsubHttpResponse {
  * no development environment ever makes a real opt-out call. The
  * implementation MUST NOT follow redirects, attach credentials, or
  * read the response body.
+ *
+ * Seam contract: implementations MUST dial the pinned address
+ * (`opts.pinnedAddress` / `opts.family`, the address the pre-flight
+ * already validated), NOT re-resolve the hostname — re-resolution
+ * reopens the DNS-rebinding TOCTOU. TLS SNI / `servername` stays the
+ * hostname from `url` so certificate validation is unchanged.
  */
 export interface UnsubHttpPort {
-  postOneClick(url: string, opts: { timeoutMs: number }): Promise<UnsubHttpResponse>;
+  postOneClick(
+    url: string,
+    opts: { timeoutMs: number; pinnedAddress: string; family: 4 | 6 },
+  ): Promise<UnsubHttpResponse>;
+}
+
+/** RFC 8058 §3.2 one-click body — exactly 26 bytes. */
+const ONE_CLICK_BODY = 'List-Unsubscribe=One-Click';
+
+/** The `dns.lookup`-compatible shape `node:http(s)` request options accept. */
+type PinnedLookup = (
+  hostname: string,
+  optionsOrCb: { all?: boolean } | PinnedLookupCallback,
+  maybeCb?: PinnedLookupCallback,
+) => void;
+type PinnedLookupCallback = (
+  err: Error | null,
+  address: string | LookupAddress[],
+  family?: number,
+) => void;
+
+/**
+ * A `dns.lookup`-compatible function that ALWAYS yields the pre-validated
+ * pinned address, ignoring the requested hostname. This is what closes
+ * the DNS-rebinding TOCTOU: the connector resolves through this instead
+ * of a real resolver, so the socket can only dial the address the SSRF
+ * pre-flight already classified. Honors the undici-style `options.all`
+ * (array) form for safety, though Node's own connector calls the
+ * non-`all` `(hostname, options, cb)` form.
+ *
+ * Exported for direct unit testing — the pin is the whole security
+ * property, so it gets its own test rather than only the integration.
+ */
+export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): PinnedLookup {
+  return (_hostname, optionsOrCb, maybeCb) => {
+    const all = typeof optionsOrCb === 'function' ? false : optionsOrCb.all === true;
+    const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb!;
+    if (all) {
+      cb(null, [{ address: pinnedAddress, family }]);
+    } else {
+      cb(null, pinnedAddress, family);
+    }
+  };
 }
 
 /**
- * Production adapter — native fetch, `redirect: 'manual'` (a 3xx comes
- * back as-is and classifies 'ambiguous'), abort at `timeoutMs`. fetch
- * in Node attaches no cookies and we set no auth header; the response
- * body is never consumed.
+ * Production adapter — `node:https.request` (or `node:http.request` only
+ * on the insecure local-smoke path), pinned to the pre-validated address
+ * via a custom `lookup` (see `buildPinnedLookup`). `node:http(s)` does
+ * NOT auto-follow redirects, so a 3xx comes back as-is and classifies
+ * 'ambiguous'. No cookie jar, no auth header; the response body is never
+ * consumed — the socket is destroyed once the status line is read.
+ * `servername` stays the hostname so TLS SNI + certificate validation
+ * remain correct (the cert is validated against the hostname, not the
+ * pinned IP).
  */
 export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
-  async postOneClick(url, opts) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'List-Unsubscribe=One-Click',
-      redirect: 'manual',
-      signal: AbortSignal.timeout(opts.timeoutMs),
+  postOneClick(url, opts) {
+    const parsed = new URL(url);
+    const isHttps = parsed.protocol === 'https:';
+    const requestFn = isHttps ? httpsRequest : httpRequest;
+    // `URL.hostname` brackets IPv6 literals — strip for SNI/servername.
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+
+    return new Promise<UnsubHttpResponse>((resolve, reject) => {
+      const req = requestFn(
+        {
+          protocol: parsed.protocol,
+          // Keep the REAL hostname so the implicit Host header + (for
+          // https) SNI/servername are the hostname, never the IP.
+          hostname,
+          port: parsed.port ? Number(parsed.port) : isHttps ? 443 : 80,
+          path: `${parsed.pathname}${parsed.search}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(ONE_CLICK_BODY),
+          },
+          // The pin: dial ONLY the pre-validated address. No second
+          // resolution occurs. Cast at this boundary — `PinnedLookup`'s
+          // optional-callback form is structurally looser than Node's
+          // overloaded `LookupFunction`, but at runtime Node always calls
+          // the `(hostname, options, cb)` form.
+          lookup: buildPinnedLookup(opts.pinnedAddress, opts.family) as never,
+          // TLS cert is validated against the hostname (servername), not
+          // the dialed IP. Defaulting `servername` from `hostname` is
+          // Node's behavior; set it explicitly to be unambiguous.
+          ...(isHttps ? { servername: hostname } : {}),
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          // Release the connection without reading the payload (D7
+          // posture: we never ingest third-party response content).
+          res.resume();
+          res.destroy();
+          resolve({ status });
+        },
+      );
+      req.setTimeout(opts.timeoutMs, () => {
+        req.destroy(new Error(`one-click POST timed out after ${opts.timeoutMs}ms`));
+      });
+      req.on('error', reject);
+      req.end(ONE_CLICK_BODY);
     });
-    // Release the connection without reading the payload (D7 posture:
-    // we never ingest third-party response content).
-    await res.body?.cancel();
-    return { status: res.status };
   },
 };
 
@@ -271,6 +366,10 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     try {
       response = await this.deps.http.postOneClick(sender.unsubscribeUrl, {
         timeoutMs: UNSUB_REQUEST_TIMEOUT_MS,
+        // Pin the socket to the address the pre-flight already validated
+        // — no second resolution (DNS-rebinding TOCTOU closed).
+        pinnedAddress: targetCheck.pinnedAddress,
+        family: targetCheck.family,
       });
     } catch (err) {
       // Network-level failure (timeout / refused / reset / DNS). ONE
@@ -420,14 +519,20 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * SSRF pre-flight. Returns `ok` or the classification to record.
+   * SSRF pre-flight. Returns `ok` + the address to PIN the connection to
+   * (the first resolved address — all passed `classifyAddress`), or the
+   * classification to record. The caller hands `pinnedAddress`/`family`
+   * to the port so the socket dials exactly this validated address and
+   * never re-resolves (DNS-rebinding TOCTOU closed).
    * `allowInsecureTargets` (local smoke only — see `UnsubExecutionDeps`)
    * relaxes exactly two rules: the `http:` scheme and LOOPBACK
    * addresses. Private / link-local ranges stay blocked even then.
    */
   private async validateTarget(
     rawUrl: string,
-  ): Promise<{ ok: true } | { ok: false; errorCode: string }> {
+  ): Promise<
+    { ok: true; pinnedAddress: string; family: 4 | 6 } | { ok: false; errorCode: string }
+  > {
     const allowInsecure =
       this.deps.allowInsecureTargets === true && process.env.NODE_ENV !== 'production';
 
@@ -462,7 +567,12 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       if (cls === 'loopback' && allowInsecure) continue;
       return { ok: false, errorCode: 'UNSUB_PRIVATE_TARGET' };
     }
-    return { ok: true };
+    // Pin the FIRST validated address — every address passed
+    // classifyAddress, so the first is safe and the dialed IP is
+    // deterministic. `family` derives from isIP() (4 or 6).
+    const pinnedAddress = addresses[0]!;
+    const family = isIP(pinnedAddress) === 6 ? 6 : 4;
+    return { ok: true, pinnedAddress, family };
   }
 }
 
