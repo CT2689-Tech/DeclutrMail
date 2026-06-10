@@ -468,3 +468,19 @@ collision case").
 **Correct approach:** Re-read the D-body before citing. Cite the D that decides the rule, not the D that mentions the term. When unsure, search the plan (`rg "atomic"`, `rg "partial undo"`) and read the matched bodies.
 **Rule:** Citation discipline — when invoking a D-number, the D's BODY must actually decide the rule you're invoking it for. "D-number adjacency by topic" is not citation; it's pattern-matching on keywords.
 **Enforcement update:** None automated (citations are judgment calls). LEARNINGS already captures the pattern. Watch for repeat occurrences in PR-review and ADR PRs; if it happens twice more, distill into CLAUDE.md §3 ("Source-of-truth precedence") as an explicit citation rule.
+
+## 2026-06-10 — "Later" shipped green but Gmail rejects label NAMES
+**PR:** feat/d226-triage-mutation-wiring (Wave 1 Track A, pre-merge)
+**Caught by:** manual live smoke (CLAUDE.md §8) — every structural gate, typecheck, and 281 worker unit tests were green
+**What happened:** The action manifest's `buildLabelChange` for the `later` verb emits `addLabelIds: ['DeclutrMail/Later']` — a label NAME. Gmail `messages.batchModify` accepts label IDS only, and nothing ever created the label. First real Later: `400 Invalid label: DeclutrMail/Later`. Worse, the worker classified the 400 as `TransientError` and retried to the attempt cap — a retry storm against a deterministic 4xx. Unit tests passed because the fake Gmail client accepted any string as a label id.
+**Correct approach:** Resolve user-label names to ids at the worker/client seam (`ensureLabelId`: list → create-if-missing → cache), feed the RESOLVED change to both `batchModify` and the local `mail_messages` label mirror, and classify provider-deterministic 4xx as permanent (fail attempt 1). Fixed in commit fd4ebbb.
+**Rule:** (1) A fake provider client must reject what the real provider rejects for the contract under test — if Gmail only takes ids, the fake should throw on a non-id. (2) Any provider error taxonomy needs an explicit permanent-4xx member from day one; "default transient" turns deterministic failures into storms. (3) A verb is not "wired" until one real round-trip has run against the live provider (§8 smoke).
+**Enforcement update:** `PermanentError` added to the D203 taxonomy + tests asserting attempt-1 terminal failure on Gmail 400; live-smoke step already mandated by §8 (this entry is the evidence it catches what gates cannot).
+
+## 2026-06-10 — Stale main-checkout worker intercepted worktree jobs mid-smoke
+**PR:** N/A (smoke-infrastructure hazard, no code shipped wrong)
+**Caught by:** manual live smoke — a reverse job reported `done` with no trace in the worktree worker's log
+**What happened:** A 3-day-old worker process from the MAIN checkout was still alive during a worktree smoke. Both processes consume the same local Redis queues, so the stale worker (old module graph) raced the worktree worker and executed an undo reverse job with 3-day-old code. `scripts/dev-up.sh --stop`'s orphan sweep greps for processes whose cwd is under the CURRENT repo root — run from a worktree it can never see main-checkout orphans (and vice versa). This is the exact MISTAKES.md 2026-06-05 stale-worker class, with a worktree twist.
+**Correct approach:** Before any worktree smoke, sweep ALL DeclutrMail worker/api processes regardless of which checkout they belong to (`pgrep -f 'src/worker\.ts'` + cwd check against ~/projects/*declutrmail*-ish roots), not just the current root.
+**Rule:** One local Redis = one live worker, ever. Verify with `pgrep -lf 'src/worker.ts'` (expect exactly one, in the checkout under test) before trusting any smoke that touches a queue.
+**Enforcement update:** Candidate fix: widen dev-up.sh's sweep to match any process whose cwd contains the repo name across sibling worktrees (`wt-*`). Not yet implemented — follow-up; promote to CLAUDE.md §8 smoke checklist if it bites again.
