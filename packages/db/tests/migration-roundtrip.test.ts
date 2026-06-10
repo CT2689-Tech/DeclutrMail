@@ -139,6 +139,7 @@ describe('migration round-trip', () => {
       'enum:triage_reasoning_source',
       'enum:triage_verdict',
       'enum:undo_action_kind',
+      'enum:unsub_status',
       'enum:workspace_tier',
     ]);
 

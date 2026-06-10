@@ -55,6 +55,24 @@ export const protectionReason = pgEnum('protection_reason', [
   'vip',
 ]);
 
+/**
+ * Unsubscribe execution status (D9 Wave 2, migration 0029).
+ *
+ * Tracks the RFC 8058 one-click execution outcome for a sender whose
+ * intent was recorded with `policy_type = 'unsubscribe'`:
+ *   - `pending`   — execution job queued / in flight.
+ *   - `done`      — target answered 2xx; unsubscribed.
+ *   - `failed`    — terminal: target 4xx/5xx, blocked URL, or network
+ *                   retries exhausted. Never auto-retried past that.
+ *   - `ambiguous` — target answered 3xx; redirects are not followed
+ *                   (SSRF posture), so the outcome is unknown.
+ *
+ * NULL = no tracked execution (mailto-manual per D230, method 'none',
+ * or a policy row that predates the pipeline). No undo linkage (D58) —
+ * a delivered network unsubscribe is one-way by design.
+ */
+export const unsubStatus = pgEnum('unsub_status', ['pending', 'done', 'failed', 'ambiguous']);
+
 export const senderPolicies = pgTable(
   'sender_policies',
   {
@@ -90,6 +108,14 @@ export const senderPolicies = pgTable(
     protectionReason: protectionReason('protection_reason'),
     /** When `is_protected` last flipped true. NULL when not protected. */
     protectionSetAt: timestamp('protection_set_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * RFC 8058 one-click execution outcome (migration 0029). See the
+     * `unsub_status` enum doc. Written 'pending' when an unsubscribe
+     * intent is recorded for a `one_click` sender; flipped to its
+     * terminal value by `UnsubExecutionWorker`. NULL for mailto/none
+     * senders (D230 manual path — no claimed outcome).
+     */
+    unsubStatus: unsubStatus('unsub_status'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
