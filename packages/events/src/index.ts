@@ -13,6 +13,7 @@
 
 export {
   ActionLabelAppliedPayloadSchema,
+  ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotActionIntentEmittedPayloadSchema,
   AutopilotMatchRecordedPayloadSchema,
@@ -26,6 +27,7 @@ export {
 } from './events.js';
 export type {
   ActionLabelAppliedPayload,
+  ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
   AutopilotActionIntentEmittedPayload,
   AutopilotMatchRecordedPayload,
