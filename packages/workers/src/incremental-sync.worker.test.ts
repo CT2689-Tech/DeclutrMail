@@ -468,6 +468,108 @@ describe('IncrementalSyncWorker', () => {
     expect(policy?.protectionReason).toBe('engagement_based');
   });
 
+  it('auto-protect post-pass honors a manually demoted user_defined row (D40/D42 unprotect)', async () => {
+    // Same engagement fixture as the post-pass test above (2 prior
+    // replies + 1 incoming → replied_count=3), but the sender carries
+    // the D40/D42 manual-Unprotect memory pin: `is_protected=false`
+    // with `protection_reason='user_defined'` preserved
+    // (senders-policy.service.ts). The webhook pass MUST NOT silently
+    // re-protect — only `protection_reason IS NULL` rows may be
+    // auto-protected.
+    const senderEmail = 'persona@example.com';
+    const senderKey = deriveSenderKey(senderEmail);
+    const threadId = 'thread-chat';
+    const base = Date.UTC(2026, 5, 1);
+
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'inbound-0',
+      providerThreadId: threadId,
+      senderKey,
+      internalDate: new Date(base),
+      isUnread: false,
+    });
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId,
+        providerMessageId: 'reply-0',
+        providerThreadId: threadId,
+        senderKey: '',
+        internalDate: new Date(base + 60_000),
+        isUnread: false,
+        isOutbound: true,
+      },
+      {
+        mailboxAccountId,
+        providerMessageId: 'reply-1',
+        providerThreadId: threadId,
+        senderKey: '',
+        internalDate: new Date(base + 120_000),
+        isUnread: false,
+        isOutbound: true,
+      },
+    ]);
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: 'Persona',
+      email: senderEmail,
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(base),
+      lastSeenAt: new Date(base),
+      totalReceived: 1,
+      repliedCount: 2,
+    });
+    // The memory-pin state the manual Unprotect leaves behind.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey,
+      isProtected: false,
+      protectionReason: 'user_defined',
+      protectionSetAt: null,
+    });
+
+    const newReply = makeMetadata(
+      'reply-2',
+      threadId,
+      'Owner <owner@declutrmail.ai>',
+      ['SENT'],
+      base + 180_000,
+      { to: senderEmail },
+    );
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'reply-2', threadId, labelIds: ['SENT'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['reply-2', newReply]]),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    // Signal crossed the threshold…
+    const [updated] = await db.select().from(senders).where(eq(senders.senderKey, senderKey));
+    expect(updated!.repliedCount).toBe(3);
+
+    // …but the user's explicit demote is honored.
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      );
+    expect(policy?.isProtected).toBe(false);
+    expect(policy?.protectionReason).toBe('user_defined'); // memory pin retained
+    expect(policy?.protectionSetAt).toBeNull();
+  });
+
   it('cursor-too-old (Gmail 404) → cursorTooOld:true + cursor not advanced', async () => {
     const client = new FakeGmailClient([{ forCursor: '1000', page: null }], new Map());
     const result = await new IncrementalSyncWorker({

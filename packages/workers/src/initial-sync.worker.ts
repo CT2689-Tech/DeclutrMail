@@ -778,16 +778,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // UPSERT preserves prior user_defined / vip provenance.
       //
       // User-agency-wins guard (flow-completeness-auditor 2026-06-05
-      // 🔴-3): if a user manually demoted an `engagement_based`-
-      // protected row (`is_protected=false` but the prior
-      // `protection_reason='engagement_based'`), the re-protect path
-      // would silently flip them back on every sync — overriding the
-      // user's decision. The extra
-      // `protection_reason != 'engagement_based'` clause respects the
-      // demote: an engagement_based-then-demoted row stays demoted
-      // until the underlying signal (replied_count) is reset OR the
-      // user manually re-protects. Fresh rows (no prior reason) are
-      // untouched by this clause and still pick up engagement_based.
+      // 🔴-3; widened 2026-06-09 for the D40/D42 manual-unprotect
+      // endpoint): a manual demote leaves `is_protected=false` with the
+      // prior `protection_reason` PRESERVED as the memory pin
+      // (schema/sender-policies.ts, senders-policy.service.ts). ANY
+      // non-NULL reason on a demoted row therefore signals a deliberate
+      // demote — `engagement_based` (the original 🔴-3 case) AND
+      // `user_defined` / `vip` (reachable since manual Unprotect
+      // shipped). Only `protection_reason IS NULL` rows may be
+      // auto-protected; a demoted row stays demoted until the user
+      // manually re-protects.
       await tx.execute(sql`
         INSERT INTO ${senderPolicies} (
           ${sql.identifier('mailbox_account_id')},
@@ -820,10 +820,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           ),
           ${sql.identifier('updated_at')} = now()
         WHERE sender_policies.${sql.identifier('is_protected')} = false
-          AND (
-            sender_policies.${sql.identifier('protection_reason')} IS NULL
-            OR sender_policies.${sql.identifier('protection_reason')} <> 'engagement_based'::protection_reason
-          )
+          AND sender_policies.${sql.identifier('protection_reason')} IS NULL
       `);
     });
 
