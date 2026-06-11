@@ -3,12 +3,23 @@ import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
-import { mailboxAccounts, mailMessages, schema, senders, users, workspaces } from '@declutrmail/db';
+import {
+  mailboxAccounts,
+  mailMessages,
+  outboxEvents,
+  providerSyncState,
+  schema,
+  senders,
+  users,
+  workspaces,
+} from '@declutrmail/db';
+import { TOPICS } from '@declutrmail/events';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InitialSyncWorker } from './initial-sync.worker.js';
+import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
@@ -967,5 +978,53 @@ describe('InitialSyncWorker', () => {
       // started, not the most recent rerun.
       expect(secondRun?.protectionSetAt?.getTime()).toBe(firstSetAt?.getTime());
     });
+  });
+});
+
+describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  it('publishes mailbox.sync_ready in the ready transition with workspace + count', async () => {
+    const client = new FakeGmailClient(makeMessages(6, 2));
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    });
+    const result = await worker.processJob({ mailboxAccountId }, CTX);
+
+    const events = await db.select().from(outboxEvents);
+    const ready = events.filter((e) => e.topic === TOPICS.MAILBOX_SYNC_READY);
+    expect(ready).toHaveLength(1);
+    const payload = ready[0]!.payload as {
+      mailboxAccountId: string;
+      workspaceId: string;
+      readyAt: string;
+      messageCount: number;
+    };
+    expect(payload.mailboxAccountId).toBe(mailboxAccountId);
+    expect(payload.messageCount).toBe(result.messagesSynced);
+    expect(Date.parse(payload.readyAt)).not.toBeNaN();
+    const [mb] = await db
+      .select({ workspaceId: mailboxAccounts.workspaceId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    expect(payload.workspaceId).toBe(mb!.workspaceId);
+  });
+
+  it('without an outbox dep the sync still reaches ready and publishes nothing', async () => {
+    const client = new FakeGmailClient(makeMessages(4, 2));
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('ready');
   });
 });

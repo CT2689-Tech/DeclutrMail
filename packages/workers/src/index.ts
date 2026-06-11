@@ -119,6 +119,22 @@ export type {
   AutopilotApplyJobData,
   AutopilotApplyJobResult,
 } from './autopilot-apply.worker.js';
+export { materializeAutopilotSignals } from './autopilot-signals.js';
+export type { AutopilotSignalRow } from './autopilot-signals.js';
+export {
+  AUTOPILOT_ACTION_JOB,
+  AUTOPILOT_ACTION_QUEUE,
+  autopilotActionJobOptions,
+  AutopilotActionWorker,
+  isQuietStateActive,
+} from './autopilot-action.worker.js';
+export type {
+  AutopilotActionDeps,
+  AutopilotActionJobData,
+  AutopilotActionResult,
+} from './autopilot-action.worker.js';
+export { createAutopilotExecutionChain } from './autopilot-execution-chain.js';
+export type { AutopilotExecutionChain } from './autopilot-execution-chain.js';
 export { BriefSnapshotWorker } from './brief-snapshot.worker.js';
 export type {
   BriefSnapshotDeps,

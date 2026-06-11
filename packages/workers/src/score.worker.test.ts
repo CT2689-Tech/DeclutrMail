@@ -8,6 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import {
   activityLog,
   mailboxAccounts,
+  outboxEvents,
   mailMessages,
   schema,
   senderPolicies,
@@ -17,8 +18,10 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { TOPICS } from '@declutrmail/events';
 import { describe, expect, it, vi } from 'vitest';
 
+import { OutboxPublisher } from './outbox-publisher.js';
 import { ScoreWorker } from './score.worker.js';
 import type { ScoreWorkerDeps } from './score.worker.js';
 import type { ReasoningLlmPort } from './reasoning.js';
@@ -558,10 +561,14 @@ describe('ScoreWorker — LLM port', () => {
       expect(row?.reasoning).toContain('Slow LLM Sender');
 
       // The `reasoning.timeout` log line carries enough fields to
-      // correlate without a re-query.
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      const payload = JSON.parse(warnSpy.mock.calls[0]![0] as string) as Record<string, unknown>;
-      expect(payload['kind']).toBe('reasoning.timeout');
+      // correlate without a re-query. Filter by kind — the worker also
+      // warns `score.run_completed_publish_skipped` when constructed
+      // without an outbox dep (U14), which this test deliberately is.
+      const timeoutWarns = warnSpy.mock.calls
+        .map((c) => JSON.parse(c[0] as string) as Record<string, unknown>)
+        .filter((p) => p['kind'] === 'reasoning.timeout');
+      expect(timeoutWarns).toHaveLength(1);
+      const payload = timeoutWarns[0]!;
       expect(payload['worker']).toBe('ScoreWorker');
       expect(payload['mailboxAccountId']).toBe(mailboxAccountId);
       expect(payload['senderKey']).toBe(senderKey);
@@ -713,5 +720,53 @@ describe('ScoreWorker — LLM port', () => {
     // A finite limiter at very low rate could push this over 200ms;
     // Infinity must not. Generous bound — test-runner jitter friendly.
     expect(elapsed).toBeLessThan(2_000);
+  });
+});
+
+describe('ScoreWorker — score_run_completed outbox publish (U14)', () => {
+  it('publishes triage.score_run_completed with trigger + producedAtMs + decisionsWritten', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, 'a@pub.test', { gmailCategory: 'promotions' });
+    await seedSender(db, mailboxAccountId, 'b@pub.test', { gmailCategory: 'promotions' });
+
+    const worker = new ScoreWorker({
+      db,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      outbox: new OutboxPublisher(),
+    });
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 4_200 },
+      FAKE_CTX,
+    );
+
+    const events = await db.select().from(outboxEvents);
+    const published = events.filter((e) => e.topic === TOPICS.TRIAGE_SCORE_RUN_COMPLETED);
+    expect(published).toHaveLength(1);
+    const payload = published[0]!.payload as {
+      mailboxAccountId: string;
+      trigger: string;
+      producedAtMs: number;
+      decisionsWritten: number;
+    };
+    expect(payload.mailboxAccountId).toBe(mailboxAccountId);
+    expect(payload.trigger).toBe('sync_complete');
+    expect(payload.producedAtMs).toBe(4_200);
+    expect(payload.decisionsWritten).toBe(result.decisionsWritten);
+  });
+
+  it('without an outbox dep the run still succeeds and publishes nothing', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, 'a@nopub.test', { gmailCategory: 'promotions' });
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'cron_sweep', producedAtMs: 1 },
+      FAKE_CTX,
+    );
+
+    expect(result.decisionsWritten).toBe(1);
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
   });
 });

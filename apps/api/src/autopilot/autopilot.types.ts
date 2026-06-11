@@ -32,6 +32,18 @@ export interface AutopilotRule {
   enabled: boolean;
   mode: AutopilotRuleMode;
   modeChangedAt: string;
+  /**
+   * U14 — D10/D104 Observe-window projection (`modeChangedAt` + 7d).
+   * ISO-8601 while the rule is in Observe mode; null otherwise. The
+   * FE renders "(N days left)" off this.
+   */
+  observeWindowEndsAt: string | null;
+  /**
+   * True when the rule is in Observe mode AND the 7-day window has
+   * elapsed. Drives the day-7 prompt banner (U15) — NO auto-promotion
+   * happens server-side (locked safe variant).
+   */
+  observeWindowElapsed: boolean;
   /** Null when the preset does not gate on confidence. */
   confidenceThreshold: number | null;
   scope: AutopilotRuleScope;

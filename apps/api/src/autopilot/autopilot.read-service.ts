@@ -9,19 +9,30 @@
 // tables — so they live in the read service per D204's pragmatic
 // boundary rather than emitting events.
 //
-// What this service does NOT do (deferred to the action-consumer PR):
-//   - Emit Gmail mutations on `approve`. The approve flow requires
-//     creating an `undo_journal` row and emitting an outbox event to
-//     the action consumer, which is its own PR. Today the dismiss
-//     endpoint exists; approve does NOT.
+// U14 — the approve flow + dry-run preview now live here too:
+//   - `approveMatches` / `approveAllForRule` flip pending Observe-mode
+//     rows to `approved` (an intra-feature write on the Autopilot-owned
+//     `rule_match_log`) and enqueue an `autopilot-action` sweep — the
+//     ACTION CONSUMER (`AutopilotActionWorker`) is the only writer of
+//     the Gmail mutation + undo_journal + activity effects (D226).
+//   - `previewRule` runs the rule's matcher against the SAME signal
+//     materializer the apply worker uses (`materializeAutopilotSignals`)
+//     — read-only, no mutation, no match-log writes.
 //
 // PRIVACY (D7, D228): every column read here is metadata. The match
 // log's `sender_key` is the sha256 hex digest, never the raw email.
 // The rule's `conditions` + `action_payload` jsonb reference engine
 // signals, never message body content.
 
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Optional,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import type { Queue } from 'bullmq';
 
 import {
   AUTOPILOT_PRESET_KEYS,
@@ -32,6 +43,18 @@ import {
   ruleMatchLog,
   senders,
 } from '@declutrmail/db';
+import {
+  AUTOPILOT_ACTION_JOB,
+  AUTOPILOT_PRESETS,
+  autopilotActionJobOptions,
+  materializeAutopilotSignals,
+  type AutopilotActionJobData,
+  type PresetInput,
+} from '@declutrmail/workers';
+import type {
+  AutopilotApproveResult,
+  AutopilotRulePreviewResult,
+} from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -42,9 +65,29 @@ import type {
   AutopilotRulePatch,
 } from './autopilot.types.js';
 
+/**
+ * NestJS DI token for the `autopilot-action` BullMQ producer queue
+ * (U14). Same fail-open `Queue | null` contract as ActionsModule's
+ * tokens: `null` when REDIS_URL is unset, and the approve endpoints
+ * surface a clear 503 instead of stranding approved-but-never-executed
+ * matches.
+ */
+export const AUTOPILOT_ACTION_QUEUE_TOKEN = 'AUTOPILOT_ACTION_QUEUE';
+
+/** D10 — Observe-mode window before the day-7 prompt (no auto-promote). */
+const OBSERVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Preview sample size — D103's "10-row sample list". */
+const PREVIEW_SAMPLE_SIZE = 10;
+
 @Injectable()
 export class AutopilotReadService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    @Optional()
+    @Inject(AUTOPILOT_ACTION_QUEUE_TOKEN)
+    private readonly actionQueue: Queue<AutopilotActionJobData> | null = null,
+  ) {}
 
   /**
    * List all rules for a mailbox. Returns rows in creation order
@@ -322,6 +365,223 @@ export class AutopilotReadService {
     }
     return null;
   }
+
+  /**
+   * U14 — approve selected pending Observe-mode suggestions (D104
+   * "Approve selected"). Flips `resolution='approved'` and enqueues an
+   * `autopilot-action` sweep; the action consumer executes through the
+   * D226 pipeline (undo journal + activity + Gmail mutation).
+   *
+   * Idempotency contract (mirrors `dismissMatch`):
+   *   - first approve of a pending row → counted in `approvedCount`
+   *   - replayed approve of a terminal row (approved/dismissed) for
+   *     THIS mailbox → counted in `alreadyResolvedCount`, 200
+   *   - cross-tenant / unknown ids → silently absent from both counts
+   *     (cannot probe existence across mailboxes)
+   *
+   * Fails 503 BEFORE any write when the action queue is down —
+   * approving rows that nothing will ever execute is the stuck state
+   * CLAUDE.md §10 bans (same contract as ActionsService.enqueueArchive).
+   */
+  async approveMatches(
+    mailboxAccountId: string,
+    matchIds: string[],
+  ): Promise<AutopilotApproveResult> {
+    this.requireActionQueue();
+
+    const updated = await this.db
+      .update(ruleMatchLog)
+      .set({ resolution: 'approved', resolvedAt: sql`now()` })
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          inArray(ruleMatchLog.id, matchIds),
+          eq(ruleMatchLog.modeAtMatch, 'observe'),
+          eq(ruleMatchLog.resolution, 'pending'),
+        ),
+      )
+      .returning({ id: ruleMatchLog.id });
+    const approvedCount = updated.length;
+
+    // Benign-replay accounting: rows in THIS mailbox that are terminal
+    // but were not flipped by this call (already approved or dismissed
+    // before). The just-approved ids are excluded by the count diff.
+    const [terminal] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          inArray(ruleMatchLog.id, matchIds),
+          ne(ruleMatchLog.resolution, 'pending'),
+        ),
+      );
+    const alreadyResolvedCount = Math.max(0, (terminal?.n ?? 0) - approvedCount);
+
+    const executionEnqueued =
+      approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
+    return { approvedCount, alreadyResolvedCount, executionEnqueued };
+  }
+
+  /**
+   * U14 — approve EVERY pending Observe-mode suggestion for one rule
+   * (D104 "Approve all"). Returns `null` when the rule does not exist
+   * in this mailbox (controller maps to 404). A replay approves 0 rows
+   * and enqueues nothing — terminal rows are simply no longer pending.
+   *
+   * NOTE: deliberately does NOT flip the rule to Active — D104's
+   * "Approve all and switch to Active mode" is two calls (this +
+   * `PATCH mode=active`) so the FE can also offer plain "Approve
+   * selected/all" without a mode change (locked safe variant: no
+   * auto-promotion, the day-7 banner only PROMPTS).
+   */
+  async approveAllForRule(
+    mailboxAccountId: string,
+    ruleId: string,
+  ): Promise<AutopilotApproveResult | null> {
+    this.requireActionQueue();
+
+    const [rule] = await this.db
+      .select({ id: automationRules.id })
+      .from(automationRules)
+      .where(
+        and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
+      )
+      .limit(1);
+    if (!rule) return null;
+
+    const updated = await this.db
+      .update(ruleMatchLog)
+      .set({ resolution: 'approved', resolvedAt: sql`now()` })
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.ruleId, ruleId),
+          eq(ruleMatchLog.modeAtMatch, 'observe'),
+          eq(ruleMatchLog.resolution, 'pending'),
+        ),
+      )
+      .returning({ id: ruleMatchLog.id });
+    const approvedCount = updated.length;
+
+    const executionEnqueued =
+      approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
+    return { approvedCount, alreadyResolvedCount: 0, executionEnqueued };
+  }
+
+  /**
+   * U14 — dry-run preview (D103's "would have affected" scoped to the
+   * V2 preset surface per D192). Runs the rule's matcher against the
+   * SAME signal materializer the apply worker uses, so the count equals
+   * what the next sweep would log. Read-only — no match rows, no
+   * mutations.
+   *
+   * Returns `null` for a rule that doesn't exist in this mailbox OR a
+   * custom rule (`presetKey=null`) — D234 keeps custom rules off the V2
+   * API surface, mirroring `patchRule`'s 404 behavior.
+   */
+  async previewRule(
+    mailboxAccountId: string,
+    ruleId: string,
+  ): Promise<AutopilotRulePreviewResult | null> {
+    const [rule] = await this.db
+      .select()
+      .from(automationRules)
+      .where(
+        and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
+      )
+      .limit(1);
+    if (!rule) return null;
+    const presetKey = asPresetKey(rule.presetKey);
+    if (!presetKey) return null;
+    const def = AUTOPILOT_PRESETS[presetKey];
+
+    // numeric(3,2) → number; null = use the preset default; malformed
+    // strings (NaN) fall back to the default rather than silently
+    // never-matching (same defense as the apply worker).
+    let threshold: number | null = null;
+    if (rule.confidenceThreshold !== null) {
+      const parsed = Number.parseFloat(rule.confidenceThreshold);
+      threshold = Number.isFinite(parsed) ? parsed : null;
+    }
+
+    const signalRows = await materializeAutopilotSignals(this.db, mailboxAccountId, new Date());
+    const eligible = signalRows.filter((s) => !s.signals.isProtected);
+
+    const matched: Array<{ senderKey: string; reason: string }> = [];
+    for (const { senderKey, signals, decision } of eligible) {
+      const input: PresetInput = { signals, triageDecision: decision };
+      const result = def.match(input, threshold);
+      if (result.matched) matched.push({ senderKey, reason: result.reason });
+    }
+
+    // Sample sender identities (D7 allowlist) for the first N matches.
+    const sampleMatches = matched.slice(0, PREVIEW_SAMPLE_SIZE);
+    const identityBy = new Map<string, { name: string | null; email: string | null }>();
+    if (sampleMatches.length > 0) {
+      const rows = await this.db
+        .select({
+          senderKey: senders.senderKey,
+          displayName: senders.displayName,
+          email: senders.email,
+        })
+        .from(senders)
+        .where(
+          and(
+            eq(senders.mailboxAccountId, mailboxAccountId),
+            inArray(
+              senders.senderKey,
+              sampleMatches.map((m) => m.senderKey),
+            ),
+          ),
+        );
+      for (const r of rows) {
+        identityBy.set(r.senderKey, {
+          name: r.displayName.length > 0 ? r.displayName : null,
+          email: r.email.length > 0 ? r.email : null,
+        });
+      }
+    }
+
+    return {
+      ruleId,
+      wouldMatchCount: matched.length,
+      evaluatedSenders: eligible.length,
+      sample: sampleMatches.map((m) => ({
+        senderKey: m.senderKey,
+        senderName: identityBy.get(m.senderKey)?.name ?? null,
+        senderEmail: identityBy.get(m.senderKey)?.email ?? null,
+        reason: m.reason,
+      })),
+    };
+  }
+
+  /** 503 when the action queue is not wired (fail before any write). */
+  private requireActionQueue(): void {
+    if (!this.actionQueue) {
+      throw new ServiceUnavailableException({
+        code: 'QUEUE_UNAVAILABLE',
+        message: 'Autopilot action queue unavailable — REDIS_URL is not set.',
+      });
+    }
+  }
+
+  /**
+   * Enqueue one `autopilot-action` sweep for the mailbox. The sweep
+   * picks up EVERY approved-unapplied match, so concurrent approvals
+   * collapsing onto one job is correct. `-` separator in the jobId —
+   * BullMQ rejects custom ids containing `:` (U14 smoke).
+   */
+  private async enqueueActionSweep(mailboxAccountId: string): Promise<boolean> {
+    if (!this.actionQueue) return false;
+    const triggeredAtMs = Date.now();
+    await this.actionQueue.add(
+      AUTOPILOT_ACTION_JOB,
+      { mailboxAccountId, triggeredAtMs },
+      autopilotActionJobOptions(`${mailboxAccountId}-${triggeredAtMs}`),
+    );
+    return true;
+  }
 }
 
 const PRESET_KEY_SET = new Set<string>(AUTOPILOT_PRESET_KEYS);
@@ -330,6 +590,12 @@ function asPresetKey(k: string | null): AutopilotPresetKey | null {
 }
 
 function projectRule(row: typeof automationRules.$inferSelect): AutopilotRule {
+  // U14 — Observe-window projection (D10/D104). The window runs 7 days
+  // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
+  // No auto-promotion happens at elapse (locked safe variant) — the FE
+  // day-7 banner (U15) prompts the user off `observeWindowElapsed`.
+  const inObserve = row.mode === 'observe';
+  const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;
   return {
     id: row.id,
     presetKey: asPresetKey(row.presetKey),
@@ -338,6 +604,8 @@ function projectRule(row: typeof automationRules.$inferSelect): AutopilotRule {
     enabled: row.enabled,
     mode: row.mode as AutopilotRuleMode,
     modeChangedAt: row.modeChangedAt.toISOString(),
+    observeWindowEndsAt: inObserve ? new Date(observeWindowEndsAtMs).toISOString() : null,
+    observeWindowElapsed: inObserve && Date.now() >= observeWindowEndsAtMs,
     confidenceThreshold:
       row.confidenceThreshold !== null ? Number.parseFloat(row.confidenceThreshold) : null,
     scope: row.scope as AutopilotRuleScope,

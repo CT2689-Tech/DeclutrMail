@@ -110,6 +110,16 @@ export interface PresetDefinition {
    * Serialized into `automation_rules.action_payload`.
    */
   defaultActionPayload: Record<string, unknown>;
+  /**
+   * Max ACTIONS this rule may execute per rolling 24h window (U14 —
+   * D99 blast-radius guard). Enforced by `AutopilotActionWorker`
+   * against `activity_log` rows where `source='autopilot'` AND
+   * `rule_id = <rule>`; matches beyond the cap stay
+   * `intent_applied=false` and execute on a later sweep. Bounds the
+   * damage of a runaway rule (bad threshold, engine regression) to one
+   * day's cap rather than the whole mailbox.
+   */
+  dailyActionCap: number;
   /** The matcher fn — pure, no side effects. */
   match: (input: PresetInput, threshold: number | null) => PresetMatchResult;
 }
@@ -154,6 +164,7 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     actionKind: 'archive',
     defaultThreshold: 0.85,
     defaultActionPayload: {},
+    dailyActionCap: 100,
     match: VERDICT_MATCHER('archive', 0.85, 'Archive'),
   },
   auto_unsubscribe_noisy: {
@@ -162,6 +173,7 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     defaultThreshold: 0.9,
     // D101 #2: "Unsubscribe + auto-archive future".
     defaultActionPayload: { and_archive_future: true },
+    dailyActionCap: 25,
     match: VERDICT_MATCHER('unsubscribe', 0.9, 'Unsubscribe'),
   },
   auto_screen_new_senders: {
@@ -169,6 +181,7 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     actionKind: 'later',
     defaultThreshold: null,
     defaultActionPayload: {},
+    dailyActionCap: 50,
     match: ({ signals }) => {
       const newByDays = signals.firstSeenDaysAgo < 7;
       const newByCount = signals.totalMessages < 3;
@@ -203,6 +216,7 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     actionKind: 'unsubscribe',
     defaultThreshold: null,
     defaultActionPayload: {},
+    dailyActionCap: 25,
     match: ({ signals }) => {
       if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 90) return { matched: false, reason: '' };
@@ -222,6 +236,7 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     actionKind: 'unsubscribe',
     defaultThreshold: null,
     defaultActionPayload: {},
+    dailyActionCap: 25,
     match: ({ signals }) => {
       if (signals.readRate90d >= 0.05) return { matched: false, reason: '' };
       if (signals.lastSeenDaysAgo <= 180) return { matched: false, reason: '' };
