@@ -234,7 +234,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D180 | Webhook signature verification (derived) | ⬜ |  |  |  |
 | D181 | Security events log (distinct from Activity log) | 🔵 | #131 |  |  |
 | D182 | Test framework stack: **Vitest + testcontainers + Playwright | ⬜ |  |  |  |
-| D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | ⬜ |  |  |  |
+| D183 | Gmail mock strategy: **MockGmailProvider + recorded fixtures + staging real Gmail | 🔵 | #197 |  |  |
 | D184 | Coverage strategy: **Risk-weighted with 70% floor on `packages/shared` + `packages/db` | ⬜ |  |  |  |
 | D185 | Visual regression: **Skip at launch | ⬜ |  |  |  |
 | D186 | CLAUDE.md content: **DEFERRED pending community references | ⬜ |  |  |  |
