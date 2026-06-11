@@ -29,10 +29,10 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-- ⬜ Not started: 145
-- 🟡 In progress: 0
-- 🔵 Shipped: 18
-- 🟢 Verified: 72
+- ⬜ Not started: 132
+- 🟡 In progress: 5
+- 🔵 Shipped: 32
+- 🟢 Verified: 66
 - 🔴 Blocked: 0
 - ⏸️ Deferred: 0
 - **Total: 235 D-decisions**
