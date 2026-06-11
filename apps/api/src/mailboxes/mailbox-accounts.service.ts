@@ -6,6 +6,7 @@ import type { MailboxAccount } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
+import { GmailWatchService } from './gmail-watch.service.js';
 
 /** Wire shape returned by `list()` for the FE account menu. */
 export interface MailboxSummary {
@@ -36,6 +37,7 @@ export class MailboxAccountsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly tokenCrypto: TokenCryptoService,
+    private readonly gmailWatch: GmailWatchService,
   ) {}
 
   /**
@@ -176,6 +178,13 @@ export class MailboxAccountsService {
         connectedAt: row.connectedAt?.toISOString() ?? null,
       };
     }
+
+    // `users.stop` BEFORE the revoke — a revoked token cannot end the
+    // Pub/Sub watch, and a lingering watch would push notifications
+    // for a mailbox we no longer sync (D8/D229). Best-effort: the
+    // service never throws, and an un-stopped watch self-expires in
+    // ~7 days (the webhook treats its pushes as designed no-ops).
+    await this.gmailWatch.stopMailbox(row.id);
 
     if (row.encryptedRefreshToken && row.dekEncrypted && row.keyVersion !== null) {
       try {

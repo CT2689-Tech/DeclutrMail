@@ -4,6 +4,7 @@ import { AuthCryptoModule } from '../auth/auth-crypto.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { CurrentMailboxGuard } from './current-mailbox.guard.js';
+import { GmailWatchService } from './gmail-watch.service.js';
 import { MailboxAccountsService } from './mailbox-accounts.service.js';
 import { MailboxesController } from './mailboxes.controller.js';
 
@@ -28,7 +29,7 @@ import { MailboxesController } from './mailboxes.controller.js';
   // Both modules are eagerly loaded, so the forwardRef resolves once
   // Nest finishes wiring both.
   imports: [AuthCryptoModule, UsersModule, forwardRef(() => AuthModule)],
-  providers: [MailboxAccountsService, CurrentMailboxGuard],
+  providers: [MailboxAccountsService, GmailWatchService, CurrentMailboxGuard],
   controllers: [MailboxesController],
   // Re-export `UsersModule` so importers (Senders/Triage/Undo/etc.)
   // that consume `CurrentMailboxGuard` get `UsersService` resolved in
@@ -37,6 +38,9 @@ import { MailboxesController } from './mailboxes.controller.js';
   //   "Nest can't resolve dependencies of the CurrentMailboxGuard
   //    (?, MailboxAccountsService). Please make sure that the argument
   //    UsersService at index [0] is available in the UndoModule context."
-  exports: [MailboxAccountsService, CurrentMailboxGuard, UsersModule],
+  // `GmailWatchService` is exported for `AuthSignupOrchestrator`
+  // (watch-on-connect/reconnect) and the U22 deletion purge
+  // (`stopAllForUser`).
+  exports: [MailboxAccountsService, GmailWatchService, CurrentMailboxGuard, UsersModule],
 })
 export class MailboxAccountsModule {}

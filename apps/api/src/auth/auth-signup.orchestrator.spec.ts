@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import type { DrizzleDb } from '../db/db.module.js';
 import type { UsersService } from '../users/users.service.js';
+import type { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
 import type { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import type { SyncService } from '../sync/sync.service.js';
 import type { TokenCryptoService } from './token-crypto.service.js';
@@ -33,6 +34,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     upsertConnect: ReturnType<typeof vi.fn>;
   };
   let sync: { markQueued: ReturnType<typeof vi.fn>; schedule: ReturnType<typeof vi.fn> };
+  let gmailWatch: { watchMailbox: ReturnType<typeof vi.fn> };
   let tokenCrypto: { encrypt: ReturnType<typeof vi.fn> };
   let sessions: { issue: ReturnType<typeof vi.fn> };
   let csrf: { issue: ReturnType<typeof vi.fn> };
@@ -53,6 +55,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       markQueued: vi.fn().mockResolvedValue(undefined),
       schedule: vi.fn().mockResolvedValue(undefined),
     };
+    gmailWatch = { watchMailbox: vi.fn().mockResolvedValue('watched') };
     tokenCrypto = {
       encrypt: vi.fn().mockResolvedValue({
         ciphertext: Buffer.from('c'),
@@ -79,6 +82,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       users as unknown as UsersService,
       mailboxes as unknown as MailboxAccountsService,
       sync as unknown as SyncService,
+      gmailWatch as unknown as GmailWatchService,
       tokenCrypto as unknown as TokenCryptoService,
       sessions as unknown as SessionsService,
       csrf as unknown as CsrfService,
@@ -107,6 +111,8 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     );
     // Active mailbox set to the just-connected mailbox.
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
+    // `users.watch` fires on connect/reconnect (D8/D225/D229).
+    expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
   });
 
   it('resolves into the home workspace when the email was connected as a secondary mailbox', async () => {
@@ -177,6 +183,8 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(users.patchPreferences).toHaveBeenCalledWith('u-owner', {
         activeMailboxId: 'mailbox-new',
       });
+      // `users.watch` fires for the added mailbox too (D8/D225/D229).
+      expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
     });
 
     it('rejects a Gmail already owned by a different workspace without touching preferences', async () => {

@@ -153,3 +153,41 @@ export interface GmailMetadataClient {
 export interface GmailAccess {
   getClient(mailboxAccountId: string): Promise<GmailMetadataClient>;
 }
+
+/**
+ * Result of one `users.watch` call (D8/D225). Both fields come from
+ * Gmail's watch response envelope — no message content can appear in a
+ * watch resource (D7-safe by construction).
+ */
+export interface GmailWatchResult {
+  /** The mailbox's historyId at watch time (decimal string). */
+  historyId: string;
+  /** Watch expiration — ms since epoch. Gmail caps this at ~7 days. */
+  expirationMs: number;
+}
+
+/**
+ * The Pub/Sub watch lifecycle surface of a mailbox-bound Gmail client
+ * (D8, D225, D229). `watch` is idempotent at the Gmail level — calling
+ * it again on an already-watched mailbox extends the subscription, so
+ * the 6h `WatchRenewalWorker` sweep re-watches unconditionally.
+ */
+export interface GmailWatchClient {
+  /**
+   * `users.watch` — subscribe the mailbox's change notifications to the
+   * given Pub/Sub topic (`projects/<id>/topics/<name>`), filtered to
+   * INBOX label changes (the drift sweep covers non-INBOX drift).
+   */
+  watch(topicName: string): Promise<GmailWatchResult>;
+  /** `users.stop` — end the mailbox's Pub/Sub notifications. */
+  stopWatch(): Promise<void>;
+}
+
+/**
+ * Per-mailbox resolver for the watch lifecycle — same factory shape as
+ * `GmailAccess`. The composition root's token-bound `GmailClientService`
+ * implements every port, so one factory serves all of them.
+ */
+export interface GmailWatchAccess {
+  getClient(mailboxAccountId: string): Promise<GmailWatchClient>;
+}
