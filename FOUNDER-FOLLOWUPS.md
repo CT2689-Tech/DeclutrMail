@@ -26,6 +26,18 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
+**Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
+**Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
+**How (remaining founder items — full detail in the doc):**
+1. Sentry: set `SENTRY_ORG=chintan-ashok-thakkar` in Vercel + 2 alert rules.
+2. Resend: rotate the exposed full-access key.
+3. Paddle (Sandbox) + Razorpay (Test) keys + webhook secrets → GH secrets.
+4. Decide Plus/Pro tier prices (D17-21) for the payment catalogs.
+5. `.ai`→`.com` cutover after V2 live (OAuth URLs, payment site, retire `.ai`).
+**Verifies by:** see `docs/execution/buildout-prerequisites-2026-06-11.md` for the full table + cutover checklist.
+**Status:** Open (KYC long-poles cleared; remaining items are hours)
+
 ### 2026-06-10 — Upstash: enable usage notifications (plan flip DONE via PAYG + $20 budget)
 **Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
 **Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. RESOLVED 2026-06-10 ~22:15Z: founder flipped the DB to **Pay as You Go with a $20/mo hard budget** (chosen over Fixed 250MB — tuned command volume ≈ $2-3/mo is cheaper than the $10 flat; flip trigger: watchdog run-rate > $6/mo → switch to Fixed). Worker bounced; all queues listening, zero `bullmq.error` since 22:21Z.
