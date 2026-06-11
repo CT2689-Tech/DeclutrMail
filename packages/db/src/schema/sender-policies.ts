@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { boolean, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { mailboxAccounts } from './mailbox-accounts';
 
@@ -116,6 +125,18 @@ export const senderPolicies = pgTable(
      * senders (D230 manual path — no claimed outcome).
      */
     unsubStatus: unsubStatus('unsub_status'),
+    /**
+     * Sender snooze wake time (D78/D79 — sender-level only at launch).
+     * Non-null = the sender is actively snoozed: new arrivals route to
+     * the snooze label instead of INBOX, and the hourly
+     * `SnoozeRestoreWorker` wake-scan (`WHERE snoozed_until <= now()`)
+     * restores the label's messages and nulls all three snooze columns.
+     */
+    snoozedUntil: timestamp('snoozed_until', { withTimezone: true, mode: 'date' }),
+    /** When the snooze was set; null when not snoozed (D79). */
+    snoozedAt: timestamp('snoozed_at', { withTimezone: true, mode: 'date' }),
+    /** Optional user note shown on the Snoozed screen row (D79/D80). */
+    snoozedReason: text('snoozed_reason'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -128,6 +149,14 @@ export const senderPolicies = pgTable(
       table.mailboxAccountId,
       table.senderKey,
     ),
+    /**
+     * Hourly wake-scan (D79): `WHERE snoozed_until <= now()` across all
+     * mailboxes. Partial — only actively-snoozed rows are indexed, so
+     * the index stays tiny relative to the policy table.
+     */
+    snoozeWakeIdx: index('sender_policies_snooze_wake_idx')
+      .on(table.snoozedUntil)
+      .where(sql`${table.snoozedUntil} IS NOT NULL`),
   }),
 );
 
