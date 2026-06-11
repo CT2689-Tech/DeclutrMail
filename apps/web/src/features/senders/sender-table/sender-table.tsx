@@ -58,6 +58,7 @@ import { NumericDisplay, tokens } from '@declutrmail/shared';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
+import { UNSUB_PILL } from '../grid/sender-card';
 import { SenderRowDetail } from '../table/sender-row-detail';
 import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
@@ -107,6 +108,14 @@ export interface SenderTableProps {
   selectedIds: ReadonlySet<string>;
   /** Selection change handler — caller owns the bulk semantics. */
   onSelectionChange(next: ReadonlySet<string>): void;
+  /**
+   * Per-row checkbox toggle with the modifier state (D52 shift-click
+   * ranges). When provided, the CALLER owns the selection-set math
+   * (anchor + range) and `onSelectionChange` is not called for row
+   * clicks; when absent, the table falls back to its internal
+   * single-row toggle.
+   */
+  onRowToggle?(args: { id: string; checked: boolean; shiftKey: boolean }): void;
   /**
    * Verb invocation. Caller routes the call through D226's
    * `ConfirmActionModal`; the table NEVER mutates optimistically.
@@ -203,8 +212,15 @@ export function SenderTable(props: SenderTableProps) {
                 sender={sender}
                 globalMaxTotal={props.globalMaxTotal}
                 selected={props.selectedIds.has(sender.id)}
-                onSelectionChange={(checked) =>
-                  toggleSelection(props.selectedIds, sender.id, checked, props.onSelectionChange)
+                onSelectionChange={(checked, shiftKey) =>
+                  props.onRowToggle
+                    ? props.onRowToggle({ id: sender.id, checked, shiftKey })
+                    : toggleSelection(
+                        props.selectedIds,
+                        sender.id,
+                        checked,
+                        props.onSelectionChange,
+                      )
                 }
                 onAction={props.onAction}
                 pad={pad}
@@ -346,7 +362,7 @@ function SenderRow({
   sender: SenderListRow;
   globalMaxTotal: number;
   selected: boolean;
-  onSelectionChange(checked: boolean): void;
+  onSelectionChange(checked: boolean, shiftKey: boolean): void;
   onAction: SenderTableProps['onAction'];
   pad: string;
 }) {
@@ -390,11 +406,17 @@ function SenderRow({
               background: toneAccent,
             }}
           />
+          {/* Toggle fires from onClick (not onChange) — only the click
+              event carries `shiftKey`, which the screen's range-select
+              logic consumes (D52). Controlled `checked` + `readOnly`
+              keeps React's controlled-input contract; Space still
+              toggles (the browser synthesizes a click). */}
           <input
             type="checkbox"
             aria-label={`Select ${displayLabel(sender)}`}
             checked={selected}
-            onChange={(e) => onSelectionChange(e.target.checked)}
+            readOnly
+            onClick={(e) => onSelectionChange(!selected, e.shiftKey)}
           />
         </td>
 
@@ -420,6 +442,29 @@ function SenderRow({
               >
                 {displayLabel(sender)}
               </span>
+              {/* Unsub status chip (D9 Wave 2) — same trigger + copy map
+                  as the grid card so list ↔ grid never contradict:
+                  shown while a standing unsubscribe policy exists,
+                  copy keyed by the execution outcome. */}
+              {sender.policyType === 'unsubscribe' && (
+                <span
+                  title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 9.5,
+                    letterSpacing: '0.10em',
+                    textTransform: 'uppercase',
+                    color: color.primary,
+                    background: color.primarySoft,
+                    border: `1px solid ${color.primaryBorder}`,
+                    borderRadius: 999,
+                    padding: '1px 6px',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
+                </span>
+              )}
             </span>
             <span
               style={{
@@ -688,11 +733,12 @@ const VERB_ORDER: readonly SenderTableVerb[] = ['archive', 'later', 'unsubscribe
 /**
  * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
  * not a triage verb (D227), so it renders as a ⭐ on protected / VIP rows —
- * never a verb button. It is intentionally non-interactive here: flipping
- * protection needs a Protect write endpoint that does not exist yet (the
- * same BE gap that keeps Later / Unsubscribe at tracer fidelity on this
- * surface), so toggling stays on the Sender Detail page until that lands.
- * Renders nothing for unprotected rows so the name column stays quiet.
+ * never a verb button. It is intentionally non-interactive here BY DESIGN:
+ * the Protect write endpoint exists (`PATCH /api/senders/:id/policy` via
+ * `useSetSenderPolicy`), but toggling a standing policy is a deliberate
+ * per-sender decision that lives on the Sender Detail page — a one-click
+ * row star invites accidental flips mid-scan. Renders nothing for
+ * unprotected rows so the name column stays quiet.
  */
 function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
   if (!flags.isVip && !flags.isProtected) return null;

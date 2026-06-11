@@ -38,6 +38,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
+import { UNSUB_PILL } from '../grid/sender-card';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { track } from '@/lib/posthog';
@@ -491,6 +492,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       if (verb === 'Unsubscribe') {
         if (recordUnsubIntent.isPending || activeUnsub != null) return;
         setPendingAction(null);
+        // The "Also act on past emails" chip from the D226 preview.
+        // Captured before the async hop so the historic action fires
+        // with exactly what the user confirmed.
+        const secondary = opts?.secondary ?? null;
         recordUnsubIntent.mutate(
           { senderId: sender.id },
           {
@@ -508,6 +513,41 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 toast(
                   `${sender.name} offers no unsubscribe channel — Archive is the reliable fallback`,
                   'info',
+                );
+              }
+              // Secondary historic action (Archive/Delete the backlog) —
+              // the unsub intent has no composite primary on the BE, so
+              // the backlog enqueues as its own composite whose primary
+              // IS the secondary verb (triage archive-after-unsub
+              // pattern). The polled `activeAction` lifecycle surfaces
+              // the real receipt + undo token.
+              if (secondary) {
+                enqueueComposite.mutate(
+                  {
+                    senderId: sender.id,
+                    primary: {
+                      type: secondary.type,
+                      olderThanDays: secondary.olderThanDays ?? null,
+                    },
+                  },
+                  {
+                    onSuccess: (cres) =>
+                      setActiveAction({
+                        actionId: cres.actionId,
+                        senderName: sender.name,
+                        verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                      }),
+                    onError: (err) => {
+                      captureFeatureException(err, {
+                        surface: 'senders',
+                        reason: `enqueue_${secondary.type}_after_unsub`,
+                      });
+                      toast(
+                        `Unsubscribe queued, but couldn't ${secondary.type} the backlog from ${sender.name}`,
+                        'warn',
+                      );
+                    },
+                  },
                 );
               }
             },
@@ -918,13 +958,14 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               justifyContent: 'flex-end',
             }}
           >
-            {/* Unsub-queued pill (FOUNDER-FOLLOWUPS 2026-06-05).
-                Mirrors the senders-list row pill: shown when a
-                standing unsubscribe policy is in flight but the
-                provider hasn't acted on the RFC 8058 endpoint yet.
-                Reads `policyType` directly so the Detail header is
-                consistent with the list — same source of truth. */}
-            {detail.policyType === 'unsubscribe' && <UnsubQueuedPill />}
+            {/* Unsub status pill (D9 Wave 2). Mirrors the senders-list
+                chip: shown while a standing unsubscribe policy exists,
+                copy keyed by the REAL execution outcome (`unsubStatus`
+                from the senders read API) via the shared UNSUB_PILL map
+                — never a static "queued" that outlives a terminal
+                done/failed state. Reads `policyType` + `unsubStatus`
+                directly so Detail and list share one source of truth. */}
+            {detail.policyType === 'unsubscribe' && <UnsubStatusPill status={detail.unsubStatus} />}
 
             {/* Open-all-in-Gmail (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
                 DeclutrMail never renders message bodies (D7); the
@@ -1281,21 +1322,29 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
 }
 
 /**
- * "Unsub queued" pill — Sender Detail header surface (FOUNDER-FOLLOWUPS
- * 2026-06-05). Mirrors the senders-list row pill so a user navigating
- * between list ↔ detail never sees a contradiction. Wired off
- * `detail.policyType === 'unsubscribe'`.
+ * Unsub status pill — Sender Detail header surface (D9 Wave 2; replaces
+ * the static "Unsub queued" pill that ignored terminal outcomes).
+ * Mirrors the senders-list row chip so a user navigating between
+ * list ↔ detail never sees a contradiction: both render the shared
+ * `UNSUB_PILL` copy map keyed by the wire `unsubStatus` (`none` covers
+ * a recorded intent with no tracked execution — mailto manual per D230,
+ * or method-none).
  *
  * Visual: pale-amber wash so it reads alongside the VIP (warm) chip
  * without competing with the deep-teal primary actions. Uses the
  * canonical `color.amberBg` token (no hand-rolled rgba).
  */
-function UnsubQueuedPill() {
+function UnsubStatusPill({
+  status,
+}: {
+  status: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+}) {
+  const copy = UNSUB_PILL[status ?? 'none'];
   return (
     <span
       role="status"
-      aria-label="Unsubscribe queued"
-      title="Unsubscribe sent — Gmail will remove this sender shortly. (RFC 8058)"
+      aria-label={copy.label}
+      title={copy.title}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -1322,7 +1371,7 @@ function UnsubQueuedPill() {
           background: color.amber,
         }}
       />
-      Unsub queued
+      {copy.label}
     </span>
   );
 }

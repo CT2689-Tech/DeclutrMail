@@ -693,6 +693,165 @@ describe('IncrementalSyncWorker', () => {
     expect(row!.last.getTime()).toBe(newer); // GREATEST kept raising
   });
 
+  it('derives sender unsubscribe_method on insert and upgrades monotonically (one_click > mailto > none)', async () => {
+    // Two senders × multiple messages (Drizzle correlated-subquery
+    // pitfall guard — a tautological correlated ref would pass with a
+    // single row on either side). Sender A walks the full upgrade
+    // ladder none → mailto → one_click; sender B starts at one_click
+    // and must survive both a header-less and a mailto-only message
+    // without demotion.
+    const senderA = 'news-a@example.com';
+    const senderB = 'news-b@example.com';
+    const base = Date.UTC(2026, 5, 1);
+
+    const a1 = makeMetadata('a-1', 'thread-a1', senderA, ['INBOX'], base);
+    const b1 = makeMetadata('b-1', 'thread-b1', senderB, ['INBOX'], base + 1_000, {
+      listUnsubscribe: '<https://b.example.com/unsub>',
+      listUnsubscribePost: 'List-Unsubscribe=One-Click',
+    });
+    const run1: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'a-1', threadId: 'thread-a1', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'b-1', threadId: 'thread-b1', labelIds: ['INBOX'] },
+    ];
+    await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [{ forCursor: '1000', page: { records: run1, historyId: '1500' } }],
+          new Map([
+            ['a-1', a1],
+            ['b-1', b1],
+          ]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    const keyA = deriveSenderKey(senderA);
+    const keyB = deriveSenderKey(senderB);
+    let [rowA] = await db.select().from(senders).where(eq(senders.senderKey, keyA));
+    let [rowB] = await db.select().from(senders).where(eq(senders.senderKey, keyB));
+    // Insert path — A had no List-Unsubscribe header, B was one-click.
+    expect(rowA!.unsubscribeMethod).toBe('none');
+    expect(rowA!.unsubscribeUrl).toBeNull();
+    expect(rowB!.unsubscribeMethod).toBe('one_click');
+    expect(rowB!.unsubscribeUrl).toBe('https://b.example.com/unsub');
+
+    // Run 2 — A upgrades mailto then one_click; B sees a header-less
+    // and a mailto-only message and must NOT demote.
+    const a2 = makeMetadata('a-2', 'thread-a2', senderA, ['INBOX'], base + 2_000, {
+      listUnsubscribe: '<mailto:unsub@a.example.com>',
+    });
+    const a3 = makeMetadata('a-3', 'thread-a3', senderA, ['INBOX'], base + 3_000, {
+      listUnsubscribe: '<https://a.example.com/unsub>',
+      listUnsubscribePost: 'List-Unsubscribe=One-Click',
+    });
+    const b2 = makeMetadata('b-2', 'thread-b2', senderB, ['INBOX'], base + 4_000);
+    const b3 = makeMetadata('b-3', 'thread-b3', senderB, ['INBOX'], base + 5_000, {
+      listUnsubscribe: '<mailto:unsub@b.example.com>',
+    });
+    const run2: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'a-2', threadId: 'thread-a2', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'b-2', threadId: 'thread-b2', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'a-3', threadId: 'thread-a3', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'b-3', threadId: 'thread-b3', labelIds: ['INBOX'] },
+    ];
+    await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [{ forCursor: '1500', page: { records: run2, historyId: '2000' } }],
+          new Map([
+            ['a-2', a2],
+            ['a-3', a3],
+            ['b-2', b2],
+            ['b-3', b3],
+          ]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1500', endHistoryId: '2000' }, CTX);
+
+    [rowA] = await db.select().from(senders).where(eq(senders.senderKey, keyA));
+    [rowB] = await db.select().from(senders).where(eq(senders.senderKey, keyB));
+    // A climbed the ladder; the URL stays scheme-matched (Option B).
+    expect(rowA!.unsubscribeMethod).toBe('one_click');
+    expect(rowA!.unsubscribeUrl).toBe('https://a.example.com/unsub');
+    // B never demoted — neither the header-less nor the mailto message
+    // lowered the one_click method or replaced its HTTPS URL.
+    expect(rowB!.unsubscribeMethod).toBe('one_click');
+    expect(rowB!.unsubscribeUrl).toBe('https://b.example.com/unsub');
+  });
+
+  it('mailto-only message upgrades a NULL/none sender but a later header-less one keeps mailto', async () => {
+    // Pre-seed a sender row with NO method (NULL — the post-initial-sync
+    // legacy state this fix targets) and a second sender at 'none' so
+    // the conflict path is exercised on both NULL and 'none' ranks.
+    const senderC = 'legacy-null@example.com';
+    const senderD = 'legacy-none@example.com';
+    const keyC = deriveSenderKey(senderC);
+    const keyD = deriveSenderKey(senderD);
+    const base = Date.UTC(2026, 5, 10);
+    await db.insert(senders).values([
+      {
+        mailboxAccountId,
+        senderKey: keyC,
+        displayName: 'Legacy Null',
+        email: senderC,
+        domain: 'example.com',
+        gmailCategory: 'updates',
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+      },
+      {
+        mailboxAccountId,
+        senderKey: keyD,
+        displayName: 'Legacy None',
+        email: senderD,
+        domain: 'example.com',
+        gmailCategory: 'updates',
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+        unsubscribeMethod: 'none',
+      },
+    ]);
+
+    const c1 = makeMetadata('c-1', 'thread-c1', senderC, ['INBOX'], base + 1_000, {
+      listUnsubscribe: '<mailto:unsub@c.example.com>',
+    });
+    const c2 = makeMetadata('c-2', 'thread-c2', senderC, ['INBOX'], base + 2_000);
+    const d1 = makeMetadata('d-1', 'thread-d1', senderD, ['INBOX'], base + 3_000, {
+      listUnsubscribe: '<mailto:unsub@d.example.com>',
+    });
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'c-1', threadId: 'thread-c1', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'c-2', threadId: 'thread-c2', labelIds: ['INBOX'] },
+      { kind: 'added', messageId: 'd-1', threadId: 'thread-d1', labelIds: ['INBOX'] },
+    ];
+    await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+          new Map([
+            ['c-1', c1],
+            ['c-2', c2],
+            ['d-1', d1],
+          ]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    const [rowC] = await db.select().from(senders).where(eq(senders.senderKey, keyC));
+    const [rowD] = await db.select().from(senders).where(eq(senders.senderKey, keyD));
+    // NULL ranks as none — the mailto message upgrades it; the
+    // header-less follow-up (c-2) does not demote it back.
+    expect(rowC!.unsubscribeMethod).toBe('mailto');
+    expect(rowC!.unsubscribeUrl).toBe('mailto:unsub@c.example.com');
+    expect(rowD!.unsubscribeMethod).toBe('mailto');
+    expect(rowD!.unsubscribeUrl).toBe('mailto:unsub@d.example.com');
+  });
+
   it('updates `sender_timeseries` on a new INBOUND message', async () => {
     const meta = makeMetadata(
       'ts-001',

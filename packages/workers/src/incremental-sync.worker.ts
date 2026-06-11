@@ -30,6 +30,24 @@ const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
   CATEGORY_FORUMS: 'forums',
 };
 
+/**
+ * Rank fragments for the monotonic unsubscribe-method upgrade (D9):
+ * one_click (2) > mailto (1) > none / NULL (0). Used inside the senders
+ * UPSERT's `ON CONFLICT DO UPDATE` — `EXCLUDED.*` is the incoming row,
+ * the table-qualified column is the existing row. Raw SQL (not bind
+ * params / Drizzle column templates) because (a) enum-vs-literal CASE
+ * arms need typed literals, and (b) the `sql` template emits bare
+ * column names for correlated refs (drizzle-correlated-subquery
+ * pitfall) — `senders.unsubscribe_method` must stay table-qualified to
+ * unambiguously mean "the existing row" next to EXCLUDED.
+ */
+const UNSUB_RANK_EXCLUDED = sql.raw(
+  "CASE EXCLUDED.unsubscribe_method WHEN 'one_click' THEN 2 WHEN 'mailto' THEN 1 ELSE 0 END",
+);
+const UNSUB_RANK_CURRENT = sql.raw(
+  "CASE senders.unsubscribe_method WHEN 'one_click' THEN 2 WHEN 'mailto' THEN 1 ELSE 0 END",
+);
+
 /** Dependencies the worker needs — mirrors `InitialSyncDeps`. */
 export interface IncrementalSyncDeps {
   db: WorkerDb;
@@ -325,6 +343,20 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       oneClick: unsubscribeOneClick,
     } = parseListUnsubscribe(meta.listUnsubscribe, meta.listUnsubscribePost);
 
+    // Sender-level unsubscribe channel from THIS message's headers (D9).
+    // Mirrors `InitialSyncWorker.deriveUnsubscribe` (Option B invariant):
+    // one_click requires the RFC 8058 post-flag + an HTTPS URL and pairs
+    // with that URL; mailto pairs with the mailto: URI; none carries
+    // NULL. Without this, a sender first seen AFTER the initial sync
+    // read `method='none'` forever — the per-message channels were
+    // stored but never folded up to the sender row.
+    const senderUnsub: { method: 'one_click' | 'mailto' | 'none'; url: string | null } =
+      unsubscribeOneClick && unsubscribeUrl
+        ? { method: 'one_click', url: unsubscribeUrl }
+        : unsubscribeMailtoUrl
+          ? { method: 'mailto', url: unsubscribeMailtoUrl }
+          : { method: 'none', url: null };
+
     // Sender identity — parsed from `From` header. For OUTBOUND
     // (SENT label) the From IS the user, so we don't materialise a
     // `senders` row; the mail_messages row stores recipientEmails
@@ -404,6 +436,8 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           firstSeenAt: internalDate,
           lastSeenAt: internalDate,
           totalReceived: 1,
+          unsubscribeMethod: senderUnsub.method,
+          unsubscribeUrl: senderUnsub.url,
         })
         .onConflictDoUpdate({
           target: [senders.mailboxAccountId, senders.senderKey],
@@ -417,6 +451,19 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             firstSeenAt: sql`LEAST(${senders.firstSeenAt}, EXCLUDED.first_seen_at)`,
             lastSeenAt: sql`GREATEST(${senders.lastSeenAt}, EXCLUDED.last_seen_at)`,
             totalReceived: sql`${senders.totalReceived} + 1`,
+            // Monotonic channel upgrade (D9): one_click > mailto > none.
+            // A header-less message must never demote a sender that
+            // already advertised a better channel — only a strictly
+            // higher-ranked method (and its scheme-matched URL, the
+            // Option B invariant) wins. NULL ranks as none (0).
+            unsubscribeMethod: sql`CASE
+              WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_method
+              ELSE ${senders.unsubscribeMethod}
+            END`,
+            unsubscribeUrl: sql`CASE
+              WHEN ${UNSUB_RANK_EXCLUDED} > ${UNSUB_RANK_CURRENT} THEN EXCLUDED.unsubscribe_url
+              ELSE ${senders.unsubscribeUrl}
+            END`,
             updatedAt: new Date(),
           },
         });
