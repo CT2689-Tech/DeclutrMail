@@ -38,8 +38,12 @@ export interface WatchRenewalResult {
    * `swept` — this run claimed the `cron_runs` slot and ran the sweep.
    * `duplicate_run_key` — another run already SUCCEEDED for this
    * run-key (double-fired tick / second replica); clean no-op.
+   * `skipped_disabled` — `topicName` is null (env `GMAIL_PUBSUB_TOPIC`
+   * unset; local dev / not-yet-provisioned env). The worker stays
+   * registered but idles — mirrors `GmailWatchService`'s
+   * `skipped_disabled`. No `cron_runs` claim, no Gmail call.
    */
-  outcome: 'swept' | 'duplicate_run_key';
+  outcome: 'swept' | 'duplicate_run_key' | 'skipped_disabled';
   /** Mailboxes eligible for renewal (active + sync-ready + token). */
   eligible: number;
   /** `users.watch` calls that succeeded + persisted state. */
@@ -54,8 +58,13 @@ export interface WatchRenewalDeps {
   db: WorkerDb;
   /** Per-mailbox token-bound client resolver (composition root). */
   gmailWatch: GmailWatchAccess;
-  /** Full Pub/Sub topic resource (env `GMAIL_PUBSUB_TOPIC`). */
-  topicName: string;
+  /**
+   * Full Pub/Sub topic resource (env `GMAIL_PUBSUB_TOPIC`), or null
+   * when the watch pipeline is off (local dev). A null topic makes
+   * every sweep a clean `skipped_disabled` no-op — registered-but-idle,
+   * never absent (CLAUDE.md §10 no-fake-completion).
+   */
+  topicName: string | null;
   /**
    * D159 seam for PER-MAILBOX failures. The base class captures a
    * TERMINAL job failure exactly once (D203); failures inside a sweep
@@ -125,6 +134,19 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
     const startedAt = Date.now();
     const runKey = `${this.workerName}:${payload.scheduledAtMinute}`;
 
+    // Watch pipeline off (GMAIL_PUBSUB_TOPIC unset — local dev). Bail
+    // BEFORE the cron_runs claim so an idle dev worker writes nothing.
+    const topicName = this.deps.topicName;
+    if (!topicName) {
+      return {
+        outcome: 'skipped_disabled',
+        eligible: 0,
+        watched: 0,
+        failed: 0,
+        durationMs: Date.now() - startedAt,
+      };
+    }
+
     // D225 durable claim. `setWhere` makes the conflict-update a no-op
     // when the slot already SUCCEEDED — RETURNING is then empty and we
     // bail idempotently. A 'running'/'failed' conflict row is a retry
@@ -168,7 +190,7 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
     for (const { mailboxAccountId } of eligible) {
       try {
         const client = await this.deps.gmailWatch.getClient(mailboxAccountId);
-        const result = await client.watch(this.deps.topicName);
+        const result = await client.watch(topicName);
         await persistGmailWatchState(this.deps.db, mailboxAccountId, {
           history_id: result.historyId,
           expiration: new Date(result.expirationMs).toISOString(),

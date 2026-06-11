@@ -41,6 +41,10 @@ import {
   UNSUB_EXECUTION_QUEUE,
   UnsubExecutionWorker,
   ValidationError,
+  enqueueWatchRenewalTick,
+  WATCH_RENEWAL_INTERVAL_MS,
+  WATCH_RENEWAL_QUEUE,
+  WatchRenewalWorker,
   workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
@@ -48,6 +52,7 @@ import type {
   BriefSnapshotResult,
   GmailAccess,
   GmailMutationAccess,
+  GmailWatchAccess,
   IncrementalSyncJobData,
   IncrementalSyncResult,
   InitialSyncJobData,
@@ -63,6 +68,8 @@ import type {
   UndoExpiryResult,
   UnsubExecutionJobData,
   UnsubExecutionResult,
+  WatchRenewalJobData,
+  WatchRenewalResult,
 } from '@declutrmail/workers';
 
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
@@ -463,6 +470,10 @@ async function bootstrap(): Promise<void> {
   };
   const gmailAccess: GmailAccess = { getClient: getGmailClient };
   const gmailMutationAccess: GmailMutationAccess = { getClient: getGmailClient };
+  // `GmailClientService` implements the watch lifecycle port too
+  // (`users.watch` / `users.stop`), so the same token-bound factory
+  // serves the WatchRenewalWorker (D225).
+  const gmailWatchAccess: GmailWatchAccess = { getClient: getGmailClient };
 
   /**
    * Per-mailbox advisory lock for destructive actions (D226, Codex
@@ -1107,6 +1118,79 @@ async function bootstrap(): Promise<void> {
   sendersCounterReconciliationSchedulerHandle.unref();
 
   /**
+   * WatchRenewalWorker consumer + scheduler (D8, D225, D229 —
+   * cronPolicy). Re-watches every active, sync-ready mailbox so its
+   * Gmail `users.watch` subscription (which expires ~7 days after the
+   * connect-time watch) never lapses — without this sweep the Pub/Sub
+   * push webhook goes silent mailbox-wide within a week. Same
+   * setInterval pattern as the cron workers above: the boot enqueue
+   * covers downtime across a 6h boundary, the BullMQ
+   * `jobId = WatchRenewalWorker:<minute>` dedups the tick, and the
+   * worker's `cron_runs` claim makes a double-fire a durable no-op.
+   *
+   * `GMAIL_PUBSUB_TOPIC` unset (local dev / not-yet-provisioned env) →
+   * the worker stays REGISTERED but every sweep returns
+   * `skipped_disabled` without touching Gmail or `cron_runs` — mirrors
+   * `GmailWatchService`'s connect-time guard.
+   */
+  const gmailPubsubTopic = process.env.GMAIL_PUBSUB_TOPIC || null;
+  const watchRenewalWorker = new WatchRenewalWorker({
+    db,
+    gmailWatch: gmailWatchAccess,
+    topicName: gmailPubsubTopic,
+    // Per-mailbox failure seam (record-and-continue isolation); the
+    // base-class observer below captures TERMINAL job failures.
+    observer,
+  });
+  watchRenewalWorker.setObserver(observer);
+
+  const watchRenewalBullWorker = new Worker<WatchRenewalJobData, WatchRenewalResult>(
+    WATCH_RENEWAL_QUEUE,
+    (job) => watchRenewalWorker.run(job),
+    // One sweep at a time — `users.watch` is cheap and the sweep is
+    // already jobId-deduped, so overlapping ticks have nothing to win.
+    { connection, concurrency: 1, ...cronTuning },
+  );
+
+  watchRenewalBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: WATCH_RENEWAL_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const watchRenewalSchedulerQueue = new Queue<WatchRenewalJobData>(WATCH_RENEWAL_QUEUE, {
+    connection,
+  });
+
+  async function enqueueWatchRenewal(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueWatchRenewalTick(watchRenewalSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'watch_renewal.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'watch_renewal.scheduler_failed' });
+    }
+  }
+
+  await enqueueWatchRenewal();
+  const watchRenewalSchedulerHandle = setInterval(() => {
+    void enqueueWatchRenewal();
+  }, WATCH_RENEWAL_INTERVAL_MS);
+  watchRenewalSchedulerHandle.unref();
+
+  /**
    * Incremental-sync drift sweeper (D38 prod-ready pass).
    *
    * Every `INCREMENTAL_DRIFT_INTERVAL_MS`, enqueue an incremental-sync
@@ -1327,6 +1411,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
+    clearInterval(watchRenewalSchedulerHandle);
     clearInterval(incrementalDriftHandle);
     void (async () => {
       if (inFlight) {
@@ -1351,6 +1436,8 @@ async function bootstrap(): Promise<void> {
       await undoExpirySchedulerQueue.close();
       await sendersCounterReconciliationBullWorker.close();
       await sendersCounterReconciliationSchedulerQueue.close();
+      await watchRenewalBullWorker.close();
+      await watchRenewalSchedulerQueue.close();
       await reconcilerQueue.close();
       await incrementalReconcilerQueue.close();
       await connection.quit();

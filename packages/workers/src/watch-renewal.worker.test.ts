@@ -187,6 +187,30 @@ describe('WatchRenewalWorker', () => {
     expect(watchCalls).toEqual([eligible]);
   });
 
+  it('no-ops as skipped_disabled when the topic is null: no Gmail call, no cron_runs claim', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, { email: 'idle@x.com' });
+    const { access, watchCalls } = makeWatchAccess({});
+    const worker = new WatchRenewalWorker({
+      db: db as never,
+      gmailWatch: access,
+      topicName: null,
+    });
+
+    const result = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+
+    expect(result).toMatchObject({
+      outcome: 'skipped_disabled',
+      eligible: 0,
+      watched: 0,
+      failed: 0,
+    });
+    expect(watchCalls).toEqual([]);
+    // Registered-but-idle leaves NO trace: an idle dev worker must not
+    // accrete a cron_runs row every 6h.
+    expect(await db.select().from(cronRuns)).toHaveLength(0);
+  });
+
   it('ISOLATES one bad grant: records + Sentry-captures it, the rest of the sweep proceeds', async () => {
     const db = await freshDb();
     const bad = await seedMailbox(db, { email: 'revoked@x.com' });
