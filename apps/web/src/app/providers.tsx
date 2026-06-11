@@ -10,12 +10,17 @@
 // at module scope would create the client at import time on the
 // server, leaking state across requests. A `useState` keeps the
 // browser client stable while letting the server stay request-scoped.
+//
+// Auth is NOT here (D134 public-route split): `AuthProvider` blocks on
+// `GET /api/auth/me`, so it wraps only the authed surfaces — the
+// `(app)` route-group layout and `/onboarding`'s layout. Public routes
+// (the `(marketing)` group, 404, error boundaries) render without any
+// auth round-trip.
 
 'use client';
 
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { AuthProvider } from '@/features/auth/auth-provider';
 import { makeQueryClient } from '@/lib/query-client';
 
 let browserQueryClient: QueryClient | undefined;
@@ -33,9 +38,5 @@ function getQueryClient(): QueryClient {
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(getQueryClient);
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

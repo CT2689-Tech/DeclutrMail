@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
-import { useAuth } from '@/features/auth/auth-provider';
+import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
@@ -21,10 +21,21 @@ import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-b
  *
  * Account menu (D116 surface — partial): the topbar's right slot
  * carries the switcher / disconnect / connect-another / sign-out menu.
- * The menu reads `useAuth` so the AuthProvider must wrap this layout
- * (it does — see `apps/web/src/app/providers.tsx`).
+ * The menu reads `useAuth` so the AuthProvider must wrap this layout —
+ * it does, right here: since the D134 public-route split, the
+ * `(app)` group owns its own AuthProvider (the root `providers.tsx`
+ * no longer auth-gates public routes). `AppChrome` is split out so
+ * its `useAuth()` call sits BELOW the provider in the tree.
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
+  return (
+    <AuthProvider>
+      <AppChrome>{children}</AppChrome>
+    </AuthProvider>
+  );
+}
+
+function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { me } = useAuth();
