@@ -76,7 +76,7 @@ export type { ActionPopoverProps } from './components/action-popover';
 
 // D211 — typed edge-state inventory. Enforces that every launch screen
 // has designed coverage for every edge state it can enter.
-export { EDGE_STATE_INVENTORY, EDGE_STATES } from './edge-states/inventory';
+export { EDGE_STATE_INVENTORY, EDGE_STATES, SCREEN_ROUTES } from './edge-states/inventory';
 export type {
   EdgeState,
   EdgeStateCoverage,
