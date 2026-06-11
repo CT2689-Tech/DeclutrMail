@@ -26,26 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-06-11 — Register prod OAuth redirect URI in Google Console
-**Source:** session 2026-06-11 (set missing prod API env vars)
-**Why:** `GOOGLE_REDIRECT_URI` was missing from the live Cloud Run API (a required env — OAuth throws without it). Now set to `https://api.declutrmail.com/api/auth/google/callback` on revision 00032-krt + persisted in `deploy-cloud-run.yml`. Verified live: `/api/auth/google/start` now redirects to Google with that `redirect_uri`. BUT Google rejects the callback with `redirect_uri_mismatch` unless the exact URI is in the OAuth client's Authorized redirect URIs — this can only be set in the Google Console.
-**How:**
-1. Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID `387835380133-34lfqvcgmk5d017dd264tkjmme8as8ml` (https://console.cloud.google.com/apis/credentials?project=declutrmail-ai-prod).
-2. Under **Authorized redirect URIs**, confirm (or add) `https://api.declutrmail.com/api/auth/google/callback`. Keep the localhost dev URI too.
-3. Under **Authorized JavaScript origins**, confirm `https://app.declutrmail.com`.
-**Verifies by:** a real prod OAuth connect completes without `redirect_uri_mismatch` (callback lands on the app, mailbox connects).
-**Status:** Open
-
-### 2026-06-11 — Wire prod Gmail Pub/Sub webhook (enable + audience + subscription)
-**Source:** session 2026-06-11 (set missing prod API env vars — webhook left off deliberately)
-**Why:** Real-time Gmail sync needs the Pub/Sub push webhook. `PUBSUB_WEBHOOK_ENABLED` is OFF in prod — and must STAY off until its full config exists, because the webhooks module crashes API boot if enabled without `PUBSUB_PUSH_AUDIENCE` + `PUBSUB_PUSH_SA_EMAIL` (D229 OIDC, fail-fast by design — confirmed live: enabling it alone broke revision 00030). This is a §2.5 webhook-auth surface (8-step OIDC checklist) + §9 stop-condition — needs a deliberate, founder-owned wiring, not a guessed value.
-**How (all three together, then deploy):**
-1. Decide the OIDC **audience** (the verifier's expected `aud`) — typically the API base URL `https://api.declutrmail.com` or the full webhook path. Must match the audience set on the Pub/Sub push subscription.
-2. Create the Pub/Sub push subscription on topic `projects/declutrmail-ai-prod/topics/gmail-push` → push endpoint `https://api.declutrmail.com/api/webhooks/gmail` with OIDC token (service account `gmail-webhook-oidc@declutrmail-ai-prod.iam.gserviceaccount.com`, audience = step 1).
-3. Add to the API deploy env (`deploy-cloud-run.yml` `--set-env-vars`): `PUBSUB_WEBHOOK_ENABLED=true`, `PUBSUB_PUSH_AUDIENCE=<step 1>`, `PUBSUB_PUSH_SA_EMAIL=gmail-webhook-oidc@declutrmail-ai-prod.iam.gserviceaccount.com`.
-**Verifies by:** API boots with the webhook route mounted; a Gmail change triggers a push that passes OIDC verification (a `webhook.received` / `webhook.verified` log line, not a 401).
-**Status:** Open
-
 ### 2026-06-10 — Upstash: enable usage notifications (plan flip DONE via PAYG + $20 budget)
 **Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
 **Why:** Upstash free tier (500K commands/month) was exhausted at 2026-06-09T01:41Z by 9 always-on BullMQ consumers polling 24/7 + the 6627-sender initial sync; every queue rejected commands with `ERR max requests limit exceeded` for ~41h — syncs, scoring, undo-expiry, unsubscribe execution all dead. RESOLVED 2026-06-10 ~22:15Z: founder flipped the DB to **Pay as You Go with a $20/mo hard budget** (chosen over Fixed 250MB — tuned command volume ≈ $2-3/mo is cheaper than the $10 flat; flip trigger: watchdog run-rate > $6/mo → switch to Fixed). Worker bounced; all queues listening, zero `bullmq.error` since 22:21Z.
@@ -1448,6 +1428,23 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-11 — Wire prod Gmail Pub/Sub webhook (enable + audience + SA + subscription)
+**Source:** session 2026-06-11 (set missing prod API env vars)
+**Why:** Real-time Gmail sync needs the Pub/Sub push webhook. It was OFF in prod and the existing `gmail-push-sub` subscription pushed to the WRONG endpoint (`/api/webhooks/gmail`, missing the `/pubsub` suffix the route actually serves — `@Controller('webhooks/gmail')` + `@Post('pubsub')`). Enabling the webhooks module also requires `PUBSUB_PUSH_AUDIENCE` + `PUBSUB_PUSH_SA_EMAIL` or API boot crashes (D229 fail-fast — confirmed live on revision 00030).
+**How (done this session):**
+1. Fixed subscription endpoint → `https://api.declutrmail.com/api/webhooks/gmail/pubsub` (audience `https://api.declutrmail.com`, SA `gmail-webhook-oidc@declutrmail-ai-prod.iam.gserviceaccount.com` unchanged).
+2. Set on live API (revision 00033-jzw) + persisted in `deploy-cloud-run.yml`: `PUBSUB_WEBHOOK_ENABLED=true`, `PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com`, `PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT`. Values match the subscription's token (not guessed).
+3. Fixed the same `/pubsub` bug in `docs/runbooks/prod-infra-bootstrap.md`.
+**Verifies by:** API boots with the route mounted; unauthenticated POST → 401 (OIDC active, not 404); bogus bearer → 401 (signature rejected) — all confirmed live 2026-06-11. Next: a real Gmail change → push passes OIDC (a `webhook` success log, not a `webhook.signature_failure`). NOTE: Gmail `users.watch` must be (re)issued per mailbox for Google to actually publish to the topic — that's a separate app-side call, not infra.
+**Status:** Done 2026-06-11
+
+### 2026-06-11 — Register prod OAuth redirect URI in Google Console
+**Source:** session 2026-06-11 (set missing prod API env vars)
+**Why:** `GOOGLE_REDIRECT_URI` was missing from the live Cloud Run API (required — OAuth throws without it). Set to `https://api.declutrmail.com/api/auth/google/callback` on revision 00032-krt + persisted in `deploy-cloud-run.yml`. Google rejects the callback with `redirect_uri_mismatch` unless the exact URI is registered on the OAuth client.
+**How:** Google Cloud Console → APIs & Services → Credentials → OAuth client `387835380133-…` → add `https://api.declutrmail.com/api/auth/google/callback` to Authorized redirect URIs.
+**Verifies by:** prod OAuth connect completes without `redirect_uri_mismatch`.
+**Status:** Done 2026-06-11 (founder confirmed registered)
 
 ### 2026-06-10 — Create vendor API tokens for the limits watchdog
 **Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)

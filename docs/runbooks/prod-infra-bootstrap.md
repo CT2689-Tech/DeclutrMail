@@ -526,7 +526,7 @@ echo $API_URL
 ```bash
 gcloud pubsub subscriptions create gmail-push-sub \
   --topic=gmail-push \
-  --push-endpoint=$API_URL/api/webhooks/gmail \
+  --push-endpoint=$API_URL/api/webhooks/gmail/pubsub \
   --push-auth-service-account=gmail-webhook-oidc@$PROJECT.iam.gserviceaccount.com \
   --push-auth-token-audience=$API_URL \
   --ack-deadline=60 \
