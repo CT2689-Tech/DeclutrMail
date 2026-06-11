@@ -50,7 +50,9 @@ export type EventName =
   | 'autopilot_suggestion_decided'
   | 'autopilot_preset_changed'
   // — Marketing surface (D19 pricing) —
-  | 'waitlist_joined';
+  | 'waitlist_joined'
+  // — Followups surface —
+  | 'followup_dismissed';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in
@@ -273,6 +275,16 @@ export interface EventPayloads {
     tier_interest: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' | null;
     /** App-chosen attribution slug (`pricing`, `landing`, …) — NEVER the email. */
     source: string;
+  };
+
+  // — Followups surface —
+  followup_dismissed: {
+    /** Internal `followup_tracker.id` UUID — never the Gmail thread id. */
+    followup_id: string;
+    /** D85 age bucket the row sat in when dismissed. */
+    priority: 'high' | 'medium' | 'low' | 'fresh';
+    /** True when the BE reported an idempotent replay (D88 Phase-1 hint). */
+    already_dismissed: boolean;
   };
 }
 
