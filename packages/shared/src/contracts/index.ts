@@ -138,3 +138,7 @@ export {
   parseEmailPrefs,
 } from './email-prefs';
 export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
+
+// Private-beta invite gate (buildout F7) — API ↔ web redirect contract
+// for denied signups. See ./beta-gate.ts for the env + flow contract.
+export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from './beta-gate';

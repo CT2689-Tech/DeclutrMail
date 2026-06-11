@@ -14,6 +14,7 @@ import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { EmailRaceLostError, UsersService } from '../users/users.service.js';
+import { BetaGateDeniedError, betaGateAllowsSignup } from './beta-gate.js';
 import { CsrfService } from './csrf.service.js';
 import { SessionsService } from './sessions.service.js';
 import { TokenCryptoService } from './token-crypto.service.js';
@@ -95,6 +96,15 @@ export class AuthSignupOrchestrator {
         workspaceId = existingMailbox.workspaceId;
         isNewSignup = false;
       } else {
+        // Private-beta invite gate (F7). Branches 1–2 above are
+        // existing users and always pass; ONLY a brand-new signup is
+        // gated, and the denial fires BEFORE any side effect — no
+        // workspace/user bootstrap, no token encryption, no mailbox
+        // row, no session. The controller turns the sentinel into a
+        // redirect to the public /beta waitlist page.
+        if (!betaGateAllowsSignup(input.email)) {
+          throw new BetaGateDeniedError();
+        }
         ({ userId, workspaceId } = await this.bootstrapUser(input.email));
         isNewSignup = true;
       }

@@ -9,6 +9,7 @@ import {
 } from '../common/rate-limit/rate-limit.types.js';
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
+import { BetaGateDeniedError } from './beta-gate.js';
 import type { GoogleOAuthService } from './google-oauth.service.js';
 import { GoogleOAuthController } from './google-oauth.controller.js';
 
@@ -396,6 +397,42 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         payload: { provider: 'google', mode: 'login', isNewSignup: true },
       }),
     );
+  });
+
+  it('turns a BetaGateDeniedError into a /beta redirect — signup.denied audit, no session, no throw', async () => {
+    // Private-beta gate (F7): an uninvited brand-new signup. The
+    // orchestrator throws BEFORE creating anything; the controller
+    // must NOT bubble an error page — it records the audit row (with
+    // the denied email, the founder's invite-list signal) and 302s to
+    // the public waitlist page.
+    orchestrator.connect.mockRejectedValueOnce(new BetaGateDeniedError());
+
+    await expect(
+      controller.callback(
+        req({ cookies: loginCookie() }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'signup.denied',
+        severity: 'info',
+        sourceIp: IP,
+        userAgent: UA,
+        payload: {
+          provider: 'google',
+          reason: 'beta_gate_denied',
+          email: 'first@example.com',
+        },
+      }),
+    );
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/beta?reason=not_invited`);
+    // No session cookies for a denied signup.
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 
   it('does not alter the response when SecurityEventsService.record rejects', async () => {

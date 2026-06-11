@@ -52,7 +52,9 @@ export type EventName =
   // — Marketing surface (D19 pricing) —
   | 'waitlist_joined'
   // — Followups surface —
-  | 'followup_dismissed';
+  | 'followup_dismissed'
+  // — Private-beta gate (buildout F7) —
+  | 'beta_gate_denied';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in
@@ -285,6 +287,12 @@ export interface EventPayloads {
     priority: 'high' | 'medium' | 'low' | 'fresh';
     /** True when the BE reported an idempotent replay (D88 Phase-1 hint). */
     already_dismissed: boolean;
+  };
+
+  // — Private-beta gate (buildout F7) —
+  beta_gate_denied: {
+    /** What surfaced the denial — only the OAuth-callback redirect today. */
+    source: 'oauth_callback';
   };
 }
 

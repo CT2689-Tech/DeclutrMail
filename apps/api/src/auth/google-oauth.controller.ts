@@ -13,9 +13,16 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
+import {
+  BETA_DENIED_PATH,
+  BETA_DENIED_REASON,
+  BETA_DENIED_REASON_PARAM,
+} from '@declutrmail/shared/contracts';
+
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
+import { BetaGateDeniedError } from './beta-gate.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { CurrentUser, JwtGuard } from './jwt.guard.js';
 import type { SessionPrincipal } from './sessions.service.js';
@@ -260,6 +267,29 @@ export class GoogleOAuthController {
         userAgent,
       });
     } catch (err) {
+      if (err instanceof BetaGateDeniedError) {
+        // Private-beta invite gate (F7) — a brand-new signup without
+        // an invite. Not a failure of the OAuth machinery: severity
+        // info, and the user gets the public /beta waitlist page, not
+        // an error. The denied email IS included in the audit payload
+        // — it's the operational signal the founder acts on (add to
+        // BETA_INVITE_EMAILS), it's a verified Google id_token claim
+        // (not caller-controlled free text), and security_events is
+        // the founder-only D181 surface — NOT telemetry, where raw
+        // emails are banned (D159).
+        void this.securityEvents.record({
+          eventType: 'signup.denied',
+          severity: 'info',
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', reason: 'beta_gate_denied', email },
+        });
+        res.redirect(
+          302,
+          `${webBase}${BETA_DENIED_PATH}?${BETA_DENIED_REASON_PARAM}=${BETA_DENIED_REASON}`,
+        );
+        return;
+      }
       // D181 emit — the orchestrator itself failed (DB outage during
       // user/workspace bootstrap, KMS unavailable, sync enqueue race
       // recovery exhausted, …). No verified userId/workspaceId to

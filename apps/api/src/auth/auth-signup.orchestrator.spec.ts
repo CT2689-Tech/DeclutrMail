@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
+import { BetaGateDeniedError } from './beta-gate.js';
 import type { DrizzleDb } from '../db/db.module.js';
 import type { UsersService } from '../users/users.service.js';
 import type { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
@@ -155,6 +156,84 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w-new', userId: 'u-new' }),
     );
+  });
+
+  describe('private-beta invite gate (F7)', () => {
+    const ORIGINAL_ENV = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...ORIGINAL_ENV };
+    });
+
+    it('denies a brand-new uninvited signup with ZERO side effects', async () => {
+      process.env.BETA_GATE_ENABLED = 'true';
+      process.env.BETA_INVITE_EMAILS = 'someone-else@example.com';
+      users.findByEmail.mockResolvedValue(null);
+      mailboxes.findByProviderEmail.mockResolvedValue(null);
+
+      await expect(orchestrator.connect(INPUT)).rejects.toBeInstanceOf(BetaGateDeniedError);
+
+      // The deny fires BEFORE any write: no user/workspace bootstrap,
+      // no token encryption, no mailbox row, no sync, no session.
+      expect(users.insertWorkspaceAndUser).not.toHaveBeenCalled();
+      expect(tokenCrypto.encrypt).not.toHaveBeenCalled();
+      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
+      expect(sync.schedule).not.toHaveBeenCalled();
+      expect(sessions.issue).not.toHaveBeenCalled();
+      expect(users.patchPreferences).not.toHaveBeenCalled();
+    });
+
+    it('lets an EXISTING user log in with the gate enabled and an empty invite list', async () => {
+      process.env.BETA_GATE_ENABLED = 'true';
+      process.env.BETA_INVITE_EMAILS = '';
+      users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+
+      const result = await orchestrator.connect(INPUT);
+
+      expect(result.isNewSignup).toBe(false);
+      expect(sessions.issue).toHaveBeenCalled();
+    });
+
+    it('lets a secondary-mailbox email resolve into its home workspace with the gate enabled', async () => {
+      process.env.BETA_GATE_ENABLED = 'true';
+      process.env.BETA_INVITE_EMAILS = '';
+      users.findByEmail.mockResolvedValue(null);
+      mailboxes.findByProviderEmail.mockResolvedValue({
+        mailboxId: 'mailbox-b',
+        workspaceId: 'w-home',
+        userId: 'u-owner',
+      });
+
+      const result = await orchestrator.connect(INPUT);
+
+      expect(result.isNewSignup).toBe(false);
+      expect(result.user).toMatchObject({ id: 'u-owner', workspaceId: 'w-home' });
+    });
+
+    it('bootstraps an INVITED new signup (case-insensitive match)', async () => {
+      process.env.BETA_GATE_ENABLED = 'true';
+      process.env.BETA_INVITE_EMAILS = 'ME@Example.com';
+      users.findByEmail.mockResolvedValue(null);
+      mailboxes.findByProviderEmail.mockResolvedValue(null);
+      users.insertWorkspaceAndUser.mockResolvedValue({ userId: 'u-new', workspaceId: 'w-new' });
+
+      const result = await orchestrator.connect(INPUT);
+
+      expect(result.isNewSignup).toBe(true);
+      expect(users.insertWorkspaceAndUser).toHaveBeenCalled();
+    });
+
+    it('is a no-op with BETA_GATE_ENABLED unset (default open signup)', async () => {
+      delete process.env.BETA_GATE_ENABLED;
+      delete process.env.BETA_INVITE_EMAILS;
+      users.findByEmail.mockResolvedValue(null);
+      mailboxes.findByProviderEmail.mockResolvedValue(null);
+      users.insertWorkspaceAndUser.mockResolvedValue({ userId: 'u-new', workspaceId: 'w-new' });
+
+      const result = await orchestrator.connect(INPUT);
+
+      expect(result.isNewSignup).toBe(true);
+    });
   });
 
   describe('addMailbox — connect a secondary mailbox to the current workspace', () => {
