@@ -126,6 +126,31 @@ export { AppShell } from './shell/app-shell';
 export { useUiStore } from './state/ui-store';
 export type { UiState, UiActions } from './state/ui-store';
 
+// D19 — tier manifest + entitlement model. Pure TS (also importable via
+// the `@declutrmail/shared/entitlements` subpath without the component
+// tree). Composes with the Action Registry — see entitlements/types.ts.
+export { TIER_MANIFEST } from './entitlements/index';
+export {
+  cleanupActionsLifetimeFor,
+  hasCapability,
+  inboxLimitFor,
+  satisfiesActionTier,
+  tierById,
+  undoWindowDaysFor,
+} from './entitlements/index';
+export { CAPABILITIES, PROMO_IDS, TIER_IDS, TIER_RANK } from './entitlements/index';
+export type {
+  Capability,
+  NonPurchasableRow,
+  PricePoint,
+  PromoDefinition,
+  PromoId,
+  TierDefinition,
+  TierId,
+  TierManifest,
+  TierPrices,
+} from './entitlements/index';
+
 // D7 + D228 — privacy copy module. Re-exported so consumers can pull
 // canonical wording without depending on the components subtree.
 export {

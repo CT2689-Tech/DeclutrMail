@@ -65,7 +65,15 @@ export interface TriageSessionStats {
   tier: 'free' | 'plus' | 'pro';
 }
 
-/** D77 — Free tier daily decision cap. */
+/**
+ * D19 — Free-tier cleanup-action limit (display path only). Previously
+ * misattributed to D77 (Screener Pro-gating); the Free cap is a D19
+ * decision. NOTE: D19 locks the Free limit at 5 LIFETIME cleanup
+ * actions — this 25/day counter predates the entitlement manifest
+ * (`@declutrmail/shared/entitlements`, `cleanupActionsLifetimeFor`) and
+ * its display path is superseded by manifest-driven lifetime
+ * enforcement in a later unit. Behavior intentionally unchanged here.
+ */
 const FREE_TIER_DAILY_LIMIT = 25;
 
 /**

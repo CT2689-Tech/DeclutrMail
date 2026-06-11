@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./actions": "./src/actions/index.ts",
     "./contracts": "./src/contracts/index.ts",
+    "./entitlements": "./src/entitlements/index.ts",
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",
     "./tokens.css": "./src/styles/tokens.css"
