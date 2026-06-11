@@ -34,19 +34,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** notification setting visible in the Upstash console; (recovery already verified — `worker.listening` for all queues on revision 00037-8w5, no `bullmq.error` after 22:21Z).
 **Status:** Open (notifications only)
 
-### 2026-06-10 — Create vendor API tokens for the limits watchdog
-**Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)
-**Why:** The vendor-limits watchdog can only report usage for vendors it can authenticate against. Without these tokens every vendor reports UNCONFIGURED and the watchdog is blind — the exact gap that let Upstash quota exhaustion run unalerted for ~41h.
-**How:** create each token at the vendor console, then store it as a GH Actions secret:
-1. ~~`UPSTASH_EMAIL` + `UPSTASH_API_KEY`~~ — **DONE 2026-06-10T22:32Z** (both secrets set).
-2. `ANTHROPIC_ADMIN_KEY` — Anthropic console → Settings → Admin keys (https://console.anthropic.com/settings/admin-keys) → create admin key (usage/billing read). Then `gh secret set ANTHROPIC_ADMIN_KEY`.
-3. `VERCEL_TOKEN` + `VERCEL_TEAM_ID` — Vercel → Account Settings → Tokens (https://vercel.com/account/tokens) → create token. Then `gh secret set VERCEL_TOKEN` + `gh secret set VERCEL_TEAM_ID`. The billing endpoint is team-scoped, so the check needs BOTH and only works on a team/Pro plan — **skip this step while on Hobby** (the check stays UNCONFIGURED, which is correct).
-4. `SENTRY_AUTH_TOKEN` + `SENTRY_ORG` — Sentry → Settings → Auth Tokens → org-scoped token with org:read (a build-time token already exists per `docs/runbooks/secrets-inventory.md` — verify its scope covers org usage reads, reuse if so). Then `gh secret set SENTRY_AUTH_TOKEN` + `gh secret set SENTRY_ORG` (the org slug).
-5. `POSTHOG_API_KEY` + `POSTHOG_PROJECT_ID` — PostHog → Settings → Personal API keys → create key (billing read). Then `gh secret set POSTHOG_API_KEY` + `gh secret set POSTHOG_PROJECT_ID` (the numeric project id).
-6. `GH_BILLING_PAT` — GitHub → Settings → Developer settings → Fine-grained personal access tokens → new token with the **"Plan: read-only"** permission. Then `gh secret set GH_BILLING_PAT`.
-**Verifies by:** a vendor-limits-watchdog run shows each of those vendors as OK instead of UNCONFIGURED.
-**Status:** Open
-
 ### 2026-06-10 — Enable vendor-side hard caps: Vercel Spend Management + PostHog billing limit + Sentry spike protection
 **Source:** session 2026-06-10 (Upstash billing incident — every metered vendor needs its own cap, not just GCP)
 **Why:** The Upstash incident showed what an uncapped/unalerted vendor limit does: the free tier enforced itself by silently killing the service for ~41h. On usage-billed vendors the same gap manifests as open-ended spend instead. Vendor-side caps turn a runaway into a bounded, alerting event.
@@ -1441,6 +1428,36 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-11 — Wire prod Gmail Pub/Sub webhook (enable + audience + SA + subscription)
+**Source:** session 2026-06-11 (set missing prod API env vars)
+**Why:** Real-time Gmail sync needs the Pub/Sub push webhook. It was OFF in prod and the existing `gmail-push-sub` subscription pushed to the WRONG endpoint (`/api/webhooks/gmail`, missing the `/pubsub` suffix the route actually serves — `@Controller('webhooks/gmail')` + `@Post('pubsub')`). Enabling the webhooks module also requires `PUBSUB_PUSH_AUDIENCE` + `PUBSUB_PUSH_SA_EMAIL` or API boot crashes (D229 fail-fast — confirmed live on revision 00030).
+**How (done this session):**
+1. Fixed subscription endpoint → `https://api.declutrmail.com/api/webhooks/gmail/pubsub` (audience `https://api.declutrmail.com`, SA `gmail-webhook-oidc@declutrmail-ai-prod.iam.gserviceaccount.com` unchanged).
+2. Set on live API (revision 00033-jzw) + persisted in `deploy-cloud-run.yml`: `PUBSUB_WEBHOOK_ENABLED=true`, `PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com`, `PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT`. Values match the subscription's token (not guessed).
+3. Fixed the same `/pubsub` bug in `docs/runbooks/prod-infra-bootstrap.md`.
+**Verifies by:** API boots with the route mounted; unauthenticated POST → 401 (OIDC active, not 404); bogus bearer → 401 (signature rejected) — all confirmed live 2026-06-11. Next: a real Gmail change → push passes OIDC (a `webhook` success log, not a `webhook.signature_failure`). NOTE: Gmail `users.watch` must be (re)issued per mailbox for Google to actually publish to the topic — that's a separate app-side call, not infra.
+**Status:** Done 2026-06-11
+
+### 2026-06-11 — Register prod OAuth redirect URI in Google Console
+**Source:** session 2026-06-11 (set missing prod API env vars)
+**Why:** `GOOGLE_REDIRECT_URI` was missing from the live Cloud Run API (required — OAuth throws without it). Set to `https://api.declutrmail.com/api/auth/google/callback` on revision 00032-krt + persisted in `deploy-cloud-run.yml`. Google rejects the callback with `redirect_uri_mismatch` unless the exact URI is registered on the OAuth client.
+**How:** Google Cloud Console → APIs & Services → Credentials → OAuth client `387835380133-…` → add `https://api.declutrmail.com/api/auth/google/callback` to Authorized redirect URIs.
+**Verifies by:** prod OAuth connect completes without `redirect_uri_mismatch`.
+**Status:** Done 2026-06-11 (founder confirmed registered)
+
+### 2026-06-10 — Create vendor API tokens for the limits watchdog
+**Source:** session 2026-06-10 (Upstash billing incident — vendor-limits watchdog needs read creds)
+**Why:** The vendor-limits watchdog can only report usage for vendors it can authenticate against. Without these tokens every vendor reports UNCONFIGURED and the watchdog is blind — the exact gap that let Upstash quota exhaustion run unalerted for ~41h.
+**How (all stored as GH Actions secrets):**
+1. `UPSTASH_EMAIL` + `UPSTASH_API_KEY` — DONE 2026-06-10T22:32Z.
+2. `VERCEL_TOKEN` + `VERCEL_TEAM_ID` — DONE 2026-06-11 (Pro plan; billing check lit green).
+3. `SENTRY_AUTH_TOKEN` (new org:read personal token) + `SENTRY_ORG=chintan-ashok-thakkar` — DONE 2026-06-11.
+4. `POSTHOG_API_KEY` (personal read key) + `POSTHOG_PROJECT_ID=456795` — DONE 2026-06-11.
+5. `GH_BILLING_PAT` (fine-grained, Administration: read-only) — DONE 2026-06-11.
+6. `ANTHROPIC_ADMIN_KEY` — SKIPPED: Admin API `cost_report` requires a Teams/Enterprise plan; individual orgs cannot provision `sk-ant-admin` keys (the page 404s). The Anthropic vendor check was removed from the watchdog (PR #188); spend is monitored via `console.anthropic.com/cost` + console billing alerts.
+**Verifies by:** vendor-limits-watchdog run 2026-06-11 — Supabase/Upstash/Vercel/Sentry/PostHog/GitHub Actions all OK; GCP UNCONFIGURED by design (needs WIF). Exit 0.
+**Status:** Done 2026-06-11
 
 ### 2026-06-07 — Execute prod infra bootstrap (Tier A, ~$10/mo idle)
 **Source:** session 2026-06-07 — founder asked to pre-create prod infra to unblock D160

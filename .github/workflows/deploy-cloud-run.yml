@@ -161,7 +161,14 @@ jobs:
           # secretAccessor` for each (already bound in step 2 of the
           # bootstrap runbook).
           # `--allow-unauthenticated` exposes the service to the public
-          # internet — the app does its own session-cookie auth.
+          # internet — the app does its own session-cookie auth; the
+          # Gmail webhook authenticates via Pub/Sub OIDC (D229), not IAM.
+          # The webhooks module (PUBSUB_WEBHOOK_ENABLED=true) crashes
+          # boot unless BOTH PUBSUB_PUSH_AUDIENCE + PUBSUB_PUSH_SA_EMAIL
+          # are set — keep all three together. The audience + SA must
+          # match the gmail-push-sub subscription's --push-auth-token-
+          # audience + --push-auth-service-account, and the push
+          # endpoint must be /api/webhooks/gmail/pubsub (not /gmail).
           gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
@@ -173,7 +180,7 @@ jobs:
             --cpu=1 \
             --port=8080 \
             --allow-unauthenticated \
-            --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA" \
+            --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=https://app.declutrmail.com,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest" \
             --quiet
 
