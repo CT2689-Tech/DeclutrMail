@@ -82,43 +82,6 @@ section to the Done section. Do not delete entries — the trail matters.
 **Verifies by:** Manually flip a mailbox's `last_incremental_error_at` to `now()` via SQL, hit `/senders` — banner appears. Restore to NULL — banner disappears. Smoke also: kill Redis mid-sync to force a real terminal failure; banner renders within 1 polling cycle of `useSyncStatus()`.
 **Status:** Open
 
-### 2026-06-09 — Bump Anthropic org to Tier 2 (50 → 1000 RPM, ~$40)
-**Source:** session 2026-06-09 — first real-prod score sweep hit Tier 1 cap mid-run
-**Why:** Anthropic Tier 1 = 50 RPM / org / model. A first-run score sweep over a 6627-sender mailbox burned through the budget in seconds → 70 × 429 in 15 min → ~25 % of `triage_decisions` rows written with `generated_by='template'` instead of `llm_haiku`. The product value prop (D24 — LLM-generated reasoning per sender) is diluted at exactly the moment the user is most attentive (first triage screen). Code-side defense landed this session: `REASONING_RATE_PER_MIN=40` env-driven sliding-window rate limiter in `ScoreWorker` (see `packages/workers/src/score.worker.ts` + `reasoning.ts`). That stops the 429 storm but caps the sweep wall-clock at ~6627 / 40 = 166 min per fresh mailbox. Tier 2 (1000 RPM) drops that to ~7 min — material to first-run UX. Cost: $40 prepaid credits unlock Tier 2 immediately; usage at $0.25 / $1.25 per Mtoken is trivial vs the operational benefit.
-**How:**
-1. Visit `https://console.anthropic.com/settings/billing` while signed into the DeclutrMail org (org id `385cc5e8-043e-4d4f-b68e-ccce418b4fed`).
-2. Purchase ≥$40 in prepaid credits OR enable auto-recharge with a $40 floor (Tier 2 requires either + 7 day org age — DeclutrMail org meets both as of 2026-06-09).
-3. Console will reflect Tier 2 — verify under "Plans & billing" the per-model row for `claude-haiku-4-5` shows 1000 RPM / 200000 ITPM / 80000 OTPM.
-4. After Tier 2 is live, bump `REASONING_RATE_PER_MIN` from `40` → `400` (still 60 % under the ceiling) in `.github/workflows/deploy-cloud-run.yml` worker env block + `docs/runbooks/prod-infra-bootstrap.md`. Redeploy the worker — env-var-only change is fast (`gcloud run services update declutrmail-worker --update-env-vars=REASONING_RATE_PER_MIN=400` is also valid).
-5. (Optional) Add `--update-env-vars` for `REASONING_CONCURRENCY=8` simultaneously — the existing concurrency limiter defaults to 4 and the higher rate now justifies more in-flight calls.
-**Verifies by:** Trigger a manual rescore sweep (POST `/api/triage/score-sender` with no `senderKey`, or wait for the cron sweep). `gcloud logging read … jsonPayload.kind="reasoning.adapter_error" AND jsonPayload.status=429` returns 0 results over a 15-min window during the sweep. Supabase `SELECT generated_by, COUNT(*) FROM triage_decisions GROUP BY 1` shows `template` count ≈ the number of "no-signal" senders only (verdict from cascade falls back to template when LLM call returns null for reasons other than rate limit).
-**Status:** Open
-
-### 2026-06-08 — Cloud Run worker MUST run with `--no-cpu-throttling` (D158, D193 amendment)
-**Source:** session 2026-06-08 — 90-minute prod sync stall traced to CPU throttling
-**Why:** Cloud Run's default request-only CPU allocation throttles idle CPU. For HTTP services (which our API is), that's fine — CPU spins up on each request. For BACKGROUND workers (BullMQ consumer with no inbound HTTP traffic), it's catastrophic: CPU drops to ~0.1 cores between job ticks → gRPC connection pools to KMS / Gmail / Supabase die → next API call goes through a cold network handshake (this session: KMS decrypt = 68 SECONDS vs 284ms warm). Then BullMQ's 30s stalled-lock check fires + the job is marked stalled + retried + the new attempt hits the same cold start. Eternal stall spiral.
-Fix landed mid-session via `gcloud run services update declutrmail-worker --no-cpu-throttling --quiet`. After the flip: KMS decrypt 284ms, listMessageIds enumerated 50,000 IDs in seconds, mail_messages rows started accumulating immediately. **D158's worker spec implicitly assumes always-allocated CPU; document explicitly.**
-**Cost note:** CPU is billed when allocated, so always-on doubles the worker baseline from ~$15-25/mo to ~$30-50/mo. Worth it — the alternative is the worker never makes progress.
-**How (codify):**
-1. Update `docs/runbooks/prod-infra-bootstrap.md` Step 8: every `gcloud run deploy declutrmail-worker` command MUST include `--no-cpu-throttling`.
-2. Update `.github/workflows/deploy-cloud-run.yml` worker block: include `--no-cpu-throttling`.
-3. Add explicit note in `docs/adr/0022` (or a new ADR) — "Cloud Run worker is a CPU-always-allocated service per D158's BullMQ consumer requirement; cost ~2x request-only baseline."
-4. The API service stays at request-only allocation (HTTP-driven — request-only is correct).
-**Verifies by:** A fresh Cloud Run worker revision created without `--no-cpu-throttling` reproduces the 60+s cold-API-call symptom in `gcloud logging read … "gmail.getClient.kms_decrypt_done"`. Same revision flipped to `--no-cpu-throttling` returns sub-300ms.
-**Status:** Open — flipped live this session; doc + workflow updates still pending commit.
-
-### 2026-06-08 — Sentry preload on worker via Node `--import @sentry/node/preload`
-**Source:** session 2026-06-08 (Cloud Run worker rev 12-16 — Sentry init hangs bootstrap)
-**Why:** `@sentry/node` v10 ships with OpenTelemetry-based default integrations that monkey-patch already-loaded modules at `Sentry.init()` time. The worker entrypoint imports the full NestJS / Drizzle / BullMQ / Anthropic / googleapis graph at the TOP of `worker.ts`. By the time `initSentry()` executes, those modules are already in `require.cache`. Sentry's late-monkey-patch hangs the bootstrap indefinitely; the worker never reaches `worker.listening`. Worked around for now by gating Sentry behind `WORKER_SENTRY_ENABLED=true` (default OFF) — the worker is otherwise observable via structured Cloud Logging entries. Real fix is to load Sentry BEFORE other modules.
-**How:**
-1. Update `apps/api/Dockerfile.worker` (or the worker's Cloud Run `--command`/`--args`) so the entrypoint becomes:
-   `node --import @sentry/node/preload --import @swc-node/register/esm-register src/worker.ts`
-2. The `@sentry/node/preload` flag installs OTel auto-instrumentation BEFORE any user code runs, so all subsequent module imports get patched at load time, not retroactively.
-3. Flip `WORKER_SENTRY_ENABLED=true` in Cloud Run env once the preload is in place.
-4. Smoke: confirm `worker.listening` for all 5 queues + a triggered worker error lands in Sentry's inbox with `runtime:node` tag.
-**Verifies by:** `gcloud logging read … jsonPayload.kind="worker.listening"` continues to return 5 queues after the preload flag + `WORKER_SENTRY_ENABLED=true` are both live; force a worker error + Sentry inbox shows it within 30s.
-**Status:** Open
-
 ### 2026-06-08 — Cloud Run worker `min_instances=1` cost note ($15-25/mo)
 **Source:** session 2026-06-08 — D193 launch posture flipped at end of prod end-to-end smoke
 **Why:** Worker was at `min=0` pre-launch for cost savings (Tier A bootstrap), then flipped to `min=1, max=3` per D193 to ensure BullMQ consumers stay attached for incoming Gmail Pub/Sub pushes + Cloud Scheduler ticks. A min=1 Cloud Run worker bills $15-25/mo even idle. Acceptable in prod (1k+ users is the planning horizon) but the founder should be aware the post-launch monthly burn is now closer to ~$30-40 baseline.
@@ -1428,6 +1391,24 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-09 — Bump Anthropic org to Tier 2 (50 → 1000 RPM, ~$40)
+**Source:** session 2026-06-09 — first real-prod score sweep hit Tier 1 cap mid-run
+**Why:** Tier 1 (50 RPM) caps a fresh 6627-sender sweep at ~166 min and writes ~25% of `triage_decisions` as `template` instead of `llm_haiku`. Tier 2 (1000 RPM) drops the sweep to ~7 min.
+**Done:** Founder purchased Tier 2 credits (confirmed in console 2026-06-10). `REASONING_RATE_PER_MIN` bumped 40 → 400 in `deploy-cloud-run.yml` + `docs/runbooks/prod-infra-bootstrap.md` (lines 483/498); live worker env confirmed `REASONING_RATE_PER_MIN=400`.
+**Status:** Done 2026-06-11 (verified live)
+
+### 2026-06-08 — Cloud Run worker MUST run with `--no-cpu-throttling` (D158, D193 amendment)
+**Source:** session 2026-06-08 — 90-minute prod sync stall traced to CPU throttling
+**Why:** Request-only CPU allocation throttles a BullMQ worker to ~0.1 cores between job ticks → KMS/Gmail/Supabase connection pools die → 68s cold KMS decrypt → BullMQ stalled-lock retry spiral.
+**Done:** `--no-cpu-throttling` in `deploy-cloud-run.yml` worker block (line 226) + `docs/runbooks/prod-infra-bootstrap.md`; live worker `cpu-throttling=false` confirmed. (ADR note step skipped — workflow + runbook are the load-bearing record.)
+**Status:** Done 2026-06-11 (verified live)
+
+### 2026-06-08 — Sentry preload on worker via Node `--import @sentry/node/preload`
+**Source:** session 2026-06-08 (Cloud Run worker rev 12-16 — Sentry init hangs bootstrap)
+**Why:** `@sentry/node` v10 late-monkey-patches already-loaded modules at `Sentry.init()`, hanging the worker bootstrap. Loading Sentry via `--import` preload patches at load time instead.
+**Done:** Worker entrypoint runs with `NODE_OPTIONS=--import @sentry/node/preload …` (`deploy-cloud-run.yml` line 231) + `WORKER_SENTRY_ENABLED=true`; live worker env confirms both. Worker reaches `worker.listening` for all queues.
+**Status:** Done 2026-06-11 (verified live)
 
 ### 2026-06-11 — Wire prod Gmail Pub/Sub webhook (enable + audience + SA + subscription)
 **Source:** session 2026-06-11 (set missing prod API env vars)
