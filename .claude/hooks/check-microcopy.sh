@@ -4,10 +4,16 @@
 # Enforces D227 canonical verbs (Keep / Archive / Unsubscribe / Later — K/A/U/L)
 # in product UI surfaces. "Screen" is an internal enum only — never user-facing.
 #
-# Scope: apps/web/** and any *.stories.tsx file (Storybook copy must also comply).
+# Also enforces the D228 privacy-badge rule: the pre-D228 trust copy
+# "Bodies read: 0" is banned in product surfaces (CLAUDE.md §2.1) — the
+# locked replacement is "Full bodies fetched: 0" + the explicit storage
+# list, rendered by PrivacyBadge from packages/shared/src/copy/privacy.ts.
+#
+# Scope: apps/web/** and any *.stories.tsx file (Storybook copy must also
+# comply); the privacy-badge rule additionally covers packages/shared/**.
 # Skipped: .claude/, docs/, CLAUDE.md, agent definitions, the plan mirror, this hook.
 #
-# Exit 1 to block on canonical-verbs violation.
+# Exit 1 to block on canonical-verbs or privacy-badge violation.
 
 set -euo pipefail
 
@@ -43,6 +49,30 @@ esac
 case "$file_path" in
   *.test.ts|*.test.tsx|*.test.js|*.test.jsx|*.spec.ts|*.spec.tsx|*.spec.js|*.spec.jsx)
     exit 0
+    ;;
+esac
+
+# Privacy badge rule (D228 + CLAUDE.md §2.1): the pre-D228 trust copy
+# "Bodies read: 0" is banned in product surfaces. The locked replacement
+# is "Full bodies fetched: 0" + the explicit storage list — render
+# <PrivacyBadge> from @declutrmail/shared; copy literals live ONLY in
+# packages/shared/src/copy/privacy.ts.
+#
+# Scope: apps/web/**, packages/shared/**, and any *.stories.* file. The
+# copy module itself is exempt — its comments document the banned wording
+# (like tests, that mention IS the rule, not user-facing copy).
+case "$file_path" in
+  */packages/shared/src/copy/privacy.ts)
+    ;;
+  */apps/web/*|*/packages/shared/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
+    if grep -nF 'Bodies read: 0' "$file_path" >/dev/null 2>&1; then
+      echo "❌ check-microcopy: banned pre-D228 trust copy 'Bodies read: 0' (D228 — use 'Full bodies fetched: 0')" >&2
+      grep -nF 'Bodies read: 0' "$file_path" | sed 's/^/   /' >&2
+      echo "" >&2
+      echo "   D228: the trust badge says 'Full bodies fetched: 0' + the explicit storage list." >&2
+      echo "   Render <PrivacyBadge> from @declutrmail/shared — copy lives only in packages/shared/src/copy/privacy.ts." >&2
+      exit 1
+    fi
     ;;
 esac
 
