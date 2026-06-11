@@ -120,9 +120,9 @@ async function bootstrap(): Promise<void> {
   await initSentry();
 
   // `rawBody: true` makes Nest retain the raw request buffer on
-  // `req.rawBody` — the billing webhooks (D117/D180) verify their
-  // HMAC signatures over the EXACT bytes received, never a re-
-  // serialized parse.
+  // `req.rawBody` — the billing webhooks (D117/D180) and the Resend
+  // webhook (D162) verify their HMAC/svix signatures over the EXACT
+  // bytes received, never a re-serialized parse.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   app.set('trust proxy', 1);
   // CORS (D179). Without this, the FE on :3000 cannot reach the API

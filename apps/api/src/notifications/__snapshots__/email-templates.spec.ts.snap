@@ -1,0 +1,70 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`email templates > deletion-receipt renders 1`] = `
+{
+  "subject": "Your DeclutrMail data has been deleted",
+  "text": "On June 18, 2026, DeclutrMail permanently deleted your account
+and everything it stored about your mailboxes — sender names and
+addresses, subject lines, snippets, labels, and dates.
+
+Your Gmail account itself was never modified by this deletion.
+
+Thank you for trying DeclutrMail.
+
+— DeclutrMail
+
+This receipt is the last email you will receive from us.",
+}
+`;
+
+exports[`email templates > deletion-scheduled places the U22 cancel-link slot 1`] = `
+{
+  "subject": "Your DeclutrMail deletion is scheduled",
+  "text": "Your DeclutrMail account is scheduled for deletion on June 18, 2026.
+
+On that date, everything DeclutrMail stored about your mailboxes —
+sender names and addresses, subject lines, snippets, labels, and
+dates — will be permanently deleted. Nothing in your Gmail account
+itself is touched.
+
+Changed your mind? Cancel any time before then:
+https://app.declutrmail.com/account/deletion/cancel?token=tok_123
+
+— DeclutrMail
+
+This is a required account notice; it cannot be turned off.",
+}
+`;
+
+exports[`email templates > sync-complete renders counts-only plain text 1`] = `
+{
+  "subject": "Your inbox is ready",
+  "text": "DeclutrMail finished indexing you@gmail.com.
+
+24,310 messages indexed — your senders are grouped and ready to
+triage. The first pass usually takes a few minutes and clears
+the bulk of the noise.
+
+Start here: https://app.declutrmail.com/triage
+
+— DeclutrMail
+
+You received this because you connected this mailbox to DeclutrMail.",
+}
+`;
+
+exports[`email templates > sync-reminder-24h renders with the settings opt-out pointer (D165) 1`] = `
+{
+  "subject": "Your inbox is still ready",
+  "text": "Yesterday DeclutrMail finished indexing you@gmail.com.
+
+Your senders are grouped and waiting. Five minutes of triage is
+usually enough to feel the difference.
+
+Pick it up here: https://app.declutrmail.com/triage
+
+— DeclutrMail
+
+You can turn off reminder emails at https://app.declutrmail.com/settings.",
+}
+`;

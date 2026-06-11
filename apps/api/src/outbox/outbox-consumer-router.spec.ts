@@ -338,3 +338,80 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
     }
   });
 });
+
+describe('OutboxConsumerRouter — D6/D162 mailbox.sync_ready email trigger', () => {
+  let db: DrizzleDb;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    const [w] = await db.insert(workspaces).values({ name: 'W' }).returning({ id: workspaces.id });
+    const [u] = await db
+      .insert(users)
+      .values({ workspaceId: w!.id, email: 'u@x.com' })
+      .returning({ id: users.id });
+    const [m] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: w!.id,
+        userId: u!.id,
+        provider: 'gmail',
+        providerAccountId: 'u@x',
+      })
+      .returning({ id: mailboxAccounts.id });
+    mailboxId = m!.id;
+  });
+
+  function syncReadyEvent(workspaceId: string) {
+    return {
+      id: 'evt-ready-1',
+      topic: TOPICS.MAILBOX_SYNC_READY,
+      aggregateId: mailboxId,
+      payload: {
+        mailboxAccountId: mailboxId,
+        workspaceId,
+        readyAt: '2026-06-11T08:00:00.000Z',
+        messageCount: 100,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    };
+  }
+
+  it('routes mailbox.sync_ready to the injected email handler with the event id', async () => {
+    const calls: Array<{ payload: unknown; eventId: string }> = [];
+    const consumeWithHandler = buildOutboxConsumer(db, {
+      onMailboxSyncReady: async (payload, eventId) => {
+        calls.push({ payload, eventId });
+      },
+    });
+    const [w] = await db.select().from(workspaces);
+    await consumeWithHandler(syncReadyEvent(w!.id));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.eventId).toBe('evt-ready-1');
+    expect(calls[0]!.payload).toMatchObject({ mailboxAccountId: mailboxId, messageCount: 100 });
+  });
+
+  it('ACKs (no throw) when the email handler is not wired', async () => {
+    const consumeUnwired = buildOutboxConsumer(db);
+    const [w] = await db.select().from(workspaces);
+    // Must not throw — the dispatcher would otherwise wedge on the row.
+    await expect(consumeUnwired(syncReadyEvent(w!.id))).resolves.toBeUndefined();
+  });
+
+  it('rejects a malformed sync_ready payload (Zod re-parse)', async () => {
+    const consumeWithHandler = buildOutboxConsumer(db, {
+      onMailboxSyncReady: async () => {},
+    });
+    await expect(
+      consumeWithHandler({
+        id: 'evt-bad',
+        topic: TOPICS.MAILBOX_SYNC_READY,
+        aggregateId: mailboxId,
+        payload: { mailboxAccountId: mailboxId },
+        attempts: 1,
+        createdAt: new Date(),
+      }),
+    ).rejects.toThrow();
+  });
+});

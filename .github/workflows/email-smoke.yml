@@ -1,0 +1,35 @@
+# D162 — real-send smoke for the transactional-email pipeline.
+#
+# Manual-only (workflow_dispatch). Sends ONE sync-complete email to the
+# founder via the production template + From constant, using the
+# RESEND_API_KEY repo secret (the key never exists on dev machines).
+# The orchestrator triggers this once post-merge; the founder verifies
+# receipt + rendering in a real inbox.
+#
+# Injection posture: no github.event.* interpolation anywhere; the only
+# external value is the RESEND_API_KEY secret, passed via env.
+name: Email smoke (Resend)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    name: Send one sync-complete email
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Send smoke email
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: pnpm --filter @declutrmail/api email-smoke
