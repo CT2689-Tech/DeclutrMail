@@ -15,6 +15,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "pnpm -r --parallel test",
+    "e2e": "pnpm --filter @declutrmail/e2e e2e",
+    "e2e:ui": "pnpm --filter @declutrmail/e2e e2e:ui",
     "build": "pnpm -r --parallel build",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",

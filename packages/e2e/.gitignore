@@ -1,0 +1,5 @@
+# Session cookies from the dev test-login (D206) — never commit.
+.auth/
+# Playwright artifacts.
+test-results/
+playwright-report/
