@@ -30,13 +30,22 @@ export interface BucketConfig {
  *   gmail-action  60 / min  — destructive Gmail mutations (per-user quota
  *                             tracking by `RateLimiter` in workers is
  *                             separate; this caps API surface abuse).
- *   triage-load   30 / min  — list endpoints fronting Gmail metadata.
+ *   triage-load   120 / min — read endpoints fronting OUR Postgres, not
+ *                             Gmail quota. The bucket is shared across
+ *                             every default-config route tagged with it,
+ *                             and one sender-detail page load fans out to
+ *                             ~6 reads — at the old 30/min a real user hit
+ *                             429 after ~5 page views (observed live
+ *                             2026-06-11 during e2e runs). 120/min ≈ 20
+ *                             page views/min: generous for a human, still
+ *                             a hard wall for scrapers (breach severity
+ *                             stays 'info').
  *   default       120 / min — everything else opted in.
  */
 export const BUCKET_DEFAULTS: Readonly<Record<BucketName, BucketConfig>> = {
   auth: { limit: 5, windowSec: 60 },
   'gmail-action': { limit: 60, windowSec: 60 },
-  'triage-load': { limit: 30, windowSec: 60 },
+  'triage-load': { limit: 120, windowSec: 60 },
   default: { limit: 120, windowSec: 60 },
 };
 
@@ -79,7 +88,10 @@ export interface TokenBucketStore {
    * MUST be idempotent — re-running the same call with the same `nowMs`
    * is harmless (Redis script is replay-safe within the same time).
    *
-   * @param key       Bucket key, formed as `${bucket}:${userId ?? ip}`.
+   * @param key       Bucket key. Default-config routes share
+   *                  `${bucket}:${userId ?? ip}`; routes with a per-route
+   *                  override get `${bucket}:route:<Class.method>:${userId ?? ip}`
+   *                  so one counter never mixes two different limits.
    * @param config    Resolved limit + windowSec for this bucket.
    * @param nowMs     Caller-supplied clock; tests inject deterministic time.
    * @throws on infra failure — interceptor catches and fails open.

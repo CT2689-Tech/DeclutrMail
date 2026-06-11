@@ -7,7 +7,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { InMemoryTokenBucketStore } from './in-memory-token-bucket.store.js';
 import { RateLimit } from './rate-limit.decorator.js';
 import { RateLimitInterceptor } from './rate-limit.interceptor.js';
-import { type TokenBucketStore } from './rate-limit.types.js';
+import { BUCKET_DEFAULTS, type TokenBucketStore } from './rate-limit.types.js';
 
 /**
  * Integration tests for the rate-limit interceptor (D156).
@@ -353,5 +353,99 @@ describe('RateLimitInterceptor (D156)', () => {
     const obs = await noStoreInterceptor.intercept(ctx, makeHandler());
     await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
     expect(setHeader).not.toHaveBeenCalled();
+  });
+
+  // ---- Key scoping (D156 fix 2026-06-11): default-config routes share
+  // the bucket pool; per-route overrides get their own counter. One
+  // counter checked against two different capacities is not a budget —
+  // observed live when the limit-120 actions-preview route drained the
+  // same `triage-load:user:<id>` tokens the default reads were checked
+  // against, starving sender-detail loads into 429s.
+
+  it('shares one pool across default-config routes on the same bucket', async () => {
+    @Controller('pool')
+    class PoolController {
+      @Get('a')
+      @RateLimit('auth')
+      a(): { ok: true } {
+        return { ok: true };
+      }
+      @Get('b')
+      @RateLimit('auth')
+      b(): { ok: true } {
+        return { ok: true };
+      }
+    }
+    const c = new PoolController();
+    const ctxFor = (handler: () => { ok: true }): ExecutionContext =>
+      makeContext({ handler, controller: PoolController, setHeader, userId: 'user_pool' });
+
+    // auth default = 5/min. Drain 3 via route a + 2 via route b — the
+    // pool is shared, so the 6th request 429s on EITHER route.
+    for (let i = 0; i < 3; i++) {
+      const obs = await interceptor.intercept(ctxFor(c.a), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+    }
+    for (let i = 0; i < 2; i++) {
+      const obs = await interceptor.intercept(ctxFor(c.b), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+    }
+    await expect(interceptor.intercept(ctxFor(c.a), makeHandler())).rejects.toMatchObject({
+      status: 429,
+    });
+    await expect(interceptor.intercept(ctxFor(c.b), makeHandler())).rejects.toMatchObject({
+      status: 429,
+    });
+  });
+
+  it('gives overridden routes a route-scoped counter — they neither drain nor are starved by the bucket pool', async () => {
+    @Controller('mixed')
+    class MixedController {
+      @Get('plain')
+      @RateLimit('auth')
+      plain(): { ok: true } {
+        return { ok: true };
+      }
+      @Get('boosted')
+      @RateLimit({ bucket: 'auth', limit: 2, windowSec: 60 })
+      boosted(): { ok: true } {
+        return { ok: true };
+      }
+    }
+    const c = new MixedController();
+    const ctxFor = (handler: () => { ok: true }): ExecutionContext =>
+      makeContext({ handler, controller: MixedController, setHeader, userId: 'user_mixed' });
+
+    // Drain the overridden route to ITS capacity (2)…
+    for (let i = 0; i < 2; i++) {
+      const obs = await interceptor.intercept(ctxFor(c.boosted), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+    }
+    await expect(interceptor.intercept(ctxFor(c.boosted), makeHandler())).rejects.toMatchObject({
+      status: 429,
+    });
+
+    // …and the shared pool is untouched: the default route still has its
+    // full 5 (auth default), then 429s on the 6th.
+    for (let i = 0; i < 5; i++) {
+      const obs = await interceptor.intercept(ctxFor(c.plain), makeHandler());
+      await new Promise<void>((resolve) => obs.subscribe(() => resolve()));
+    }
+    await expect(interceptor.intercept(ctxFor(c.plain), makeHandler())).rejects.toMatchObject({
+      status: 429,
+    });
+
+    // And the drained pool does not leak back into the route-scoped
+    // counter for a DIFFERENT user dimension check: same user, the
+    // boosted route is still keyed apart (already 429 from its own 2).
+    await expect(interceptor.intercept(ctxFor(c.boosted), makeHandler())).rejects.toMatchObject({
+      status: 429,
+    });
+  });
+
+  it('triage-load default is 120/min — it fronts Postgres reads, not Gmail quota', () => {
+    // One sender-detail page load fans out to ~6 triage-load reads; the
+    // old 30/min default 429'd a real user after ~5 page views.
+    expect(BUCKET_DEFAULTS['triage-load']).toEqual({ limit: 120, windowSec: 60 });
   });
 });
