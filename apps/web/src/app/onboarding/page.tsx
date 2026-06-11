@@ -24,9 +24,10 @@ import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mai
  *     offers a "Go back to <primary>" escape hatch.
  *
  * Lives OUTSIDE the `(app)` route group on purpose: the gate is pre-app
- * chrome. It is still authenticated — the root `AuthProvider` wraps
- * every route, so `useAuth()` is available and an unauthd hit bounces
- * to the OAuth start endpoint.
+ * chrome. It is still authenticated — this route's own `layout.tsx`
+ * wraps the subtree in `AuthProvider` (D134 split: the root providers
+ * no longer auth-gate every route), so `useAuth()` is available and an
+ * unauthd hit bounces to the OAuth start endpoint.
  *
  * `useSearchParams` requires a Suspense boundary in the App Router, so
  * the gate body is split into an inner client component.
