@@ -103,7 +103,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
-| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: shift-click range select NOT implemented (only shiftKey handler in repo is the shared focus-trap hook); multi-select + sticky bulk bar shipped in #183 |
+| D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
@@ -262,7 +262,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D208 | "What happens next" preview mandatory before every automation or destructive action | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | ⬜ |  |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
-| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🟡 | #51 | packages/shared/src/edge-states/inventory.test.ts | Drift fix 2026-06-11: inventory ScreenId covers 6 screens while the app has 13+ routes (apps/web/src/app); extension in flight on branch chore/d211-edge-state-inventory |
+| D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #195 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
 | D212 | Empty states as first-class | 🔵 | #51 |  |  |
 | D213 | Motion design discipline | ⬜ |  |  |  |
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
@@ -279,7 +279,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🟡 |  |  | Drift fix 2026-06-11 (understated): 5 policies + cron idempotency + base-worker timeout/dead-letter event built (packages/workers/src/worker-policies.ts:54-101, base-declutr-worker.ts); cron_runs/dead_letter_jobs tables + DeadLetterWorker + WatchRenewalWorker missing |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🟢 | #44, #180 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180 |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
-| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟡 | #26 | packages/shared/src/components/privacy-badge.test.tsx (10/10) | Drift fix 2026-06-11: PrivacyBadge component exists but is mounted nowhere; banned pre-D228 copy still live at apps/web/src/features/onboarding/sync-gate.tsx:327 — fix in flight on branch fix/d228-privacy-badge-sync-gate |
+| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🔵 | #192 | packages/shared/src/components/privacy-badge.test.tsx (10/10) + sync-gate.test.tsx banned-phrase-absent assertions | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
 | D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | 🔵 | #185 |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
