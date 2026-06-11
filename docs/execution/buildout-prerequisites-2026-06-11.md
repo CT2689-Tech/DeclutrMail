@@ -27,23 +27,45 @@
 | Razorpay KYC                                                         | website approved; live key exists                                                                           |
 | Vendor billing caps                                                  | Vercel Spend Mgmt ($40 + pause), Upstash PAYG $20, PostHog free, GCP budget+alerts, Sentry spike protection |
 | Daily vendor-limits watchdog                                         | green (6 vendors); Anthropic dropped (Teams-only)                                                           |
+| Sentry org + alert rules                                             | `SENTRY_ORG` set in Vercel + alert rules configured                                                         |
+| Payment sandbox/test keys stored                                     | `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` (GH secrets)              |
+| Tier structure + pricing                                             | D19 confirmed 2026-06-11 — see Tiers section                                                                |
+
+## Tiers — LOCKED (D19, confirmed 2026-06-11)
+
+5-tier ladder, capability buckets (see → clean → automate). **3 purchasable
+at launch**; Team + Enterprise are non-purchasable pricing-page rows (zero build).
+
+| Tier           | Price            | Inboxes | Unlocks                                                                  |
+| -------------- | ---------------- | ------- | ------------------------------------------------------------------------ |
+| **Free**       | $0               | 1       | Senders + Detail + Activity (read-only) + **5 lifetime cleanup actions** |
+| **Plus**       | $9/mo · $90/yr   | 1       | + Triage + unlimited manual Archive/Mute/Unsubscribe                     |
+| **Pro**        | $19/mo · $190/yr | 2       | + Autopilot, Brief, Screener, Quiet, Snoozed, Followups; 30-day undo     |
+| **Team**       | "Coming Q3 2026" | —       | Waitlist row only                                                        |
+| **Enterprise** | Contact Sales    | —       | Contact form only                                                        |
+
+Launch promo: **Founding Pro $129/yr**, first 250 paying users.
+
+**Build directive:** a single configurable **tier manifest** in `packages/shared`
+— `{ id, name, prices:{monthly,annual}, paddlePriceId, razorpayPlanId, inboxLimit,
+capabilities:[] }`. Prices + provider price-IDs live in the manifest so re-pricing
+is a one-value edit, not a code change. Capability gating reads the manifest.
+Agents create the Paddle products + Razorpay plans via API (keys stored) and emit
+the price-IDs back into the manifest.
 
 ## REMAINING (founder)
 
-### Quick (this week)
-
-1. **Sentry** — set `SENTRY_ORG=chintan-ashok-thakkar` (+ confirm `SENTRY_PROJECT=declutrmail-web`) in Vercel prod env → redeploy (empty now → source-map upload fails). Add 2 alert rules: new-issue + error-rate-spike.
-2. **Resend** — rotate the full-access key exposed in chat (`re_MEW…`); sending-only prod key is separate, nothing breaks.
-
-### Payment integration keys (sandbox/test first — NEVER hand live keys until go-live)
-
-3. **Paddle (Sandbox):** API key + client-side token (Developer Tools → Authentication) + webhook signing secret. → `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`.
-4. **Razorpay (Test Mode):** test key id + secret + webhook secret. → `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
-5. **Tier prices** (Plus/Pro per D17-21/D77/D81) — product decision; needed to build the Paddle/Razorpay catalogs.
-
 ### Review / sign-off
 
-6. **Legal accuracy for V2** — rebuilt on `.com` by agents; founder confirms privacy copy matches the no-body-storage posture (D7/D228) + adds a **refund policy** (Paddle/Razorpay require it).
+1. **Legal accuracy for V2** — rebuilt on `.com` by agents; founder confirms privacy copy matches the no-body-storage posture (D7/D228) + adds a **refund policy** (Paddle/Razorpay require it).
+
+### Comes mid-build (not now)
+
+2. **Paddle + Razorpay webhook secrets** — generated when the webhook destination is created against the API endpoint (agents build the endpoint first). → `PADDLE_WEBHOOK_SECRET`, `RAZORPAY_WEBHOOK_SECRET`.
+
+### At go-live (not now)
+
+3. **Rotate all keys to live** — Resend full key, Paddle live keys, Razorpay live keys (test/sandbox values in secrets today). Add `.com` site to both providers.
 
 ## `.ai` → `.com` cutover (after V2 live)
 
