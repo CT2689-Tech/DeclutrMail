@@ -7,6 +7,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { correlationMiddleware } from './common/correlation.middleware.js';
+import { securityHeadersMiddleware } from './common/security-headers.middleware.js';
 import { initSentry } from './observability/sentry.js';
 
 /**
@@ -121,6 +122,11 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.set('trust proxy', 1);
+  // Security headers (D175) — registered FIRST so every response,
+  // including CORS preflights, 404s, and error envelopes, carries the
+  // set. Compatible with the CORS block below: it only ADDS headers and
+  // never touches Access-Control-*.
+  app.use(securityHeadersMiddleware);
   // CORS (D179). Without this, the FE on :3000 cannot reach the API
   // on :4000 — the preflight OPTIONS is rejected with 404 and the
   // GET surfaces as a 503 (network error) in the browser console.
