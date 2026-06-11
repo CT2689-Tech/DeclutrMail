@@ -1,0 +1,1125 @@
+/* ─────────────────────────────────────────────────────────────
+   DeclutrMail marketing landing (D134, D223).
+
+   Editorial-broadsheet treatment of the existing warm-newsprint
+   token palette: hairline rules, mono microcaps eyebrows, Fraunces
+   display headlines, deep-teal accent. Scoped to `.dm-mkt` so none
+   of this leaks into the app shell.
+
+   The `--mkt-*` custom properties exist (instead of reusing the JS
+   token literals inline) for ONE reason: the marketing surface ships
+   a dark scheme, and inline hex styles can't respond to
+   `prefers-color-scheme`. Light values mirror tokens.ts exactly.
+   ───────────────────────────────────────────────────────────── */
+
+.dm-mkt {
+  /* Light = the app's warm-newsprint palette, verbatim. */
+  --mkt-bg: #fafaf7;
+  --mkt-paper: #f4f4f0;
+  --mkt-card: #ffffff;
+  --mkt-ink: #0e1413;
+  --mkt-ink-soft: #4b5552;
+  --mkt-ink-muted: #646d69;
+  --mkt-line: rgba(14, 20, 19, 0.14);
+  --mkt-line-soft: rgba(14, 20, 19, 0.08);
+  --mkt-accent: #006b5f;
+  --mkt-accent-deep: #00463f;
+  --mkt-accent-soft: rgba(0, 107, 95, 0.08);
+  --mkt-accent-border: rgba(0, 107, 95, 0.35);
+  --mkt-mint: #79e6dc;
+  --mkt-amber: #b45309;
+  --mkt-danger: #a12525;
+  /* The full-bleed "ink desk" privacy section. */
+  --mkt-desk: #0e1413;
+  --mkt-desk-ink: #f2f3f0;
+  --mkt-desk-ink-soft: rgba(242, 243, 240, 0.66);
+  --mkt-desk-line: rgba(242, 243, 240, 0.16);
+  /* Filled CTA. */
+  --mkt-cta-bg: #0e1413;
+  --mkt-cta-fg: #fafaf7;
+
+  color-scheme: light;
+  background: var(--mkt-bg);
+  color: var(--mkt-ink);
+  min-height: 100vh;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dm-mkt {
+    /* Dark = ink-first: the newsprint flips to a deep green-black desk. */
+    --mkt-bg: #0c1110;
+    --mkt-paper: #101716;
+    --mkt-card: #151d1b;
+    --mkt-ink: #f2f3f0;
+    --mkt-ink-soft: #b9c0bc;
+    --mkt-ink-muted: #8a938f;
+    --mkt-line: rgba(242, 243, 240, 0.16);
+    --mkt-line-soft: rgba(242, 243, 240, 0.09);
+    --mkt-accent: #36c2af;
+    --mkt-accent-deep: #79e6dc;
+    --mkt-accent-soft: rgba(121, 230, 220, 0.08);
+    --mkt-accent-border: rgba(121, 230, 220, 0.35);
+    --mkt-amber: #e0a050;
+    --mkt-danger: #e57373;
+    --mkt-desk: #080c0b;
+    --mkt-desk-ink: #f2f3f0;
+    --mkt-desk-ink-soft: rgba(242, 243, 240, 0.66);
+    --mkt-desk-line: rgba(242, 243, 240, 0.16);
+    --mkt-cta-bg: #f2f3f0;
+    --mkt-cta-fg: #0c1110;
+
+    color-scheme: dark;
+  }
+}
+
+/* ── Shared primitives ──────────────────────────────────────── */
+
+.dm-mkt-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+@media (max-width: 480px) {
+  .dm-mkt-shell {
+    padding: 0 18px;
+  }
+}
+
+/* Mono microcaps eyebrow — the "№ 01 — Section" device. */
+.dm-mkt-eyebrow {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mkt-accent);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dm-mkt-eyebrow::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--mkt-line);
+}
+
+.dm-mkt-h2 {
+  font-family: var(--dm-font-display);
+  font-weight: 580;
+  font-size: clamp(28px, 4.4vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  margin: 18px 0 0;
+  text-wrap: balance;
+}
+
+.dm-mkt-lede {
+  font-size: clamp(15px, 1.6vw, 17px);
+  line-height: 1.65;
+  color: var(--mkt-ink-soft);
+  max-width: 60ch;
+  margin: 16px 0 0;
+}
+
+.dm-mkt-section {
+  padding: clamp(64px, 9vw, 112px) 0 0;
+}
+
+/* CTA buttons. */
+.dm-mkt-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 22px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition:
+    transform 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
+    background 0.15s ease;
+}
+
+.dm-mkt-cta-primary {
+  background: var(--mkt-cta-bg);
+  color: var(--mkt-cta-fg);
+}
+
+.dm-mkt-cta-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -8px rgba(14, 20, 19, 0.35);
+}
+
+.dm-mkt-cta-primary .dm-mkt-cta-arrow {
+  transition: transform 0.15s ease;
+}
+
+.dm-mkt-cta-primary:hover .dm-mkt-cta-arrow {
+  transform: translateX(3px);
+}
+
+.dm-mkt-cta-ghost {
+  background: transparent;
+  color: var(--mkt-ink);
+  border-color: var(--mkt-line);
+}
+
+.dm-mkt-cta-ghost:hover {
+  border-color: var(--mkt-ink);
+}
+
+/* ── Masthead ───────────────────────────────────────────────── */
+
+.dm-mkt-masthead {
+  border-bottom: 1px solid var(--mkt-line);
+  position: relative;
+}
+
+/* Double-rule, newspaper style: thick + thin. */
+.dm-mkt-masthead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--mkt-ink);
+}
+
+.dm-mkt-masthead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+}
+
+.dm-mkt-wordmark {
+  font-family: var(--dm-font-display);
+  font-size: 21px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--mkt-ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dm-mkt-wordmark b {
+  color: var(--mkt-accent);
+  font-weight: inherit;
+}
+
+.dm-mkt-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font-family: var(--dm-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.dm-mkt-nav-links a {
+  color: var(--mkt-ink-soft);
+  text-decoration: none;
+}
+
+.dm-mkt-nav-links a:hover {
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-nav-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 9999px;
+  background: var(--mkt-cta-bg);
+  color: var(--mkt-cta-fg);
+  font-family: var(--dm-font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .dm-mkt-nav-links .dm-mkt-nav-link {
+    display: none;
+  }
+}
+
+/* ── Hero ───────────────────────────────────────────────────── */
+
+.dm-mkt-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+  padding: clamp(48px, 7vw, 96px) 0 clamp(40px, 5vw, 64px);
+}
+
+@media (max-width: 980px) {
+  .dm-mkt-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dm-mkt-hero-kicker {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mkt-ink-muted);
+  margin: 0 0 20px;
+}
+
+.dm-mkt-hero-kicker b {
+  color: var(--mkt-accent);
+  font-weight: 500;
+}
+
+.dm-mkt-h1 {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: clamp(38px, 6.2vw, 68px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.dm-mkt-h1 em {
+  font-style: italic;
+  color: var(--mkt-accent);
+}
+
+.dm-mkt-hero-sub {
+  font-size: clamp(15px, 1.8vw, 18px);
+  line-height: 1.6;
+  color: var(--mkt-ink-soft);
+  max-width: 54ch;
+  margin: 22px 0 0;
+}
+
+.dm-mkt-hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 32px;
+}
+
+.dm-mkt-hero-note {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--mkt-ink-muted);
+  margin: 14px 0 0;
+}
+
+/* Staggered load reveal — opacity/transform only (zero layout shift). */
+.dm-mkt-reveal {
+  animation: dm-mkt-reveal 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.dm-mkt-reveal-2 {
+  animation-delay: 0.08s;
+}
+.dm-mkt-reveal-3 {
+  animation-delay: 0.16s;
+}
+.dm-mkt-reveal-4 {
+  animation-delay: 0.24s;
+}
+
+@keyframes dm-mkt-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Hero ledger card (D135 adaptation, CSS-only loop) ──────────
+   8s loop. Base styles = frame 0, so the global reduced-motion
+   override in tokens.css collapses the loop to the static state. */
+
+.dm-mkt-ledger {
+  background: var(--mkt-card);
+  border: 1px solid var(--mkt-line);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(14, 20, 19, 0.05),
+    0 24px 48px -24px rgba(14, 20, 19, 0.18);
+  overflow: hidden;
+  position: relative;
+  min-height: 332px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dm-mkt-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--mkt-line-soft);
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mkt-ink-muted);
+}
+
+.dm-mkt-ledger-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--mkt-accent);
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.dm-mkt-ledger-body {
+  padding: 18px 16px 16px;
+  flex: 1;
+}
+
+.dm-mkt-ledger-row {
+  border: 1px solid var(--mkt-line);
+  border-radius: 12px;
+  padding: 14px;
+  animation: dm-mkt-row 8s infinite;
+}
+
+.dm-mkt-ledger-sender {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dm-mkt-ledger-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--mkt-accent-soft);
+  border: 1px solid var(--mkt-accent-border);
+  color: var(--mkt-accent);
+  display: grid;
+  place-items: center;
+  font-family: var(--dm-font-display);
+  font-weight: 620;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.dm-mkt-ledger-name {
+  font-weight: 600;
+  font-size: 14.5px;
+  animation: dm-mkt-strike 8s infinite;
+}
+
+.dm-mkt-ledger-meta {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  color: var(--mkt-ink-muted);
+  margin-top: 3px;
+}
+
+.dm-mkt-ledger-verbs {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.dm-mkt-ledger-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--mkt-line);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--mkt-ink-soft);
+  background: transparent;
+}
+
+.dm-mkt-ledger-verb kbd {
+  font-family: var(--dm-font-mono);
+  font-size: 10px;
+  border: 1px solid var(--mkt-line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 4px;
+  color: var(--mkt-ink-muted);
+}
+
+/* The Archive chip is "pressed" mid-loop. */
+.dm-mkt-ledger-verb-archive {
+  animation: dm-mkt-press 8s infinite;
+}
+
+/* Undo toast — hidden at frame 0, slides up mid-loop. */
+.dm-mkt-ledger-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--mkt-desk);
+  color: var(--mkt-desk-ink);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: dm-mkt-toast 8s infinite;
+}
+
+.dm-mkt-ledger-toast b {
+  font-weight: 600;
+}
+
+.dm-mkt-ledger-toast .dm-mkt-undo {
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mkt-mint);
+  white-space: nowrap;
+}
+
+/* Caption under the card. */
+.dm-mkt-ledger-caption {
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  color: var(--mkt-ink-muted);
+  text-align: center;
+  margin-top: 12px;
+}
+
+/* Timeline (of 8s):
+   0.0–1.0s  row settles (frame 0 base)
+   1.5–3.0s  Archive chip highlights
+   3.0–4.0s  press → strikethrough + row slides out
+   4.0–7.0s  toast visible
+   7.0–8.0s  reset */
+
+@keyframes dm-mkt-row {
+  0%,
+  37.5% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  47% {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  91% {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes dm-mkt-press {
+  0%,
+  16% {
+    background: transparent;
+    color: var(--mkt-ink-soft);
+    border-color: var(--mkt-line);
+    transform: scale(1);
+  }
+  22%,
+  36% {
+    background: var(--mkt-cta-bg);
+    color: var(--mkt-cta-fg);
+    border-color: var(--mkt-cta-bg);
+    transform: scale(1);
+  }
+  39% {
+    transform: scale(0.94);
+  }
+  42%,
+  100% {
+    background: transparent;
+    color: var(--mkt-ink-soft);
+    border-color: var(--mkt-line);
+    transform: scale(1);
+  }
+}
+
+@keyframes dm-mkt-strike {
+  0%,
+  36% {
+    text-decoration-color: transparent;
+  }
+  40%,
+  100% {
+    text-decoration: line-through;
+    text-decoration-color: var(--mkt-ink-muted);
+  }
+}
+
+@keyframes dm-mkt-toast {
+  0%,
+  47% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  53%,
+  85% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  93%,
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ── Trust strip ────────────────────────────────────────────── */
+
+.dm-mkt-trust {
+  border-top: 1px solid var(--mkt-line);
+  border-bottom: 1px solid var(--mkt-line);
+  padding: 16px 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+}
+
+.dm-mkt-trust-item {
+  font-family: var(--dm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--mkt-ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.dm-mkt-trust-item::before {
+  content: '·';
+  color: var(--mkt-accent);
+  font-weight: 700;
+}
+
+/* ── Problem: the arithmetic ────────────────────────────────── */
+
+.dm-mkt-arith {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--mkt-line);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 40px;
+  background: var(--mkt-card);
+}
+
+.dm-mkt-arith-cell {
+  padding: clamp(20px, 3vw, 34px);
+  border-left: 1px solid var(--mkt-line-soft);
+}
+
+.dm-mkt-arith-cell:first-child {
+  border-left: 0;
+}
+
+.dm-mkt-arith-label {
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mkt-ink-muted);
+}
+
+.dm-mkt-arith-value {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: clamp(26px, 4vw, 44px);
+  letter-spacing: -0.02em;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-mkt-arith-value s {
+  color: var(--mkt-ink-muted);
+  text-decoration-thickness: 2px;
+}
+
+.dm-mkt-arith-value em {
+  font-style: normal;
+  color: var(--mkt-accent);
+}
+
+.dm-mkt-arith-note {
+  font-size: 12.5px;
+  color: var(--mkt-ink-muted);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .dm-mkt-arith {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dm-mkt-arith-cell {
+    border-left: 0;
+    border-top: 1px solid var(--mkt-line-soft);
+  }
+  .dm-mkt-arith-cell:first-child {
+    border-top: 0;
+  }
+}
+
+/* ── How it works ───────────────────────────────────────────── */
+
+.dm-mkt-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 36px);
+  margin-top: 44px;
+}
+
+@media (max-width: 720px) {
+  .dm-mkt-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dm-mkt-step {
+  border-top: 2px solid var(--mkt-ink);
+  padding-top: 18px;
+}
+
+.dm-mkt-step-no {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--mkt-accent);
+}
+
+.dm-mkt-step-title {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: 21px;
+  margin: 10px 0 0;
+}
+
+.dm-mkt-step-body {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--mkt-ink-soft);
+  margin: 10px 0 0;
+}
+
+/* ── The ritual (K/A/U/L/D) ─────────────────────────────────── */
+
+.dm-mkt-ritual {
+  margin-top: 44px;
+  border: 1px solid var(--mkt-line);
+  border-radius: 14px;
+  background: var(--mkt-card);
+  overflow: hidden;
+}
+
+.dm-mkt-ritual-row {
+  display: grid;
+  grid-template-columns: 64px 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--mkt-line-soft);
+}
+
+.dm-mkt-ritual-row:first-child {
+  border-top: 0;
+}
+
+.dm-mkt-ritual-row-delete {
+  border-top: 1px solid var(--mkt-line);
+}
+
+.dm-mkt-ritual-key {
+  font-family: var(--dm-font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mkt-line);
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  color: var(--mkt-ink);
+  background: var(--mkt-paper);
+}
+
+.dm-mkt-ritual-row-delete .dm-mkt-ritual-key {
+  color: var(--mkt-danger);
+}
+
+.dm-mkt-ritual-verb {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: 19px;
+}
+
+.dm-mkt-ritual-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--mkt-ink-soft);
+}
+
+@media (max-width: 640px) {
+  .dm-mkt-ritual-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .dm-mkt-ritual-desc {
+    grid-column: 1 / -1;
+    margin-top: -4px;
+  }
+}
+
+/* ── Privacy desk (full-bleed ink) ──────────────────────────── */
+
+.dm-mkt-desk-section {
+  background: var(--mkt-desk);
+  color: var(--mkt-desk-ink);
+  margin-top: clamp(64px, 9vw, 112px);
+  padding: clamp(56px, 8vw, 96px) 0;
+}
+
+.dm-mkt-desk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: clamp(32px, 5vw, 64px);
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .dm-mkt-desk-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dm-mkt-desk-section .dm-mkt-eyebrow {
+  color: var(--mkt-mint);
+}
+
+.dm-mkt-desk-section .dm-mkt-eyebrow::after {
+  background: var(--mkt-desk-line);
+}
+
+.dm-mkt-desk-section .dm-mkt-h2 {
+  color: var(--mkt-desk-ink);
+}
+
+.dm-mkt-desk-section .dm-mkt-lede {
+  color: var(--mkt-desk-ink-soft);
+}
+
+.dm-mkt-desk-points {
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.dm-mkt-desk-points li {
+  display: flex;
+  gap: 12px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--mkt-desk-ink-soft);
+}
+
+.dm-mkt-desk-points li::before {
+  content: '—';
+  color: var(--mkt-mint);
+  flex-shrink: 0;
+}
+
+.dm-mkt-desk-link {
+  display: inline-block;
+  margin-top: 26px;
+  font-family: var(--dm-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--mkt-mint);
+  text-decoration: none;
+  border-bottom: 1px solid var(--mkt-desk-line);
+  padding-bottom: 3px;
+}
+
+.dm-mkt-desk-link:hover {
+  border-bottom-color: var(--mkt-mint);
+}
+
+/* The PrivacyBadge card stays its designed light-paper self in both
+   schemes — a document lying on the dark desk. */
+.dm-mkt-desk-paper {
+  filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.4));
+}
+
+/* ── Pricing teaser ─────────────────────────────────────────── */
+
+.dm-mkt-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 44px;
+}
+
+@media (max-width: 860px) {
+  .dm-mkt-tiers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dm-mkt-tier {
+  border: 1px solid var(--mkt-line);
+  border-radius: 14px;
+  background: var(--mkt-card);
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dm-mkt-tier-flag {
+  border-color: var(--mkt-accent-border);
+  box-shadow: 0 0 0 1px var(--mkt-accent-border) inset;
+}
+
+.dm-mkt-tier-name {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mkt-ink-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.dm-mkt-tier-star {
+  color: var(--mkt-accent);
+  letter-spacing: 0.04em;
+}
+
+.dm-mkt-tier-price {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: 40px;
+  letter-spacing: -0.02em;
+  margin-top: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-mkt-tier-price small {
+  font-family: var(--dm-font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--mkt-ink-muted);
+  letter-spacing: 0;
+}
+
+.dm-mkt-tier-alt {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  color: var(--mkt-ink-muted);
+  margin-top: 4px;
+  min-height: 14px;
+}
+
+.dm-mkt-tier-feats {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--mkt-line-soft);
+  display: grid;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-tier-feats li {
+  display: flex;
+  gap: 9px;
+  line-height: 1.5;
+}
+
+.dm-mkt-tier-feats li::before {
+  content: '✓';
+  color: var(--mkt-accent);
+  font-size: 11px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.dm-mkt-founding {
+  margin-top: 16px;
+  border: 1px dashed var(--mkt-accent-border);
+  background: var(--mkt-accent-soft);
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+
+.dm-mkt-founding b {
+  font-family: var(--dm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mkt-accent);
+}
+
+.dm-mkt-pricing-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 22px;
+  font-family: var(--dm-font-mono);
+  font-size: 11.5px;
+  color: var(--mkt-ink-muted);
+}
+
+.dm-mkt-pricing-foot a {
+  color: var(--mkt-accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--mkt-accent-border);
+  padding-bottom: 2px;
+}
+
+/* ── FAQ ────────────────────────────────────────────────────── */
+
+.dm-mkt-faq {
+  margin-top: 36px;
+  border-top: 1px solid var(--mkt-line);
+}
+
+.dm-mkt-faq details {
+  border-bottom: 1px solid var(--mkt-line);
+}
+
+.dm-mkt-faq summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 4px;
+  font-family: var(--dm-font-display);
+  font-weight: 560;
+  font-size: clamp(16px, 2vw, 19px);
+}
+
+.dm-mkt-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.dm-mkt-faq summary::after {
+  content: '+';
+  font-family: var(--dm-font-mono);
+  font-size: 18px;
+  color: var(--mkt-accent);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.dm-mkt-faq details[open] summary::after {
+  transform: rotate(45deg);
+}
+
+.dm-mkt-faq-a {
+  padding: 0 4px 22px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--mkt-ink-soft);
+  max-width: 68ch;
+}
+
+.dm-mkt-faq-a a {
+  color: var(--mkt-accent);
+}
+
+/* ── Final CTA + footer ─────────────────────────────────────── */
+
+.dm-mkt-final {
+  text-align: center;
+  padding: clamp(72px, 10vw, 128px) 0;
+}
+
+.dm-mkt-final .dm-mkt-h2 {
+  font-size: clamp(32px, 5.5vw, 56px);
+}
+
+.dm-mkt-footer {
+  border-top: 1px solid var(--mkt-line);
+  padding: 32px 0 44px;
+}
+
+.dm-mkt-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 28px;
+}
+
+.dm-mkt-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  font-family: var(--dm-font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+}
+
+.dm-mkt-footer-links a {
+  color: var(--mkt-ink-soft);
+  text-decoration: none;
+}
+
+.dm-mkt-footer-links a:hover {
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-footer-fine {
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  color: var(--mkt-ink-muted);
+  margin-top: 20px;
+  line-height: 1.8;
+}

@@ -174,6 +174,42 @@ client-side billing UI (clients can't see real subscription state).
 **Retention / aggregation.** 2y raw (overlaps with billing audit
 retention). Drives MRR cohort, churn cohort, free-to-paid funnel.
 
+### `page_viewed`
+
+**When fired.** Once per mount of an instrumented page. Currently
+emitted by the marketing landing (`page: 'landing'`, D134) from its
+always-mounted nav island; app surfaces adopt the same event as they
+get instrumented (the `page` union in `events.ts` already enumerates
+them).
+
+**Payload.**
+
+| Field        | Type                                                                                                                                         | Notes                                              |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `page`       | `'landing' \| 'senders' \| 'sender_detail' \| 'activity' \| 'brief' \| 'autopilot' \| 'triage' \| 'onboarding' \| 'settings' \| 'mailboxes'` | Closed union                                       |
+| `mailbox_id` | `string \| null`                                                                                                                             | UUID; `null` on public pages (landing has no auth) |
+
+**Retention / aggregation.** PostHog default. Top of the
+landing → OAuth → onboarding funnel insight.
+
+### `landing_cta_clicked`
+
+**When fired.** On click of any landing-page CTA (D134), before the
+browser follows the link — fire-and-forget, navigation never waits on
+telemetry. Anonymous visitors are expected; no identify call precedes
+this event.
+
+**Payload.**
+
+| Field       | Type                                             | Notes                                         |
+| ----------- | ------------------------------------------------ | --------------------------------------------- |
+| `cta`       | `'connect_gmail' \| 'open_app' \| 'see_pricing'` | `connect_gmail` is the OAuth-start conversion |
+| `placement` | `'nav' \| 'hero' \| 'pricing_teaser' \| 'final'` | Where on the page                             |
+
+**Retention / aggregation.** PostHog default. `connect_gmail` clicks
+vs `page_viewed{page='landing'}` is the landing conversion rate;
+placement breakdown ranks the sections.
+
 ---
 
 ## Adding a new event

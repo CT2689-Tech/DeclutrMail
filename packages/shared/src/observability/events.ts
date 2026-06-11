@@ -27,6 +27,8 @@ export type EventName =
   | 'page_viewed'
   | 'sender_detail_opened'
   | 'gmail_deep_link_opened'
+  // — Marketing landing funnel (D134) —
+  | 'landing_cta_clicked'
   // — Senders V2 surface —
   | 'compose_filter_changed'
   | 'bulk_select_in_filter'
@@ -117,6 +119,7 @@ export interface EventPayloads {
   // — Page-view + navigation funnel —
   page_viewed: {
     page:
+      | 'landing'
       | 'senders'
       | 'sender_detail'
       | 'activity'
@@ -127,6 +130,14 @@ export interface EventPayloads {
       | 'settings'
       | 'mailboxes';
     mailbox_id: string | null;
+  };
+
+  // — Marketing landing funnel (D134) —
+  landing_cta_clicked: {
+    /** Which CTA — `connect_gmail` starts OAuth; `open_app` is the authed shortcut. */
+    cta: 'connect_gmail' | 'open_app' | 'see_pricing';
+    /** Where on the landing page the click happened. */
+    placement: 'nav' | 'hero' | 'pricing_teaser' | 'final';
   };
   sender_detail_opened: {
     sender_id: string;
