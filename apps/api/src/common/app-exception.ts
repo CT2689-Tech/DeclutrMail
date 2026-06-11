@@ -29,12 +29,19 @@ export interface AppExceptionOptions {
   retryable?: boolean;
   /** Override the registry's default D169 tier. */
   severityTier?: ErrorSeverityTier;
+  /**
+   * Machine-readable context surfaced on the envelope's `details`
+   * field (e.g. `FREE_CAP_REACHED` → `{ remaining, limit, used }`).
+   * Scalars only — never message content or addresses (D7, D228).
+   */
+  details?: Record<string, string | number | boolean | null>;
 }
 
 export class AppException extends HttpException {
   readonly code: ErrorCode;
   readonly retryable: boolean;
   readonly severityTier: ErrorSeverityTier;
+  readonly details: Record<string, string | number | boolean | null> | undefined;
 
   constructor(opts: AppExceptionOptions) {
     const spec = ERROR_CODES[opts.code];
@@ -42,5 +49,6 @@ export class AppException extends HttpException {
     this.code = opts.code;
     this.retryable = opts.retryable ?? spec.retryable;
     this.severityTier = opts.severityTier ?? spec.severityTier;
+    this.details = opts.details;
   }
 }

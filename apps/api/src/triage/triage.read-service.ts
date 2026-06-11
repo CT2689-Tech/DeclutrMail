@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { and, count, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 
 import {
@@ -11,7 +11,9 @@ import {
   workspaces,
   type TriageVerdict,
 } from '@declutrmail/db';
+import { cleanupActionsLifetimeFor } from '@declutrmail/shared/entitlements';
 
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -66,17 +68,6 @@ export interface TriageSessionStats {
 }
 
 /**
- * D19 — Free-tier cleanup-action limit (display path only). Previously
- * misattributed to D77 (Screener Pro-gating); the Free cap is a D19
- * decision. NOTE: D19 locks the Free limit at 5 LIFETIME cleanup
- * actions — this 25/day counter predates the entitlement manifest
- * (`@declutrmail/shared/entitlements`, `cleanupActionsLifetimeFor`) and
- * its display path is superseded by manifest-driven lifetime
- * enforcement in a later unit. Behavior intentionally unchanged here.
- */
-const FREE_TIER_DAILY_LIMIT = 25;
-
-/**
  * D30 — "not seen by user in last 7 days". A sender the user has
  * DECIDED on (a K/A/U/L/D `activity_log` row whose undo has not been
  * reverted) within this window is excluded from the queue, so a row
@@ -112,7 +103,18 @@ const SECONDS_SAVED_PER_DEFLECTED_EMAIL = 6;
  */
 @Injectable()
 export class TriageReadService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  private readonly entitlements: EntitlementsService;
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    // Free-cap position for the stats block (D19 — 5 LIFETIME cleanup
+    // actions; replaces the old 25/day display counter). `@Optional()`
+    // + fallback so the existing `new TriageReadService(db)` test
+    // wiring keeps working (the service is stateless over the db).
+    @Optional() entitlements?: EntitlementsService,
+  ) {
+    this.entitlements = entitlements ?? new EntitlementsService(db);
+  }
 
   /**
    * Return up to `limit` triage decisions for the mailbox, joined with
@@ -298,16 +300,18 @@ export class TriageReadService {
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
 
-    // Tier comes from the mailbox's workspace.
+    // Tier comes from the mailbox's workspace. Team/enterprise rank AT
+    // pro for the stats union (the plan's Pro gates unlock for
+    // tier ∈ {pro, team, enterprise} — see `satisfiesActionTier`).
     const [tierRow] = await this.db
-      .select({ tier: workspaces.tier })
+      .select({ tier: workspaces.tier, workspaceId: workspaces.id })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, input.mailboxAccountId))
       .limit(1);
     const tierEnum = tierRow?.tier ?? 'free';
     const tier: TriageSessionStats['tier'] =
-      tierEnum === 'plus' ? 'plus' : tierEnum === 'pro' ? 'pro' : 'free';
+      tierEnum === 'plus' ? 'plus' : tierEnum === 'free' ? 'free' : 'pro';
 
     // Today's decision counts by verb.
     const todayCounts = await this.db
@@ -351,8 +355,17 @@ export class TriageReadService {
     // mail_messages for the touched senders.
     const projection = await this.projectImpact(input.mailboxAccountId, todayStartUtc);
 
+    // D19 free-cap position — LIFETIME cleanup units left (manifest
+    // limit − units consumed), not a daily decision counter. The
+    // counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    const lifetimeLimit = cleanupActionsLifetimeFor(tierEnum);
     const freeRemaining =
-      tier === 'free' ? Math.max(0, FREE_TIER_DAILY_LIMIT - decidedToday) : null;
+      lifetimeLimit === null || !tierRow
+        ? null
+        : Math.max(
+            0,
+            lifetimeLimit - (await this.entitlements.cleanupUnitsUsed(tierRow.workspaceId)),
+          );
 
     return {
       decidedToday,

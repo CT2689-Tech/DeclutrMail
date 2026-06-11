@@ -245,6 +245,60 @@ describe('LabelActionWorker', () => {
       expect(byId['m3']).toContain('CATEGORY_PROMOTIONS');
     });
 
+    it('undo window resolves from the workspace tier AT ACTION TIME (D19/D81: free 7d, pro 30d)', async () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      // Seeded workspace defaults to tier='free' → 7-day window,
+      // snapshotted explicitly onto undo_journal.expires_at.
+      const [freeJob] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          idempotencyKey: 'idem-tier-free',
+        })
+        .returning();
+      const freeResult = await worker.processJob(
+        { actionId: freeJob!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-tier-free' },
+        CTX,
+      );
+      const [freeUndo] = await db
+        .select()
+        .from(undoJournal)
+        .where(eq(undoJournal.token, freeResult.undoToken!));
+      expect(freeUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * DAY);
+      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * DAY);
+
+      // Flip the workspace to pro — the NEXT action snapshots 30d (the
+      // already-issued 7d token above is untouched: downgrade/upgrade
+      // semantics resolve at action time, never retroactively).
+      await db.update(workspaces).set({ tier: 'pro' });
+      await seedMessage(db, mailboxId, 'm4', ['INBOX']);
+      const [proJob] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          idempotencyKey: 'idem-tier-pro',
+        })
+        .returning();
+      const proResult = await worker.processJob(
+        { actionId: proJob!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-tier-pro' },
+        CTX,
+      );
+      const [proUndo] = await db
+        .select()
+        .from(undoJournal)
+        .where(eq(undoJournal.token, proResult.undoToken!));
+      expect(proUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
+      expect(proUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 31 * DAY);
+      // The earlier free-tier token is unchanged.
+      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * DAY);
+    });
+
     it('is idempotent on a done row (no second mutation)', async () => {
       const [job] = await db
         .insert(actionJobs)

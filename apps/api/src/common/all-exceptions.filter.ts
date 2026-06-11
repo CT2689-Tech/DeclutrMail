@@ -141,6 +141,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     message: string;
     retryable: boolean;
     severityTier: ErrorSeverityTier;
+    details?: Record<string, string | number | boolean | null>;
   } {
     if (exception instanceof AppException) {
       const status = exception.getStatus();
@@ -150,6 +151,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message: this.safeHttpMessage(exception),
         retryable: exception.retryable,
         severityTier: exception.severityTier,
+        // Scalar machine-readable context (e.g. FREE_CAP_REACHED's
+        // remaining/limit/used counters). Only AppException carries it.
+        ...(exception.details ? { details: exception.details } : {}),
       };
     }
     if (exception instanceof HttpException) {

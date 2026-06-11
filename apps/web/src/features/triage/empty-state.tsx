@@ -25,11 +25,12 @@ const { color, font } = tokens;
  *      from the next sync sweep + the weekly re-score cron (D25).
  *
  *   4. A subtle upgrade nudge — tier-gated per D17–D21:
- *        free → "See Plus" (removes the 5/day cap)
+ *        free → "See Plus" (lifts the D19 5-LIFETIME cleanup cap)
  *        plus → "Pro could do this for you automatically" (D33 quote)
  *        pro  → no nudge; D33 explicitly hides it for Pro users.
- *      The Plus nudge only renders when `freeRemaining ≤ 5` so a free
- *      user who hasn't pressed the cap doesn't get pestered.
+ *      `freeRemaining` is the LIFETIME remainder (manifest-driven via
+ *      the BE; replaced the old 25/day display counter), so the nudge
+ *      is always relevant on free once any cleanup action is spent.
  *
  * Privacy note (D7): no body content, no message subjects — only the
  * decision counts and the upgrade pitch. The same constraint applies
@@ -203,8 +204,8 @@ export function TriageEmptyState({
         </div>
       )}
 
-      {/* D33 Free-tier nudge — "See Plus" surfaces only when the daily
-          cap is in view (≤5 free decisions left). */}
+      {/* D33 Free-tier nudge — "See Plus" surfaces when the D19
+          lifetime cleanup cap is in view (≤5 cleanup actions left). */}
       {showPlusNudge && (
         <div
           style={{
@@ -224,11 +225,11 @@ export function TriageEmptyState({
           <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
             <strong style={{ fontWeight: 600 }}>
               {stats.freeRemaining === 0
-                ? "You're out of free decisions today."
-                : `Only ${stats.freeRemaining} free decisions left today.`}
+                ? "You've used all 5 free cleanup actions."
+                : `${stats.freeRemaining} of your 5 free cleanup actions left.`}
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              Plus removes the daily cap and unlocks Autopilot rules.
+              Plus removes the cap — unlimited archive, delete, and unsubscribe.
             </span>
           </span>
           <Button tone="primary" size="sm" onClick={onOpenUpgrade ?? (() => {})}>
