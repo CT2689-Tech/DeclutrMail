@@ -65,7 +65,14 @@ type AuthenticatedRequest = Request;
  *
  * Flow per request:
  *   1. Read `@RateLimit(...)` metadata. Absent → pass through (opt-in).
- *   2. Resolve key as `${bucket}:${req.user?.id ?? req.ip}`.
+ *   2. Resolve key. Default-config routes share the bucket pool
+ *      (`${bucket}:${req.user?.id ?? req.ip}`); routes with an explicit
+ *      `limit`/`windowSec` override get a route-scoped key
+ *      (`${bucket}:route:<Class.method>:…`) — sharing one counter
+ *      between routes with DIFFERENT limits made every budget
+ *      misleading (a limit-120 route drained the same tokens a
+ *      limit-30 sibling was checked against; observed live 2026-06-11
+ *      when sender-detail e2e loads starved the triage-load pool).
  *   3. Call `store.consume(...)`. On `allowed=false`, throw a 429 with
  *      `Retry-After` header set to seconds until refill.
  *   4. On store error (Redis down, network blip), log + count and
@@ -117,7 +124,7 @@ export class RateLimitInterceptor implements NestInterceptor {
     const http = context.switchToHttp();
     const req = http.getRequest<AuthenticatedRequest>();
     const res = http.getResponse<Response>();
-    const key = `${resolved.bucket}:${this.identify(req)}`;
+    const key = `${this.keyPrefix(opts, resolved.bucket, context)}:${this.identify(req)}`;
 
     let result;
     try {
@@ -188,6 +195,27 @@ export class RateLimitInterceptor implements NestInterceptor {
       limit: opts.limit ?? defaults.limit,
       windowSec: opts.windowSec ?? defaults.windowSec,
     };
+  }
+
+  /**
+   * Key prefix for the token-bucket counter.
+   *
+   * Default-config routes share the bucket pool (`bucket`): that sharing
+   * IS the abuse cap — N read routes drawing one budget. But a route
+   * that declares its own `limit`/`windowSec` gets a route-scoped
+   * counter (`bucket:route:<Class.method>`): one counter checked
+   * against two different capacities is not a budget, it's a race —
+   * the limit-120 preview route drained the same tokens the limit-30
+   * (now 120) reads were checked against, so "overriding up" silently
+   * starved every sibling on the bucket.
+   *
+   * `<Class.method>` comes from Nest's handler refs — stable across
+   * restarts, no per-request allocation beyond the template string.
+   */
+  private keyPrefix(opts: RateLimitOptions, bucket: BucketName, context: ExecutionContext): string {
+    const overridden = opts.limit !== undefined || opts.windowSec !== undefined;
+    if (!overridden) return bucket;
+    return `${bucket}:route:${context.getClass().name}.${context.getHandler().name}`;
   }
 
   /**
