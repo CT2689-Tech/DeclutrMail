@@ -21,7 +21,12 @@ export interface SenderGridProps {
   senders: Sender[];
   /** Selected ids — controlled by parent (shift-click range + bulk bar). */
   selectedIds: Set<string>;
-  onToggleSelect: (id: string) => void;
+  /**
+   * Checkbox toggle. `shiftKey` carries the modifier state up so the
+   * parent's anchor-based range logic (D52) can select a span — the
+   * grid itself owns no selection math.
+   */
+  onToggleSelect: (id: string, shiftKey?: boolean) => void;
   onAction: (req: ActionRequest) => void;
   /**
    * Mailbox-wide MAX(total_received) — the magnitude under-bar's

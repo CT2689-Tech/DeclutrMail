@@ -82,7 +82,11 @@ export interface SenderCardProps {
   sender: Sender;
   /** Selected — controlled by parent for shift-click range + sticky bar. */
   selected: boolean;
-  onToggleSelect: (id: string) => void;
+  /**
+   * Checkbox toggle — `shiftKey` rides up so the screen's anchor-based
+   * range logic (D52) can span-select; the card owns no selection math.
+   */
+  onToggleSelect: (id: string, shiftKey?: boolean) => void;
   onAction: (req: ActionRequest) => void;
   /**
    * Mailbox-wide MAX(total_received) — magnitude under-bar denominator
@@ -99,8 +103,12 @@ export interface SenderCardProps {
  * a promised outcome). Keyed by `Sender.unsubStatus`; `none` covers a
  * recorded intent with NO tracked execution — a mailto sender whose
  * manual send happens from Sender Detail (D230), or method-none.
+ *
+ * Exported as the ONE copy source for the unsub status chip — the
+ * SenderTable row chip and the Sender Detail header pill render the
+ * same map so list ↔ detail never contradict each other.
  */
-const UNSUB_PILL: Record<
+export const UNSUB_PILL: Record<
   'pending' | 'done' | 'failed' | 'ambiguous' | 'none',
   { label: string; title: string }
 > = {
@@ -259,11 +267,17 @@ export function SenderCard({
           // semantics removed from card chrome.
           <Spark values={sender.spark} width={48} height={16} color={color.fgSoft} />
         )}
+        {/* Toggle fires from onClick (not onChange) — the click event is
+            the only one that carries `shiftKey`, which the screen's
+            range-select logic needs (D52). `readOnly` + controlled
+            `checked` keeps React's controlled-input contract intact;
+            keyboard toggling still works (Space synthesizes a click). */}
         <input
           type="checkbox"
           aria-label={`Select ${sender.name}`}
           checked={selected}
-          onChange={() => onToggleSelect(sender.id)}
+          readOnly
+          onClick={(e) => onToggleSelect(sender.id, e.shiftKey)}
           style={{ cursor: 'pointer', marginTop: 2 }}
         />
       </div>

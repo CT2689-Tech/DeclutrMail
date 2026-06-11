@@ -562,6 +562,62 @@ function SendersScreenContent({
     [selected, senders],
   );
 
+  // D52 — shift-click range selection, shared by Grid + Table. The
+  // anchor is the last row whose checkbox was clicked; a shift-click
+  // applies the clicked row's NEW state (select/deselect) to every row
+  // between anchor and target in the CURRENT visual order. A ref (not
+  // state) — the anchor never drives a render. Plain clicks always
+  // re-anchor; a shift-click re-anchors to its target so chained
+  // shift-clicks extend from the last extent (the Gmail convention).
+  //
+  // NOTE: the next set is computed OUTSIDE setSelected — an earlier cut
+  // mutated `selectionAnchorRef` inside the functional updater, and
+  // React StrictMode's double-invocation of updaters made the second
+  // run see anchor === id and silently drop the range (caught live in
+  // the 2026-06-11 smoke). Updaters must stay pure; the closure over
+  // `selected` is safe because each call rides a discrete user click.
+  const selectionAnchorRef = useRef<string | null>(null);
+  const toggleWithRange = useCallback(
+    (orderedIds: readonly string[], id: string, shiftKey: boolean) => {
+      const next = new Set(selected);
+      const checked = !selected.has(id);
+      const anchor = selectionAnchorRef.current;
+      if (shiftKey && anchor !== null && anchor !== id) {
+        const ai = orderedIds.indexOf(anchor);
+        const bi = orderedIds.indexOf(id);
+        // Both ends must be in the current visual order — a stale
+        // anchor (row filtered away / view switched) degrades to a
+        // plain single toggle rather than guessing a range.
+        if (ai !== -1 && bi !== -1) {
+          const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+          for (let i = lo; i <= hi; i++) {
+            const rid = orderedIds[i]!;
+            if (checked) next.add(rid);
+            else next.delete(rid);
+          }
+          selectionAnchorRef.current = id;
+          setSelected(next);
+          return;
+        }
+      }
+      if (checked) next.add(id);
+      else next.delete(id);
+      selectionAnchorRef.current = id;
+      setSelected(next);
+    },
+    [selected],
+  );
+
+  // Visual row orders the range logic walks — grid order is the
+  // BE-sorted loaded list; table order is the same list after the
+  // table's client-side search/intent narrowing (`filterTableRows`).
+  const gridOrderedIds = useMemo(() => senders.map((s) => s.id), [senders]);
+  const tableRows = useMemo(
+    () => filterTableRows(wireRows, queryBase, activeIntent, senders),
+    [wireRows, queryBase, activeIntent, senders],
+  );
+  const tableOrderedIds = useMemo(() => tableRows.map((r) => r.id), [tableRows]);
+
   // Hero / KPI numbers. The server-side summary (#145) IS the source of
   // truth for headline figures — `totalMonthly`, `noiseReducible`,
   // `protectedCount`, `needsReview`, and `cleanupCount` (= byIntent.cleanup)
@@ -744,6 +800,13 @@ function SendersScreenContent({
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name, domain: s.domain }));
         const isBulk = senderRefs.length > 1;
 
+        // The "Also act on past emails" chip from the D226 preview
+        // (ConfirmOptions.secondary). The unsub intent has no composite
+        // primary on the BE, so the historic action enqueues as its own
+        // composite/bulk whose primary IS the secondary verb — exactly
+        // the triage pattern (triage-screen.tsx archive-after-unsub).
+        const secondary = opts?.secondary ?? null;
+
         if (!isBulk) {
           const sref = senderRefs[0]!;
           recordUnsubIntent.mutate(
@@ -769,6 +832,40 @@ function SendersScreenContent({
                     'info',
                   );
                 }
+                // Secondary historic action (Archive/Delete the backlog).
+                // Fires only after the intent recorded — the preview
+                // already showed the per-window counts (D226); the polled
+                // `activeAction` lifecycle below surfaces the real
+                // receipt + undo token for the paired archive/delete.
+                if (secondary) {
+                  enqueueComposite.mutate(
+                    {
+                      senderId: sref.id,
+                      primary: {
+                        type: secondary.type,
+                        olderThanDays: secondary.olderThanDays ?? null,
+                      },
+                    },
+                    {
+                      onSuccess: (cres) =>
+                        setActiveAction({
+                          actionId: cres.actionId,
+                          senderName: sref.name,
+                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                        }),
+                      onError: (err) => {
+                        captureFeatureException(err, {
+                          surface: 'senders',
+                          reason: `enqueue_${secondary.type}_after_unsub`,
+                        });
+                        toast(
+                          `Unsubscribe queued, but couldn't ${secondary.type} the backlog from ${sref.name}`,
+                          'warn',
+                        );
+                      },
+                    },
+                  );
+                }
               },
               onError: (err) => {
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
@@ -782,36 +879,71 @@ function SendersScreenContent({
         // Bulk fan-out — each sender is its own intent (+execution for
         // one_click senders). No per-execution polling at this scale:
         // each row's chip carries its sender's state on refetch.
-        let succeeded = 0;
-        let failed = 0;
-        for (const sref of senderRefs) {
-          recordUnsubIntent.mutate(
-            { senderId: sref.id },
+        //
+        // `mutateAsync` + Promise.allSettled, NOT a mutate()-callback
+        // loop: TanStack v5 fires mutate-level callbacks only for the
+        // LATEST call when one mutation hook is invoked consecutively,
+        // so the prior per-sender onSuccess counters undercounted —
+        // the completion toast never fired and the secondary batch
+        // below never enqueued (caught in the 2026-06-11 live smoke).
+        // Each mutateAsync promise settles independently.
+        void Promise.allSettled(
+          senderRefs.map((sref) => recordUnsubIntent.mutateAsync({ senderId: sref.id })),
+        ).then((results) => {
+          const succeededIds = senderRefs
+            .filter((_, i) => results[i]!.status === 'fulfilled')
+            .map((s) => s.id);
+          const failedCount = senderRefs.length - succeededIds.length;
+          for (const r of results) {
+            if (r.status === 'rejected') {
+              captureFeatureException(r.reason, { surface: 'senders', reason: 'record_unsub' });
+            }
+          }
+          void qc.invalidateQueries({ queryKey: sendersKeys.all });
+          void qc.invalidateQueries({ queryKey: activityKeys.all });
+          if (succeededIds.length === 0) {
+            toast(
+              `${failedCount} of ${senderRefs.length} unsubscribe requests failed — try again.`,
+              'warn',
+            );
+            return;
+          }
+          toast(
+            `Unsubscribe requested for ${succeededIds.length} sender${succeededIds.length === 1 ? '' : 's'}${failedCount ? ` (${failedCount} failed)` : ''} — each sender's chip shows the result; email-based lists finish from the sender's page.`,
+            failedCount > 0 ? 'warn' : 'success',
+          );
+          // The preview's secondary chip (D226 — counts already shown):
+          // fan the backlog out as ONE bulk batch (D52 pipeline) over
+          // the senders whose intents recorded — the batch poll below
+          // surfaces the real receipt + undo token.
+          if (!secondary) return;
+          enqueueBulk.mutate(
             {
-              onSuccess: () => {
-                succeeded++;
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    `Unsubscribe requested for ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''} — each sender's chip shows the result; email-based lists finish from the sender's page.`,
-                    failed > 0 ? 'warn' : 'success',
-                  );
-                }
-                void qc.invalidateQueries({ queryKey: sendersKeys.all });
-                void qc.invalidateQueries({ queryKey: activityKeys.all });
-              },
+              senderIds: succeededIds,
+              primary: { type: secondary.type, olderThanDays: secondary.olderThanDays ?? null },
+            },
+            {
+              onSuccess: (res) =>
+                setActiveBatch({
+                  batchId: res.batchId,
+                  verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                  senderCount: res.senderCount,
+                }),
               onError: (err) => {
-                failed++;
-                captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    `${failed} of ${senderRefs.length} unsubscribe requests failed — try again.`,
-                    'warn',
-                  );
+                if (!(err instanceof ApiError && err.status === 409)) {
+                  captureFeatureException(err, {
+                    surface: 'senders',
+                    reason: `enqueue_bulk_${secondary.type}_after_unsub`,
+                  });
                 }
+                toast(
+                  `Unsubscribes queued, but couldn't ${secondary.type} the backlog — see Activity`,
+                  'warn',
+                );
               },
             },
           );
-        }
+        });
         return;
       }
 
@@ -935,24 +1067,14 @@ function SendersScreenContent({
         return;
       }
 
-      // Tracer tail — Protect only (standing-policy verb; no Gmail
-      // mutation fires). Every mail-moving verb above rides a real
-      // pipeline now: single Archive (P6), single Delete/Later/composite
-      // (ADR-0020), Unsubscribe intent (D38), Keep standing-policy (D40),
-      // multi-sender A/L/D bulk (D52).
-      toast(
-        `${VERB_PAST[verb]} ${senders.length} sender${senders.length === 1 ? '' : 's'}`,
-        'success',
-      );
-      setReceipt({
-        id: `r${++receiptSeq}`,
-        verb,
-        count: senders.length,
-        historicTotal: 0,
-        timeLeft: '6d 23h',
-      });
-      setPendingAction(null);
-      setSelected(new Set());
+      // Every verb is handled by a real pipeline above: single Archive
+      // (P6), single Delete/Later/composite (ADR-0020), Unsubscribe
+      // intent + secondary (D9/D38), Keep standing-policy (D40),
+      // multi-sender A/L/D bulk (D52). The former Protect tracer tail
+      // (fabricated receipt, hardcoded '6d 23h') was removed along with
+      // its only producer — the unreachable ReviewSession 'lock'
+      // bucket. Protect stays a standing-policy toggle on Sender
+      // Detail; no Senders-screen surface emits it as a verb.
     },
     [enqueue, enqueueBulk],
   );
@@ -1310,10 +1432,16 @@ function SendersScreenContent({
     (result: ReviewResult) => {
       const slice = review?.slice ?? [];
       setReview(null);
+      // The 'lock' (Protect) bucket was removed with the Protect tracer
+      // tail in `performAction` — ReviewSession itself has no live
+      // opener on this screen (nothing calls `setReview` with a slice),
+      // so the bucket was double-dead: unreachable entry feeding a
+      // fabricated receipt. If ReviewSession is resurrected post-launch
+      // ("Saved filters"), wire 'lock' to `setPolicy({ isProtected:
+      // true })` — never to a verb fire.
       const buckets: [ActionVerb, Sender[]][] = [
         ['Unsubscribe', slice.filter((s) => result.decisions[s.id] === 'unsub')],
         ['Later', slice.filter((s) => result.decisions[s.id] === 'later')],
-        ['Protect', slice.filter((s) => result.decisions[s.id] === 'lock')],
       ];
       // Destructive buckets route through `requestAction` so the
       // mandatory D226 preview gates the mutation — `performAction`
@@ -1587,14 +1715,7 @@ function SendersScreenContent({
         <SenderGrid
           senders={senders}
           selectedIds={selected}
-          onToggleSelect={(id) =>
-            setSelected((prev) => {
-              const next = new Set(prev);
-              if (next.has(id)) next.delete(id);
-              else next.add(id);
-              return next;
-            })
-          }
+          onToggleSelect={(id, shiftKey) => toggleWithRange(gridOrderedIds, id, shiftKey ?? false)}
           onAction={requestAction}
           globalMaxTotal={globalMaxTotal}
         />
@@ -1616,13 +1737,14 @@ function SendersScreenContent({
         // gets BE-order rows with the full `SenderListRow` shape
         // (including `totalReceived`, which the FE adapter drops).
         <SenderTable
-          rows={filterTableRows(wireRows, queryBase, activeIntent, senders)}
+          rows={tableRows}
           globalMaxTotal={globalMaxTotal}
           sort={tableSort}
           direction={tableDirection}
           onSortChange={(next) => setTableSort(next)}
           selectedIds={selected}
           onSelectionChange={(next) => setSelected(new Set(next))}
+          onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
           onAction={({ verb, sender }) => {
             // Bridge wire-row verbs into the existing
             // `requestAction({ verb, senders: Sender[] })` shape so
