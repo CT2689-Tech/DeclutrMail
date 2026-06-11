@@ -38,6 +38,21 @@ function buildStore(): TokenBucketStore | null {
   // string 'false' keeps the limiter on). Explicit opt-out only.
   const rateLimitEnabled = process.env.RATE_LIMIT_ENABLED !== 'false';
 
+  // Non-prod explicit opt-out (D183 e2e stack): with REDIS_URL set the
+  // limiter was previously unconditional, which breaks local e2e runs —
+  // the suite's page loads + the app's own polling (sync status, undo
+  // tray, action-status) drain the shared per-user buckets and surface
+  // designed 429 states mid-spec. Production NEVER takes this branch:
+  // `isProd` keeps the limiter on regardless of the env var when
+  // REDIS_URL is present.
+  if (!rateLimitEnabled && !isProd) {
+    bootLogger.warn(
+      'RATE_LIMIT_ENABLED=false — rate limiter disabled (non-production only). ' +
+        'Unset it to restore enforcement.',
+    );
+    return null;
+  }
+
   if (!url) {
     if (isProd && rateLimitEnabled) {
       throw new Error(

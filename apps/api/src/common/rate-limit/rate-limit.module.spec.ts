@@ -60,6 +60,29 @@ describe('RateLimitModule — REDIS_URL startup guard', () => {
     expect(mod).toBeDefined();
     await mod.close();
   });
+
+  it('disables the limiter with REDIS_URL set when RATE_LIMIT_ENABLED=false in non-production (D183 e2e knob)', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.RATE_LIMIT_ENABLED = 'false';
+    // No ioredis client may be constructed — a real connect attempt to
+    // this URL would error noisily; the early-return branch never
+    // touches it.
+    process.env.REDIS_URL = 'redis://stub:6379';
+
+    const mod = await Test.createTestingModule({ imports: [RateLimitModule] }).compile();
+    expect(mod).toBeDefined();
+    // The store token resolves to null — the interceptor fails open.
+    const { TOKEN_BUCKET_STORE } = await import('./rate-limit.interceptor.js');
+    expect(mod.get(TOKEN_BUCKET_STORE)).toBeNull();
+    await mod.close();
+  });
+
+  // NOTE: the symmetric production case (REDIS_URL set +
+  // RATE_LIMIT_ENABLED=false → limiter stays ON) is intentionally not
+  // compiled here: building the real store constructs an ioredis
+  // client that retries against the stub URL forever and leaks an open
+  // handle into the test run. The guard is the `!isProd` condition on
+  // the early-return branch in `buildStore`.
 });
 
 /**
