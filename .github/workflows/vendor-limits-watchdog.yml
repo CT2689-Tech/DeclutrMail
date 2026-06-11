@@ -1,8 +1,8 @@
 # Vendor-limits watchdog (D156).
 #
 # Runs daily at 13:00 UTC (~6:30pm IST). Reads usage vs limits per
-# external vendor (Supabase, GCP, Upstash, Anthropic, Vercel, Sentry,
-# PostHog, GitHub Actions) via scripts/check-vendor-limits.mjs. A
+# external vendor (Supabase, GCP, Upstash, Vercel, Sentry, PostHog,
+# GitHub Actions) via scripts/check-vendor-limits.mjs. A
 # failed workflow run = email to the founder via GH's "Send
 # notifications for failed workflows" setting — same alert channel as
 # the sync-stuck watchdog.
@@ -60,7 +60,6 @@ jobs:
           GCP_BILLING_ACCOUNT_ID: ${{ secrets.GCP_BILLING_ACCOUNT_ID }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
-          ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
