@@ -39,7 +39,7 @@ const meta: StoryMeta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. Progress bar + 6-stage indicator are driven by real backend state (no fake ticking). The "🔒 Bodies read: 0 — forever" trust badge (D7) is always present.',
+          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. Progress bar + 6-stage indicator are driven by real backend state (no fake ticking). The shared PrivacyBadge ("Full bodies fetched: 0" + the explicit storage list, D7/D228) is always present.',
       },
     },
   },

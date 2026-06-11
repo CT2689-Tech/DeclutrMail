@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
 const { color, font } = tokens;
@@ -19,9 +19,10 @@ const { color, font } = tokens;
  * (`app/onboarding/page.tsx`) so Storybook can drive every state
  * (queued / syncing / ready / failed) without a network.
  *
- * Privacy (D7 / D228): the "🔒 Bodies read: 0 — forever" badge is the
- * load-bearing trust artifact. The gate shows only stage labels + a
- * percentage; it never renders message-derived data.
+ * Privacy (D7 / D228): the shared `PrivacyBadge` ("Full bodies
+ * fetched: 0" + the explicit storage list) is the load-bearing trust
+ * artifact. The gate shows only stage labels + a percentage; it never
+ * renders message-derived data.
  */
 
 /** The six user-facing stages (D109), in order. */
@@ -180,7 +181,7 @@ function SyncProgress({
         })}
       </ol>
 
-      <TrustBadge />
+      <PrivacyBadge style={PRIVACY_BADGE_STYLE} />
       <PushPermissionAsk />
       {escape && <SyncEscapeHatch escape={escape} />}
     </Shell>
@@ -264,10 +265,21 @@ function SyncFailed({
           </Button>
         )}
       </div>
-      <TrustBadge />
+      <PrivacyBadge style={PRIVACY_BADGE_STYLE} />
     </Shell>
   );
 }
+
+/**
+ * Gate placement for the shared trust card (D228): full-width within the
+ * 460px shell column, left-aligned (the Shell centers text for the
+ * heading/stages — the badge's lists read as lists, not centered copy).
+ */
+const PRIVACY_BADGE_STYLE: React.CSSProperties = {
+  marginTop: 26,
+  width: '100%',
+  textAlign: 'left',
+};
 
 function StageDot({ state }: { state: 'done' | 'active' | 'pending' }) {
   if (state === 'done') {
@@ -304,28 +316,6 @@ function StageDot({ state }: { state: 'done' | 'active' | 'pending' }) {
         animation: state === 'active' ? 'dm-pulse 1.4s ease-in-out infinite' : undefined,
       }}
     />
-  );
-}
-
-function TrustBadge() {
-  return (
-    <div
-      style={{
-        marginTop: 26,
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '6px 12px',
-        borderRadius: 9999,
-        background: color.primaryWash,
-        color: color.primaryDeep,
-        fontFamily: font.mono,
-        fontSize: 11,
-        letterSpacing: '0.04em',
-      }}
-    >
-      🔒 Bodies read: 0 — forever
-    </div>
   );
 }
 

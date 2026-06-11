@@ -56,8 +56,11 @@ describe('SyncGate render', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
     expect(html).toContain('Reading your inbox');
     expect(html).toContain('aria-valuenow="45"');
-    // D7 trust artifact — exact copy.
-    expect(html).toContain('Bodies read: 0 — forever');
+    // D228 trust artifact — locked headline + storage list (shared PrivacyBadge).
+    expect(html).toContain('Full bodies fetched: 0');
+    expect(html).toContain('Sender (name + email)');
+    // Pre-D228 wording is BANNED in product UI (CLAUDE.md §2.1).
+    expect(html).not.toContain('Bodies read: 0');
     // No time promise (D109 hard rule).
     expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
   });
@@ -74,7 +77,10 @@ describe('SyncGate render', () => {
     const html = renderToStaticMarkup(<SyncGate status={FAILED} />);
     expect(html).toContain('snag');
     expect(html).toContain('Try again');
-    expect(html).toContain('Bodies read: 0 — forever');
+    // D228 trust artifact present on the failed state too — banned copy absent.
+    expect(html).toContain('Full bodies fetched: 0');
+    expect(html).toContain('Sender (name + email)');
+    expect(html).not.toContain('Bodies read: 0');
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
