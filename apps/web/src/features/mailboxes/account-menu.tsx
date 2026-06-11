@@ -1,10 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { tokens, toast } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { useLogout } from '@/features/auth/api/use-logout';
+import { useTier } from '@/features/auth/api/use-tier';
+import { track } from '@/lib/posthog';
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
 
@@ -33,6 +36,10 @@ export function AccountMenu() {
   const setActive = useSetActiveMailbox();
   const disconnect = useDisconnectMailbox();
   const logout = useLogout();
+  // D19/D81 inbox limit — gates ADDING (or reactivating) a Gmail
+  // account; existing connections keep working even over-limit. The BE
+  // mirror is InboxLimitGuard on connect-mailbox/start (402).
+  const { tier, inboxLimit, connectedInboxes, atInboxLimit } = useTier();
 
   useEffect(() => {
     if (!open) return;
@@ -42,6 +49,14 @@ export function AccountMenu() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
+
+  // One emit per menu-open while at the limit (D159 — the funnel
+  // counts appearances of the upgrade affordance, not re-renders).
+  useEffect(() => {
+    if (open && atInboxLimit) {
+      void track('upgrade_prompt_shown', { reason: 'inbox_limit', source: 'account_menu' });
+    }
+  }, [open, atInboxLimit]);
 
   // D205 connect-mailbox flow: adds (or reactivates) a Gmail account on
   // the CURRENT workspace without re-creating the user or re-issuing
@@ -244,14 +259,23 @@ export function AccountMenu() {
                     // Reconnect a disconnected account — same OAuth flow as
                     // "connect another"; Google's chooser lets the user pick
                     // this account, which `addMailbox` reactivates (D116).
+                    // Reactivating counts toward the D19 inbox limit, so
+                    // the affordance is disabled at the limit (the BE
+                    // start route would 402 anyway).
                     <button
                       type="button"
-                      onClick={connectAnother}
+                      disabled={atInboxLimit}
+                      onClick={atInboxLimit ? undefined : connectAnother}
+                      title={
+                        atInboxLimit
+                          ? `Your plan includes ${inboxLimit} connected ${inboxLimit === 1 ? 'inbox' : 'inboxes'} — upgrade to reconnect this one.`
+                          : undefined
+                      }
                       style={{
                         background: 'transparent',
                         border: 'none',
-                        color: color.primary,
-                        cursor: 'pointer',
+                        color: atInboxLimit ? color.fgMuted : color.primary,
+                        cursor: atInboxLimit ? 'not-allowed' : 'pointer',
                         fontSize: 11,
                         fontWeight: 600,
                         padding: '2px 6px',
@@ -317,9 +341,46 @@ export function AccountMenu() {
               gap: 2,
             }}
           >
-            <button type="button" onClick={connectAnother} style={menuItemStyle()}>
-              + Connect another Gmail account
-            </button>
+            {atInboxLimit ? (
+              // D19/D81 inbox-limit gate — replaces the connect
+              // affordance with the honest state + the upgrade path.
+              // Existing accounts above keep working; only ADDING is
+              // blocked (BE mirror: 402 INBOX_LIMIT_REACHED).
+              <div
+                data-testid="inbox-limit-gate"
+                style={{
+                  padding: '6px 8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  fontSize: 12,
+                  color: color.fgMuted,
+                }}
+              >
+                <span>
+                  {connectedInboxes > inboxLimit
+                    ? // Over-limit (e.g. after a downgrade) — existing
+                      // connections keep working; only adding is blocked.
+                      `${connectedInboxes} inboxes connected — your ${tierLabel(tier)} plan includes ${inboxLimit}.`
+                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
+                </span>
+                <Link
+                  href="/pricing"
+                  onClick={() => setOpen(false)}
+                  style={{
+                    color: color.primary,
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                >
+                  Upgrade to connect another →
+                </Link>
+              </div>
+            ) : (
+              <button type="button" onClick={connectAnother} style={menuItemStyle()}>
+                + Connect another Gmail account
+              </button>
+            )}
             <button
               type="button"
               disabled={logout.isPending}
@@ -333,6 +394,11 @@ export function AccountMenu() {
       )}
     </div>
   );
+}
+
+/** Display name for the tier in the inbox-limit gate copy. */
+function tierLabel(tier: string): string {
+  return tier === 'free' ? 'Free' : tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
 function menuItemStyle() {

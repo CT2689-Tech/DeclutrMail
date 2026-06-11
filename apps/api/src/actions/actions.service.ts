@@ -28,6 +28,7 @@ import {
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
 
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
@@ -82,6 +83,7 @@ export const UNSUB_QUEUE_TOKEN = 'UNSUB_QUEUE';
 @Injectable()
 export class ActionsService {
   private readonly outbox: OutboxPublisher;
+  private readonly entitlements: EntitlementsService;
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     // `Queue | null` — fail-open when REDIS_URL is unset (matches
@@ -107,8 +109,14 @@ export class ActionsService {
     @Optional()
     @Inject(UNSUB_QUEUE_TOKEN)
     private readonly unsubQueue: Queue<UnsubExecutionJobData> | null = null,
+    // Tier enforcement (D19/D77). `@Optional()` + fallback like the
+    // OutboxPublisher above: Nest injects the module-provided instance;
+    // direct `new ActionsService(db, queue)` test wiring gets a fresh
+    // one (the service is stateless over the same db handle).
+    @Optional() entitlements?: EntitlementsService,
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
+    this.entitlements = entitlements ?? new EntitlementsService(db);
   }
 
   /**
@@ -131,6 +139,17 @@ export class ActionsService {
     }
 
     const { mailboxAccountId, selector, idempotencyKey, override } = input;
+
+    // D19/D77 free-cleanup cap — ONE unit (one sender / one frozen
+    // message set, one click). Checked only for a FRESH enqueue: a
+    // network-retried click whose key row already exists replays the
+    // prior action (its unit was already consumed) and must not 402.
+    // The counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    const archiveStorageKey = `archive-${idempotencyKey.replace(/:/g, '-')}`;
+    if (!(await this.hasJobWithKey(archiveStorageKey))) {
+      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
+    }
+
     let storedSelector: LabelActionSelector;
     let resolvedMessageIds: string[];
     let requestedCount: number;
@@ -188,8 +207,9 @@ export class ActionsService {
     // The key doubles as the BullMQ `jobId`, which MUST NOT contain `:`
     // (BullMQ reserves `:` as its Redis key separator and rejects custom
     // ids containing it). So the separator is `-` and any `:` in the
-    // client-supplied key is normalized out.
-    const storageKey = `archive-${idempotencyKey.replace(/:/g, '-')}`;
+    // client-supplied key is normalized out. (Computed above for the
+    // free-cap replay check.)
+    const storageKey = archiveStorageKey;
     const inserted = await this.insertJob({
       mailboxAccountId,
       direction: 'forward',
@@ -426,6 +446,17 @@ export class ActionsService {
 
     const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
 
+    // D19/D77 free-cleanup cap — a composite (primary + optional
+    // secondary on ONE sender, one click) is ONE unit. Fresh enqueues
+    // only: when the primary's key row already exists this is an
+    // idempotent replay whose unit was already consumed. The counting
+    // rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const primaryStorageKey = `${primary.type}-${safeKey}`;
+    if (!(await this.hasJobWithKey(primaryStorageKey))) {
+      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
+    }
+
     // Resolve target set + ownership ONCE for the sender selector — both
     // primary and secondary act on the same sender / same selector. The
     // override check fires on the resolved senderKey so a Protected
@@ -477,9 +508,6 @@ export class ActionsService {
       primaryCount = resolvedMessageIds.length;
       storedSelector = { type: 'messages' };
     }
-
-    const safeKey = idempotencyKey.replace(/:/g, '-');
-    const primaryStorageKey = `${primary.type}-${safeKey}`;
 
     const primaryRow = await this.insertJob({
       mailboxAccountId,
@@ -736,6 +764,19 @@ export class ActionsService {
       });
     }
 
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+
+    // D19/D77 free-cleanup cap — a bulk of N actionable senders is N
+    // units (skipped senders never enqueue, so they don't count).
+    // Replay detection: per-row keys derive deterministically from the
+    // client key + sorted sender ids, so the anchor's key existing
+    // means this exact bulk was already enqueued (its units consumed).
+    // Counting rule on `EntitlementsService.cleanupUnitsUsed`.
+    const anchorKey = `${primary.type}-${safeKey}-${actionable[0]!.id}`;
+    if (!(await this.hasJobWithKey(anchorKey))) {
+      await this.entitlements.assertCleanupCapacity(mailboxAccountId, actionable.length);
+    }
+
     // Per-sender counts for each verb's window — ONE grouped query per
     // window, not N queries.
     const keys = actionable.map((r) => r.senderKey);
@@ -748,7 +789,6 @@ export class ActionsService {
       ? await this.countSenderInboxGrouped(mailboxAccountId, keys, secondary.olderThanDays ?? null)
       : null;
 
-    const safeKey = idempotencyKey.replace(/:/g, '-');
     let anchorId: string | null = null;
     let status: ActionJobStatus = 'queued';
     let requestedTotal = 0;
@@ -1689,6 +1729,23 @@ export class ActionsService {
       undoToken: row.undoToken,
       errorCode: row.errorCode,
     };
+  }
+
+  /**
+   * Whether an `action_jobs` row already exists for a storage key —
+   * the free-cap replay check (D19/D77): a network-retried POST whose
+   * key row exists must replay the prior action, never re-consume (or
+   * be denied) a cleanup unit. One indexed lookup on the unique
+   * `action_jobs_idempotency_key_uniq`. Cross-mailbox key reuse is
+   * still rejected downstream by `insertJob`.
+   */
+  private async hasJobWithKey(idempotencyKey: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: actionJobs.id })
+      .from(actionJobs)
+      .where(eq(actionJobs.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return row !== undefined;
   }
 
   /** Insert (or find existing on idempotency-key conflict) an action_jobs row. */

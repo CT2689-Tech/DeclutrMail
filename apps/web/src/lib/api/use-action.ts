@@ -16,6 +16,8 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 
+import { reportFreeCapHit } from '@/lib/entitlements/free-cap';
+
 import {
   enqueueArchiveSender,
   enqueueBulkAction,
@@ -68,6 +70,10 @@ export function useEnqueueAction() {
         idempotencyKey: newIdempotencyKey(),
         override: override ?? false,
       }),
+    // D19/D77 — a 402 FREE_CAP_REACHED surfaces the upgrade prompt
+    // (lib/entitlements/free-cap). Hook-level onError runs IN ADDITION
+    // to any per-mutate onError the caller passes.
+    onError: reportFreeCapHit,
   });
 }
 
@@ -135,6 +141,8 @@ export function useEnqueueComposite() {
         ...(override !== undefined ? { override } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
+    // D19/D77 — surface FREE_CAP_REACHED as the upgrade prompt.
+    onError: reportFreeCapHit,
   });
 }
 
@@ -178,6 +186,9 @@ export function useEnqueueBulkAction() {
         ...(secondary ? { secondary } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
+    // D19/D77 — a bulk of N needs N free units; the 402's details say
+    // how many were left. Same prompt seam as the single-sender hooks.
+    onError: reportFreeCapHit,
   });
 }
 

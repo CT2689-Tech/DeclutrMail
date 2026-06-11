@@ -53,6 +53,15 @@ export interface ApiError {
   displayId: string;
   retryable: boolean;
   severityTier: ErrorSeverityTier;
+  /**
+   * Optional machine-readable context for the code — scalar fields the
+   * FE renders alongside the message (e.g. `FREE_CAP_REACHED` carries
+   * `{ remaining: 0, limit: 5, used: 5 }` per D19/D77). Only an
+   * `AppException` thrown with explicit `details` populates it; the
+   * filter never derives it. Privacy (D7, D228): scalars and counts
+   * only — never message content, addresses, or non-allowlisted data.
+   */
+  details?: Record<string, string | number | boolean | null>;
 }
 
 /** The full D168 error envelope as serialized on the wire. */
