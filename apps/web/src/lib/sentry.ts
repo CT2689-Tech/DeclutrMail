@@ -95,7 +95,7 @@ export function addBreadcrumb(crumb: AppBreadcrumb): void {
 export function captureFeatureException(
   err: unknown,
   ctx: {
-    surface: 'sync' | 'senders' | 'activity' | 'brief' | 'autopilot' | 'triage';
+    surface: 'sync' | 'senders' | 'activity' | 'brief' | 'autopilot' | 'triage' | 'onboarding';
     reason: string;
   },
 ): void {

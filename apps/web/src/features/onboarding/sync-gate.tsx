@@ -74,32 +74,43 @@ export interface SyncGateEscape {
   returning?: boolean;
 }
 
+/**
+ * The gate's eyebrow line. The D106 step machine makes the gate step 3
+ * of FIVE for the first-run flow; a secondary-mailbox connect (D116)
+ * is not part of that flow, so its route passes plain "One-time scan".
+ */
+const DEFAULT_EYEBROW = 'Step 3 of 5 · One-time scan';
+
 export function SyncGate({
   status,
   escape,
+  eyebrow = DEFAULT_EYEBROW,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  eyebrow?: string;
 }) {
   if (status.readiness_status === 'failed') {
     return <SyncFailed status={status} escape={escape} />;
   }
-  return <SyncProgress status={status} escape={escape} />;
+  return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
 }
 
 function SyncProgress({
   status,
   escape,
+  eyebrow,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  eyebrow: string;
 }) {
   const active = activeStageIndex(status);
   const pct = Math.min(100, Math.max(0, status.progress_pct));
 
   return (
     <Shell>
-      <Eyebrow>Step 3 of 3 · One-time scan</Eyebrow>
+      <Eyebrow>{eyebrow}</Eyebrow>
       <h1
         style={{
           fontFamily: font.display,

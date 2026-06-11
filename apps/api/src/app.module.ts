@@ -10,6 +10,7 @@ import { BriefModule } from './briefs/brief.module.js';
 import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
+import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
 import { SecurityEventsModule } from './security-events/security-events.module.js';
 import { SendersModule } from './senders/senders.module.js';
@@ -62,6 +63,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     SendersModule,
     TriageModule,
     AutopilotModule,
+    OnboardingModule,
     BriefModule,
     FollowupModule,
     ActivityModule,

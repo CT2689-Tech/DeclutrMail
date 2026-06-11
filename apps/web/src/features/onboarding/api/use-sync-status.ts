@@ -51,7 +51,7 @@ export function syncRefetchInterval(data: SyncStatus | undefined): number | fals
   return SYNC_POLL_MS;
 }
 
-export function useSyncStatus(mailboxId?: string) {
+export function useSyncStatus(mailboxId?: string, opts: { enabled?: boolean } = {}) {
   return useQuery({
     // Key by mailbox so two gates (primary + a syncing secondary) never
     // share a cache entry.
@@ -60,6 +60,11 @@ export function useSyncStatus(mailboxId?: string) {
       const envelope = await apiGet<SyncStatus>('/api/v1/sync/status', { signal, mailboxId });
       return envelope.data;
     },
+    // `enabled: false` lets the onboarding step machine hold the poll
+    // off while there is NO active mailbox (a session-resolved call
+    // would 409 NO_ACTIVE_MAILBOX every 3s — the designed-state-not-
+    // retry rule, CLAUDE.md §8). Existing callers pass nothing.
+    enabled: opts.enabled ?? true,
     refetchInterval: (query) => syncRefetchInterval(query.state.data),
     // The gate is the whole point of the screen — keep it fresh.
     staleTime: 0,

@@ -35,18 +35,38 @@ content are NEVER sent.
 
 ## Events
 
-### `onboarding_step_completed`
+### `onboarding_step_viewed`
 
-**When fired.** As soon as the user finishes a discrete onboarding step
-in the D109 / D224 flow. Fires once per step per user; replays of the
-flow re-emit (so the funnel reflects retries).
+**When fired.** When an onboarding step (D106 machine: promise →
+connect → sync gate → preset pick → first triage) first renders in a
+page session. Fires once per step per page load — a refresh that
+resumes the flow re-emits for the resumed step, so drop-off points
+stay visible in the funnel.
 
 **Payload.**
 
-| Field         | Type                                                                                | Notes                              |
-| ------------- | ----------------------------------------------------------------------------------- | ---------------------------------- |
-| `step`        | `'connect_gmail' \| 'choose_preset' \| 'sync_gate' \| 'first_triage' \| 'finished'` | Five lock-step stages              |
-| `duration_ms` | `number`                                                                            | Time on the step (client-measured) |
+| Field  | Type                                                                                             | Notes                          |
+| ------ | ------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `step` | `'promise' \| 'connect_gmail' \| 'sync_gate' \| 'choose_preset' \| 'first_triage' \| 'finished'` | D106 step machine stage (D107) |
+
+**Retention / aggregation.** PostHog default (7y). Paired with
+`onboarding_step_completed` for the per-step conversion funnel. The
+`promise` + `connect_gmail` views fire PRE-AUTH (anonymous PostHog id)
+— no `user_id` exists yet by design.
+
+### `onboarding_step_completed`
+
+**When fired.** As soon as the user finishes a discrete onboarding step
+in the D106 / D109 / D224 flow. Fires once per step per user; replays
+of the flow re-emit (so the funnel reflects retries). `finished` fires
+after `POST /api/onboarding/complete` succeeds (D113).
+
+**Payload.**
+
+| Field         | Type                                                                                             | Notes                              |
+| ------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `step`        | `'promise' \| 'connect_gmail' \| 'sync_gate' \| 'choose_preset' \| 'first_triage' \| 'finished'` | D106 step machine stages           |
+| `duration_ms` | `number`                                                                                         | Time on the step (client-measured) |
 
 **Retention / aggregation.** PostHog default (7y). Built into the
 onboarding funnel insight. No per-user breakdown beyond `user_id`.
