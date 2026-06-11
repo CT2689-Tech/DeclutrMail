@@ -36,6 +36,7 @@ export function Button({
   disabled = false,
   title,
   ariaLabel,
+  ariaPressed,
   style,
 }: {
   children?: ReactNode;
@@ -48,6 +49,8 @@ export function Button({
   disabled?: boolean;
   title?: string;
   ariaLabel?: string;
+  /** Toggle state; forwarded as aria-pressed (AT + selector contract). */
+  ariaPressed?: boolean;
   style?: CSSProperties;
 }) {
   const t = TONES[tone];
@@ -59,6 +62,7 @@ export function Button({
       disabled={disabled}
       title={title}
       aria-label={ariaLabel}
+      aria-pressed={ariaPressed}
       onMouseEnter={(e) => {
         if (!disabled) e.currentTarget.style.background = t.hover;
       }}

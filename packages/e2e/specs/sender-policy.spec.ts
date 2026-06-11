@@ -82,15 +82,15 @@ test('VIP toggle persists across reload and restores on toggle-back', async ({ p
   const prePolicy = await getSenderPolicy(sql, mailboxId, senderKey);
   target = { senderKey, prePolicy };
 
-  // ---- Detail page — the VIP toggle. State reads from the visible
-  // label ('VIP' off ↔ '★ VIP' on): the page passes aria-pressed to
-  // the shared <Button>, but Button drops non-destructured props so
-  // the attribute never reaches the DOM (bug flagged separately —
-  // switch this selector to button[aria-pressed] once fixed).
+  // ---- Detail page — the VIP toggle. Button now forwards
+  // `ariaPressed` to the DOM (D43 fix), so state reads from the
+  // toggle semantics; the visible label ('VIP' ↔ '★ VIP') is kept as
+  // a secondary assertion.
   await page.goto(`/senders/${senderId}`);
   const vipChip = page.getByRole('button', { name: /^(★ )?VIP$/ });
   await expect(vipChip).toBeVisible({ timeout: 30_000 });
-  const initialPressed = (await vipChip.innerText()).includes('★');
+  await expect(vipChip).toHaveAttribute('aria-pressed', /true|false/);
+  const initialPressed = (await vipChip.getAttribute('aria-pressed')) === 'true';
   const labelFor = (pressed: boolean) => (pressed ? '★ VIP' : 'VIP');
 
   // ---- Toggle ON (or off, if the sender is already VIP).
