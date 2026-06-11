@@ -8,20 +8,21 @@
 //      — D211's design-system gate would otherwise rubber-stamp a
 //      screen claiming coverage it doesn't have.
 //
-//   2. Every entry marked `required: true` MUST be either `covered`,
-//      `covered-by-pr-52`, or `todo` (never `n/a`). Required-and-N/A
-//      is a contradiction — flag it at PR time before it ships.
+//   2. Every entry marked `status: 'implemented'` MUST point at an
+//      existing app-code file via `implementation`. Same rationale:
+//      "implemented" is a coverage claim, so the pointer must resolve.
 //
-//   3. Every entry marked `required: false` is allowed any status,
-//      but if `status: 'covered'` and `storybook` is set, the file
-//      still has to exist (no broken pointers).
+//   3. Every entry marked `required: true` MUST be either `covered`,
+//      `implemented`, or `todo` (never `n/a`). Required-and-N/A is a
+//      contradiction — flag it at PR time before it ships.
 //
-//   4. `covered-by-pr-52` is a transitional literal pointing at the
-//      parallel `feat/d039-senders-tightening-pass-1` PR. It MUST be
-//      flipped to `covered` (with a real `storybook`) once that PR
-//      merges, or back to `todo` if it's cancelled. A dedicated test
-//      asserts the literal is bounded — if it sticks around past PR
-//      #52's resolution, the founder sees it.
+//   4. ROUTE PARITY: every `page.tsx` route dir under
+//      `apps/web/src/app/(app)` MUST have an inventory row (via
+//      `SCREEN_ROUTES`), and every non-null `SCREEN_ROUTES` entry MUST
+//      have a route dir on disk. Adding a route without declaring its
+//      edge states — the exact gap class this inventory existed to
+//      close and then silently fell behind on (6 screens declared vs
+//      14 routes shipped, 2026-06-11 refresh) — now fails CI.
 //
 // The repo root is resolved via `process.cwd()` because Vitest runs
 // from the shared package, but the storybook paths in the inventory
@@ -29,10 +30,16 @@
 // from cwd until it finds the workspace root (the directory with
 // `pnpm-workspace.yaml`).
 
-import { existsSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { dirname, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EDGE_STATE_INVENTORY, EDGE_STATES, type EdgeState, type ScreenId } from './inventory';
+import {
+  EDGE_STATE_INVENTORY,
+  EDGE_STATES,
+  SCREEN_ROUTES,
+  type EdgeState,
+  type ScreenId,
+} from './inventory';
 
 function findWorkspaceRoot(start: string): string {
   let dir = start;
@@ -53,6 +60,22 @@ function findWorkspaceRoot(start: string): string {
 }
 
 const REPO_ROOT = findWorkspaceRoot(process.cwd());
+
+/** The (app) route group whose route dirs the inventory must mirror. */
+const APP_ROUTE_GROUP = resolve(REPO_ROOT, 'apps/web/src/app/(app)');
+
+/**
+ * Enumerate every route dir (relative, posix-style) under the (app)
+ * group that contains a `page.tsx`. `(app)` itself has no page — only
+ * `layout.tsx` — so the result is exactly the navigable routes.
+ */
+function collectRouteDirs(): string[] {
+  return readdirSync(APP_ROUTE_GROUP, { recursive: true })
+    .map((entry) => String(entry).split(sep).join('/'))
+    .filter((entry) => entry === 'page.tsx' || entry.endsWith('/page.tsx'))
+    .map((entry) => (entry === 'page.tsx' ? '' : entry.slice(0, -'/page.tsx'.length)))
+    .sort();
+}
 
 const screens = Object.keys(EDGE_STATE_INVENTORY) as ScreenId[];
 
@@ -103,6 +126,29 @@ describe('D211 — edge-state inventory contract', () => {
     expect(missing, missing.join('\n')).toEqual([]);
   });
 
+  it('points every "implemented" entry at a real app-code file on disk', () => {
+    // `implemented` records a state branch that ships in app code
+    // without a dedicated Storybook variant (D211 refresh). The claim
+    // still has to resolve to a real file — otherwise it is the same
+    // rubber-stamp risk as a broken `covered` pointer.
+    const missing: string[] = [];
+    for (const screen of screens) {
+      for (const state of EDGE_STATES) {
+        const entry = EDGE_STATE_INVENTORY[screen][state];
+        if (entry.status !== 'implemented') continue;
+        if (!entry.implementation) {
+          missing.push(`${screen}.${state}: status=implemented but no implementation path`);
+          continue;
+        }
+        const absolutePath = resolve(REPO_ROOT, entry.implementation);
+        if (!existsSync(absolutePath)) {
+          missing.push(`${screen}.${state}: implementation file missing → ${entry.implementation}`);
+        }
+      }
+    }
+    expect(missing, missing.join('\n')).toEqual([]);
+  });
+
   it('exports the canonical edge-state set in a stable order', () => {
     // Locking the order keeps test snapshots and design-system gate
     // diffs predictable. If you intentionally add a state, append it.
@@ -119,36 +165,60 @@ describe('D211 — edge-state inventory contract', () => {
       'free-cap-reached',
       'sender-deleted-upstream',
       'account-deletion-pending',
+      'placeholder',
     ] satisfies EdgeState[]);
   });
 
-  it('tracks the PR #52 hand-off with the explicit `covered-by-pr-52` literal', () => {
-    // The senders + sender-detail required edge-states ship in the
-    // parallel `feat/d039-senders-tightening-pass-1` branch (PR #52).
-    // The explicit literal — rather than a vague `todo` — keeps the
-    // cross-PR linkage diff-visible. When PR #52 merges, flip these
-    // to `covered` with a real `storybook` pointer; if cancelled, drop
-    // them back to `todo`. Until then, this assertion locks the
-    // current expectation so a silent drift can't happen.
-    const sendersRequired = (
-      ['loading', 'empty', 'error'] as const satisfies readonly EdgeState[]
-    ).map((s) => EDGE_STATE_INVENTORY.senders[s].status);
-    expect(sendersRequired).toEqual(['covered-by-pr-52', 'covered-by-pr-52', 'covered-by-pr-52']);
+  it('keeps the inventory in lockstep with the (app) route dirs on disk', () => {
+    // THE refresh-leg guard: the original inventory froze at 6 screens
+    // while the app grew to 14 routes. This test fails the moment a
+    // route ships without an inventory row (add the ScreenId, an
+    // EDGE_STATE_INVENTORY row, and a SCREEN_ROUTES entry), or an
+    // inventory row outlives its deleted route (remove all three).
+    const onDisk = collectRouteDirs();
+    const declared = (Object.values(SCREEN_ROUTES).filter((r) => r !== null) as string[]).sort();
+    expect(declared, 'SCREEN_ROUTES must exactly mirror (app)/**/page.tsx route dirs').toEqual(
+      onDisk,
+    );
+  });
 
-    const detailRequired = (
-      [
-        'loading',
-        'empty',
-        'error',
-        'sender-deleted-upstream',
-      ] as const satisfies readonly EdgeState[]
-    ).map((s) => EDGE_STATE_INVENTORY['sender-detail'][s].status);
-    expect(detailRequired).toEqual([
-      'covered-by-pr-52',
-      'covered-by-pr-52',
-      'covered-by-pr-52',
-      'covered-by-pr-52',
-    ]);
+  it('declares a route (or an explicit null) for every screen', () => {
+    // TypeScript enforces Record completeness; assert at runtime too
+    // so a build-config drift (e.g. transpile-only) still surfaces.
+    for (const screen of screens) {
+      expect(
+        SCREEN_ROUTES[screen],
+        `screen "${screen}" has no SCREEN_ROUTES entry`,
+      ).not.toBeUndefined();
+    }
+  });
+
+  it('records every placeholder route as placeholder-covered and nothing else', () => {
+    // The 5 RoutePlaceholder stubs (billing / quiet / screener /
+    // settings-index / snoozed) are static server renders — their one
+    // designed state is the placeholder itself. Recording any other
+    // state as built would be aspiration, not reality.
+    const placeholderScreens: ScreenId[] = [
+      'billing',
+      'quiet',
+      'screener',
+      'settings-index',
+      'snoozed',
+    ];
+    for (const screen of placeholderScreens) {
+      const coverage = EDGE_STATE_INVENTORY[screen];
+      expect(coverage.placeholder.required, `${screen}.placeholder should be required`).toBe(true);
+      expect(coverage.placeholder.status, `${screen}.placeholder should be covered`).toBe(
+        'covered',
+      );
+      for (const state of EDGE_STATES) {
+        if (state === 'placeholder') continue;
+        expect(
+          coverage[state].status,
+          `${screen}.${state} must be n/a while the route is a RoutePlaceholder stub`,
+        ).toBe('n/a');
+      }
+    }
   });
 
   it('covers the App Router error surfaces (D167)', () => {

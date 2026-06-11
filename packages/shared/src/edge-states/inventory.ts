@@ -13,25 +13,33 @@
 //      which states it MUST render before launch.
 //   3. Per-state coverage flags: `required: true` (screen must ship
 //      this state), `storybook: <story-file-pattern>` (where the
-//      Storybook variant lives), `status: 'covered' | 'todo'`.
+//      Storybook variant lives), `status` (see `StateCoverage`).
+//   4. A `Record<ScreenId, string | null>` (`SCREEN_ROUTES`) tying
+//      each screen to its `apps/web/src/app/(app)` route dir, so the
+//      inventory test can fail when a route ships without a row here.
 //
 // What this file is NOT:
 //
 //   - A runtime checker. Coverage is verified at test-time by walking
-//     the inventory and asserting matching `*.stories.tsx` files exist
-//     (see `inventory.test.ts`).
+//     the inventory and asserting matching `*.stories.tsx` /
+//     implementation files exist, and that route dirs and inventory
+//     rows stay in lockstep (see `inventory.test.ts`).
 //   - A copy registry. Microcopy lives in
 //     `packages/shared/src/copy/*` and is governed by D209.
 //
 // How to extend:
 //
-//   - When a new screen ships, add a row to `EDGE_STATE_INVENTORY` and
-//     mark each state `status: 'covered' | 'todo'`. `todo` is
-//     intentional debt — the inventory test tolerates it but the
-//     design-system gate (D210) flags it for follow-up.
+//   - When a new screen ships, add a `ScreenId`, a row to
+//     `EDGE_STATE_INVENTORY`, and a `SCREEN_ROUTES` entry — the
+//     route-parity test fails until you do. Mark each state honestly:
+//     `covered` (Storybook variant exists), `implemented` (state
+//     branch ships in app code but has no dedicated Storybook
+//     variant), `todo` (intentional debt — the inventory test
+//     tolerates it but the design-system gate (D210) flags it for
+//     follow-up), or `n/a`.
 //   - When a new edge state is identified (e.g. "billing payment
-//     failed" from D211's table), add it to `EDGE_STATES` and update
-//     every screen entry that should render it.
+//     failed" from D211's table), append it to `EDGE_STATES` and
+//     update every screen entry that should render it.
 //
 // Owning-D mapping (per the AUDIT PATCH on D211, plan line 8797):
 // see comments inline beside each `EdgeState` value.
@@ -62,18 +70,69 @@ export const EDGE_STATES = [
   'sender-deleted-upstream',
   /** Account-deletion grace period banner (D205 + D216 + D211). */
   'account-deletion-pending',
+  /**
+   * The whole route is an intentional `RoutePlaceholder` stub — the
+   * nav lists the surface but the feature is queued for a later
+   * version. Recording this AS a state keeps the inventory honest:
+   * placeholder routes have no loading/empty/error of their own
+   * (static server render), and the placeholder itself is the one
+   * designed state they ship (D211 refresh, 2026-06-11).
+   */
+  'placeholder',
 ] as const;
 
 export type EdgeState = (typeof EDGE_STATES)[number];
 
 /** Stable identifier for a launch screen. */
 export type ScreenId =
+  // Feature screens (data-driven).
   | 'triage'
   | 'senders'
   | 'sender-detail'
+  | 'activity'
+  | 'autopilot'
+  | 'brief'
+  | 'followups'
+  | 'settings-senders'
+  | 'admin-security'
+  // Placeholder routes — `RoutePlaceholder` stubs so the nav doesn't lie.
+  | 'billing'
+  | 'quiet'
+  | 'screener'
+  | 'settings-index'
+  | 'snoozed'
+  // App Router error surfaces (D167) — not (app) routes.
   | 'app-error-boundary'
   | 'app-not-found'
   | 'app-global-error';
+
+/**
+ * Screen → route dir under `apps/web/src/app/(app)`, or `null` for
+ * surfaces that are not (app) routes (the App Router error
+ * boundaries live at `apps/web/src/app/*`). The inventory test
+ * enumerates `page.tsx` route dirs on disk and asserts exact parity
+ * with the non-null values here — adding a route without an
+ * inventory row (or keeping a row for a deleted route) fails CI.
+ */
+export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
+  triage: 'triage',
+  senders: 'senders',
+  'sender-detail': 'senders/[id]',
+  activity: 'activity',
+  autopilot: 'autopilot',
+  brief: 'brief',
+  followups: 'followups',
+  'settings-senders': 'settings/senders',
+  'admin-security': 'admin/security',
+  billing: 'billing',
+  quiet: 'quiet',
+  screener: 'screener',
+  'settings-index': 'settings',
+  snoozed: 'snoozed',
+  'app-error-boundary': null,
+  'app-not-found': null,
+  'app-global-error': null,
+};
 
 /**
  * Per-state coverage declaration.
@@ -86,42 +145,36 @@ export type ScreenId =
  * variant lives. The inventory test resolves this to disk and fails
  * the build if the file is missing.
  *
+ * `implementation` is the app-code file where the state branch ships
+ * when no dedicated Storybook variant exists (`status:
+ * 'implemented'`). Same disk-existence rule as `storybook`.
+ *
  * `status`:
- *   - `covered`              — variant exists and is wired.
- *   - `covered-by-pr-52`     — variant ships in the parallel
- *                              `feat/d039-senders-tightening-pass-1`
- *                              branch (PR #52). Tracked as its own
- *                              literal so the inventory test fails
- *                              loudly if PR #52 merges first (this
- *                              status should become `covered` with a
- *                              real `storybook` pointer) OR is
- *                              cancelled (this status should drop back
- *                              to `todo`). Either way the dangling
- *                              linkage surfaces at PR time, not in
- *                              production.
- *   - `todo`                 — declared but not yet built; design-system
- *                              gate flags this without blocking merge.
- *   - `n/a`                  — explicitly not applicable.
+ *   - `covered`     — Storybook variant exists and is wired.
+ *   - `implemented` — state branch ships in app code (exercised by
+ *                     the screen's unit tests) but has no dedicated
+ *                     Storybook variant. Real coverage with Storybook
+ *                     debt — the design-system gate (D210) flags the
+ *                     missing story without blocking merge.
+ *   - `todo`        — declared but not yet built; design-system gate
+ *                     flags this without blocking merge.
+ *   - `n/a`         — explicitly not applicable.
  */
 export interface StateCoverage {
   required: boolean;
   storybook?: string;
-  status: 'covered' | 'covered-by-pr-52' | 'todo' | 'n/a';
+  implementation?: string;
+  status: 'covered' | 'implemented' | 'todo' | 'n/a';
 }
 
 export type EdgeStateCoverage = Record<EdgeState, StateCoverage>;
 
 /**
- * The full inventory.
- *
- * Senders + Sender Detail required states are marked
- * `covered-by-pr-52` — a parallel branch
- * (`feat/d039-senders-tightening-pass-1`, PR #52) ships the storybook
- * variants. The explicit literal (rather than `todo`) makes the
- * cross-PR linkage diff-visible: when PR #52 merges, this file must
- * flip those entries to `covered` with a real `storybook` pointer.
- * If PR #52 is closed without shipping the variants, these entries
- * drop back to `todo`. Either way the design-system gate notices.
+ * The full inventory — refreshed 2026-06-11 against every (app) route
+ * on disk. Statuses record REALITY (what each screen renders today),
+ * not aspiration. The `covered-by-pr-52` transitional literal is gone:
+ * PR #52 (`feat/d039-senders-tightening-pass-1`) merged 2026-05-25,
+ * and the senders surfaces' actual coverage is recorded directly.
  */
 export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   triage: {
@@ -136,11 +189,12 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       status: 'covered',
     },
     error: {
-      // Triage delegates full-screen errors to the App Router
-      // boundary (`apps/web/src/app/error.tsx`) at this point.
-      // A dedicated in-shell error state is a future enhancement.
-      required: false,
-      status: 'n/a',
+      // `composeTriageState` branches error FIRST (before loading) —
+      // the launch-gap audit's "no isError branch" fix — and the
+      // ErrorState story renders the designed retry surface.
+      required: true,
+      storybook: 'apps/web/src/features/triage/triage-screen.stories.tsx',
+      status: 'covered',
     },
     'partial-error': {
       required: false,
@@ -180,18 +234,32 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       required: false,
       status: 'todo',
     },
+    placeholder: { required: false, status: 'n/a' },
   },
 
-  // Senders + Sender Detail — required edge-state variants ship in PR
-  // #52 (`feat/d039-senders-tightening-pass-1`). Marked
-  // `covered-by-pr-52` rather than `todo` so the cross-PR linkage is
-  // explicit; the inventory test treats this literal as not-yet-covered
-  // (no storybook resolution required) but the design-system gate can
-  // surface it as a tracked dependency rather than free-floating debt.
+  // Senders — screen-level loading / empty / error branches ship in
+  // `senders-screen.tsx` (the D211 skeleton, the grid-mode EmptyState
+  // pair, and the retry ErrorState). Table-mode variants ARE storied
+  // at component level (`sender-table.stories.tsx`: Loading,
+  // ErrorState, EmptyNoSenders / NoFilterMatch / NoSearchMatch), but
+  // no story renders the full screen in these states — hence
+  // `implemented`, not `covered`.
   senders: {
-    loading: { required: true, status: 'covered-by-pr-52' },
-    empty: { required: true, status: 'covered-by-pr-52' },
-    error: { required: true, status: 'covered-by-pr-52' },
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/senders/senders-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      implementation: 'apps/web/src/features/senders/senders-screen.tsx',
+      status: 'implemented',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/senders/senders-screen.tsx',
+      status: 'implemented',
+    },
     'partial-error': { required: false, status: 'n/a' },
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
@@ -201,24 +269,359 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'free-cap-reached': { required: false, status: 'todo' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   'sender-detail': {
-    loading: { required: true, status: 'covered-by-pr-52' },
-    empty: { required: true, status: 'covered-by-pr-52' },
-    error: { required: true, status: 'covered-by-pr-52' },
-    'partial-error': { required: false, status: 'todo' },
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/senders/detail/sender-detail-page.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      // "Sender exists but no recent messages" — the Empty story.
+      required: true,
+      storybook: 'apps/web/src/features/senders/detail/sender-detail-page.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/senders/detail/sender-detail-page.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': {
+      // Child-query failures (messages / timeseries / history)
+      // deliberately collapse to the full-screen error with retry —
+      // there is no partial-render design for this screen.
+      required: false,
+      status: 'n/a',
+    },
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
     'sync-in-progress': { required: false, status: 'n/a' },
     'sync-failed-transient': { required: false, status: 'n/a' },
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
-    'sender-deleted-upstream': { required: true, status: 'covered-by-pr-52' },
+    'sender-deleted-upstream': {
+      // BE 404 → `NotFoundState` ("sender no longer exists / unknown
+      // id") in the route container. No dedicated story.
+      required: true,
+      implementation: 'apps/web/src/features/senders/detail/sender-detail-page.tsx',
+      status: 'implemented',
+    },
     'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
   },
 
-  // App Router error surfaces (D167).
+  // Activity feed (D55–D60). Empty is storied; loading skeleton and
+  // the 4xx-vs-5xx ErrorState ship in code only. The bulk-undo
+  // failure banner is a mutation error, not a load partial — hence
+  // partial-error n/a.
+  activity: {
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/activity/activity-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/activity/activity-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/activity/activity-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Autopilot (D99–D105). All three core states are storied
+  // (Loading / Error / Empty + EmptyNoRules).
+  autopilot: {
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/autopilot/autopilot-screen.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/autopilot/autopilot-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/autopilot/autopilot-screen.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Daily Brief (D61–D70). Empty = the storied D70 QuietInbox.
+  // Loading skeleton + ErrorState ship in code only. The BE 404
+  // ("snapshot not generated yet" — fresh connect or tail UTC offset)
+  // renders the designed `NotYetState`, recorded under
+  // sync-in-progress as the closest D211 semantic.
+  brief: {
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/brief/brief-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/brief/brief-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/brief/brief-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': {
+      // `NotYetState` — 404 from the BE means the snapshot worker
+      // hasn't fired for this mailbox yet (includes freshly-connected
+      // accounts mid-initial-sync).
+      required: false,
+      implementation: 'apps/web/src/features/brief/brief-screen.tsx',
+      status: 'implemented',
+    },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Followups (D90, D91). Empty is storied (D91 copy verbatim);
+  // loading + error ship in code only.
+  followups: {
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/followups/followups-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/followups/followups-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/followups/followups-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Standing sender policies (Phase X3) — /settings/senders. All
+  // three core states ship in code; no stories file exists for this
+  // screen yet.
+  'settings-senders': {
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx',
+      status: 'implemented',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Operator audit log (D181 read) — /admin/security. All states
+  // storied, including the deliberate not-an-admin 404 surface
+  // (recorded under `unauthorized`: `AdminAllowlistGuard` refuses
+  // with 404 so the route's purpose is never revealed). Sync / quota
+  // / tier states don't apply to an operator-only DB read.
+  'admin-security': {
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-security/security-events-screen.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-security/security-events-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-security/security-events-screen.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: {
+      // NotFound story — non-allowlisted callers get the 404 surface.
+      required: true,
+      storybook: 'apps/web/src/features/admin-security/security-events-screen.stories.tsx',
+      status: 'covered',
+    },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // ── Placeholder routes ──────────────────────────────────────────
+  // Static server-rendered `RoutePlaceholder` stubs (no data fetch →
+  // no loading / empty / error of their own). The placeholder IS the
+  // one designed state each ships; variants live in the shared
+  // route-placeholder stories file.
+
+  billing: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: {
+      required: true,
+      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      status: 'covered',
+    },
+  },
+
+  quiet: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: {
+      required: true,
+      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      status: 'covered',
+    },
+  },
+
+  screener: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: {
+      required: true,
+      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      status: 'covered',
+    },
+  },
+
+  'settings-index': {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: {
+      required: true,
+      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      status: 'covered',
+    },
+  },
+
+  snoozed: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: {
+      required: true,
+      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      status: 'covered',
+    },
+  },
+
+  // ── App Router error surfaces (D167) ────────────────────────────
+
   'app-error-boundary': {
     loading: { required: false, status: 'n/a' },
     empty: { required: false, status: 'n/a' },
@@ -236,6 +639,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   'app-not-found': {
@@ -256,6 +660,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   'app-global-error': {
@@ -276,6 +681,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
   },
 };
 
