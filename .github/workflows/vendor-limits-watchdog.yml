@@ -71,4 +71,11 @@ jobs:
           # GITHUB_TOKEN cannot read billing. GH_BILLING_ACCOUNT
           # defaults to GITHUB_REPOSITORY_OWNER inside Actions.
           GH_BILLING_PAT: ${{ secrets.GH_BILLING_PAT }}
+          # Billing providers (D117) — webhook-delivery health checks.
+          # PADDLE_ENV unset → sandbox host; set the repo variable to
+          # `production` once the live Paddle account is wired.
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
         run: node scripts/check-vendor-limits.mjs

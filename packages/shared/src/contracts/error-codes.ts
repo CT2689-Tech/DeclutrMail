@@ -123,6 +123,44 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Your Gmail connection was revoked. Reconnect your account to continue.',
   },
+
+  // --- domain: billing (D117/D118 — apps/api/src/billing) ---
+  BILLING_DISABLED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Billing is not available yet.',
+  },
+  BILLING_NOT_PROVISIONED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This plan cannot be purchased yet. Please try again later.',
+  },
+  BILLING_PROVIDER_ERROR: {
+    status: 502,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Our payment provider could not be reached. Please try again.',
+  },
+  SUBSCRIPTION_EXISTS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This workspace already has an active subscription.',
+  },
+  NO_ACTIVE_SUBSCRIPTION: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'There is no active subscription to cancel.',
+  },
+  FOUNDING_PRO_SOLD_OUT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'All 250 Founding Pro spots have been claimed.',
+  },
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /** The union of every registered error code. */

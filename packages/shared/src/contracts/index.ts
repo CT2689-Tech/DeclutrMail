@@ -102,3 +102,30 @@ export type {
 // marketing forms). Constant 202 body — no email-exists oracle.
 export { WaitlistJoinRequestSchema } from './waitlist';
 export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';
+
+// D117/D118 billing transport — Zod schemas for /api/billing/* shared
+// between the NestJS billing module and the FE billing screen.
+export {
+  BillingCycleSchema,
+  BillingProviderIdSchema,
+  BillingSubscriptionSchema,
+  CancelRequestSchema,
+  CheckoutRequestSchema,
+  CheckoutSessionSchema,
+  PaddleCheckoutSessionSchema,
+  PurchasableTierSchema,
+  RazorpayCheckoutSessionSchema,
+  SubscriptionStatusSchema,
+} from './billing';
+export type {
+  BillingCycle,
+  BillingProviderId,
+  BillingSubscription,
+  CancelRequest,
+  CheckoutRequest,
+  CheckoutSession,
+  PaddleCheckoutSession,
+  PurchasableTier,
+  RazorpayCheckoutSession,
+  SubscriptionStatus,
+} from './billing';

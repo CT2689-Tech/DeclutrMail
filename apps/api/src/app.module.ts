@@ -6,6 +6,7 @@ import { ActionsModule } from './actions/actions.module.js';
 import { ActivityModule } from './activity/activity.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AutopilotModule } from './autopilot/autopilot.module.js';
+import { BillingModule } from './billing/billing.module.js';
 import { BriefModule } from './briefs/brief.module.js';
 import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
@@ -61,6 +62,9 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     AuthModule,
     UndoModule,
     ActionsModule,
+    // D117/D118 billing — always loaded; routes 503 cleanly until
+    // BILLING_ENABLED=true / the webhook signing secrets are set.
+    BillingModule,
     SendersModule,
     TriageModule,
     AutopilotModule,
