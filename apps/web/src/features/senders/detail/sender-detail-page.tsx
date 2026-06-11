@@ -1013,7 +1013,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               tone={detail.isVip ? 'primary' : 'default'}
               size="sm"
               onClick={toggleVip}
-              aria-pressed={detail.isVip}
+              ariaPressed={detail.isVip}
               disabled={setPolicy.isPending}
             >
               {detail.isVip ? '★ VIP' : 'VIP'}
@@ -1022,7 +1022,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               tone={detail.isProtected ? 'primary' : 'default'}
               size="sm"
               onClick={toggleProtect}
-              aria-pressed={detail.isProtected}
+              ariaPressed={detail.isProtected}
               disabled={setPolicy.isPending}
             >
               {detail.isProtected ? '◆ Protect' : 'Protect'}
