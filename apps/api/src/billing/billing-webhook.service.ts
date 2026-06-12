@@ -38,6 +38,12 @@
 // (docs/observability/event-taxonomy.md → `billing_event`). PostHog
 // server-side capture is not wired in apps/api yet — the log line is
 // the greppable source until it is.
+//
+// PRIVACY (D7/D228). The raw provider body is NEVER persisted — it
+// carries customer PII (email, name, address, phone, card metadata).
+// `projectWebhookPayload` (exported below) is the single enforcement
+// point that reduces it to allowlisted billing metadata before the
+// `subscription_events` insert.
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -63,6 +69,98 @@ export type WebhookProcessOutcome =
   | { kind: 'duplicate' }
   | { kind: 'ignored' };
 
+/** Safe property read — no throw on null/array/scalar inputs. */
+function prop(obj: unknown, key: string): unknown {
+  return obj !== null && typeof obj === 'object' && !Array.isArray(obj)
+    ? (obj as Record<string, unknown>)[key]
+    : undefined;
+}
+
+/** Keep string/number scalars only — objects can nest PII, drop them. */
+function scalar(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+/**
+ * Raw scalars the normalization drops but the audit trail keeps:
+ * verbatim provider status (lossy mapping — Razorpay `pending` and
+ * `halted` both normalize to `past_due`), the provider's own event
+ * timestamp, period start, and pause/cancel stamps. Paddle carries
+ * these under `data.*`; Razorpay under `payload.subscription.entity.*`.
+ */
+function pickRawAuditScalars(rawPayload: unknown): Record<string, unknown> {
+  const data = prop(rawPayload, 'data'); // Paddle
+  const entity = prop(prop(prop(rawPayload, 'payload'), 'subscription'), 'entity'); // Razorpay
+  const picked: Record<string, unknown> = {
+    provider_status: scalar(prop(data, 'status') ?? prop(entity, 'status')),
+    occurred_at: scalar(prop(rawPayload, 'occurred_at') ?? prop(rawPayload, 'created_at')),
+    period_start: scalar(
+      prop(prop(data, 'current_billing_period'), 'starts_at') ?? prop(entity, 'current_start'),
+    ),
+    canceled_at: scalar(prop(data, 'canceled_at') ?? prop(entity, 'ended_at')),
+    paused_at: scalar(prop(data, 'paused_at')),
+  };
+  for (const key of Object.keys(picked)) {
+    if (picked[key] === undefined) delete picked[key];
+  }
+  return picked;
+}
+
+/**
+ * D7 ENFORCEMENT POINT — the ONLY shape ever persisted to
+ * `subscription_events.payload`.
+ *
+ * Provider webhook bodies carry customer PII — Paddle nests email/
+ * name/address under `data.customer` / `data.billing_details`,
+ * Razorpay nests email/contact/card under `payload.payment.entity` —
+ * none of it in the D7 allowlist, so the raw body never reaches the
+ * database. This pure function projects the event down to billing
+ * metadata only: the normalized fields the handler applies plus the
+ * small explicit raw pick above. Every value is a scalar read from an
+ * explicit path — no spread of any raw object — so new provider
+ * fields can never leak through.
+ *
+ * Referenced by the schema doc
+ * (packages/db/src/schema/subscription-events.ts) and locked by the
+ * PII-scrub tests in `__tests__/billing-webhook.service.spec.ts`.
+ */
+export function projectWebhookPayload(
+  event: NormalizedBillingEvent,
+  rawPayload: unknown,
+): Record<string, unknown> {
+  const projected: Record<string, unknown> = {
+    kind: event.kind,
+    provider_event_id: event.providerEventId,
+    event_type: event.eventType,
+    ...pickRawAuditScalars(rawPayload),
+  };
+  switch (event.kind) {
+    case 'subscription': {
+      const sub = event.subscription;
+      projected.provider_subscription_id = sub.providerSubscriptionId;
+      projected.provider_customer_id = sub.providerCustomerId;
+      projected.provider_price_id = sub.providerPriceId;
+      projected.status = sub.status;
+      projected.current_period_end = sub.currentPeriodEnd;
+      projected.cancel_at_period_end = sub.cancelAtPeriodEnd;
+      projected.pause_until = sub.pauseUntil;
+      projected.workspace_id = sub.workspaceId;
+      break;
+    }
+    case 'payment':
+      projected.outcome = event.outcome;
+      projected.provider_subscription_id = event.providerSubscriptionId;
+      break;
+    case 'cancellation_scheduled':
+      projected.provider_subscription_id = event.providerSubscriptionId;
+      projected.cancellation_reason = event.reason;
+      break;
+    case 'ignored':
+      break;
+  }
+  return projected;
+}
+
 @Injectable()
 export class BillingWebhookService {
   private readonly logger = new Logger(BillingWebhookService.name);
@@ -77,14 +175,15 @@ export class BillingWebhookService {
     event: NormalizedBillingEvent,
     rawPayload: unknown,
   ): Promise<WebhookProcessOutcome> {
-    // 1. Insert-first dedup gate.
+    // 1. Insert-first dedup gate. The stored payload is the D7-safe
+    //    projection, never the raw body (see projectWebhookPayload).
     const inserted = await this.db
       .insert(subscriptionEvents)
       .values({
         provider,
         providerEventId: event.providerEventId,
         eventType: event.eventType,
-        payload: rawPayload as Record<string, unknown>,
+        payload: projectWebhookPayload(event, rawPayload),
       })
       .onConflictDoNothing()
       .returning({ id: subscriptionEvents.id });

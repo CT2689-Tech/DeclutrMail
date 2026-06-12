@@ -66,8 +66,9 @@ export class BillingPaddleWebhookController {
 
     const verdict = this.adapter.verifyWebhookSignature({ rawBody, signatureHeader, secret });
     if (!verdict.ok) {
-      // D181: audit BEFORE the 401 — never logs the body or the header value.
-      void this.securityEvents.record({
+      // D181: audit BEFORE the 401 — awaited so the row lands before the
+      // response (record() never throws); never logs the body or header value.
+      await this.securityEvents.record({
         eventType: 'webhook.signature_failure',
         severity: 'warning',
         payload: { source: 'billing.paddle', reason: verdict.reason },

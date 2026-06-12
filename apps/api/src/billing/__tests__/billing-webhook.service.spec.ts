@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
-import { BillingWebhookService } from '../billing-webhook.service.js';
+import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
@@ -105,6 +105,22 @@ async function seedWorkspace(db: DrizzleDb, name = 'Billing WS'): Promise<string
   return ws!.id;
 }
 
+/** D7 scrub helper — every key at every depth of a stored jsonb value. */
+function collectKeysDeep(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) collectKeysDeep(item, out);
+  } else if (value !== null && typeof value === 'object') {
+    for (const [key, nested] of Object.entries(value)) {
+      out.push(key);
+      collectKeysDeep(nested, out);
+    }
+  }
+  return out;
+}
+
+/** PII key names real Paddle/Razorpay webhook bodies carry (D7-banned). */
+const PII_KEYS = ['email', 'contact', 'card', 'name', 'billing_details', 'address'] as const;
+
 const paddle = new PaddleAdapter({} as NodeJS.ProcessEnv);
 const razorpay = new RazorpayAdapter({} as NodeJS.ProcessEnv);
 
@@ -167,7 +183,7 @@ describe('BillingWebhookService.process', () => {
       provider: 'paddle',
       providerEventId: event.providerEventId,
       eventType: event.eventType,
-      payload: fixture,
+      payload: projectWebhookPayload(event, fixture),
     });
 
     const outcome = await service.process('paddle', event, fixture);
@@ -349,5 +365,86 @@ describe('BillingWebhookService.process', () => {
     const [sub] = await db.select().from(subscriptions);
     expect(sub!.status).toBe('past_due');
     expect(sub!.workspaceId).toBe(workspaceId);
+  });
+
+  it('D7 — persists the projection, never Paddle PII (customer / billing_details / address)', async () => {
+    const fixture = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_pii_paddle_1' });
+    const data = fixture.data as Record<string, unknown>;
+    // Real Paddle bodies expand the customer + payment method — exactly
+    // the PII the projection must drop.
+    data.customer = {
+      id: 'ctm_01paddle000001',
+      name: 'Pat Example',
+      email: 'pat@example.com',
+      address: { first_line: '1 Market St', postal_code: '94105', country_code: 'US' },
+    };
+    data.billing_details = {
+      payment_method: { card: { last4: '4242', name: 'Pat Example', expiry_year: 2030 } },
+    };
+
+    const event = paddle.mapWebhookEvent(fixture);
+    await service.process('paddle', event, fixture);
+
+    const [row] = await db.select().from(subscriptionEvents);
+    // The stored row is EXACTLY the projection — nothing of the raw body.
+    expect(row!.payload).toEqual(projectWebhookPayload(event, fixture));
+    const keys = collectKeysDeep(row!.payload);
+    for (const banned of PII_KEYS) {
+      expect(keys).not.toContain(banned);
+    }
+    // The allowlisted billing metadata survives.
+    expect(row!.payload).toMatchObject({
+      kind: 'subscription',
+      provider_event_id: 'evt_pii_paddle_1',
+      event_type: 'subscription.activated',
+      provider_subscription_id: 'sub_01paddle000001',
+      provider_customer_id: 'ctm_01paddle000001',
+      provider_price_id: TEST_PRICE_IDS.paddle.plus_monthly,
+      status: 'active',
+      provider_status: 'active',
+      occurred_at: '2026-06-11T10:00:00.000000Z',
+      period_start: '2026-06-11T10:00:00.000000Z',
+      current_period_end: '2026-07-11T10:00:00.000000Z',
+      workspace_id: workspaceId,
+    });
+  });
+
+  it('D7 — persists the projection, never Razorpay PII (payment entity email / contact / card)', async () => {
+    const fixture = razorpaySubscriptionEvent({ workspaceId, event: 'subscription.charged' });
+    // subscription.charged delivers the payment entity alongside the
+    // subscription — email/contact/card live there on real bodies.
+    (fixture.payload as Record<string, unknown>).payment = {
+      entity: {
+        id: 'pay_rzp00000000001',
+        amount: 1900000,
+        currency: 'INR',
+        email: 'pat@example.in',
+        contact: '+919999999999',
+        card: { last4: '1111', name: 'Pat Example', network: 'Visa' },
+      },
+    };
+
+    const event = razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
+    await service.process('razorpay', event, fixture);
+
+    const [row] = await db.select().from(subscriptionEvents);
+    expect(row!.payload).toEqual(projectWebhookPayload(event, fixture));
+    const keys = collectKeysDeep(row!.payload);
+    for (const banned of PII_KEYS) {
+      expect(keys).not.toContain(banned);
+    }
+    expect(row!.payload).toMatchObject({
+      kind: 'subscription',
+      provider_event_id: 'evt_pii_rzp_1',
+      event_type: 'subscription.charged',
+      provider_subscription_id: 'sub_rzp00000000001',
+      provider_customer_id: 'cust_rzp0000000001',
+      provider_price_id: TEST_PRICE_IDS.razorpay.pro_annual,
+      status: 'active',
+      provider_status: 'active',
+      occurred_at: 1781430100,
+      period_start: 1781430000,
+      workspace_id: workspaceId,
+    });
   });
 });

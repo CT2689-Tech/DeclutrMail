@@ -17,11 +17,14 @@ import { billingProvider } from './billing-customers';
  * (`subscription.updated`, `subscription.charged`, …) — normalization
  * to domain effects happens in the handler, not the store.
  *
- * `payload` is the provider's webhook body as received (post
- * signature verification). It carries billing metadata only —
- * subscription/customer/price ids, amounts, statuses, and D118's
- * optional cancellation reason. Never email content; D7/D228
- * unaffected.
+ * `payload` is NOT the raw provider body — provider webhooks carry
+ * customer PII (email, name, address, card metadata) outside the D7
+ * allowlist. The webhook handler projects the verified body through
+ * `projectWebhookPayload`
+ * (apps/api/src/billing/billing-webhook.service.ts) — THE enforcement
+ * point — down to billing metadata only: subscription/customer/price
+ * ids, statuses, period bounds, pause/cancel stamps, and D118's
+ * optional cancellation reason. A PII-scrub test locks the projection.
  *
  * `processed_at` — null until the handler has applied the event's
  * domain effect (tier flip, status update). The partial index on
