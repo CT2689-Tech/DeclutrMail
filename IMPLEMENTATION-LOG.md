@@ -158,12 +158,12 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D104 | Observe mode UI (per D10) | 🟢 | #108 | apps/api/src/autopilot/autopilot.read-service.spec.ts — listPendingSuggestions + dismissMatch (observe-mode surface) |  |
 | D105 | Autopilot pause | 🟢 | #108 | apps/api/src/autopilot/autopilot.read-service.spec.ts — pauseAll flips + idempotent second call |  |
 | D106 | Onboarding 5-step structure | ⬜ |  |  |  |
-| D107 | Step 1: Promise screen content | ⬜ |  |  |  |
+| D107 | Step 1: Promise screen content | 🔵 | #212 |  |  |
 | D108 | Step 2: Connect (OAuth) | ⬜ |  |  |  |
 | D109 | Step 3: Sync (strict gate, no time promise, no live counters) | 🔵 | #122 |  |  |
-| D110 | Step 4: Style preset selection | ⬜ |  |  |  |
+| D110 | Step 4: Style preset selection | 🔵 | #212 |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
-| D112 | Step 5: First Triage with real senders | ⬜ |  |  |  |
+| D112 | Step 5: First Triage with real senders | 🔵 | #212 |  |  |
 | D113 | Onboarding completion side effects | 🔵 | #194 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | ⬜ |  |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
