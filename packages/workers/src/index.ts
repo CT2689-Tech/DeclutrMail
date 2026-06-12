@@ -271,6 +271,24 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
+export {
+  deletionPendingSql,
+  hasInFlightDeletion,
+  isSyncPausedForDeletion,
+} from './deletion-pause.js';
+export { AccountDeletionPurgeWorker } from './deletion.worker.js';
+export type {
+  DeletionPurgeDeps,
+  DeletionSweepJobData,
+  DeletionSweepResult,
+} from './deletion.worker.js';
+export {
+  DELETION_SWEEP_INTERVAL_MS,
+  DELETION_SWEEP_JOB,
+  DELETION_SWEEP_QUEUE,
+  deletionSweepJobOptions,
+  enqueueDeletionSweepTick,
+} from './deletion.queue.js';
 export { EmailSendWorker } from './email-send.worker.js';
 export type {
   EmailDeliveryOutcome,

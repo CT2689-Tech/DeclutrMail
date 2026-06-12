@@ -12,7 +12,7 @@ import { UndoService } from './undo.service.js';
  * Exposes `UndoService` so the destructive feature modules (archive,
  * unsubscribe, later, apply-rule) can `issue()` a token at mutation
  * time, and so `AccountDeletionOrchestrator` (D205) can read
- * `latestActiveExpiry()` for the D232 deletion-time computation.
+ * `activeExpirySummaryForUser()` for the D232 deletion-time computation.
  *
  * Unlike SyncModule, UndoModule has no queue producer of its own — the
  * cleanup worker runs in the worker process and produces nothing the

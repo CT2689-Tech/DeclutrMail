@@ -170,3 +170,22 @@ export {
   QuietHoursConfigSchema,
 } from './quiet-hours';
 export type { QuietHoursConfig, QuietHoursState } from './quiet-hours';
+
+// D205/D216/D232 account deletion — request/cancel/status transport
+// shared between apps/api/src/account and the FE account-deletion feature.
+export {
+  AccountDeletionBasisSchema,
+  AccountDeletionPendingSchema,
+  AccountDeletionProjectionSchema,
+  AccountDeletionRequestSchema,
+  AccountDeletionStatusSchema,
+  DELETION_CONFIRM_PHRASE,
+  DELETION_WAIVER_PHRASE,
+} from './account-deletion';
+export type {
+  AccountDeletionBasis,
+  AccountDeletionPending,
+  AccountDeletionProjection,
+  AccountDeletionRequest,
+  AccountDeletionStatus,
+} from './account-deletion';

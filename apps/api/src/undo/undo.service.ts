@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { undoJournal } from '@declutrmail/db';
+import { mailboxAccounts, undoJournal } from '@declutrmail/db';
 import type { NewUndoJournalEntry, UndoJournalEntry } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -231,34 +231,52 @@ export class UndoService {
   }
 
   /**
-   * D232 deletion-time read.
+   * D232 deletion-time read — per USER, across ALL mailboxes.
    *
    * `AccountDeletionOrchestrator` computes the effective deletion time
-   * as `max(now + 7d, latest_undo_expires_at)`. Reads the most distant
-   * still-pending expiry across the mailbox; null when the mailbox has
-   * no active tokens.
+   * as `max(now + 7d, latest_undo_expires_at)` where the aggregate is
+   * `MAX(expires_at) FROM undo_journal WHERE user_id = ?` (the D232
+   * rule text is explicitly user-scoped). The previous implementation
+   * aggregated per-MAILBOX, which under-counted for two-mailbox users —
+   * an undo window on the OTHER mailbox could not extend the deletion
+   * date (buildout 2026-06-11 per-USER fix). `undo_journal` keys on
+   * `mailbox_account_id`, so the user scope is a join through
+   * `mailbox_accounts.user_id`.
+   *
+   * Returns the most distant still-pending expiry plus the count of
+   * active tokens (for the D232 UI copy: "You have N undoable actions,
+   * the latest expiring in M days"). `latest` is null when no token is
+   * active.
    */
-  async latestActiveExpiry(mailboxAccountId: string): Promise<Date | null> {
+  async activeExpirySummaryForUser(
+    userId: string,
+  ): Promise<{ latest: Date | null; activeCount: number }> {
     // Postgres returns the `MAX(timestamp)` aggregate without Drizzle's
     // column-level Date coercion (the type hint below is for the
     // caller's benefit; the driver hands back either a Date instance
     // or an ISO string depending on adapter — pglite differs from
-    // postgres-js here). Normalize in one place.
+    // postgres-js here). Normalize in one place. COUNT(*) likewise
+    // arrives as a string on postgres-js (bigint) — Number() it.
     const [row] = await this.db
-      .select({ maxExpiry: sql<Date | string | null>`MAX(${undoJournal.expiresAt})` })
+      .select({
+        maxExpiry: sql<Date | string | null>`MAX(${undoJournal.expiresAt})`,
+        activeCount: sql<number | string>`COUNT(*)`,
+      })
       .from(undoJournal)
+      .innerJoin(mailboxAccounts, eq(undoJournal.mailboxAccountId, mailboxAccounts.id))
       .where(
         and(
-          eq(undoJournal.mailboxAccountId, mailboxAccountId),
+          eq(mailboxAccounts.userId, userId),
           isNull(undoJournal.revertedAt),
           gt(undoJournal.expiresAt, sql`now()`),
         ),
       );
     const raw = row?.maxExpiry ?? null;
+    const activeCount = Number(row?.activeCount ?? 0);
     if (raw === null) {
-      return null;
+      return { latest: null, activeCount };
     }
-    return raw instanceof Date ? raw : new Date(raw);
+    return { latest: raw instanceof Date ? raw : new Date(raw), activeCount };
   }
 
   /**

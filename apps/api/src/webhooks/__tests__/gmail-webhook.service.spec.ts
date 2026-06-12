@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
+  accountDeletionRequests,
   mailboxAccounts,
   providerSyncState,
   schema,
@@ -207,6 +208,44 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     const dedup = await db.select().from(webhookDedup);
     expect(dedup.length).toBe(1);
     expect(dedup[0]!.messageId).toBe('msg-orphan');
+  });
+
+  it('returns deletion_pending + does NOT advance the cursor while a D232 deletion is in flight', async () => {
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    const [mailbox] = await db
+      .select({ userId: mailboxAccounts.userId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxId));
+    await db.insert(accountDeletionRequests).values({
+      userId: mailbox!.userId,
+      effectiveAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      basis: 'flat-grace',
+      status: 'pending',
+    });
+
+    const outcome = await service.processVerifiedPush({
+      messageId: 'msg-paused',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+
+    expect(outcome.kind).toBe('deletion_pending');
+    // Cursor untouched — advancing while paused would strand (S, H] on
+    // cancel.
+    const sync = await db.select().from(providerSyncState);
+    expect(sync[0]!.lastHistoryId).toBe(1000n);
+
+    // Cancel un-pauses: the NEXT push (fresh messageId) syncs again.
+    await db
+      .update(accountDeletionRequests)
+      .set({ status: 'cancelled', cancelledAt: new Date() })
+      .where(eq(accountDeletionRequests.userId, mailbox!.userId));
+    const resumed = await service.processVerifiedPush({
+      messageId: 'msg-resumed',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+    expect(resumed.kind).toBe('enqueued');
+    const syncAfter = await db.select().from(providerSyncState);
+    expect(syncAfter[0]!.lastHistoryId).toBe(1500n);
   });
 
   it('returns sync_state_uninitialized + does NOT create provider_sync_state when the mailbox has no row yet', async () => {

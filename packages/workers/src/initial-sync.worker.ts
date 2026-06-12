@@ -18,6 +18,7 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { isSyncPausedForDeletion } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
@@ -112,6 +113,13 @@ export interface InitialSyncResult {
   durationMs: number;
   /** Per-stage wall-clock ms, keyed by D224 stage name. */
   stageTimings: Record<string, number>;
+  /**
+   * D232 sync pause — `true` when the mailbox's owner has an in-flight
+   * account-deletion request and the job was a designed no-op: no Gmail
+   * call, sync state untouched (the initial-sync reconciler re-enqueues
+   * after a cancel). See `deletion-pause.ts`.
+   */
+  deletionPaused?: boolean;
 }
 
 /** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
@@ -242,6 +250,22 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       stageTimings[stage] = now - lastMark;
       lastMark = now;
     };
+
+    // D232 sync pause — eligibility guard BEFORE any Gmail call or
+    // sync-state write. A paused mailbox's backfill is a designed
+    // no-op; sync state stays as-is so the initial-sync reconciler
+    // re-enqueues it after a cancel. See `deletion-pause.ts`.
+    if (await isSyncPausedForDeletion(this.deps.db, mailboxAccountId)) {
+      initialSyncLog('skipped_deletion_pending', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+        deletionPaused: true,
+      };
+    }
 
     // Stage 1 — fetching_metadata (resumable).
     // 2026-06-08 session: structured progress logs added so a stalled

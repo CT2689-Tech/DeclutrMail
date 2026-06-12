@@ -174,6 +174,10 @@ export class GmailWebhookController {
         // Service already warn-logged with mailbox id; nothing to add here.
         // (Outcome surfaces in the 200 response body for observability.)
         break;
+      case 'deletion_pending':
+        // D232 sync pause — service already warn-logged with mailbox id.
+        // 200 designed no-op; Pub/Sub must not retry a state, not weather.
+        break;
       case 'stale_history_id':
         this.logger.log(
           `pubsub.history_stale incoming=${outcome.incomingHistoryId} last=${outcome.lastHistoryId ?? 'null'}`,
