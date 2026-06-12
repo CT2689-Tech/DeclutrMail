@@ -53,6 +53,20 @@ const UNSUB_RANK_CURRENT = sql.raw(
 export interface IncrementalSyncDeps {
   db: WorkerDb;
   gmailAccess: GmailAccess;
+  /**
+   * Fired once per FIRST-SEEN sender (a TRUE insert into `senders`,
+   * never a conflict-update). The composition root enqueues a
+   * single-sender score job off it so the engine evaluates the new
+   * sender immediately — the D75 incremental path that routes Phase-B
+   * "too new to judge" senders into the Screener queue (the
+   * ScoreWorker owns the flag write; this is only the trigger).
+   *
+   * BEST-EFFORT: a callback failure is WARN-logged and the sync job
+   * proceeds — the message/sender writes are the canonical work; the
+   * next sync_complete sweep re-scores every sender as the safety
+   * net.
+   */
+  onNewSender?: (mailboxAccountId: string, senderKey: string) => Promise<void>;
 }
 
 /**
@@ -455,7 +469,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // UPSERT — on insert, full identity row; on conflict, bump
       // last_seen_at (max) and total_received (increment). The
       // EXCLUDED.* references give us the new row's values cleanly.
-      await this.deps.db
+      // RETURNING `(xmax = 0)` distinguishes a TRUE insert from a
+      // conflict-update (same trick as the mail_messages Path-B
+      // idempotency contract, ADR-0014) — it drives the
+      // first-seen-sender callback below.
+      const senderUpsert = await this.deps.db
         .insert(senders)
         .values({
           mailboxAccountId,
@@ -497,7 +515,27 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             END`,
             updatedAt: new Date(),
           },
-        });
+        })
+        .returning({ newlyInserted: sql<boolean>`(xmax = 0)` });
+
+      // First-seen sender → fire the score trigger (D75 incremental
+      // path). Best-effort per the `onNewSender` contract — a failed
+      // enqueue must not fail the sync delta; the sync_complete sweep
+      // is the safety net.
+      if (senderUpsert[0]?.newlyInserted && this.deps.onNewSender) {
+        try {
+          await this.deps.onNewSender(mailboxAccountId, senderKey);
+        } catch (err) {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'sync.new_sender_callback_failed',
+              mailboxAccountId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
 
       // sender_timeseries — month-keyed; bump volume + readCount.
       const yearMonth = startOfMonthISO(internalDate);

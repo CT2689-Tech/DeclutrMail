@@ -364,6 +364,41 @@ flagged via `already_dismissed`.
 replied" ratio for the Followups feature; the `priority` breakdown shows
 how stale rows are when users resolve them by hand.
 
+### `screener_queue_viewed`
+
+**When fired.** When the Screener queue (D73) renders in the `ready` or
+`empty` state — once per mount, not per refetch. Under-tier visitors
+(D77 Pro gate) never fire it: the upsell state renders before any
+Screener query runs.
+
+**Payload.**
+
+| Field           | Type     | Notes                                            |
+| --------------- | -------- | ------------------------------------------------ |
+| `pending_count` | `number` | Pending first-time senders (the D74 badge count) |
+
+**Retention / aggregation.** 1y raw. Sizes the typical Screener backlog
+and how often Pro users open the surface relative to badge growth.
+
+### `screener_decision_taken`
+
+**When fired.** When a Screener decide confirm succeeds —
+`POST /api/screener/decide` resolved the quarantine row and the verb
+was recorded/enqueued. Fires from the FE mutation's `onSuccess`, never
+on click alone (the D226 preview → confirm gap must not pollute the
+funnel).
+
+**Payload.**
+
+| Field       | Type                                                          | Notes                                 |
+| ----------- | ------------------------------------------------------------- | ------------------------------------- |
+| `verb`      | `'keep' \| 'archive' \| 'unsubscribe' \| 'later' \| 'delete'` | The K/A/U/L/D decision                |
+| `sender_id` | `string`                                                      | Internal `senders.id` UUID, not email |
+
+**Retention / aggregation.** 1y raw. Drives the keep-vs-cleanup ratio
+for first-time senders — the signal D75's onboarding handoff copy and
+the engine's Phase-B confidence band are tuned against.
+
 ### `beta_gate_denied`
 
 **When fired.** On mount of the public `/beta` page when the URL

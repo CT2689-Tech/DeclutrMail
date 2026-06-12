@@ -629,7 +629,23 @@ async function bootstrap(): Promise<void> {
   // ${mailboxAccountId}:${endHistoryId}` namespacing at enqueue time —
   // two webhooks for the same mailbox at different historyIds CAN run
   // concurrently, which is correct: each processes its own delta.
-  const incrementalSync = new IncrementalSyncWorker({ db, gmailAccess });
+  const incrementalSync = new IncrementalSyncWorker({
+    db,
+    gmailAccess,
+    // First-seen sender → single-sender score job (D25 signal_change
+    // trigger; D75 incremental path). The ScoreWorker's Phase-B branch
+    // is what flags the sender into `screener_quarantine` — this only
+    // produces the trigger. jobId matches ScoreWorker's idempotency
+    // key shape so a BullMQ redelivery of the same trigger dedups.
+    onNewSender: async (mailboxAccountId, senderKey) => {
+      const producedAtMs = Date.now();
+      await scoreProducerQueue.add(
+        SCORE_JOB,
+        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs },
+        { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
+      );
+    },
+  });
   incrementalSync.setObserver(observer);
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(

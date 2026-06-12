@@ -1,43 +1,56 @@
-// /screener — Screener queue (D71–D77).
+'use client';
+
+// /screener — the Screener queue (D71–D77).
 //
-// The Screener is a soft-quarantine surface for first-time senders.
-// "Screener" is the product noun (D227-allowed); the verb "Screen" is
-// banned as user-facing copy. Pro-only per D77 — the TierGate shows
-// under-tier workspaces the upgrade placeholder; Pro workspaces see
-// the build-status placeholder until the feature ships.
+// Soft-quarantine review surface for first-time senders (D72 — Gmail
+// untouched until the user decides). "Screener" is the product noun
+// (D227-allowed); the verbs are the canonical K/A/U/L/D set. Pro-only
+// per D77: under-tier workspaces see the upgrade surface and never
+// fire a Screener query (the BE 402s them regardless — defense in
+// depth).
 
-import { TierGate } from '@/features/billing/tier-gate';
-import { RoutePlaceholder } from '@/features/route-placeholder/route-placeholder';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 
-export const metadata = {
-  title: 'Screener — DeclutrMail',
-};
+import { useTier } from '@/features/auth/api/use-tier';
+import { useScreenerQueue } from '@/features/screener/api/use-screener';
+import { composeScreenerState } from '@/features/screener/compose-state';
+import { ScreenerProUpsell } from '@/features/screener/pro-upsell';
+import { ScreenerScreen } from '@/features/screener/screener-screen';
+
+/**
+ * Hard navigation to /pricing — it lives in the (marketing) route
+ * group, outside the (app) shell (same pattern as the Triage screen's
+ * upgrade path).
+ */
+function openPricing(): void {
+  window.location.assign('/pricing');
+}
 
 export default function ScreenerPage() {
-  return (
-    <TierGate
-      capability="screener"
-      title="Screener"
-      pitch="A soft-quarantine queue for first-time senders. New senders wait at the door instead of landing in your inbox; decide once whether they belong, and the rule routes them automatically next time."
-      bullets={[
-        'New senders auto-route to the queue',
-        'One decision covers every future email',
-        'Nothing is touched in Gmail until you decide',
-      ]}
-    >
-      <RoutePlaceholder
-        status="Planned for V2.1"
-        title="Screener"
-        description={
-          <>
-            A soft-quarantine queue for new senders. Decide once whether they belong in your inbox;
-            next time they show up, the rule routes them automatically.
-          </>
-        }
-        decisions={['D71', 'D72', 'D73', 'D74', 'D75', 'D76', 'D77']}
-        primaryCta={{ href: '/triage', label: 'Open Triage' }}
-        secondaryCta={{ href: '/senders', label: 'Browse senders' }}
-      />
-    </TierGate>
-  );
+  const { tier } = useTier();
+  const unlocked = hasCapability(tier, 'screener');
+
+  if (!unlocked) {
+    return <ScreenerProUpsell onSeePricing={openPricing} />;
+  }
+  return <ScreenerQueueRoute />;
+}
+
+/**
+ * Split out so the queue query only mounts for unlocked tiers — a
+ * Free/Plus session must never fire a request the server would 402
+ * (`useQuery` hooks would otherwise run before the gate).
+ */
+function ScreenerQueueRoute() {
+  const queue = useScreenerQueue();
+  const state = composeScreenerState({
+    rows: queue.data,
+    isLoading: queue.isLoading,
+    isError: queue.isError,
+    error: queue.error,
+    retry: () => {
+      void queue.refetch();
+    },
+  });
+  return <ScreenerScreen state={state} />;
 }
