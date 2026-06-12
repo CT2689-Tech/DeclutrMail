@@ -54,7 +54,11 @@ export type EventName =
   // — Followups surface —
   | 'followup_dismissed'
   // — Private-beta gate (buildout F7) —
-  | 'beta_gate_denied';
+  | 'beta_gate_denied'
+  // — Snoozed surface (D78–D80, D82) —
+  | 'snooze_set'
+  | 'snooze_cleared'
+  | 'wake_now_clicked';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in
@@ -153,7 +157,8 @@ export interface EventPayloads {
       | 'onboarding'
       | 'settings'
       | 'mailboxes'
-      | 'pricing';
+      | 'pricing'
+      | 'snoozed';
     mailbox_id: string | null;
   };
 
@@ -301,6 +306,23 @@ export interface EventPayloads {
   beta_gate_denied: {
     /** What surfaced the denial — only the OAuth-callback redirect today. */
     source: 'oauth_callback';
+  };
+
+  // — Snoozed surface (D78–D80, D82) —
+  snooze_set: {
+    sender_id: string;
+    /** Which D82 preset was picked (`custom` = the date picker). */
+    preset: 'later_today' | 'tomorrow' | 'weekend' | 'next_week' | 'next_month' | 'custom';
+    /** Whether the user attached a note — never the note text. */
+    has_reason: boolean;
+  };
+  snooze_cleared: {
+    sender_id: string;
+  };
+  wake_now_clicked: {
+    sender_id: string;
+    /** Mirror count at click time; -1 when the count was still syncing. */
+    later_count: number;
   };
 }
 

@@ -148,3 +148,13 @@ export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '
 // `GET /api/activity` rows, resolved from `activity_log.rule_id`.
 export { ActivityRuleRefSchema } from './activity';
 export type { ActivityRuleRef } from './activity';
+
+// D78–D80 Snoozed/Later review surface — list row + snooze/wake wire
+// shapes shared between the snoozed controller and the FE screen.
+export { SNOOZE_REASON_MAX_LENGTH, SnoozeUpdateRequestSchema } from './snoozed';
+export type {
+  SnoozedSenderRow,
+  SnoozeUpdateRequest,
+  SnoozeUpdateResult,
+  WakeNowResult,
+} from './snoozed';

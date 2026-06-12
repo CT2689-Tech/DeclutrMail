@@ -279,3 +279,20 @@ export {
   syncCompleteEmailJobId,
   syncReminderEmailJobId,
 } from './email-send.queue.js';
+export { SnoozeWakeWorker, laterLabelName } from './snooze-wake.worker.js';
+export type { SnoozeWakeDeps, SnoozeWakeJobData, SnoozeWakeResult } from './snooze-wake.worker.js';
+export {
+  enqueueSnoozeWakeNow,
+  enqueueSnoozeWakeTick,
+  RedisSnoozeLabelMapStore,
+  SNOOZE_LATER_LABEL_TTL_SECONDS,
+  SNOOZE_WAKE_INTERVAL_MS,
+  SNOOZE_WAKE_JOB,
+  SNOOZE_WAKE_QUEUE,
+  snoozeLaterLabelKey,
+  snoozeScheduledAtMinute,
+  snoozeSweepJobId,
+  snoozeWakeJobOptions,
+  snoozeWakeNowJobId,
+} from './snooze-wake.queue.js';
+export type { SnoozeLabelMapRedis, SnoozeLabelMapStore } from './snooze-wake.queue.js';

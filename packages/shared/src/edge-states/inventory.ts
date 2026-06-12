@@ -93,6 +93,7 @@ export type ScreenId =
   | 'autopilot'
   | 'brief'
   | 'followups'
+  | 'snoozed'
   | 'settings-senders'
   | 'admin-security'
   // Placeholder routes — `RoutePlaceholder` stubs so the nav doesn't lie.
@@ -100,7 +101,6 @@ export type ScreenId =
   | 'quiet'
   | 'screener'
   | 'settings-index'
-  | 'snoozed'
   // App Router error surfaces (D167) — not (app) routes.
   | 'app-error-boundary'
   | 'app-not-found'
@@ -609,24 +609,40 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     },
   },
 
+  // Snoozed/Later review surface (D78–D80) — real loading/empty/error
+  // variants; no placeholder phase.
   snoozed: {
-    loading: { required: false, status: 'n/a' },
-    empty: { required: false, status: 'n/a' },
-    error: { required: false, status: 'n/a' },
-    'partial-error': { required: false, status: 'n/a' },
-    offline: { required: false, status: 'n/a' },
-    unauthorized: { required: false, status: 'n/a' },
-    'sync-in-progress': { required: false, status: 'n/a' },
-    'sync-failed-transient': { required: false, status: 'n/a' },
-    'quota-exceeded': { required: false, status: 'n/a' },
-    'free-cap-reached': { required: false, status: 'n/a' },
-    'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'n/a' },
-    placeholder: {
+    loading: {
       required: true,
-      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',
       status: 'covered',
     },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': {
+      // The mirror-degraded "count syncing…" variant (CountSyncing
+      // story) — rows render, counts are honestly unknown.
+      required: false,
+      storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',
+      status: 'covered',
+    },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'todo' },
+    'free-cap-reached': { required: false, status: 'todo' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'todo' },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   // ── App Router error surfaces (D167) ────────────────────────────
