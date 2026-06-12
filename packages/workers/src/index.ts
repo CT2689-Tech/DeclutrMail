@@ -38,6 +38,9 @@ export type {
   GmailMessageListPage,
   GmailMessageMetadata,
   GmailMetadataClient,
+  GmailWatchAccess,
+  GmailWatchClient,
+  GmailWatchResult,
 } from './ports.js';
 export type {
   GmailMutationAccess,
@@ -192,6 +195,26 @@ export {
   UNDO_EXPIRY_QUEUE,
   undoExpiryJobOptions,
 } from './undo-expiry.queue.js';
+export { WatchRenewalWorker } from './watch-renewal.worker.js';
+export type {
+  WatchRenewalDeps,
+  WatchRenewalJobData,
+  WatchRenewalResult,
+} from './watch-renewal.worker.js';
+export {
+  enqueueWatchRenewalTick,
+  WATCH_RENEWAL_INTERVAL_MS,
+  WATCH_RENEWAL_JOB,
+  WATCH_RENEWAL_QUEUE,
+  watchRenewalJobOptions,
+} from './watch-renewal.queue.js';
+export {
+  clearGmailWatchState,
+  GMAIL_WATCH_STATE_KEY,
+  persistGmailWatchState,
+  readGmailWatchState,
+} from './gmail-watch-state.js';
+export type { GmailWatchState } from './gmail-watch-state.js';
 export { SendersCounterReconciliationWorker } from './senders-counter-reconciliation.worker.js';
 export type {
   SendersCounterReconciliationJobData,

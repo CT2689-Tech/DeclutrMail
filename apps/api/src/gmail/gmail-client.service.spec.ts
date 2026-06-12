@@ -444,3 +444,92 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
     );
   });
 });
+
+describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => {
+  let oauth: OAuth2Client;
+  let limiter: RateLimiter;
+  let acquireSpy: ReturnType<typeof vi.fn>;
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    oauth = makeOauth();
+    const made = makeLimiter();
+    limiter = made.limiter;
+    acquireSpy = made.acquire;
+    fetchMock = vi.fn<(url: string, init: FetchInit) => Promise<Response>>();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('watch', () => {
+    it('POSTs the topic + INBOX label filter and returns historyId + expiration', async () => {
+      fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '987654', expiration: '1765432100000' }));
+      const client = new GmailClientService(oauth, limiter);
+
+      const result = await client.watch('projects/p/topics/gmail-push');
+
+      expect(result).toEqual({ historyId: '987654', expirationMs: 1765432100000 });
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(`${API}/watch`);
+      expect(init.method).toBe('POST');
+      // The request body is the full watch contract: topic + the INBOX
+      // include filter (the drift sweep covers non-INBOX changes).
+      expect(JSON.parse(init.body!)).toEqual({
+        topicName: 'projects/p/topics/gmail-push',
+        labelIds: ['INBOX'],
+        labelFilterBehavior: 'include',
+      });
+      // Paced through the limiter like every other call (D5).
+      expect(acquireSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws TransientError when the response is missing historyId/expiration', async () => {
+      fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '987654' }));
+      const client = new GmailClientService(oauth, limiter);
+      await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(TransientError);
+    });
+
+    it('throws TransientError when expiration is non-numeric', async () => {
+      fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '1', expiration: 'soon' }));
+      const client = new GmailClientService(oauth, limiter);
+      await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(TransientError);
+    });
+
+    it('maps a Gmail 400 (bad topic / missing publish grant) to PermanentError', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(400, 'topicName required'));
+      const client = new GmailClientService(oauth, limiter);
+      await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(PermanentError);
+    });
+
+    it('maps invalid_grant on token refresh to InvalidGrantError', async () => {
+      (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('invalid_grant'),
+      );
+      const client = new GmailClientService(oauth, limiter);
+      await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(InvalidGrantError);
+    });
+  });
+
+  describe('stopWatch', () => {
+    it('POSTs users.stop and discards the (empty) response body', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(204, ''));
+      const client = new GmailClientService(oauth, limiter);
+
+      await client.stopWatch();
+
+      const [url, init] = fetchMock.mock.calls[0]!;
+      expect(url).toBe(`${API}/stop`);
+      expect(init.method).toBe('POST');
+      expect(acquireSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps a Gmail 401 to AuthExpiredError', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(401, 'unauthorized'));
+      const client = new GmailClientService(oauth, limiter);
+      await expect(client.stopWatch()).rejects.toBeInstanceOf(AuthExpiredError);
+    });
+  });
+});

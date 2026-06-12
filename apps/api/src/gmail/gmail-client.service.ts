@@ -14,6 +14,8 @@ import type {
   GmailMessageMetadata,
   GmailMetadataClient,
   GmailMutationClient,
+  GmailWatchClient,
+  GmailWatchResult,
   LabelChange,
 } from '@declutrmail/workers';
 
@@ -121,6 +123,17 @@ interface GmailLabelCreateResponse {
   id?: string;
 }
 
+/**
+ * Shape of a `users.watch` response (D8/D229). Both fields are
+ * mailbox-level bookkeeping — historyId is Gmail's monotonic change
+ * cursor, expiration is ms-since-epoch as a decimal string. No message
+ * content can appear in a watch resource (D7).
+ */
+interface GmailWatchResponse {
+  historyId?: string;
+  expiration?: string;
+}
+
 /** Shape of a `users.history.list` response (only the fields we read). */
 interface GmailHistoryResponse {
   history?: GmailHistoryRecordRaw[];
@@ -182,7 +195,9 @@ export type OauthRefreshFailureReason = 'invalid_grant' | 'no_access_token' | 't
  */
 export type OauthRefreshFailureRecorder = (failure: { reason: OauthRefreshFailureReason }) => void;
 
-export class GmailClientService implements GmailMetadataClient, GmailMutationClient {
+export class GmailClientService
+  implements GmailMetadataClient, GmailMutationClient, GmailWatchClient
+{
   /**
    * Optional D181 audit recorder — set on construction by the worker
    * (which closes over the mailbox/workspace context). Absent in test
@@ -554,6 +569,54 @@ export class GmailClientService implements GmailMetadataClient, GmailMutationCli
     }
     this.labelIdCache.set(name, created.id);
     return created.id;
+  }
+
+  /**
+   * `users.watch` — subscribe this mailbox's change notifications to
+   * the Pub/Sub topic (D8, D229; the webhook receiver verifies OIDC
+   * per the 8-step checklist).
+   *
+   * `labelIds: ['INBOX']` + `labelFilterBehavior: 'include'`: pushes
+   * fire only for changes touching INBOX. New mail and archive both
+   * touch INBOX; the 5-min incremental drift sweep covers any
+   * non-INBOX drift (read-state flips on archived mail, label edits in
+   * folders). This matches the webhook's needs — the push payload is
+   * only an `{emailAddress, historyId}` trigger; the incremental-sync
+   * worker pages the FULL unfiltered history regardless of what
+   * triggered it, so a filtered watch never loses events.
+   *
+   * Idempotent at the Gmail level: re-watching an already-watched
+   * mailbox extends the subscription (~7-day expiry each call) — the
+   * 6h `WatchRenewalWorker` relies on exactly that.
+   *
+   * D7-safe: request carries topic + label ids; response carries
+   * historyId + expiration. No message content in either direction.
+   * Reads the response via `postJson` (the watch handle is the point).
+   */
+  async watch(topicName: string): Promise<GmailWatchResult> {
+    const json = await this.postJson<GmailWatchResponse>('/watch', {
+      topicName,
+      labelIds: ['INBOX'],
+      labelFilterBehavior: 'include',
+    });
+    if (!json.historyId || !json.expiration) {
+      throw new TransientError('Gmail watch response missing historyId/expiration');
+    }
+    const expirationMs = Number(json.expiration);
+    if (!Number.isFinite(expirationMs)) {
+      throw new TransientError('Gmail watch response carried a non-numeric expiration');
+    }
+    return { historyId: json.historyId, expirationMs };
+  }
+
+  /**
+   * `users.stop` — end this mailbox's Pub/Sub notifications (mailbox
+   * disconnect + account-deletion purge). Response body is empty and
+   * deliberately discarded (`post`). Idempotent: stopping a mailbox
+   * with no active watch is a 204 no-op at Gmail.
+   */
+  async stopWatch(): Promise<void> {
+    await this.post('/stop', {});
   }
 
   /** A fresh access token — `OAuth2Client` refreshes it if expired. */

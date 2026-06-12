@@ -10,6 +10,7 @@ import { mailboxAccounts } from '@declutrmail/db';
 import type { ErrorCode } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import { SyncService } from '../sync/sync.service.js';
 import { EmailRaceLostError, UsersService } from '../users/users.service.js';
@@ -51,6 +52,7 @@ export class AuthSignupOrchestrator {
     private readonly users: UsersService,
     private readonly mailboxes: MailboxAccountsService,
     private readonly sync: SyncService,
+    private readonly gmailWatch: GmailWatchService,
     private readonly tokenCrypto: TokenCryptoService,
     private readonly sessions: SessionsService,
     private readonly csrf: CsrfService,
@@ -126,6 +128,13 @@ export class AuthSignupOrchestrator {
     // stale pending job (e.g. a reconnect's pre-disconnect leftover)
     // that would fail on the old token and flip readiness to `failed`.
     await this.sync.schedule(mailboxRow.id, { force: true });
+
+    // `users.watch` on connect AND reconnect (D8/D225/D229 — both the
+    // first-time connect and a post-disconnect reconnect flow through
+    // here; `upsertConnect` stores the fresh token either way).
+    // Best-effort + non-throwing: a Gmail hiccup must not fail the
+    // OAuth redirect, and the 6h WatchRenewalWorker heals a miss.
+    await this.gmailWatch.watchMailbox(mailboxRow.id);
 
     const { tokens } = await this.sessions.issue({
       userId,
@@ -220,6 +229,10 @@ export class AuthSignupOrchestrator {
     // stale pending job (e.g. a reconnect's pre-disconnect leftover)
     // that would fail on the old token and flip readiness to `failed`.
     await this.sync.schedule(mailboxRow.id, { force: true });
+
+    // `users.watch` for the added/reconnected mailbox — same
+    // best-effort contract as `connect` above (D8/D225/D229).
+    await this.gmailWatch.watchMailbox(mailboxRow.id);
     return { mailboxId: mailboxRow.id };
   }
 
