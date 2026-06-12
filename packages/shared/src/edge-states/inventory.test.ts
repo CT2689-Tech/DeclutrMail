@@ -194,17 +194,11 @@ describe('D211 — edge-state inventory contract', () => {
   });
 
   it('records every placeholder route as placeholder-covered and nothing else', () => {
-    // The 5 RoutePlaceholder stubs (billing / quiet / screener /
-    // settings-index / snoozed) are static server renders — their one
-    // designed state is the placeholder itself. Recording any other
-    // state as built would be aspiration, not reality.
-    const placeholderScreens: ScreenId[] = [
-      'billing',
-      'quiet',
-      'screener',
-      'settings-index',
-      'snoozed',
-    ];
+    // The 4 RoutePlaceholder stubs (billing / quiet / screener /
+    // settings-index) are static server renders — their one designed
+    // state is the placeholder itself. Recording any other state as
+    // built would be aspiration, not reality.
+    const placeholderScreens: ScreenId[] = ['billing', 'quiet', 'screener', 'settings-index'];
     for (const screen of placeholderScreens) {
       const coverage = EDGE_STATE_INVENTORY[screen];
       expect(coverage.placeholder.required, `${screen}.placeholder should be required`).toBe(true);

@@ -292,6 +292,56 @@ lives in the `security_events` table (`signup.denied`, D181).
 while the gate is up; pairs with the `security_events` rows for the
 "who to invite next" list.
 
+### `snooze_set`
+
+**When fired.** When the user sets or extends a sender's wake timer on
+the Snoozed screen (D79/D82) and the PATCH succeeds. One event per
+successful write — an idempotent no-op replay on the BE still fires
+(the user made the gesture).
+
+**Payload.**
+
+| Field        | Type                                                                                  | Notes                                             |
+| ------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `sender_id`  | `string`                                                                              | UUID                                              |
+| `preset`     | `'later_today' \| 'tomorrow' \| 'weekend' \| 'next_week' \| 'next_month' \| 'custom'` | D82 preset (`custom` = date picker)               |
+| `has_reason` | `boolean`                                                                             | Whether a note was attached — never the note text |
+
+**Retention / aggregation.** PostHog default. Drives preset popularity
+(do users want different D82 defaults?) and snooze adoption per cohort.
+
+### `snooze_cleared`
+
+**When fired.** When the user cancels a wake timer (`until: null`
+PATCH succeeds) on the Snoozed screen (D80 "Cancel snooze"). Not fired
+by wakes — wakes clear the timer server-side and emit no client event
+beyond `wake_now_clicked`.
+
+**Payload.**
+
+| Field       | Type     | Notes |
+| ----------- | -------- | ----- |
+| `sender_id` | `string` | UUID  |
+
+**Retention / aggregation.** PostHog default. Paired with `snooze_set`
+for set-vs-abandon ratio.
+
+### `wake_now_clicked`
+
+**When fired.** When the user confirms the Wake-now inline confirm on
+the Snoozed screen (D80) — at click time, before the queued restore
+completes in the worker.
+
+**Payload.**
+
+| Field         | Type     | Notes                                            |
+| ------------- | -------- | ------------------------------------------------ |
+| `sender_id`   | `string` | UUID                                             |
+| `later_count` | `number` | Mirror count at click time; `-1` = count syncing |
+
+**Retention / aggregation.** PostHog default. Wake-now vs timer-expiry
+ratio tells us whether D82's presets match real wake behavior.
+
 ---
 
 ## Adding a new event
