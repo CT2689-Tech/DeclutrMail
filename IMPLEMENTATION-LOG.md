@@ -108,7 +108,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
 | D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | ⬜ |  |  |  |
-| D57 | Row expansion: **Accordion pattern matching Triage/Senders | ⬜ |  |  |  |
+| D57 | Row expansion: **Accordion pattern matching Triage/Senders | 🔵 | #214 |  |  |
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
