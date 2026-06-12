@@ -95,12 +95,13 @@ export type ScreenId =
   | 'followups'
   | 'snoozed'
   | 'settings-senders'
+  | 'settings-index'
+  | 'settings-privacy'
   | 'admin-security'
   | 'quiet'
   // Placeholder routes — `RoutePlaceholder` stubs so the nav doesn't lie.
   | 'billing'
   | 'screener'
-  | 'settings-index'
   // App Router error surfaces (D167) — not (app) routes.
   | 'app-error-boundary'
   | 'app-not-found'
@@ -123,11 +124,12 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   brief: 'brief',
   followups: 'followups',
   'settings-senders': 'settings/senders',
+  'settings-index': 'settings',
+  'settings-privacy': 'settings/privacy',
   'admin-security': 'admin/security',
   billing: 'billing',
   quiet: 'quiet',
   screener: 'screener',
-  'settings-index': 'settings',
   snoozed: 'snoozed',
   'app-error-boundary': null,
   'app-not-found': null,
@@ -602,24 +604,85 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     },
   },
 
+  // Settings index (U23 — D34/D114/D116/D216). Graduated from a
+  // RoutePlaceholder stub 2026-06-11. Per-card loading/error branches
+  // (me-settings + billing queries each render their own retry state);
+  // `empty` = the zero-mailboxes branch in the Mailboxes card. The
+  // account-deletion-pending state is the #218 deletion section's
+  // PendingState (date + cancel) rendered inside this screen.
   'settings-index': {
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/settings-index/settings-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/settings-index/mailboxes-card.tsx',
+      status: 'implemented',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/settings-index/settings-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': {
+      // One card's query failing renders that card's retry state while
+      // the rest of the page stays usable — partial by construction.
+      required: false,
+      implementation: 'apps/web/src/features/settings/settings-index/settings-screen.tsx',
+      status: 'implemented',
+    },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': {
+      // Per-mailbox "Syncing…" tag in the Mailboxes card.
+      required: false,
+      implementation: 'apps/web/src/features/settings/settings-index/mailboxes-card.tsx',
+      status: 'implemented',
+    },
+    'sync-failed-transient': {
+      required: false,
+      implementation: 'apps/web/src/features/settings/settings-index/mailboxes-card.tsx',
+      status: 'implemented',
+    },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': {
+      required: true,
+      implementation: 'apps/web/src/features/account-deletion/account-deletion-section.tsx',
+      status: 'implemented',
+    },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Privacy & Data sub-page (D116/D217/D228). Largely static trust
+  // copy (the PrivacyBadge card) + data from the already-resolved auth
+  // provider — no full-screen loading/error of its own. `error` is the
+  // export-failed inline alert; `empty` = zero indexed mailboxes.
+  'settings-privacy': {
     loading: { required: false, status: 'n/a' },
-    empty: { required: false, status: 'n/a' },
-    error: { required: false, status: 'n/a' },
+    empty: {
+      required: false,
+      implementation: 'apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx',
+      status: 'implemented',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx',
+      status: 'implemented',
+    },
     'partial-error': { required: false, status: 'n/a' },
-    offline: { required: false, status: 'n/a' },
-    unauthorized: { required: false, status: 'n/a' },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
     'sync-in-progress': { required: false, status: 'n/a' },
     'sync-failed-transient': { required: false, status: 'n/a' },
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'n/a' },
-    placeholder: {
-      required: true,
-      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
-      status: 'covered',
-    },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   // Snoozed/Later review surface (D78–D80) — real loading/empty/error

@@ -327,6 +327,54 @@ describe('SendersReadService', () => {
       expect(rows[0]!.protectionFlags.isProtected).toBe(true);
     });
 
+    it('filters to VIP senders when isVip=true (U23 settings VIP list)', async () => {
+      // Mirrors the protected-filter fixture: one VIP, one explicit
+      // non-VIP, one with no policy row (left-joined NULL excluded).
+      const vip = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'vip@x.com',
+        lastSeenAt: new Date('2026-03-01T00:00:00Z'),
+      });
+      const notVip = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'not-vip@x.com',
+        lastSeenAt: new Date('2026-02-01T00:00:00Z'),
+      });
+      await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'no-policy-vip@x.com',
+        lastSeenAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: vip.senderKey,
+        isVip: true,
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: notVip.senderKey,
+        isVip: false,
+      });
+
+      const rows = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        isVip: true,
+        cursor: null,
+        limit: 25,
+      });
+      expect(rows.map((r) => r.id)).toEqual([vip.id]);
+      expect(rows[0]!.protectionFlags.isVip).toBe(true);
+
+      // The meta count mirrors the same predicate.
+      const meta = await svc.getSenderListQueryMeta({
+        mailboxAccountId: mailboxId,
+        category: null,
+        isVip: true,
+      });
+      expect(meta.totalMatching).toBe(1);
+    });
+
     describe('q search (#145)', () => {
       async function seedSearchFixture() {
         await seedSender(db, {

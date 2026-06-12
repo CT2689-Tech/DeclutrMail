@@ -81,7 +81,7 @@ describe('SendersPoliciesScreen', () => {
     expect(screen.getByRole('heading', { name: /standing policies/i })).toBeInTheDocument();
   });
 
-  it('fires exactly one server-filtered request with ?protected=true&limit=50', async () => {
+  it('fires exactly one server-filtered request per section (protected + vip)', async () => {
     const seenUrls: URL[] = [];
     installFetchStub([
       {
@@ -89,6 +89,12 @@ describe('SendersPoliciesScreen', () => {
         path: '/api/senders',
         respond: (_req, url) => {
           seenUrls.push(url);
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
           return jsonOk({
             data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
             meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
@@ -100,11 +106,18 @@ describe('SendersPoliciesScreen', () => {
     await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
 
     // The old behavior auto-paginated until hasMore=false. Slice 0 must
-    // make exactly ONE request — anything more is a regression of the
-    // storm (and would not survive a 5k mailbox).
-    expect(seenUrls).toHaveLength(1);
-    expect(seenUrls[0]!.searchParams.get('protected')).toBe('true');
-    expect(seenUrls[0]!.searchParams.get('limit')).toBe('50');
+    // make exactly ONE request per section — anything more is a
+    // regression of the storm (and would not survive a 5k mailbox).
+    expect(seenUrls).toHaveLength(2);
+    const protectedReq = seenUrls.find((u) => u.searchParams.get('protected') === 'true');
+    const vipReq = seenUrls.find((u) => u.searchParams.get('vip') === 'true');
+    expect(protectedReq).toBeDefined();
+    expect(protectedReq!.searchParams.get('limit')).toBe('50');
+    expect(vipReq).toBeDefined();
+    expect(vipReq!.searchParams.get('limit')).toBe('50');
+    // The two filters never compose on one request.
+    expect(protectedReq!.searchParams.get('vip')).toBeNull();
+    expect(vipReq!.searchParams.get('protected')).toBeNull();
   });
 
   it('lists each server-returned protected sender with a Manage link', async () => {
@@ -112,14 +125,21 @@ describe('SendersPoliciesScreen', () => {
       {
         method: 'GET',
         path: '/api/senders',
-        respond: () =>
-          jsonOk({
+        respond: (_req, url) => {
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
+          return jsonOk({
             data: [
               { ...BASE_ROW, id: 'a', displayName: 'Stripe', email: 'stripe@stripe.com' },
               { ...BASE_ROW, id: 'b', displayName: 'GitHub', email: 'noreply@github.com' },
             ],
             meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
-          }),
+          });
+        },
       },
     ]);
     renderScreen();
@@ -137,6 +157,12 @@ describe('SendersPoliciesScreen', () => {
         method: 'GET',
         path: '/api/senders',
         respond: (_req, url) => {
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
           page += 1;
           const cursor = url.searchParams.get('cursor');
           if (cursor === 'page-2') {
@@ -183,5 +209,114 @@ describe('SendersPoliciesScreen', () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+  });
+
+  // ── VIP section (U23) ─────────────────────────────────────────────
+
+  const VIP_ROW = {
+    ...BASE_ROW,
+    id: 'v1',
+    displayName: 'Mom',
+    email: 'mom@example.com',
+    protectionFlags: {
+      isVip: true,
+      isProtected: false,
+      protectionReason: null,
+      protectionSetAt: null,
+    },
+  };
+
+  function installVipFixture(opts: { removed?: () => boolean } = {}) {
+    const patches: Array<{ url: string; body: unknown }> = [];
+    let vipRemoved = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: vipRemoved ? [] : [VIP_ROW],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
+          return jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          });
+        },
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/senders\/[^/]+\/policy/,
+        respond: async (req, url) => {
+          patches.push({ url: url.pathname, body: await req.json() });
+          vipRemoved = opts.removed ? opts.removed() : true;
+          return jsonOk({
+            data: {
+              senderId: 'v1',
+              policyType: null,
+              isVip: false,
+              isProtected: false,
+              protectionReason: null,
+              protectionSetAt: null,
+              changed: true,
+            },
+          });
+        },
+      },
+    ]);
+    return patches;
+  }
+
+  it('lists VIP senders with Remove + Manage affordances', async () => {
+    installVipFixture();
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Mom')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /remove vip from mom/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /manage mom/i })).toHaveAttribute(
+      'href',
+      '/senders/v1',
+    );
+  });
+
+  it('Remove PATCHes isVip:false via the existing policy route and the row leaves the list', async () => {
+    const patches = installVipFixture();
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Mom')).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /remove vip from mom/i }));
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0]!.url).toBe('/api/senders/v1/policy');
+    expect(patches[0]!.body).toEqual({ isVip: false });
+    // The mutation invalidates sendersKeys.all → the vip list refetches
+    // (now empty) and the row disappears.
+    await waitFor(() => expect(screen.queryByText('Mom')).not.toBeInTheDocument());
+    expect(screen.getByText(/No VIP senders yet/i)).toBeInTheDocument();
+  });
+
+  it('renders the VIP empty state without blanking the Protected section', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
+          return jsonOk({
+            data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
+    expect(screen.getByText(/No VIP senders yet/i)).toBeInTheDocument();
   });
 });

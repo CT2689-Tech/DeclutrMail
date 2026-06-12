@@ -24,6 +24,14 @@ import { captureFeatureException } from '@/lib/sentry';
 // packages/shared promotion, so triage imports across the boundary
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
+// D34 — the settings feature owns the persisted skip-sheet preference
+// (users.preferences.actionSheetPrefs); triage hydrates from it and
+// writes through when the sheet's "remember this" toggle confirms.
+import {
+  useHydrateActionSheetPrefs,
+  useUpdateActionSheetPrefs,
+  VERB_TO_WIRE,
+} from '@/features/settings/api/use-me-settings';
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
@@ -122,6 +130,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const keepIntent = useKeepIntent();
   const unsubIntent = useRecordUnsubscribeIntent();
   const enqueueComposite = useEnqueueComposite();
+
+  // D34 — mirror the persisted skip-sheet prefs into the triage store
+  // so the sheet-vs-inline choice reflects the user's saved preference
+  // on any device. Failures degrade to the store default (sheet shows).
+  useHydrateActionSheetPrefs();
+  const { mutate: persistSheetPref } = useUpdateActionSheetPrefs('action_sheet');
 
   /**
    * The one async action in flight (enqueue → worker → poll). Single
@@ -434,11 +448,20 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     (details: ConfirmDetails) => {
       if (pendingAction == null || pendingRow == null) return;
       if (pendingAction.verb !== 'Keep') {
-        setRememberPreference(pendingAction.verb as SheetableVerb, details.rememberPreference);
+        const verb = pendingAction.verb as SheetableVerb;
+        setRememberPreference(verb, details.rememberPreference);
+        // D34 persistence — the sheet only renders when the stored pref
+        // is `false`, so a checked toggle is the only change worth a
+        // PATCH (unchecked re-asserts the stored default). Fire-and-
+        // forget: the store already reflects the choice for this
+        // session; a failed PATCH just means it won't roam.
+        if (details.rememberPreference) {
+          persistSheetPref({ [VERB_TO_WIRE[verb]]: true });
+        }
       }
       dispatchAction(pendingAction.verb, pendingRow, details);
     },
-    [pendingAction, pendingRow, dispatchAction, setRememberPreference],
+    [pendingAction, pendingRow, dispatchAction, setRememberPreference, persistSheetPref],
   );
 
   /**

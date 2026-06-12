@@ -28,11 +28,13 @@
  * inside `senders-screen.tsx`). Keeping the slice scoped means the
  * Brief / Followups / Screener screens never have to know about it.
  *
- * Persistence: `rememberPreference` is conceptually a per-user
- * setting (Settings page, D34) — for this PR it lives in memory only.
- * When the Settings page lands, a `persist` middleware writes to
- * localStorage; the store contract stays identical so consumers don't
- * change.
+ * Persistence: `rememberPreference` is a per-user setting (D34),
+ * persisted server-side under `users.preferences.actionSheetPrefs` so
+ * it roams devices. The settings feature owns the wire
+ * (`useHydrateActionSheetPrefs` mirrors server → store on load;
+ * `useUpdateActionSheetPrefs` writes through on change) — this store
+ * stays the in-session source the action sheet actually reads, so the
+ * contract is unchanged for consumers.
  */
 
 'use client';

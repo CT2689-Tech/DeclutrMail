@@ -60,7 +60,10 @@ export type EventName =
   // — Snoozed surface (D78–D80, D82) —
   | 'snooze_set'
   | 'snooze_cleared'
-  | 'wake_now_clicked';
+  | 'wake_now_clicked'
+  // — Settings surface (U23 — D34/D116/D216) —
+  | 'settings_pref_changed'
+  | 'data_export_requested';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in
@@ -334,6 +337,27 @@ export interface EventPayloads {
     sender_id: string;
     /** Mirror count at click time; -1 when the count was still syncing. */
     later_count: number;
+  };
+
+  // — Settings surface (U23 — D34/D116/D216) —
+  settings_pref_changed: {
+    /** Which preference flipped. */
+    pref: 'action_sheet_skip' | 'email_reminders';
+    /**
+     * The KAULD verb for `action_sheet_skip` flips; null for
+     * non-verb-scoped prefs (`email_reminders`).
+     */
+    verb: Verb | null;
+    /** State AFTER the change — for skip prefs, true = sheet skipped. */
+    enabled: boolean;
+    /** Where the flip happened — settings card vs the sheet's remember toggle. */
+    source: 'settings' | 'action_sheet';
+  };
+  data_export_requested: {
+    /** Which export artifact was downloaded. */
+    format: 'json' | 'csv';
+    /** Terminal client-side outcome of the download attempt. */
+    outcome: 'success' | 'failed';
   };
 }
 

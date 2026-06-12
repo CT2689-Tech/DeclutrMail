@@ -43,6 +43,8 @@ export const sendersKeys = {
       category?: GmailCategory | undefined;
       limit?: number | undefined;
       isProtected?: TriStateFilter | undefined;
+      /** VIP filter (U23 settings VIP list) — keyed like isProtected. */
+      isVip?: boolean | undefined;
       sort?: SenderListSort | undefined;
       direction?: SenderListDirection | undefined;
       /** Search term (#145) — in the key so each query caches separately
