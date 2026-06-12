@@ -11,6 +11,7 @@ import {
   outboxEvents,
   mailMessages,
   schema,
+  screenerQuarantine,
   senderPolicies,
   senders,
   senderTimeseries,
@@ -768,5 +769,121 @@ describe('ScoreWorker — score_run_completed outbox publish (U14)', () => {
 
     expect(result.decisionsWritten).toBe(1);
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
+  });
+});
+
+describe('ScoreWorker — Screener Phase-B flag (D72, D75)', () => {
+  /** One message → total < 3 → Phase B (insufficient_signal). */
+  async function seedPhaseBSender(
+    db: ScoreWorkerDeps['db'],
+    mailboxAccountId: string,
+    email: string,
+  ): Promise<string> {
+    const senderKey = await seedSender(db, mailboxAccountId, email, {
+      gmailCategory: 'updates',
+      firstSeenAt: new Date('2026-05-20T00:00:00Z'),
+      lastSeenAt: new Date('2026-05-22T00:00:00Z'),
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: `m-${email}`,
+      providerThreadId: `t-${email}`,
+      senderKey,
+      subject: '',
+      snippet: '',
+      internalDate: new Date('2026-05-22T00:00:00Z'),
+      labelIds: ['INBOX'],
+      isUnread: true,
+    });
+    return senderKey;
+  }
+
+  it('flags a Phase-B sender into screener_quarantine — DB row only, pending', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedPhaseBSender(db, mailboxAccountId, 'fresh@flag.test');
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    const result = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 10_000 },
+      FAKE_CTX,
+    );
+
+    expect(result.screenerFlagged).toBe(1);
+    const rows = await db
+      .select()
+      .from(screenerQuarantine)
+      .where(eq(screenerQuarantine.mailboxAccountId, mailboxAccountId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.senderKey).toBe(senderKey);
+    expect(rows[0]?.decidedAt).toBeNull();
+    // D72 — soft quarantine: the flag is the entire effect.
+    expect(rows[0]?.softQuarantined).toBe(true);
+  });
+
+  it('does not flag a Phase-C / Phase-A sender', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    // Default seed: first seen 2024, no messages seeded ⇒ total = 0…
+    // so add 3 messages to clear Phase B and land in Phase C.
+    const senderKey = await seedSender(db, mailboxAccountId, 'old@brand.test', {
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    await db.insert(mailMessages).values(
+      [1, 2, 3].map((i) => ({
+        mailboxAccountId,
+        providerMessageId: `m${i}`,
+        providerThreadId: `t${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date('2026-04-01T00:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      })),
+    );
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    const result = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 11_000 },
+      FAKE_CTX,
+    );
+
+    expect(result.screenerFlagged).toBe(0);
+    expect(await db.select().from(screenerQuarantine)).toHaveLength(0);
+  });
+
+  it('re-score is idempotent — no duplicate row, no re-flag of a decided sender', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedPhaseBSender(db, mailboxAccountId, 'again@flag.test');
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    const first = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 12_000 },
+      FAKE_CTX,
+    );
+    expect(first.screenerFlagged).toBe(1);
+
+    // Re-score while pending → conflict, no second row.
+    const second = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: 13_000 },
+      FAKE_CTX,
+    );
+    expect(second.screenerFlagged).toBe(0);
+    expect(await db.select().from(screenerQuarantine)).toHaveLength(1);
+
+    // User decides → decided_at set; a later Phase-B re-score must NOT
+    // re-queue the sender (decide once — D72).
+    await db.update(screenerQuarantine).set({ decidedAt: new Date() });
+    const third = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: 14_000 },
+      FAKE_CTX,
+    );
+    expect(third.screenerFlagged).toBe(0);
+    const rows = await db.select().from(screenerQuarantine);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.decidedAt).not.toBeNull();
   });
 });
