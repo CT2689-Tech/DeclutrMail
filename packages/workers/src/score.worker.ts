@@ -10,8 +10,10 @@ import {
   triageDecisions,
 } from '@declutrmail/db';
 import type { schema, TriageVerdict } from '@declutrmail/db';
+import { TOPICS, TriageScoreRunCompletedPayloadSchema } from '@declutrmail/events';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import type { OutboxPublisher } from './outbox-publisher.js';
 import {
   createLimiter,
   renderTemplate,
@@ -119,6 +121,18 @@ export interface ScoreWorkerDeps {
    * `reasoning.ts` for the leaky-bucket pacing model.
    */
   reasoningRatePerMin?: number;
+  /**
+   * Outbox publisher (D13/D204) for the `triage.score_run_completed`
+   * event, published after the run's decisions are written (U14 —
+   * drives the Autopilot apply sweep via the outbox consumer router).
+   * Published with the root db handle — the run's upserts are
+   * individually committed (no enclosing tx), so the event marks "the
+   * sweep finished", not an atomic batch. Optional ONLY because the
+   * composition root (`apps/api/src/worker.ts`) is integration-owned
+   * this wave; when absent a structured
+   * `score.run_completed_publish_skipped` warning surfaces the gap.
+   */
+  outbox?: OutboxPublisher;
 }
 
 /**
@@ -236,9 +250,44 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       else templateExplanations += 1;
       if (written.timedOut) llmTimeouts += 1;
     }
+    const decisionsWritten = llmExplanations + templateExplanations;
+
+    // U14 — `triage.score_run_completed` drives the Autopilot apply
+    // sweep (the consumer router enqueues `autopilot-apply` off it).
+    // Published AFTER the upserts complete; the root db handle is the
+    // documented OutboxPublisher path when there is no enclosing tx
+    // (the run's writes commit individually). A BullMQ retry of this
+    // job re-publishes with the same `producedAtMs` — the apply job's
+    // `${mailbox}:${producedAtMs}` jobId dedups downstream.
+    if (this.deps.outbox) {
+      await this.deps.outbox.publish(this.deps.db, {
+        topic: TOPICS.TRIAGE_SCORE_RUN_COMPLETED,
+        aggregateId: payload.mailboxAccountId,
+        payload: {
+          mailboxAccountId: payload.mailboxAccountId,
+          trigger: payload.trigger,
+          producedAtMs: payload.producedAtMs,
+          decisionsWritten,
+        },
+        schema: TriageScoreRunCompletedPayloadSchema,
+      });
+    } else {
+      // Registration gap (integration PR wires the publisher). The
+      // score run itself succeeded; the missing event means no
+      // autopilot sweep follows — surface it.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'score.run_completed_publish_skipped',
+          worker: this.workerName,
+          mailboxAccountId: payload.mailboxAccountId,
+          reason: 'ScoreWorkerDeps.outbox not wired',
+        }),
+      );
+    }
 
     return {
-      decisionsWritten: llmExplanations + templateExplanations,
+      decisionsWritten,
       llmExplanations,
       templateExplanations,
       llmTimeouts,

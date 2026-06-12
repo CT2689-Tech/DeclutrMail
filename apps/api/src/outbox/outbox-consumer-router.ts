@@ -1,17 +1,39 @@
 import { eq, sql } from 'drizzle-orm';
+import type { Queue } from 'bullmq';
 import { senderPolicies } from '@declutrmail/db';
 import {
   ActionsUnsubscribeIntentRecordedPayloadSchema,
+  MailboxSyncReadyPayloadSchema,
   TOPICS,
+  TriageScoreRunCompletedPayloadSchema,
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
 import type {
   ActionsUnsubscribeIntentRecordedPayload,
   TriageVerdictAppliedPayload,
 } from '@declutrmail/events';
-import type { DispatchedEvent } from '@declutrmail/workers';
+import {
+  AUTOPILOT_APPLY_JOB,
+  seedAutopilotPresets,
+  type AutopilotApplyJobData,
+  type DispatchedEvent,
+} from '@declutrmail/workers';
 
 import type { DrizzleDb } from '../db/db.module.js';
+
+/**
+ * Optional consumer dependencies beyond the db handle (U14).
+ *
+ * `autopilotApplyQueue` — BullMQ producer for the `autopilot-apply`
+ * queue. Optional because the worker composition root
+ * (`apps/api/src/worker.ts`) is integration-owned this wave: the
+ * router compiles + runs without it, and the autopilot cases log a
+ * structured `autopilot_queue_unwired` warning instead of silently
+ * dropping the trigger. The integration PR passes the queue.
+ */
+export interface OutboxConsumerDeps {
+  autopilotApplyQueue?: Queue<AutopilotApplyJobData> | null;
+}
 
 /**
  * Outbox consumer router (D13, D204).
@@ -35,9 +57,37 @@ import type { DrizzleDb } from '../db/db.module.js';
  * payload as metadata-only; no message content is ever in it (publisher
  * gates enforce this).
  */
-export function buildOutboxConsumer(db: DrizzleDb) {
+export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}) {
   return async function consumeOutboxEvent(event: DispatchedEvent): Promise<void> {
     switch (event.topic) {
+      case TOPICS.MAILBOX_SYNC_READY: {
+        // U14 — Autopilot bootstrap on first ready (D10, D99, D101).
+        // 1. Seed the 5 D101 preset rules — idempotent (`ON CONFLICT
+        //    DO NOTHING` on the partial unique), so a RESUMED sync
+        //    that re-reaches ready is a no-op.
+        // 2. Enqueue an `autopilot-apply` sweep so enabled rules run
+        //    against the fresh sender index. jobId carries the ready
+        //    timestamp — a redelivered event dedups at BullMQ.
+        const payload = MailboxSyncReadyPayloadSchema.parse(event.payload);
+        await seedAutopilotPresets(db, payload.mailboxAccountId);
+        await enqueueAutopilotApply(deps, {
+          mailboxAccountId: payload.mailboxAccountId,
+          triggeredAtMs: Date.parse(payload.readyAt),
+        });
+        return;
+      }
+      case TOPICS.TRIAGE_SCORE_RUN_COMPLETED: {
+        // U14 — score run finished ⇒ decisions are fresh ⇒ run the
+        // Autopilot matchers (D99/D104). jobId reuses the score run's
+        // `producedAtMs` so a republished event (BullMQ retry of the
+        // score job) collapses to one apply sweep.
+        const payload = TriageScoreRunCompletedPayloadSchema.parse(event.payload);
+        await enqueueAutopilotApply(deps, {
+          mailboxAccountId: payload.mailboxAccountId,
+          triggeredAtMs: payload.producedAtMs,
+        });
+        return;
+      }
       case TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED: {
         // Defense-in-depth Zod re-parse on the consumer side
         // (typescript-reviewer 2026-06-06). The publisher already
@@ -84,6 +134,37 @@ export function buildOutboxConsumer(db: DrizzleDb) {
         return;
     }
   };
+}
+
+/**
+ * Enqueue one `autopilot-apply` sweep (U14). Fail-open on a missing
+ * queue: the event still ACKs (the dispatcher must not wedge on a
+ * registration gap), but the dropped trigger is logged at WARN so the
+ * gap surfaces in Cloud Logging until the integration PR wires the
+ * queue. `jobId = ${mailbox}-${triggeredAtMs}` mirrors the apply
+ * worker's idempotency key with `-` instead of `:` — BullMQ reserves
+ * `:` as its Redis key separator and REJECTS custom ids containing it
+ * (caught live in the U14 smoke: `Error: Custom Id cannot contain :`).
+ */
+async function enqueueAutopilotApply(
+  deps: OutboxConsumerDeps,
+  job: AutopilotApplyJobData,
+): Promise<void> {
+  if (!deps.autopilotApplyQueue) {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'outbox.consumer.autopilot_queue_unwired',
+        mailboxAccountId: job.mailboxAccountId,
+      }),
+    );
+    return;
+  }
+  await deps.autopilotApplyQueue.add(AUTOPILOT_APPLY_JOB, job, {
+    jobId: `${job.mailboxAccountId}-${job.triggeredAtMs}`,
+    removeOnComplete: { age: 86_400 },
+    removeOnFail: false,
+  });
 }
 
 /**

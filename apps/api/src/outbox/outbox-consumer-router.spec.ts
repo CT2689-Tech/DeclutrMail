@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle, type PgliteDatabase } from 'drizzle-orm/pglite';
 import {
+  automationRules,
   mailboxAccounts,
   schema,
   senderPolicies,
@@ -14,7 +15,7 @@ import {
 } from '@declutrmail/db';
 import { TOPICS } from '@declutrmail/events';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildOutboxConsumer } from './outbox-consumer-router.js';
 import type { DrizzleDb } from '../db/db.module.js';
@@ -215,5 +216,125 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     });
     const rows = await db.select().from(senderPolicies);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
+  let db: DrizzleDb;
+  let mailboxId: string;
+  let workspaceId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    const [w] = await db.insert(workspaces).values({ name: 'W' }).returning({ id: workspaces.id });
+    workspaceId = w!.id;
+    const [u] = await db
+      .insert(users)
+      .values({ workspaceId, email: 'u@x.com' })
+      .returning({ id: users.id });
+    const [m] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId: u!.id,
+        provider: 'gmail',
+        providerAccountId: 'u@x',
+      })
+      .returning({ id: mailboxAccounts.id });
+    mailboxId = m!.id;
+  });
+
+  it('mailbox.sync_ready seeds the 5 presets and enqueues an apply sweep', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    const consume = buildOutboxConsumer(db, { autopilotApplyQueue: { add } as never });
+
+    const readyAt = '2026-06-10T08:00:00.000Z';
+    await consume({
+      id: 'evt-ready-1',
+      topic: TOPICS.MAILBOX_SYNC_READY,
+      aggregateId: mailboxId,
+      payload: { mailboxAccountId: mailboxId, workspaceId, readyAt, messageCount: 42 },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+
+    const rules = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.mailboxAccountId, mailboxId));
+    expect(rules).toHaveLength(5);
+
+    expect(add).toHaveBeenCalledTimes(1);
+    const [, jobData, opts] = add.mock.calls[0]!;
+    expect(jobData).toEqual({
+      mailboxAccountId: mailboxId,
+      triggeredAtMs: Date.parse(readyAt),
+    });
+    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(readyAt)}`);
+
+    // Redelivery: seeder is a no-op, enqueue dedups at BullMQ (same jobId).
+    await consume({
+      id: 'evt-ready-1',
+      topic: TOPICS.MAILBOX_SYNC_READY,
+      aggregateId: mailboxId,
+      payload: { mailboxAccountId: mailboxId, workspaceId, readyAt, messageCount: 42 },
+      attempts: 2,
+      createdAt: new Date(),
+    });
+    const rulesAfter = await db
+      .select()
+      .from(automationRules)
+      .where(eq(automationRules.mailboxAccountId, mailboxId));
+    expect(rulesAfter).toHaveLength(5);
+  });
+
+  it('triage.score_run_completed enqueues an apply sweep keyed on producedAtMs', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    const consume = buildOutboxConsumer(db, { autopilotApplyQueue: { add } as never });
+
+    await consume({
+      id: 'evt-score-1',
+      topic: TOPICS.TRIAGE_SCORE_RUN_COMPLETED,
+      aggregateId: mailboxId,
+      payload: {
+        mailboxAccountId: mailboxId,
+        trigger: 'sync_complete',
+        producedAtMs: 777,
+        decisionsWritten: 12,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+
+    expect(add).toHaveBeenCalledTimes(1);
+    const [, jobData, opts] = add.mock.calls[0]!;
+    expect(jobData).toEqual({ mailboxAccountId: mailboxId, triggeredAtMs: 777 });
+    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-777`);
+  });
+
+  it('without a wired queue the event ACKs and warns instead of throwing', async () => {
+    const consume = buildOutboxConsumer(db);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await consume({
+        id: 'evt-score-2',
+        topic: TOPICS.TRIAGE_SCORE_RUN_COMPLETED,
+        aggregateId: mailboxId,
+        payload: {
+          mailboxAccountId: mailboxId,
+          trigger: 'cron_sweep',
+          producedAtMs: 1,
+          decisionsWritten: 0,
+        },
+        attempts: 1,
+        createdAt: new Date(),
+      });
+      const kinds = warnSpy.mock.calls.map(
+        (c) => (JSON.parse(c[0] as string) as { kind: string }).kind,
+      );
+      expect(kinds).toContain('outbox.consumer.autopilot_queue_unwired');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

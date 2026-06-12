@@ -62,3 +62,17 @@ export type { ActionJobStatus } from './action-job-status';
 // Gmail category mirror — `gmail_category` pg_enum. Contract-tested in
 // apps/api/src/senders/senders.types.ts.
 export type { GmailCategory } from './gmail-category';
+
+// U14 — Autopilot approve + dry-run preview contracts (D99/D101/D104).
+export {
+  AutopilotApproveMatchesRequestSchema,
+  AutopilotApproveResultSchema,
+  AutopilotPreviewSampleSchema,
+  AutopilotRulePreviewResultSchema,
+} from './autopilot';
+export type {
+  AutopilotApproveMatchesRequest,
+  AutopilotApproveResult,
+  AutopilotPreviewSample,
+  AutopilotRulePreviewResult,
+} from './autopilot';

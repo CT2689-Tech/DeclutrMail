@@ -1,4 +1,5 @@
 import {
+  mailboxAccounts,
   mailMessages,
   providerSyncState,
   senderPolicies,
@@ -12,11 +13,13 @@ import type {
   NewSenderTimeseries,
   schema,
 } from '@declutrmail/db';
+import { MailboxSyncReadyPayloadSchema, TOPICS } from '@declutrmail/events';
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
+import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
 import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 import { ValidationError } from './worker-errors.js';
@@ -73,6 +76,17 @@ export interface InitialSyncDeps {
    * time never fails an otherwise-successful sync.
    */
   onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
+  /**
+   * Outbox publisher (D13/D204) for the `mailbox.sync_ready` event,
+   * published in the SAME transaction as the final ready transition
+   * (U14 — drives the Autopilot preset seeder + apply sweep via the
+   * outbox consumer router). Optional ONLY because the worker's
+   * composition root (`apps/api/src/worker.ts`) is integration-owned
+   * this wave — when absent, the ready transition still commits and a
+   * structured `sync.sync_ready_publish_skipped` warning surfaces the
+   * gap. The integration PR passes `outbox: new OutboxPublisher()`.
+   */
+  outbox?: OutboxPublisher;
 }
 
 /**
@@ -294,7 +308,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     // Stage 5 — ready. Persist the historyId snapshot so PR-D's
     // incremental sync can `history.list?startHistoryId=...` from here.
-    await this.markReady(mailboxAccountId, snapshotHistoryId);
+    await this.markReady(mailboxAccountId, snapshotHistoryId, messagesSynced);
 
     return {
       messagesSynced,
@@ -1179,37 +1193,91 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * readiness, progress, errorCode, lastSyncedAt) always commit so the
    * sync gate transitions correctly; only the cursor field is
    * monotonic-guarded.
+   *
+   * U14: the `mailbox.sync_ready` outbox event is published in the SAME
+   * transaction as the ready upsert (transactional outbox — the event
+   * exists iff the ready state committed). The consumer router seeds
+   * the D101 Autopilot presets + enqueues the apply sweep off it. A
+   * RESUMED sync that re-reaches ready publishes again — consumers are
+   * idempotent (seeder ON CONFLICT; apply job deduped per trigger).
    */
-  private async markReady(mailboxAccountId: string, historyId: string): Promise<void> {
+  private async markReady(
+    mailboxAccountId: string,
+    historyId: string,
+    messageCount: number,
+  ): Promise<void> {
     const lastHistoryId = BigInt(historyId);
-    await this.deps.db
-      .insert(providerSyncState)
-      .values({
-        mailboxAccountId,
-        currentStage: 'ready',
-        readinessStatus: 'ready',
-        progressPct: 100,
-        lastHistoryId,
-      })
-      .onConflictDoUpdate({
-        target: providerSyncState.mailboxAccountId,
-        set: {
+    const readyUpsert = (tx: OutboxTx) =>
+      tx
+        .insert(providerSyncState)
+        .values({
+          mailboxAccountId,
           currentStage: 'ready',
           readinessStatus: 'ready',
           progressPct: 100,
-          errorCode: null,
-          // GREATEST(stored, snapshot) — never regress on a concurrent
-          // IncrementalSyncWorker's already-advanced cursor.
-          lastHistoryId: sql`CASE
+          lastHistoryId,
+        })
+        .onConflictDoUpdate({
+          target: providerSyncState.mailboxAccountId,
+          set: {
+            currentStage: 'ready',
+            readinessStatus: 'ready',
+            progressPct: 100,
+            errorCode: null,
+            // GREATEST(stored, snapshot) — never regress on a concurrent
+            // IncrementalSyncWorker's already-advanced cursor.
+            lastHistoryId: sql`CASE
             WHEN ${providerSyncState.lastHistoryId} IS NULL
               OR EXCLUDED.${sql.identifier('last_history_id')} > ${providerSyncState.lastHistoryId}
             THEN EXCLUDED.${sql.identifier('last_history_id')}
             ELSE ${providerSyncState.lastHistoryId}
           END`,
-          lastSyncedAt: sql`now()`,
-          updatedAt: sql`now()`,
+            lastSyncedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          },
+        });
+
+    const outbox = this.deps.outbox;
+    if (!outbox) {
+      // Registration gap (integration PR wires the publisher) — the
+      // ready transition must never block on it, but the missing event
+      // is a real gap (no preset seeding / apply sweep), so WARN.
+      await readyUpsert(this.deps.db);
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.sync_ready_publish_skipped',
+          worker: this.workerName,
+          mailboxAccountId,
+          reason: 'InitialSyncDeps.outbox not wired',
+        }),
+      );
+      return;
+    }
+
+    const [account] = await this.deps.db
+      .select({ workspaceId: mailboxAccounts.workspaceId })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, mailboxAccountId))
+      .limit(1);
+    if (!account) {
+      throw new ValidationError(`mailbox account ${mailboxAccountId} not found at markReady`);
+    }
+
+    await this.deps.db.transaction(async (tx) => {
+      await readyUpsert(tx);
+      await outbox.publish(tx, {
+        topic: TOPICS.MAILBOX_SYNC_READY,
+        aggregateId: mailboxAccountId,
+        payload: {
+          mailboxAccountId,
+          workspaceId: account.workspaceId,
+          readyAt: new Date().toISOString(),
+          messageCount,
         },
+        schema: MailboxSyncReadyPayloadSchema,
       });
+    });
   }
 }
 

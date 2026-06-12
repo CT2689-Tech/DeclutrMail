@@ -9,13 +9,15 @@ import {
   mailboxAccounts,
   ruleMatchLog,
   schema,
+  senders,
+  triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { BadRequestException } from '@nestjs/common';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from './autopilot.read-service.js';
 
@@ -496,6 +498,226 @@ describe('AutopilotReadService', () => {
       expect(dismissedAsB!.alreadyDismissed).toBe(false);
       const crossTenant = await service.dismissMatch(mailboxA, matchB!.id);
       expect(crossTenant).toBeNull();
+    });
+  });
+
+  describe('approveMatches (U14)', () => {
+    function withQueue(): { svc: AutopilotReadService; add: ReturnType<typeof vi.fn> } {
+      const add = vi.fn().mockResolvedValue(undefined);
+      const svc = new AutopilotReadService(db as never, { add } as never);
+      return { svc, add };
+    }
+
+    async function seedPendingMatch(mailboxId: string, presetKey = 'auto_archive_low_engagement') {
+      const ruleId = await getRuleId(db, mailboxId, presetKey);
+      const [m] = await db
+        .insert(ruleMatchLog)
+        .values({
+          ruleId,
+          mailboxAccountId: mailboxId,
+          senderKey: 'c'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'approve-test',
+        })
+        .returning({ id: ruleMatchLog.id });
+      return { ruleId, matchId: m!.id };
+    }
+
+    it('approves pending observe matches and enqueues the action sweep', async () => {
+      const { svc, add } = withQueue();
+      const { matchId } = await seedPendingMatch(mailboxA);
+
+      const result = await svc.approveMatches(mailboxA, [matchId]);
+      expect(result.approvedCount).toBe(1);
+      expect(result.alreadyResolvedCount).toBe(0);
+      expect(result.executionEnqueued).toBe(true);
+      expect(add).toHaveBeenCalledTimes(1);
+
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(row!.resolution).toBe('approved');
+      expect(row!.resolvedAt).not.toBeNull();
+      expect(row!.intentApplied).toBe(false);
+    });
+
+    it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
+      const { svc, add } = withQueue();
+      const { matchId } = await seedPendingMatch(mailboxA);
+      await svc.approveMatches(mailboxA, [matchId]);
+      add.mockClear();
+
+      const replay = await svc.approveMatches(mailboxA, [matchId]);
+      expect(replay.approvedCount).toBe(0);
+      expect(replay.alreadyResolvedCount).toBe(1);
+      expect(replay.executionEnqueued).toBe(false);
+      expect(add).not.toHaveBeenCalled();
+    });
+
+    it('cross-tenant ids are silently absent from both counts', async () => {
+      const { svc } = withQueue();
+      const { matchId } = await seedPendingMatch(mailboxB);
+      const result = await svc.approveMatches(mailboxA, [matchId]);
+      expect(result.approvedCount).toBe(0);
+      expect(result.alreadyResolvedCount).toBe(0);
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(row!.resolution).toBe('pending');
+    });
+
+    it('503s before any write when the action queue is not wired', async () => {
+      const { matchId } = await seedPendingMatch(mailboxA);
+      await expect(service.approveMatches(mailboxA, [matchId])).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(row!.resolution).toBe('pending');
+    });
+
+    it('approveAllForRule approves every pending row for the rule only', async () => {
+      const add = vi.fn().mockResolvedValue(undefined);
+      const svc = new AutopilotReadService(db as never, { add } as never);
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const otherRuleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'd'.repeat(64),
+          modeAtMatch: 'observe' as const,
+          confidence: '0.92',
+          reason: 'r1',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'e'.repeat(64),
+          modeAtMatch: 'observe' as const,
+          confidence: '0.92',
+          reason: 'r2',
+        },
+        {
+          ruleId: otherRuleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'f'.repeat(64),
+          modeAtMatch: 'observe' as const,
+          confidence: '0.92',
+          reason: 'other-rule',
+        },
+      ]);
+
+      const result = await svc.approveAllForRule(mailboxA, ruleId);
+      expect(result).not.toBeNull();
+      expect(result!.approvedCount).toBe(2);
+      expect(result!.executionEnqueued).toBe(true);
+
+      const pending = await db
+        .select()
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.resolution, 'pending'));
+      expect(pending).toHaveLength(1);
+      expect(pending[0]!.ruleId).toBe(otherRuleId);
+
+      // Cross-tenant rule id → null → controller 404.
+      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      expect(await svc.approveAllForRule(mailboxA, ruleB)).toBeNull();
+    });
+  });
+
+  describe('previewRule (U14)', () => {
+    it('runs the matcher against current signals and returns a metadata-only sample', async () => {
+      const senderKey = 'a1'.repeat(32);
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxA,
+        senderKey,
+        displayName: 'Shop Inc',
+        email: 'deals@shop.com',
+        domain: 'shop.com',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2024-01-01'),
+        lastSeenAt: new Date(),
+      });
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxA,
+        senderKey,
+        verdict: 'archive',
+        confidence: '0.92',
+        reasoning: 'test',
+        generatedBy: 'template',
+        producedAt: new Date(),
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const result = await service.previewRule(mailboxA, ruleId);
+      expect(result).not.toBeNull();
+      expect(result!.wouldMatchCount).toBe(1);
+      expect(result!.evaluatedSenders).toBe(1);
+      expect(result!.sample).toHaveLength(1);
+      expect(result!.sample[0]!.senderName).toBe('Shop Inc');
+      expect(result!.sample[0]!.senderEmail).toBe('deals@shop.com');
+      expect(result!.sample[0]!.reason).toContain('Archive');
+
+      // No mutation: preview writes no match rows.
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+    });
+
+    it('returns null for cross-tenant and custom rules (D234)', async () => {
+      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      expect(await service.previewRule(mailboxA, ruleB)).toBeNull();
+
+      const [custom] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId: mailboxA,
+          isPreset: false,
+          presetKey: null,
+          name: 'Custom',
+          enabled: false,
+          mode: 'observe',
+          scope: 'account',
+          conditions: {},
+          actionKind: 'archive',
+          actionPayload: {},
+        })
+        .returning({ id: automationRules.id });
+      expect(await service.previewRule(mailboxA, custom!.id)).toBeNull();
+    });
+  });
+
+  describe('observe-window projection (U14 — D10/D104)', () => {
+    it('projects observeWindowEndsAt = modeChangedAt + 7d while in observe mode', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const changed = new Date('2026-06-01T00:00:00Z');
+      await db
+        .update(automationRules)
+        .set({ modeChangedAt: changed })
+        .where(eq(automationRules.id, ruleId));
+
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeWindowEndsAt).toBe('2026-06-08T00:00:00.000Z');
+      // 2026-06-08 is in the past relative to the real clock → elapsed.
+      expect(rule!.observeWindowElapsed).toBe(true);
+    });
+
+    it('is null / false outside observe mode', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await db
+        .update(automationRules)
+        .set({ mode: 'active' })
+        .where(eq(automationRules.id, ruleId));
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeWindowEndsAt).toBeNull();
+      expect(rule!.observeWindowElapsed).toBe(false);
+    });
+
+    it('a fresh observe window has not elapsed', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await db
+        .update(automationRules)
+        .set({ modeChangedAt: new Date() })
+        .where(eq(automationRules.id, ruleId));
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeWindowElapsed).toBe(false);
+      expect(rule!.observeWindowEndsAt).not.toBeNull();
     });
   });
 });

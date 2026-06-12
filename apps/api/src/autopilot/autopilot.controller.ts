@@ -25,7 +25,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { type Envelope, ok } from '@declutrmail/shared/contracts';
+import {
+  AutopilotApproveMatchesRequestSchema,
+  type AutopilotApproveResult,
+  type AutopilotRulePreviewResult,
+  type Envelope,
+  ok,
+} from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -170,6 +176,70 @@ export class AutopilotController {
     const result = await this.reads.dismissMatch(accountId, matchId);
     if (!result) {
       throw notFound('Match not found.');
+    }
+    return ok(result);
+  }
+
+  /**
+   * POST /api/autopilot/matches/approve — U14/D104 "Approve selected".
+   * Body: `{ matchIds: uuid[] }` (1–100). Flips pending Observe-mode
+   * suggestions to `approved` + enqueues the action sweep. Idempotent
+   * — replays return `approvedCount=0` with `alreadyResolvedCount`.
+   */
+  @Post('matches/approve')
+  @RateLimit('triage-load')
+  async approveMatches(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<AutopilotApproveResult>> {
+    const parsed = AutopilotApproveMatchesRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Body must be { matchIds: uuid[] } with 1-100 ids.');
+    }
+    const result = await this.reads.approveMatches(mailbox.id, parsed.data.matchIds);
+    return ok(result);
+  }
+
+  /**
+   * POST /api/autopilot/rules/:id/approve-all — U14/D104 "Approve all".
+   * Approves every pending Observe-mode suggestion for the rule +
+   * enqueues the action sweep. Does NOT change the rule's mode — the
+   * D104 "and switch to Active" variant is this + `PATCH mode=active`.
+   */
+  @Post('rules/:id/approve-all')
+  @RateLimit('triage-load')
+  async approveAllForRule(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<AutopilotApproveResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException('Rule id must be a UUID.');
+    }
+    const result = await this.reads.approveAllForRule(mailbox.id, id);
+    if (!result) {
+      throw notFound('Rule not found.');
+    }
+    return ok(result);
+  }
+
+  /**
+   * POST /api/autopilot/rules/:id/preview — U14 dry-run preview (D103
+   * scoped to presets per D192). Read-only: runs the rule's matcher
+   * against current signals; returns the would-match count + a 10-row
+   * metadata-only sample. Custom rules 404 per D234.
+   */
+  @Post('rules/:id/preview')
+  @RateLimit('triage-load')
+  async previewRule(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<AutopilotRulePreviewResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException('Rule id must be a UUID.');
+    }
+    const result = await this.reads.previewRule(mailbox.id, id);
+    if (!result) {
+      throw notFound('Rule not found.');
     }
     return ok(result);
   }
