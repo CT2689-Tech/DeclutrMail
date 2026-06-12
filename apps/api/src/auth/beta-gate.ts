@@ -10,8 +10,12 @@
  * Env contract (.env.example):
  *   BETA_GATE_ENABLED  — the gate is active ONLY when exactly 'true'.
  *                        Unset / any other value → open signup, so the
- *                        default is ZERO behavior change until the
- *                        founder flips it in the deploy env.
+ *                        default is ZERO behavior change. In prod the
+ *                        ONLY safe flip is editing the value in
+ *                        `.github/workflows/deploy-cloud-run.yml`
+ *                        (`--set-env-vars` is a full replace; a live
+ *                        `--update-env-vars` flip silently reverts on
+ *                        the next deploy → open signup).
  *   BETA_INVITE_EMAILS — comma-separated allowlist. Matching is
  *                        case-insensitive and whitespace-trimmed;
  *                        empty entries are ignored. With the gate
