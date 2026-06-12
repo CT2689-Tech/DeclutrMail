@@ -20,7 +20,7 @@
 
 import type { Envelope } from '@declutrmail/shared/contracts';
 
-import { apiGet } from './client';
+import { apiGet, apiPost } from './client';
 
 /** D85 — priority bucket computed at request time from `sent_at`. */
 export type FollowupPriorityWire = 'high' | 'medium' | 'low' | 'fresh';
@@ -49,4 +49,26 @@ export interface FollowupRow {
 /** GET /api/followups — list awaiting followups for the current mailbox. */
 export function fetchFollowups(signal?: AbortSignal): Promise<Envelope<FollowupRow[], unknown>> {
   return apiGet<FollowupRow[]>('/api/followups', { signal });
+}
+
+/**
+ * Outcome of `POST /api/followups/:id/dismiss` (D88). Mirrors BE
+ * `FollowupDismissResult` in `apps/api/src/followups/followup.types.ts`.
+ */
+export interface FollowupDismissResult {
+  id: string;
+  status: FollowupStatusWire;
+  /** ISO-8601 — when the dismissal landed. */
+  dismissedAt: string;
+  /**
+   * D88 Phase-1 idempotency hint: `true` when this request was a
+   * benign replay of an already-dismissed row (the BE returns 200, not
+   * 404, so a flaky-network retry can render the success state).
+   */
+  alreadyDismissed: boolean;
+}
+
+/** POST /api/followups/:id/dismiss — D88 "Mark resolved". Idempotent. */
+export function postDismissFollowup(id: string): Promise<Envelope<FollowupDismissResult, unknown>> {
+  return apiPost<FollowupDismissResult>(`/api/followups/${encodeURIComponent(id)}/dismiss`);
 }

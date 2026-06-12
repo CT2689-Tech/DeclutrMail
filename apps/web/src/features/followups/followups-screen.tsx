@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, type FocusEvent, type MouseEvent } from 'react';
 
 import { Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
 
+import { useDismissFollowup } from './api/use-dismiss-followup';
 import { useFollowups } from './api/use-followups';
 
 const { color, font } = tokens;
@@ -20,13 +21,13 @@ const { color, font } = tokens;
  *   3. Per-row: recipient name + domain, subject (truncated to 60 chars),
  *      sent-at relative time, [Open in Gmail →] link
  *
- * D88 "Mark resolved" is wired by the dismiss endpoint (`POST
- * /api/followups/:id/dismiss`) — kept out of this screen because the
- * mutation slice for Followups is a separate concern from D90's layout
- * shipment. The row trash-icon affordance lands in the follow-up PR
- * tracked by D88 (already 🔵 shipped via #106 on the BE; the FE wiring
- * is intentionally narrow here per the canonical-verbs / surgical-change
- * rule).
+ * D88 "Mark resolved": every row carries a trash-icon button (visible
+ * always, emphasized on row hover / keyboard focus per D88's
+ * "trash icon on hover" — never opacity-0 so touch + keyboard users can
+ * reach it). Click → `useDismissFollowup` removes the row optimistically
+ * (rolled back with a toast on failure) and the BE flips the
+ * `followup_tracker` row + writes the Activity audit entry. When the
+ * last row is dismissed the D91 empty state renders on the same pass.
  *
  * Empty / loading / error states are first-class per D211 / D212.
  * Empty copy mirrors D91 verbatim.
@@ -39,6 +40,7 @@ const { color, font } = tokens;
  */
 export function FollowupsScreen() {
   const query = useFollowups();
+  const dismiss = useDismissFollowup();
 
   // Group BEFORE early-returning so the hook list is stable across
   // every render branch.
@@ -87,16 +89,36 @@ export function FollowupsScreen() {
         <>
           <StatsSummary total={totalAwaiting} overAWeek={overAWeek} />
           {grouped.high.length > 0 && (
-            <PriorityGroup label="Over a week" tone="danger" rows={grouped.high} />
+            <PriorityGroup
+              label="Over a week"
+              tone="danger"
+              rows={grouped.high}
+              onDismiss={dismiss.mutate}
+            />
           )}
           {grouped.medium.length > 0 && (
-            <PriorityGroup label="3–7 days" tone="warn" rows={grouped.medium} />
+            <PriorityGroup
+              label="3–7 days"
+              tone="warn"
+              rows={grouped.medium}
+              onDismiss={dismiss.mutate}
+            />
           )}
           {grouped.low.length > 0 && (
-            <PriorityGroup label="1–3 days" tone="muted" rows={grouped.low} />
+            <PriorityGroup
+              label="1–3 days"
+              tone="muted"
+              rows={grouped.low}
+              onDismiss={dismiss.mutate}
+            />
           )}
           {grouped.fresh.length > 0 && (
-            <PriorityGroup label="Less than a day" tone="muted" rows={grouped.fresh} />
+            <PriorityGroup
+              label="Less than a day"
+              tone="muted"
+              rows={grouped.fresh}
+              onDismiss={dismiss.mutate}
+            />
           )}
         </>
       )}
@@ -151,10 +173,12 @@ function PriorityGroup({
   label,
   tone,
   rows,
+  onDismiss,
 }: {
   label: string;
   tone: GroupTone;
   rows: FollowupRow[];
+  onDismiss?: (row: FollowupRow) => void;
 }) {
   return (
     <section
@@ -173,7 +197,7 @@ function PriorityGroup({
         }}
       >
         {rows.map((row) => (
-          <FollowupListItem key={row.id} row={row} />
+          <FollowupListItem key={row.id} row={row} onDismiss={onDismiss} />
         ))}
       </ul>
     </section>
@@ -215,9 +239,16 @@ function GroupHeading({ label, tone, count }: { label: string; tone: GroupTone; 
 /**
  * Single Followups row. Recipient name + domain leads, subject is
  * truncated to 60 chars per D90, sent-at renders as a relative time,
- * and a single trailing link opens the thread in Gmail.
+ * a trailing link opens the thread in Gmail, and the D88 trash-icon
+ * button marks the row resolved.
  */
-export function FollowupListItem({ row }: { row: FollowupRow }) {
+export function FollowupListItem({
+  row,
+  onDismiss,
+}: {
+  row: FollowupRow;
+  onDismiss?: ((row: FollowupRow) => void) | undefined;
+}) {
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
   const relative = relativeTime(row.sentAt);
@@ -227,7 +258,9 @@ export function FollowupListItem({ row }: { row: FollowupRow }) {
     <li
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
+        gridTemplateColumns: onDismiss
+          ? 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto'
+          : 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
         alignItems: 'center',
         gap: 14,
         padding: '12px 14px',
@@ -289,7 +322,78 @@ export function FollowupListItem({ row }: { row: FollowupRow }) {
       >
         Open in Gmail →
       </a>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={() => onDismiss(row)}
+          title="Mark resolved"
+          aria-label={`Mark resolved — ${recipient.name}`}
+          onMouseEnter={emphasizeDismiss}
+          onMouseLeave={resetDismiss}
+          onFocus={emphasizeDismiss}
+          onBlur={resetDismiss}
+          style={{
+            height: 26,
+            width: 26,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'transparent',
+            color: color.fgMuted,
+            border: `1px solid ${color.line}`,
+            borderRadius: 6,
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+            transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+          }}
+        >
+          <TrashIcon />
+        </button>
+      )}
     </li>
+  );
+}
+
+/**
+ * D88 dismiss affordance styling. The trash button is ALWAYS rendered
+ * (never opacity-0 — touch + keyboard users must reach it) at low
+ * emphasis, and lifts to full contrast on hover AND keyboard focus.
+ * Mirrors the senders `IconVerb` hover treatment so per-row icon
+ * actions feel identical across screens.
+ */
+function emphasizeDismiss(e: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = color.paper;
+  e.currentTarget.style.color = color.red;
+  e.currentTarget.style.borderColor = color.fgMuted;
+}
+
+function resetDismiss(e: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) {
+  e.currentTarget.style.background = 'transparent';
+  e.currentTarget.style.color = color.fgMuted;
+  e.currentTarget.style.borderColor = color.line;
+}
+
+/** Trash glyph (D88 "trash icon on hover") — feather-style, 11px. */
+function TrashIcon() {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
   );
 }
 

@@ -251,6 +251,27 @@ addresses in event payloads).
 **Retention / aggregation.** 2y raw. Drives the Team-waitlist ≥ 50
 build trigger (D19) and marketing-form conversion funnels.
 
+### `followup_dismissed`
+
+**When fired.** When the user clicks "Mark resolved" on a Followups row
+(D88) and `POST /api/followups/:id/dismiss` succeeds. Fires from the FE
+mutation's `onSuccess` — never on the optimistic removal alone, so a
+rolled-back failure does not pollute the funnel. Idempotent replays
+(flaky-network retry hitting an already-dismissed row) still fire,
+flagged via `already_dismissed`.
+
+**Payload.**
+
+| Field               | Type                                     | Notes                                   |
+| ------------------- | ---------------------------------------- | --------------------------------------- |
+| `followup_id`       | `string`                                 | Internal `followup_tracker.id` UUID     |
+| `priority`          | `'high' \| 'medium' \| 'low' \| 'fresh'` | D85 age bucket at dismissal time        |
+| `already_dismissed` | `boolean`                                | BE idempotent-replay hint (D88 Phase-1) |
+
+**Retention / aggregation.** 1y raw. Drives the "resolved manually vs
+replied" ratio for the Followups feature; the `priority` breakdown shows
+how stale rows are when users resolve them by hand.
+
 ---
 
 ## Adding a new event

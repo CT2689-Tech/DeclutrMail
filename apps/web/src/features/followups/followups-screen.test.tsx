@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -136,6 +136,127 @@ describe('FollowupsScreen — populated list', () => {
     const links = screen.getAllByRole('link', { name: /open in gmail/i });
     expect(links).toHaveLength(2);
     expect(links[0]).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/thread-h1');
+  });
+});
+
+describe('FollowupsScreen — D88 dismiss', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  function dismissResult(id: string, alreadyDismissed = false) {
+    return jsonOk({
+      data: {
+        id,
+        status: 'dismissed',
+        dismissedAt: new Date(NOW).toISOString(),
+        alreadyDismissed,
+      },
+    });
+  }
+
+  it('removes the row optimistically and POSTs to the dismiss endpoint', async () => {
+    let listCalls = 0;
+    let dismissCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => {
+          listCalls += 1;
+          return jsonOk({ data: dismissCalls > 0 ? [ROW_LOW] : [ROW_HIGH, ROW_LOW] });
+        },
+      },
+      {
+        method: 'POST',
+        path: `/api/followups/${ROW_HIGH.id}/dismiss`,
+        respond: () => {
+          dismissCalls += 1;
+          return dismissResult(ROW_HIGH.id);
+        },
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /mark resolved — big boss/i }));
+
+    // Optimistic removal — the row leaves without waiting for the POST.
+    await waitFor(() => expect(screen.queryByText('Big Boss')).not.toBeInTheDocument());
+    // The sibling row stays put.
+    expect(screen.getByText('Peer')).toBeInTheDocument();
+    // The mutation actually hit the wire and server truth was refetched
+    // (success invalidates the list).
+    await waitFor(() => expect(dismissCalls).toBe(1));
+    await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
+    // Stats summary reflects the surviving row.
+    expect(screen.getByText(/1 thread awaiting reply/i)).toBeInTheDocument();
+  });
+
+  it('transitions to the D91 empty state when the last row is dismissed', async () => {
+    let dismissed = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: dismissed ? [] : [ROW_HIGH] }),
+      },
+      {
+        method: 'POST',
+        path: `/api/followups/${ROW_HIGH.id}/dismiss`,
+        respond: () => {
+          dismissed = true;
+          return dismissResult(ROW_HIGH.id);
+        },
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /mark resolved/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /no follow-ups waiting\./i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText('Big Boss')).not.toBeInTheDocument();
+  });
+
+  it('rolls the row back when the dismiss fails', async () => {
+    // Hold the 500 behind a manual deferred so the optimistic removal
+    // is observable before the failure lands.
+    let releaseFailure: () => void = () => {};
+    const failureGate = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [ROW_HIGH, ROW_LOW] }),
+      },
+      {
+        method: 'POST',
+        path: `/api/followups/${ROW_HIGH.id}/dismiss`,
+        respond: async () => {
+          await failureGate;
+          return jsonServerError();
+        },
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /mark resolved — big boss/i }));
+
+    // Optimistic removal first…
+    await waitFor(() => expect(screen.queryByText('Big Boss')).not.toBeInTheDocument());
+    releaseFailure();
+    // …then the 500 rolls the snapshot back — the row returns, nothing
+    // pretends to have worked.
+    await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
+    expect(screen.getByText(/2 threads awaiting reply/i)).toBeInTheDocument();
   });
 });
 
