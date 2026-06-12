@@ -272,6 +272,26 @@ flagged via `already_dismissed`.
 replied" ratio for the Followups feature; the `priority` breakdown shows
 how stale rows are when users resolve them by hand.
 
+### `beta_gate_denied`
+
+**When fired.** On mount of the public `/beta` page when the URL
+carries `?reason=not_invited` — i.e. the user was 302'd there by the
+OAuth callback because the private-beta invite gate (buildout F7)
+denied a brand-new signup. Organic visits to `/beta` (no reason param)
+do NOT fire it. The denied email is NEVER in the payload (D7/D159 — no
+raw email addresses in telemetry); the audit trail with the email
+lives in the `security_events` table (`signup.denied`, D181).
+
+**Payload.**
+
+| Field    | Type               | Notes                                       |
+| -------- | ------------------ | ------------------------------------------- |
+| `source` | `'oauth_callback'` | Only producer today — the callback redirect |
+
+**Retention / aggregation.** 90 days raw. Counts denied-signup demand
+while the gate is up; pairs with the `security_events` rows for the
+"who to invite next" list.
+
 ---
 
 ## Adding a new event

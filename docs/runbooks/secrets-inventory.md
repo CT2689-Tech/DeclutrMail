@@ -182,6 +182,38 @@ coordinated Pub/Sub topic recreate.
 fail-closed (all admin routes return 404). The route is intentionally
 indistinguishable from a non-existent route — see `.env.example` 72-79.
 
+### Beta invite gate (buildout F7)
+
+| Slot                  | Storage                                                      | Env var              | Rotated | Owner   |
+| --------------------- | ------------------------------------------------------------ | -------------------- | ------- | ------- |
+| Beta invite allowlist | GCP Secret Manager: `beta-invite-emails-prod` + `.env.local` | `BETA_INVITE_EMAILS` | TBD     | founder |
+
+**Note:** Comma-separated, case-insensitive invite allowlist consumed
+by the private-beta signup gate (`apps/api/src/auth/beta-gate.ts`).
+With the gate enabled and this unset/empty, every new signup is denied
+(fail-closed). The secret is NOT yet referenced by
+`deploy-cloud-run.yml` — a referenced secret that doesn't exist fails
+the whole deploy, so the `--update-secrets` binding ships in the same
+PR that flips `BETA_GATE_ENABLED=true`, AFTER the founder creates the
+secret. Create + bind:
+
+```bash
+echo -n "chintan.a.thakkar@gmail.com" | gcloud secrets create beta-invite-emails-prod \
+  --project=declutrmail-ai-prod --data-file=-
+gcloud secrets add-iam-policy-binding beta-invite-emails-prod \
+  --project=declutrmail-ai-prod \
+  --member="serviceAccount:declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Invite-list rotation = `gcloud secrets versions add` + a manual
+`workflow_dispatch` re-deploy (Cloud Run pins the secret at revision
+creation). The gate itself flips ONLY by editing `BETA_GATE_ENABLED`
+in `deploy-cloud-run.yml` — never live `--update-env-vars` (the API
+deploy uses full-replace `--set-env-vars`; a live flip silently
+reverts on the next routine deploy → open signup, the PR #188
+incident class).
+
 ### GitHub
 
 | Slot                                    | Vendor label             | Storage                              | Env var                                     | Rotated    | Owner   |
