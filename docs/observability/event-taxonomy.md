@@ -204,10 +204,10 @@ them).
 
 **Payload.**
 
-| Field        | Type                                                                                                                                         | Notes                                              |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `page`       | `'landing' \| 'senders' \| 'sender_detail' \| 'activity' \| 'brief' \| 'autopilot' \| 'triage' \| 'onboarding' \| 'settings' \| 'mailboxes'` | Closed union                                       |
-| `mailbox_id` | `string \| null`                                                                                                                             | UUID; `null` on public pages (landing has no auth) |
+| Field        | Type                                                                                                                                                                   | Notes                                              |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `page`       | `'landing' \| 'senders' \| 'sender_detail' \| 'activity' \| 'brief' \| 'autopilot' \| 'triage' \| 'onboarding' \| 'settings' \| 'mailboxes' \| 'pricing' \| 'billing'` | Closed union                                       |
+| `mailbox_id` | `string \| null`                                                                                                                                                       | UUID; `null` on public pages (landing has no auth) |
 
 **Retention / aggregation.** PostHog default. Top of the
 landing → OAuth → onboarding funnel insight.
@@ -295,22 +295,47 @@ while the gate is up; pairs with the `security_events` rows for the
 ### `upgrade_prompt_shown`
 
 **When fired.** When an entitlement gate (D19/D77/D81) surfaces an
-upgrade affordance to the user: the `FREE_CAP_REACHED` 402 prompt after
-an action enqueue is denied (`source: 'actions_402'`), the AccountMenu
-inbox-limit row replacing "Connect another" (`source: 'account_menu'`),
-or the Triage empty-state free-cap nudge. One emit per appearance, not
-per render.
+upgrade affordance to the user: the global `UpgradeModal` opening on an
+entitlement 402 — `FREE_CAP_REACHED` or `INBOX_LIMIT_REACHED` — routed
+through the MutationCache handler (`source: 'upgrade_modal'`, U13), the
+`TierGate` placeholder replacing a Pro feature screen for an under-tier
+workspace (`source: 'tier_gate'`, `reason: 'pro_feature'`, D68/D77),
+the AccountMenu inbox-limit row replacing "Connect another"
+(`source: 'account_menu'`), or the Triage empty-state free-cap nudge.
+One emit per appearance, not per render. (`source: 'actions_402'` was
+the pre-U13 inline prompt, retired in favor of the modal.)
 
 **Payload.**
 
-| Field    | Type                                                      | Notes                    |
-| -------- | --------------------------------------------------------- | ------------------------ |
-| `reason` | `'free_cap' \| 'inbox_limit'`                             | Which gate triggered it  |
-| `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state'` | Surface that rendered it |
+| Field    | Type                                                                                        | Notes                    |
+| -------- | ------------------------------------------------------------------------------------------- | ------------------------ |
+| `reason` | `'free_cap' \| 'inbox_limit' \| 'pro_feature'`                                              | Which gate triggered it  |
+| `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state' \| 'upgrade_modal' \| 'tier_gate'` | Surface that rendered it |
 
 **Retention / aggregation.** PostHog default. Drives the
 prompt-shown → pricing-visit → checkout free-to-paid funnel alongside
-`billing_event`.
+`checkout_started` and `billing_event`.
+
+### `checkout_started`
+
+**When fired.** On the "Continue to checkout" click in the plan-change
+modal (D120, U13), immediately before `POST /api/billing/checkout` —
+i.e. checkout INTENT. Payment completion is never inferred client-side;
+the paid-conversion signal is the BE's webhook-driven `billing_event`
+(`kind: 'subscription_created'`).
+
+**Payload.**
+
+| Field          | Type                     | Notes                                  |
+| -------------- | ------------------------ | -------------------------------------- |
+| `tier`         | `'plus' \| 'pro'`        | Purchasable target (D19)               |
+| `cycle`        | `'monthly' \| 'annual'`  | Billing interval                       |
+| `provider`     | `'paddle' \| 'razorpay'` | User's explicit provider choice (D117) |
+| `founding_pro` | `boolean`                | Founding Pro promo claimed (D126)      |
+
+**Retention / aggregation.** 2y raw (funnel pairs with
+`billing_event`). `checkout_started` vs webhook `subscription_created`
+is the checkout abandonment rate, per provider.
 
 ---
 

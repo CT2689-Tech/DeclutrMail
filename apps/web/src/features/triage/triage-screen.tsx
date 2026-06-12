@@ -4,8 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
-import { FreeCapPrompt } from '@/features/billing/free-cap-prompt';
-
 // Cross-feature query-key imports are deliberate (not a D198/D199
 // boundary breach): each feature owns its keys, and exports them as the
 // invalidation contract other features use to mark its caches stale
@@ -385,8 +383,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           onError: (err) => {
             // 409 PROTECTED_SENDER and 402 FREE_CAP_REACHED are
             // designed states — no Sentry. The 402 already surfaced
-            // the upgrade prompt via the hook-level handler
-            // (lib/entitlements/free-cap), so skip the generic toast.
+            // the UpgradeModal via the global MutationCache handler
+            // (lib/query-client), so skip the generic toast.
             if (err instanceof ApiError && err.status === 402) return;
             if (!(err instanceof ApiError && err.status === 409)) {
               captureFeatureException(err, {
@@ -566,10 +564,6 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
       />
-
-      {/* D19/D77 — non-blocking upgrade prompt when an enqueue 402s
-          with FREE_CAP_REACHED (reported by the action hooks). */}
-      <FreeCapPrompt />
     </div>
   );
 }
