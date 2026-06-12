@@ -244,7 +244,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D190 | Quiet Mode Preview Mode (updates D92, D93) | ⬜ |  |  |  |
 | D191 | Sync gate kill metric (updates D6) | ⬜ |  |  |  |
 | D192 | Custom Autopilot rule builder deferred to V2.1 (updates D99, D103) | ⬜ |  |  |  |
-| D193 | API service min_instances=1 from launch (updates D158, D161) | ⬜ |  |  |  |
+| D193 | API service min_instances=1 from launch (updates D158, D161) | 🔵 | #221 |  |  |
 | D194 | Screener marketing-copy hard rule (lifts D72 rationale into enforceable rule) | ⬜ |  |  |  |
 | D195 | Worker scaling decoupled from billing webhook (updates D161) | ⬜ |  |  |  |
 | D196 | Custom Autopilot rule builder: build at launch, ship flag-disabled (reverses D192) | 🟢 | #107 | packages/db/tests/autopilot-rules.test.ts — CHECK gates (is_preset/preset_key) lock custom-rule schema readiness |  |
