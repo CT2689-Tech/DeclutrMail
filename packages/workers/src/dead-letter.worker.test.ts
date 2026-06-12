@@ -9,7 +9,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { DrizzleDeadLetterRecorder } from './dead-letter.recorder.js';
+import {
+  DEAD_LETTER_ERROR_MAX_LEN,
+  DEAD_LETTER_PAYLOAD_ALLOWED_KEYS,
+  DrizzleDeadLetterRecorder,
+} from './dead-letter.recorder.js';
 import { DeadLetterWorker, replayDeadLetterJob } from './dead-letter.worker.js';
 import type { DeadLetterReplayTarget } from './dead-letter.worker.js';
 import { ValidationError } from './worker-errors.js';
@@ -135,6 +139,80 @@ describe('dead-letter pipeline (D225)', () => {
     });
   });
 
+  describe('recorder write-boundary sanitization (D7)', () => {
+    it('drops non-allowlisted keys and records them under __redacted_keys', async () => {
+      const db = await freshDb();
+      const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
+
+      await recorder.record({
+        queue: 'label-action',
+        jobId: 'mb-1:batch-1',
+        // A hypothetical future worker leaking message content (D7).
+        payload: {
+          mailboxAccountId: 'mb-1',
+          snippet: 'Hi Chintan, your invoice…',
+          subject: 'Your May invoice',
+          body: '<html>full body</html>',
+        },
+        error: 'boom',
+      });
+
+      const [row] = await db.select().from(deadLetterJobs);
+      expect(row?.payload).toEqual({
+        mailboxAccountId: 'mb-1',
+        __redacted_keys: ['body', 'snippet', 'subject'],
+      });
+    });
+
+    it('a payload with only allowlisted keys survives untouched (replay-safe)', async () => {
+      const db = await freshDb();
+      const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
+
+      const payload = {
+        mailboxAccountId: 'mb-1',
+        startHistoryId: '1000',
+        endHistoryId: '2000',
+      };
+      await recorder.record({ queue: 'incremental-sync', jobId: 'mb-1', payload, error: 'boom' });
+
+      const [row] = await db.select().from(deadLetterJobs);
+      expect(row?.payload).toEqual(payload);
+    });
+
+    it('caps the persisted error at DEAD_LETTER_ERROR_MAX_LEN', async () => {
+      const db = await freshDb();
+      const recorder = new DrizzleDeadLetterRecorder({ db: db as never });
+
+      await recorder.record({
+        queue: 'q',
+        jobId: 'j',
+        payload: {},
+        error: 'x'.repeat(DEAD_LETTER_ERROR_MAX_LEN + 500),
+      });
+
+      const [row] = await db.select().from(deadLetterJobs);
+      expect(row?.error).toHaveLength(DEAD_LETTER_ERROR_MAX_LEN + 1); // cap + '…'
+      expect(row?.error.endsWith('…')).toBe(true);
+    });
+
+    it('locks the allowlist to the audited union of *JobData keys', () => {
+      // Changing this set is a DELIBERATE act — see the doc comment on
+      // DEAD_LETTER_PAYLOAD_ALLOWED_KEYS (replay contract + D7 review).
+      expect([...DEAD_LETTER_PAYLOAD_ALLOWED_KEYS]).toEqual([
+        'actionId',
+        'endHistoryId',
+        'idempotencyKey',
+        'mailboxAccountId',
+        'producedAtMs',
+        'scheduledAtMinute',
+        'senderKey',
+        'startHistoryId',
+        'trigger',
+        'triggeredAtMs',
+      ]);
+    });
+  });
+
   describe('DeadLetterWorker sweep', () => {
     it('alerts exactly once per parked row — second sweep is silent', async () => {
       const db = await freshDb();
@@ -254,6 +332,28 @@ describe('dead-letter pipeline (D225)', () => {
       const second = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:01' }, FAKE_CTX);
       expect(second.alerted).toBe(1); // at-least-once: retried and delivered
       expect(calls).toBe(2);
+    });
+
+    it('the sweep SELECT never reads payload (D7 — parked payloads stay in the table)', async () => {
+      const db = await freshDb();
+      await db.insert(deadLetterJobs).values({
+        queue: 'initial-sync',
+        jobId: 'mb-1',
+        payload: { mailboxAccountId: 'mb-1' },
+        error: 'boom',
+      });
+      const selectSpy = vi.spyOn(db, 'select');
+      const worker = new DeadLetterWorker({ db: db as never, observer: recordingObserver() });
+
+      await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, FAKE_CTX);
+
+      // The worker alerts on queue/jobId/error only — payload is never
+      // selected, so it cannot leak into logs or Sentry titles.
+      expect(selectSpy).toHaveBeenCalled();
+      for (const call of selectSpy.mock.calls) {
+        expect(Object.keys((call[0] ?? {}) as Record<string, unknown>)).not.toContain('payload');
+      }
+      selectSpy.mockRestore();
     });
 
     it('idempotency key combines worker name and scheduling minute (D225)', () => {
