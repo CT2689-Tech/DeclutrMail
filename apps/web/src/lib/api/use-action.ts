@@ -16,8 +16,6 @@
 
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { reportFreeCapHit } from '@/lib/entitlements/free-cap';
-
 import {
   enqueueArchiveSender,
   enqueueBulkAction,
@@ -62,6 +60,10 @@ export function actionRefetchInterval(data: ActionStatusResult | undefined): num
  * Enqueue a single-sender Archive. One idempotency key per mutate call, so
  * a network-retry of the SAME mutation dedupes while a fresh user click is
  * a new action (D202).
+ *
+ * A 402 FREE_CAP_REACHED surfaces the UpgradeModal via the GLOBAL
+ * MutationCache handler in `lib/query-client.ts` (D19/D77) — no
+ * per-hook wiring needed here.
  */
 export function useEnqueueAction() {
   return useMutation<ActionEnqueueResult, Error, { senderId: string; override?: boolean }>({
@@ -70,10 +72,6 @@ export function useEnqueueAction() {
         idempotencyKey: newIdempotencyKey(),
         override: override ?? false,
       }),
-    // D19/D77 — a 402 FREE_CAP_REACHED surfaces the upgrade prompt
-    // (lib/entitlements/free-cap). Hook-level onError runs IN ADDITION
-    // to any per-mutate onError the caller passes.
-    onError: reportFreeCapHit,
   });
 }
 
@@ -141,8 +139,6 @@ export function useEnqueueComposite() {
         ...(override !== undefined ? { override } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    // D19/D77 — surface FREE_CAP_REACHED as the upgrade prompt.
-    onError: reportFreeCapHit,
   });
 }
 
@@ -186,9 +182,6 @@ export function useEnqueueBulkAction() {
         ...(secondary ? { secondary } : {}),
         idempotencyKey: newIdempotencyKey(),
       }),
-    // D19/D77 — a bulk of N needs N free units; the 402's details say
-    // how many were left. Same prompt seam as the single-sender hooks.
-    onError: reportFreeCapHit,
   });
 }
 

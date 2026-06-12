@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@declutrmail/shared": "workspace:*",
+    "@paddle/paddle-js": "^1.4.2",
     "@sentry/nextjs": "^10.0.0",
     "@tanstack/react-query": "^5.100.13",
     "next": "^15.1.0",

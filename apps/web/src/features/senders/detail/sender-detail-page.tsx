@@ -41,7 +41,6 @@ import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { UNSUB_PILL } from '../grid/sender-card';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
-import { FreeCapPrompt } from '@/features/billing/free-cap-prompt';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -411,9 +410,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             onSuccess: (res) =>
               setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
             onError: (err) => {
-              // 402 FREE_CAP_REACHED — the upgrade prompt (hook-level
-              // handler in lib/entitlements/free-cap) is the surface;
-              // skip Sentry + the generic toast.
+              // 402 FREE_CAP_REACHED — the UpgradeModal (global
+              // MutationCache handler in lib/query-client) is the
+              // surface; skip Sentry + the generic toast.
               if (err instanceof ApiError && err.status === 402) return;
               captureFeatureException(err, { surface: 'senders', reason: 'enqueue_archive' });
               toast(
@@ -871,10 +870,6 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       }}
     >
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
-
-      {/* D19/D77 — non-blocking upgrade prompt when an enqueue 402s
-          with FREE_CAP_REACHED (reported by the action hooks). */}
-      <FreeCapPrompt />
 
       {/* D230 manual path — the "finish in Gmail" step for a mailto
           sender. Transient right after this tab's confirm; persistent
