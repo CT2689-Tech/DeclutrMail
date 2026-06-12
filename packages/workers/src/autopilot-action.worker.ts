@@ -32,6 +32,7 @@ import type {
 } from './gmail-mutation-client.js';
 import { labelChangeForVerb, type MailboxActionLock } from './label-action.worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import type { UnsubExecutionJobData } from './unsub-execution.worker.js';
 import { ValidationError } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -87,11 +88,13 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * job) reverses an autopilot action exactly like a manual one.
  *
  * GUARDS (in evaluation order, all per sweep):
- *   1. QUIET STATE (D92/D95 seam for U18): when
- *      `mailbox_accounts.quiet_state` says quiet is active, the whole
- *      sweep defers — no mutation, matches stay eligible, the next
- *      trigger re-runs. `isQuietStateActive` is the predicate U18's
- *      enforcement builds on.
+ *   1. QUIET (U18 — D92/D93/D95): when `mailbox_accounts.quiet_state`
+ *      says quiet is active — the manual toggle OR the recurring
+ *      quiet-hours window (`isQuietActive`, quiet-hours-state.ts) —
+ *      the whole sweep defers: no mutation, matches stay eligible, and
+ *      `onQuietDeferred` re-schedules a delayed sweep for when quiet
+ *      ends (next trigger is the safety net). Manual user actions are
+ *      NOT gated — quiet defers automation only.
  *   2. RULE STATE: matches whose rule is now disabled or paused are
  *      skipped (left pending) — D105's pause must stop execution even
  *      for already-approved matches.
@@ -182,6 +185,19 @@ export interface AutopilotActionDeps {
    * unsubExecutionJobOptions(data.idempotencyKey))`.
    */
   enqueueUnsubExecution: (data: UnsubExecutionJobData) => Promise<void>;
+  /**
+   * Optional hook fired when a sweep DEFERS for quiet (U18 — D92/D93).
+   * `resumeAfterMs` is the minute-granular hint until quiet ends, or
+   * `null` when no hint is computable (indefinite manual quiet). The
+   * composition root wires this to enqueue a DELAYED `autopilot-action`
+   * job so deferred matches sweep right after the window closes even
+   * if no new trigger (sync-ready / score-completed / approve) fires.
+   *
+   * Best-effort: a failure here is logged and swallowed — the matches
+   * are durable (`intent_applied=false`) and the next trigger's sweep
+   * is the safety net, so deferral can NEVER drop an action.
+   */
+  onQuietDeferred?: (mailboxAccountId: string, resumeAfterMs: number | null) => Promise<void>;
   /** Override clock for tests. Defaults to `() => new Date()`. */
   now?: () => Date;
 }
@@ -201,31 +217,14 @@ export function autopilotActionJobOptions(jobId: string): JobsOptions {
 }
 
 /**
- * Quiet-state predicate (D92/D93 — the U18 enforcement seam).
- *
- * `mailbox_accounts.quiet_state` jsonb shape per D92:
- * `{ enabled, started_at, until_at, source }`. Quiet is ACTIVE when
- * `enabled === true` and `until_at` is absent, null, or in the future.
- * A present-but-unparseable `until_at` counts as ACTIVE — when the
- * stored state is ambiguous the safe side is to defer mutations, not
- * fire them.
- *
- * Exported so U18's quiet-enforcement (config UI + GET/PUT) reuses the
- * exact predicate this worker defers on — one definition of "quiet now".
+ * Quiet predicates (D92/D93 — the U18 enforcement seam) live in
+ * `quiet-hours-state.ts` next to the persistence helpers, so the
+ * worker, the GET/PUT API, and the config UI all defer/report on ONE
+ * definition of "quiet now". `isQuietStateActive` (the manual-toggle
+ * predicate this worker originally defined) is re-exported for
+ * existing importers.
  */
-export function isQuietStateActive(quietState: unknown, now: Date): boolean {
-  if (typeof quietState !== 'object' || quietState === null || Array.isArray(quietState)) {
-    return false;
-  }
-  const state = quietState as Record<string, unknown>;
-  if (state.enabled !== true) return false;
-  const untilAt = state.until_at;
-  if (untilAt === undefined || untilAt === null) return true;
-  if (typeof untilAt !== 'string') return true;
-  const parsed = Date.parse(untilAt);
-  if (!Number.isFinite(parsed)) return true;
-  return parsed > now.getTime();
-}
+export { isQuietStateActive } from './quiet-hours-state.js';
 
 /**
  * Gmail SYSTEM label ids — skip name→id resolution. Replicated from
@@ -337,8 +336,11 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       durationMs: 0,
     };
 
-    // Guard 1 — quiet state (U18 seam). Defer the WHOLE sweep; matches
-    // stay `intent_applied=false` so the next trigger re-runs them.
+    // Guard 1 — quiet (U18, D92/D93): manual toggle OR recurring
+    // quiet-hours window. Defer the WHOLE sweep; matches stay
+    // `intent_applied=false` so a later sweep re-runs them (the
+    // deferral re-schedules via `onQuietDeferred` when the quiet end
+    // is computable — actions are deferred, never dropped).
     const [mailbox] = await this.deps.db
       .select({ quietState: mailboxAccounts.quietState })
       .from(mailboxAccounts)
@@ -347,15 +349,32 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     if (!mailbox) {
       throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
     }
-    if (isQuietStateActive(mailbox.quietState, now)) {
+    if (isQuietActive(mailbox.quietState, now)) {
+      const resumeAfterMs = msUntilQuietEnds(mailbox.quietState, now);
       console.log(
         JSON.stringify({
           level: 'info',
           kind: 'autopilot.action.quiet_deferred',
           worker: this.workerName,
           mailboxAccountId,
+          resumeAfterMs,
         }),
       );
+      if (this.deps.onQuietDeferred) {
+        try {
+          await this.deps.onQuietDeferred(mailboxAccountId, resumeAfterMs);
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'autopilot.action.quiet_reschedule_failed',
+              worker: this.workerName,
+              mailboxAccountId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
       result.deferredQuiet = true;
       result.durationMs = Date.now() - startedAt;
       return result;

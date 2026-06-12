@@ -57,11 +57,35 @@ export function createAutopilotExecutionChain(
       autopilotActionJobOptions(`${mailboxAccountId}-${triggeredAtMs}`),
     );
   };
+  // U18 (D92/D93) — a quiet-deferred sweep re-schedules itself for the
+  // computed quiet end (BullMQ delayed job). `triggeredAtMs` is the
+  // RESUME instant so the jobId differs from the deferred sweep's. No
+  // hint (`null` — indefinite manual quiet) → no delayed job; the next
+  // regular trigger sweeps. A duplicate delayed job is harmless — the
+  // sweep is idempotent and re-checks quiet on run.
+  const enqueueDelayedActionSweep = async (
+    mailboxAccountId: string,
+    resumeAfterMs: number | null,
+  ): Promise<void> => {
+    if (resumeAfterMs === null || resumeAfterMs <= 0) return;
+    const triggeredAtMs = (actionDeps.now ?? (() => new Date()))().getTime() + resumeAfterMs;
+    await actionQueue.add(
+      AUTOPILOT_ACTION_JOB,
+      { mailboxAccountId, triggeredAtMs },
+      {
+        ...autopilotActionJobOptions(`${mailboxAccountId}-${triggeredAtMs}`),
+        delay: resumeAfterMs,
+      },
+    );
+  };
   const applyWorker = new AutopilotApplyWorker({
     db: actionDeps.db,
     ...(actionDeps.now ? { now: actionDeps.now } : {}),
     onActiveMatchesPending: enqueueActionSweep,
   });
-  const actionWorker = new AutopilotActionWorker(actionDeps);
+  const actionWorker = new AutopilotActionWorker({
+    ...actionDeps,
+    ...(actionDeps.onQuietDeferred ? {} : { onQuietDeferred: enqueueDelayedActionSweep }),
+  });
   return { applyWorker, actionWorker, enqueueActionSweep };
 }

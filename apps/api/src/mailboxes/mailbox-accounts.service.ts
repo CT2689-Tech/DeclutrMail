@@ -3,6 +3,8 @@ import { and, eq } from 'drizzle-orm';
 
 import { mailboxAccounts } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
+import type { QuietHoursConfig, QuietHoursState } from '@declutrmail/shared/contracts';
+import { isQuietActive, persistQuietHoursState, readQuietHoursState } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
@@ -148,6 +150,52 @@ export class MailboxAccountsService {
       throw new Error('Failed to persist the mailbox account.');
     }
     return row;
+  }
+
+  /**
+   * Quiet hours, read path (U18 — D92/D95). `config` is `null` until
+   * the mailbox has ever been configured; `activeNow` is the SAME
+   * combined predicate (`isQuietActive`) the AutopilotActionWorker
+   * defers on, so the UI and the worker never disagree.
+   */
+  async getQuietHours(workspaceId: string, mailboxAccountId: string): Promise<QuietHoursState> {
+    const row = await this.findOwned(workspaceId, mailboxAccountId);
+    if (!row) {
+      throw new NotFoundException('Mailbox not found in this workspace.');
+    }
+    return {
+      config: readQuietHoursState(row.quietState),
+      activeNow: isQuietActive(row.quietState, new Date()),
+    };
+  }
+
+  /**
+   * Quiet hours, write path (U18 — D92/D95). Delegates to
+   * `persistQuietHoursState`, which writes via jsonb `||` MERGE under
+   * the namespaced `quiet_hours` key — NEVER a whole-column replace.
+   * `mailbox_accounts.quiet_state` is CO-TENANTED: the Gmail watch
+   * pipeline stores `gmail_watch` in the same column, and a replace
+   * would silently wipe it and kill push notifications (see
+   * `packages/workers/src/quiet-hours-state.ts`).
+   *
+   * Disconnected mailboxes accept config too — quiet hours are
+   * harmless at rest and apply on reconnect.
+   */
+  async putQuietHours(
+    workspaceId: string,
+    mailboxAccountId: string,
+    config: QuietHoursConfig,
+  ): Promise<QuietHoursState> {
+    const row = await this.findOwned(workspaceId, mailboxAccountId);
+    if (!row) {
+      throw new NotFoundException('Mailbox not found in this workspace.');
+    }
+    await persistQuietHoursState(this.db, mailboxAccountId, config);
+    const fresh = await this.findOwned(workspaceId, mailboxAccountId);
+    return {
+      config: readQuietHoursState(fresh?.quietState),
+      activeNow: isQuietActive(fresh?.quietState, new Date()),
+    };
   }
 
   /**

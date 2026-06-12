@@ -129,6 +129,14 @@ export async function apiPatch<T>(
   return apiRequest<T>('PATCH', path, body, options);
 }
 
+export async function apiPut<T>(
+  path: string,
+  body?: unknown,
+  options: ApiRequestOptions = {},
+): Promise<Envelope<T, unknown>> {
+  return apiRequest<T>('PUT', path, body, options);
+}
+
 export async function apiDelete<T>(
   path: string,
   options: ApiRequestOptions = {},
@@ -139,7 +147,7 @@ export async function apiDelete<T>(
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 async function apiRequest<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   path: string,
   body: unknown,
   options: ApiRequestOptions,

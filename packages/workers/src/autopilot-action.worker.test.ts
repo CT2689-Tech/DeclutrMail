@@ -453,6 +453,111 @@ describe('AutopilotActionWorker', () => {
     expect(match!.resolution).toBe('approved');
   });
 
+  it('defers when the recurring quiet-hours window covers now (U18 — D92/D93)', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', { inboxMessages: 1 });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    // NOW = 2026-06-10T08:00:00Z = 13:30 IST → window 13:00–14:00 IST
+    // covers it. Manual toggle stays OFF — only the window defers.
+    await db
+      .update(mailboxAccounts)
+      .set({
+        quietState: {
+          quiet_hours: {
+            enabled: true,
+            start_local: '13:00',
+            end_local: '14:00',
+            timezone: 'Asia/Kolkata',
+            updated_at: NOW.toISOString(),
+          },
+        },
+      })
+      .where(eq(mailboxAccounts.id, mailboxId));
+
+    const deferred: Array<{ mailboxAccountId: string; resumeAfterMs: number | null }> = [];
+    worker = buildWorker({
+      onQuietDeferred: async (id, resumeAfterMs) => {
+        deferred.push({ mailboxAccountId: id, resumeAfterMs });
+      },
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(true);
+    expect(result.labelActionsExecuted).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+    // Re-schedule hook fired with the minutes-until-window-end hint
+    // (13:30 → 14:00 IST = 30 min).
+    expect(deferred).toEqual([{ mailboxAccountId: mailboxId, resumeAfterMs: 30 * 60_000 }]);
+    // Match stays durable — deferral never drops an action.
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(match!.intentApplied).toBe(false);
+    expect(match!.resolution).toBe('approved');
+  });
+
+  it('executes normally when the quiet-hours window does NOT cover now', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', { inboxMessages: 1 });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    // NOW = 13:30 IST; window 22:00–06:00 IST does not cover it.
+    await db
+      .update(mailboxAccounts)
+      .set({
+        quietState: {
+          quiet_hours: {
+            enabled: true,
+            start_local: '22:00',
+            end_local: '06:00',
+            timezone: 'Asia/Kolkata',
+            updated_at: NOW.toISOString(),
+          },
+        },
+      })
+      .where(eq(mailboxAccounts.id, mailboxId));
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(false);
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(gmail.calls).toHaveLength(1);
+  });
+
+  it('a failing onQuietDeferred hook is swallowed — the sweep still defers cleanly', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', { inboxMessages: 1 });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    await db
+      .update(mailboxAccounts)
+      .set({
+        quietState: { enabled: true, source: 'manual' },
+      })
+      .where(eq(mailboxAccounts.id, mailboxId));
+
+    worker = buildWorker({
+      onQuietDeferred: async () => {
+        throw new Error('redis down');
+      },
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(true);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(match!.intentApplied).toBe(false);
+  });
+
   it('dismisses matches whose sender became Protected after matching', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
     const { senderKey } = await seedSender(db, mailboxId, 'bank@bank.com', { inboxMessages: 2 });
