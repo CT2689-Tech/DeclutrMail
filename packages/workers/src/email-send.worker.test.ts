@@ -116,6 +116,29 @@ describe('EmailSendWorker', () => {
     expect(delivery.deliver).not.toHaveBeenCalled();
   });
 
+  it('recipientOverride sends even when the user row is gone (D232 deletion receipt)', async () => {
+    const db = await freshDb();
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_receipt' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    const result = await worker.processJob(
+      jobData('00000000-0000-4000-8000-000000000000', {
+        kind: 'deletion-receipt',
+        recipientOverride: 'purged-user@b.com',
+        idempotencyKey: 'email__deletion-receipt__req1',
+      }),
+      CTX,
+    );
+
+    expect(result.outcome).toBe('sent');
+    expect(delivery.deliver).toHaveBeenCalledWith({
+      to: 'purged-user@b.com',
+      subject: 'Your inbox is ready',
+      text: 'body',
+      idempotencyKey: 'email__deletion-receipt__req1',
+    });
+  });
+
   it('honors the D165 reminders opt-out for sync-reminder-24h only', async () => {
     const db = await freshDb();
     const userId = await seedUser(db);

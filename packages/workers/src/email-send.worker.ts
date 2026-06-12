@@ -79,6 +79,18 @@ export interface EmailSendJobData {
    * activity after this ISO-8601 instant ("the user returned").
    */
   skipIfUserActiveSince?: string;
+  /**
+   * Explicit recipient override — ONLY for sends whose user row is
+   * deliberately gone by execution time (the D232 deletion receipt:
+   * the purge worker captures the address, enqueues, then drops the
+   * account; execution-time `users.email` resolution would skip). The
+   * suppression list still applies (checked in the delivery port).
+   * Every other kind resolves via `userId` — never set this casually:
+   * an address in Redis outlives the DB row by the job retention
+   * window, which is exactly right for a deletion receipt and wrong
+   * for everything else.
+   */
+  recipientOverride?: string;
 }
 
 /** Metric-only result (logged on `worker.succeeded`). */
@@ -143,34 +155,45 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       throw new ValidationError('email-send job payload is missing required fields.');
     }
 
-    const [user] = await this.deps.db
-      .select({ email: users.email, preferences: users.preferences })
-      .from(users)
-      .where(eq(users.id, payload.userId))
-      .limit(1);
+    // Recipient resolution. `recipientOverride` short-circuits the
+    // users lookup — ONLY the D232 deletion receipt sets it (the user
+    // row is deliberately gone by send time; see the field's doc).
+    // Override sends skip the opt-out + activity checks by design: a
+    // deletion receipt is a required account notice (D216), and the
+    // preference rows no longer exist to consult.
+    let to = payload.recipientOverride ?? null;
+    if (!to) {
+      const [user] = await this.deps.db
+        .select({ email: users.email, preferences: users.preferences })
+        .from(users)
+        .where(eq(users.id, payload.userId))
+        .limit(1);
 
-    if (!user) {
-      // User deleted between enqueue and execution — nothing to send,
-      // and nobody to send it to. Designed skip, not a failure.
-      return { outcome: 'skipped_no_recipient', kind: payload.kind, providerId: null };
-    }
-
-    if (OPT_OUT_KINDS.has(payload.kind) && !parseEmailPrefs(user.preferences).reminders) {
-      return { outcome: 'skipped_opted_out', kind: payload.kind, providerId: null };
-    }
-
-    if (payload.skipIfUserActiveSince) {
-      const returned = await this.hasUserActivitySince(
-        payload.userId,
-        payload.skipIfUserActiveSince,
-      );
-      if (returned) {
-        return { outcome: 'skipped_user_returned', kind: payload.kind, providerId: null };
+      if (!user) {
+        // User deleted between enqueue and execution — nothing to send,
+        // and nobody to send it to. Designed skip, not a failure.
+        return { outcome: 'skipped_no_recipient', kind: payload.kind, providerId: null };
       }
+
+      if (OPT_OUT_KINDS.has(payload.kind) && !parseEmailPrefs(user.preferences).reminders) {
+        return { outcome: 'skipped_opted_out', kind: payload.kind, providerId: null };
+      }
+
+      if (payload.skipIfUserActiveSince) {
+        const returned = await this.hasUserActivitySince(
+          payload.userId,
+          payload.skipIfUserActiveSince,
+        );
+        if (returned) {
+          return { outcome: 'skipped_user_returned', kind: payload.kind, providerId: null };
+        }
+      }
+
+      to = user.email;
     }
 
     const delivered = await this.deps.delivery.deliver({
-      to: user.email,
+      to,
       subject: payload.subject,
       text: payload.text,
       idempotencyKey: payload.idempotencyKey,

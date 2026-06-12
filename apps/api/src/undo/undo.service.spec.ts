@@ -53,7 +53,9 @@ async function freshDb(): Promise<Db> {
   return drizzle(pg, { schema });
 }
 
-async function seedMailbox(db: Db): Promise<string> {
+async function seedMailbox(
+  db: Db,
+): Promise<{ userId: string; workspaceId: string; mailboxId: string }> {
   const [ws] = await db.insert(workspaces).values({ name: 'Test WS' }).returning({
     id: workspaces.id,
   });
@@ -61,13 +63,24 @@ async function seedMailbox(db: Db): Promise<string> {
     .insert(users)
     .values({ workspaceId: ws!.id, email: 'owner@declutrmail.ai' })
     .returning({ id: users.id });
+  const mailboxId = await addMailbox(db, ws!.id, user!.id, 'owner@declutrmail.ai');
+  return { userId: user!.id, workspaceId: ws!.id, mailboxId };
+}
+
+/** Add another mailbox under an existing user (per-USER D232 coverage). */
+async function addMailbox(
+  db: Db,
+  workspaceId: string,
+  userId: string,
+  providerAccountId: string,
+): Promise<string> {
   const [mailbox] = await db
     .insert(mailboxAccounts)
     .values({
-      workspaceId: ws!.id,
-      userId: user!.id,
+      workspaceId,
+      userId,
       provider: 'gmail',
-      providerAccountId: 'owner@declutrmail.ai',
+      providerAccountId,
     })
     .returning({ id: mailboxAccounts.id });
   return mailbox!.id;
@@ -81,12 +94,14 @@ const archivePayload: UndoPayload = {
 
 describe('UndoService', () => {
   let db: Db;
+  let userId: string;
+  let workspaceId: string;
   let mailboxId: string;
   let svc: UndoService;
 
   beforeEach(async () => {
     db = await freshDb();
-    mailboxId = await seedMailbox(db);
+    ({ userId, workspaceId, mailboxId } = await seedMailbox(db));
     // The service expects the DRIZZLE injection — bypass DI in unit tests
     // by direct construction.
     svc = new UndoService(db as never);
@@ -243,10 +258,34 @@ describe('UndoService', () => {
     });
   });
 
-  describe('latestActiveExpiry — D232 deletion-time read', () => {
-    it('returns null for a mailbox with no active tokens', async () => {
-      const result = await svc.latestActiveExpiry(mailboxId);
-      expect(result).toBeNull();
+  describe('activeExpirySummaryForUser — D232 deletion-time read (per-USER)', () => {
+    it('returns null/0 for a user with no active tokens', async () => {
+      const result = await svc.activeExpirySummaryForUser(userId);
+      expect(result.latest).toBeNull();
+      expect(result.activeCount).toBe(0);
+    });
+
+    it('aggregates across ALL of the user mailboxes (the per-mailbox bug)', async () => {
+      // Second mailbox under the SAME user — the buildout bug was a
+      // per-mailbox MAX that could not see this mailbox's later expiry.
+      const secondMailboxId = await addMailbox(db, workspaceId, userId, 'owner2@declutrmail.ai');
+      await svc.issue({
+        mailboxAccountId: mailboxId,
+        actionKind: 'archive',
+        payload: archivePayload,
+        expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      });
+      const farOnSecond = await svc.issue({
+        mailboxAccountId: secondMailboxId,
+        actionKind: 'archive',
+        payload: archivePayload,
+        expiresAt: new Date(Date.now() + 25 * 24 * 60 * 60 * 1000),
+      });
+
+      const result = await svc.activeExpirySummaryForUser(userId);
+      expect(result.latest).not.toBeNull();
+      expect(result.latest!.getTime()).toBe(farOnSecond.expiresAt.getTime());
+      expect(result.activeCount).toBe(2);
     });
 
     it('returns the most distant active expiry, ignoring expired + reverted', async () => {
@@ -279,12 +318,40 @@ describe('UndoService', () => {
       await svc.claimForRevert(revertedFar.token, mailboxId);
       await svc.recordRevertSuccess(revertedFar.token);
 
-      const result = await svc.latestActiveExpiry(mailboxId);
-      expect(result).not.toBeNull();
-      expect(result!.getTime()).toBe(far.expiresAt.getTime());
+      const result = await svc.activeExpirySummaryForUser(userId);
+      expect(result.latest).not.toBeNull();
+      expect(result.latest!.getTime()).toBe(far.expiresAt.getTime());
+      expect(result.activeCount).toBe(2); // near + far; expired + reverted excluded
       // Reference `near` so a future regression on a "single-row table"
       // path is caught (sanity that `near` was actually inserted).
-      expect(near.expiresAt.getTime()).toBeLessThan(result!.getTime());
+      expect(near.expiresAt.getTime()).toBeLessThan(result.latest!.getTime());
+    });
+
+    it("never counts another user's tokens (tenant isolation)", async () => {
+      const [otherWs] = await db
+        .insert(workspaces)
+        .values({ name: 'Other' })
+        .returning({ id: workspaces.id });
+      const [otherUser] = await db
+        .insert(users)
+        .values({ workspaceId: otherWs!.id, email: 'other@declutrmail.ai' })
+        .returning({ id: users.id });
+      const otherMailboxId = await addMailbox(
+        db,
+        otherWs!.id,
+        otherUser!.id,
+        'other@declutrmail.ai',
+      );
+      await svc.issue({
+        mailboxAccountId: otherMailboxId,
+        actionKind: 'archive',
+        payload: archivePayload,
+        expiresAt: new Date(Date.now() + 50 * 24 * 60 * 60 * 1000),
+      });
+
+      const result = await svc.activeExpirySummaryForUser(userId);
+      expect(result.latest).toBeNull();
+      expect(result.activeCount).toBe(0);
     });
   });
 

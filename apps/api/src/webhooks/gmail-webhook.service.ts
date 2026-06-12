@@ -2,7 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { mailboxAccounts, webhookDedup } from '@declutrmail/db';
-import { ensureIncrementalSyncJob, type IncrementalSyncJobData } from '@declutrmail/workers';
+import {
+  deletionPendingSql,
+  ensureIncrementalSyncJob,
+  type IncrementalSyncJobData,
+} from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { SyncService, INCREMENTAL_SYNC_QUEUE_TOKEN } from '../sync/sync.service.js';
@@ -43,6 +47,12 @@ export type ProcessOutcome =
   | { kind: 'duplicate_message_id'; messageId: string }
   | { kind: 'unknown_mailbox'; emailAddress: string }
   | { kind: 'sync_state_uninitialized'; mailboxAccountId: string }
+  // D232 sync pause — the mailbox's owner has an in-flight account-
+  // deletion request. Designed 200 no-op BEFORE the cursor advance:
+  // advancing while paused would permanently strand the (S, H] range
+  // when the user cancels during the grace window. Pub/Sub must not
+  // retry (the pause is state, not weather), so this maps to 200.
+  | { kind: 'deletion_pending'; mailboxAccountId: string }
   | { kind: 'stale_history_id'; lastHistoryId: bigint | null; incomingHistoryId: bigint }
   | {
       kind: 'enqueued';
@@ -143,8 +153,11 @@ export class GmailWebhookService {
       }
 
       // Resolve the mailbox by emailAddress (Gmail's provider_account_id).
+      // The D232 pause flag rides the SAME eligibility query (one
+      // round-trip, no scattered ifs) — see `deletion-pause.ts` in
+      // @declutrmail/workers for the predicate's rationale.
       const mailboxRows = await tx
-        .select({ id: mailboxAccounts.id })
+        .select({ id: mailboxAccounts.id, deletionPending: deletionPendingSql })
         .from(mailboxAccounts)
         .where(
           and(
@@ -156,6 +169,16 @@ export class GmailWebhookService {
       const mailbox = mailboxRows[0];
       if (!mailbox) {
         return { kind: 'unknown_mailbox', emailAddress: args.payload.emailAddress };
+      }
+
+      // D232 "Pause sync while pending": return BEFORE the cursor
+      // advance so a cancel resumes from the unmoved cursor. The dedup
+      // row above stays committed — a redelivery of this messageId is
+      // still a duplicate; the NEXT Gmail change emits a fresh push
+      // that re-enters this path (and syncs, post-cancel).
+      if (mailbox.deletionPending) {
+        this.logger.warn(`webhook.skipped_deletion_pending mailbox=${mailbox.id}`);
+        return { kind: 'deletion_pending', mailboxAccountId: mailbox.id };
       }
 
       // Backfill the dedup row's mailbox_account_id for trace.

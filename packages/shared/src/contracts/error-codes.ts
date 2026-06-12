@@ -161,6 +161,26 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'All 250 Founding Pro spots have been claimed.',
   },
+
+  // --- domain: account deletion (D205/D216/D232 — apps/api/src/account) ---
+  DELETION_CONFIRM_MISMATCH: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'The confirmation phrase did not match. Type it exactly to continue.',
+  },
+  DELETION_ALREADY_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Account deletion is already scheduled for this account.',
+  },
+  NO_PENDING_DELETION: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'There is no scheduled deletion to cancel.',
+  },
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /** The union of every registered error code. */

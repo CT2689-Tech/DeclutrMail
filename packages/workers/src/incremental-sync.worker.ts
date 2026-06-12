@@ -10,6 +10,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { isSyncPausedForDeletion } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
 import type { IncrementalSyncJobData } from './queue.js';
@@ -80,6 +81,13 @@ export interface IncrementalSyncResult {
    * `cursorTooOld` is `true` (the cursor stays put for the recovery).
    */
   advancedToHistoryId: string | null;
+  /**
+   * D232 sync pause — `true` when the mailbox's owner has an in-flight
+   * account-deletion request and the job was a designed no-op: no Gmail
+   * call, no cursor advance (advancing while paused would lose the
+   * (S, H] window on cancel). See `deletion-pause.ts`.
+   */
+  deletionPaused?: boolean;
 }
 
 /**
@@ -188,6 +196,29 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       throw new ValidationError('incremental-sync job is missing startHistoryId');
     }
     const { mailboxAccountId, startHistoryId } = payload;
+
+    // D232 sync pause — eligibility guard BEFORE any Gmail call. The
+    // authoritative backstop for every producer (webhook, drift sweep,
+    // "Sync now"); a paused mailbox's job is a designed no-op that
+    // leaves the cursor untouched so cancel resumes from the gap start.
+    if (await isSyncPausedForDeletion(this.deps.db, mailboxAccountId)) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.skipped_deletion_pending',
+          mailboxAccountId,
+        }),
+      );
+      return {
+        recordsProcessed: 0,
+        added: 0,
+        deleted: 0,
+        labelChanges: 0,
+        cursorTooOld: false,
+        advancedToHistoryId: null,
+        deletionPaused: true,
+      };
+    }
 
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
 
