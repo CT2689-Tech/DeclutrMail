@@ -213,7 +213,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D159 | Observability stack: **Sentry + PostHog | 🟢 | #34 | apps/api/src/observability/sentry-worker-observer.spec.ts |  |
 | D160 | CI/CD: **GitHub Actions → Cloud Run + Vercel auto-deploy | 🟢 | #7 | gh run 26327595271 ci.yml green on main |  |
 | D161 | Dev-phase cost optimizations (config-only, no service change) | ⬜ |  |  |  |
-| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | ⬜ |  |  |  |
+| D162 | Email provider: **Resend ($20/mo, 100k emails, React-Email templates) | 🔵 | #204 |  |  |
 | D163 | Browser push: **Web Push standard via `web-push` library + VAPID keys | ⬜ |  |  |  |
 | D164 | Mobile push: **Deferred to V2.1+ | ⬜ |  |  |  |
 | D165 | Notification preferences: **Per-category toggles in Settings | ⬜ |  |  |  |
