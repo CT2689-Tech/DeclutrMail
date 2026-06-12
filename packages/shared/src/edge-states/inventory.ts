@@ -314,9 +314,10 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   },
 
   // Activity feed (D55–D60). Empty is storied; loading skeleton and
-  // the 4xx-vs-5xx ErrorState ship in code only. The bulk-undo
-  // failure banner is a mutation error, not a load partial — hence
-  // partial-error n/a.
+  // the 4xx-vs-5xx ErrorState ship in code only. With U27 infinite
+  // scroll (D57), a failed fetchNextPage keeps the loaded pages on
+  // screen + renders an inline retry in <LoadMoreRegion> — that IS
+  // the partial-error state (some rows loaded, some did not).
   activity: {
     loading: {
       required: true,
@@ -333,7 +334,11 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       implementation: 'apps/web/src/features/activity/activity-screen.tsx',
       status: 'implemented',
     },
-    'partial-error': { required: false, status: 'n/a' },
+    'partial-error': {
+      required: true,
+      implementation: 'apps/web/src/features/activity/activity-screen.tsx',
+      status: 'implemented',
+    },
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
     'sync-in-progress': { required: false, status: 'todo' },

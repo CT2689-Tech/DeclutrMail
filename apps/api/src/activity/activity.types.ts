@@ -11,6 +11,8 @@
 // snippet, or non-allowlisted headers; the read service constructs
 // these rows from `activity_log` + `senders` + `undo_journal` only.
 
+import type { ActivityRuleRef } from '@declutrmail/shared/contracts';
+
 import type { ActivityLogEntry } from '@declutrmail/db';
 
 /**
@@ -49,6 +51,14 @@ export interface ActivityRow {
   affectedCount: number;
   /** Sender identity joined from `senders`; null for account-scoped rows. */
   sender: ActivitySender | null;
+  /**
+   * D57 rule attribution — joined from `automation_rules` via
+   * `activity_log.rule_id`. Non-null only for `source = 'autopilot'`
+   * rows whose originating rule still exists (the FK is
+   * `onDelete: 'set null'`, so a deleted rule degrades to null and the
+   * FE falls back to plain "by Autopilot").
+   */
+  rule: ActivityRuleRef | null;
   /** D58 undo affordance state — see {@link UndoState}. */
   undoState: UndoState;
 }

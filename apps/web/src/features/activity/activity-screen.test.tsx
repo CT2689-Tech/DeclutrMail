@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -58,17 +58,21 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
         email: 'one@example.com',
         domain: 'example.com',
       } as ActivityRowWire['sender']),
+    rule: partial.rule ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
   };
 }
 
 function renderScreen() {
   const client = createTestQueryClient();
-  return render(
+  const utils = render(
     <QueryWrapper client={client}>
       <ActivityScreen />
     </QueryWrapper>,
   );
+  // Expose the client so tests can force cache effects (e.g. a
+  // background refetch) that have no DOM trigger in happy-dom.
+  return { ...utils, client };
 }
 
 beforeEach(() => {
@@ -527,6 +531,210 @@ describe('ActivityScreen — B11 group by sender', () => {
     const groupChip = await screen.findByRole('button', { name: /^Group$/ });
     await userEvent.click(groupChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('group=sender'));
+  });
+});
+
+// ── U27 — D57 rule attribution + infinite scroll ─────────────────────
+
+describe('ActivityScreen — D57 rule attribution', () => {
+  it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                source: 'autopilot',
+                rule: {
+                  id: '22222222-2222-2222-2222-222222222222',
+                  name: 'Newsletter graveyard',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByText('by Autopilot · Newsletter graveyard')).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to plain "by Autopilot" when the rule was deleted (rule=null)', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({ source: 'autopilot', rule: null })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
+  });
+
+  it('keeps the "via <source>" form for non-autopilot rows', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ source: 'manual' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('via Manual')).toBeInTheDocument());
+  });
+});
+
+describe('ActivityScreen — U27 infinite scroll', () => {
+  it('appends the next page on "Load more" and then shows the end marker', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          const cursor = url.searchParams.get('cursor');
+          if (!cursor) {
+            return jsonOk({
+              data: [row({ id: 'p1-1' })],
+              meta: {
+                ...META_BASE,
+                pagination: { nextCursor: 'cursor-page-2', hasMore: true, limit: 25 },
+              },
+            });
+          }
+          expect(cursor).toBe('cursor-page-2');
+          return jsonOk({
+            data: [
+              row({
+                id: 'p2-1',
+                sender: {
+                  senderKey: 'sk-2',
+                  displayName: 'Sender Two',
+                  email: 'two@example.com',
+                  domain: 'example.com',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    // Page 1 rendered + load-more affordance present (hasMore=true).
+    await waitFor(() => expect(screen.getByText('Sender One')).toBeInTheDocument());
+    const loadMore = screen.getByRole('button', { name: /^load more$/i });
+    await userEvent.click(loadMore);
+    // Page 2 appends below page 1 — both rows visible.
+    await waitFor(() => expect(screen.getByText('Sender Two')).toBeInTheDocument());
+    expect(screen.getByText('Sender One')).toBeInTheDocument();
+    // Page 2's nextCursor=null → end-of-list marker with the loaded count.
+    await waitFor(() =>
+      expect(screen.getByText(/end of activity · 2 rows loaded/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the end-of-list marker instead of Load more on a single full page', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByText(/end of activity · 1 row loaded/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
+  });
+
+  // D211 partial-error — the edge state this slice promotes to
+  // required: page 1 loaded, page 2 did not. The amber inline retry
+  // must be scoped to NEXT-PAGE failures only (isFetchNextPageError);
+  // a failed background refetch retains the rows and must not trip it.
+  it('keeps loaded rows and renders the amber inline retry when fetchNextPage 5xx-fails', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          // Page 1 (no cursor) succeeds; the cursor'd next page 500s.
+          if (url.searchParams.get('cursor')) return jsonServerError();
+          return jsonOk({
+            data: [row({ id: 'p1-1' })],
+            meta: {
+              ...META_BASE,
+              pagination: { nextCursor: 'cursor-page-2', hasMore: true, limit: 25 },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Sender One')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^load more$/i }));
+    // Amber inline retry renders in the tail region…
+    const retry = await screen.findByRole('button', { name: /couldn[’']t load more/i });
+    expect(retry).toBeInTheDocument();
+    // …while the loaded page-1 rows stay on screen (no full-screen error).
+    expect(screen.getByText('Sender One')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /couldn[’']t load your activity/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does NOT show the amber retry when a background refetch fails (error is next-page-scoped)', async () => {
+    let calls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          calls += 1;
+          // First load succeeds with more pages available; the
+          // background refetch of the loaded page then 500s — the
+          // 1.5s in-flight poll / refetchOnWindowFocus failure class.
+          if (calls === 1) {
+            return jsonOk({
+              data: [row({ id: 'p1-1' })],
+              meta: {
+                ...META_BASE,
+                pagination: { nextCursor: 'cursor-page-2', hasMore: true, limit: 25 },
+              },
+            });
+          }
+          return jsonServerError();
+        },
+      },
+    ]);
+    const { client } = renderScreen();
+    await waitFor(() => expect(screen.getByText('Sender One')).toBeInTheDocument());
+    // Force the background refetch (no DOM trigger for focus/poll here).
+    await act(() => client.refetchQueries({ queryKey: ['activity'] }));
+    expect(calls).toBeGreaterThan(1);
+    // refetchQueries resolves BEFORE the query observer notifies React —
+    // flush a macrotask so the component has re-rendered with the
+    // post-refetch error state. Without this the assertions below pass
+    // vacuously (verified: the un-fixed `isError` gate shows the amber
+    // one tick after refetchQueries resolves).
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    // Query-wide isError is now true with data retained — the rows stay,
+    // the plain "Load more" affordance remains, and the amber
+    // "Couldn't load more" retry must NOT render (pins the
+    // isFetchNextPageError gate).
+    expect(screen.getByText('Sender One')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^load more$/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /couldn[’']t load more/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
