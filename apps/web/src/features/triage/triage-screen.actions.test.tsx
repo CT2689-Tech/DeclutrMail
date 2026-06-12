@@ -33,7 +33,7 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
-import { resetTriageStore } from './store';
+import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
@@ -802,5 +802,87 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     );
     expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
     expect(h.toast).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * D226/D34 — the inline pending preview (sheet skipped via the
+ * remember-preference path) must clear on Escape WITHOUT firing the
+ * mutation. Pins the contract the inline-confirm comment promises;
+ * the sheet surface owns its own Escape (action-sheet.test.tsx).
+ */
+describe('TriageScreen — inline pending preview clears on Escape (D226, D34)', () => {
+  beforeEach(() => {
+    resetTriageStore();
+    h.toast.mockClear();
+    h.captureFeatureException.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+    ]);
+  });
+  afterEach(() => {
+    resetFetchStub();
+  });
+
+  it('Escape clears the inline pending action, keeps the row expanded, fires no mutation', async () => {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({ data: { actionId: ACTION_ID, status: 'queued' } });
+        },
+      },
+    ]);
+    // Remember-preference ON for Archive → the verb goes inline, no sheet.
+    useTriageStore.getState().setRememberPreference('Archive', true);
+
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    // Inline preview banner renders (no dialog — the sheet was skipped).
+    await screen.findByText('Preview · before anything changes');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(useTriageStore.getState().pendingAction).toMatchObject({
+      verb: 'Archive',
+      rowId: GROUPON.id,
+      surface: 'inline',
+    });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByText('Preview · before anything changes')).toBeNull());
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    // The row stays expanded — only the pending decision is discarded.
+    expect(useTriageStore.getState().expandedRowId).toBe(GROUPON.id);
+    // No mutation ever fired.
+    expect(enqueues).toHaveLength(0);
+  });
+
+  it('Escape inside an input is ignored (typing convention)', async () => {
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await screen.findByText('Preview · before anything changes');
+
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    // Pending action survives — Escape belonged to the input.
+    expect(useTriageStore.getState().pendingAction).not.toBeNull();
+    expect(screen.getByText('Preview · before anything changes')).toBeDefined();
+    input.remove();
   });
 });
