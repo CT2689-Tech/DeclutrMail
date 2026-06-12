@@ -158,3 +158,15 @@ export type {
   SnoozeUpdateResult,
   WakeNowResult,
 } from './snoozed';
+
+// U18 quiet hours — GET/PUT /api/mailboxes/:id/quiet-hours (D92, D95)
+// + the window math the Autopilot deferral guard evaluates (D93 seam).
+export {
+  isValidTimeZone,
+  isWithinQuietWindow,
+  minutesOfDayInZone,
+  msUntilQuietWindowEnd,
+  parseTimeToMinutes,
+  QuietHoursConfigSchema,
+} from './quiet-hours';
+export type { QuietHoursConfig, QuietHoursState } from './quiet-hours';

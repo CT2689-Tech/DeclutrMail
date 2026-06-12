@@ -1,6 +1,21 @@
-import { Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Put,
+  UseGuards,
+} from '@nestjs/common';
 
-import { ok, type Envelope } from '@declutrmail/shared/contracts';
+import {
+  ok,
+  QuietHoursConfigSchema,
+  type Envelope,
+  type QuietHoursState,
+} from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
@@ -11,9 +26,11 @@ import { MailboxAccountsService, type MailboxSummary } from './mailbox-accounts.
 /**
  * Mailboxes routes (D205 MailboxAccountsModule).
  *
- *   GET    /api/mailboxes              → list workspace mailboxes
- *   DELETE /api/mailboxes/:id          → disconnect (revoke + nullify)
- *   PATCH  /api/mailboxes/:id/active   → set as the user's active mailbox
+ *   GET    /api/mailboxes                   → list workspace mailboxes
+ *   DELETE /api/mailboxes/:id               → disconnect (revoke + nullify)
+ *   PATCH  /api/mailboxes/:id/active        → set as the user's active mailbox
+ *   GET    /api/mailboxes/:id/quiet-hours   → quiet-hours config + activeNow (U18, D92/D95)
+ *   PUT    /api/mailboxes/:id/quiet-hours   → replace quiet-hours config (jsonb-merge write)
  *
  * All routes require JwtGuard. State-changing routes also require
  * CsrfGuard. Ownership scoping happens in the service layer —
@@ -87,5 +104,54 @@ export class MailboxesController {
     }
     await this.users.patchPreferences(user.userId, { activeMailboxId: id });
     return ok({ activeMailboxId: id });
+  }
+
+  /**
+   * GET /api/mailboxes/:id/quiet-hours — the stored config (null until
+   * first configured) + `activeNow` from the SAME predicate the
+   * Autopilot action sweep defers on (U18 — D92/D93/D95).
+   */
+  @Get(':id/quiet-hours')
+  async getQuietHours(
+    @CurrentUser() user: SessionPrincipal,
+    @Param('id') id: string,
+  ): Promise<Envelope<QuietHoursState>> {
+    assertUuid(id);
+    const state = await this.mailboxes.getQuietHours(user.workspaceId, id);
+    return ok(state);
+  }
+
+  /**
+   * PUT /api/mailboxes/:id/quiet-hours — replace the quiet-hours
+   * config. Body = `QuietHoursConfigSchema` (enabled + "HH:MM" local
+   * start/end + IANA timezone; start ≠ end; cross-midnight windows
+   * allowed via start > end). The write is a jsonb MERGE under the
+   * `quiet_hours` key — sibling keys (`gmail_watch`, the manual quiet
+   * toggle) survive (co-tenancy contract, see
+   * packages/workers/src/quiet-hours-state.ts).
+   */
+  @Put(':id/quiet-hours')
+  @UseGuards(CsrfGuard)
+  async putQuietHours(
+    @CurrentUser() user: SessionPrincipal,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<Envelope<QuietHoursState>> {
+    assertUuid(id);
+    const parsed = QuietHoursConfigSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(
+        'Body must be { enabled: boolean, startLocal: "HH:MM", endLocal: "HH:MM", timezone: IANA } with startLocal ≠ endLocal.',
+      );
+    }
+    const state = await this.mailboxes.putQuietHours(user.workspaceId, id, parsed.data);
+    return ok(state);
+  }
+}
+
+/** Reject non-UUID ids BEFORE the DB query — an invalid uuid cast 500s. */
+function assertUuid(value: string): void {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    throw new BadRequestException('Mailbox id must be a UUID.');
   }
 }

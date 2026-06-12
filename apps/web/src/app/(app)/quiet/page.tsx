@@ -1,29 +1,15 @@
-// /quiet — Quiet hours configuration.
+// /quiet — Quiet hours configuration (U18 — D92, D95).
 //
-// Quiet hours pause Autopilot mutations + outbound notifications
-// during user-chosen windows. Sidebar nav lists this surface but the
-// feature is still queued — the stub lands now so the nav doesn't lie.
+// Per-mailbox recurring quiet window: while it covers "now", Autopilot
+// mutations defer (AutopilotActionWorker Guard 1) and run after the
+// window ends. Manual user actions are never deferred.
 
-import { RoutePlaceholder } from '@/features/route-placeholder/route-placeholder';
+import { QuietRoute } from '@/features/quiet/quiet-screen';
 
 export const metadata = {
   title: 'Quiet hours — DeclutrMail',
 };
 
 export default function QuietPage() {
-  return (
-    <RoutePlaceholder
-      status="Planned for V2.2"
-      title="Quiet hours"
-      description={
-        <>
-          Pause Autopilot moves and outbound notifications during the hours you choose. Triage stays
-          available — only the automated mutations sleep.
-        </>
-      }
-      decisions={[]}
-      primaryCta={{ href: '/autopilot', label: 'Open Autopilot' }}
-      secondaryCta={{ href: '/settings', label: 'Account settings' }}
-    />
-  );
+  return <QuietRoute />;
 }

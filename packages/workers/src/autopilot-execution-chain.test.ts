@@ -172,4 +172,65 @@ describe('createAutopilotExecutionChain', () => {
     expect(result.observeMatches).toBeGreaterThan(0);
     expect(add).not.toHaveBeenCalled();
   });
+
+  it('a quiet-deferred action sweep re-schedules a DELAYED sweep for the quiet end (U18)', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMatchableMailbox(db, 'active');
+    // NOW = 08:00Z = 13:30 IST → window 13:00–14:00 IST covers it; the
+    // quiet end is 30 minutes out.
+    await db
+      .update(mailboxAccounts)
+      .set({
+        quietState: {
+          quiet_hours: {
+            enabled: true,
+            start_local: '13:00',
+            end_local: '14:00',
+            timezone: 'Asia/Kolkata',
+            updated_at: NOW.toISOString(),
+          },
+        },
+      })
+      .where(eq(mailboxAccounts.id, mailboxId));
+    const { chain, add } = buildChain(db);
+
+    const result = await chain.actionWorker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(true);
+    expect(add).toHaveBeenCalledTimes(1);
+    const [jobName, jobData, opts] = add.mock.calls[0] as [
+      string,
+      { mailboxAccountId: string; triggeredAtMs: number },
+      { jobId: string; delay?: number },
+    ];
+    expect(jobName).toBe('autopilot-action');
+    expect(jobData.mailboxAccountId).toBe(mailboxId);
+    expect(opts.delay).toBe(30 * 60_000);
+    // jobId keyed on the RESUME instant — distinct from the deferred
+    // sweep's id, '-'-separated (BullMQ rejects ':' in custom ids).
+    expect(jobData.triggeredAtMs).toBe(NOW.getTime() + 30 * 60_000);
+    expect(opts.jobId).toBe(`${mailboxId}-${jobData.triggeredAtMs}`);
+    expect(opts.jobId).not.toContain(':');
+  });
+
+  it('an indefinite manual quiet (no until_at) defers WITHOUT re-scheduling', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMatchableMailbox(db, 'active');
+    await db
+      .update(mailboxAccounts)
+      .set({ quietState: { enabled: true, source: 'manual' } })
+      .where(eq(mailboxAccounts.id, mailboxId));
+    const { chain, add } = buildChain(db);
+
+    const result = await chain.actionWorker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(true);
+    expect(add).not.toHaveBeenCalled();
+  });
 });

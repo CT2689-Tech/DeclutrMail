@@ -96,9 +96,9 @@ export type ScreenId =
   | 'snoozed'
   | 'settings-senders'
   | 'admin-security'
+  | 'quiet'
   // Placeholder routes — `RoutePlaceholder` stubs so the nav doesn't lie.
   | 'billing'
-  | 'quiet'
   | 'screener'
   | 'settings-index'
   // App Router error surfaces (D167) — not (app) routes.
@@ -549,10 +549,27 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     },
   },
 
+  // Quiet hours config (U18 — D92/D95). Per-mailbox cards, each with
+  // its own loading/error branch; `empty` = no connected mailboxes.
   quiet: {
-    loading: { required: false, status: 'n/a' },
-    empty: { required: false, status: 'n/a' },
-    error: { required: false, status: 'n/a' },
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/quiet/quiet-hours-card.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      // "No mailboxes connected" EmptyState branch in the screen —
+      // exercised by unit tests; no dedicated story (the shared
+      // EmptyState component carries its own stories).
+      required: true,
+      implementation: 'apps/web/src/features/quiet/quiet-screen.tsx',
+      status: 'implemented',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/quiet/quiet-hours-card.stories.tsx',
+      status: 'covered',
+    },
     'partial-error': { required: false, status: 'n/a' },
     offline: { required: false, status: 'n/a' },
     unauthorized: { required: false, status: 'n/a' },
@@ -562,11 +579,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
     'account-deletion-pending': { required: false, status: 'n/a' },
-    placeholder: {
-      required: true,
-      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
-      status: 'covered',
-    },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   screener: {

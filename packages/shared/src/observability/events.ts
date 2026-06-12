@@ -49,6 +49,8 @@ export type EventName =
   | 'autopilot_resumed'
   | 'autopilot_suggestion_decided'
   | 'autopilot_preset_changed'
+  // — Quiet hours (U18 — D92/D95) —
+  | 'quiet_hours_updated'
   // — Marketing surface (D19 pricing) —
   | 'waitlist_joined'
   // — Followups surface —
@@ -278,6 +280,15 @@ export interface EventPayloads {
     preset_id: string;
     /** `activated` = the explicit D104 Observe → Active switch (no auto-promote). */
     action: 'enabled' | 'disabled' | 'parameter_changed' | 'activated';
+  };
+
+  // — Quiet hours (U18 — D92/D95) —
+  quiet_hours_updated: {
+    mailbox_id: string;
+    /** Config state AFTER the save. */
+    enabled: boolean;
+    /** True when the saved window spans midnight (startLocal > endLocal). */
+    crosses_midnight: boolean;
   };
 
   // — Marketing surface (D19 pricing) —

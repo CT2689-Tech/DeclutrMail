@@ -23,7 +23,7 @@
  */
 
 export interface FetchStubHandler {
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   /** Path string (exact match) or RegExp (tested against URL pathname). */
   path: string | RegExp;
   /**

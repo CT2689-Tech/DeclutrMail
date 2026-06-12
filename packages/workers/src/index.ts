@@ -153,6 +153,16 @@ export type {
   AutopilotActionJobData,
   AutopilotActionResult,
 } from './autopilot-action.worker.js';
+// U18 quiet hours — persistence (jsonb MERGE, co-tenant contract) +
+// the combined quiet predicate the action sweep defers on (D92/D93).
+// `isQuietStateActive` ships via the autopilot-action re-export above.
+export {
+  isQuietActive,
+  msUntilQuietEnds,
+  persistQuietHoursState,
+  QUIET_HOURS_STATE_KEY,
+  readQuietHoursState,
+} from './quiet-hours-state.js';
 export { createAutopilotExecutionChain } from './autopilot-execution-chain.js';
 export type { AutopilotExecutionChain } from './autopilot-execution-chain.js';
 export { BriefSnapshotWorker } from './brief-snapshot.worker.js';

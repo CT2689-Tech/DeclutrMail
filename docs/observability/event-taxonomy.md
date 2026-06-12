@@ -297,6 +297,31 @@ modal). There is no auto-promotion — `activated` is always a user act.
 **Retention / aggregation.** 1y raw. Drives preset adoption + the
 share of rules that ever reach Active mode.
 
+### `quiet_hours_updated`
+
+**When fired.** From the Quiet screen after
+`PUT /api/mailboxes/:id/quiet-hours` succeeds (U18 — D92/D95) — i.e.
+after the server confirmed the save, never optimistically. One event
+per saved mailbox config.
+
+**Payload.**
+
+| Field              | Type      | Notes                                        |
+| ------------------ | --------- | -------------------------------------------- |
+| `mailbox_id`       | `string`  | Internal UUID — never the Gmail address      |
+| `enabled`          | `boolean` | Config state AFTER the save                  |
+| `crosses_midnight` | `boolean` | `startLocal > endLocal` (e.g. 22:00 → 06:00) |
+
+Window times and the timezone are NOT attached — `crosses_midnight`
+answers the product question (do users set overnight windows?) without
+shipping per-user schedule details.
+
+**Retention / aggregation.** PostHog default. Quiet-hours adoption
+(enabled=true saves per mailbox) + the overnight-window share. The
+worker-side deferral signal is the structured log line
+`autopilot.action.quiet_deferred` (Cloud Run logs), not a PostHog
+event.
+
 ### `waitlist_joined`
 
 **When fired.** From the marketing client after `POST /api/waitlist`
