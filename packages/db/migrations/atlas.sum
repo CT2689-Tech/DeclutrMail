@@ -1,4 +1,4 @@
-h1:xIcLg5/+T5piqWSE5iESsQI/aZypyZoYXw9Rsp4PlYw=
+h1:P1yB8ln84V6pBGzTdhdVMMWJjCTEEBJ2LD41240U7V4=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:COE1cnXSzGmexAp7l9JwAYLVhPilqOD4Vo6roD/D5To=
 0002_mailbox_oauth_tokens.sql h1:1sPxNFc73SsT9MSMW+4KYw96x/5KT47gSpz6ysoOa7E=
@@ -29,3 +29,4 @@ h1:xIcLg5/+T5piqWSE5iESsQI/aZypyZoYXw9Rsp4PlYw=
 0027_provider_sync_incremental_error_tracking.sql h1:3ivFCfHM47hlnYsvpAbKo1bjmmwcyOGDSo4qNkXItLY=
 0028_activity_action_vip_protect.sql h1:xl/a6p/Fk57H8dty448xj/LtYwuAeQI4L/Xfe0Zu8PM=
 0029_sender_policies_unsub_status.sql h1:ZfMfzgOQLJSJ9+6SHyOmnDzrm9xZmibDlH056LySsjU=
+0030_launch_schema_pack.sql h1:n8bk52KVsuy/FujzR60o/Tt6Xdms2rsPhaomutweuTY=

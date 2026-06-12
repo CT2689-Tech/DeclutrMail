@@ -1,0 +1,70 @@
+-- Rollback for 0030_launch_schema_pack.sql
+--
+-- Reverse order of the forward file: column adds come off first (their
+-- partial indexes and FKs drop implicitly with the columns), then the
+-- eight new tables, then the seven new enum types.
+--
+-- Data impact, stated honestly:
+--   - Dropping the billing tables discards provider customer ids,
+--     subscription state, and the normalized webhook event stream —
+--     the provider (Paddle/Razorpay) remains the source of truth and
+--     a re-applied forward migration repopulates via webhook replay /
+--     reconciliation, but local processing bookkeeping is lost.
+--   - Dropping `account_deletion_requests` discards scheduled
+--     deletions — operators MUST verify no row has status 'pending'
+--     or 'executing' before rolling back (a scheduled deletion would
+--     silently stop being scheduled).
+--   - Dropping `cron_runs` / `dead_letter_jobs` discards run-ledger
+--     and parked-failure history (Sentry retains the alerts).
+--   - Dropping `screener_quarantine` discards pending screen queues;
+--     decided state survives in sender_policies/activity_log.
+--   - Dropping the snooze columns discards active snoozes — messages
+--     already routed to the snooze Gmail label are NOT restored by
+--     this rollback (the label outlives the column; operators run the
+--     restore worker first or restore manually).
+--   - Dropping `activity_log.rule_id` / `users.*` adds loses only the
+--     new nullable attributes.
+
+ALTER TABLE "users" DROP COLUMN "billing_region";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "timezone";
+--> statement-breakpoint
+ALTER TABLE "users" DROP COLUMN "onboarded_at";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN "snoozed_reason";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN "snoozed_at";
+--> statement-breakpoint
+ALTER TABLE "sender_policies" DROP COLUMN "snoozed_until";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP COLUMN "rule_id";
+--> statement-breakpoint
+DROP TABLE "screener_quarantine";
+--> statement-breakpoint
+DROP TABLE "dead_letter_jobs";
+--> statement-breakpoint
+DROP TABLE "cron_runs";
+--> statement-breakpoint
+DROP TABLE "account_deletion_requests";
+--> statement-breakpoint
+DROP TABLE "waitlist";
+--> statement-breakpoint
+DROP TABLE "subscription_events";
+--> statement-breakpoint
+DROP TABLE "subscriptions";
+--> statement-breakpoint
+DROP TABLE "billing_customers";
+--> statement-breakpoint
+DROP TYPE "public"."cron_run_status";
+--> statement-breakpoint
+DROP TYPE "public"."account_deletion_status";
+--> statement-breakpoint
+DROP TYPE "public"."account_deletion_basis";
+--> statement-breakpoint
+DROP TYPE "public"."subscription_status";
+--> statement-breakpoint
+DROP TYPE "public"."billing_cycle";
+--> statement-breakpoint
+DROP TYPE "public"."billing_region";
+--> statement-breakpoint
+DROP TYPE "public"."billing_provider";

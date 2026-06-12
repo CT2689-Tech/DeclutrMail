@@ -1,7 +1,8 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
+import { billingRegion } from './billing-customers';
 import { workspaces } from './workspaces';
 
 /**
@@ -42,6 +43,24 @@ export const users = pgTable(
     devPreferences: jsonb('dev_preferences')
       .notNull()
       .default(sql`'{}'::jsonb`),
+    /**
+     * D113 — set to `now()` when the user completes onboarding Step 5
+     * (or skips onboarding per D106). Null = onboarding not finished;
+     * the web app routes such users back into the flow.
+     */
+    onboardedAt: timestamp('onboarded_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * IANA timezone, e.g. `Asia/Kolkata` (D64). Captured from the
+     * browser; drives the Brief's 8am-local delivery slot. Null until
+     * first captured — consumers fall back to UTC.
+     */
+    timezone: text('timezone'),
+    /**
+     * D117 — billing-provider routing ('india' → Razorpay, else
+     * Paddle). Auto-detected from IP at signup; user can override in
+     * Settings → Account. Null until first detected.
+     */
+    billingRegion: billingRegion('billing_region'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

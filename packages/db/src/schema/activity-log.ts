@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
+import { automationRules } from './automation-rules';
 import { mailboxAccounts } from './mailbox-accounts';
 import { undoJournal } from './undo-journal';
 
@@ -90,6 +91,17 @@ export const activityLog = pgTable(
     undoToken: uuid('undo_token').references(() => undoJournal.token, {
       onDelete: 'set null',
     }),
+    /**
+     * Rule attribution for `source = 'autopilot'` rows (D58, D104).
+     * D58's undo confirm sheet offers "Also disable the rule that
+     * triggered this?" — that needs a resolvable reference, so this is
+     * an FK to `automation_rules`, not a jsonb blob. Null for
+     * non-autopilot rows. `onDelete: 'set null'` — activity is
+     * append-only audit and outlives a deleted rule.
+     */
+    ruleId: uuid('rule_id').references(() => automationRules.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -102,6 +114,14 @@ export const activityLog = pgTable(
     ),
     /** Activity-row → undo lookup (D58 "Undo" affordance per row). */
     undoTokenIdx: index('activity_log_undo_token_idx').on(table.undoToken),
+    /**
+     * Rule → activity rows (D104 audit history) + keeps a rule DELETE's
+     * `SET NULL` fan-out off a sequential scan. Partial — only
+     * autopilot-attributed rows carry a rule_id.
+     */
+    ruleIdIdx: index('activity_log_rule_id_idx')
+      .on(table.ruleId)
+      .where(sql`${table.ruleId} IS NOT NULL`),
   }),
 );
 
