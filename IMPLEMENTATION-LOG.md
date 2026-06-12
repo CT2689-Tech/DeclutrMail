@@ -130,8 +130,8 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D76 | Empty state: **Calm single-line message | ⬜ |  |  |  |
 | D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | ⬜ |  |  |  |
 | D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
-| D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | ⬜ |  |  |  |
-| D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | ⬜ |  |  |  |
+| D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | 🔵 | #215 |  |  |
+| D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | 🔵 | #215 |  |  |
 | D81 | Snooze trigger surfaces | ⬜ |  |  |  |
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
