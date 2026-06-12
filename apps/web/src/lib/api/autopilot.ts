@@ -1,5 +1,5 @@
 /**
- * Autopilot API — typed fetchers for the six Autopilot endpoints
+ * Autopilot API — typed fetchers for the Autopilot endpoints
  * (D99-D105, D234). Mirrors the BE wire contract in
  * `apps/api/src/autopilot/autopilot.types.ts`. The BE is the
  * source-of-truth; if these types drift, the TanStack hooks above will
@@ -15,8 +15,24 @@
  * change.
  */
 
-import type { Envelope } from '@declutrmail/shared/contracts';
-import { apiGet, apiPost } from './client';
+import type {
+  AutopilotApproveMatchesRequest,
+  AutopilotApproveResult,
+  AutopilotPreviewSample,
+  AutopilotRulePreviewResult,
+  Envelope,
+} from '@declutrmail/shared/contracts';
+import { apiGet, apiPatch, apiPost } from './client';
+
+/**
+ * Approve + preview wire shapes come from the shared Zod contracts
+ * (`packages/shared/src/contracts/autopilot.ts`) — the BE validates
+ * against the same schemas. Re-exported under the FE's `*Dto` naming
+ * so feature code imports every Autopilot wire type from one place.
+ */
+export type AutopilotApproveResultDto = AutopilotApproveResult;
+export type AutopilotRulePreviewResultDto = AutopilotRulePreviewResult;
+export type AutopilotPreviewSampleDto = AutopilotPreviewSample;
 
 /** Rule lifecycle (D10, D105). Mirrors `autopilot_rule_mode` pgEnum. */
 export type AutopilotRuleMode = 'observe' | 'active' | 'paused';
@@ -50,6 +66,18 @@ export interface AutopilotRuleDto {
   enabled: boolean;
   mode: AutopilotRuleMode;
   modeChangedAt: string;
+  /**
+   * D10/D104 Observe-window projection (`modeChangedAt` + 7d).
+   * ISO-8601 while the rule is in Observe mode; null otherwise. The
+   * FE renders "(N days left)" off this.
+   */
+  observeWindowEndsAt: string | null;
+  /**
+   * True when the rule is in Observe mode AND the 7-day window has
+   * elapsed. Drives the day-7 prompt banner (U15) — there is NO
+   * server-side auto-promotion; the user explicitly switches to Active.
+   */
+  observeWindowElapsed: boolean;
   confidenceThreshold: number | null;
   scope: AutopilotRuleScope;
   actionKind: AutopilotActionKind;
@@ -59,6 +87,24 @@ export interface AutopilotRuleDto {
   lastRunSenders: number;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Allowed `PATCH /api/autopilot/rules/:id` body. All fields optional.
+ * Mirrors `AutopilotRulePatch` in `autopilot.types.ts`.
+ */
+export interface AutopilotRulePatchDto {
+  /** D101 — toggle the rule on / off. */
+  enabled?: boolean;
+  /** D10 / D105 — observe ↔ active ↔ paused. */
+  mode?: AutopilotRuleMode;
+  /**
+   * D101 threshold slider. Range `[0, 1]`. Only meaningful for
+   * threshold-bearing presets; `null` resets to the preset default.
+   */
+  confidenceThreshold?: number | null;
+  /** D102 — per-inbox vs all-inboxes. */
+  scope?: AutopilotRuleScope;
 }
 
 /** One match row, as the pending-suggestions endpoint returns it. */
@@ -126,4 +172,51 @@ export function postDismissMatch(
 /** POST /api/autopilot/pause-all — D105 master pause. */
 export function postPauseAll(): Promise<Envelope<AutopilotPauseAllResult, unknown>> {
   return apiPost<AutopilotPauseAllResult>('/api/autopilot/pause-all');
+}
+
+/**
+ * PATCH /api/autopilot/rules/:id — toggle enabled, change mode, adjust
+ * threshold (D101, D105). Custom rules 404 per D234.
+ */
+export function patchAutopilotRule(
+  ruleId: string,
+  patch: AutopilotRulePatchDto,
+): Promise<Envelope<AutopilotRuleDto, unknown>> {
+  return apiPatch<AutopilotRuleDto>(`/api/autopilot/rules/${encodeURIComponent(ruleId)}`, patch);
+}
+
+/**
+ * POST /api/autopilot/matches/approve — D104 "Approve selected".
+ * Flips pending Observe-mode suggestions to `approved` + enqueues the
+ * action sweep. Idempotent (replays return `approvedCount=0`).
+ */
+export function postApproveMatches(
+  body: AutopilotApproveMatchesRequest,
+): Promise<Envelope<AutopilotApproveResult, unknown>> {
+  return apiPost<AutopilotApproveResult>('/api/autopilot/matches/approve', body);
+}
+
+/**
+ * POST /api/autopilot/rules/:id/approve-all — D104 "Approve all".
+ * Approves every pending suggestion for the rule. Does NOT change the
+ * rule's mode (the "and switch to Active" variant is this + a PATCH).
+ */
+export function postApproveAllForRule(
+  ruleId: string,
+): Promise<Envelope<AutopilotApproveResult, unknown>> {
+  return apiPost<AutopilotApproveResult>(
+    `/api/autopilot/rules/${encodeURIComponent(ruleId)}/approve-all`,
+  );
+}
+
+/**
+ * POST /api/autopilot/rules/:id/preview — D103/D192 dry-run preview.
+ * Read-only: would-match count + a 10-row metadata-only sample.
+ */
+export function postRulePreview(
+  ruleId: string,
+): Promise<Envelope<AutopilotRulePreviewResult, unknown>> {
+  return apiPost<AutopilotRulePreviewResult>(
+    `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview`,
+  );
 }

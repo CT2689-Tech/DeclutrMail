@@ -257,10 +257,18 @@ export interface EventPayloads {
     decision: 'accepted' | 'rejected' | 'snoozed';
     /** Which suggestion category — preset, custom rule, sender-policy nudge. */
     suggestion_kind: 'preset_rule' | 'sender_policy' | 'preset_change';
+    /**
+     * How many suggestions this decision covered — 1 for a per-row
+     * dismiss, N for the D104 batch approves (approve-all /
+     * approve-selected fire ONE event per mutation, not per row, to
+     * keep cardinality bounded like `rule_fired`).
+     */
+    count: number;
   };
   autopilot_preset_changed: {
     preset_id: string;
-    action: 'enabled' | 'disabled' | 'parameter_changed';
+    /** `activated` = the explicit D104 Observe → Active switch (no auto-promote). */
+    action: 'enabled' | 'disabled' | 'parameter_changed' | 'activated';
   };
 
   // — Marketing surface (D19 pricing) —

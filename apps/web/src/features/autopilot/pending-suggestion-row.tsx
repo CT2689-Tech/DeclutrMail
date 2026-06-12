@@ -1,23 +1,20 @@
 'use client';
 
-import { Button, Pill, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
-import { presetDisplayName } from './preset-labels';
 
 const { color, font } = tokens;
 
 /**
- * One row in the D104 "Pending Autopilot suggestions" list.
+ * One row in a D104 "Pending Autopilot suggestions" group.
  *
- * Each row is one (rule, sender) pair: rule name + short sender-key
- * preview + the verb phrase the rule would emit ("would archive") +
- * a single Dismiss action. There is no Approve button at V2 — the
- * Observe-mode prompt for activation lives in the per-rule day-7
- * banner, NOT on individual rows (per D10/D104). Approving a single
- * sender out of Observe is intentionally not exposed; the user either
- * lets the rule keep observing, dismisses individual matches that look
- * wrong, or flips the whole rule to Active.
+ * Each row is one (rule, sender) pair: a select checkbox (feeds the
+ * group's "Approve selected"), sender identity + the verb phrase the
+ * rule would emit ("would archive") + a per-row Dismiss. Approving
+ * goes through the group's Approve buttons + the D226 preview modal —
+ * never a one-click mutation on the row itself. The rule name renders
+ * once in the group header, not per row.
  *
  * Privacy: `senderKey` is the sha256 hex digest (D7). `senderName` +
  * `senderEmail` come from the senders table — both ARE on the D7
@@ -30,19 +27,23 @@ const { color, font } = tokens;
 export function PendingSuggestionRow({
   match,
   rule,
+  selected,
+  onToggleSelect,
   onDismiss,
   isDismissing,
 }: {
   match: AutopilotMatchDto;
   rule: AutopilotRuleDto | null;
+  selected: boolean;
+  onToggleSelect: (matchId: string) => void;
   onDismiss: (matchId: string) => void;
   isDismissing: boolean;
 }) {
-  const ruleName = rule == null ? 'Unknown rule' : presetDisplayName(rule.presetKey, rule.name);
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
   const senderPreview = match.senderKey.slice(0, 8);
   const confidencePct = Math.round(match.confidence * 100);
   const hasName = match.senderName != null && match.senderName.length > 0;
+  const senderLabel = hasName ? (match.senderName ?? senderPreview) : `sender ${senderPreview}`;
 
   return (
     <li
@@ -52,11 +53,18 @@ export function PendingSuggestionRow({
         gap: 12,
         padding: '12px 14px',
         background: color.card,
-        border: `1px solid ${color.lineSoft}`,
+        border: `1px solid ${selected ? color.primary : color.lineSoft}`,
         borderRadius: 10,
         fontFamily: font.sans,
       }}
     >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelect(match.id)}
+        aria-label={`Select suggestion for ${senderLabel}`}
+        style={{ accentColor: color.primary, width: 15, height: 15, flexShrink: 0 }}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -99,7 +107,6 @@ export function PendingSuggestionRow({
             </span>
           )}
           <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
-          <Pill tone="default">{ruleName}</Pill>
         </div>
         <div
           style={{

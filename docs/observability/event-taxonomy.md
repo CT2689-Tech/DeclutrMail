@@ -230,6 +230,73 @@ this event.
 vs `page_viewed{page='landing'}` is the landing conversion rate;
 placement breakdown ranks the sections.
 
+### `autopilot_paused`
+
+**When fired.** When the user confirms the D105 master pause (after
+the D226 preview modal) and the `POST /api/autopilot/pause-all`
+mutation is dispatched. Fires once per confirmed pause, not per rule.
+
+**Payload.**
+
+| Field           | Type                                           | Notes                                                 |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| `duration_kind` | `'24h' \| '7d' \| 'until_resumed' \| 'custom'` | V2 only emits `until_resumed` (no timed pause UI yet) |
+
+**Retention / aggregation.** 1y raw. Pause frequency is a trust
+signal — users who pause often don't trust the rules.
+
+### `autopilot_resumed`
+
+**When fired.** When the user resumes a paused rule from the rules
+list (`PATCH /api/autopilot/rules/:id` with `mode='observe'`). Fires
+once per resumed rule.
+
+**Payload.**
+
+| Field     | Type                           | Notes                                                   |
+| --------- | ------------------------------ | ------------------------------------------------------- |
+| `trigger` | `'manual' \| 'window_expired'` | V2 only emits `manual` (paused rules never auto-resume) |
+
+**Retention / aggregation.** 1y raw. Pairs with `autopilot_paused`
+for the pause→resume gap metric.
+
+### `autopilot_suggestion_decided`
+
+**When fired.** When the user decides a D104 Observe-mode suggestion:
+per-row Dismiss (`decision='rejected'`, `count=1`), or a confirmed
+approve — approve-all / approve-selected — after the D226 preview
+modal (`decision='accepted'`, `count=N`). Batch approves fire ONE
+event per mutation, not per row (bounded cardinality, like
+`rule_fired`).
+
+**Payload.**
+
+| Field             | Type                                                  | Notes                                |
+| ----------------- | ----------------------------------------------------- | ------------------------------------ |
+| `decision`        | `'accepted' \| 'rejected' \| 'snoozed'`               | V2 emits accepted/rejected only      |
+| `suggestion_kind` | `'preset_rule' \| 'sender_policy' \| 'preset_change'` | V2 emits `preset_rule` only (D234)   |
+| `count`           | `number`                                              | Suggestions covered by this decision |
+
+**Retention / aggregation.** 1y raw. Accept rate per rule is the
+"are the presets trustworthy?" metric that gates Active-mode adoption.
+
+### `autopilot_preset_changed`
+
+**When fired.** When a rule mutation commits from the rules list:
+enable/disable toggle, threshold slider commit, or the explicit
+Observe → Active switch from the day-7 banner (after its D226 preview
+modal). There is no auto-promotion — `activated` is always a user act.
+
+**Payload.**
+
+| Field       | Type                                                            | Notes                              |
+| ----------- | --------------------------------------------------------------- | ---------------------------------- |
+| `preset_id` | `string`                                                        | Internal rule UUID                 |
+| `action`    | `'enabled' \| 'disabled' \| 'parameter_changed' \| 'activated'` | `activated` = explicit D104 switch |
+
+**Retention / aggregation.** 1y raw. Drives preset adoption + the
+share of rules that ever reach Active mode.
+
 ### `waitlist_joined`
 
 **When fired.** From the marketing client after `POST /api/waitlist`
