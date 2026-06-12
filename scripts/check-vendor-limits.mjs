@@ -287,6 +287,55 @@ async function checkPosthog() {
   };
 }
 
+async function checkPaddle() {
+  // Paddle is a REVENUE vendor (merchant-of-record, % fees) — the
+  // operational risk is not spend but silent webhook death: Paddle
+  // auto-deactivates a notification destination after sustained
+  // delivery failures, after which subscription tier flips stop
+  // arriving with zero error on our side. The check asserts >= 1
+  // ACTIVE destination exists (D117).
+  const base =
+    process.env.PADDLE_ENV === 'production'
+      ? 'https://api.paddle.com'
+      : 'https://sandbox-api.paddle.com';
+  const res = await httpJson(`${base}/notification-settings`, {
+    headers: { Authorization: `Bearer ${process.env.PADDLE_API_KEY}` },
+  });
+  const destinations = Array.isArray(res?.data) ? res.data : [];
+  const active = destinations.filter((d) => d.active === true);
+  if (active.length === 0) {
+    return {
+      status: 'BREACH',
+      detail: `no ACTIVE webhook destination (${destinations.length} total) — subscription events are NOT being delivered`,
+    };
+  }
+  return {
+    status: 'OK',
+    detail: `${active.length} active webhook destination(s) of ${destinations.length}`,
+  };
+}
+
+async function checkRazorpay() {
+  // Same posture as Paddle: Razorpay disables webhooks that fail
+  // consistently for 24h — assert >= 1 active webhook so India-side
+  // subscription events keep flowing (D117).
+  const basic = Buffer.from(
+    `${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`,
+  ).toString('base64');
+  const res = await httpJson('https://api.razorpay.com/v1/webhooks?count=100', {
+    headers: { Authorization: `Basic ${basic}` },
+  });
+  const hooks = Array.isArray(res?.items) ? res.items : [];
+  const active = hooks.filter((h) => h.active === true);
+  if (active.length === 0) {
+    return {
+      status: 'BREACH',
+      detail: `no ACTIVE webhook (${hooks.length} total) — subscription events are NOT being delivered`,
+    };
+  }
+  return { status: 'OK', detail: `${active.length} active webhook(s) of ${hooks.length}` };
+}
+
 async function checkGithubActions() {
   const account = process.env.GH_BILLING_ACCOUNT || process.env.GITHUB_REPOSITORY_OWNER;
   if (!account) {
@@ -356,6 +405,14 @@ const VENDORS = [
     check: checkPosthog,
   },
   { name: 'GitHub Actions', requires: ['GH_BILLING_PAT'], check: checkGithubActions },
+  // Billing providers (D117, ADR-0023): revenue vendors — the check
+  // guards webhook-delivery health, not spend (see each check's note).
+  { name: 'Paddle (webhooks)', requires: ['PADDLE_API_KEY'], check: checkPaddle },
+  {
+    name: 'Razorpay (webhooks)',
+    requires: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'],
+    check: checkRazorpay,
+  },
 ];
 
 async function runVendor(vendor) {

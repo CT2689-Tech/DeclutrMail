@@ -57,17 +57,19 @@ Rules:
 
 One row per metered vendor. Owner is `founder` everywhere (solo).
 
-| Vendor              | Metered on                                                 | Plan + hard cap                                                                              | Vendor-side alert (console path)                                                    | App-side limiter                                                                                                 | Watchdog check + required secret                                                                                                                                                                                                             | Owner   |
-| ------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| **Upstash Redis**   | Commands (rate), storage, bandwidth                        | **Fixed 250MB $10/mo** — flat rate, hard cap by design; overage = throttling, never billing  | PAYG-only budget emails (70/90%) — n/a on Fixed; eyeball console → database → Usage | BullMQ polling tuned via worker env (`packages/workers`)                                                         | `GET api.upstash.com/v2/redis/stats/{id}` — `daily_net_commands` + storage (db id discovered via `GET /v2/redis/databases`) · `UPSTASH_EMAIL` + `UPSTASH_API_KEY`                                                                            | founder |
-| **Anthropic**       | Tokens → USD                                               | Tier 2, $500/mo invoice ceiling + per-workspace spend limits (hard: requests 4xx past limit) | Console → Settings → Workspaces → [workspace] → Limits                              | Job-driven only (BullMQ concurrency); 3 key slots with per-slot caps ($20/$50/$100 — see `secrets-inventory.md`) | `GET /v1/organizations/cost_report` — sums month-to-date cost vs `ANTHROPIC_MTD_COST_WARN_USD` (default $50) · `ANTHROPIC_ADMIN_KEY`                                                                                                         | founder |
-| **GCP**             | Cloud Run vCPU/mem (worker `min-instances=1`), KMS, egress | **No hard cap exists** — budgets are alert-only                                              | Billing → Budgets & alerts — `declutrmail-pre-launch-30` ($30, 50/90/100% emails)   | Cloud Run `max-instances`; `setup-billing-alerts.sh` log-based alert                                             | `gcloud billing budgets list` — asserts a budget EXISTS (UNCONFIGURED in CI today: the workflow has no WIF auth step; pulling budget spend via Pub/Sub message is future work) · `GOOGLE_APPLICATION_CREDENTIALS` + `GCP_BILLING_ACCOUNT_ID` | founder |
-| **Supabase**        | DB disk, egress                                            | Free tier — cannot bill (pauses/restricts instead); on Pro: Spend Cap toggle                 | Free tier emails on resource exhaustion; Pro: Cost Control page                     | D7 allowlist bounds row size (no bodies stored)                                                                  | psql `SELECT pg_database_size(current_database())` vs threshold (default 400MB, env `SUPABASE_DB_SIZE_WARN_MB`) · `SUPABASE_SESSION_DSN`                                                                                                     | founder |
-| **Vercel**          | Bandwidth, function invocations, builds                    | Hobby — cannot bill (hard-stops); on Pro: Spend Management + auto-pause                      | Pro-only: Settings → Billing → Spend Management (50/75/100% emails)                 | Static-leaning frontend; no server $ paths                                                                       | `GET /v1/billing/charges` `BilledCost` sum — **skip until Pro** (endpoint is team-scoped) · `VERCEL_TOKEN` + `VERCEL_TEAM_ID`                                                                                                                | founder |
-| **Sentry**          | Accepted events per category                               | Free Developer tier — quota-drops, cannot bill; paid: on-demand budget $0 = hard stop        | Settings → Spike Protection (org-wide toggle)                                       | SDK sample rates in web/api init                                                                                 | `GET /organizations/{org}/stats_v2/` `outcome=accepted` daily count · `SENTRY_AUTH_TOKEN` + `SENTRY_ORG`                                                                                                                                     | founder |
-| **PostHog**         | Ingested events                                            | Free tier allowance; billing limit per product = hard cap (drops data past it)               | Auto-emails to org owner at 80/100% of billing limit                                | Events fired from web only, no server-side firehose                                                              | `GET /api/projects/{id}/quota_limits/` — any `limited: true` fails · `POSTHOG_API_KEY` + `POSTHOG_PROJECT_ID`                                                                                                                                | founder |
-| **GitHub Actions**  | Runner minutes                                             | Free org plan, 2000 min/mo; budget with "stop usage" = true hard stop                        | Org Settings → Billing & licensing → Budgets and alerts (threshold emails)          | CI runs on PR only; `concurrency` groups cancel superseded runs                                                  | `GET /organizations/CT2689-Tech/settings/billing/usage` — `netAmount > 0` for `product=actions` fails · `GH_BILLING_PAT`                                                                                                                     | founder |
-| **Resend** (future) | Emails/mo                                                  | Not provisioned — add row + watchdog check in the PR that wires it (D-billing emails)        | TBD at signup                                                                       | TBD                                                                                                              | TBD · `RESEND_API_KEY` reserved                                                                                                                                                                                                              | founder |
+| Vendor              | Metered on                                                 | Plan + hard cap                                                                                                               | Vendor-side alert (console path)                                                    | App-side limiter                                                                                                 | Watchdog check + required secret                                                                                                                                                                                                             | Owner   |
+| ------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| **Upstash Redis**   | Commands (rate), storage, bandwidth                        | **Fixed 250MB $10/mo** — flat rate, hard cap by design; overage = throttling, never billing                                   | PAYG-only budget emails (70/90%) — n/a on Fixed; eyeball console → database → Usage | BullMQ polling tuned via worker env (`packages/workers`)                                                         | `GET api.upstash.com/v2/redis/stats/{id}` — `daily_net_commands` + storage (db id discovered via `GET /v2/redis/databases`) · `UPSTASH_EMAIL` + `UPSTASH_API_KEY`                                                                            | founder |
+| **Anthropic**       | Tokens → USD                                               | Tier 2, $500/mo invoice ceiling + per-workspace spend limits (hard: requests 4xx past limit)                                  | Console → Settings → Workspaces → [workspace] → Limits                              | Job-driven only (BullMQ concurrency); 3 key slots with per-slot caps ($20/$50/$100 — see `secrets-inventory.md`) | `GET /v1/organizations/cost_report` — sums month-to-date cost vs `ANTHROPIC_MTD_COST_WARN_USD` (default $50) · `ANTHROPIC_ADMIN_KEY`                                                                                                         | founder |
+| **GCP**             | Cloud Run vCPU/mem (worker `min-instances=1`), KMS, egress | **No hard cap exists** — budgets are alert-only                                                                               | Billing → Budgets & alerts — `declutrmail-pre-launch-30` ($30, 50/90/100% emails)   | Cloud Run `max-instances`; `setup-billing-alerts.sh` log-based alert                                             | `gcloud billing budgets list` — asserts a budget EXISTS (UNCONFIGURED in CI today: the workflow has no WIF auth step; pulling budget spend via Pub/Sub message is future work) · `GOOGLE_APPLICATION_CREDENTIALS` + `GCP_BILLING_ACCOUNT_ID` | founder |
+| **Supabase**        | DB disk, egress                                            | Free tier — cannot bill (pauses/restricts instead); on Pro: Spend Cap toggle                                                  | Free tier emails on resource exhaustion; Pro: Cost Control page                     | D7 allowlist bounds row size (no bodies stored)                                                                  | psql `SELECT pg_database_size(current_database())` vs threshold (default 400MB, env `SUPABASE_DB_SIZE_WARN_MB`) · `SUPABASE_SESSION_DSN`                                                                                                     | founder |
+| **Vercel**          | Bandwidth, function invocations, builds                    | Hobby — cannot bill (hard-stops); on Pro: Spend Management + auto-pause                                                       | Pro-only: Settings → Billing → Spend Management (50/75/100% emails)                 | Static-leaning frontend; no server $ paths                                                                       | `GET /v1/billing/charges` `BilledCost` sum — **skip until Pro** (endpoint is team-scoped) · `VERCEL_TOKEN` + `VERCEL_TEAM_ID`                                                                                                                | founder |
+| **Sentry**          | Accepted events per category                               | Free Developer tier — quota-drops, cannot bill; paid: on-demand budget $0 = hard stop                                         | Settings → Spike Protection (org-wide toggle)                                       | SDK sample rates in web/api init                                                                                 | `GET /organizations/{org}/stats_v2/` `outcome=accepted` daily count · `SENTRY_AUTH_TOKEN` + `SENTRY_ORG`                                                                                                                                     | founder |
+| **PostHog**         | Ingested events                                            | Free tier allowance; billing limit per product = hard cap (drops data past it)                                                | Auto-emails to org owner at 80/100% of billing limit                                | Events fired from web only, no server-side firehose                                                              | `GET /api/projects/{id}/quota_limits/` — any `limited: true` fails · `POSTHOG_API_KEY` + `POSTHOG_PROJECT_ID`                                                                                                                                | founder |
+| **GitHub Actions**  | Runner minutes                                             | Free org plan, 2000 min/mo; budget with "stop usage" = true hard stop                                                         | Org Settings → Billing & licensing → Budgets and alerts (threshold emails)          | CI runs on PR only; `concurrency` groups cancel superseded runs                                                  | `GET /organizations/CT2689-Tech/settings/billing/usage` — `netAmount > 0` for `product=actions` fails · `GH_BILLING_PAT`                                                                                                                     | founder |
+| **Resend** (future) | Emails/mo                                                  | Not provisioned — add row + watchdog check in the PR that wires it (D-billing emails)                                         | TBD at signup                                                                       | TBD                                                                                                              | TBD · `RESEND_API_KEY` reserved                                                                                                                                                                                                              | founder |
+| **Paddle** (D117)   | Revenue (merchant-of-record, ~5% fees) — no spend meter    | n/a — fees scale with revenue; the risk is silent WEBHOOK death (auto-deactivated after sustained failures → tier flips stop) | Paddle emails account owner on payout/dispute anomalies (default)                   | Webhook handler is replay-safe (insert-first dedup on `subscription_events`); checkout rate-limited 10/min/user  | `GET /notification-settings` — BREACH when zero ACTIVE destinations · `PADDLE_API_KEY` (+ `PADDLE_ENV` var)                                                                                                                                  | founder |
+| **Razorpay** (D117) | Revenue (India: UPI/cards, ~2-3% fees) — no spend meter    | n/a — same posture as Paddle; Razorpay disables a webhook failing consistently for ~24h                                       | Razorpay emails account owner when it disables a failing webhook                    | Same replay-safe webhook handler + checkout rate limit                                                           | `GET /v1/webhooks` — BREACH when zero ACTIVE webhooks · `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET`                                                                                                                                            | founder |
 
 **Informational — Gmail API quota (not billing, but a hard limit):**
 `declutrmail-ai-prod` has 15,000 units/min/user and 1,200,000
@@ -94,6 +96,8 @@ same PR as any plan change.
 | PostHog        | Free           | Free monthly event allowance, no card on file                                             | $0                             |
 | GitHub Actions | Free (org)     | 2000 minutes/mo included                                                                  | $0                             |
 | Gmail API      | n/a (quota)    | 15K units/min/user · 1.2M units/min/project (informational)                               | $0                             |
+| Paddle         | Sandbox        | Revenue vendor (~5% + $0.50/txn as merchant-of-record); no spend meter                    | $0 until revenue               |
+| Razorpay       | Test mode      | Revenue vendor (~2-3%/txn, India); subscriptions need Razorpay activation                 | $0 until revenue               |
 
 ---
 
@@ -279,6 +283,73 @@ Not provisioned. The PR that wires transactional email MUST: add the
 matrix row above with real values, add the watchdog check, set the
 sending quota/plan cap at signup, and add the secret row to
 `secrets-inventory.md`. Reserved secret name: `RESEND_API_KEY`.
+
+### 10. Paddle (billing provider, D117)
+
+Revenue vendor — fees are a % of revenue, so there is no spend cap to
+arm. The guardrail target is WEBHOOK DELIVERY: Paddle auto-deactivates
+a notification destination after sustained delivery failures, after
+which subscription tier flips silently stop. The watchdog asserts ≥1
+active destination daily.
+
+**(a) Watchdog/API key** — Paddle dashboard → Developer tools →
+Authentication → **API keys** → create (label
+`declutrmail-watchdog-202606`). Sandbox and live are separate
+accounts with separate keys.
+
+```bash
+gh secret set PADDLE_API_KEY      # server-side API key
+gh secret set PADDLE_CLIENT_TOKEN # client-side (publishable) token
+```
+
+Set the repo **variable** `PADDLE_ENV=production` (Settings → Secrets
+and variables → Actions → Variables) once the live account is wired;
+leave unset for sandbox.
+
+**(b) Webhook destination** — Developer tools → Notifications →
+**New destination** → URL
+`https://<api-host>/api/webhooks/billing/paddle`, type webhook,
+events: `subscription.*`, `transaction.completed`,
+`transaction.payment_failed`, `adjustment.created`. Copy the
+destination's **secret key**:
+
+```bash
+gh secret set PADDLE_WEBHOOK_SECRET
+```
+
+**(c) Vendor-side alert** — Paddle emails the account owner on
+payout/dispute anomalies by default; webhook-failure visibility is the
+watchdog row (layer 3).
+
+### 11. Razorpay (billing provider, D117)
+
+Same posture as Paddle: revenue vendor, webhook delivery is the
+guardrail. Razorpay disables a webhook that fails consistently for
+~24h; the watchdog asserts ≥1 active webhook daily.
+
+**(a) Watchdog/API keys** — Razorpay dashboard → Account & Settings →
+**API keys** → generate key pair (test mode `rzp_test_…` / live
+`rzp_live_…`; live requires account activation + subscriptions
+feature enablement).
+
+```bash
+gh secret set RAZORPAY_KEY_ID
+gh secret set RAZORPAY_KEY_SECRET
+```
+
+**(b) Webhook** — Account & Settings → **Webhooks** → Add new webhook
+→ URL `https://<api-host>/api/webhooks/billing/razorpay`, set a strong
+secret, events: `subscription.activated`, `subscription.charged`,
+`subscription.updated`, `subscription.pending`, `subscription.halted`,
+`subscription.cancelled`, `subscription.completed`,
+`subscription.paused`, `subscription.resumed`.
+
+```bash
+gh secret set RAZORPAY_WEBHOOK_SECRET
+```
+
+**(c) Vendor-side alert** — Razorpay emails the account owner when it
+disables a failing webhook; keep that address monitored.
 
 ---
 

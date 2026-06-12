@@ -1,0 +1,59 @@
+# Billing catalog provisioning (D117).
+#
+# Manual-only (workflow_dispatch): creates the Paddle products + prices
+# and Razorpay plans for the D19 ladder (plus/pro monthly+annual +
+# Founding Pro annual $129, D126) using the sandbox/live keys that live
+# ONLY as GH secrets — never on a laptop.
+#
+# IDEMPOTENT: the script lists by SKU (Paddle `custom_data.sku` /
+# Razorpay `notes.sku`) before creating; re-runs are safe and re-print
+# the resulting ids.
+#
+# OUTPUT: the job summary carries a copy-pasteable manifest patch block
+# (founder step F3 — patch the ids into
+# packages/shared/src/entitlements/manifest.ts) plus the equivalent
+# BILLING_CATALOG_JSON overlay for sandbox environments.
+#
+# Environment selection: the `paddle_env` input (closed choice list —
+# no free-text reaches the shell) picks Paddle sandbox vs live API
+# host. Razorpay test vs live mode follows the key pair itself
+# (rzp_test_… / rzp_live_…).
+
+name: Provision billing catalog
+
+on:
+  workflow_dispatch:
+    inputs:
+      paddle_env:
+        description: 'Paddle environment (sandbox uses sandbox-api.paddle.com)'
+        type: choice
+        options: [sandbox, production]
+        default: sandbox
+
+permissions:
+  contents: read
+
+concurrency:
+  group: provision-billing-catalog
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Provision Paddle + Razorpay catalog
+        env:
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          PADDLE_ENV: ${{ inputs.paddle_env }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
+        run: pnpm --filter @declutrmail/api provision-billing-catalog

@@ -10,6 +10,7 @@
     "worker:dev": "node --watch --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register src/worker.ts",
     "dev-populate": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/dev-populate-cron.ts",
     "dev:autopilot-harness": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/dev-autopilot-harness.ts",
+    "provision-billing-catalog": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/provision-billing-catalog.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
