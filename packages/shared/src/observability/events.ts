@@ -54,6 +54,9 @@ export type EventName =
   | 'waitlist_joined'
   // — Followups surface —
   | 'followup_dismissed'
+  // — Screener surface (D71–D77) —
+  | 'screener_queue_viewed'
+  | 'screener_decision_taken'
   // — Private-beta gate (buildout F7) —
   | 'beta_gate_denied';
 
@@ -294,6 +297,17 @@ export interface EventPayloads {
     priority: 'high' | 'medium' | 'low' | 'fresh';
     /** True when the BE reported an idempotent replay (D88 Phase-1 hint). */
     already_dismissed: boolean;
+  };
+
+  // — Screener surface (D71–D77) —
+  screener_queue_viewed: {
+    /** Pending first-time senders when the queue rendered (D74 badge figure). */
+    pending_count: number;
+  };
+  screener_decision_taken: {
+    verb: Verb;
+    /** Internal `senders.id` UUID — never the email address. */
+    sender_id: string;
   };
 
   // — Private-beta gate (buildout F7) —

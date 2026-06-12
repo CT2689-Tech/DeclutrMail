@@ -131,6 +131,12 @@ export const ERROR_CODES = {
     message:
       'Your plan has reached its connected-inbox limit. Upgrade to connect another Gmail account.',
   },
+  PRO_FEATURE_REQUIRED: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This feature is part of the Pro plan. Upgrade to unlock it.',
+  },
 
   // --- trust-affecting (D170) ---
   OAUTH_REVOKED: {
