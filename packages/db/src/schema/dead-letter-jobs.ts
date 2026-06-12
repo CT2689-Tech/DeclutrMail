@@ -16,8 +16,11 @@ import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-cor
  *
  * `payload` is the job's data as enqueued (mailbox ids, message id
  * lists, action intents — the same metadata the queues already carry).
- * Privacy (D7, D228): job payloads never contain message bodies, so
- * neither does this table.
+ * Privacy (D7, D228): ENFORCED at the write boundary, not assumed —
+ * `DrizzleDeadLetterRecorder` (packages/workers) allowlists payload
+ * keys before persist, so a non-allowlisted field (e.g. a future
+ * worker's `snippet`) is dropped and recorded under `__redacted_keys`
+ * rather than stored.
  *
  * `replayed_at` — null until an operator replays the job (re-enqueue
  * via admin tooling). The partial index on unreplayed rows serves both
@@ -37,7 +40,7 @@ export const deadLetterJobs = pgTable(
     queue: text('queue').notNull(),
     /** BullMQ job id within the queue. */
     jobId: text('job_id').notNull(),
-    /** Job data as enqueued — queue metadata only, never body content (D7). */
+    /** Job data as enqueued — recorder allowlists keys before persist (D7). */
     payload: jsonb('payload')
       .notNull()
       .default(sql`'{}'::jsonb`),

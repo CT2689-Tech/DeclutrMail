@@ -1,5 +1,6 @@
 import { type Job, UnrecoverableError } from 'bullmq';
 
+import type { DeadLetterRecorder } from './dead-letter.recorder.js';
 import type { WorkerContext } from './worker-context.js';
 import { isNonRetryable } from './worker-errors.js';
 import {
@@ -46,8 +47,16 @@ type WorkerEvent =
  * FOUNDER-FOLLOWUPS 2026-05-22 "D-CANDIDATE: D159 Sentry seam for
  * background reconciler" (now Done).
  *
- * Out of PR scope (lands with later PRs): checkpointing, the
- * `dead_letter_jobs` table, AsyncLocalStorage correlation ids.
+ * Dead-letter persistence (D225): on TERMINAL failure the base also
+ * parks the job in `dead_letter_jobs` via the injected
+ * `DeadLetterRecorder` (`setDeadLetterRecorder()`, same wiring pattern
+ * as the observer). The recorder path never throws — a failed INSERT
+ * is logged + reported to the observer, but must not mask the original
+ * job failure. `DeadLetterWorker` (adminPolicy) polls the table and
+ * alerts on every parked row.
+ *
+ * Out of PR scope (lands with later PRs): checkpointing,
+ * AsyncLocalStorage correlation ids.
  */
 export abstract class BaseDeclutrWorker<TPayload, TResult> {
   /** Stable name for logs + failure capture. */
@@ -62,6 +71,15 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    * composition root replaces it via `setObserver()` at boot.
    */
   private observer: WorkerObserver = NOOP_WORKER_OBSERVER;
+
+  /**
+   * Durable dead-letter sink (D225). `null` until the composition root
+   * installs the Drizzle-backed recorder via `setDeadLetterRecorder()`
+   * — unit tests and one-off harnesses run without one, in which case
+   * terminal failures still emit `worker.dead_lettered` + the failure
+   * capture, they just are not parked in Postgres.
+   */
+  private deadLetterRecorder: DeadLetterRecorder | null = null;
 
   /**
    * The job body. Subclasses do the real work here.
@@ -96,6 +114,15 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    */
   setObserver(observer: WorkerObserver): void {
     this.observer = observer;
+  }
+
+  /**
+   * Install the durable dead-letter sink (D225). The composition root
+   * calls this once per worker at boot, alongside `setObserver()`.
+   * Idempotent — safe to call multiple times across test setups.
+   */
+  setDeadLetterRecorder(recorder: DeadLetterRecorder): void {
+    this.deadLetterRecorder = recorder;
   }
 
   /**
@@ -140,6 +167,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
           await this.onTerminalFailure(job.data, error, ctx);
         }
         this.captureFailure(error, ctx);
+        await this.recordDeadLetter(job, error, ctx);
         this.emit('worker.dead_lettered', ctx, { error: error.name });
         // Non-retryable → tell BullMQ to stop retrying.
         if (isNonRetryable(error)) {
@@ -194,6 +222,64 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
           message: observerErr instanceof Error ? observerErr.message : String(observerErr),
         }),
       );
+    }
+  }
+
+  /**
+   * Park a terminal failure in `dead_letter_jobs` (D225) so it is
+   * durable beyond Redis. `DeadLetterWorker` (adminPolicy) polls the
+   * table and alerts on every parked row.
+   *
+   * NEVER throws (silent-failure-hunter posture, inverted): a failed
+   * INSERT must not mask the original job failure that is about to be
+   * rethrown to BullMQ — but it is also never swallowed silently. The
+   * recorder failure gets exactly one structured error log line AND a
+   * `captureBackgroundFailure` to the observer (Sentry in prod), which
+   * is itself wrapped because a broken observer must not break the
+   * worker either.
+   */
+  private async recordDeadLetter(
+    job: Job<TPayload, TResult>,
+    error: Error,
+    ctx: WorkerContext,
+  ): Promise<void> {
+    if (!this.deadLetterRecorder) {
+      return;
+    }
+    try {
+      await this.deadLetterRecorder.record({
+        queue: job.queueName,
+        jobId: ctx.jobId,
+        payload: job.data,
+        error: error.stack ?? error.message,
+      });
+    } catch (recorderErr) {
+      const recorderError =
+        recorderErr instanceof Error ? recorderErr : new Error(String(recorderErr));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'worker.dead_letter_record_failed',
+          worker: ctx.workerName,
+          jobId: ctx.jobId,
+          message: recorderError.message,
+        }),
+      );
+      try {
+        this.observer.captureBackgroundFailure(recorderError, {
+          kind: 'dead_letter.record_failed',
+          tags: { worker: ctx.workerName, job_id: ctx.jobId },
+        });
+      } catch (observerErr) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'worker.observer_failed',
+            worker: ctx.workerName,
+            message: observerErr instanceof Error ? observerErr.message : String(observerErr),
+          }),
+        );
+      }
     }
   }
 

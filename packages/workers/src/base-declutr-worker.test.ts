@@ -3,6 +3,7 @@ import type { Job } from 'bullmq';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import { InvalidGrantError, TransientError, ValidationError } from './worker-errors.js';
 import type {
   BackgroundFailureContext,
@@ -29,13 +30,16 @@ function fakeJob<TPayload, TResult>(opts: {
   id?: string;
   data: TPayload;
   attemptsMade?: number;
+  queueName?: string;
 }): Job<TPayload, TResult> {
   return {
     id: opts.id ?? 'job-1',
     data: opts.data,
     attemptsMade: opts.attemptsMade ?? 0,
-    // The base only reads `id`, `data`, `attemptsMade`. Cast to keep the
-    // fake minimal — exercising `run()` exercises every field it touches.
+    queueName: opts.queueName ?? 'test-queue',
+    // The base only reads `id`, `data`, `attemptsMade`, `queueName`.
+    // Cast to keep the fake minimal — exercising `run()` exercises
+    // every field it touches.
   } as unknown as Job<TPayload, TResult>;
 }
 
@@ -344,6 +348,136 @@ describe('BaseDeclutrWorker', () => {
         worker: 'TestWorker',
         message: 'Sentry transport down',
       });
+    });
+  });
+
+  describe('dead-letter recorder (D225)', () => {
+    /** Recording recorder — every parked entry shows up in `entries`. */
+    function recordingRecorder(): DeadLetterRecorder & { entries: DeadLetterEntry[] } {
+      const entries: DeadLetterEntry[] = [];
+      return {
+        entries,
+        async record(entry) {
+          entries.push(entry);
+        },
+      };
+    }
+
+    it('terminal failure parks (queue, jobId, payload, error) via the recorder', async () => {
+      const err = new ValidationError('bad payload');
+      const worker = new TestWorker(async () => {
+        throw err;
+      });
+      const recorder = recordingRecorder();
+      worker.setDeadLetterRecorder(recorder);
+
+      await expect(
+        worker.run(
+          fakeJob<TestPayload, { ok: true }>({
+            id: 'job-dl',
+            data: { mailboxAccountId: 'mb-dl' },
+            queueName: 'initial-sync',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(UnrecoverableError);
+
+      expect(recorder.entries).toHaveLength(1);
+      expect(recorder.entries[0]).toMatchObject({
+        queue: 'initial-sync',
+        jobId: 'job-dl',
+        payload: { mailboxAccountId: 'mb-dl' },
+      });
+      // The error column carries the stack (falls back to message).
+      expect(recorder.entries[0]?.error).toContain('bad payload');
+      // The park happens BEFORE the dead_lettered emit — the lifecycle
+      // line is the signal that the terminal path fully completed.
+      expect(lifecycleLines().map((l) => l.kind)).toContain('worker.dead_lettered');
+    });
+
+    it('retryable (non-terminal) failure does NOT park a row', async () => {
+      const worker = new TestWorker(async () => {
+        throw new TransientError('upstream 503');
+      });
+      const recorder = recordingRecorder();
+      worker.setDeadLetterRecorder(recorder);
+
+      await expect(
+        worker.run(
+          fakeJob<TestPayload, { ok: true }>({
+            data: { mailboxAccountId: 'mb-1' },
+            attemptsMade: 0,
+          }),
+        ),
+      ).rejects.toBeInstanceOf(TransientError);
+
+      expect(recorder.entries).toHaveLength(0);
+    });
+
+    it('a throwing recorder is logged + observer-reported, never masks the job failure', async () => {
+      const err = new ValidationError('original failure');
+      const worker = new TestWorker(async () => {
+        throw err;
+      });
+      const obs = recordingObserver();
+      worker.setObserver(obs);
+      worker.setDeadLetterRecorder({
+        async record() {
+          throw new Error('insert failed: connection refused');
+        },
+      });
+
+      // The ORIGINAL error still reaches BullMQ — the recorder failure
+      // must not replace it.
+      await expect(
+        worker.run(fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-6' } })),
+      ).rejects.toBeInstanceOf(UnrecoverableError);
+
+      // Exactly one structured error log for the recorder failure.
+      const recordFailedLines = errorLines().filter(
+        (l) => l.kind === 'worker.dead_letter_record_failed',
+      );
+      expect(recordFailedLines).toHaveLength(1);
+      expect(recordFailedLines[0]).toMatchObject({
+        worker: 'TestWorker',
+        jobId: 'job-1',
+        message: 'insert failed: connection refused',
+      });
+      // The recorder failure is also Sentry'd via the background seam.
+      expect(obs.bgCaptures).toHaveLength(1);
+      expect(obs.bgCaptures[0]?.ctx).toMatchObject({
+        kind: 'dead_letter.record_failed',
+        tags: { worker: 'TestWorker', job_id: 'job-1' },
+      });
+      // The job's own terminal capture still fired exactly once.
+      expect(obs.captures).toHaveLength(1);
+    });
+
+    it('a throwing recorder AND throwing observer still do not break the worker', async () => {
+      const worker = new TestWorker(async () => {
+        throw new ValidationError('original failure');
+      });
+      const broken: WorkerObserver = {
+        captureFailure() {
+          throw new Error('Sentry transport down');
+        },
+        captureBackgroundFailure() {
+          throw new Error('Sentry transport down');
+        },
+      };
+      worker.setObserver(broken);
+      worker.setDeadLetterRecorder({
+        async record() {
+          throw new Error('insert failed');
+        },
+      });
+
+      await expect(
+        worker.run(fakeJob<TestPayload, { ok: true }>({ data: {} })),
+      ).rejects.toBeInstanceOf(UnrecoverableError);
+
+      const kinds = errorLines().map((l) => l.kind);
+      expect(kinds).toContain('worker.dead_letter_record_failed');
+      expect(kinds).toContain('worker.observer_failed');
     });
   });
 

@@ -77,6 +77,23 @@ export type {
   UnsubHttpPort,
   UnsubHttpResponse,
 } from './unsub-execution.worker.js';
+export { DrizzleDeadLetterRecorder } from './dead-letter.recorder.js';
+export type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
+export { DeadLetterWorker, replayDeadLetterJob } from './dead-letter.worker.js';
+export type {
+  DeadLetterReplayOutcome,
+  DeadLetterReplayTarget,
+  DeadLetterSweepJobData,
+  DeadLetterSweepResult,
+} from './dead-letter.worker.js';
+export {
+  DEAD_LETTER_INTERVAL_MS,
+  DEAD_LETTER_JOB,
+  DEAD_LETTER_QUEUE,
+  deadLetterJobOptions,
+  enqueueDeadLetterTick,
+  scheduledAtMinute as deadLetterScheduledAtMinute,
+} from './dead-letter.queue.js';
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
