@@ -267,7 +267,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D213 | Motion design discipline | ⬜ |  |  |  |
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
-| D216 | Account deletion UI flow at launch (Settings → Account) | ⬜ |  |  |  |
+| D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218 |  |  |
 | D217 | Privacy & Data settings sub-page at launch | ⬜ |  |  |  |
 | D218 | Public `/changelog` at launch | ⬜ |  |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | ⬜ |  |  |  |
