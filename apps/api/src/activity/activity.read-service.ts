@@ -24,7 +24,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, count, desc, eq, gte, ilike, inArray, lt, or } from 'drizzle-orm';
 
-import { activityLog, senders, undoJournal } from '@declutrmail/db';
+import { activityLog, automationRules, senders, undoJournal } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -182,6 +182,8 @@ export class ActivityReadService {
         affectedCount: activityLog.affectedCount,
         senderKey: activityLog.senderKey,
         undoToken: activityLog.undoToken,
+        ruleId: activityLog.ruleId,
+        ruleName: automationRules.name,
         senderDisplayName: senders.displayName,
         senderEmail: senders.email,
         undoCreatedAt: undoJournal.createdAt,
@@ -204,6 +206,11 @@ export class ActivityReadService {
         ),
       )
       .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
+      // D57 rule attribution — `rule_id` is non-null only for
+      // autopilot-attributed rows, and the FK's `onDelete: 'set null'`
+      // keeps a non-null id resolvable; LEFT JOIN stays the defensive
+      // shape (a null id simply yields no rule).
+      .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
       .where(and(...whereParts))
       .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
       .limit(limit + 1);
@@ -226,6 +233,7 @@ export class ActivityReadService {
         action: row.action,
         affectedCount: row.affectedCount,
         sender,
+        rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
         undoState: resolveUndoState({
           token: row.undoToken,
           expiresAt: row.undoExpiresAt,

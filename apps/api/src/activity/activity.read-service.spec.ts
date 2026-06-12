@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   activityLog,
+  automationRules,
   mailboxAccounts,
   schema,
   senders,
@@ -12,6 +13,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -125,6 +127,7 @@ async function seedActivity(
     affectedCount?: number;
     senderKey?: string;
     undoToken?: string;
+    ruleId?: string;
   },
 ): Promise<string> {
   const [row] = await db
@@ -137,8 +140,24 @@ async function seedActivity(
       affectedCount: args.affectedCount ?? 1,
       ...(args.senderKey ? { senderKey: args.senderKey } : {}),
       ...(args.undoToken ? { undoToken: args.undoToken } : {}),
+      ...(args.ruleId ? { ruleId: args.ruleId } : {}),
     })
     .returning({ id: activityLog.id });
+  return row!.id;
+}
+
+/** Seed one preset Autopilot rule (D57 attribution fixture). */
+async function seedRule(db: Db, mailboxAccountId: string, name: string): Promise<string> {
+  const [row] = await db
+    .insert(automationRules)
+    .values({
+      mailboxAccountId,
+      presetKey: 'newsletter_graveyard',
+      isPreset: true,
+      name,
+      actionKind: 'archive',
+    })
+    .returning({ id: automationRules.id });
   return row!.id;
 }
 
@@ -884,6 +903,75 @@ describe('ActivityReadService', () => {
       });
       expect(aStats.archived).toBe(1);
       expect(bStats.archived).toBe(1);
+    });
+  });
+
+  // ── D57 — rule attribution (U27) ─────────────────────────────────────
+
+  describe('D57 — rule attribution', () => {
+    it('joins rule id + name for autopilot rows carrying a rule_id', async () => {
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Newsletter graveyard');
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'autopilot',
+        action: 'archive',
+        ruleId,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows[0]!.rule).toEqual({ id: ruleId, name: 'Newsletter graveyard' });
+    });
+
+    it('leaves rule=null for rows without a rule_id (manual / triage)', async () => {
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows[0]!.rule).toBeNull();
+    });
+
+    it('degrades rule to null when the originating rule is deleted (FK set-null)', async () => {
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Auto-archive low engagement');
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'autopilot',
+        action: 'archive',
+        ruleId,
+      });
+      await db.delete(automationRules).where(eq(automationRules.id, ruleId));
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      // The append-only audit row survives the rule's deletion; the
+      // attribution degrades to null (FE renders plain "by Autopilot").
+      expect(rows[0]!.source).toBe('autopilot');
+      expect(rows[0]!.rule).toBeNull();
     });
   });
 });

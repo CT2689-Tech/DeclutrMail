@@ -173,13 +173,20 @@ export function ActivityScreen() {
   }, []);
 
   if (query.isLoading) return <LoadingState />;
-  if (query.isError) {
+  if (query.isError && !query.data) {
+    // Full-screen error only when NOTHING loaded. A failed
+    // fetchNextPage / background refetch keeps the loaded pages on
+    // screen and renders an inline retry in <LoadMoreRegion> instead
+    // (D211 partial-error — some rows loaded, some did not).
     return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
-  const env = query.data!;
-  const rows = env.data;
-  const meta = env.meta;
+  // U27 — pages flatten into one row list; meta (stats + filter echo)
+  // comes from the first page, which refetches with every page on the
+  // poll/focus cadence, so it never goes staler than the rows do.
+  const pages = query.data!.pages;
+  const rows = pages.flatMap((page) => page.data);
+  const meta = pages[0]?.meta;
   const stats = meta?.stats;
   const allTimeStats = meta?.allTimeStats;
 
@@ -284,6 +291,124 @@ export function ActivityScreen() {
             />
           ))}
         </ul>
+      )}
+
+      {rows.length > 0 && (
+        <LoadMoreRegion
+          hasNextPage={query.hasNextPage}
+          isFetchingNextPage={query.isFetchingNextPage}
+          nextPageFailed={query.isError}
+          onLoadMore={() => {
+            if (!query.isFetchingNextPage) void query.fetchNextPage();
+          }}
+          loadedCount={rows.length}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Load more / end of list (U27 — D57 infinite scroll) ───────────────
+
+/**
+ * Tail region under the row list. Three states:
+ *   - more pages       → auto-load via IntersectionObserver sentinel
+ *                        (240px early) + a visible "Load more" button
+ *                        fallback; "Loading more…" while in flight.
+ *   - next-page failed → amber inline retry (partial-error — the
+ *                        loaded rows stay on screen).
+ *   - end of list      → quiet mono end-marker with the loaded count.
+ */
+function LoadMoreRegion({
+  hasNextPage,
+  isFetchingNextPage,
+  nextPageFailed,
+  onLoadMore,
+  loadedCount,
+}: {
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  nextPageFailed: boolean;
+  onLoadMore: () => void;
+  loadedCount: number;
+}) {
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    // Guarded for jsdom/SSR — the button fallback covers environments
+    // without IntersectionObserver.
+    if (!hasNextPage || nextPageFailed || typeof IntersectionObserver === 'undefined') return;
+    const node = sentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onLoadMore();
+      },
+      { rootMargin: '240px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, nextPageFailed, onLoadMore]);
+
+  const mono: CSSProperties = {
+    fontFamily: font.mono,
+    fontSize: 11,
+    letterSpacing: '0.08em',
+    color: color.fgMuted,
+  };
+
+  if (!hasNextPage) {
+    return (
+      <div
+        role="status"
+        style={{ ...mono, textAlign: 'center', padding: '10px 0 2px', textTransform: 'uppercase' }}
+      >
+        End of activity · {loadedCount} row{loadedCount === 1 ? '' : 's'} loaded
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={sentinelRef}
+      style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 2px' }}
+    >
+      {nextPageFailed ? (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          style={{
+            fontFamily: font.sans,
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: color.amber,
+            background: 'transparent',
+            border: `1px solid ${color.amber}`,
+            borderRadius: 999,
+            padding: '6px 16px',
+            cursor: 'pointer',
+          }}
+        >
+          Couldn’t load more — try again
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={isFetchingNextPage}
+          style={{
+            fontFamily: font.sans,
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: isFetchingNextPage ? color.fgMuted : color.fg,
+            background: 'transparent',
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: 999,
+            padding: '6px 16px',
+            cursor: isFetchingNextPage ? 'wait' : 'pointer',
+          }}
+        >
+          {isFetchingNextPage ? 'Loading more…' : 'Load more'}
+        </button>
       )}
     </div>
   );
@@ -1353,9 +1478,23 @@ function ActivityRow({
             letterSpacing: '0.14em',
             textTransform: 'uppercase',
             color: color.fgMuted,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
+          // D57 rule attribution — Autopilot rows name the rule that
+          // fired ("by Autopilot · Newsletter graveyard"); a deleted
+          // rule degrades to plain "by Autopilot". Other sources keep
+          // the "via <source>" form.
+          title={
+            row.source === 'autopilot' && row.rule
+              ? `By Autopilot rule “${row.rule.name}”`
+              : undefined
+          }
         >
-          via {sourceLabel}
+          {row.source === 'autopilot'
+            ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
+            : `via ${sourceLabel}`}
         </span>
       </div>
       <RowActions row={row} failedTokens={failedTokens} />

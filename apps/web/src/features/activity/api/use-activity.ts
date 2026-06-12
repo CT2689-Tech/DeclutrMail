@@ -1,11 +1,12 @@
 /**
- * `useActivity` — TanStack Query hook for the Activity feed.
+ * `useActivity` — TanStack infinite-query hook for the Activity feed
+ * (U27 — D57 load-more pagination).
  *
- * Plain `useQuery` (not infinite) for the tracer-bullet — the first
- * page is the visible page; "load more" pagination lands with the
- * follow-up PR that adds the scroll affordance. The hook returns the
- * full envelope so the screen can read both `data` (rows) and `meta`
- * (stats + window + source echo) without a second hook.
+ * Each page is one `GET /api/activity` envelope; `getNextPageParam`
+ * chains the D202 `meta.pagination.nextCursor` into the next page's
+ * `?cursor=`. The hook returns the raw `InfiniteData` so the screen
+ * can flatten `pages[].data` into one row list and read `pages[0].meta`
+ * (stats + filter echo) without a second hook.
  *
  * Default `staleTime` (set in `makeQueryClient`) is appropriate —
  * activity rows are append-only at the BE; refetch on focus is fine
@@ -13,16 +14,20 @@
  * new data sooner than the writers commit.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/api/activity';
 
 import { activityKeys } from './query-keys';
 
 export function useActivity(filters: ActivityFilters, options?: { hasInFlightAction?: boolean }) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: activityKeys.list(filters),
-    queryFn: ({ signal }) => fetchActivity({ ...filters, signal }),
+    queryFn: ({ pageParam, signal }) => fetchActivity({ ...filters, cursor: pageParam, signal }),
+    initialPageParam: undefined as string | undefined,
+    // D202: `nextCursor` is null on the last page; map null → undefined
+    // so TanStack reads "no next page" (hasNextPage=false).
+    getNextPageParam: (lastPage) => lastPage.meta?.pagination.nextCursor ?? undefined,
     // While an action is being polled elsewhere (Senders screen's
     // useActionStatus or a revert poll), refetch /activity every 1.5s
     // so a user who navigates here mid-poll sees the worker's
@@ -30,7 +35,9 @@ export function useActivity(filters: ActivityFilters, options?: { hasInFlightAct
     // (no polling) when no action is in flight — back to the default
     // append-only refetch-on-focus cadence. Flow-completeness-auditor
     // 2026-06-05: the "navigate from /senders to /activity mid-poll"
-    // class previously left /activity stale forever.
+    // class previously left /activity stale forever. (On an infinite
+    // query the interval refetches every loaded page in order — pages
+    // are 25 rows each; bounded for the poll window.)
     refetchInterval: options?.hasInFlightAction ? 1500 : false,
     refetchOnWindowFocus: true,
   });

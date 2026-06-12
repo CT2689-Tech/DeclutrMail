@@ -63,6 +63,8 @@ const ROWS: ActivityRowWire[] = [
       email: 'news@daily.example',
       domain: 'daily.example',
     },
+    // D57 — Autopilot rows carry the rule that fired.
+    rule: { id: '22222222-2222-2222-2222-222222222222', name: 'Newsletter graveyard' },
     undoState: {
       kind: 'available',
       token: '11111111-1111-1111-1111-111111111111',
@@ -81,6 +83,7 @@ const ROWS: ActivityRowWire[] = [
       email: 'mail@oldnavy.example',
       domain: 'oldnavy.example',
     },
+    rule: null,
     undoState: { kind: 'unavailable' },
   },
   {
@@ -95,6 +98,7 @@ const ROWS: ActivityRowWire[] = [
       email: 'boss@example.com',
       domain: 'example.com',
     },
+    rule: null,
     undoState: { kind: 'unavailable' },
   },
   {
@@ -109,6 +113,8 @@ const ROWS: ActivityRowWire[] = [
       email: 'billing@vendor.example',
       domain: 'vendor.example',
     },
+    // Deleted-rule fallback — renders plain "by Autopilot".
+    rule: null,
     undoState: { kind: 'executed', executedAt: isoHoursAgo(70) },
   },
   {
@@ -123,6 +129,7 @@ const ROWS: ActivityRowWire[] = [
       email: 'old@example.com',
       domain: 'example.com',
     },
+    rule: null,
     undoState: {
       kind: 'expired',
       expiredAt: new Date(NOW - 5 * 24 * 60 * 60 * 1000).toISOString(),
@@ -139,19 +146,26 @@ function makeClient(
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
   if (rows) {
+    // U27 — `useActivity` is an infinite query; the cache entry is
+    // InfiniteData ({ pages, pageParams }), one page per envelope.
     client.setQueryData(activityKeys.list({ window, source }), {
-      data: rows,
-      meta: {
-        pagination: { nextCursor: null, hasMore: false, limit: 25 },
-        stats: STATS,
-        allTimeStats: STATS,
-        window,
-        source,
-        verbs: [],
-        senderQuery: '',
-        dateFrom: null,
-        dateTo: null,
-      },
+      pages: [
+        {
+          data: rows,
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 25 },
+            stats: STATS,
+            allTimeStats: STATS,
+            window,
+            source,
+            verbs: [],
+            senderQuery: '',
+            dateFrom: null,
+            dateTo: null,
+          },
+        },
+      ],
+      pageParams: [undefined],
     });
   }
   return client;

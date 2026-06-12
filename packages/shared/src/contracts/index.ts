@@ -142,3 +142,8 @@ export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
 // Private-beta invite gate (buildout F7) — API ↔ web redirect contract
 // for denied signups. See ./beta-gate.ts for the env + flow contract.
 export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from './beta-gate';
+
+// U27 — Activity feed rule attribution (D57): `rule` ref on
+// `GET /api/activity` rows, resolved from `activity_log.rule_id`.
+export { ActivityRuleRefSchema } from './activity';
+export type { ActivityRuleRef } from './activity';

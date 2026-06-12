@@ -19,7 +19,7 @@
  * `queryFn`.
  */
 
-import type { Envelope, PaginationMeta } from '@declutrmail/shared/contracts';
+import type { ActivityRuleRef, Envelope, PaginationMeta } from '@declutrmail/shared/contracts';
 
 import { apiGet, apiPost } from './client';
 
@@ -72,6 +72,12 @@ export interface ActivityRowWire {
   action: ActivityActionWire;
   affectedCount: number;
   sender: ActivitySenderWire | null;
+  /**
+   * D57 rule attribution (shared contract `ActivityRuleRefSchema`) —
+   * non-null only for `source='autopilot'` rows whose originating rule
+   * still exists; renders as "by Autopilot · <rule name>".
+   */
+  rule: ActivityRuleRef | null;
   undoState: ActivityUndoStateWire;
 }
 

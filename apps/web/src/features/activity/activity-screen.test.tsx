@@ -58,6 +58,7 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
         email: 'one@example.com',
         domain: 'example.com',
       } as ActivityRowWire['sender']),
+    rule: partial.rule ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
   };
 }
@@ -527,6 +528,127 @@ describe('ActivityScreen — B11 group by sender', () => {
     const groupChip = await screen.findByRole('button', { name: /^Group$/ });
     await userEvent.click(groupChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('group=sender'));
+  });
+});
+
+// ── U27 — D57 rule attribution + infinite scroll ─────────────────────
+
+describe('ActivityScreen — D57 rule attribution', () => {
+  it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                source: 'autopilot',
+                rule: {
+                  id: '22222222-2222-2222-2222-222222222222',
+                  name: 'Newsletter graveyard',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByText('by Autopilot · Newsletter graveyard')).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back to plain "by Autopilot" when the rule was deleted (rule=null)', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({ source: 'autopilot', rule: null })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
+  });
+
+  it('keeps the "via <source>" form for non-autopilot rows', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ source: 'manual' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('via Manual')).toBeInTheDocument());
+  });
+});
+
+describe('ActivityScreen — U27 infinite scroll', () => {
+  it('appends the next page on "Load more" and then shows the end marker', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          const cursor = url.searchParams.get('cursor');
+          if (!cursor) {
+            return jsonOk({
+              data: [row({ id: 'p1-1' })],
+              meta: {
+                ...META_BASE,
+                pagination: { nextCursor: 'cursor-page-2', hasMore: true, limit: 25 },
+              },
+            });
+          }
+          expect(cursor).toBe('cursor-page-2');
+          return jsonOk({
+            data: [
+              row({
+                id: 'p2-1',
+                sender: {
+                  senderKey: 'sk-2',
+                  displayName: 'Sender Two',
+                  email: 'two@example.com',
+                  domain: 'example.com',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    // Page 1 rendered + load-more affordance present (hasMore=true).
+    await waitFor(() => expect(screen.getByText('Sender One')).toBeInTheDocument());
+    const loadMore = screen.getByRole('button', { name: /^load more$/i });
+    await userEvent.click(loadMore);
+    // Page 2 appends below page 1 — both rows visible.
+    await waitFor(() => expect(screen.getByText('Sender Two')).toBeInTheDocument());
+    expect(screen.getByText('Sender One')).toBeInTheDocument();
+    // Page 2's nextCursor=null → end-of-list marker with the loaded count.
+    await waitFor(() =>
+      expect(screen.getByText(/end of activity · 2 rows loaded/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the end-of-list marker instead of Load more on a single full page', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByText(/end of activity · 1 row loaded/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
   });
 });
 
