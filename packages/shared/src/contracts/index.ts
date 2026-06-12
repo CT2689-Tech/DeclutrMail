@@ -97,3 +97,8 @@ export type {
   AutopilotPreviewSample,
   AutopilotRulePreviewResult,
 } from './autopilot';
+
+// D19 waitlist capture — POST /api/waitlist (pricing Team row +
+// marketing forms). Constant 202 body — no email-exists oracle.
+export { WaitlistJoinRequestSchema } from './waitlist';
+export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';

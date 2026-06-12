@@ -48,7 +48,9 @@ export type EventName =
   | 'autopilot_paused'
   | 'autopilot_resumed'
   | 'autopilot_suggestion_decided'
-  | 'autopilot_preset_changed';
+  | 'autopilot_preset_changed'
+  // — Marketing surface (D19 pricing) —
+  | 'waitlist_joined';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in
@@ -146,7 +148,8 @@ export interface EventPayloads {
       | 'triage'
       | 'onboarding'
       | 'settings'
-      | 'mailboxes';
+      | 'mailboxes'
+      | 'pricing';
     mailbox_id: string | null;
   };
 
@@ -258,6 +261,18 @@ export interface EventPayloads {
   autopilot_preset_changed: {
     preset_id: string;
     action: 'enabled' | 'disabled' | 'parameter_changed';
+  };
+
+  // — Marketing surface (D19 pricing) —
+  waitlist_joined: {
+    /**
+     * D19 tier the visitor expressed interest in; null for generic
+     * forms. Mirrors `TierId` — kept inline so this file stays
+     * import-free.
+     */
+    tier_interest: 'free' | 'plus' | 'pro' | 'team' | 'enterprise' | null;
+    /** App-chosen attribution slug (`pricing`, `landing`, …) — NEVER the email. */
+    source: string;
   };
 }
 

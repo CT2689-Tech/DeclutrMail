@@ -17,6 +17,7 @@ import { SendersModule } from './senders/senders.module.js';
 import { TriageModule } from './triage/triage.module.js';
 import { UndoModule } from './undo/undo.module.js';
 import { UsersModule } from './users/users.module.js';
+import { WaitlistModule } from './waitlist/waitlist.module.js';
 import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 /**
@@ -68,6 +69,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     FollowupModule,
     ActivityModule,
     AccountModule,
+    WaitlistModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
 })
