@@ -6,18 +6,29 @@
 // the real `@storybook/react` imports; the story shapes do not change.
 //
 // Variants covered (per D211/D212 + Storybook contract):
-//   • Default           — populated suggestion list across two rules
-//   • Loading           — skeleton stack
-//   • Error             — fetch failed branch
-//   • Empty             — rules exist but no pending matches
-//   • EmptyNoRules      — fresh mailbox, no rules seeded yet
-//   • AllPaused         — D105 paused banner visible, Pause-all disabled
-//   • PauseConfirmOpen  — D226 mandatory preview modal mid-flight
+//   • Default            — all five preset rules + grouped suggestions
+//                          (rule #1's observe window elapsed → day-7 banner)
+//   • Loading            — skeleton stacks (rules + suggestions)
+//   • Error              — fetch failed branch
+//   • Empty              — rules exist but no pending matches
+//   • EmptyNoRules       — fresh mailbox, no rules seeded yet
+//   • AllPaused          — D105 paused banner visible, Pause-all disabled
+//   • PauseConfirmOpen   — D226 mandatory preview modal mid-flight
+//   • ApproveConfirmOpen — D226 preview before the D104 approve mutation
+//   • ActivateConfirmOpen— D226 preview before Observe → Active
 
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
-import { PENDING_SUGGESTIONS, PRESET_RULES_ALL_PAUSED, PRESET_RULES_OBSERVE } from './fixtures';
+import {
+  AUTO_ARCHIVE_LOW_ENGAGEMENT,
+  PENDING_SUGGESTIONS,
+  PRESET_RULES_ALL_FIVE,
+  PRESET_RULES_ALL_PAUSED,
+  PRESET_RULES_OBSERVE,
+} from './fixtures';
+import { ActivateRuleModal } from './activate-rule-modal';
+import { ApproveConfirmModal } from './approve-confirm-modal';
 import { AutopilotScreen } from './autopilot-screen';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import type { AutopilotScreenState } from './types';
@@ -75,15 +86,15 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Default — two rules running, three pending suggestions. */
+/** Default — all five preset rules, grouped suggestions, day-7 banner. */
 export const Default: Story<typeof AutopilotScreen> = {
   args: {
     state: {
       kind: 'ready',
-      rules: PRESET_RULES_OBSERVE,
+      rules: PRESET_RULES_ALL_FIVE,
       suggestions: PENDING_SUGGESTIONS.map((match) => ({
         match,
-        rule: PRESET_RULES_OBSERVE.find((r) => r.id === match.ruleId) ?? null,
+        rule: PRESET_RULES_ALL_FIVE.find((r) => r.id === match.ruleId) ?? null,
       })),
     } satisfies AutopilotScreenState,
   },
@@ -141,9 +152,7 @@ export const AllPaused: Story<typeof AutopilotScreen> = {
 
 /**
  * D226 — pause-confirm modal in its mid-flight state. Renders the
- * modal directly (the screen is in the background for context). The
- * "Pause-all" CTA is the only Autopilot mutation surface that needs
- * a mandatory preview at V2.
+ * modal directly (the screen is in the background for context).
  */
 export const PauseConfirmOpen: Story<typeof PauseConfirmModal> = {
   render: () =>
@@ -155,6 +164,43 @@ export const PauseConfirmOpen: Story<typeof PauseConfirmModal> = {
         onConfirm={() => undefined}
         isPausing={false}
         pauseError={null}
+      />,
+    ),
+};
+
+/**
+ * D226 — the D104 approve preview. Enumerates the exact senders the
+ * approval covers + the verb-true consequence before the mutation.
+ */
+export const ApproveConfirmOpen: Story<typeof ApproveConfirmModal> = {
+  render: () =>
+    frame(
+      <ApproveConfirmModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        matches={PENDING_SUGGESTIONS.filter((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)}
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    ),
+};
+
+/**
+ * D226 — the day-7 Observe → Active preview. States what changes
+ * going forward and that already-collected suggestions stay pending.
+ */
+export const ActivateConfirmOpen: Story<typeof ActivateRuleModal> = {
+  render: () =>
+    frame(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        pendingCount={2}
+        pendingApproximate={false}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
       />,
     ),
 };

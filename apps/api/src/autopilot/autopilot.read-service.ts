@@ -51,6 +51,7 @@ import {
   type AutopilotActionJobData,
   type PresetInput,
 } from '@declutrmail/workers';
+import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 import type {
   AutopilotApproveResult,
   AutopilotRulePreviewResult,
@@ -213,7 +214,7 @@ export class AutopilotReadService {
    * infinite feed. Cursoring would land if the backlog ever needs it.
    */
   async listPendingSuggestions(mailboxAccountId: string): Promise<AutopilotMatch[]> {
-    const PAGE_SIZE = 50;
+    const PAGE_SIZE = AUTOPILOT_PENDING_PAGE_SIZE;
     // LEFT JOIN senders so each match carries the sender's display name +
     // email (D7 allowlist — sender identity is the FIRST item on the
     // storage list; surfacing it is NOT a privacy violation). LEFT join

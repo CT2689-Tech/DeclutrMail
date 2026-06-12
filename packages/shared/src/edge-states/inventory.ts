@@ -351,7 +351,11 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   },
 
   // Autopilot (D99–D105). All three core states are storied
-  // (Loading / Error / Empty + EmptyNoRules).
+  // (Loading / Error / Empty + EmptyNoRules) across BOTH sections of
+  // the screen — the D101 rules-management list and the D104 pending-
+  // suggestions buffer share the same top-level state machine, so one
+  // row covers both. Guard 409s (SELECT_MAILBOX / NO_ACTIVE_MAILBOX)
+  // render the layout-owned designed state, never a retry.
   autopilot: {
     loading: {
       required: true,

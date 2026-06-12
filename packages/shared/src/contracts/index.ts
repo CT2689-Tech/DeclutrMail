@@ -86,6 +86,7 @@ export type { GmailCategory } from './gmail-category';
 
 // U14 — Autopilot approve + dry-run preview contracts (D99/D101/D104).
 export {
+  AUTOPILOT_PENDING_PAGE_SIZE,
   AutopilotApproveMatchesRequestSchema,
   AutopilotApproveResultSchema,
   AutopilotPreviewSampleSchema,
