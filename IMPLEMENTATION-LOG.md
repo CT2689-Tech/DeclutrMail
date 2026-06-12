@@ -115,7 +115,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
-| D64 | Brief timing: **Default 8am local; user-configurable | ⬜ |  |  |  |
+| D64 | Brief timing: **Default 8am local; user-configurable | 🔵 | #194 |  |  |
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | VIP in Brief: **Inline ⭐ star on Reply rows | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
@@ -129,7 +129,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | ⬜ |  |  |  |
 | D76 | Empty state: **Calm single-line message | ⬜ |  |  |  |
 | D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | ⬜ |  |  |  |
-| D78 | Snooze scope: **Sender-level only at launch; message-level deferred | ⬜ |  |  |  |
+| D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
 | D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | ⬜ |  |  |  |
 | D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | ⬜ |  |  |  |
 | D81 | Snooze trigger surfaces | ⬜ |  |  |  |
@@ -164,11 +164,11 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D110 | Step 4: Style preset selection | ⬜ |  |  |  |
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
 | D112 | Step 5: First Triage with real senders | ⬜ |  |  |  |
-| D113 | Onboarding completion side effects | ⬜ |  |  |  |
+| D113 | Onboarding completion side effects | 🔵 | #194 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | ⬜ |  |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | ⬜ |  |  |  |
-| D117 | Billing providers: **Paddle (international) + Razorpay (India) | ⬜ |  |  |  |
+| D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194 |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | ⬜ |  |  |  |
 | D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | ⬜ |  |  |  |
 | D120 | Plan-change flows | ⬜ |  |  |  |
