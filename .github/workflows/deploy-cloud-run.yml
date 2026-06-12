@@ -186,18 +186,35 @@ jobs:
           # `docs/runbooks/secrets-inventory.md`, add
           # `BETA_INVITE_EMAILS=beta-invite-emails-prod:latest` to
           # --update-secrets, set BETA_GATE_ENABLED=true.
+          #
+          # BILLING_ENABLED / PADDLE_ENV (D117/D118): billing ships
+          # default-OFF — every /api/billing/* route 503s until the
+          # flip PR. The vendor secrets (PADDLE_API_KEY,
+          # PADDLE_CLIENT_TOKEN, PADDLE_WEBHOOK_SECRET, RAZORPAY_KEY_ID,
+          # RAZORPAY_KEY_SECRET, RESEND_WEBHOOK_SECRET) exist only as
+          # GH Actions secrets today; binding them here requires the
+          # founder to create the GCP Secret Manager entries FIRST
+          # (referenced-but-missing secrets fail the whole deploy — the
+          # beta-invite-emails precedent above). Flip sequence (one PR):
+          # create the secrets, add the --update-secrets bindings, set
+          # BILLING_ENABLED=true. PADDLE_ENV stays `sandbox` until the
+          # live-key rotation at go-live.
+          #
+          # --min-instances=1 per D193: the API serves OAuth callbacks
+          # + Pub/Sub webhooks; a cold start on the OAuth redirect is a
+          # first-impression failure, so one warm instance from launch.
           gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
-            --min-instances=0 \
+            --min-instances=1 \
             --max-instances=3 \
             --memory=512Mi \
             --cpu=1 \
             --port=8080 \
             --allow-unauthenticated \
-            --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=https://app.declutrmail.com,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false" \
+            --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=https://app.declutrmail.com,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,RATE_LIMIT_ENABLED=false,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=false,PADDLE_ENV=sandbox" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest" \
             --quiet
 
@@ -245,7 +262,7 @@ jobs:
             --no-allow-unauthenticated \
             --command="node" \
             --args="src/worker.ts" \
-            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|WEB_URL=https://app.declutrmail.com|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|REASONING_RATE_PER_MIN=400|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=10|WORKER_STALLED_INTERVAL_MS=60000|WORKER_CRON_DRAIN_DELAY_SEC=60|WORKER_CRON_STALLED_INTERVAL_MS=300000" \
+            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|REASONING_RATE_PER_MIN=400|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=10|WORKER_STALLED_INTERVAL_MS=60000|WORKER_CRON_DRAIN_DELAY_SEC=60|WORKER_CRON_STALLED_INTERVAL_MS=300000" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest" \
             --quiet
 
