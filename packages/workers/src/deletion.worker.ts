@@ -99,6 +99,11 @@ const MAIL_MESSAGES_DELETE_CHUNK = 5_000;
  */
 const EXECUTING_TAKEOVER_AFTER_MS = 10 * 60 * 1_000;
 
+/** Single source for the stranded-takeover cutoff (due-scan AND claim). */
+function executingTakeoverCutoff(): Date {
+  return new Date(Date.now() - EXECUTING_TAKEOVER_AFTER_MS);
+}
+
 /**
  * AccountDeletionPurgeWorker (D205, D216, D232) — executes due
  * account-deletion requests.
@@ -111,7 +116,9 @@ const EXECUTING_TAKEOVER_AFTER_MS = 10 * 60 * 1_000;
  * Purge order per request (each step idempotent, so a crash anywhere
  * resumes cleanly on the next sweep):
  *
- *   1. Claim — flip to 'executing' (+executed_at). Conditional UPDATE.
+ *   1. Claim — flip to 'executing' (+executed_at). Conditional UPDATE:
+ *      accepts only 'pending' or stranded-'executing' past the takeover
+ *      cutoff, so a replica that loses the claim race gets no row back.
  *   2. Capture — user email/workspace + mailbox ids (needed AFTER the
  *      drop; nothing below can re-read them).
  *   3. `users.stop` on every mailbox — best-effort per-mailbox
@@ -249,7 +256,7 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
    * OR executing-and-stranded (crash takeover).
    */
   private async findDueRequests(): Promise<DueRequest[]> {
-    const takeoverCutoff = new Date(Date.now() - EXECUTING_TAKEOVER_AFTER_MS);
+    const takeoverCutoff = executingTakeoverCutoff();
     return this.deps.db
       .select({
         id: accountDeletionRequests.id,
@@ -278,14 +285,23 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
   private async purgeOne(request: DueRequest): Promise<void> {
     const { db } = this.deps;
 
-    // 1. Claim. Conditional so a cancel that raced the sweep wins.
+    // 1. Claim. Conditional so a cancel that raced the sweep wins, and
+    // so two replicas can't both take over the same stranded row: an
+    // 'executing' row is claimable only past the takeover cutoff — the
+    // winner's fresh executed_at makes the loser's UPDATE match no row.
     const [claimedRow] = await db
       .update(accountDeletionRequests)
       .set({ status: 'executing', executedAt: sql`now()`, updatedAt: sql`now()` })
       .where(
         and(
           eq(accountDeletionRequests.id, request.id),
-          inArray(accountDeletionRequests.status, ['pending', 'executing']),
+          or(
+            eq(accountDeletionRequests.status, 'pending'),
+            and(
+              eq(accountDeletionRequests.status, 'executing'),
+              lt(accountDeletionRequests.executedAt, executingTakeoverCutoff()),
+            ),
+          ),
         ),
       )
       .returning({ id: accountDeletionRequests.id });

@@ -288,6 +288,65 @@ describe('AccountDeletionPurgeWorker', () => {
     expect(await db.select().from(users)).toHaveLength(1);
   });
 
+  it('a takeover claim that lost the replica race is skipped (no double purge)', async () => {
+    const db = await freshDb();
+    const seeded = await seedDueDeletion(db, {
+      status: 'executing',
+      executedAt: new Date(Date.now() - 30 * 60 * 1000), // stranded
+    });
+    const { worker, email } = makeWorker(db);
+    const sweep = worker as unknown as {
+      findDueRequests(): Promise<{ id: string }[]>;
+      purgeOne(request: { id: string }): Promise<void>;
+    };
+
+    // Replica B's sweep reads the stranded row as due…
+    const due = await sweep.findDueRequests();
+    expect(due).toHaveLength(1);
+    expect(due[0]!.id).toBe(seeded.requestId);
+
+    // …but replica A's claim commits first (fresh executed_at).
+    await db
+      .update(accountDeletionRequests)
+      .set({ status: 'executing', executedAt: new Date() })
+      .where(eq(accountDeletionRequests.id, seeded.requestId));
+
+    // Replica B's claim must lose: no purge, no receipt, no audit.
+    await sweep.purgeOne(due[0]!);
+
+    expect(await db.select().from(users)).toHaveLength(1);
+    expect(await db.select().from(mailMessages)).toHaveLength(6);
+    expect(email.jobs).toHaveLength(0);
+    expect(
+      await db
+        .select()
+        .from(securityEvents)
+        .where(eq(securityEvents.eventType, 'account.deletion_executed')),
+    ).toHaveLength(0);
+  });
+
+  it('the claim itself rejects a fresh executing row (takeover cutoff re-asserted)', async () => {
+    const db = await freshDb();
+    const freshExecutedAt = new Date(Date.now() - 2 * 60 * 1000); // 2 min < cutoff
+    const seeded = await seedDueDeletion(db, { status: 'executing', executedAt: freshExecutedAt });
+    const { worker, email } = makeWorker(db);
+
+    // Force the claim directly (as if a sweep raced past the due-scan).
+    await (
+      worker as unknown as { purgeOne(request: { id: string; userId: string }): Promise<void> }
+    ).purgeOne({ id: seeded.requestId, userId: seeded.userId });
+
+    // Claim lost: row untouched (executed_at NOT refreshed), nothing purged.
+    const [row] = await db
+      .select()
+      .from(accountDeletionRequests)
+      .where(eq(accountDeletionRequests.id, seeded.requestId));
+    expect(row!.status).toBe('executing');
+    expect(row!.executedAt).toEqual(freshExecutedAt);
+    expect(await db.select().from(users)).toHaveLength(1);
+    expect(email.jobs).toHaveLength(0);
+  });
+
   it('a failed watch stop never blocks the purge (best-effort)', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
