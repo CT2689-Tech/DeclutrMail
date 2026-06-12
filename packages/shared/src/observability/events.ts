@@ -25,6 +25,8 @@ export type EventName =
   | 'rule_fired'
   | 'billing_event'
   | 'upgrade_prompt_shown'
+  // — Billing surface (D119/D120, U13) —
+  | 'checkout_started'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
   | 'sender_detail_opened'
@@ -151,9 +153,20 @@ export interface EventPayloads {
   };
   upgrade_prompt_shown: {
     /** Which entitlement gate triggered the prompt (D19/D77/D81). */
-    reason: 'free_cap' | 'inbox_limit';
+    reason: 'free_cap' | 'inbox_limit' | 'pro_feature';
     /** The surface that rendered it. */
-    source: 'actions_402' | 'account_menu' | 'triage_empty_state';
+    source: 'actions_402' | 'account_menu' | 'triage_empty_state' | 'upgrade_modal' | 'tier_gate';
+  };
+
+  // — Billing surface (D119/D120, U13) —
+  checkout_started: {
+    /** Purchasable target tier (D19). */
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    /** D117 — user's explicit provider choice. */
+    provider: 'paddle' | 'razorpay';
+    /** True when the Founding Pro promo price was claimed (D126). */
+    founding_pro: boolean;
   };
 
   // — Page-view + navigation funnel —
@@ -170,7 +183,8 @@ export interface EventPayloads {
       | 'settings'
       | 'mailboxes'
       | 'pricing'
-      | 'snoozed';
+      | 'snoozed'
+      | 'billing';
     mailbox_id: string | null;
   };
 
