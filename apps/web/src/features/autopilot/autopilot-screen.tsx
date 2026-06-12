@@ -11,6 +11,8 @@ import {
   tokens,
 } from '@declutrmail/shared';
 import { ApiError } from '@/lib/api/client';
+import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
+
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
@@ -38,8 +40,12 @@ import type {
 
 const { color, font } = tokens;
 
-/** BE page cap on GET /api/autopilot/pending-suggestions (D104). */
-const PENDING_BUFFER_CAP = 50;
+/**
+ * BE page cap on GET /api/autopilot/pending-suggestions (D104) —
+ * shared constant so the "latest N" honesty copy can't drift from the
+ * read-service LIMIT.
+ */
+const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
 
 /**
  * Autopilot screen — D99–D105 (U15).

@@ -24,14 +24,26 @@ import { z } from 'zod';
 const UuidSchema = z.string().uuid();
 
 /**
- * Approve-selected request body. Bounded at 100 ids per call — the
- * pending-suggestions page is 50 rows, so 100 covers a "select all on
- * both mailbox tabs" worst case without letting a client batch
- * unbounded work into one request.
+ * Page cap on GET /api/autopilot/pending-suggestions. ONE constant
+ * shared by the BE read-service (LIMIT) and the FE screen (the
+ * "N pending in the latest 50" honesty copy) — the truncation signal
+ * is only honest while both sides agree on the cap, so a bump here
+ * moves both at once instead of silently re-introducing dishonest
+ * counts.
+ */
+export const AUTOPILOT_PENDING_PAGE_SIZE = 50;
+
+/**
+ * Approve-selected request body. Bounded at 2× the pending page size
+ * per call — covers a "select all on both mailbox tabs" worst case
+ * without letting a client batch unbounded work into one request.
  */
 export const AutopilotApproveMatchesRequestSchema = z
   .object({
-    matchIds: z.array(UuidSchema).min(1).max(100),
+    matchIds: z
+      .array(UuidSchema)
+      .min(1)
+      .max(AUTOPILOT_PENDING_PAGE_SIZE * 2),
   })
   .strict();
 export type AutopilotApproveMatchesRequest = z.infer<typeof AutopilotApproveMatchesRequestSchema>;
