@@ -11,6 +11,7 @@
     "dev-populate": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/dev-populate-cron.ts",
     "dev:autopilot-harness": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/dev-autopilot-harness.ts",
     "provision-billing-catalog": "node --env-file-if-exists=../../.env.local --import @swc-node/register/esm-register scripts/provision-billing-catalog.ts",
+    "email-smoke": "node --import @swc-node/register/esm-register scripts/email-smoke.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
@@ -35,6 +36,7 @@
     "jose": "^6.2.3",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.12.4",
     "rxjs": "^7.8.1",
     "zod": "^4.4.3"
   },

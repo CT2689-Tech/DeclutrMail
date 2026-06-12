@@ -10,6 +10,7 @@ import {
 } from '@declutrmail/events';
 import type {
   ActionsUnsubscribeIntentRecordedPayload,
+  MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
 } from '@declutrmail/events';
 import {
@@ -22,17 +23,26 @@ import {
 import type { DrizzleDb } from '../db/db.module.js';
 
 /**
- * Optional consumer dependencies beyond the db handle (U14).
- *
- * `autopilotApplyQueue` — BullMQ producer for the `autopilot-apply`
- * queue. Optional because the worker composition root
- * (`apps/api/src/worker.ts`) is integration-owned this wave: the
- * router compiles + runs without it, and the autopilot cases log a
- * structured `autopilot_queue_unwired` warning instead of silently
- * dropping the trigger. The integration PR passes the queue.
+ * Optional consumer dependencies beyond the db handle, injected by the
+ * worker composition root (`apps/api/src/worker.ts` — integration-owned).
+ * The router stays the seam; feature wiring (queues, ports) lives with
+ * the feature and is passed in here. A dep whose wiring is absent logs
+ * loudly + ACKs so the dispatcher never wedges on a deploy-ordering gap.
  */
 export interface OutboxConsumerDeps {
+  /**
+   * U14 — BullMQ producer for the `autopilot-apply` queue. Optional:
+   * the router compiles + runs without it, and the autopilot cases log
+   * a structured `autopilot_queue_unwired` warning instead of silently
+   * dropping the trigger. The integration PR passes the queue.
+   */
   autopilotApplyQueue?: Queue<AutopilotApplyJobData> | null;
+  /**
+   * D6/D162 transactional-email trigger for `mailbox.sync_ready` —
+   * built via `buildSyncReadyEmailHandler` (notifications feature).
+   * `eventId` keys the send's idempotency (one send per logical event).
+   */
+  onMailboxSyncReady?: (payload: MailboxSyncReadyPayload, eventId: string) => Promise<void>;
 }
 
 /**
@@ -68,12 +78,31 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         // 2. Enqueue an `autopilot-apply` sweep so enabled rules run
         //    against the fresh sender index. jobId carries the ready
         //    timestamp — a redelivered event dedups at BullMQ.
+        // 3. D6/D162 — enqueue the sync-complete email + 24h reminder
+        //    via the injected handler; idempotent on `event.id`, so a
+        //    retry after a step-1/2 failure cannot double-send.
         const payload = MailboxSyncReadyPayloadSchema.parse(event.payload);
         await seedAutopilotPresets(db, payload.mailboxAccountId);
         await enqueueAutopilotApply(deps, {
           mailboxAccountId: payload.mailboxAccountId,
           triggeredAtMs: Date.parse(payload.readyAt),
         });
+        if (deps.onMailboxSyncReady) {
+          await deps.onMailboxSyncReady(payload, event.id);
+        } else {
+          // Composition root didn't wire the email trigger — ERROR
+          // (not warn): a sync_ready with no email handler means the
+          // D6 sync-complete email silently never sends. ACK so the
+          // dispatcher doesn't wedge; the log is the alarm.
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'outbox.consumer.sync_ready_email_unwired',
+              eventId: event.id,
+              mailboxAccountId: payload.mailboxAccountId,
+            }),
+          );
+        }
         return;
       }
       case TOPICS.TRIAGE_SCORE_RUN_COMPLETED: {

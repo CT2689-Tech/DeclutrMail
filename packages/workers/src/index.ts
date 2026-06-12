@@ -261,3 +261,21 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
+export { EmailSendWorker } from './email-send.worker.js';
+export type {
+  EmailDeliveryOutcome,
+  EmailDeliveryPort,
+  EmailKind,
+  EmailSendJobData,
+  EmailSendResult,
+  EmailSendWorkerDeps,
+} from './email-send.worker.js';
+export {
+  EMAIL_SEND_JOB,
+  EMAIL_SEND_QUEUE,
+  emailSendJobOptions,
+  enqueueEmailSend,
+  SYNC_REMINDER_DELAY_MS,
+  syncCompleteEmailJobId,
+  syncReminderEmailJobId,
+} from './email-send.queue.js';

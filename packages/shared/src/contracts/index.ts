@@ -129,3 +129,12 @@ export type {
   RazorpayCheckoutSession,
   SubscriptionStatus,
 } from './billing';
+// D162 / D165 transactional-email preferences — shared between the
+// PATCH /api/me/email-prefs route and the EmailSendWorker opt-out check.
+export {
+  DEFAULT_EMAIL_PREFS,
+  EmailPrefsPatchSchema,
+  EmailPrefsSchema,
+  parseEmailPrefs,
+} from './email-prefs';
+export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';

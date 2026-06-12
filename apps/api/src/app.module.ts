@@ -12,7 +12,9 @@ import { DbModule } from './db/db.module.js';
 import { FollowupModule } from './followups/followup.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
+import { ResendWebhookModule } from './webhooks/resend/resend-webhook.module.js';
 import { SecurityEventsModule } from './security-events/security-events.module.js';
 import { SendersModule } from './senders/senders.module.js';
 import { TriageModule } from './triage/triage.module.js';
@@ -74,6 +76,11 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     ActivityModule,
     AccountModule,
     WaitlistModule,
+    // D162 transactional email — prefs route + Resend webhook. Loaded
+    // unconditionally; the webhook controller fail-closes per request
+    // (503) while RESEND_WEBHOOK_SECRET is unset.
+    NotificationsModule,
+    ResendWebhookModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
 })
