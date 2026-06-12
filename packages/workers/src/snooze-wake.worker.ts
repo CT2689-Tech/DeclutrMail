@@ -21,7 +21,9 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *
  *   - `sweep` — the 15-minute cron tick (D225 `cronPolicy`). Scans the
  *     `sender_policies_snooze_wake_idx` partial index for due timers
- *     (`snoozed_until <= now()`) and wakes each due sender. Also
+ *     (`snoozed_until <= now()`) on ACTIVE mailboxes and wakes each due
+ *     sender (due timers on disconnected mailboxes lie dormant until
+ *     reconnect — see `sweep`). Also
  *     refreshes the per-mailbox Later-label-id mapping in Redis (see
  *     snooze-wake.queue.ts) for any mailbox whose key is missing, so
  *     the API's Snoozed LIST read stays answerable without a Gmail
@@ -212,13 +214,25 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
 
   private async sweep(now: Date): Promise<Omit<SnoozeWakeResult, 'durationMs'>> {
     // Due timers — hits the partial wake-scan index (schema D79).
+    // Active mailboxes only: disconnect preserves sender_policies rows
+    // (incl. live timers) but nullifies the OAuth token, so a wake on a
+    // disconnected mailbox can only throw. Due timers there lie DORMANT
+    // — rows untouched — and become eligible again the moment the
+    // mailbox status flips back to 'active' on reconnect.
     const due = await this.deps.db
       .select({
         mailboxAccountId: senderPolicies.mailboxAccountId,
         senderKey: senderPolicies.senderKey,
       })
       .from(senderPolicies)
-      .where(and(isNotNull(senderPolicies.snoozedUntil), lte(senderPolicies.snoozedUntil, now)));
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, senderPolicies.mailboxAccountId))
+      .where(
+        and(
+          eq(mailboxAccounts.status, 'active'),
+          isNotNull(senderPolicies.snoozedUntil),
+          lte(senderPolicies.snoozedUntil, now),
+        ),
+      );
 
     const byMailbox = new Map<string, string[]>();
     for (const row of due) {

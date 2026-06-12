@@ -438,6 +438,87 @@ describe('SnoozeWakeWorker — sweep', () => {
     expect(again.mappingsRefreshed).toBe(0);
   });
 
+  it('a due timer on a disconnected mailbox lies dormant, then wakes after reconnect', async () => {
+    // Two mailboxes, BOTH with due timers — the active one must wake
+    // (proves the status filter is not a tautology in either direction).
+    const disconnectedId = await seedMailbox(db, 'gone@declutrmail.ai');
+    await seedSender(db, disconnectedId, SENDER_KEY_A);
+    await seedMessage(db, disconnectedId, SENDER_KEY_A, 'dormant-1', ['Label_7']);
+    await seedSnooze(db, disconnectedId, SENDER_KEY_A, PAST);
+    await seedMessage(db, mailboxId, SENDER_KEY_A, 'active-1', ['Label_7']);
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, disconnectedId));
+
+    const clientRequests: string[] = [];
+    const tracked = makeWorker(
+      db,
+      {
+        getClient: async (id) => {
+          clientRequests.push(id);
+          return gmail;
+        },
+      },
+      labelMap,
+    );
+
+    const result = await tracked.processJob(
+      { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' },
+      CTX,
+    );
+
+    // Disconnected mailbox: not scanned, no Gmail client requested, not
+    // counted failed; timer row untouched (dormant, not retried).
+    expect(result.dueProcessed).toBe(1);
+    expect(result.woken).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(clientRequests).not.toContain(disconnectedId);
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual(['active-1']);
+    const [dormant] = await db
+      .select()
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, disconnectedId),
+          eq(senderPolicies.senderKey, SENDER_KEY_A),
+        ),
+      );
+    expect(dormant!.snoozedUntil).not.toBeNull();
+    expect(dormant!.snoozedAt).not.toBeNull();
+
+    // Reconnect (status flips back) — the SAME row becomes eligible and
+    // wakes on the next sweep.
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'active' })
+      .where(eq(mailboxAccounts.id, disconnectedId));
+    gmail.calls = [];
+
+    const second = await tracked.processJob(
+      { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:15' },
+      CTX,
+    );
+
+    expect(second.dueProcessed).toBe(1);
+    expect(second.woken).toBe(1);
+    expect(second.failed).toBe(0);
+    expect(gmail.calls).toHaveLength(1);
+    expect(gmail.calls[0]!.ids).toEqual(['dormant-1']);
+    const [woken] = await db
+      .select()
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, disconnectedId),
+          eq(senderPolicies.senderKey, SENDER_KEY_A),
+        ),
+      );
+    expect(woken!.snoozedUntil).toBeNull();
+  });
+
   it('skips disconnected mailboxes in the mapping refresh', async () => {
     const disconnectedId = await seedMailbox(db, 'gone@declutrmail.ai');
     await db
