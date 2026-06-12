@@ -466,6 +466,31 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     [pendingAction, dispatchAction, onRowAction],
   );
 
+  /**
+   * Escape clears an INLINE pending preview — the contract the comment
+   * above promises. Only the pending decision is discarded; the row
+   * stays expanded so the user keeps their place. The sheet surface is
+   * untouched: it owns its own Escape (action-sheet.tsx) and this
+   * effect doesn't mount for it.
+   */
+  useEffect(() => {
+    if (pendingAction == null || pendingAction.surface !== 'inline') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Don't hijack Escape inside inputs / textareas / contentEditable
+      // (same convention as the toolbar's verb shortcuts).
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      e.preventDefault();
+      clearPending();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pendingAction, clearPending]);
+
   return (
     <div
       style={{
