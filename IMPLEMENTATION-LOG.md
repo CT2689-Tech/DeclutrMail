@@ -185,7 +185,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
 | D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | ⬜ |  |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
-| D134 | Landing page 10-section structure | ⬜ |  |  |  |
+| D134 | Landing page 10-section structure | 🔵 | #202 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
 | D137 | FAQ content (10 questions) | ⬜ |  |  |  |
@@ -274,7 +274,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
-| D223 | Landing page primary headline (locks tentative) | ⬜ |  |  |  |
+| D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🟡 |  |  | Drift fix 2026-06-11 (understated): 5 policies + cron idempotency + base-worker timeout/dead-letter event built (packages/workers/src/worker-policies.ts:54-101, base-declutr-worker.ts); cron_runs/dead_letter_jobs tables + DeadLetterWorker + WatchRenewalWorker missing |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🟢 | #44, #180 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180 |
