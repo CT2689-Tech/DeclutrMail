@@ -434,6 +434,42 @@ completes in the worker.
 **Retention / aggregation.** PostHog default. Wake-now vs timer-expiry
 ratio tells us whether D82's presets match real wake behavior.
 
+### `settings_pref_changed`
+
+**When fired.** When a user-level preference flip persists successfully
+(the PATCH resolved — never on optimistic state). Two sources: the
+Settings → Action preferences / Email preferences cards
+(`source: 'settings'`), and the action sheet's D34 "remember this"
+toggle confirming with a changed value (`source: 'action_sheet'`).
+
+**Payload.**
+
+| Field     | Type                                       | Notes                                               |
+| --------- | ------------------------------------------ | --------------------------------------------------- |
+| `pref`    | `'action_sheet_skip' \| 'email_reminders'` | Which preference flipped                            |
+| `verb`    | `Verb \| null`                             | KAULD verb for `action_sheet_skip`; null otherwise  |
+| `enabled` | `boolean`                                  | State AFTER the change (skip prefs: true = skipped) |
+| `source`  | `'settings' \| 'action_sheet'`             | Where the flip happened                             |
+
+**Retention / aggregation.** PostHog default. D34 adoption signal — how
+many power users opt into the skip-sheet path, and from which surface.
+
+### `data_export_requested`
+
+**When fired.** When a Privacy & Data export download attempt reaches a
+terminal client-side state — the blob saved (`success`) or the fetch /
+stream failed (`failed`). One event per attempt.
+
+**Payload.**
+
+| Field     | Type                    | Notes                        |
+| --------- | ----------------------- | ---------------------------- |
+| `format`  | `'json' \| 'csv'`       | Which export artifact        |
+| `outcome` | `'success' \| 'failed'` | Terminal client-side outcome |
+
+**Retention / aggregation.** PostHog default. DPDP-export usage +
+failure-rate alarm (a spike in `failed` flags a broken export stream).
+
 ---
 
 ## Adding a new event
