@@ -67,7 +67,11 @@ export function AppShell({
       style={{
         display: 'flex',
         width: '100%',
-        height: '100vh',
+        // 100% (not 100vh) — the host layout owns the viewport box so
+        // it can stack app-level chrome (the D216 grace-period banner)
+        // above the shell without clipping it off the bottom. The only
+        // consumer ((app)/layout.tsx) always provides a 100vh parent.
+        height: '100%',
         background: 'transparent',
         color: color.fg,
         fontFamily: font.sans,
