@@ -8,15 +8,34 @@ import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
+  AccountDeletionPurgeWorker,
+  AUTOPILOT_ACTION_QUEUE,
+  AUTOPILOT_APPLY_QUEUE,
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
+  createAutopilotExecutionChain,
   createRedisConnection,
+  DEAD_LETTER_INTERVAL_MS,
+  DEAD_LETTER_QUEUE,
+  DeadLetterWorker,
+  DELETION_SWEEP_INTERVAL_MS,
+  DELETION_SWEEP_QUEUE,
+  DrizzleDeadLetterRecorder,
+  EMAIL_SEND_QUEUE,
+  EmailSendWorker,
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   enqueueBriefSnapshotTick,
+  enqueueDeadLetterTick,
+  enqueueDeletionSweepTick,
+  enqueueFollowupCheckTick,
   enqueueSendersCounterReconciliationTick,
+  enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
+  FOLLOWUP_CHECK_INTERVAL_MS,
+  FOLLOWUP_CHECK_QUEUE,
+  FollowupCheckWorker,
   INCREMENTAL_SYNC_QUEUE,
   IncrementalSyncWorker,
   INITIAL_SYNC_QUEUE,
@@ -28,18 +47,24 @@ import {
   OutboxDispatcherWorker,
   OutboxPublisher,
   RateLimiter,
+  RedisSnoozeLabelMapStore,
   SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
   SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   SendersCounterReconciliationWorker,
+  SNOOZE_WAKE_INTERVAL_MS,
+  SNOOZE_WAKE_QUEUE,
+  SnoozeWakeWorker,
   FETCH_UNSUB_HTTP_PORT,
   UNDO_EXPIRY_INTERVAL_MS,
   UNDO_EXPIRY_QUEUE,
   UndoExpiryWorker,
+  UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
   UnsubExecutionWorker,
+  unsubExecutionJobOptions,
   ValidationError,
   enqueueWatchRenewalTick,
   WATCH_RENEWAL_INTERVAL_MS,
@@ -48,8 +73,20 @@ import {
   workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
+  AutopilotActionJobData,
+  AutopilotActionResult,
+  AutopilotApplyJobData,
+  AutopilotApplyJobResult,
   BriefSnapshotJobData,
   BriefSnapshotResult,
+  DeadLetterSweepJobData,
+  DeadLetterSweepResult,
+  DeletionSweepJobData,
+  DeletionSweepResult,
+  EmailSendJobData,
+  EmailSendResult,
+  FollowupCheckJobData,
+  FollowupCheckResult,
   GmailAccess,
   GmailMutationAccess,
   GmailWatchAccess,
@@ -64,6 +101,8 @@ import type {
   ScoreJobResult,
   SendersCounterReconciliationJobData,
   SendersCounterReconciliationResult,
+  SnoozeWakeJobData,
+  SnoozeWakeResult,
   UndoExpiryJobData,
   UndoExpiryResult,
   UnsubExecutionJobData,
@@ -77,6 +116,10 @@ import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js'
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import { deletionReceiptEmail } from './notifications/email-templates.js';
+import { EmailService } from './notifications/email.service.js';
+import { EmailSuppressionService } from './notifications/email-suppression.service.js';
+import { buildSyncReadyEmailHandler } from './notifications/sync-ready-email.trigger.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -524,6 +567,16 @@ async function bootstrap(): Promise<void> {
   // diagnosable from boot logs instead of the Upstash bill.
   bootStep('worker_tuning_resolved', { userFacingTuning, cronTuning });
 
+  /**
+   * Dead-letter recorder (D225 — U29/#208). Installed on EVERY
+   * BaseDeclutrWorker instance below, next to its `setObserver()` call,
+   * so terminal failures park durably in `dead_letter_jobs` instead of
+   * living only in Redis's capped failed set. The `DeadLetterWorker`
+   * sweep (registered further down) alerts once per parked row.
+   */
+  const deadLetterRecorder = new DrizzleDeadLetterRecorder({ db });
+  bootStep('dead_letter_recorder_constructed');
+
   // Score-queue PRODUCER (D25 sync_complete trigger). The initial sync
   // enqueues one all-senders score sweep here once the sender index is
   // built, so `triage_decisions` populate after a fresh sync. The
@@ -535,6 +588,12 @@ async function bootstrap(): Promise<void> {
   const initialSync = new InitialSyncWorker({
     db,
     gmailAccess,
+    // U14/U-WIRE: publish `mailbox.sync_ready` in the ready transition
+    // (transactional outbox) — drives preset seeding, the Autopilot
+    // apply sweep, and the D6 sync-complete email via the consumer
+    // router below. Without this dep the worker WARNs
+    // `sync.sync_ready_publish_skipped` on every ready flip.
+    outbox: new OutboxPublisher(),
     onSenderIndexBuilt: async (mailboxAccountId) => {
       const producedAtMs = Date.now();
       await scoreProducerQueue.add(
@@ -548,6 +607,7 @@ async function bootstrap(): Promise<void> {
   // BullMQ `Worker` starts pulling jobs, so the very first terminal
   // failure routes through the observer (no warm-up window).
   initialSync.setObserver(observer);
+  initialSync.setDeadLetterRecorder(deadLetterRecorder);
 
   const bullWorker = new Worker<InitialSyncJobData, InitialSyncResult>(
     INITIAL_SYNC_QUEUE,
@@ -571,6 +631,7 @@ async function bootstrap(): Promise<void> {
   // concurrently, which is correct: each processes its own delta.
   const incrementalSync = new IncrementalSyncWorker({ db, gmailAccess });
   incrementalSync.setObserver(observer);
+  incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
     (job) => incrementalSync.run(job),
@@ -645,6 +706,7 @@ async function bootstrap(): Promise<void> {
   const briefLlm = buildBriefLlmAdapter();
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
+  briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const briefSnapshotBullWorker = new Worker<BriefSnapshotJobData, BriefSnapshotResult>(
     BRIEF_SNAPSHOT_QUEUE,
@@ -701,8 +763,17 @@ async function bootstrap(): Promise<void> {
         client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
       })
     : undefined;
-  const scoreWorker = new ScoreWorker(reasoningLlm ? { db, llm: reasoningLlm } : { db });
+  // U14/U-WIRE: `outbox` publishes `triage.score_run_completed` after
+  // each run — the consumer router (below) turns it into an Autopilot
+  // apply sweep. Without it the worker WARNs
+  // `score.run_completed_publish_skipped` per run.
+  const scoreWorker = new ScoreWorker(
+    reasoningLlm
+      ? { db, llm: reasoningLlm, outbox: new OutboxPublisher() }
+      : { db, outbox: new OutboxPublisher() },
+  );
   scoreWorker.setObserver(observer);
+  scoreWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
@@ -737,6 +808,7 @@ async function bootstrap(): Promise<void> {
     lock: mailboxLock,
   });
   labelActionWorker.setObserver(observer);
+  labelActionWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const labelActionBullWorker = new Worker<LabelActionJobData, LabelActionResult>(
     LABEL_ACTION_QUEUE,
@@ -776,6 +848,7 @@ async function bootstrap(): Promise<void> {
     allowInsecureTargets: process.env.UNSUB_ALLOW_INSECURE_TARGETS === 'true',
   });
   unsubExecutionWorker.setObserver(observer);
+  unsubExecutionWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const unsubExecutionBullWorker = new Worker<UnsubExecutionJobData, UnsubExecutionResult>(
     UNSUB_EXECUTION_QUEUE,
@@ -998,6 +1071,7 @@ async function bootstrap(): Promise<void> {
    */
   const undoExpiryWorker = new UndoExpiryWorker({ db });
   undoExpiryWorker.setObserver(observer);
+  undoExpiryWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const undoExpiryBullWorker = new Worker<UndoExpiryJobData, UndoExpiryResult>(
     UNDO_EXPIRY_QUEUE,
@@ -1029,6 +1103,7 @@ async function bootstrap(): Promise<void> {
    */
   const sendersCounterReconciliationWorker = new SendersCounterReconciliationWorker({ db });
   sendersCounterReconciliationWorker.setObserver(observer);
+  sendersCounterReconciliationWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const sendersCounterReconciliationBullWorker = new Worker<
     SendersCounterReconciliationJobData,
@@ -1143,6 +1218,7 @@ async function bootstrap(): Promise<void> {
     observer,
   });
   watchRenewalWorker.setObserver(observer);
+  watchRenewalWorker.setDeadLetterRecorder(deadLetterRecorder);
 
   const watchRenewalBullWorker = new Worker<WatchRenewalJobData, WatchRenewalResult>(
     WATCH_RENEWAL_QUEUE,
@@ -1321,6 +1397,352 @@ async function bootstrap(): Promise<void> {
   const incrementalDriftHandle = setInterval(driftTick, INCREMENTAL_DRIFT_INTERVAL_MS);
   incrementalDriftHandle.unref();
 
+  /**
+   * EmailSendWorker consumer (D162, D6 — batchPolicy per D225). Sends
+   * the transactional emails enqueued by the sync-ready outbox trigger
+   * (below), the deletion pipeline, and the 24h reminder. Delivery is
+   * `EmailService` — FAIL-CLOSED when `RESEND_API_KEY` is unset: the
+   * service logs once at construction, every send returns a typed
+   * `disabled` refusal, and the worker maps that to a `PermanentError`
+   * (dead-letter + one Sentry capture, never a retry loop, never a
+   * boot crash). The same queue instance is the PRODUCER handed to the
+   * sync-ready email trigger and the deletion purge worker.
+   */
+  const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
+  const emailSendWorker = new EmailSendWorker({
+    db,
+    delivery: new EmailService(new EmailSuppressionService(db)),
+  });
+  emailSendWorker.setObserver(observer);
+  emailSendWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const emailSendBullWorker = new Worker<EmailSendJobData, EmailSendResult>(
+    EMAIL_SEND_QUEUE,
+    (job) => emailSendWorker.run(job),
+    { connection, concurrency: 5, ...userFacingTuning },
+  );
+  emailSendBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: EMAIL_SEND_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * Autopilot execution chain (D99/D101/D104, D226 — perMailboxPolicy;
+   * quiet-hours deferral D92/D93). `createAutopilotExecutionChain`
+   * wires the pair: the APPLY worker matches enabled rules against
+   * fresh triage decisions and, when Active-mode matches land, enqueues
+   * one ACTION sweep; the ACTION worker executes matched intents
+   * through the same terminal-tx pipeline as LabelActionWorker (same
+   * per-mailbox advisory lock, same outbox publisher) and re-enqueues
+   * a DELAYED sweep when a quiet window defers it. One-click unsub
+   * intents route to the existing `unsub-execution` queue via its
+   * canonical job options. Producers: the outbox consumer router
+   * (sync_ready + score_run_completed → apply queue, wired below) and
+   * the API's approve endpoints (action queue).
+   */
+  const autopilotApplyQueue = new Queue<AutopilotApplyJobData>(AUTOPILOT_APPLY_QUEUE, {
+    connection,
+  });
+  const autopilotActionQueue = new Queue<AutopilotActionJobData>(AUTOPILOT_ACTION_QUEUE, {
+    connection,
+  });
+  const unsubExecutionProducerQueue = new Queue<UnsubExecutionJobData>(UNSUB_EXECUTION_QUEUE, {
+    connection,
+  });
+  const { applyWorker: autopilotApplyWorker, actionWorker: autopilotActionWorker } =
+    createAutopilotExecutionChain({
+      db,
+      gmailMutation: gmailMutationAccess,
+      outbox: new OutboxPublisher(),
+      lock: mailboxLock,
+      actionQueue: autopilotActionQueue,
+      enqueueUnsubExecution: async (data) => {
+        await unsubExecutionProducerQueue.add(
+          UNSUB_EXECUTION_JOB,
+          data,
+          unsubExecutionJobOptions(data.idempotencyKey),
+        );
+      },
+    });
+  autopilotApplyWorker.setObserver(observer);
+  autopilotApplyWorker.setDeadLetterRecorder(deadLetterRecorder);
+  autopilotActionWorker.setObserver(observer);
+  autopilotActionWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const autopilotApplyBullWorker = new Worker<AutopilotApplyJobData, AutopilotApplyJobResult>(
+    AUTOPILOT_APPLY_QUEUE,
+    (job) => autopilotApplyWorker.run(job),
+    // Matcher sweeps are DB-only (no Gmail, no lock); modest parallelism
+    // across mailboxes is plenty — sweeps are event-paced, not throughput.
+    { connection, concurrency: 5, ...userFacingTuning },
+  );
+  autopilotApplyBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: AUTOPILOT_APPLY_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const autopilotActionBullWorker = new Worker<AutopilotActionJobData, AutopilotActionResult>(
+    AUTOPILOT_ACTION_QUEUE,
+    (job) => autopilotActionWorker.run(job),
+    // Each sweep holds a `lockPg` advisory-lock connection for its full
+    // duration, sharing the max-10 pool with LabelActionWorker
+    // (concurrency 10). Combined peak demand is 15 > 10 — an ACCEPTED
+    // overcommit: `reserve()` queues (never fails), a lock holder's
+    // inner queries run on the separate main `pg` pool so it always
+    // completes and releases (no hold-and-wait deadlock), and both
+    // queues are event-paced, not throughput-bound. Worst case under
+    // simultaneous max load: up to 5 sweeps idle in the reserve queue.
+    { connection, concurrency: 5, ...userFacingTuning },
+  );
+  autopilotActionBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: AUTOPILOT_ACTION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * SnoozeWakeWorker consumer + 15-min tick scheduler (D78/D79/D80 —
+   * cronPolicy). The sweep wakes due sender snoozes (restores INBOX +
+   * removes the per-mailbox Later label via batchModify, clears the
+   * timer) and publishes the Later-label-id mapping to Redis so the
+   * `/api/snoozed` list read never needs a Gmail client. Targeted
+   * `wake` jobs come from POST /api/snoozed/:senderId/wake.
+   */
+  const snoozeWakeWorker = new SnoozeWakeWorker({
+    db,
+    gmailMutation: gmailMutationAccess,
+    labelMap: new RedisSnoozeLabelMapStore(connection),
+  });
+  snoozeWakeWorker.setObserver(observer);
+  snoozeWakeWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const snoozeWakeBullWorker = new Worker<SnoozeWakeJobData, SnoozeWakeResult>(
+    SNOOZE_WAKE_QUEUE,
+    (job) => snoozeWakeWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+  snoozeWakeBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SNOOZE_WAKE_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const snoozeWakeSchedulerQueue = new Queue<SnoozeWakeJobData>(SNOOZE_WAKE_QUEUE, { connection });
+
+  async function enqueueSnoozeWake(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueSnoozeWakeTick(snoozeWakeSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'snooze_wake.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'snooze_wake.scheduler_failed' });
+    }
+  }
+
+  await enqueueSnoozeWake();
+  const snoozeWakeSchedulerHandle = setInterval(() => {
+    void enqueueSnoozeWake();
+  }, SNOOZE_WAKE_INTERVAL_MS);
+  snoozeWakeSchedulerHandle.unref();
+
+  /**
+   * DeadLetterWorker sweep + 60s scheduler (D225 — adminPolicy). Scans
+   * `dead_letter_jobs` for unreplayed rows and alerts exactly once per
+   * row per process lifetime: one `dead_letter.parked` error log + one
+   * `observer.captureBackgroundFailure()`. Replay is the MANUAL-only
+   * `replayDeadLetterJob` helper — nothing auto-replays (D233 spirit).
+   * Self-parking (the recorder installed on this worker too) is safe:
+   * bounded, and the next sweep surfaces it.
+   */
+  const deadLetterWorker = new DeadLetterWorker({ db, observer });
+  deadLetterWorker.setObserver(observer);
+  deadLetterWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const deadLetterBullWorker = new Worker<DeadLetterSweepJobData, DeadLetterSweepResult>(
+    DEAD_LETTER_QUEUE,
+    (job) => deadLetterWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+  deadLetterBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: DEAD_LETTER_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const deadLetterSchedulerQueue = new Queue<DeadLetterSweepJobData>(DEAD_LETTER_QUEUE, {
+    connection,
+  });
+
+  async function enqueueDeadLetter(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueDeadLetterTick(deadLetterSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'dead_letter.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'dead_letter.scheduler_failed' });
+    }
+  }
+
+  await enqueueDeadLetter();
+  const deadLetterSchedulerHandle = setInterval(() => {
+    void enqueueDeadLetter();
+  }, DEAD_LETTER_INTERVAL_MS);
+  deadLetterSchedulerHandle.unref();
+
+  /**
+   * AccountDeletionPurgeWorker + 5-min sweep (D205/D216/D232 —
+   * cronPolicy). Purges due deletion requests: stop watches
+   * (best-effort) → enqueue the receipt email (via `emailSendQueue`
+   * above, `recipientOverride` because the user row is gone at send
+   * time) → audit row → chunked data drop. `gmailPubsubTopic` null
+   * (local dev) skips the `users.stop` calls, mirroring
+   * GmailWatchService.
+   */
+  const deletionPurgeWorker = new AccountDeletionPurgeWorker({
+    db,
+    gmailWatch: gmailWatchAccess,
+    topicName: gmailPubsubTopic,
+    emailQueue: emailSendQueue,
+    renderReceiptEmail: deletionReceiptEmail,
+    observer,
+  });
+  deletionPurgeWorker.setObserver(observer);
+  deletionPurgeWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const deletionSweepBullWorker = new Worker<DeletionSweepJobData, DeletionSweepResult>(
+    DELETION_SWEEP_QUEUE,
+    (job) => deletionPurgeWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+  deletionSweepBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: DELETION_SWEEP_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const deletionSweepSchedulerQueue = new Queue<DeletionSweepJobData>(DELETION_SWEEP_QUEUE, {
+    connection,
+  });
+
+  async function enqueueDeletionSweep(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueDeletionSweepTick(deletionSweepSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'deletion_sweep.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'deletion_sweep.scheduler_failed' });
+    }
+  }
+
+  await enqueueDeletionSweep();
+  const deletionSweepSchedulerHandle = setInterval(() => {
+    void enqueueDeletionSweep();
+  }, DELETION_SWEEP_INTERVAL_MS);
+  deletionSweepSchedulerHandle.unref();
+
+  /**
+   * FollowupCheckWorker + 6h cron (D84/D85/D87/D88 — cronPolicy).
+   * Materializes `followup_tracker` rows from outbound mail metadata:
+   * threads whose latest message is outbound become `awaiting`, later
+   * inbound replies flip them to `replied`. Per-mailbox fan-out
+   * concurrency comes from `FOLLOWUP_CHECK_CONCURRENCY` (default 8)
+   * inside the worker; the outer consumer stays at 1 like every cron.
+   */
+  const followupCheckWorker = new FollowupCheckWorker({ db });
+  followupCheckWorker.setObserver(observer);
+  followupCheckWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const followupCheckBullWorker = new Worker<FollowupCheckJobData, FollowupCheckResult>(
+    FOLLOWUP_CHECK_QUEUE,
+    (job) => followupCheckWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+  followupCheckBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: FOLLOWUP_CHECK_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const followupCheckSchedulerQueue = new Queue<FollowupCheckJobData>(FOLLOWUP_CHECK_QUEUE, {
+    connection,
+  });
+
+  async function enqueueFollowupCheck(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueFollowupCheckTick(followupCheckSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'followup_check.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'followup_check.scheduler_failed' });
+    }
+  }
+
+  await enqueueFollowupCheck();
+  const followupCheckSchedulerHandle = setInterval(() => {
+    void enqueueFollowupCheck();
+  }, FOLLOWUP_CHECK_INTERVAL_MS);
+  followupCheckSchedulerHandle.unref();
+
   console.log(
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INITIAL_SYNC_QUEUE }),
   );
@@ -1344,6 +1766,32 @@ async function bootstrap(): Promise<void> {
       kind: 'worker.listening',
       queue: SENDERS_COUNTER_RECONCILIATION_QUEUE,
     }),
+  );
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'worker.listening',
+      queue: EMAIL_SEND_QUEUE,
+      resendConfigured: Boolean(process.env.RESEND_API_KEY),
+    }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: AUTOPILOT_APPLY_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: AUTOPILOT_ACTION_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: SNOOZE_WAKE_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: DEAD_LETTER_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: DELETION_SWEEP_QUEUE }),
+  );
+  console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: FOLLOWUP_CHECK_QUEUE }),
   );
 
   /**
@@ -1372,7 +1820,19 @@ async function bootstrap(): Promise<void> {
   });
   const outboxDispatcher = new OutboxDispatcherWorker({
     db,
-    consumer: buildOutboxConsumer(db),
+    // U-WIRE (D225): full consumer deps. `autopilotApplyQueue` routes
+    // sync_ready + score_run_completed into the apply sweep (U14);
+    // `onMailboxSyncReady` enqueues the D6/D162 sync-complete email +
+    // 24h reminder — wiring it silences the designed
+    // `sync_ready_email_unwired` ERROR the router fires when absent.
+    consumer: buildOutboxConsumer(db, {
+      autopilotApplyQueue,
+      onMailboxSyncReady: buildSyncReadyEmailHandler({
+        db,
+        emailQueue: emailSendQueue,
+        appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+      }),
+    }),
     observer: {
       captureBackgroundFailure: (err, ctx) =>
         observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), ctx),
@@ -1413,6 +1873,10 @@ async function bootstrap(): Promise<void> {
     clearInterval(sendersCounterReconciliationSchedulerHandle);
     clearInterval(watchRenewalSchedulerHandle);
     clearInterval(incrementalDriftHandle);
+    clearInterval(snoozeWakeSchedulerHandle);
+    clearInterval(deadLetterSchedulerHandle);
+    clearInterval(deletionSweepSchedulerHandle);
+    clearInterval(followupCheckSchedulerHandle);
     void (async () => {
       if (inFlight) {
         await inFlight;
@@ -1438,6 +1902,21 @@ async function bootstrap(): Promise<void> {
       await sendersCounterReconciliationSchedulerQueue.close();
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
+      await emailSendBullWorker.close();
+      await emailSendQueue.close();
+      await autopilotApplyBullWorker.close();
+      await autopilotActionBullWorker.close();
+      await autopilotApplyQueue.close();
+      await autopilotActionQueue.close();
+      await unsubExecutionProducerQueue.close();
+      await snoozeWakeBullWorker.close();
+      await snoozeWakeSchedulerQueue.close();
+      await deadLetterBullWorker.close();
+      await deadLetterSchedulerQueue.close();
+      await deletionSweepBullWorker.close();
+      await deletionSweepSchedulerQueue.close();
+      await followupCheckBullWorker.close();
+      await followupCheckSchedulerQueue.close();
       await reconcilerQueue.close();
       await incrementalReconcilerQueue.close();
       await connection.quit();
