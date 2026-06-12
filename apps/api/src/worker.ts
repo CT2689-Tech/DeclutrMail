@@ -1496,8 +1496,13 @@ async function bootstrap(): Promise<void> {
     AUTOPILOT_ACTION_QUEUE,
     (job) => autopilotActionWorker.run(job),
     // Each sweep holds a `lockPg` advisory-lock connection for its full
-    // duration (pool shared with LabelActionWorker's concurrency=10);
-    // 5 keeps combined demand near the pool size so neither starves.
+    // duration, sharing the max-10 pool with LabelActionWorker
+    // (concurrency 10). Combined peak demand is 15 > 10 — an ACCEPTED
+    // overcommit: `reserve()` queues (never fails), a lock holder's
+    // inner queries run on the separate main `pg` pool so it always
+    // completes and releases (no hold-and-wait deadlock), and both
+    // queues are event-paced, not throughput-bound. Worst case under
+    // simultaneous max load: up to 5 sweeps idle in the reserve queue.
     { connection, concurrency: 5, ...userFacingTuning },
   );
   autopilotActionBullWorker.on('error', (err) => {
