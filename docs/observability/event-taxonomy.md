@@ -292,6 +292,26 @@ lives in the `security_events` table (`signup.denied`, D181).
 while the gate is up; pairs with the `security_events` rows for the
 "who to invite next" list.
 
+### `upgrade_prompt_shown`
+
+**When fired.** When an entitlement gate (D19/D77/D81) surfaces an
+upgrade affordance to the user: the `FREE_CAP_REACHED` 402 prompt after
+an action enqueue is denied (`source: 'actions_402'`), the AccountMenu
+inbox-limit row replacing "Connect another" (`source: 'account_menu'`),
+or the Triage empty-state free-cap nudge. One emit per appearance, not
+per render.
+
+**Payload.**
+
+| Field    | Type                                                      | Notes                    |
+| -------- | --------------------------------------------------------- | ------------------------ |
+| `reason` | `'free_cap' \| 'inbox_limit'`                             | Which gate triggered it  |
+| `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state'` | Surface that rendered it |
+
+**Retention / aggregation.** PostHog default. Drives the
+prompt-shown → pricing-visit → checkout free-to-paid funnel alongside
+`billing_event`.
+
 ---
 
 ## Adding a new event

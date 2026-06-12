@@ -24,6 +24,7 @@ export type EventName =
   | 'unsubscribe_attempted'
   | 'rule_fired'
   | 'billing_event'
+  | 'upgrade_prompt_shown'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
   | 'sender_detail_opened'
@@ -138,6 +139,12 @@ export interface EventPayloads {
       | 'payment_succeeded'
       | 'payment_failed';
     tier: 'free' | 'plus' | 'pro';
+  };
+  upgrade_prompt_shown: {
+    /** Which entitlement gate triggered the prompt (D19/D77/D81). */
+    reason: 'free_cap' | 'inbox_limit';
+    /** The surface that rendered it. */
+    source: 'actions_402' | 'account_menu' | 'triage_empty_state';
   };
 
   // — Page-view + navigation funnel —

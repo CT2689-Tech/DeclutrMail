@@ -15,6 +15,8 @@ function me(
   return {
     user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
     activeMailboxId: null,
+    tier: 'free',
+    cleanupRemaining: 5,
     mailboxes: mailboxes.map((m, i) => ({
       id: `m${i}`,
       email: `m${i}@example.com`,

@@ -116,6 +116,22 @@ export const ERROR_CODES = {
       'Sign in with that account or disconnect it from the other workspace first.',
   },
 
+  // --- domain: tier entitlements (D19, D77, D81) ---
+  FREE_CAP_REACHED: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      "You've used all 5 free cleanup actions. Upgrade to keep cleaning — everything you've already done stays done.",
+  },
+  INBOX_LIMIT_REACHED: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Your plan has reached its connected-inbox limit. Upgrade to connect another Gmail account.',
+  },
+
   // --- trust-affecting (D170) ---
   OAUTH_REVOKED: {
     status: 409,

@@ -19,6 +19,7 @@ import {
   BETA_DENIED_REASON_PARAM,
 } from '@declutrmail/shared/contracts';
 
+import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
@@ -88,10 +89,16 @@ export class GoogleOAuthController {
    * workspace. The state cookie carries `userId` + `workspaceId` so
    * the callback can verify the same browser still owns the session
    * AND knows which workspace to add the new mailbox to.
+   *
+   * `InboxLimitGuard` (D19/D81) gates BEFORE the Google consent screen:
+   * a workspace already at its tier's connected-inbox limit gets a 402
+   * `INBOX_LIMIT_REACHED` envelope instead of an OAuth round-trip that
+   * could only fail after consent. Counts ACTIVE mailboxes only —
+   * existing connections keep working; only ADDING is enforced.
    */
   @Get('connect-mailbox/start')
   @RateLimit('auth')
-  @UseGuards(JwtGuard)
+  @UseGuards(JwtGuard, InboxLimitGuard)
   connectMailboxStart(@CurrentUser() user: SessionPrincipal, @Res() res: Response): void {
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),

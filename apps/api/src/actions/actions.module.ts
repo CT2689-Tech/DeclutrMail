@@ -9,6 +9,7 @@ import {
 import type { LabelActionJobData, UnsubExecutionJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ActionsController } from './actions.controller.js';
 import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions.service.js';
@@ -28,7 +29,7 @@ import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions
  * jobs through the same pipeline.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule],
+  imports: [AuthModule, EntitlementsModule, MailboxAccountsModule],
   controllers: [ActionsController],
   providers: [
     {
