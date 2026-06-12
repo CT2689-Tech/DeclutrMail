@@ -175,9 +175,12 @@ export function ActivityScreen() {
   if (query.isLoading) return <LoadingState />;
   if (query.isError && !query.data) {
     // Full-screen error only when NOTHING loaded. A failed
-    // fetchNextPage / background refetch keeps the loaded pages on
-    // screen and renders an inline retry in <LoadMoreRegion> instead
-    // (D211 partial-error — some rows loaded, some did not).
+    // fetchNextPage keeps the loaded pages on screen and renders an
+    // inline retry in <LoadMoreRegion> instead (D211 partial-error —
+    // some rows loaded, some did not). A failed background refetch
+    // (1.5s in-flight poll / window focus) also retains the rows but
+    // must NOT trip the inline retry — that amber state is gated on
+    // `isFetchNextPageError` below, not the query-wide `isError`.
     return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
@@ -297,7 +300,14 @@ export function ActivityScreen() {
         <LoadMoreRegion
           hasNextPage={query.hasNextPage}
           isFetchingNextPage={query.isFetchingNextPage}
-          nextPageFailed={query.isError}
+          // Next-page-scoped error signal (TanStack v5): true only when
+          // the failed fetch was a `fetchNextPage` (fetchMeta direction
+          // 'forward'). The query-wide `isError` also flips on a failed
+          // background refetch (the 1.5s in-flight poll or
+          // refetchOnWindowFocus) while data is retained — gating the
+          // amber retry on it showed "Couldn't load more" to users who
+          // never loaded more.
+          nextPageFailed={query.isFetchNextPageError}
           onLoadMore={() => {
             if (!query.isFetchingNextPage) void query.fetchNextPage();
           }}

@@ -141,9 +141,19 @@ function makeClient(
   rows: ActivityRowWire[] | undefined,
   window: ActivityWindowWire,
   source: ActivitySourceFilterWire,
+  pagination: { nextCursor: string | null; hasMore: boolean; limit: number } = {
+    nextCursor: null,
+    hasMore: false,
+    limit: 25,
+  },
 ): QueryClient {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+    // `retryOnMount: false` keeps the NextPageError story stable — an
+    // errored query would otherwise refetch on mount, hit the absent
+    // API in the Storybook canvas, and overwrite the seeded fetchMeta.
+    defaultOptions: {
+      queries: { retry: false, retryOnMount: false, staleTime: Infinity, gcTime: Infinity },
+    },
   });
   if (rows) {
     // U27 — `useActivity` is an infinite query; the cache entry is
@@ -153,7 +163,7 @@ function makeClient(
         {
           data: rows,
           meta: {
-            pagination: { nextCursor: null, hasMore: false, limit: 25 },
+            pagination,
             stats: STATS,
             allTimeStats: STATS,
             window,
@@ -218,4 +228,53 @@ export const AutopilotOnly: Story<typeof ActivityScreen> = {
         'autopilot',
       ),
     ),
+};
+
+// ── U27 — D57 LoadMoreRegion states (D210) ───────────────────────────
+
+/**
+ * Has-next — `nextCursor` set on the loaded page, so the tail region
+ * renders the "Load more" button (plus the IntersectionObserver
+ * sentinel; with no API in the canvas an auto-fired load settles into
+ * the partial-error state below).
+ */
+export const LoadMoreAvailable: Story<typeof ActivityScreen> = {
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(
+      makeClient(ROWS, '30d', 'all', { nextCursor: 'cursor-page-2', hasMore: true, limit: 25 }),
+    ),
+};
+
+/** End of list — `nextCursor: null` → quiet mono marker with the loaded count. */
+export const EndOfList: Story<typeof ActivityScreen> = {
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(makeClient(ROWS.slice(0, 2), '30d', 'all')),
+};
+
+/**
+ * Partial-error (D211) — page 1 loaded, fetchNextPage failed. The rows
+ * stay on screen and the tail region renders the amber inline retry.
+ * The error state is not part of the cached `InfiniteData`, so the
+ * story seeds it on the Query directly: status 'error' + fetchMeta
+ * direction 'forward' is exactly what a rejected `fetchNextPage`
+ * leaves behind (and what `isFetchNextPageError` derives from).
+ */
+export const NextPageError: Story<typeof ActivityScreen> = {
+  render: (_args: ComponentProps<typeof ActivityScreen>) => {
+    const client = makeClient(ROWS.slice(0, 2), '30d', 'all', {
+      nextCursor: 'cursor-page-2',
+      hasMore: true,
+      limit: 25,
+    });
+    const query = client
+      .getQueryCache()
+      .find({ queryKey: activityKeys.list({ window: '30d', source: 'all' }) });
+    query?.setState({
+      status: 'error',
+      error: new Error('HTTP 500 — next page failed'),
+      fetchStatus: 'idle',
+      fetchMeta: { fetchMore: { direction: 'forward' } },
+    });
+    return frame(client);
+  },
 };
