@@ -230,6 +230,27 @@ this event.
 vs `page_viewed{page='landing'}` is the landing conversion rate;
 placement breakdown ranks the sections.
 
+### `waitlist_joined`
+
+**When fired.** From the marketing client after `POST /api/waitlist`
+returns 202 — i.e. after the server accepted the submission. The
+endpoint responds identically for new and duplicate emails (no
+email-exists oracle), so this event counts SUBMISSIONS, not unique
+signups; the `waitlist` table is the source of truth for unique counts.
+
+**Payload.**
+
+| Field           | Type                                                          | Notes                                                  |
+| --------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
+| `tier_interest` | `'free' \| 'plus' \| 'pro' \| 'team' \| 'enterprise' \| null` | D19 tier the form was attached to; null = generic form |
+| `source`        | `string`                                                      | App-chosen attribution slug (`pricing`, `landing`, …)  |
+
+The submitted email address is NEVER attached (D7 — no raw email
+addresses in event payloads).
+
+**Retention / aggregation.** 2y raw. Drives the Team-waitlist ≥ 50
+build trigger (D19) and marketing-form conversion funnels.
+
 ---
 
 ## Adding a new event
