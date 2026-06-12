@@ -1,10 +1,12 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
   AUTOPILOT_PRESET_KEYS,
   type AutopilotPresetKey,
   automationRules,
+  mailboxAccounts,
+  users,
   type schema,
 } from '@declutrmail/db';
 
@@ -26,6 +28,15 @@ type Db = PostgresJsDatabase<typeof schema>;
  * Default state per D10 (Observe-first):
  *   - `enabled = false`  — user must enable each rule explicitly
  *   - `mode = 'observe'` — first matches log to `rule_match_log` only
+ *
+ * D110 exception to the `enabled=false` default: when the owning
+ * user already submitted onboarding preset picks
+ * (`users.preferences.onboardingPresetPicks`, written by
+ * `POST /api/onboarding/preset-picks`), the picked presets seed with
+ * `enabled = true`. Step 4 of onboarding can run BEFORE this seeder
+ * (the picks endpoint persists to preferences either way), so reading
+ * the picks here is what guarantees the user's choice is never
+ * silently lost. Mode stays `observe` regardless — D10 is unchanged.
  *
  * Default state per D101:
  *   - `confidence_threshold` set to the preset's `defaultThreshold`
@@ -49,6 +60,8 @@ export async function seedAutopilotPresets(
   db: Db,
   mailboxAccountId: string,
 ): Promise<{ insertedKeys: AutopilotPresetKey[] }> {
+  const picks = await readOnboardingPresetPicks(db, mailboxAccountId);
+
   const rows = AUTOPILOT_PRESET_KEYS.map((key) => {
     const def = AUTOPILOT_PRESETS[key];
     return {
@@ -56,7 +69,7 @@ export async function seedAutopilotPresets(
       presetKey: key,
       isPreset: true,
       name: def.defaultName,
-      enabled: false,
+      enabled: picks.has(key),
       mode: 'observe' as const,
       // numeric(3,2) — Drizzle accepts a string for numeric columns.
       // Null when the preset does not gate on engine confidence.
@@ -86,4 +99,28 @@ export async function seedAutopilotPresets(
       .map((r) => r.presetKey)
       .filter((k): k is AutopilotPresetKey => k !== null),
   };
+}
+
+/**
+ * The mailbox owner's D110 onboarding picks, or an empty set when the
+ * user has not submitted step 4 (or the mailbox row is gone — the
+ * seeder's insert would fail on the FK anyway, so an empty set is
+ * fine here).
+ */
+async function readOnboardingPresetPicks(
+  db: Db,
+  mailboxAccountId: string,
+): Promise<Set<AutopilotPresetKey>> {
+  const [row] = await db
+    .select({ preferences: users.preferences })
+    .from(mailboxAccounts)
+    .innerJoin(users, eq(users.id, mailboxAccounts.userId))
+    .where(eq(mailboxAccounts.id, mailboxAccountId))
+    .limit(1);
+
+  const raw = (row?.preferences as Record<string, unknown> | undefined)?.onboardingPresetPicks;
+  if (!Array.isArray(raw)) return new Set();
+
+  const valid = new Set<string>(AUTOPILOT_PRESET_KEYS);
+  return new Set(raw.filter((k): k is AutopilotPresetKey => typeof k === 'string' && valid.has(k)));
 }

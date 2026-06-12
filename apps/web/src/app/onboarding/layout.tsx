@@ -1,17 +1,18 @@
-// Onboarding auth boundary (D134 public-route split).
+// Onboarding route boundary (D134 split, restructured for D106-D108).
 //
-// `/onboarding` is pre-app chrome (no AppShell) but still an authed
-// surface — the sync gate reads `useAuth()` for the session's
-// mailboxes. Since the root `providers.tsx` no longer wraps every
-// route in AuthProvider, this layout supplies it for the onboarding
-// subtree. An unauthd hit bounces to the OAuth start endpoint exactly
-// as before (AuthProvider handles the 401 redirect).
-
-'use client';
+// `/onboarding` is no longer wrapped in `AuthProvider` at the layout —
+// the first two steps of the D106 machine (Promise + Connect, D107/
+// D108) are PRE-AUTH funnel surfaces: a fresh visitor must see the
+// value promise and the privacy boundary BEFORE any Google consent,
+// so a blocking `GET /api/auth/me` + 401→OAuth bounce here would
+// defeat the screen's purpose.
+//
+// The page itself owns the boundary: it probes the session and mounts
+// `AuthProvider` only around the authed steps (sync gate onward) and
+// the secondary-connect gate. See `page.tsx`'s docblock.
 
 import type { ReactNode } from 'react';
-import { AuthProvider } from '@/features/auth/auth-provider';
 
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
-  return <AuthProvider>{children}</AuthProvider>;
+  return children;
 }

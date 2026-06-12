@@ -159,4 +159,58 @@ describe('seedAutopilotPresets', () => {
     const totalCount = await db.select({ id: automationRules.id }).from(automationRules);
     expect(totalCount).toHaveLength(10);
   });
+
+  it('seeds picked presets enabled when onboarding picks predate the seed (D110)', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+
+    // Step 4 ran before the post-sync seeder: the picks endpoint
+    // persisted to users.preferences and found zero rules to flip.
+    await db
+      .update(users)
+      .set({
+        preferences: {
+          onboardingPresetPicks: ['auto_archive_low_engagement', 'newsletter_graveyard'],
+        },
+      })
+      .where(eq(users.email, 'a@b.com'));
+
+    await seedAutopilotPresets(db as never, mbId);
+
+    const rows = await db
+      .select({
+        presetKey: automationRules.presetKey,
+        enabled: automationRules.enabled,
+        mode: automationRules.mode,
+      })
+      .from(automationRules)
+      .where(eq(automationRules.mailboxAccountId, mbId));
+    const byKey = new Map(rows.map((r) => [r.presetKey, r]));
+    expect(byKey.get('auto_archive_low_engagement')?.enabled).toBe(true);
+    expect(byKey.get('newsletter_graveyard')?.enabled).toBe(true);
+    expect(byKey.get('auto_unsubscribe_noisy')?.enabled).toBe(false);
+    expect(byKey.get('auto_screen_new_senders')?.enabled).toBe(false);
+    expect(byKey.get('long_dormant_unsubscribe')?.enabled).toBe(false);
+    // D10 observe-first is unchanged by the picks.
+    for (const row of rows) {
+      expect(row.mode).toBe('observe');
+    }
+  });
+
+  it('ignores junk preference values when reading picks', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await db
+      .update(users)
+      .set({ preferences: { onboardingPresetPicks: ['not_a_preset', 42, null] } })
+      .where(eq(users.email, 'a@b.com'));
+
+    await seedAutopilotPresets(db as never, mbId);
+
+    const rows = await db
+      .select({ enabled: automationRules.enabled })
+      .from(automationRules)
+      .where(eq(automationRules.mailboxAccountId, mbId));
+    expect(rows.every((r) => r.enabled === false)).toBe(true);
+  });
 });

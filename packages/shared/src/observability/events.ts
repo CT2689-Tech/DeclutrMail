@@ -13,6 +13,7 @@
  */
 export type EventName =
   // — Onboarding + sync —
+  | 'onboarding_step_viewed'
   | 'onboarding_step_completed'
   | 'sync_started'
   | 'sync_completed'
@@ -57,6 +58,20 @@ export type EventName =
 export type Verb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
 
 /**
+ * The D106 onboarding funnel stages, in flow order. `promise` is the
+ * pre-auth value screen (D107); the remaining five match the original
+ * D159 taxonomy entry. Used by both the step_viewed and step_completed
+ * events so the funnel insight joins on one union.
+ */
+export type OnboardingFunnelStep =
+  | 'promise'
+  | 'connect_gmail'
+  | 'sync_gate'
+  | 'choose_preset'
+  | 'first_triage'
+  | 'finished';
+
+/**
  * Per-event payload shapes. Only includes scalars and small enums —
  * NEVER email content, addresses, or anything privacy-banned.
  *
@@ -64,8 +79,11 @@ export type Verb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
  * our DB), never Gmail message IDs or raw email addresses.
  */
 export interface EventPayloads {
+  onboarding_step_viewed: {
+    step: OnboardingFunnelStep;
+  };
   onboarding_step_completed: {
-    step: 'connect_gmail' | 'choose_preset' | 'sync_gate' | 'first_triage' | 'finished';
+    step: OnboardingFunnelStep;
     duration_ms: number;
   };
   sync_started: {
