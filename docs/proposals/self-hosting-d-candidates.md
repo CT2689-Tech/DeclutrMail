@@ -28,9 +28,10 @@ it doubles as a pre-written spec per CLAUDE.md §1.4).
 
 ## D236 — Self-hosting product posture (the anchor decision)
 
-**Decision:** What *is* self-hosting for DeclutrMail, and how is it monetized?
+**Decision:** What _is_ self-hosting for DeclutrMail, and how is it monetized?
 
 **Options:**
+
 - **A — Open-core:** source-available, free personal self-host, paid license for
   teams (Plausible/Sentry pattern). Best funnel + community; adds a license
   server + ongoing support burden.
@@ -39,7 +40,7 @@ it doubles as a pre-written spec per CLAUDE.md §1.4).
   $/deal, lowest volume, gated behind the existing `Enterprise: contact sales`
   row.
 - **C — Trust/moat play (recommended):** source-available, free unmonetized
-  self-host. Most who *could* self-host won't, but offering it kills the "I don't
+  self-host. Most who _could_ self-host won't, but offering it kills the "I don't
   trust your cloud" objection on the SaaS sale and seeds goodwill. Monetize only
   the managed SaaS. Cheapest to build (no license server).
 
@@ -173,11 +174,11 @@ statement in the self-host docs.
 ## D243 — Privacy posture in self-host
 
 **Decision:** The `Full bodies fetched: 0` claim (D228) remains a statement about
-*our managed cloud*. A self-host operator's data behavior is theirs; our claim is
+_our managed cloud_. A self-host operator's data behavior is theirs; our claim is
 not transferable to forks.
 
 **Recommendation:** marketing copy makes the distinction explicit — self-host is
-sold on *control and the option to leave*, not as an extension of our auditable
+sold on _control and the option to leave_, not as an extension of our auditable
 privacy claim. Preserve the falsifiable-claim discipline of D228.
 **Guardrail touched:** privacy/data-retention messaging (D7/D228 — founder-only).
 **Success criterion:** self-host docs + marketing copy contain the distinction;
