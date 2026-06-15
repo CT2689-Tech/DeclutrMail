@@ -119,7 +119,7 @@ jobs:
           service_account: ${{ secrets.GCP_DEPLOY_SA }}
 
       - name: Install gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure docker auth for Artifact Registry
         run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
