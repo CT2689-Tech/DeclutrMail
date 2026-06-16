@@ -26,6 +26,16 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-13 — Decide how `claude/*` web-session branches satisfy the §6 branch gates
+**Source:** PR #227 (self-hosting feasibility doc; session 2026-06-13)
+**Why:** Claude Code web sessions are mandated onto `claude/<slug>` branches, but the two authoritative CI gates — "Branch follows CLAUDE.md §6 convention" and "PR body references D-decisions or is bootstrap-exempt" (`.github/workflows`, regex `^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-)`) — don't recognize the `claude/` prefix. So **every** web-session PR fails both gates by construction. On #227 the agent declined to paper over it (won't fake a `Closes D###`; won't rename off the mandated branch without explicit permission), leaving both gates red. This will recur on every future web-session PR.
+**How (pick one):**
+1. **Per-PR rename** — move the work to `chore/bootstrap-<topic>` (or `chore/distill-<topic>`), which both gates already exempt. Cleanest per-PR fix; agent needs explicit go-ahead to switch branches (closes the old PR, opens a fresh one).
+2. **Leave red** — accept the two red gates on feasibility/scratch PRs that won't merge as-is. Current state of #227.
+3. **Allowlist `claude/*`** — add the prefix to the regex in both gate workflows (and the §6 doc + local hooks for parity). Fixes it for all future web sessions; note `pull_request` checks run the workflow from `main`, so this only takes effect once merged to `main` (won't retroactively green #227). Architecturally significant → founder-owned.
+**Verifies by:** chosen path applied — either #227 (or its successor) shows both gates green, or the founder records "leave red" as accepted policy for web-session draft PRs.
+**Status:** Open
+
 ### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
 **Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
