@@ -1,0 +1,121 @@
+name: Codex adversarial review
+
+# Runs an adversarial Codex review on every PR to main and posts the findings
+# as a sticky PR comment. ADVISORY ONLY — it never fails the check or gates
+# merge (CLAUDE.md §7 advisory tier + §6 [BLOCKING]/[SUGGESTION] prefixes).
+#
+# Requires the OPENAI_API_KEY repo secret (founder action — see
+# FOUNDER-FOLLOWUPS.md). Until that is set the job no-ops with a warning.
+#
+# Security: no untrusted PR input (title/body/head.ref) is ever interpolated
+# into a run: shell — only the target base.ref (repo-controlled) and the PR
+# number (integer), and both flow through env: vars per GitHub's injection
+# guidance.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+  # Manual fallback — mirrors ci.yml / subagent-gate.yml (PR #178 dispatch gap).
+  workflow_dispatch:
+
+concurrency:
+  group: codex-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  adversarial-review:
+    name: Codex adversarial review
+    if: ${{ github.event.pull_request.draft != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history so the base...HEAD diff resolves
+
+      - name: Guard — require OPENAI_API_KEY
+        id: guard
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::OPENAI_API_KEY secret not set — skipping Codex adversarial review. See FOUNDER-FOLLOWUPS.md."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve PR context
+        id: ctx
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_PR: ${{ github.event.pull_request.number }}
+          EVENT_BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ -n "$EVENT_PR" ]; then
+            pr="$EVENT_PR"
+            base="$EVENT_BASE"
+          else
+            pr="$(gh pr view --json number --jq .number 2>/dev/null || true)"
+            base="$(gh pr view --json baseRefName --jq .baseRefName 2>/dev/null || true)"
+          fi
+          [ -z "$base" ] && base=main
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          if [ -z "$pr" ]; then echo "::warning::No PR associated with this ref — nothing to review."; fi
+
+      - uses: actions/setup-node@v6
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Codex CLI
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        run: npm install -g @openai/codex@0.132.0
+
+      - name: Fetch base branch
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        env:
+          BASE: ${{ steps.ctx.outputs.base }}
+        run: git fetch --no-tags origin "$BASE"
+
+      - name: Run adversarial review
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_DIFF_BASE: origin/${{ steps.ctx.outputs.base }}
+          CODEX_TARGET_LABEL: 'PR #${{ steps.ctx.outputs.pr }}'
+        run: |
+          node .github/codex/run-adversarial-review.mjs prompt > /tmp/codex-prompt.txt
+          codex exec --json --skip-git-repo-check \
+            --dangerously-bypass-approvals-and-sandbox \
+            - < /tmp/codex-prompt.txt > /tmp/codex-out.jsonl || true
+          node .github/codex/run-adversarial-review.mjs format < /tmp/codex-out.jsonl > /tmp/codex-comment.md
+          echo "::group::Review comment"; cat /tmp/codex-comment.md; echo "::endgroup::"
+
+      - name: Upsert sticky PR comment
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.ctx.outputs.pr }}
+          REPO: ${{ github.repository }}
+        run: |
+          marker='<!-- codex-adversarial-review -->'
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                 --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@/tmp/codex-comment.md >/dev/null
+            echo "updated comment $id"
+          else
+            gh pr comment "$PR" --body-file /tmp/codex-comment.md
+          fi

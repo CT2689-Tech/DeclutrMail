@@ -26,6 +26,16 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-25 — Add OPENAI_API_KEY repo secret for the Codex adversarial PR review
+**Source:** session 2026-06-25 (Codex adversarial review on all PRs)
+**Why:** `.github/workflows/codex-review.yml` runs an adversarial Codex review on every PR and posts a sticky comment. It needs `OPENAI_API_KEY` to authenticate Codex in CI (locally Codex uses ChatGPT login; CI has no browser session). Until the secret is set the job no-ops with a `::warning::` and posts nothing — it never fails the check.
+**How:**
+1. Create an OpenAI API key at https://platform.openai.com/api-keys (a project key scoped to this repo is fine).
+2. GitHub → repo **Settings → Secrets and variables → Actions → New repository secret** → name `OPENAI_API_KEY`, paste the key.
+3. (Metered-vendor guardrail per billing posture) Set a monthly usage limit + budget alert on that OpenAI project so per-PR review spend is capped; add a row to the vendor-limits runbook.
+**Verifies by:** open/re-run any code PR → the "Codex adversarial review" check runs the review steps (not the skip warning) and a `<!-- codex-adversarial-review -->` sticky comment appears on the PR.
+**Status:** Open
+
 ### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
 **Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
