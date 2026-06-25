@@ -34,7 +34,14 @@ permissions:
 jobs:
   adversarial-review:
     name: Codex adversarial review
-    if: ${{ github.event.pull_request.draft != true }}
+    # Same-repo PRs only (write-access authors). Fork PRs are skipped outright —
+    # GitHub already withholds secrets from fork `pull_request` runs, and this
+    # also stops fork-controlled code from ever executing in this job. Manual
+    # dispatch (no pull_request payload) is always allowed.
+    if: >-
+      github.event.pull_request.draft != true &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -95,12 +102,26 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CODEX_DIFF_BASE: origin/${{ steps.ctx.outputs.base }}
           CODEX_TARGET_LABEL: 'PR #${{ steps.ctx.outputs.pr }}'
+          BASE: ${{ steps.ctx.outputs.base }}
         run: |
-          node .github/codex/run-adversarial-review.mjs prompt > /tmp/codex-prompt.txt
+          # Run the TRUSTED (base-ref) helper, never the PR's checked-out copy,
+          # so a malicious same-repo branch cannot rewrite the script to read
+          # OPENAI_API_KEY out of this step's env. Fallback to the working-tree
+          # copy only when base lacks the file (i.e. the PR that introduces it).
+          if git show "origin/$BASE:.github/codex/run-adversarial-review.mjs" > /tmp/review.mjs 2>/dev/null; then
+            echo "using base-ref ($BASE) helper"
+          else
+            echo "::notice::base ($BASE) has no helper yet — using PR copy (first-introduction PR only)"
+            cp .github/codex/run-adversarial-review.mjs /tmp/review.mjs
+          fi
+          node /tmp/review.mjs prompt > /tmp/codex-prompt.txt
+          # Sandboxed (read-only FS, no command approvals): the PR diff is
+          # attacker-controlled text, so Codex must not be able to act on a
+          # prompt-injection — only emit the review JSON. No sandbox bypass.
           codex exec --json --skip-git-repo-check \
-            --dangerously-bypass-approvals-and-sandbox \
+            -c sandbox_mode=read-only -c approval_policy=never \
             - < /tmp/codex-prompt.txt > /tmp/codex-out.jsonl || true
-          node .github/codex/run-adversarial-review.mjs format < /tmp/codex-out.jsonl > /tmp/codex-comment.md
+          node /tmp/review.mjs format < /tmp/codex-out.jsonl > /tmp/codex-comment.md
           echo "::group::Review comment"; cat /tmp/codex-comment.md; echo "::endgroup::"
 
       - name: Upsert sticky PR comment
