@@ -97,6 +97,7 @@ jobs:
         run: git fetch --no-tags origin "$BASE"
 
       - name: Run adversarial review
+        id: review
         if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -104,15 +105,15 @@ jobs:
           CODEX_TARGET_LABEL: 'PR #${{ steps.ctx.outputs.pr }}'
           BASE: ${{ steps.ctx.outputs.base }}
         run: |
-          # Run the TRUSTED (base-ref) helper, never the PR's checked-out copy,
-          # so a malicious same-repo branch cannot rewrite the script to read
-          # OPENAI_API_KEY out of this step's env. Fallback to the working-tree
-          # copy only when base lacks the file (i.e. the PR that introduces it).
-          if git show "origin/$BASE:.github/codex/run-adversarial-review.mjs" > /tmp/review.mjs 2>/dev/null; then
-            echo "using base-ref ($BASE) helper"
-          else
-            echo "::notice::base ($BASE) has no helper yet — using PR copy (first-introduction PR only)"
-            cp .github/codex/run-adversarial-review.mjs /tmp/review.mjs
+          # Run ONLY the TRUSTED (base-ref) helper, never the PR's checked-out
+          # copy, so a malicious branch cannot rewrite the script to read
+          # OPENAI_API_KEY out of this step's env. If base has no helper (e.g.
+          # the PR that first introduces it), SKIP — never fall back to running
+          # PR-head code with the secret present.
+          if ! git show "origin/$BASE:.github/codex/run-adversarial-review.mjs" > /tmp/review.mjs 2>/dev/null; then
+            echo "::notice::No trusted helper on base ($BASE) — skipping review (refusing to run PR-head code with the secret)."
+            echo "ran=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           node /tmp/review.mjs prompt > /tmp/codex-prompt.txt
           # Sandboxed (read-only FS, no command approvals): the PR diff is
@@ -122,10 +123,11 @@ jobs:
             -c sandbox_mode=read-only -c approval_policy=never \
             - < /tmp/codex-prompt.txt > /tmp/codex-out.jsonl || true
           node /tmp/review.mjs format < /tmp/codex-out.jsonl > /tmp/codex-comment.md
+          echo "ran=true" >> "$GITHUB_OUTPUT"
           echo "::group::Review comment"; cat /tmp/codex-comment.md; echo "::endgroup::"
 
       - name: Upsert sticky PR comment
-        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != ''
+        if: steps.guard.outputs.configured == 'true' && steps.ctx.outputs.pr != '' && steps.review.outputs.ran == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ steps.ctx.outputs.pr }}
