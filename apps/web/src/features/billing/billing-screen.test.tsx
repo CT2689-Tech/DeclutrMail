@@ -351,6 +351,33 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
   });
 
+  it('cancel error does not persist after closing and reopening the modal', async () => {
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+      { method: 'POST', path: '/api/billing/cancel', respond: () => jsonServerError() },
+    ]);
+    renderScreen();
+
+    // Open → confirm → the POST fails → inline error renders.
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    let modal = screen.getByTestId('cancel-modal');
+    fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
+    expect(await within(modal).findByRole('alert')).toHaveTextContent(
+      'Cancellation could not be processed. Please try again.',
+    );
+
+    // Close ("Keep my plan") then reopen — the stale error must be gone.
+    fireEvent.click(within(modal).getByRole('button', { name: 'Keep my plan' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    modal = screen.getByTestId('cancel-modal');
+    expect(within(modal).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('change plan → Free shows the D120 downgrade panel routing to cancel', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));

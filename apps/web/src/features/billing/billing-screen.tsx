@@ -135,7 +135,12 @@ export function BillingScreen() {
       <CancelModal
         open={cancelOpen}
         subscription={subscription}
-        onClose={() => setCancelOpen(false)}
+        onClose={() => {
+          setCancelOpen(false);
+          // Clear a failed attempt so reopening the modal starts clean
+          // (the mutation lives for the screen's lifetime, not the modal's).
+          cancel.reset();
+        }}
         onConfirm={onConfirmCancel}
         isCanceling={cancel.isPending}
         cancelError={cancel.error ? cancelErrorMessage(cancel.error) : null}
