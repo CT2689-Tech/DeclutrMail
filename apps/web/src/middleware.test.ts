@@ -12,6 +12,7 @@ import {
   STATIC_SECURITY_HEADERS,
   buildContentSecurityPolicy,
   cspHeaderName,
+  sentryCspReportUri,
   type CspEnv,
 } from './middleware';
 
@@ -63,6 +64,10 @@ describe('buildContentSecurityPolicy (D175)', () => {
     const csp = buildContentSecurityPolicy(NONCE, PROD_ENV);
 
     // Paddle: script + frame + connect + form-action (overlay checkout, U13).
+    // NOTE: the *.paddle.com entry in SCRIPT-src is a CSP2-only fallback —
+    // under 'strict-dynamic' (asserted above) modern browsers ignore it,
+    // so U13 must load Paddle.js via a nonced loader. Presence here is
+    // the host allowlist, NOT proof a static <script src> would execute.
     for (const dir of ['script-src', 'frame-src', 'connect-src', 'form-action']) {
       expect(directive(csp, dir)).toContain('https://*.paddle.com');
     }
@@ -87,6 +92,18 @@ describe('buildContentSecurityPolicy (D175)', () => {
     expect(connectSrc).toContain('https://api.declutrmail.com');
     expect(connectSrc).not.toContain('/api/auth/me');
     expect(connectSrc).toContain('https://o99.ingest.us.sentry.io');
+  });
+
+  it('emits a Sentry report-uri so report-only mode is server-visible', () => {
+    const csp = buildContentSecurityPolicy(NONCE, PROD_ENV);
+    expect(directive(csp, 'report-uri')).toBe(
+      'report-uri https://o4501.ingest.us.sentry.io/api/4509/security/?sentry_key=abc123',
+    );
+  });
+
+  it('omits report-uri when no Sentry DSN is configured', () => {
+    const csp = buildContentSecurityPolicy(NONCE, { ...PROD_ENV, sentryDsn: undefined });
+    expect(directive(csp, 'report-uri')).toBeUndefined();
   });
 
   it('survives unset / malformed env URLs without emitting broken sources', () => {
@@ -125,6 +142,24 @@ describe('buildContentSecurityPolicy (D175)', () => {
     const connectSrc = directive(csp, 'connect-src') ?? '';
     const occurrences = connectSrc.split('https://us.i.posthog.com').length - 1;
     expect(occurrences).toBe(1);
+  });
+});
+
+describe('sentryCspReportUri', () => {
+  it('derives the Sentry security endpoint from a valid DSN', () => {
+    expect(sentryCspReportUri('https://abc123@o4501.ingest.us.sentry.io/4509')).toBe(
+      'https://o4501.ingest.us.sentry.io/api/4509/security/?sentry_key=abc123',
+    );
+  });
+
+  it('returns null on a missing, malformed, or incomplete DSN', () => {
+    expect(sentryCspReportUri(undefined)).toBeNull();
+    expect(sentryCspReportUri('')).toBeNull();
+    expect(sentryCspReportUri('not a url')).toBeNull();
+    // No project path → incomplete.
+    expect(sentryCspReportUri('https://abc123@o4501.ingest.us.sentry.io')).toBeNull();
+    // No public key → incomplete.
+    expect(sentryCspReportUri('https://o4501.ingest.us.sentry.io/4509')).toBeNull();
   });
 });
 

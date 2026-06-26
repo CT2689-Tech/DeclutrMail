@@ -27,11 +27,19 @@
 //     overlay checkout renders in iframes on `buy.paddle.com` /
 //     `sandbox-buy.paddle.com` and calls `checkout-service.paddle.com`.
 //     D175 allowlists the `https://*.paddle.com` umbrella for
-//     script-src / frame-src / connect-src / form-action so the U13
-//     checkout overlay works without a CSP follow-up PR.
+//     frame-src / connect-src / form-action — those directives have no
+//     `strict-dynamic`, so the iframe + API + form posts are authorized.
+//     CAVEAT (U13 must handle): the `*.paddle.com` entry in SCRIPT-src is
+//     a CSP2-only fallback — under `strict-dynamic` modern browsers
+//     IGNORE host-source expressions in script-src, so a static
+//     `<script src="cdn.paddle.com/...">` tag will be BLOCKED. U13 must
+//     load Paddle.js via a nonced loader (next/script with the request
+//     `x-nonce`) so trust propagates; the host entry alone is NOT enough.
 //   Razorpay (D77/U13) — checkout script is `https://checkout.razorpay.com`;
 //     the checkout iframe + API calls hit `https://api.razorpay.com`
 //     (https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/).
+//     Same script-src/strict-dynamic caveat as Paddle: load
+//     checkout.razorpay.com via a nonced loader, not a bare <script src>.
 //     NOTE for U13: Razorpay's telemetry host `lumberjack.razorpay.com`
 //     is intentionally NOT allowlisted — verify checkout still completes
 //     (it should; telemetry is fire-and-forget) and widen connect-src
@@ -91,6 +99,29 @@ function sources(...entries: Array<string | null | false>): string {
   return [...new Set(entries.filter((e): e is string => Boolean(e)))].join(' ');
 }
 
+/**
+ * Sentry's CSP report collector URL, derived from the Sentry DSN, so a
+ * `report-uri` directive makes violations server-visible (the rollback
+ * escape hatch — `CSP_REPORT_ONLY=true` — is otherwise blind, logging
+ * only to each user's browser console). DSN `https://KEY@HOST/PROJECT`
+ * → `https://HOST/api/PROJECT/security/?sentry_key=KEY` (Sentry's
+ * documented security endpoint). Returns null on a missing/malformed
+ * DSN so the directive is simply omitted rather than emitting a broken
+ * one. report-uri endpoints are exempt from connect-src, so no source
+ * grant is needed.
+ */
+export function sentryCspReportUri(dsn: string | undefined): string | null {
+  if (!dsn) return null;
+  try {
+    const url = new URL(dsn);
+    const projectId = url.pathname.replace(/^\//, '');
+    if (!url.username || !projectId) return null;
+    return `${url.protocol}//${url.host}/api/${projectId}/security/?sentry_key=${url.username}`;
+  } catch {
+    return null;
+  }
+}
+
 export interface CspEnv {
   isDev: boolean;
   apiUrl: string | undefined;
@@ -106,14 +137,18 @@ export function buildContentSecurityPolicy(nonce: string, env: CspEnv): string {
   const apiOrigin = originOf(env.apiUrl);
   const posthogOrigin = originOf(env.posthogHost) ?? 'https://us.i.posthog.com';
   const sentryOrigin = originOf(env.sentryDsn);
+  const reportUri = sentryCspReportUri(env.sentryDsn);
 
   const directives = [
     `default-src 'self'`,
     // 'strict-dynamic' lets the nonced Next.js bootstrap scripts load
-    // the chunk graph; the host allowlist is the CSP2 fallback for
-    // browsers that ignore strict-dynamic. Dev needs 'unsafe-eval' for
-    // React Refresh / eval source maps (per the Next.js CSP guide) —
-    // production never includes it.
+    // the chunk graph. The vendor host entries below are a CSP2-only
+    // fallback: under strict-dynamic, CSP3 browsers IGNORE host-source
+    // expressions in script-src, so a STATIC third-party <script src>
+    // (Paddle.js, Razorpay checkout) is blocked — U13 must load those
+    // via a nonced loader (see the Paddle/Razorpay header note). Dev
+    // needs 'unsafe-eval' for React Refresh / eval source maps (per the
+    // Next.js CSP guide) — production never includes it.
     `script-src ${sources(
       `'self'`,
       `'nonce-${nonce}'`,
@@ -158,6 +193,10 @@ export function buildContentSecurityPolicy(nonce: string, env: CspEnv): string {
     // Prod-only: on http://localhost this would upgrade the API fetch
     // to https://localhost:4000 and break local dev.
     !env.isDev && `upgrade-insecure-requests`,
+    // Violation reporting — makes the CSP_REPORT_ONLY rollback hatch
+    // server-visible (reports land in Sentry, which the team monitors)
+    // instead of only each user's console. Omitted when no DSN is set.
+    reportUri && `report-uri ${reportUri}`,
   ];
 
   return directives.filter((d): d is string => Boolean(d)).join('; ');
