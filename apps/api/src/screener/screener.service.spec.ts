@@ -201,7 +201,33 @@ describe('ScreenerService.decide (D72, D226)', () => {
       status: 'queued',
       requestedCount: 3,
     });
+    // A >0-message async action is NOT resolved at decide time — it is
+    // resolved by the actions.label_action_applied outbox event on
+    // terminal success, so a failed Gmail job leaves the sender in the
+    // queue rather than silently dropping it. Row stays pending here.
+    expect(res.resolved).toBe(false);
+    expect(await pendingCount()).toBe(1);
+  });
+
+  it('a 0-message async action (terminal no-op) resolves the row immediately', async () => {
+    actions.enqueueComposite.mockResolvedValueOnce({
+      actionId: 'action-noop',
+      compositeId: 'action-noop',
+      secondaryId: null,
+      status: 'queued' as const,
+      primaryCount: 0,
+      secondaryCount: null,
+    });
+    const res = await svc.decide({
+      mailboxAccountId: mailboxId,
+      senderId,
+      verb: 'archive',
+      olderThanDays: 365,
+      idempotencyKey: 'key-arch-noop',
+    });
+    // Nothing async can fail, so the decision resolves now.
     expect(res.resolved).toBe(true);
+    expect(await pendingCount()).toBe(0);
   });
 
   it('delete and later also route through the composite pipeline', async () => {

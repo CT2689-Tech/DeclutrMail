@@ -92,10 +92,24 @@ export class ScreenerService {
     }
 
     // 1) Execute the verb through the existing pipeline.
+    //
+    // `resolveNow` decides whether to mark the quarantine row decided
+    // synchronously here. SYNCHRONOUS verbs (keep / unsubscribe) are
+    // terminal at write time — resolve now. ASYNC verbs (archive /
+    // later / delete) enqueue a job that can still FAIL (Gmail 5xx,
+    // retry exhaustion); resolving now would silently drop the sender
+    // from the queue even though no mutation happened. So for async
+    // verbs we resolve only the terminal NO-OP case (0 resolved
+    // messages — nothing can fail), and leave a >0 action pending until
+    // the `actions.label_action_applied` outbox event confirms terminal
+    // success (handleActionLabelApplied resolves it then). A failed job
+    // never emits that event, so the sender stays reviewable.
     let execution: ScreenerDecideResult['execution'];
+    let resolveNow: boolean;
     if (verb === 'keep') {
       const res = await this.actions.recordKeepIntent({ mailboxAccountId, senderId });
       execution = { kind: 'policy', activityLogId: res.activityLogId };
+      resolveNow = true;
     } else if (verb === 'unsubscribe') {
       const res = await this.actions.recordUnsubscribeIntent({
         mailboxAccountId,
@@ -109,6 +123,7 @@ export class ScreenerService {
         mailtoUrl: res.mailtoUrl,
         activityLogId: res.activityLogId,
       };
+      resolveNow = true;
     } else {
       const res = await this.actions.enqueueComposite({
         mailboxAccountId,
@@ -123,21 +138,28 @@ export class ScreenerService {
         status: res.status,
         requestedCount: res.primaryCount,
       };
+      // A 0-message enqueue is a terminal no-op (the user decided, but
+      // nothing async can fail) → safe to resolve now. A >0 action is
+      // resolved by the outbox consumer on terminal success.
+      resolveNow = res.primaryCount === 0;
     }
 
-    // 2) Resolve the pending quarantine row. The `decided_at IS NULL`
-    // predicate keeps replays + already-decided senders no-ops.
-    const resolvedRows = await this.db
-      .update(screenerQuarantine)
-      .set({ decidedAt: new Date(), updatedAt: new Date() })
-      .where(
-        and(
-          eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
-          eq(screenerQuarantine.senderKey, sender.senderKey),
-          isNull(screenerQuarantine.decidedAt),
-        ),
-      )
-      .returning({ id: screenerQuarantine.id });
+    // 2) Resolve the pending quarantine row when appropriate (see
+    // `resolveNow` above). The `decided_at IS NULL` predicate keeps
+    // replays + already-decided senders no-ops.
+    const resolvedRows = resolveNow
+      ? await this.db
+          .update(screenerQuarantine)
+          .set({ decidedAt: new Date(), updatedAt: new Date() })
+          .where(
+            and(
+              eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
+              eq(screenerQuarantine.senderKey, sender.senderKey),
+              isNull(screenerQuarantine.decidedAt),
+            ),
+          )
+          .returning({ id: screenerQuarantine.id })
+      : [];
     const resolved = resolvedRows.length > 0;
 
     // Structured observability line — scalars only (D7/D228): verb +

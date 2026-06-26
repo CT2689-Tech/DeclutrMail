@@ -1,7 +1,8 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
-import { senderPolicies } from '@declutrmail/db';
+import { screenerQuarantine, senderPolicies } from '@declutrmail/db';
 import {
+  ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
@@ -9,6 +10,7 @@ import {
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
 import type {
+  ActionLabelAppliedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
   MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
@@ -137,6 +139,18 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         await handleTriageVerdictApplied(db, payload);
         return;
       }
+      case TOPICS.ACTION_LABEL_APPLIED: {
+        // Screener projection (D72): a label action that SUCCEEDED
+        // resolves the sender's pending quarantine row. The Screener
+        // delegates archive/later/delete to the async action pipeline
+        // and deliberately leaves the quarantine row pending at decide
+        // time (for >0-message actions), so a failed Gmail job — which
+        // never emits this event — keeps the sender in the queue instead
+        // of silently dropping it. Same defense-in-depth re-parse.
+        const payload = ActionLabelAppliedPayloadSchema.parse(event.payload);
+        await handleActionLabelApplied(db, payload);
+        return;
+      }
       case TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED:
         // Observability-only (D9 Wave 2): `UnsubExecutionWorker` writes
         // the durable effects itself in its terminal tx; this event
@@ -244,6 +258,34 @@ async function handleUnsubscribeIntentRecorded(
         updatedAt: sql`now()`,
       },
     });
+}
+
+/**
+ * Screener projection (D72) — resolve a sender's pending quarantine row
+ * when a label action it owns reaches terminal SUCCESS.
+ *
+ * D204 boundary: the Screener owns `screener_quarantine`, so the
+ * resolution lives here, not in the worker. Keyed by
+ * (mailbox_account_id, sender_key) and guarded by `decided_at IS NULL`,
+ * so it is idempotent on redelivery and a no-op for a sender that was
+ * decided through another path. A message-selector action (senderKey
+ * null) carries nothing to resolve.
+ */
+async function handleActionLabelApplied(
+  db: DrizzleDb,
+  payload: ActionLabelAppliedPayload,
+): Promise<void> {
+  if (payload.senderKey === null) return;
+  await db
+    .update(screenerQuarantine)
+    .set({ decidedAt: sql`now()`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(screenerQuarantine.mailboxAccountId, payload.mailboxAccountId),
+        eq(screenerQuarantine.senderKey, payload.senderKey),
+        isNull(screenerQuarantine.decidedAt),
+      ),
+    );
 }
 
 /**
