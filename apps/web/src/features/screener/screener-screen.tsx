@@ -28,7 +28,7 @@ import {
 } from './data';
 import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
-import { VERB_LABEL } from './verbs';
+import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
 const { color, font } = tokens;
 
@@ -269,6 +269,54 @@ export function ScreenerScreen({
     },
     [pending, busyRowId, decide, qc],
   );
+
+  // Keyboard shortcuts (Triage parity, D29/D227). Act on the EXPANDED
+  // row. While a preview is open, Enter confirms / Escape cancels (the
+  // preview owns those keys per D226); otherwise K/A/U/L/D open the
+  // MANDATORY preview for the expanded row (never skip it). No-ops when
+  // nothing is expanded or a decision is confirming, and never hijacks
+  // typing in inputs. Without this the verb key hints were decorative.
+  useEffect(() => {
+    if (state.kind !== 'ready') return;
+    const rows = state.rows;
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      // Preview open → Enter/Escape own the interaction.
+      if (pending != null && pendingRow != null) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onConfirm(pendingRow);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setPending(null);
+        }
+        return;
+      }
+      // Otherwise a verb shortcut opens the preview for the expanded row.
+      if (expandedRowId == null || busyRowId != null || decide.isPending) return;
+      const expandedRow = rows.find((r) => r.id === expandedRowId);
+      if (expandedRow == null) return;
+      const verb = resolveScreenerShortcut(e);
+      if (verb == null) return;
+      e.preventDefault();
+      onVerbClick(verb, expandedRow);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    state,
+    pending,
+    pendingRow,
+    expandedRowId,
+    busyRowId,
+    decide.isPending,
+    onConfirm,
+    onVerbClick,
+  ]);
 
   return (
     <div

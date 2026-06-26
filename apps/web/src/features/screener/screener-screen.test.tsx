@@ -25,7 +25,7 @@ import { ScreenerEmptyState } from './empty-state';
 import { ScreenerProUpsell } from './pro-upsell';
 import { ScreenerRow } from './screener-row';
 import { ScreenerScreen } from './screener-screen';
-import { VERB_LABEL, VERB_ORDER } from './verbs';
+import { resolveScreenerShortcut, VERB_KEY_HINT, VERB_LABEL, VERB_ORDER } from './verbs';
 
 function render(el: ReactElement): string {
   return renderToStaticMarkup(<QueryWrapper client={createTestQueryClient()}>{el}</QueryWrapper>);
@@ -215,5 +215,27 @@ describe('ScreenerProUpsell — D77 + D194 marketing-copy rule', () => {
     expect(text).not.toMatch(/quarantine/i);
     expect(text).not.toMatch(/out of sight/i);
     expect(text).not.toMatch(/keeps? unknown senders out/i);
+  });
+});
+
+describe('resolveScreenerShortcut — K/A/U/L/D bindings (D227)', () => {
+  it('maps each canonical key (any case) to its verb', () => {
+    for (const verb of VERB_ORDER) {
+      const key = VERB_KEY_HINT[verb];
+      expect(resolveScreenerShortcut({ key })).toBe(verb);
+      expect(resolveScreenerShortcut({ key: key.toLowerCase() })).toBe(verb);
+    }
+  });
+
+  it('returns null for non-shortcut keys', () => {
+    for (const key of ['x', 'Enter', 'Escape', ' ', '1']) {
+      expect(resolveScreenerShortcut({ key })).toBeNull();
+    }
+  });
+
+  it('modifier chords (Cmd/Ctrl/Alt) suppress the binding', () => {
+    expect(resolveScreenerShortcut({ key: 'a', metaKey: true })).toBeNull();
+    expect(resolveScreenerShortcut({ key: 'a', ctrlKey: true })).toBeNull();
+    expect(resolveScreenerShortcut({ key: 'a', altKey: true })).toBeNull();
   });
 });

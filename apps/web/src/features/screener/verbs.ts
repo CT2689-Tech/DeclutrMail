@@ -39,3 +39,24 @@ export const VERB_KEY_HINT: Record<ScreenerDecideVerb, string> = {
 export function verdictLabel(verdict: ScreenerRecommendationVerdict): string {
   return VERB_LABEL[verdict];
 }
+
+/**
+ * Pure key→verb resolver for the K/A/U/L/D shortcuts — exported so
+ * tests assert the bindings without rendering. Returns the verb, or
+ * `null` for any non-shortcut key. Modifier chords (Cmd/Ctrl/Alt/Meta)
+ * suppress the binding so the shortcuts never collide with browser /
+ * system chords. Mirrors the Triage `resolveShortcut` contract.
+ */
+export function resolveScreenerShortcut(event: {
+  key: string;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+}): ScreenerDecideVerb | null {
+  if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  const upper = event.key.toUpperCase();
+  for (const verb of VERB_ORDER) {
+    if (VERB_KEY_HINT[verb] === upper) return verb;
+  }
+  return null;
+}
