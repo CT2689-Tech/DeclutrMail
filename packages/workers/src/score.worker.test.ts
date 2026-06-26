@@ -886,4 +886,49 @@ describe('ScoreWorker — Screener Phase-B flag (D72, D75)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.decidedAt).not.toBeNull();
   });
+
+  it('graduation (Phase B → C) resolves a still-pending quarantine row', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedPhaseBSender(db, mailboxAccountId, 'graduate@flag.test');
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    // 1) First score → Phase B → flagged, pending.
+    const first = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 20_000 },
+      FAKE_CTX,
+    );
+    expect(first.screenerFlagged).toBe(1);
+
+    // 2) Sender accrues signal: old first-seen + 3 messages ⇒ clears Phase B.
+    await db
+      .update(senders)
+      .set({ firstSeenAt: new Date('2024-01-01T00:00:00Z') })
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)));
+    await db.insert(mailMessages).values(
+      [1, 2, 3].map((i) => ({
+        mailboxAccountId,
+        providerMessageId: `grad-m${i}`,
+        providerThreadId: `grad-t${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date('2026-04-01T00:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      })),
+    );
+
+    // 3) Re-score → graduates (not insufficient_signal) → pending row resolved.
+    const second = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: 21_000 },
+      FAKE_CTX,
+    );
+    expect(second.screenerFlagged).toBe(0);
+    const rows = await db.select().from(screenerQuarantine);
+    expect(rows).toHaveLength(1);
+    // Auto-resolved on graduation — no longer in the queue, and not a
+    // user decision that would have to be re-made.
+    expect(rows[0]?.decidedAt).not.toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -449,6 +449,22 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         })
         .returning({ id: screenerQuarantine.id });
       screenerFlagged = inserted.length > 0;
+    } else {
+      // Graduation (Phase B → confident Phase-C verdict): the sender now
+      // carries a real triage verdict, so resolve any STILL-PENDING
+      // quarantine row. Without this the same sender appears in BOTH the
+      // Screener queue and Triage. Only `decided_at IS NULL` rows are
+      // touched — a user-decided row stays decided.
+      await this.deps.db
+        .update(screenerQuarantine)
+        .set({ decidedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
+            eq(screenerQuarantine.senderKey, senderKey),
+            isNull(screenerQuarantine.decidedAt),
+          ),
+        );
     }
 
     return { verdict: result.verdict, generatedBy, timedOut, screenerFlagged };
