@@ -795,6 +795,12 @@ verb-add breaks a downstream enum a 2nd time.
 **Rule (provisional):** In multi-agent smoke, treat `users.preferences`, `workspaces.tier`, and the browser session as VOLATILE — re-assert them immediately before every step that depends on them, and never trigger a real mutation path without first confirming the guard precondition still holds.
 **Distillation trigger:** promote to CLAUDE.md §8 (smoke) if a shared-state race burns a third session (this is occurrence ~2 after the tier-flip collisions noted in sibling logs).
 
+## 2026-06-26 — Three-pass agent review (compliance → adversarial → verify) finds what one pass misses
+**Context:** Reviewing a 7-PR Fable-5-authored stack for merge-readiness, then taking it to production-ready.
+**Finding:** A single review pass under-performs a layered one. Pass 1 (the repo's compliance gate agents — privacy/architecture/design/types) returned 0 blocking. Pass 2 (an adversarial workflow: 2 diverse lenses per PR — correctness/state vs security/guardrails — each finding independently re-verified by a fresh skeptic defaulting to "not real") found 4 verified HIGH defects + several real mediums, and the verify step correctly REFUTED a false positive (a claimed jsonb lost-update race). Pass 3 (re-review the fixed branches) confirmed each fix and surfaced one further medium (the ghost-pending TOCTOU) that only existed because of how the first fix interacted with the worker's 0-message branch — i.e. a fix created a new edge that a fresh adversarial read caught.
+**Rule (provisional):** For merge-readiness on non-trivial PRs: (1) compliance gates for shape, (2) adversarial diverse-lens + self-verify for correctness, (3) re-review AFTER fixes (a fix can open a new edge). Lean on integration tests (PGlite + real migrations + real services) as the verification substrate when a live stack isn't available — they exercise the DB+service path faithfully.
+**Distillation trigger:** promote to CLAUDE.md §7 (gate network) if the layered-review pattern keeps out-performing single-pass on ≥3 waves.
+
 ## 2026-06-29 — Security-regression sweep clean
 **Context:** weekly automated sweep
 **Finding:** all Section-2 hard rules held; 3 commits in last 7d, all guardrails intact

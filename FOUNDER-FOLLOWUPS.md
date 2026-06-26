@@ -41,6 +41,43 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Verifies by:** either the backlog above shrinks across sweeps, or the oracle threshold/policy is updated so 🔵 is no longer treated as transient.
 **Status:** Open
 
+### 2026-06-26 — Merge sequence + sign-offs for the reviewed PR stack
+**Source:** session — review + fix of the 7-PR Fable-5 stack (#199 #201 #206 #219 #220 #224 #226; #237 closed)
+**Why:** all code defects are fixed + test-backed, but merge order is load-bearing and several PRs need a founder-only sign-off no agent can give.
+**How:**
+1. **Merge order (respect the stack):** ① #226 (nav) + #224 (settings) + #201 (CSP) — independent, base `main`. ② #206 (tier enforcement) — keystone. ③ re-target #219 + #220 onto `main`, rebase, then merge. ④ #199 (legal) anytime after copy sign-off.
+2. **#206 PROD STEP before deploy:** `UPDATE workspaces SET tier='pro' WHERE id='<dogfood-ws>';` — enforcement otherwise locks your own workspace (lifetime free units already spent).
+3. **#201 (F6) approve the 2 CSP deviations:** `style-src 'unsafe-inline'` (design system uses inline style attrs) + img-src sender-logo origins. Both surfaced in-PR; script-src stays strict.
+4. **#199 (F2) legal copy sign-off:** 14-day pro-rata refund window + India/Mumbai governing law; confirm `privacy@`/`support@` mailboxes exist; bump last-updated stamp.
+5. **#219 (F3) billing provisioning:** Paddle/Razorpay catalog ids + `BILLING_ENABLED=true` for live checkout (billing-dark state merges fine without).
+6. **#226 onboarding backfill (optional):** `onboarded_at` is NULL for all existing users → the mounted gate routes them through onboarding once; backfill SQL is in the PR body to skip it.
+**Verifies by:** each PR CI-green after rebase; `pnpm verify-d` re-greens the cited D-rows post-merge; first prod login after #206 deploy not 402-locked.
+**Status:** Open
+
+### 2026-06-26 — Inbox-limit concurrent-connect race needs a DB-level guard (migration)
+**Source:** session — #206 fix + adversarial review
+**Why:** `addMailbox` now asserts the inbox limit at the activation boundary (closes the sequential bypass), but two truly simultaneous OAuth callbacks can still both pass the read-then-insert check and overshoot the tier ceiling by one. A partial unique index or per-workspace advisory lock would make it atomic.
+**How:** add a partial unique index sized to the tier, or wrap activation in `pg_advisory_xact_lock(hashtext(workspace_id))` + in-tx re-count. Needs a migration (deferred here — no prod migrations from a session).
+**Verifies by:** a concurrent-double-`/start` integration test can no longer exceed the limit.
+**Status:** Open
+
+### 2026-06-26 — Low follow-ups from the PR review (non-blocking)
+**Source:** session — adversarial + flow re-review
+**Why:** small gaps worth a later pass, none block merge.
+**How:**
+- #226: an onboarding-INCOMPLETE user who DOES have an active mailbox briefly renders the app shell before the gate redirect (the resolving-hold only covers no-active-mailbox). Rare; the onboarding backfill avoids it entirely. Extend the hold only if it bites.
+- #220: register the screener error codes (`IDEMPOTENCY_KEY_REQUIRED`, `INVALID_REQUEST`, `SENDER_NOT_FOUND`) in `error-codes.ts` — they flatten to the generic status code today. PRE-EXISTING repo-wide (actions/waitlist/senders/email-prefs too); a dedicated chore since registering changes those envelopes.
+- #199: stale commit-message text ("plus a minimal sitemap") after the rebase dropped the sitemap — cosmetic.
+- Storybook coverage gaps (D210): #199 legal-layout; #219 BillingScreen loading/error + plan-change/cancel modals; #224 settings-index + senders-policies screens.
+**Verifies by:** items resolved or consciously closed.
+**Status:** Open
+
+### 2026-06-26 — OPENAI_API_KEY for Codex CI — SKIPPED (superseded)
+**Source:** session — #237 closed
+**Why:** #237 (Codex adversarial review on CI) needed a funded `OPENAI_API_KEY`. Founder opted not to spend OpenAI quota; adversarial review now runs as a Claude-subagent phase of the in-session PR-review workflow instead (no metered cost). The earlier "Add OPENAI_API_KEY" follow-up is moot.
+**Verifies by:** N/A — no secret to add.
+**Status:** Skipped 2026-06-26 (superseded by in-session Claude adversarial review)
+
 ### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
 **Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
