@@ -358,6 +358,16 @@ describe('LabelActionWorker', () => {
     expect(acts[0]!.affectedCount).toBe(0);
     expect(acts[0]!.senderKey).toBe(SENDER_KEY);
     expect(acts[0]!.undoToken).toBeNull();
+    // Terminal-success event still fires (undoToken null) so the
+    // Screener quarantine resolver learns the decision completed even
+    // when nothing matched (the ghost-pending TOCTOU fix).
+    const evts = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.topic, 'actions.label_action_applied'));
+    expect(evts).toHaveLength(1);
+    expect((evts[0]!.payload as { undoToken: string | null }).undoToken).toBeNull();
+    expect((evts[0]!.payload as { affectedCount: number }).affectedCount).toBe(0);
   });
 
   it('forward archive — messages selector uses the frozen set', async () => {
