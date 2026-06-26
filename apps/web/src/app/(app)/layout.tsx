@@ -95,6 +95,16 @@ function AppChrome({ children }: { children: ReactNode }) {
     return null;
   }
 
+  // No active mailbox: hold until onboarding state SETTLES before
+  // deciding. Without this, an onboarding-incomplete user with zero
+  // mailboxes flashes the reconnect gate during the onboarding-state
+  // round-trip (branch #4's `gating` is false while that read is in
+  // flight) before the gate redirects them to /onboarding. Fail-open:
+  // on a failed read `resolving` is false, so we fall through.
+  if (!hasActiveMailbox && onboardingGate.resolving) {
+    return null;
+  }
+
   // No active mailbox (last one disconnected) — take over with the
   // reconnect gate instead of rendering a broken, data-less shell. The
   // grace banner still mounts: deletion status is user-scoped and this

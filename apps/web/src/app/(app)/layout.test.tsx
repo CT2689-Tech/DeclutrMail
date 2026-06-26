@@ -224,3 +224,88 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
+  /** Authed `me` with ZERO connected mailboxes (active = null). */
+  function noMailboxMe(): FetchStubHandler {
+    return {
+      method: 'GET',
+      path: '/api/auth/me',
+      respond: () =>
+        ok({
+          data: {
+            user: { id: 'u-1', email: 'founder@example.test', workspaceId: 'ws-1' },
+            mailboxes: [],
+            activeMailboxId: null,
+          },
+        }),
+    };
+  }
+
+  it('an ONBOARDED user with no active mailbox sees the reconnect gate', async () => {
+    installFetchStub([
+      noMailboxMe(),
+      {
+        method: 'GET',
+        path: '/api/onboarding/state',
+        respond: () => ok({ data: { onboardedAt: '2026-01-02T00:00:00.000Z' } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => ok({ data: { request: null, projection: null } }),
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
+  it('an ONBOARDING-INCOMPLETE user with no active mailbox goes to /onboarding, NOT the reconnect gate', async () => {
+    installFetchStub([
+      noMailboxMe(),
+      {
+        method: 'GET',
+        path: '/api/onboarding/state',
+        respond: () => ok({ data: { onboardedAt: null } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => ok({ data: { request: null, projection: null } }),
+      },
+    ]);
+
+    renderLayout();
+
+    await vi.waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/onboarding'));
+    // The reconnect gate must NOT have flashed.
+    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+  });
+
+  it('holds (renders nothing) while onboarding state is in flight — no reconnect-gate flash', () => {
+    installFetchStub([
+      noMailboxMe(),
+      // Onboarding state never resolves → resolving=true → hold.
+      {
+        method: 'GET',
+        path: '/api/onboarding/state',
+        respond: () => new Promise<Response>(() => undefined),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => ok({ data: { request: null, projection: null } }),
+      },
+    ]);
+
+    renderLayout();
+
+    // Neither the reconnect gate nor the app body — the branch is held
+    // until onboarding state settles (the flash fix).
+    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+  });
+});
