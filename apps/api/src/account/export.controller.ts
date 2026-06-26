@@ -1,4 +1,4 @@
-import { Controller, Get, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { Controller, Get, Logger, Query, StreamableFile, UseGuards } from '@nestjs/common';
 import { Readable } from 'node:stream';
 
 import { DataExportFormatSchema } from '@declutrmail/shared/contracts';
@@ -39,6 +39,8 @@ interface Principal {
 @Controller('account')
 @UseGuards(JwtGuard)
 export class DataExportController {
+  private readonly logger = new Logger(DataExportController.name);
+
   constructor(private readonly exporter: DataExportService) {}
 
   @Get('export')
@@ -53,13 +55,42 @@ export class DataExportController {
     }
     const format = parsed.data;
     const date = new Date().toISOString().slice(0, 10);
-    const generator =
+    const source =
       format === 'csv'
         ? this.exporter.streamCsv(principal.workspaceId)
         : this.exporter.streamJson(principal.workspaceId);
-    return new StreamableFile(Readable.from(generator), {
-      type: format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
-      disposition: `attachment; filename="declutrmail-export-${date}.${format}"`,
-    });
+    return new StreamableFile(
+      Readable.from(this.guardStream(source, format, principal.workspaceId)),
+      {
+        type: format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+        disposition: `attachment; filename="declutrmail-export-${date}.${format}"`,
+      },
+    );
+  }
+
+  /**
+   * Re-yield the export stream, logging + aborting on a mid-stream
+   * failure. The 200 + Content-Disposition headers are flushed before
+   * the first row, so a DB error mid-stream (connection drop, statement
+   * timeout — likeliest on the large mailboxes this feature targets)
+   * cannot become a clean response. Re-throwing destroys the readable,
+   * so the client sees an aborted transfer (a broken download) instead
+   * of a truncated file reported as a successful 200, and the failure
+   * leaves a server-side signal.
+   */
+  private async *guardStream(
+    source: AsyncGenerator<string>,
+    format: string,
+    workspaceId: string,
+  ): AsyncGenerator<string> {
+    try {
+      yield* source;
+    } catch (err) {
+      this.logger.error(
+        `Data export failed mid-stream (workspace=${workspaceId}, format=${format}) — aborting transfer`,
+        err instanceof Error ? err.stack : String(err),
+      );
+      throw err;
+    }
   }
 }

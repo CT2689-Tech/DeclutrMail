@@ -210,4 +210,16 @@ describe('csvField', () => {
     expect(csvField('say "hi"')).toBe('"say ""hi"""');
     expect(csvField('line1\nline2')).toBe('"line1\nline2"');
   });
+
+  it('neutralizes spreadsheet formula-injection triggers (attacker-controlled metadata)', () => {
+    // A leading =, +, -, @, tab, or CR is prefixed with a single quote
+    // so Excel/Sheets/LibreOffice treat the cell as text, not a formula.
+    expect(csvField('=HYPERLINK("http://evil","x")')).toBe('"\'=HYPERLINK(""http://evil"",""x"")"');
+    expect(csvField('+1')).toBe("'+1");
+    expect(csvField('-2')).toBe("'-2");
+    expect(csvField('@cmd')).toBe("'@cmd");
+    expect(csvField('\tlead-tab')).toBe("'\tlead-tab");
+    // A trigger char that is NOT first stays untouched (plain value).
+    expect(csvField('a=b')).toBe('a=b');
+  });
 });
