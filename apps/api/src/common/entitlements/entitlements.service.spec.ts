@@ -131,6 +131,7 @@ async function seedJob(
     compositeId?: string;
     direction?: 'forward' | 'reverse';
     status?: 'queued' | 'executing' | 'done' | 'failed';
+    affectedCount?: number;
   },
 ): Promise<string> {
   const [row] = await db
@@ -144,6 +145,9 @@ async function seedJob(
         : { type: 'messages' },
       resolvedMessageIds: [],
       requestedCount: 1,
+      // Default to an EFFECTIVE action (moved ≥1 message); a no-op test
+      // passes affectedCount: 0 explicitly.
+      affectedCount: input.affectedCount ?? 1,
       status: input.status ?? 'done',
       idempotencyKey: input.key,
       ...(input.compositeId ? { compositeId: input.compositeId } : {}),
@@ -270,6 +274,40 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       status: 'failed',
     });
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
+  });
+
+  it('a no-op cleanup (done, 0 messages moved) consumes NO unit; in-flight still counts', async () => {
+    const s1 = await seedSender(db, mailboxId);
+    const s2 = await seedSender(db, mailboxId);
+    const s3 = await seedSender(db, mailboxId);
+    // Effective action — moved 1 message → counts.
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'eff-1',
+      senderId: s1.id,
+      senderKey: s1.key,
+      affectedCount: 1,
+    });
+    // No-op — done but moved nothing → must NOT count (the bug fix).
+    await seedJob(db, mailboxId, {
+      verb: 'delete',
+      key: 'noop-1',
+      senderId: s2.id,
+      senderKey: s2.key,
+      status: 'done',
+      affectedCount: 0,
+    });
+    // In-flight — queued with the 0 default → still counts (intent about
+    // to move mail), so the no-op exclusion can't be bypassed mid-flight.
+    await seedJob(db, mailboxId, {
+      verb: 'later',
+      key: 'queued-1',
+      senderId: s3.id,
+      senderKey: s3.key,
+      status: 'queued',
+      affectedCount: 0,
+    });
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
   });
 
   it('cleanupSummary: free reports limit 5 + remaining; pro is unlimited (no scan)', async () => {

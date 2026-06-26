@@ -101,6 +101,12 @@ export class EntitlementsService {
    *     the derived count never decrements.
    *   - A `failed` forward row is excluded: an action that never
    *     mutated anything must not consume the taste quota.
+   *   - A terminally-`done` forward row that moved ZERO messages
+   *     (`affected_count = 0` — e.g. a 365d-delete on a sender with no
+   *     aged INBOX mail) is likewise excluded: a no-op consumed no
+   *     cleanup. In-flight rows (`queued`/`executing`, whose
+   *     `affected_count` is still its 0 default) keep counting — they
+   *     represent intent that is about to move mail.
    *
    * Derivation is purely from existing `action_jobs` data (no schema
    * change): group id = `COALESCE(composite_id, id)`, sender unit =
@@ -122,6 +128,8 @@ export class EntitlementsService {
           eq(actionJobs.direction, 'forward'),
           inArray(actionJobs.verb, CLEANUP_VERBS),
           ne(actionJobs.status, 'failed'),
+          // A no-op (terminally done, moved nothing) consumes no unit.
+          sql`not (${actionJobs.status} = 'done' and ${actionJobs.affectedCount} = 0)`,
         ),
       );
     return row?.used ?? 0;
