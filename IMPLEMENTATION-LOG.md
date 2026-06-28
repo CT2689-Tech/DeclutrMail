@@ -167,7 +167,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D113 | Onboarding completion side effects | 🔵 | #194 |  |  |
 | D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | ⬜ |  |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
-| D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | ⬜ |  |  |  |
+| D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224 |  |  |
 | D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194 |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207 |  |  |
 | D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | ⬜ |  |  |  |
