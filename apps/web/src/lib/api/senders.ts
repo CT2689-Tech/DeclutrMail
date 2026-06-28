@@ -424,6 +424,12 @@ export interface ListSendersParams {
    * contract.
    */
   isProtected?: TriStateFilter | undefined;
+  /**
+   * VIP filter (U23 settings VIP list). `true` = only VIP senders
+   * (`sender_policies.is_vip`). Maps to wire `?vip=true`. No negated
+   * form (not a product surface).
+   */
+  isVip?: boolean | undefined;
   /** Sortable column. Omit to take the BE default (`total`). */
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
@@ -530,6 +536,7 @@ export function fetchSenders(
       // wire reads as the compose-strip negation primitive.
       protected:
         params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
+      vip: params.isVip === true ? 'true' : undefined,
       sort: params.sort,
       direction: params.direction,
       // Empty string collapses to omitted so a cleared search keys the

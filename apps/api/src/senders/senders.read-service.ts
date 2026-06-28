@@ -236,6 +236,13 @@ export class SendersReadService {
      */
     isProtected?: boolean | null;
     /**
+     * When `true`, return only senders with the VIP flag
+     * (`sender_policies.is_vip = true`). When `null`/omitted, no
+     * filter. Backs the Settings VIP list (U23 — same server-side
+     * stance as `isProtected`). No negated form yet (not a surface).
+     */
+    isVip?: boolean | null;
+    /**
      * Sortable column — Slice 1 supports `total` | `last_seen` |
      * `first_seen` | `name`. Defaults to `'total'` per the senders
      * list contract — the new "flood" headline. `read` / `recommended`
@@ -460,6 +467,12 @@ export class SendersReadService {
       conditions.push(
         sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
       );
+    }
+    if (args.isVip === true) {
+      // VIP filter — rides the same `sender_policies` left join as the
+      // protected predicate (NULL rows excluded, the correct default
+      // for a "show only VIPs" surface).
+      conditions.push(eq(senderPolicies.isVip, true));
     }
     if (args.activity) {
       const pred = buildActivityPredicate(args.activity);
@@ -689,6 +702,8 @@ export class SendersReadService {
     mailboxAccountId: string;
     category: GmailCategory | null;
     isProtected?: boolean | null;
+    /** VIP filter (U23) — mirrored from the list scan. */
+    isVip?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
      *  the list scan uses, so "All N" counts the search hits, not the
      *  whole mailbox. */
@@ -713,6 +728,9 @@ export class SendersReadService {
       totalMatchingConditions.push(
         sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
       );
+    }
+    if (args.isVip === true) {
+      totalMatchingConditions.push(eq(senderPolicies.isVip, true));
     }
     if (args.activity) {
       totalMatchingConditions.push(buildActivityPredicate(args.activity));

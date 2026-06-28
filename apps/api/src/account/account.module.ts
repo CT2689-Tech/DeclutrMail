@@ -9,6 +9,8 @@ import { SecurityEventsModule } from '../security-events/security-events.module.
 import { UndoModule } from '../undo/undo.module.js';
 import { AccountController } from './account.controller.js';
 import { AccountDeletionOrchestrator, DELETION_EMAIL_QUEUE_TOKEN } from './deletion.service.js';
+import { DataExportController } from './export.controller.js';
+import { DataExportService } from './export.service.js';
 
 /**
  * AccountModule (D205 + D216 + D232).
@@ -33,8 +35,9 @@ import { AccountDeletionOrchestrator, DELETION_EMAIL_QUEUE_TOKEN } from './delet
  */
 @Module({
   imports: [AuthModule, UndoModule, SecurityEventsModule],
-  controllers: [AccountController],
+  controllers: [AccountController, DataExportController],
   providers: [
+    DataExportService,
     {
       provide: DELETION_EMAIL_QUEUE_TOKEN,
       useFactory: (): Queue<EmailSendJobData> | null => {

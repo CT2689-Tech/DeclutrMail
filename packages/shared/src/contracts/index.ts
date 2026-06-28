@@ -140,6 +140,25 @@ export {
 } from './email-prefs';
 export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
 
+// D34 + D226 action-sheet skip preferences — shared between the
+// PATCH /api/me/action-sheet-prefs route and the FE triage store
+// hydration (the sheet is skippable per verb; the preview never is).
+export {
+  ActionSheetPrefsPatchSchema,
+  ActionSheetPrefsSchema,
+  DEFAULT_ACTION_SHEET_PREFS,
+  parseActionSheetPrefs,
+} from './action-sheet-prefs';
+export type { ActionSheetPrefs, ActionSheetPrefsPatch } from './action-sheet-prefs';
+
+// Settings index read (D34 + D116 + D165) — GET /api/me/settings.
+export { MeSettingsSchema } from './me-settings';
+export type { MeSettings } from './me-settings';
+
+// D116 + D228 data export — GET /api/account/export format contract.
+export { DataExportFormatSchema } from './data-export';
+export type { DataExportFormat } from './data-export';
+
 // Private-beta invite gate (buildout F7) — API ↔ web redirect contract
 // for denied signups. See ./beta-gate.ts for the env + flow contract.
 export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from './beta-gate';

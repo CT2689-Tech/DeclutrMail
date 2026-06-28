@@ -1,32 +1,29 @@
-// /settings — Settings root.
+// /settings — Settings index (U23 — D34, D114, D116, D216).
 //
-// One sub-page lives today (`/settings/senders` — standing sender
-// policies). The root page introduces the section and points at the
-// shipped sub-page so the sidebar nav resolves to something useful.
-//
-// When more sub-pages land (account, notifications, billing redirect,
-// data export), this file becomes a real index with multiple cards.
+// Sectioned single-page settings: Mailboxes, Action preferences (D34
+// skip-sheet toggles), Email notifications, Sender lists link, Privacy
+// & Data link, Plan & Billing summary, and the Account danger zone
+// (#218's AccountDeletionSection). The `?cancelDeletion=1` deep link
+// (from the deletion-scheduled email) scrolls to + highlights the
+// Account section.
 
-import { RoutePlaceholder } from '@/features/route-placeholder/route-placeholder';
+import { Suspense } from 'react';
+
+import { SettingsScreen } from '@/features/settings/settings-index/settings-screen';
 
 export const metadata = {
   title: 'Settings — DeclutrMail',
 };
 
+/**
+ * Suspense boundary required because `SettingsScreen` reads the
+ * `?cancelDeletion=1` deep link via `useSearchParams()`, which Next.js
+ * requires to be wrapped at the route boundary in app-router.
+ */
 export default function SettingsPage() {
   return (
-    <RoutePlaceholder
-      status="Settings"
-      title="Sender policies are live"
-      description={
-        <>
-          The standing-policies surface — VIP, Protect, Always Archive — is shipped. The rest of the
-          settings index (notifications, data export, account) lands in subsequent slices.
-        </>
-      }
-      decisions={[]}
-      primaryCta={{ href: '/settings/senders', label: 'Open sender policies' }}
-      secondaryCta={{ href: '/autopilot', label: 'Open Autopilot' }}
-    />
+    <Suspense fallback={null}>
+      <SettingsScreen />
+    </Suspense>
   );
 }

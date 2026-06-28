@@ -17,6 +17,7 @@ import { RateLimitModule } from './common/rate-limit/index.js';
 import { ResendWebhookModule } from './webhooks/resend/resend-webhook.module.js';
 import { SecurityEventsModule } from './security-events/security-events.module.js';
 import { SendersModule } from './senders/senders.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { TriageModule } from './triage/triage.module.js';
 import { UndoModule } from './undo/undo.module.js';
 import { UsersModule } from './users/users.module.js';
@@ -75,6 +76,8 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     FollowupModule,
     ActivityModule,
     AccountModule,
+    // U23 settings — GET /api/me/settings + D34 action-sheet prefs.
+    SettingsModule,
     WaitlistModule,
     // D162 transactional email — prefs route + Resend webhook. Loaded
     // unconditionally; the webhook controller fail-closes per request
