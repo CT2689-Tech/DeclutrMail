@@ -35,11 +35,14 @@ import { useOnboardingState } from './api/use-onboarding';
  * locking every user out of the app because one read failed is the
  * worse failure mode; the onboarding flow itself re-checks on entry.
  */
-export function useOnboardingGate(): { gating: boolean } {
+export function useOnboardingGate(): { gating: boolean; resolving: boolean } {
   const router = useRouter();
   const state = useOnboardingState();
 
   const shouldGate = state.data !== undefined && state.data.onboardedAt === null;
+  // In flight: no data yet and not errored. On error → false (fail-open;
+  // never hold the app forever on a failed read).
+  const resolving = state.data === undefined && !state.isError;
 
   useEffect(() => {
     if (shouldGate) {
@@ -47,5 +50,5 @@ export function useOnboardingGate(): { gating: boolean } {
     }
   }, [shouldGate, router]);
 
-  return { gating: shouldGate };
+  return { gating: shouldGate, resolving };
 }

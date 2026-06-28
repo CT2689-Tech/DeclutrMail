@@ -233,8 +233,11 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       status: 'n/a',
     },
     'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
       required: false,
-      status: 'todo',
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
     },
     placeholder: { required: false, status: 'n/a' },
   },
@@ -270,7 +273,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'todo' },
     'free-cap-reached': { required: false, status: 'todo' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -311,7 +320,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       implementation: 'apps/web/src/features/senders/detail/sender-detail-page.tsx',
       status: 'implemented',
     },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -348,7 +363,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -382,7 +403,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -422,7 +449,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -452,7 +485,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -483,7 +522,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'n/a' },
     'free-cap-reached': { required: false, status: 'n/a' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
@@ -717,7 +762,13 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     'quota-exceeded': { required: false, status: 'todo' },
     'free-cap-reached': { required: false, status: 'todo' },
     'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'todo' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
     placeholder: { required: false, status: 'n/a' },
   },
 
