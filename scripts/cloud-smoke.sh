@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+#
+# cloud-smoke.sh — stand up a REAL local stack for per-PR smoke testing
+# inside a locked-down cloud container (Claude Code on the web), where
+# `dev-up.sh` can't be used because Docker images are egress-blocked and
+# Postgres won't run as root.
+#
+# The unlock: run the local Postgres BINARY as the pre-existing `postgres`
+# system user via `runuser` (sidesteps the no-root + no-useradd sandbox),
+# plus a local `redis-server`. No Docker, no images, no secrets needed —
+# throwaway secrets + the D206 dev-login give an authed 2-mailbox session.
+#
+# Usage:
+#   ./scripts/cloud-smoke.sh up       # pg + redis + migrations + .env.local + API on :4000
+#   ./scripts/cloud-smoke.sh seed     # seed a 2-connected-account workspace (founder + crypt)
+#   ./scripts/cloud-smoke.sh login    # dev-login → /tmp/dmlogs/cookies.txt (curl -b to use)
+#   ./scripts/cloud-smoke.sh down     # stop API (leaves pg/redis up)
+#
+# Per-PR loop:  git checkout <pr-branch> && ./scripts/cloud-smoke.sh up && ./scripts/cloud-smoke.sh seed login
+# then curl the changed endpoints with `-b /tmp/dmlogs/cookies.txt`, or
+# point Playwright (Chromium is pre-installed) at the web dev server.
+set -uo pipefail
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$REPO_ROOT"
+PGBIN=/usr/lib/postgresql/16/bin
+PGDATA=/tmp/dmpg
+PSQL="$PGBIN/psql -h 127.0.0.1 -p 5432 -U postgres"
+LOG=/tmp/dmlogs; mkdir -p "$LOG"
+
+up() {
+  # Postgres (as the `postgres` user — the root-restriction workaround).
+  if ! $PSQL -tAc 'select 1' >/dev/null 2>&1; then
+    runuser -u postgres -- bash -c "rm -rf $PGDATA && mkdir -p $PGDATA && \
+      $PGBIN/initdb -D $PGDATA -U postgres --auth=trust >$LOG/initdb.log 2>&1 && \
+      $PGBIN/pg_ctl -D $PGDATA -o '-p 5432 -k /tmp -c listen_addresses=127.0.0.1' -l $LOG/pg.log start"
+    sleep 2
+    $PSQL -tc "CREATE DATABASE declutrmail;" 2>/dev/null
+    $PSQL -d declutrmail -tc "CREATE EXTENSION IF NOT EXISTS citext;" >/dev/null
+  fi
+  # Redis.
+  redis-cli ping >/dev/null 2>&1 || redis-server --port 6379 --daemonize yes --save '' --appendonly no >/dev/null 2>&1
+  # Migrations (idempotent: --> breakpoint lines are SQL comments; ON_ERROR_STOP off so re-runs skip applied DDL).
+  for f in $(ls packages/db/migrations/*.sql | sort); do
+    $PSQL -d declutrmail -q -f "$f" >/dev/null 2>&1
+  done
+  # .env.local (throwaway secrets; only created once).
+  [ -f .env.local ] || cat > .env.local <<EOF
+NODE_ENV=development
+PORT=4000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/declutrmail
+REDIS_URL=redis://localhost:6379
+JWT_ACCESS_SECRET=$(openssl rand -hex 32)
+JWT_REFRESH_SECRET=$(openssl rand -hex 32)
+ENCRYPTION_LOCAL_KEY=$(openssl rand -hex 32)
+GOOGLE_CLIENT_ID=local-dummy.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=local-dummy-secret
+GOOGLE_REDIRECT_URI=http://localhost:4000/api/auth/google/callback
+WEB_URL=http://localhost:3000
+CORS_ORIGIN=http://localhost:3000
+COOKIE_DOMAIN=localhost
+DEV_AUTH_ENABLED=true
+DEV_AUTH_EMAIL_PREFIX=chintan
+RATE_LIMIT_ENABLED=false
+GMAIL_CONNECT_ENABLED=false
+BILLING_ENABLED=false
+NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+EOF
+  # API (restart so a branch checkout's code is picked up).
+  lsof -ti:4000 2>/dev/null | xargs -r kill -9 2>/dev/null
+  nohup pnpm --filter @declutrmail/api start >"$LOG/api.log" 2>&1 &
+  for i in $(seq 1 60); do
+    curl -s -o /dev/null --max-time 2 http://localhost:4000/api/auth/me 2>/dev/null && { echo "API up on :4000"; return; }
+    sleep 1
+  done
+  echo "API did not come up; see $LOG/api.log"; tail -20 "$LOG/api.log"
+}
+
+seed() {
+  $PSQL -d declutrmail -v ON_ERROR_STOP=1 -q -f scripts/cloud-seed.sql && echo "seeded 2-account workspace"
+}
+
+login() {
+  curl -s -c "$LOG/cookies.txt" -o /dev/null -w "dev-login http=%{http_code}\n" \
+    "http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com"
+  echo "cookies → $LOG/cookies.txt (use: curl -b $LOG/cookies.txt ...)"
+}
+
+down() { lsof -ti:4000 2>/dev/null | xargs -r kill -9 2>/dev/null; echo "API stopped"; }
+
+case "${1:-up}" in
+  up) up ;;
+  seed) seed ;;
+  login) login ;;
+  down) down ;;
+  *) for cmd in "$@"; do "$cmd"; done ;;
+esac
