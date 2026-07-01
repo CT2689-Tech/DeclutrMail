@@ -128,11 +128,11 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | ⬜ |  |  |  |
 | D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | ⬜ |  |  |  |
 | D76 | Empty state: **Calm single-line message | ⬜ |  |  |  |
-| D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | ⬜ |  |  |  |
+| D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206 |  |  |
 | D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
 | D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | 🔵 | #215 |  |  |
 | D80 | Snoozed screen layout: **Grouped by wake-time with actions per row | 🔵 | #215 |  |  |
-| D81 | Snooze trigger surfaces | ⬜ |  |  |  |
+| D81 | Snooze trigger surfaces | 🔵 | #206 |  |  |
 | D82 | Snooze presets | ⬜ |  |  |  |
 | D83 | Pro gating | ⬜ |  |  |  |
 | D84 | Scope: **Followups-Lite (list only) at launch; Nudge as fast-follow with new scope | 🟢 | #105 | apps/api/src/followups/followup.read-service.spec.ts |  |
