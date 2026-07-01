@@ -73,3 +73,7 @@ test-results/
 #     -P pager=off -f docs/eval/regenerate-eval-set.sql \
 #     > docs/eval/sender-classification-eval-set.csv
 docs/eval/sender-classification-eval-set.csv
+.vercel
+
+# Scheduled-task runner lock — machine-local state, regenerates on run.
+.claude/scheduled_tasks.lock

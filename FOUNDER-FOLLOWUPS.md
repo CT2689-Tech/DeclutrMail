@@ -26,6 +26,21 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-06-29 — IMPL-LOG-DRIFT: 49 🔵 rows stale >14 days un-verified (verify-d backlog)
+**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
+**Why:** 49 D-rows sit at 🔵 (merge-shipped) but were never flipped 🔵→🟢 via `pnpm verify-d`; all merged ≥17 days ago (oldest 40d). 🔵 is meant to be transient — a large stale backlog means the plan's verified-state is no longer trustworthy as a launch-readiness signal. This is the first run to flag stale-🔵 (prior 2026-05-27 sweep predated the backlog).
+**How:** run `pnpm verify-d D###` for each row whose verification actually passes; for rows where it does not, that's a real gap to fix, not a flip. Backlog (D# → PR, days-since-merge from 2026-06-29):
+D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) · D41→#30(37) · D42→#181(19) · D43→#181(19) · D49→#115(33) · D52→#183(19) · D55→#138(28) · D57→#214(17) · D64→#194(17) · D78→#194(17) · D79→#215(17) · D80→#215(17) · D90→#111(33) · D92→#216(17) · D107→#212(17) · D109→#122(32) · D110→#212(17) · D112→#212(17) · D113→#194(17) · D115→#126(32) · D117→#194(17) · D118→#207(17) · D134→#202(17) · D155→#121(32) · D158→#189(18) · D162→#204(17) · D166→#50(35) · D168→#131(31) · D169→#131(31) · D173→#11(40) · D179→#46(36) · D181→#131(31) · D183→#197(18) · D193→#221(17) · D199→#29(37) · D205→#121(32) · D206→#127(32) · D210→#12(39) · D211→#195(18) · D212→#51(36) · D216→#218(17) · D220→#12(39) · D223→#202(17) · D228→#192(18) · D230→#185(19).
+**Verifies by:** the flagged rows flip 🔵→🟢 in IMPLEMENTATION-LOG.md (or are reopened with a logged gap); next oracle sweep reports a shrinking backlog.
+**Status:** Open
+
+### 2026-06-29 — IMPL-LOG-DRIFT: process-break — 49 findings this week — verify-d cadence has stalled
+**Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
+**Why:** 49 stale-🔵 findings (Check 1) vs 0 missing-trailer (Check 2) and 0 un-flipped-⬜ (Check 3) — the merge→🔵 auto-flip and `Closes` trailer discipline are healthy; the broken leg is the 🔵→🟢 verify-d step, which appears not to have run since the 2026-06-09→12 launch-buildout merges. Surfaced separately so the volume is visible.
+**How:** decide whether post-launch verify-d is a cadence the solo workflow keeps. If yes, schedule a verify-d sweep; if no (verified-state not worth maintaining manually), adjust this oracle's stale-🔵 threshold so it stops flagging the standing backlog every week.
+**Verifies by:** either the backlog above shrinks across sweeps, or the oracle threshold/policy is updated so 🔵 is no longer treated as transient.
+**Status:** Open
+
 ### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
 **Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
 **Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
