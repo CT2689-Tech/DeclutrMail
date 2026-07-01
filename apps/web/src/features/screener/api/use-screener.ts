@@ -14,7 +14,6 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { apiGet, apiPost } from '@/lib/api/client';
 import { newIdempotencyKey } from '@/lib/api/actions';
-import { reportFreeCapHit } from '@/lib/entitlements/free-cap';
 
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
 
@@ -61,7 +60,8 @@ export function useScreenerCount(options: { enabled?: boolean } = {}) {
  * mutate call (D202): a network-retried POST replays server-side; a
  * fresh user click is a new decision. A 402 FREE_CAP_REACHED (Free
  * tier exhausting its 5 lifetime cleanup actions via the delegated
- * pipeline) surfaces the upgrade prompt through the shared seam.
+ * pipeline) surfaces the UpgradeModal via the global MutationCache
+ * handler (lib/query-client) — no per-hook wiring needed.
  */
 export function useScreenerDecide() {
   return useMutation<
@@ -77,6 +77,5 @@ export function useScreenerDecide() {
       );
       return envelope.data;
     },
-    onError: reportFreeCapHit,
   });
 }
