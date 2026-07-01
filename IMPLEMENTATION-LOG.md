@@ -123,11 +123,11 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
-| D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | ⬜ |  |  |  |
-| D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | ⬜ |  |  |  |
+| D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | 🔵 | #220 |  |  |
+| D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | 🔵 | #220 |  |  |
 | D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | ⬜ |  |  |  |
 | D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | ⬜ |  |  |  |
-| D76 | Empty state: **Calm single-line message | ⬜ |  |  |  |
+| D76 | Empty state: **Calm single-line message | 🔵 | #220 |  |  |
 | D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206 |  |  |
 | D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
 | D79 | Snooze mechanic: **Future-only by default; opt-in to also archive existing | 🔵 | #215 |  |  |
