@@ -16,6 +16,8 @@
 #
 # Usage: scripts/wt-new.sh <branch-name>
 #
+# Teardown: scripts/wt-clean.sh  (removes all worktrees + branches except main)
+#
 # Branch-name convention (CLAUDE.md §6):
 #   <type>/d<NNN>-<kebab-description>     (≤50 chars; zero-padded D)
 #   chore/bootstrap-<topic>               (pre-PR-1 work or no D-tie)
