@@ -138,11 +138,15 @@ export const ActionLabelAppliedPayloadSchema = z
     /** Present for a sender selector; null for a message selector. */
     senderKey: SenderKeySchema.nullable(),
     /**
-     * Undo token issued for this action — always set for label-modify
-     * verbs (archive/later/delete are all undoable; delete via Gmail
-     * Trash recovery within 30d per D81/D232).
+     * Undo token issued for this action. Set for the normal
+     * (>0-message) label-modify path — archive/later/delete are all
+     * undoable (delete via Gmail Trash recovery within 30d per
+     * D81/D232). NULL on the terminal 0-message branch: nothing moved,
+     * so there is nothing to reverse. The event still fires in that
+     * case so downstream consumers (e.g. the Screener quarantine
+     * resolver) learn the action reached terminal success.
      */
-    undoToken: UuidSchema,
+    undoToken: UuidSchema.nullable(),
     /** Messages the action moved. */
     affectedCount: z.number().int().nonnegative(),
     /**

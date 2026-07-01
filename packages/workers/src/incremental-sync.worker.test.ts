@@ -940,3 +940,96 @@ describe('IncrementalSyncWorker', () => {
     expect(state!.historyIdUpdatedAt).toBeInstanceOf(Date);
   });
 });
+
+describe('IncrementalSyncWorker — onNewSender first-seen callback (D75)', () => {
+  let db: IncrementalSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  function clientWithAdds(adds: Array<{ id: string; from: string }>): FakeGmailClient {
+    const records: GmailHistoryRecord[] = adds.map((a) => ({
+      kind: 'added',
+      messageId: a.id,
+      threadId: `t-${a.id}`,
+      labelIds: ['INBOX'],
+    }));
+    return new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(
+        adds.map((a) => [
+          a.id,
+          makeMetadata(a.id, `t-${a.id}`, a.from, ['INBOX'], Date.UTC(2026, 5, 10)),
+        ]),
+      ),
+    );
+  }
+
+  it('fires once per FIRST-SEEN sender, not on subsequent messages', async () => {
+    const seen: string[] = [];
+    const worker = new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(
+        clientWithAdds([
+          { id: 'm-n1', from: 'brandnew@example.com' },
+          { id: 'm-n2', from: 'brandnew@example.com' },
+        ]),
+      ),
+      onNewSender: async (_mb, senderKey) => {
+        seen.push(senderKey);
+      },
+    });
+    await worker.processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    // Two messages, ONE new sender → exactly one callback.
+    expect(seen).toEqual([deriveSenderKey('brandnew@example.com')]);
+  });
+
+  it('does not fire for a sender that already exists', async () => {
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey: deriveSenderKey('known@example.com'),
+      email: 'known@example.com',
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(Date.UTC(2026, 4, 1)),
+      lastSeenAt: new Date(Date.UTC(2026, 4, 1)),
+    });
+    const seen: string[] = [];
+    const worker = new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(clientWithAdds([{ id: 'm-k1', from: 'known@example.com' }])),
+      onNewSender: async (_mb, senderKey) => {
+        seen.push(senderKey);
+      },
+    });
+    await worker.processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+    expect(seen).toEqual([]);
+  });
+
+  it('a callback failure is swallowed (WARN) — the sync delta still lands', async () => {
+    const worker = new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(clientWithAdds([{ id: 'm-f1', from: 'flaky@example.com' }])),
+      onNewSender: async () => {
+        throw new Error('enqueue exploded');
+      },
+    });
+    const result = await worker.processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+    expect(result.added).toBe(1);
+    const senderRows = await db.select().from(senders);
+    expect(senderRows).toHaveLength(1);
+  });
+});

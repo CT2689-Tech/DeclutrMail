@@ -8,6 +8,7 @@ import {
   automationRules,
   mailboxAccounts,
   schema,
+  screenerQuarantine,
   senderPolicies,
   senders,
   users,
@@ -216,6 +217,60 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     });
     const rows = await db.select().from(senderPolicies);
     expect(rows).toHaveLength(0);
+  });
+
+  it('resolves a pending screener quarantine row on actions.label_action_applied (D72)', async () => {
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY_A });
+    await consume({
+      id: 'evt-label-1',
+      topic: TOPICS.ACTION_LABEL_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000007',
+      payload: {
+        mailboxAccountId: mailboxId,
+        actionId: '00000000-0000-4000-8000-000000000007',
+        verb: 'archive',
+        senderKey: SENDER_KEY_A,
+        undoToken: '00000000-0000-4000-8000-0000000000a7',
+        affectedCount: 3,
+        compositeId: null,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const [row] = await db
+      .select()
+      .from(screenerQuarantine)
+      .where(eq(screenerQuarantine.mailboxAccountId, mailboxId));
+    expect(row!.decidedAt).not.toBeNull();
+  });
+
+  it('label_action_applied with a null senderKey (message selector) resolves nothing', async () => {
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_KEY_A });
+    await consume({
+      id: 'evt-label-2',
+      topic: TOPICS.ACTION_LABEL_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000008',
+      payload: {
+        mailboxAccountId: mailboxId,
+        actionId: '00000000-0000-4000-8000-000000000008',
+        verb: 'archive',
+        senderKey: null,
+        undoToken: '00000000-0000-4000-8000-0000000000a8',
+        affectedCount: 2,
+        compositeId: null,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+    const [row] = await db
+      .select()
+      .from(screenerQuarantine)
+      .where(eq(screenerQuarantine.mailboxAccountId, mailboxId));
+    expect(row!.decidedAt).toBeNull();
   });
 });
 

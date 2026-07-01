@@ -275,6 +275,11 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   ): Promise<LabelActionResult> {
     const { db } = this.deps;
     const mailboxAccountId = job.mailboxAccountId;
+    // This worker only ever processes the label-modify verbs
+    // (archive/later/delete — unsubscribe rides UnsubExecutionWorker), so
+    // narrow `job.verb` to the ACTION_LABEL_APPLIED schema's enum for the
+    // event payload. `labelChangeForVerb` already assumes this.
+    const labelVerb = job.verb as 'archive' | 'later' | 'delete';
 
     // Resolve the durable execution set (sender selector resolves "in
     // INBOX now"; messages selector was frozen by the API). Persist it
@@ -329,6 +334,27 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           // No undo token — there is nothing to reverse. The Activity
           // row's undoState resolves to `unavailable` client-side.
           undoToken: null,
+        });
+        // Still emit ACTION_LABEL_APPLIED (undoToken null, affectedCount
+        // 0) on this terminal-success branch. Without it, a Screener
+        // decision whose mail dropped to 0 between enqueue and execution
+        // would never resolve its quarantine row — the sender would be
+        // stuck in the queue despite a recorded decision. The Screener
+        // consumer keys off (mailbox, senderKey); for a message selector
+        // (senderKey null) it no-ops.
+        await this.deps.outbox.publish(tx, {
+          topic: TOPICS.ACTION_LABEL_APPLIED,
+          aggregateId: job.id,
+          payload: {
+            mailboxAccountId,
+            actionId: job.id,
+            verb: labelVerb,
+            senderKey,
+            undoToken: null,
+            affectedCount: 0,
+            compositeId: job.compositeId,
+          },
+          schema: ActionLabelAppliedPayloadSchema,
         });
       });
       return { affectedCount: 0, undoToken: null, alreadyDone: false };
@@ -394,7 +420,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         payload: {
           mailboxAccountId,
           actionId: job.id,
-          verb: job.verb,
+          verb: labelVerb,
           senderKey,
           undoToken: issued.token,
           affectedCount: ids.length,

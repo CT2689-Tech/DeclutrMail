@@ -1,9 +1,10 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
   activityLog,
   mailMessages,
+  screenerQuarantine,
   senderPolicies,
   senders,
   senderTimeseries,
@@ -79,6 +80,13 @@ export interface ScoreJobResult {
    * signal to graph "how often is Haiku stalling?" without re-querying.
    */
   llmTimeouts: number;
+  /**
+   * NEW `screener_quarantine` rows this run created (D72/D75) — the
+   * Phase-B "too new to judge" senders routed to the Screener queue.
+   * Counts true inserts only; an already-queued or already-decided
+   * sender is never re-flagged (`ON CONFLICT DO NOTHING`).
+   */
+  screenerFlagged: number;
 }
 
 /** Window for "monthly volume" — D21 reads the last full calendar month. */
@@ -244,11 +252,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmExplanations = 0;
     let templateExplanations = 0;
     let llmTimeouts = 0;
+    let screenerFlagged = 0;
     for (const written of results) {
       if (!written) continue;
       if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
       else templateExplanations += 1;
       if (written.timedOut) llmTimeouts += 1;
+      if (written.screenerFlagged) screenerFlagged += 1;
     }
     const decisionsWritten = llmExplanations + templateExplanations;
 
@@ -291,6 +301,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmExplanations,
       templateExplanations,
       llmTimeouts,
+      screenerFlagged,
     };
   }
 
@@ -308,6 +319,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     verdict: TriageVerdict;
     generatedBy: 'llm_haiku' | 'template';
     timedOut: boolean;
+    screenerFlagged: boolean;
   } | null> {
     const signals = await this.loadSignals(mailboxAccountId, senderKey);
     if (!signals) return null;
@@ -418,7 +430,44 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         where: lt(triageDecisions.producedAt, producedAt),
       });
 
-    return { verdict: result.verdict, generatedBy, timedOut };
+    // D72/D75 — the engine's Phase-B rule ("too new to judge") routes
+    // truly unknown senders to the Screener queue. SOFT quarantine
+    // only: a `screener_quarantine` row is the entire effect — no
+    // Gmail call, no label, no move (D72 hard rule). `ON CONFLICT DO
+    // NOTHING` on (mailbox, sender) keeps this idempotent across
+    // re-scores AND preserves a decided row: once the user has
+    // screened the sender (decided_at set), a later Phase-B re-score
+    // never re-queues it. Phase-C `score_inconclusive` rows stay in
+    // Triage — D75 names Phase B only.
+    let screenerFlagged = false;
+    if (result.ruleId === 'insufficient_signal') {
+      const inserted = await this.deps.db
+        .insert(screenerQuarantine)
+        .values({ mailboxAccountId, senderKey })
+        .onConflictDoNothing({
+          target: [screenerQuarantine.mailboxAccountId, screenerQuarantine.senderKey],
+        })
+        .returning({ id: screenerQuarantine.id });
+      screenerFlagged = inserted.length > 0;
+    } else {
+      // Graduation (Phase B → confident Phase-C verdict): the sender now
+      // carries a real triage verdict, so resolve any STILL-PENDING
+      // quarantine row. Without this the same sender appears in BOTH the
+      // Screener queue and Triage. Only `decided_at IS NULL` rows are
+      // touched — a user-decided row stays decided.
+      await this.deps.db
+        .update(screenerQuarantine)
+        .set({ decidedAt: new Date(), updatedAt: new Date() })
+        .where(
+          and(
+            eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
+            eq(screenerQuarantine.senderKey, senderKey),
+            isNull(screenerQuarantine.decidedAt),
+          ),
+        );
+    }
+
+    return { verdict: result.verdict, generatedBy, timedOut, screenerFlagged };
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */

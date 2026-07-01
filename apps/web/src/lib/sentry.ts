@@ -103,7 +103,8 @@ export function captureFeatureException(
       | 'autopilot'
       | 'triage'
       | 'onboarding'
-      | 'quiet';
+      | 'quiet'
+      | 'screener';
     reason: string;
   },
 ): void {
