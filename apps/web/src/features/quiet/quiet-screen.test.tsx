@@ -30,6 +30,8 @@ function makeMe(mailboxes: Me['mailboxes']): Me {
     user: { id: 'u-1', email: 'a@b.com', workspaceId: 'ws-1' },
     mailboxes,
     activeMailboxId: mailboxes[0]?.id ?? null,
+    tier: 'pro',
+    cleanupRemaining: null,
   };
 }
 

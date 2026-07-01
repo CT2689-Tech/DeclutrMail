@@ -36,12 +36,15 @@ export interface TierEntitlements {
  */
 export function useTier(): TierEntitlements {
   const { me } = useAuth();
-  const tier = me.tier;
+  // Web (Vercel) and API (Cloud Run) deploy independently — during the
+  // skew window `/api/auth/me` may predate the tier fields. Fall back
+  // instead of crashing the shell on TIER_MANIFEST[undefined].
+  const tier = me.tier ?? 'free';
   const inboxLimit = inboxLimitFor(tier);
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {
     tier,
-    cleanupRemaining: me.cleanupRemaining,
+    cleanupRemaining: me.cleanupRemaining ?? null,
     inboxLimit,
     connectedInboxes,
     atInboxLimit: connectedInboxes >= inboxLimit,
