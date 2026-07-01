@@ -14,6 +14,7 @@ import type { schema } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
+import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type {
@@ -216,7 +217,15 @@ export function labelActionJobOptions(idempotencyKey: string): JobsOptions {
   };
 }
 
-const PRO_UNDO_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Delete's undo window is pinned to Gmail's physical Trash retention
+ * (30 days) regardless of tier — a shorter window would falsely show
+ * "expired" while the mail is still trivially recoverable in Gmail.
+ * Spec v1.2 Decision 1.
+ */
+const DELETE_UNDO_WINDOW_DAYS = 30;
 
 export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, LabelActionResult> {
   readonly workerName = 'LabelActionWorker';
@@ -342,7 +351,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           mailboxAccountId,
           actionKind: job.verb,
           payload: buildUndoPayload(job.verb, ids),
-          ...(expiresAt ? { expiresAt } : {}),
+          // Always explicit — the tier-resolved snapshot (downgrade
+          // semantics; see `undoExpiresAt`), never the column default.
+          expiresAt,
         })
         .returning({ token: undoJournal.token });
       if (!issued) {
@@ -532,21 +543,23 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   }
 
   /**
-   * Undo window per verb + tier.
+   * Undo window per verb + tier (D19/D81).
    *
-   * - `delete` always returns 30 days regardless of tier — the physical
-   *   guarantee is Gmail's Trash retention (also 30d), so a tier-shorter
-   *   window would falsely show "expired" while the mail is still
-   *   trivially recoverable in Gmail. Spec v1.2 Decision 1.
-   * - `archive` / `later` use the D81 rule: Pro+ → 30d; Free/Plus →
-   *   the column default (7d) via `undefined`.
+   * - `delete` always returns 30 days regardless of tier (see
+   *   `DELETE_UNDO_WINDOW_DAYS`).
+   * - `archive` / `later` resolve through the SINGLE tier source —
+   *   `undoWindowDaysFor` on the D19 manifest (Free/Plus 7d; Pro/team/
+   *   enterprise 30d) — never a hardcoded per-tier branch here.
+   *
+   * DOWNGRADE SEMANTICS: the window is resolved AT ACTION TIME and
+   * snapshotted onto `undo_journal.expires_at` (the insert always sets
+   * it explicitly). A later tier change never shortens or extends an
+   * already-issued token — the expiry sweep (`UndoExpiryWorker`) reads
+   * only the stored `expires_at`.
    */
-  private async undoExpiresAt(
-    mailboxAccountId: string,
-    verb: ActionVerb,
-  ): Promise<Date | undefined> {
+  private async undoExpiresAt(mailboxAccountId: string, verb: ActionVerb): Promise<Date> {
     if (verb === 'delete') {
-      return new Date(Date.now() + PRO_UNDO_WINDOW_MS);
+      return new Date(Date.now() + DELETE_UNDO_WINDOW_DAYS * DAY_MS);
     }
     const [row] = await this.deps.db
       .select({ tier: workspaces.tier })
@@ -554,11 +567,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
-    const tier = row?.tier;
-    if (tier === 'pro' || tier === 'team' || tier === 'enterprise') {
-      return new Date(Date.now() + PRO_UNDO_WINDOW_MS);
-    }
-    return undefined;
+    // `workspace_tier` pg-enum values ARE TierIds — resolve via the
+    // manifest. A missing row degrades to the Free window (7d).
+    return new Date(Date.now() + undoWindowDaysFor(row?.tier ?? 'free') * DAY_MS);
   }
 }
 

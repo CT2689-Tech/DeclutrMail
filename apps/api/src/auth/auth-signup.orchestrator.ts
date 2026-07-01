@@ -9,6 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { mailboxAccounts } from '@declutrmail/db';
 import type { ErrorCode } from '@declutrmail/shared/contracts';
 
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
@@ -57,6 +58,7 @@ export class AuthSignupOrchestrator {
     private readonly tokenCrypto: TokenCryptoService,
     private readonly sessions: SessionsService,
     private readonly csrf: CsrfService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   async connect(input: {
@@ -193,6 +195,7 @@ export class AuthSignupOrchestrator {
       .select({
         id: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
+        status: mailboxAccounts.status,
       })
       .from(mailboxAccounts)
       .where(
@@ -209,6 +212,24 @@ export class AuthSignupOrchestrator {
           'This Google account is already connected to a different DeclutrMail workspace. ' +
           'Sign in with that account or disconnect it from the other workspace first.',
       });
+    }
+
+    // Enforce the connected-inbox limit at the ACTIVATION boundary (D19,
+    // D81). `InboxLimitGuard` on /connect-mailbox/start is only a UX
+    // fast-fail; the mutation lives here in the OAuth callback, so a user
+    // who passed /start under-limit and connected later — or who never
+    // hit /start at all — would otherwise overshoot the tier ceiling.
+    // Skip ONLY an already-active reconnect (same workspace, already
+    // counted): re-running OAuth for a live mailbox consumes no new slot.
+    // A brand-new account or the reactivation of a disconnected row DOES
+    // transition a row to active and must respect the limit.
+    // NOTE: a residual narrow race remains — two truly simultaneous
+    // callbacks can both pass this read-then-insert check; a partial
+    // unique index / advisory lock would close it (logged as a founder
+    // follow-up, needs a migration).
+    const isAlreadyActiveReconnect = existing?.status === 'active';
+    if (!isAlreadyActiveReconnect) {
+      await this.entitlements.assertCanConnectMailbox(input.currentWorkspaceId);
     }
 
     const encrypted = await this.tokenCrypto.encrypt(input.refreshToken);

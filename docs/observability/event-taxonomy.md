@@ -470,6 +470,26 @@ stream failed (`failed`). One event per attempt.
 **Retention / aggregation.** PostHog default. DPDP-export usage +
 failure-rate alarm (a spike in `failed` flags a broken export stream).
 
+### `upgrade_prompt_shown`
+
+**When fired.** When an entitlement gate (D19/D77/D81) surfaces an
+upgrade affordance to the user: the `FREE_CAP_REACHED` 402 prompt after
+an action enqueue is denied (`source: 'actions_402'`), the AccountMenu
+inbox-limit row replacing "Connect another" (`source: 'account_menu'`),
+or the Triage empty-state free-cap nudge. One emit per appearance, not
+per render.
+
+**Payload.**
+
+| Field    | Type                                                      | Notes                    |
+| -------- | --------------------------------------------------------- | ------------------------ |
+| `reason` | `'free_cap' \| 'inbox_limit'`                             | Which gate triggered it  |
+| `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state'` | Surface that rendered it |
+
+**Retention / aggregation.** PostHog default. Drives the
+prompt-shown → pricing-visit → checkout free-to-paid funnel alongside
+`billing_event`.
+
 ---
 
 ## Adding a new event

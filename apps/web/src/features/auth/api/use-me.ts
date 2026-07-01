@@ -9,9 +9,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
+import type { TierId } from '@declutrmail/shared/entitlements';
 import { apiGet, ApiError } from '@/lib/api/client';
 
-export type Tier = 'free' | 'plus' | 'pro';
+/**
+ * Workspace billing tier as served by `/api/auth/me` (D19). The full
+ * 5-row ladder — team/enterprise rank AT pro for feature gates (see
+ * `satisfiesActionTier` in `@declutrmail/shared/entitlements`).
+ */
+export type Tier = TierId;
 
 export interface MeUser {
   id: string;
@@ -32,6 +38,14 @@ export interface Me {
   user: MeUser;
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
+  /** Workspace billing tier (D19) — drives every FE entitlement gate. */
+  tier: Tier;
+  /**
+   * Free-tier LIFETIME cleanup actions left (D19: 5); `null` =
+   * unlimited (every paid tier). Refreshed with the `me` query, so a
+   * `FREE_CAP_REACHED` 402's `details` is the fresher signal mid-flow.
+   */
+  cleanupRemaining: number | null;
 }
 
 export const ME_QUERY_KEY = ['auth', 'me'] as const;

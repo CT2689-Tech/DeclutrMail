@@ -53,6 +53,7 @@ import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout } from './unsub-mailto-callout';
+import { FreeCapPrompt } from '@/features/billing/free-cap-prompt';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -696,6 +697,10 @@ function SendersScreenContent({
           onSuccess: (res) =>
             setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
           onError: (err) => {
+            // 402 FREE_CAP_REACHED is a designed state — the upgrade
+            // prompt (hook-level handler, lib/entitlements/free-cap)
+            // is the surface; skip Sentry + the generic toast.
+            if (err instanceof ApiError && err.status === 402) return;
             // 409 PROTECTED_SENDER is a designed conflict — skip Sentry to
             // avoid noise. Every other failure (5xx, IDEMPOTENCY_KEY race,
             // NO_ACTIVE_MAILBOX) is a real regression worth capturing.
@@ -765,6 +770,8 @@ function SendersScreenContent({
                       : 'Archive',
               }),
             onError: (err) => {
+              // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
+              if (err instanceof ApiError && err.status === 402) return;
               if (!(err instanceof ApiError && err.status === 409)) {
                 captureFeatureException(err, {
                   surface: 'senders',
@@ -854,6 +861,9 @@ function SendersScreenContent({
                           verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                         }),
                       onError: (err) => {
+                        // 402 FREE_CAP_REACHED — the upgrade prompt
+                        // explains why the backlog didn't enqueue.
+                        if (err instanceof ApiError && err.status === 402) return;
                         captureFeatureException(err, {
                           surface: 'senders',
                           reason: `enqueue_${secondary.type}_after_unsub`,
@@ -930,6 +940,8 @@ function SendersScreenContent({
                   senderCount: res.senderCount,
                 }),
               onError: (err) => {
+                // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
+                if (err instanceof ApiError && err.status === 402) return;
                 if (!(err instanceof ApiError && err.status === 409)) {
                   captureFeatureException(err, {
                     surface: 'senders',
@@ -1046,6 +1058,10 @@ function SendersScreenContent({
               setActiveBatch({ batchId: res.batchId, verb, senderCount: res.senderCount });
             },
             onError: (err) => {
+              // 402 FREE_CAP_REACHED — a bulk of N needs N free units;
+              // the upgrade prompt (hook-level handler) is the surface.
+              // The selection is KEPT so the user can shrink it.
+              if (err instanceof ApiError && err.status === 402) return;
               // 409 NO_ACTIONABLE_SENDERS is a designed conflict (whole
               // selection protected / gone) — skip Sentry, mirror the
               // single-sender PROTECTED_SENDER convention.
@@ -1516,6 +1532,10 @@ function SendersScreenContent({
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+
+      {/* D19/D77 — non-blocking upgrade prompt when an enqueue 402s
+          with FREE_CAP_REACHED (reported by the action hooks). */}
+      <FreeCapPrompt />
 
       {/* D230 manual path — the post-confirm "finish in Gmail" step for
           a mailto sender. The user sends the opt-out; never auto-sent. */}

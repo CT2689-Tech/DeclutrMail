@@ -104,7 +104,10 @@ describe('TriageScreen — empty / loading branches', () => {
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
     const free = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE });
     expect(free).toContain('See Plus');
-    expect(free).toContain('Plus removes the daily cap');
+    // D19 — freeRemaining is the LIFETIME cleanup remainder (5 total),
+    // not a daily counter; the copy must say so.
+    expect(free).toContain('free cleanup actions left');
+    expect(free).toContain('Plus removes the cap');
 
     const paid = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(paid).not.toContain('See Plus');

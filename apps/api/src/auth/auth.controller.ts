@@ -11,7 +11,9 @@ import {
 import type { Request, Response } from 'express';
 
 import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
+import type { TierId } from '@declutrmail/shared/entitlements';
 
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import {
   MailboxAccountsService,
@@ -41,6 +43,15 @@ export interface MeEnvelope {
   user: { id: string; email: string; workspaceId: string };
   mailboxes: MailboxView[];
   activeMailboxId: string | null;
+  /** Workspace billing tier (D19) — drives every FE entitlement gate. */
+  tier: TierId;
+  /**
+   * Free-tier lifetime cleanup actions left (D19: 5 lifetime);
+   * `null` = unlimited (every paid tier). Mirrored by the FE
+   * `useTier()` hook; the manifest resolvers in
+   * `@declutrmail/shared/entitlements` carry the limits themselves.
+   */
+  cleanupRemaining: number | null;
 }
 
 /**
@@ -64,6 +75,7 @@ export class AuthController {
     private readonly users: UsersService,
     private readonly mailboxes: MailboxAccountsService,
     private readonly sync: SyncService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   @Get('me')
@@ -83,7 +95,12 @@ export class AuthController {
         ? stored
         : (mailboxes.find((m) => m.status === 'active')?.id ?? null);
     // Compose per-mailbox sync readiness via the sync facade (D116, D204).
-    const readiness = await this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id));
+    // The tier + free-cap position ride the same response (D19/D77) —
+    // `cleanupSummary` skips the count scan entirely for paid tiers.
+    const [readiness, quota] = await Promise.all([
+      this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id)),
+      this.entitlements.cleanupSummary(principal.workspaceId),
+    ]);
     const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
       ...m,
       readiness: readiness.get(m.id) ?? null,
@@ -92,6 +109,8 @@ export class AuthController {
       user: { id: user.id, email: user.email, workspaceId: user.workspaceId },
       mailboxes: mailboxViews,
       activeMailboxId,
+      tier: quota.tier,
+      cleanupRemaining: quota.remaining,
     });
   }
 

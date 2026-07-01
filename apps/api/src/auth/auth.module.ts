@@ -1,6 +1,7 @@
 import { Logger, Module, type Provider, forwardRef } from '@nestjs/common';
 import { Redis } from 'ioredis';
 
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 // `forwardRef` is used below to break the AuthModule ↔ MailboxAccountsModule cycle.
 import { SyncModule } from '../sync/sync.module.js';
@@ -55,12 +56,19 @@ const sessionsRedisProvider: Provider = {
  *   - MailboxAccountsModule (mailbox upsert during connect)
  *   - SyncModule            (initial-sync enqueue)
  *   - AuthCryptoModule      (token envelope encryption)
+ *   - EntitlementsModule    (tier on /me + connect-mailbox inbox gate, D19/D77/D81)
  *
  * Exports JwtGuard so feature modules can protect their routes via
  * `@UseGuards(JwtGuard)` without importing AuthModule transitively.
  */
 @Module({
-  imports: [AuthCryptoModule, UsersModule, forwardRef(() => MailboxAccountsModule), SyncModule],
+  imports: [
+    AuthCryptoModule,
+    EntitlementsModule,
+    UsersModule,
+    forwardRef(() => MailboxAccountsModule),
+    SyncModule,
+  ],
   // DevAuthController is always registered but its handler 404s unless
   // the dev-login is explicitly enabled in a non-prod env (see the
   // triple gate in dev-auth.controller.ts + the boot refuse in main.ts).

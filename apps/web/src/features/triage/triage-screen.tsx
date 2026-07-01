@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
+import { FreeCapPrompt } from '@/features/billing/free-cap-prompt';
+
 // Cross-feature query-key imports are deliberate (not a D198/D199
 // boundary breach): each feature owns its keys, and exports them as the
 // invalidation contract other features use to mark its caches stale
@@ -118,6 +120,15 @@ function invalidateAfterDecision(qc: QueryClient): void {
  * undo tray + the row leaving the queue ARE the feedback. Failures DO
  * toast (there is no other failure surface).
  */
+/**
+ * Hard navigation to /pricing — it lives in the (marketing) route
+ * group, outside the (app) shell, so a full document load is correct
+ * (same pattern as the OAuth start navigation in AccountMenu).
+ */
+function openPricing(): void {
+  window.location.assign('/pricing');
+}
+
 export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageScreenState }) {
   const qc = useQueryClient();
   const pendingAction = useTriageStore((s) => s.pendingAction);
@@ -344,6 +355,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                         verb: 'Archive',
                       }),
                     onError: (err) => {
+                      // 402 FREE_CAP_REACHED — the upgrade prompt
+                      // (hook-level handler) explains why the backlog
+                      // didn't archive; skip Sentry + generic toast.
+                      if (err instanceof ApiError && err.status === 402) return;
                       captureFeatureException(err, {
                         surface: 'triage',
                         reason: 'enqueue_archive_after_unsub',
@@ -382,7 +397,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               verb,
             }),
           onError: (err) => {
-            // 409 PROTECTED_SENDER is a designed conflict — no Sentry.
+            // 409 PROTECTED_SENDER and 402 FREE_CAP_REACHED are
+            // designed states — no Sentry. The 402 already surfaced
+            // the upgrade prompt via the hook-level handler
+            // (lib/entitlements/free-cap), so skip the generic toast.
+            if (err instanceof ApiError && err.status === 402) return;
             if (!(err instanceof ApiError && err.status === 409)) {
               captureFeatureException(err, {
                 surface: 'triage',
@@ -567,17 +586,15 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
 
       {state.kind === 'loading' && <LoadingState />}
       {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
+      {/* "See Plus" routes to the real pricing page (D19) — a hard
+          navigation since /pricing lives in the (marketing) route
+          group; the modal checkout flow lands with the billing FE
+          (U13). Replaces the prior "Upgrade flow opens here" stub. */}
       {state.kind === 'empty' && (
-        <TriageEmptyState
-          stats={state.stats}
-          onOpenUpgrade={() => toast('Upgrade flow opens here', 'info')}
-        />
+        <TriageEmptyState stats={state.stats} onOpenUpgrade={openPricing} />
       )}
       {state.kind === 'ready' && state.rows.length === 0 && (
-        <TriageEmptyState
-          stats={state.stats}
-          onOpenUpgrade={() => toast('Upgrade flow opens here', 'info')}
-        />
+        <TriageEmptyState stats={state.stats} onOpenUpgrade={openPricing} />
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (
         <TriageQueue
@@ -597,6 +614,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
       />
+
+      {/* D19/D77 — non-blocking upgrade prompt when an enqueue 402s
+          with FREE_CAP_REACHED (reported by the action hooks). */}
+      <FreeCapPrompt />
     </div>
   );
 }

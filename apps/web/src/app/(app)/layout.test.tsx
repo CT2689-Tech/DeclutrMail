@@ -90,6 +90,8 @@ function authedHandlers(opts: {
               },
             ],
             activeMailboxId: 'mb-1',
+            tier: 'pro',
+            cleanupRemaining: null,
           },
         }),
     },
