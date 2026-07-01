@@ -1,0 +1,50 @@
+'use client';
+
+/**
+ * Billing read hooks (D119) — `GET /api/billing/subscription`.
+ *
+ * The endpoint 503s with `BILLING_DISABLED` until the founder flips
+ * `BILLING_ENABLED=true` (F-queue step). That is a DESIGNED state, not
+ * a failure: `retry: false` so the 503 surfaces immediately, and
+ * `billingDisabledFrom` lets the screen branch to the honest
+ * "billing isn't live yet" card instead of an error toast.
+ */
+
+import { useQuery } from '@tanstack/react-query';
+import type { BillingSubscription } from '@declutrmail/shared/contracts';
+
+import { apiGet, ApiError } from '@/lib/api/client';
+
+import { billingKeys } from './query-keys';
+
+/** Extract the machine-readable envelope code from an ApiError. */
+export function apiErrorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body as { error?: { code?: unknown } } | undefined;
+  const code = body?.error?.code;
+  return typeof code === 'string' ? code : null;
+}
+
+/**
+ * True when the error is the 503 "billing is dark" designed state
+ * (`BILLING_DISABLED` — module loaded, env flag off).
+ */
+export function isBillingDisabledError(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 503 && apiErrorCode(error) === 'BILLING_DISABLED'
+  );
+}
+
+export function useBillingSubscription() {
+  return useQuery({
+    queryKey: billingKeys.subscription(),
+    queryFn: async ({ signal }) => {
+      const envelope = await apiGet<BillingSubscription>('/api/billing/subscription', { signal });
+      return envelope.data;
+    },
+    // 503 BILLING_DISABLED is a designed state — never hammer it (§8
+    // read-guard-4xx/5xx rule; the route fails CLEANLY while dark).
+    retry: false,
+    staleTime: 60_000,
+  });
+}
