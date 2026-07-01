@@ -119,7 +119,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
 | D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
 | D67 | VIP in Brief: **Inline ⭐ star on Reply rows | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
-| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | ⬜ |  |  |  |
+| D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219 |  |  |
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D70 | Brief empty state: **Calm message when no email yesterday | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D70 — empty-day no-LLM + calm template |  |
 | D71 | Classification: **Drop bundle's category labels; show only engine recommendation | ⬜ |  |  |  |
@@ -170,11 +170,11 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224 |  |  |
 | D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194 |  |  |
 | D118 | Cancellation: **Respectful flow with optional reason + pause-30-days offer | 🔵 | #207 |  |  |
-| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | ⬜ |  |  |  |
-| D120 | Plan-change flows | ⬜ |  |  |  |
-| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | ⬜ |  |  |  |
+| D119 | Plan comparison: **Current plan card + condensed 3-tier strip + link to /pricing | 🔵 | #219 |  |  |
+| D120 | Plan-change flows | 🔵 | #219 |  |  |
+| D121 | No trial mechanic; 30-day Money-Back Guarantee on Pro | 🔵 | #219 |  |  |
 | D122 | Triage S key renamed: **"Decide later" (keyboard L key) | ⬜ |  |  |  |
-| D123 | Tier-specific Triage empty-state copy | ⬜ |  |  |  |
+| D123 | Tier-specific Triage empty-state copy | 🔵 | #219 |  |  |
 | D124 | VIP elevation in Brief is hard-coded engine behavior; preset #5 replaced | ⬜ |  |  |  |
 | D125 | Snoozed + Followups stay at V2 launch with usage-tracking exit clause | ⬜ |  |  |  |
 | D126 | Retention investment package (5-part) | ⬜ |  |  |  |
