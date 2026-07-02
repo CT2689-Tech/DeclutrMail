@@ -62,6 +62,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
   const [sheet, setSheet] = useState(false); // mobile evidence sheet
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seqRef = useRef(0); // monotonic ledger key — length+1 collides after undo
 
   const current: LabSender | undefined = queue[Math.min(focus, queue.length - 1)];
 
@@ -75,7 +76,13 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
     (verb: VerbId) => {
       if (!current) return;
       const sender = current;
-      setLog((l) => [...l, { sender, verb, at: l.length + 1 }]);
+      // Dedupe inside the updater: same-tick ⏎ bursts share a stale closure,
+      // so the guard must live where updates serialize. One entry per sender.
+      setLog((l) =>
+        l.some((x) => x.sender.id === sender.id)
+          ? l
+          : [...l, { sender, verb, at: ++seqRef.current }],
+      );
       setQueue((q) => q.filter((x) => x.id !== sender.id));
       setFocus((f) => Math.max(0, Math.min(f, queue.length - 2)));
       setPreview(null);

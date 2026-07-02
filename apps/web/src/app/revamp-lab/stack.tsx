@@ -66,21 +66,32 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
   const current = queue[0];
   const total = LAB_SENDERS.length;
 
+  const exitingRef = useRef(false);
+  const seqRef = useRef(0); // monotonic ledger key — length+1 collides after undo
   const finish = useCallback(
     (verb: VerbId) => {
-      if (!current) return;
+      // Confirm must be idempotent. A ref gates re-entry synchronously —
+      // React state (`exiting`) doesn't flush within the same tick, so a
+      // burst of ⏎ events would all see stale state and multi-commit.
+      if (!current || exitingRef.current) return;
+      exitingRef.current = true;
       setExiting(true);
       const sender = current;
       setTimeout(() => {
         setResolved((r) => {
-          const next: ResolvedAction = { sender, verb, at: r.length + 1 };
+          // Invariant: one ledger entry per sender per session.
+          if (r.some((x) => x.sender.id === sender.id)) return r;
+          const next: ResolvedAction = { sender, verb, at: ++seqRef.current };
           setToast(next);
           if (toastTimer.current) clearTimeout(toastTimer.current);
           toastTimer.current = setTimeout(() => setToast(null), 6000);
           return [...r, next];
         });
-        setQueue((q) => q.slice(1));
+        // Remove by id, not position — an undo landing mid-animation unshifts
+        // a restored sender at [0], which a positional slice would eat.
+        setQueue((q) => q.filter((x) => x.id !== sender.id));
         setPreview(null);
+        exitingRef.current = false;
         setExiting(false);
         setDrag(0);
       }, 260);

@@ -65,11 +65,16 @@ export function StudyDirection({ mobile }: { mobile: boolean }) {
   const [focusId, setFocusId] = useState<string | null>(LAB_SENDERS[0]?.id ?? null);
   const [note, setNote] = useState<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const seqRef = useRef(0); // monotonic ledger key — length+1 collides after undo
 
   const focusSender = docket.find((s) => s.id === focusId) ?? docket[0];
 
   const resolve = useCallback((s: LabSender, verb: VerbId) => {
-    setLedger((l) => [...l, { sender: s, verb, at: l.length + 1 }]);
+    // Dedupe inside the updater: same-tick ⏎ bursts share a stale closure,
+    // so the guard must live where updates serialize. One entry per sender.
+    setLedger((l) =>
+      l.some((x) => x.sender.id === s.id) ? l : [...l, { sender: s, verb, at: ++seqRef.current }],
+    );
     setDocket((d) => {
       const next = d.filter((x) => x.id !== s.id);
       setFocusId((cur) => {
