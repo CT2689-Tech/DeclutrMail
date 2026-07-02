@@ -119,8 +119,14 @@ export {
   VERDICT_RUNTIME_VALUES,
 } from './reasoning.js';
 export type { ConcurrencyLimiter, ReasoningInput, ReasoningLlmPort } from './reasoning.js';
-export { runCascade } from './score-cascade.js';
-export type { CascadePhase, CascadeResult, CascadeRuleId, SenderSignals } from './score-cascade.js';
+export { isGovernmentDomain, runCascade } from './score-cascade.js';
+export type {
+  CascadePhase,
+  CascadeResult,
+  CascadeRuleId,
+  SenderSignals,
+  UnsubscribeChannel,
+} from './score-cascade.js';
 export { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 export type {
   PresetDefinition,

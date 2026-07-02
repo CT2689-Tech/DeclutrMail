@@ -225,8 +225,10 @@ describe('ScoreWorker — happy path', () => {
       },
     ]);
     // Seed enough mail_messages so totalMessages ≥ 3 (otherwise Phase B
-    // captures it before scoring runs). We only need the COUNT here,
-    // not real bodies (privacy — none stored).
+    // captures it before scoring runs). The one-click List-Unsubscribe
+    // capability makes the sender a REAL unsubscribe candidate — D29:
+    // without a declared channel + stream volume, Phase C gates the
+    // unsubscribe score to 0. No bodies (privacy — none stored).
     for (let i = 0; i < 5; i += 1) {
       await db.insert(mailMessages).values({
         mailboxAccountId,
@@ -238,6 +240,8 @@ describe('ScoreWorker — happy path', () => {
         internalDate: new Date('2026-05-22T00:00:00Z'),
         labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
         isUnread: true,
+        unsubscribeUrl: 'https://brand.test/unsub',
+        unsubscribeOneClick: true,
       });
     }
 
@@ -353,8 +357,8 @@ describe('ScoreWorker — idempotency + upsert', () => {
     const senderKey = await seedSender(db, mailboxAccountId, 'race@me.test', {
       gmailCategory: 'promotions',
     });
-    // Push to Phase C (unsubscribe) so the "later" job has a clear
-    // verdict to write.
+    // Push to Phase C (unsubscribe — one-click channel + volume per the
+    // D29 gate) so the "later" job has a clear verdict to write.
     for (let m = 0; m < 3; m += 1) {
       await db.insert(senderTimeseries).values({
         mailboxAccountId,
@@ -376,6 +380,8 @@ describe('ScoreWorker — idempotency + upsert', () => {
         internalDate: new Date('2026-05-22T00:00:00Z'),
         labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
         isUnread: true,
+        unsubscribeUrl: 'https://me.test/unsub',
+        unsubscribeOneClick: true,
       });
     }
     const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
@@ -427,14 +433,16 @@ describe('ScoreWorker — idempotency + upsert', () => {
       .update(senders)
       .set({ gmailCategory: 'promotions' })
       .where(eq(senders.senderKey, senderKey));
-    // Add enough messages + timeseries to push to Phase C.
+    // Add enough messages + timeseries to push to Phase C. The one-click
+    // channel + 30/mo volume satisfy the D29 unsubscribe gate; 0% read
+    // corroborates → unsubscribe winner.
     for (let m = 0; m < 3; m += 1) {
       await db.insert(senderTimeseries).values({
         mailboxAccountId,
         senderKey,
         yearMonth: `2026-0${3 + m}-01`,
         volume: 30,
-        readCount: 0, // 0% read → Phase C unsubscribe winner
+        readCount: 0,
         replyCount: 0,
       });
     }
@@ -449,6 +457,8 @@ describe('ScoreWorker — idempotency + upsert', () => {
         internalDate: new Date('2026-05-22T00:00:00Z'),
         labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
         isUnread: true,
+        unsubscribeUrl: 'https://me.test/unsub',
+        unsubscribeOneClick: true,
       });
     }
 

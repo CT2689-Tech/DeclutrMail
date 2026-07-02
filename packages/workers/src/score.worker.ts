@@ -26,7 +26,7 @@ import {
   type ReasoningLlmPort,
 } from './reasoning.js';
 import { RateLimiter } from './rate-limiter.js';
-import { runCascade, type SenderSignals } from './score-cascade.js';
+import { isGovernmentDomain, runCascade, type SenderSignals } from './score-cascade.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -549,11 +549,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
     // `mail_messages` metadata aggregates — total + per-flag counts.
     // Bodies are NEVER touched; only sender_key, label_ids, is_unread,
-    // internal_date are read.
+    // internal_date and the List-Unsubscribe capability columns are read.
     const [msgAgg] = await this.deps.db
       .select({
         totalMessages: sql<number>`count(*)::int`,
-        hasUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeUrl} is not null or ${mailMessages.unsubscribeMailtoUrl} is not null)`,
+        hasOneClickUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeOneClick})`,
+        hasAnyUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeUrl} is not null or ${mailMessages.unsubscribeMailtoUrl} is not null)`,
         starredCount: sql<number>`coalesce(sum(case when 'STARRED' = any(${mailMessages.labelIds}) and ${mailMessages.internalDate} >= ${sql.raw(`'${new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString()}'::timestamptz`)} then 1 else 0 end), 0)::int`,
       })
       .from(mailMessages)
@@ -565,7 +566,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       );
 
     const totalMessages = msgAgg?.totalMessages ?? 0;
-    const hasUnsubscribeHeader = Boolean(msgAgg?.hasUnsub ?? false);
+    // Channel precedence mirrors `senders.unsubscribe_method` (D9):
+    // one_click > mailto > none. Derived from the message rows directly
+    // so scoring never depends on `building_sender_index` backfill state.
+    const unsubscribeChannel: SenderSignals['unsubscribeChannel'] = msgAgg?.hasOneClickUnsub
+      ? 'one_click'
+      : msgAgg?.hasAnyUnsub
+        ? 'mailto'
+        : 'none';
     const starredInLastYear = (msgAgg?.starredCount ?? 0) > 0;
 
     // User-manual archive count — D21 §archive_score uses it as one of the
@@ -619,7 +627,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         totalMessages,
         monthlyVolume,
         spikeRatio,
-        hasUnsubscribeHeader,
+        unsubscribeChannel,
+        // Deterministic .gov/.mil public-suffix fact, computed at scoring
+        // time from the sender's domain — never persisted (D222).
+        isGovDomain: isGovernmentDomain(sender.domain),
         userManuallyArchivedCount,
       },
     };

@@ -15,11 +15,13 @@ import type { TriageVerdict } from '@declutrmail/db';
  *   Phase B (low signal) — rule 7. Always Later, exit.
  *   Phase C (scoring)   — Archive vs Unsubscribe; argmax wins.
  *
- * Confidence bands per D21 (locked):
+ * Confidence bands (D21, Phase C re-weighted 2026-07-02 per D29 triage-
+ * quality fix — see the Phase C block comment):
  *   Phase A : 0.80..1.00  (depending on which rule fired)
  *   Phase B : 0.70        (rule 7 — "too new to judge")
- *   Phase C : 0.55..0.95  (clamp; computed from winner / (winner + loser))
+ *   Phase C : 0.55..0.95  (clamp; computed from winner strength + margin)
  *   Phase C fallback (both < 0.50) : 0.60  (low confidence — defer to user)
+ *   Phase C gated (no unsubscribe stream, archive < 0.50) : 0.60
  *
  * D227: `verdict` values are the closed K/A/U/L union — `'later'` (not
  * `'screen'`) for the low-confidence cases. Matches the rest of the
@@ -27,9 +29,17 @@ import type { TriageVerdict } from '@declutrmail/db';
  *
  * D222: NO category prediction here. The cascade reads `gmailCategory`
  * but only Gmail's own CATEGORY_* label assignment — DeclutrMail never
- * predicts which category a sender belongs to. The score weights from
- * D21 §unsubscribe_score use the user-observed category, not an inferred
- * one.
+ * predicts which category a sender belongs to. The two 2026-07-02
+ * signals are rule-matched FACTS, not predicted categories:
+ *   - `unsubscribeChannel` is read off the sender's own
+ *     `List-Unsubscribe` headers (RFC 2369 / RFC 8058) — the sender
+ *     declares it; we never infer it.
+ *   - `isGovDomain` is a deterministic public-suffix check on the
+ *     sender's domain (.gov / .mil ± country code). It is computed at
+ *     scoring time, never persisted, and never used to protect or
+ *     route — it only CAPS how confident the engine claims to be about
+ *     an Unsubscribe recommendation (a wrong unsubscribe from an
+ *     official source is high-regret).
  */
 
 /** Why the cascade returned the verdict — feeds the audit copy + template. */
@@ -48,10 +58,55 @@ export type CascadeRuleId =
   // Phase C — score winner / fallback.
   | 'score_archive'
   | 'score_unsubscribe'
-  | 'score_inconclusive';
+  | 'score_inconclusive'
+  // Phase C — unsubscribe gated, archive didn't clear the bar either.
+  // Split per gate leg so the audit copy says the honest, specific
+  // thing instead of "signals are mixed":
+  //   - `score_no_unsub_channel` — the sender declares no
+  //     List-Unsubscribe channel at all; there is nothing to act on.
+  //   - `score_quiet_stream` — a channel exists but the stream is
+  //     below MIN_UNSUB_STREAM_VOLUME; too quiet to be worth cutting.
+  | 'score_no_unsub_channel'
+  | 'score_quiet_stream';
 
 /** Closed union of cascade phases — used by the template + telemetry. */
 export type CascadePhase = 'A' | 'B' | 'C';
+
+/**
+ * The sender's own declared unsubscribe channel, read off its
+ * `List-Unsubscribe` headers (already stored per-message under the D7
+ * allowlist; mirrors `senders.unsubscribe_method`'s derivation):
+ *   - `one_click` — RFC 8058 One-Click seen on ≥ 1 message.
+ *   - `mailto`    — a List-Unsubscribe URL/mailto exists, but no
+ *                   one-click capability (manual at launch per D230).
+ *   - `none`      — no List-Unsubscribe header ever seen.
+ *
+ * A closed union (not two booleans) so "one-click without a header"
+ * is unrepresentable.
+ */
+export type UnsubscribeChannel = 'one_click' | 'mailto' | 'none';
+
+/**
+ * Deterministic government/military public-suffix check (D29 confidence
+ * damping). Matches domains ENDING in `.gov` or `.mil`, optionally with
+ * a two-letter country code after (`.gov.in`, `.gov.uk`, `.mil.co`).
+ * Bare `gov.uk`-style domains match too.
+ *
+ * D222 note: this is a rule-matched FACT about the domain string —
+ * transparent, testable, computed at scoring time, never persisted,
+ * never used to protect/route. Not a predicted category. (D22 removed
+ * domain-pattern AUTO-PROTECTION; this caps recommendation confidence
+ * instead, which is the opposite of routing — it makes the engine
+ * claim LESS, never act more.)
+ *
+ * Known non-matches (accepted): `.gouv.fr`, `.gc.ca` and other
+ * non-gov/mil official suffixes. Extend the pattern if they show up in
+ * real queues — do not generalize to a category list.
+ */
+const GOV_DOMAIN_RE = /(^|\.)(gov|mil)(\.[a-z]{2})?$/i;
+export function isGovernmentDomain(domain: string): boolean {
+  return GOV_DOMAIN_RE.test(domain.trim());
+}
 
 /**
  * Signals the cascade needs. The worker materializes this from
@@ -99,10 +154,18 @@ export interface SenderSignals {
    */
   spikeRatio: number;
   /**
-   * Whether ANY of this sender's recent messages had a `List-Unsubscribe`
-   * header. D21 score weights use it on both sides (corroborating).
+   * The sender's declared unsubscribe channel (see `UnsubscribeChannel`).
+   * Replaces the pre-D29-fix `hasUnsubscribeHeader` boolean: Phase C
+   * needs to know HOW unsubscribable a sender is, not just whether a
+   * header ever appeared.
    */
-  hasUnsubscribeHeader: boolean;
+  unsubscribeChannel: UnsubscribeChannel;
+  /**
+   * Deterministic `.gov`/`.mil` public-suffix fact about the sender's
+   * domain — see `isGovernmentDomain`. Caps Unsubscribe confidence;
+   * never protects, routes, or persists anything (D222-safe).
+   */
+  isGovDomain: boolean;
   /** Times the user has manually archived a message from this sender. */
   userManuallyArchivedCount: number;
 }
@@ -128,6 +191,22 @@ export interface CascadeResult {
     unsubscribe: number;
   };
 }
+
+/**
+ * Minimum 90-day average monthly volume for a sender to count as an
+ * ACTIVE MAILING STREAM. Below this there is nothing worth
+ * unsubscribing from — a quarterly statement or an 8-lifetime-message
+ * agency sender is not a stream, however unread it is.
+ */
+export const MIN_UNSUB_STREAM_VOLUME = 2;
+
+/**
+ * Ceiling for Unsubscribe confidence on `.gov`/`.mil` senders. A wrong
+ * "Unsubscribe from the DMV · 95%" is an activation-killing
+ * recommendation; official-source unsubscribes stay below the
+ * high-confidence band no matter how strong the other signals are.
+ */
+export const GOV_UNSUB_CONFIDENCE_CAP = 0.75;
 
 /** Clamp `x` into `[lo, hi]`. */
 function clamp(x: number, lo: number, hi: number): number {
@@ -240,30 +319,76 @@ export function runCascade(s: SenderSignals): CascadeResult {
   }
 
   // ─── Phase C — scoring (Archive vs Unsubscribe; argmax wins) ───────────
-  // Weights frozen from D21 §scoring. Each `if` is INDEPENDENT — MISTAKES.md
-  // 2026-05-20 entry: do not collapse independent buckets into if/else-if.
+  // Re-weighted 2026-07-02 (D29 triage-quality fix; supersedes the frozen
+  // D21 §scoring weights — plan patch pending, see PR). The original
+  // weights let INACTIVITY alone (read_rate 0 + stale) reach 0.80 and,
+  // with `winner/(winner+loser)` degenerating to 1.0 when the loser was
+  // 0, every quiet sender surfaced as "Unsubscribe · 95%" — including
+  // no-reply government and transactional senders with NO unsubscribe
+  // channel at all. Unsubscribe now requires POSITIVE unsubscribe-ability
+  // + stream behavior; disengagement only corroborates.
+  //
+  // Each `if` is INDEPENDENT — MISTAKES.md 2026-05-20 entry: do not
+  // collapse independent buckets into if/else-if.
+  const hasUnsubChannel = s.unsubscribeChannel !== 'none';
+
   let archive = 0;
   if (s.monthlyVolume >= 30) archive += 0.3;
   if (s.monthlyVolume >= 60) archive += 0.2;
   if (s.userManuallyArchivedCount >= 3) archive += 0.3;
-  if (s.hasUnsubscribeHeader) archive += 0.15;
+  if (hasUnsubChannel) archive += 0.15;
 
+  // Unsubscribe HARD GATE: a sender is only unsubscribable when it
+  // declares a channel (List-Unsubscribe) AND behaves like an active
+  // stream (≥ MIN_UNSUB_STREAM_VOLUME msgs/mo over 90d). A sender that
+  // fails the gate scores 0 — there is no stream to cut, so silence
+  // (read_rate 0, stale last_seen) is NOT evidence for Unsubscribe.
   let unsubscribe = 0;
-  if (s.readRate90d < 0.05) unsubscribe += 0.4;
-  if (s.readRate90d < 0.2) unsubscribe += 0.3;
-  if (s.spikeRatio >= 3) unsubscribe += 0.3;
-  if (s.hasUnsubscribeHeader) unsubscribe += 0.2;
-  if (
-    s.gmailCategory === 'promotions' ||
-    s.gmailCategory === 'forums' ||
-    s.gmailCategory === 'social'
-  ) {
-    unsubscribe += 0.2;
+  if (hasUnsubChannel && s.monthlyVolume >= MIN_UNSUB_STREAM_VOLUME) {
+    // Positive unsubscribe-ability — the channel itself, graded by
+    // strength (one-click is automatic; mailto is manual per D230).
+    if (s.unsubscribeChannel === 'one_click') unsubscribe += 0.35;
+    if (s.unsubscribeChannel === 'mailto') unsubscribe += 0.2;
+    // Positive stream behavior — volume, graded.
+    if (s.monthlyVolume >= 8) unsubscribe += 0.15;
+    if (s.monthlyVolume >= 30) unsubscribe += 0.15;
+    // Disengagement CORROBORATES (max +0.25) but can never carry the
+    // verdict alone — the pre-fix 0.40/0.30 read-rate weights were the
+    // over-recommendation bug.
+    if (s.readRate90d < 0.2) unsubscribe += 0.15;
+    if (s.readRate90d < 0.05) unsubscribe += 0.1;
+    // Gmail's OWN category label (not predicted — D222).
+    if (
+      s.gmailCategory === 'promotions' ||
+      s.gmailCategory === 'forums' ||
+      s.gmailCategory === 'social'
+    ) {
+      unsubscribe += 0.1;
+    }
+    // Behavior-change spike.
+    if (s.spikeRatio >= 3) unsubscribe += 0.1;
   }
-  if (s.monthlyVolume >= 60) unsubscribe += 0.2;
-  if (s.lastSeenDaysAgo >= 30) unsubscribe += 0.1;
+  // (Removed from D21 §unsubscribe_score: `last_seen_days >= 30 → +0.10`.
+  // Staleness means the stream already went quiet — it is not a reason
+  // to unsubscribe, and it was the core of the inactivity bug.)
 
   const scores = { archive: round2(archive), unsubscribe: round2(unsubscribe) };
+
+  // Gate failed and archive didn't clear the bar either → Later, with
+  // honest audit copy per gate leg — not "signals are mixed". This is
+  // where the DMV-style no-reply / quiet transactional senders land now.
+  if (!(hasUnsubChannel && s.monthlyVolume >= MIN_UNSUB_STREAM_VOLUME) && archive < 0.5) {
+    return {
+      verdict: 'later',
+      confidence: 0.6,
+      phase: 'C',
+      // No channel is the stronger fact — report it even when the
+      // stream is also quiet.
+      ruleId: hasUnsubChannel ? 'score_quiet_stream' : 'score_no_unsub_channel',
+      facts,
+      scores,
+    };
+  }
 
   // Both below 0.50 → low-confidence Phase C fallback → Later.
   if (archive < 0.5 && unsubscribe < 0.5) {
@@ -283,11 +408,26 @@ export function runCascade(s: SenderSignals): CascadeResult {
   const archiveWins = archive >= unsubscribe;
   const winner = archiveWins ? archive : unsubscribe;
   const loser = archiveWins ? unsubscribe : archive;
-  const sum = winner + loser;
-  // `sum === 0` cannot happen here (we'd be in the inconclusive branch),
-  // but the divide-by-zero guard keeps the type sound.
-  const rawConfidence = sum > 0 ? winner / sum : 0.55;
-  const confidence = round2(clamp(rawConfidence, 0.55, 0.95));
+
+  // Confidence = winner STRENGTH + MARGIN over the loser, distributed
+  // inside the locked [0.55, 0.95] band. The pre-fix `winner/(winner+
+  // loser)` ratio degenerated to 1.0 → clamp 0.95 whenever the loser
+  // was 0, which pinned essentially every Phase C verdict at 95%. The
+  // additive form spreads honestly: a maxed-out one-click newsletter
+  // lands ~0.90; a mailto-only mid-volume case ~0.75; nothing in Phase C
+  // reaches 0.95 anymore (the loser always keeps ≥ 0.15 via the shared
+  // channel weight whenever unsubscribe is in play).
+  const strength = clamp(winner, 0, 1);
+  const margin = clamp(winner - loser, 0, 1);
+  let confidence = round2(clamp(0.5 + 0.35 * strength + 0.1 * margin, 0.55, 0.95));
+
+  // Government/military senders: never claim high confidence on
+  // Unsubscribe, regardless of signals — a wrong unsubscribe from an
+  // official source (DMV, IRS, tax portals) is high-regret and reads
+  // as unserious. Cap, don't reroute (D222: no protection, no category).
+  if (!archiveWins && s.isGovDomain) {
+    confidence = Math.min(confidence, GOV_UNSUB_CONFIDENCE_CAP);
+  }
 
   return {
     verdict: archiveWins ? 'archive' : 'unsubscribe',
