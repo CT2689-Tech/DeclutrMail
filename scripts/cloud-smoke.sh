@@ -56,7 +56,8 @@ GOOGLE_CLIENT_SECRET=local-dummy-secret
 GOOGLE_REDIRECT_URI=http://localhost:4000/api/auth/google/callback
 WEB_URL=http://localhost:3000
 CORS_ORIGIN=http://localhost:3000
-COOKIE_DOMAIN=localhost
+# COOKIE_DOMAIN deliberately UNSET (host-only cookie) — .env.example:130-131:
+# an explicit Domain=localhost attribute is rejected/ignored by cookie engines.
 DEV_AUTH_ENABLED=true
 DEV_AUTH_EMAIL_PREFIX=chintan
 RATE_LIMIT_ENABLED=false
