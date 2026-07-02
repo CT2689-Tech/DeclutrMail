@@ -70,6 +70,13 @@ updates:
       # React versions / Turbopack defaults change between majors).
       - dependency-name: next
         update-types: [version-update:semver-major]
+      # @types/node must track the RUNTIME major (Node 22 — .nvmrc,
+      # Dockerfile node:22-alpine, engines >=22, CI node-version-file).
+      # A types major admits newer-Node APIs that crash on the deployed
+      # runtime while typecheck stays green. Revisit when the runtime
+      # itself moves majors. (Context: closed PR #233.)
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
 
   # ─── GitHub Actions — pinned-by-version Actions in .github/workflows ─
   - package-ecosystem: github-actions

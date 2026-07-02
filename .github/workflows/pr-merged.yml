@@ -68,7 +68,7 @@ jobs:
               # Only flip rows currently in ⬜ Not-started state with empty PR cell.
               # Row shape: `| D<num> | <title> | ⬜ |  | <verified> | <notes> |`
               pattern = re.compile(
-                  rf'^\| D{re.escape(num)} \| ([^|]+) \| ⬜ \|  \|(.*)$',
+                  rf'^\| D{re.escape(num)} \| (.+?) \| ⬜ \|  \|(.*)$',
                   re.MULTILINE,
               )
               src, n = pattern.subn(
