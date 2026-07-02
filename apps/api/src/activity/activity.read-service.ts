@@ -22,7 +22,23 @@
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, gte, ilike, inArray, lt, or } from 'drizzle-orm';
+import {
+  and,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  min,
+  or,
+  sum,
+} from 'drizzle-orm';
+
+import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/contracts';
 
 import { activityLog, automationRules, senders, undoJournal } from '@declutrmail/db';
 
@@ -30,6 +46,7 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityRow,
   ActivityStats,
+  ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
   UndoState,
@@ -50,6 +67,23 @@ const WINDOW_DAYS: Record<Exclude<ActivityWindow, 'all'>, number> = {
  * scroll fluid without inviting unbounded scans.
  */
 export const ACTIVITY_LIMIT = { def: 25, min: 1, max: 100 };
+
+/**
+ * The five canonical verbs (K/A/U/L/D — D227 + ADR-0019) the DQ16
+ * summary counts. Derived from `CANONICAL_SHORTCUTS` (the verb
+ * registry's letter map) so a future verb addition propagates here
+ * without a parallel literal list. Feature-specific `activity_action`
+ * values (`followup-dismiss`, VIP/Protect toggles) are intentionally
+ * outside this set — they are not cleanup decisions.
+ */
+const SUMMARY_VERBS = Object.keys(CANONICAL_SHORTCUTS) as CanonicalVerb[];
+
+export interface SummarizeActivityParams {
+  mailboxAccountId: string;
+  window: ActivityWindow;
+  /** Injected "now" (same contract as `ListActivityParams.nowMs`). */
+  nowMs: number;
+}
 
 export interface ListActivityParams {
   mailboxAccountId: string;
@@ -307,6 +341,94 @@ export class ActivityReadService {
       later: byVerb.get('later') ?? 0,
       followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
       needsAttention: 0,
+    };
+  }
+
+  /**
+   * Aggregate cleanup totals for one mailbox — the DQ16 share-receipt
+   * numbers (see {@link ActivitySummary} for field semantics).
+   *
+   * Read-only (D204): three aggregate SELECTs, no writes, no events.
+   *
+   * Sources:
+   *   - `activity_log` (append-only, exact) → byVerb / emailsHandled /
+   *     decidedSenders / since. Canonical verbs only.
+   *   - `undo_journal` (pruned ~1d after expiry) → undoCount, a floor.
+   *
+   * Index path (D235 awareness): the activity_log aggregates take the
+   * same path as {@link aggregateStats} — leading-column equality on
+   * `mailbox_account_id` via `activity_log_account_sender_occurred_idx`,
+   * then filter/aggregate over the per-mailbox slice. The undo_journal
+   * count uses `undo_journal_account_expires_idx`'s leading column the
+   * same way, and the journal stays small by construction (expiry
+   * pruning). No new index needed at current scale.
+   */
+  async summarizeActivity(params: SummarizeActivityParams): Promise<ActivitySummary> {
+    const { mailboxAccountId, window, nowMs } = params;
+    const windowStart = resolveWindowStart(window, nowMs);
+
+    const verbScope = and(
+      eq(activityLog.mailboxAccountId, mailboxAccountId),
+      inArray(activityLog.action, SUMMARY_VERBS),
+      ...(windowStart ? [gte(activityLog.occurredAt, windowStart)] : []),
+    );
+    // Undos are bounded by WHEN THE UNDO HAPPENED (`reverted_at`), not
+    // when the undone action occurred — the receipt answers "how many
+    // times did you change your mind in this window?".
+    const undoScope = and(
+      eq(undoJournal.mailboxAccountId, mailboxAccountId),
+      isNotNull(undoJournal.revertedAt),
+      ...(windowStart ? [gte(undoJournal.revertedAt, windowStart)] : []),
+    );
+
+    const [verbRows, senderRows, undoRows] = await Promise.all([
+      this.db
+        .select({
+          action: activityLog.action,
+          n: count(activityLog.id),
+          handled: sum(activityLog.affectedCount),
+          earliest: min(activityLog.occurredAt),
+        })
+        .from(activityLog)
+        .where(verbScope)
+        .groupBy(activityLog.action),
+      // COUNT(DISTINCT sender_key) skips NULLs per SQL semantics, so
+      // account-scoped rows (sender_key IS NULL) never count as a
+      // "decided sender".
+      this.db
+        .select({ n: countDistinct(activityLog.senderKey) })
+        .from(activityLog)
+        .where(verbScope),
+      this.db
+        .select({ n: count(undoJournal.token) })
+        .from(undoJournal)
+        .where(undoScope),
+    ]);
+
+    const byVerb: Record<CanonicalVerb, number> = {
+      keep: 0,
+      archive: 0,
+      unsubscribe: 0,
+      later: 0,
+      delete: 0,
+    };
+    let emailsHandled = 0;
+    let since: Date | null = null;
+    for (const row of verbRows) {
+      // The WHERE clause restricts `action` to SUMMARY_VERBS — the
+      // narrowing cast cannot observe a non-canonical value.
+      byVerb[row.action as CanonicalVerb] = Number(row.n);
+      emailsHandled += Number(row.handled ?? 0);
+      if (row.earliest && (since === null || row.earliest < since)) since = row.earliest;
+    }
+
+    return {
+      window,
+      since: since ? since.toISOString() : null,
+      decidedSenders: Number(senderRows[0]?.n ?? 0),
+      byVerb,
+      emailsHandled,
+      undoCount: Number(undoRows[0]?.n ?? 0),
     };
   }
 }
