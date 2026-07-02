@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { headers } from 'next/headers';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import '@declutrmail/shared/tokens.css';
 import { Providers } from './providers';
@@ -27,7 +28,17 @@ export const metadata: Metadata = {
   description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // CSP nonce plumbing (D175). `src/middleware.ts` mints a per-request
+  // nonce and stamps it into the `Content-Security-Policy` request
+  // header; Next.js applies it to its own framework <script> tags
+  // automatically — but ONLY during dynamic rendering. Reading
+  // `headers()` here opts every route out of static prerendering, so no
+  // page can ever ship build-time HTML whose inline bootstrap scripts
+  // carry a stale (or missing) nonce. Any future inline <Script> must
+  // read the nonce the same way: `(await headers()).get('x-nonce')`.
+  // https://nextjs.org/docs/app/guides/content-security-policy
+  await headers();
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${fraunces.variable}`}>
       <body>
