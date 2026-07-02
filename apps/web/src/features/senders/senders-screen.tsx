@@ -721,9 +721,10 @@ function SendersScreenContent({
       // Delete primary OR Later primary OR Archive/Later with a secondary
       // historic verb. Routes through `POST /api/actions` so the BE
       // composite executor persists primary + secondary as two linked
-      // rows when relevant. Unsubscribe primary stays tracer at this
-      // build (no BE composite primary support for unsub) — the secondary
-      // chip on Unsub also tracers until the unsub pipeline lands.
+      // rows when relevant. Unsubscribe primary takes its own branch
+      // below (D9 Wave 2): a REAL recorded intent + RFC 8058 execution,
+      // whose secondary chip enqueues a separate composite (the BE has
+      // no composite PRIMARY for unsub — the triage pattern).
       if (
         senders.length === 1 &&
         (verb === 'Delete' || (verb === 'Archive' && opts?.secondary != null) || verb === 'Later')

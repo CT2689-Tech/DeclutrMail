@@ -3,13 +3,17 @@
 import type { ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import { GracePeriodBanner } from '@/features/account-deletion/grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
+import { useTier } from '@/features/auth/api/use-tier';
 import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
+import { useScreenerCount } from '@/features/screener/api/use-screener';
+import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 
@@ -46,6 +50,10 @@ import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-b
  * (first page) — represents the active mailbox's count + a `+` suffix
  * when there's more data behind the cursor. Hidden until the first
  * page returns so we never flash a stale `0`.
+ *
+ * Screener badge (D74): `ScreenerBadge` fed by `useScreenerCount`,
+ * mounted only for tiers with the `screener` capability (D77) — see
+ * the gating comment at the hook call.
  *
  * Account menu (D116 surface — partial): the topbar's right slot
  * carries the switcher / disconnect / connect-another / sign-out menu.
@@ -87,7 +95,18 @@ function AppChrome({ children }: { children: ReactNode }) {
         ? `${firstPage.data.length}+`
         : firstPage.data.length;
 
-  // U-NAV follow-up: screener badge mounts here when #220 lands (D74).
+  // Screener badge (D74) — Screener is Pro-only (D77), so the count
+  // query is gated on the tier capability: a Free/Plus session must
+  // NEVER fire a request the server would 402 (a read 4xx is a
+  // designed state, never an error surface or a retry — §8). Also
+  // gated on an active mailbox (`CurrentMailboxGuard` 409s without
+  // one — same rule as the senders chip). On any error the badge is
+  // simply absent (`retry: false` in the hook); a nav hint has no
+  // error state.
+  const { tier } = useTier();
+  const screenerUnlocked = hasCapability(tier, 'screener');
+  const screenerCount = useScreenerCount({ enabled: screenerUnlocked && hasActiveMailbox });
+  const screenerPending = screenerUnlocked ? screenerCount.data?.pending : undefined;
 
   // Onboarding incomplete — `useOnboardingGate` has already issued
   // `router.replace('/onboarding')`; render nothing while it lands so
@@ -129,7 +148,14 @@ function AppChrome({ children }: { children: ReactNode }) {
           <AppShell
             active={active}
             onNavigate={(id) => router.push(`/${id}`)}
-            counts={sendersCount === undefined ? {} : { senders: sendersCount }}
+            counts={{
+              ...(sendersCount === undefined ? {} : { senders: sendersCount }),
+              // Element badge — the sidebar renders it as-is, so the
+              // D74 pulse + aria-label + hide-at-zero all apply.
+              ...(screenerPending === undefined
+                ? {}
+                : { screener: <ScreenerBadge count={screenerPending} /> }),
+            }}
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <SyncNowButton />
