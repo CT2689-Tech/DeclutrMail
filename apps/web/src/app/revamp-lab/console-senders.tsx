@@ -189,7 +189,7 @@ export function ConsoleSenders({ mobile }: { mobile: boolean }) {
                       return (
                         <button
                           key={v}
-                          disabled={disabled}
+                          aria-disabled={disabled}
                           onClick={() => act(open, v)}
                           style={{
                             fontFamily: mono,

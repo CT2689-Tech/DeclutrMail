@@ -237,7 +237,7 @@ export function StackSenders({ mobile }: { mobile: boolean }) {
                 return (
                   <button
                     key={v}
-                    disabled={disabled}
+                    aria-disabled={disabled}
                     onClick={() => act(s, v)}
                     style={{
                       background: 'transparent',

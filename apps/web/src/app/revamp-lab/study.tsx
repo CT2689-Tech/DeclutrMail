@@ -341,7 +341,7 @@ export function StudyDirection({ mobile }: { mobile: boolean }) {
                           return (
                             <button
                               key={v.id}
-                              disabled={disabled}
+                              aria-disabled={disabled}
                               title={disabled ? 'No unsubscribe channel on this sender' : undefined}
                               onClick={(e) => {
                                 e.stopPropagation();

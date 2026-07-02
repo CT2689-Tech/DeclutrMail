@@ -597,7 +597,7 @@ export function StackDirection({ mobile, screen }: { mobile: boolean; screen: La
                     )}
                     <button
                       onClick={() => act(v.id)}
-                      disabled={disabled}
+                      aria-disabled={disabled}
                       title={disabled ? 'No unsubscribe channel on this sender' : undefined}
                       style={{
                         display: 'flex',

@@ -236,7 +236,7 @@ export function ConsoleDirection({ mobile, screen }: { mobile: boolean; screen: 
             return (
               <button
                 key={v.id}
-                disabled={disabled}
+                aria-disabled={disabled}
                 onClick={() => act(v.id)}
                 style={{
                   background: 'transparent',
