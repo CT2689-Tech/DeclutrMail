@@ -74,8 +74,7 @@ export interface ResolvedRateLimit {
  *                    until at least one token refills), minimum 1.
  */
 export type ConsumeResult =
-  | { allowed: true; remaining: number }
-  | { allowed: false; retryAfterSec: number };
+  { allowed: true; remaining: number } | { allowed: false; retryAfterSec: number };
 
 /**
  * Token-bucket store contract. Concrete impls: Redis (prod) +

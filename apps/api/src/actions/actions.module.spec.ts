@@ -31,12 +31,10 @@ describe('ActionsService DI shape', () => {
       (Reflect.getMetadata('design:paramtypes', ActionsService) as unknown[]) ?? [];
     const optionalDeps: Array<{ index: number }> =
       (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, ActionsService) as
-        | Array<{ index: number }>
-        | undefined) ?? [];
+        Array<{ index: number }> | undefined) ?? [];
     const explicitInjects: Array<{ index: number }> =
       (Reflect.getMetadata('self:paramtypes', ActionsService) as
-        | Array<{ index: number }>
-        | undefined) ?? [];
+        Array<{ index: number }> | undefined) ?? [];
 
     const optionalSet = new Set(optionalDeps.map((d) => d.index));
     const injectSet = new Set(explicitInjects.map((d) => d.index));

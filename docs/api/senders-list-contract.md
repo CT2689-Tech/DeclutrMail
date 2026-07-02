@@ -37,9 +37,7 @@ Extends the existing envelope. `data` = rows; `meta.pagination` unchanged
 
 ```jsonc
 {
-  "data": [
-    /* SenderListRow[] */
-  ],
+  "data": [/* SenderListRow[] */],
   "meta": {
     "pagination": { "limit": 50, "nextCursor": "…|null" },
     "query": {
@@ -49,9 +47,7 @@ Extends the existing envelope. `data` = rows; `meta.pagination` unchanged
       //   Mailbox-wide so bars stay comparable across
       //   filtered views (a filtered view does not
       //   rescale to its own max).
-      "counts": {
-        /* optional per-chip counts for the filter UI */
-      },
+      "counts": {/* optional per-chip counts for the filter UI */},
       "asOf": "2026-05-29T12:34:56Z", // server timestamp this meta was computed
     },
   },

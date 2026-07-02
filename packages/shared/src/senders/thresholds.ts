@@ -211,14 +211,7 @@ export const PATTERNS = {
  * `ONE_TIME_MAX_TOTAL`) revealed by an explicit toggle.
  */
 export type SenderBucket =
-  | 'one_time'
-  | 'protect'
-  | 'people'
-  | 'needs_review'
-  | 'quiet'
-  | 'dormant'
-  | 'bulk'
-  | 'other';
+  'one_time' | 'protect' | 'people' | 'needs_review' | 'quiet' | 'dormant' | 'bulk' | 'other';
 
 /**
  * Bucket assignment priority — first match wins. The SQL CASE in

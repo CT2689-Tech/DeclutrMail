@@ -49,10 +49,7 @@ import type { WorkerContext } from './worker-context.js';
 
 /** The four template kinds this pipeline delivers (D162; D6; D232). */
 export type EmailKind =
-  | 'sync-complete'
-  | 'sync-reminder-24h'
-  | 'deletion-scheduled'
-  | 'deletion-receipt';
+  'sync-complete' | 'sync-reminder-24h' | 'deletion-scheduled' | 'deletion-receipt';
 
 /** Kinds that honor the D165 `emailPrefs.reminders` opt-out. */
 const OPT_OUT_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>(['sync-reminder-24h']);

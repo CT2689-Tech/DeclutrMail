@@ -317,10 +317,10 @@ Always summarizes action:
 | Composition                    | Button                           |
 | ------------------------------ | -------------------------------- |
 | Archive                        | `📥 Archive 47`                  |
-| Delete                         | `🗑 Delete 125` (red fill)       |
+| Delete                         | `🗑 Delete 125` (red fill)        |
 | Unsubscribe (secondary = none) | `🚫 Unsubscribe`                 |
 | Unsubscribe + Archive past     | `🚫 Unsubscribe + 📥 Archive 47` |
-| Unsubscribe + Delete past      | `🚫 Unsubscribe + 🗑 Delete 125` |
+| Unsubscribe + Delete past      | `🚫 Unsubscribe + 🗑 Delete 125`  |
 | Later (secondary = none)       | `⏰ Later`                       |
 
 Never bare "Apply." Always names what user is committing to.

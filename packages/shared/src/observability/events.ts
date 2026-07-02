@@ -85,12 +85,7 @@ export type Verb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
  * events so the funnel insight joins on one union.
  */
 export type OnboardingFunnelStep =
-  | 'promise'
-  | 'connect_gmail'
-  | 'sync_gate'
-  | 'choose_preset'
-  | 'first_triage'
-  | 'finished';
+  'promise' | 'connect_gmail' | 'sync_gate' | 'choose_preset' | 'first_triage' | 'finished';
 
 /**
  * Per-event payload shapes. Only includes scalars and small enums —
@@ -205,10 +200,7 @@ export interface EventPayloads {
   gmail_deep_link_opened: {
     /** What surface the link came from. */
     source:
-      | 'recent_messages_row'
-      | 'sender_detail_open_all'
-      | 'senders_card_overflow'
-      | 'activity_row';
+      'recent_messages_row' | 'sender_detail_open_all' | 'senders_card_overflow' | 'activity_row';
     /** Which Gmail-link shape — single thread vs all-from-sender vs search. */
     deep_link_kind: 'thread' | 'all_from_sender' | 'search';
   };
