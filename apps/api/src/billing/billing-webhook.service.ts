@@ -65,9 +65,7 @@ const FOUNDING_LOCK_KEY = 117_126;
 const GRANTING_STATUSES = ['active', 'past_due'] as const;
 
 export type WebhookProcessOutcome =
-  | { kind: 'processed'; effect: string }
-  | { kind: 'duplicate' }
-  | { kind: 'ignored' };
+  { kind: 'processed'; effect: string } | { kind: 'duplicate' } | { kind: 'ignored' };
 
 /** Safe property read — no throw on null/array/scalar inputs. */
 function prop(obj: unknown, key: string): unknown {

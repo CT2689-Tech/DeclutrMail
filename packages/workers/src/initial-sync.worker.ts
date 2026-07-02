@@ -1180,10 +1180,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async upsertSyncState(
     mailboxAccountId: string,
     stage:
-      | 'fetching_metadata'
-      | 'building_sender_index'
-      | 'computing_recommendations'
-      | 'finalizing',
+      'fetching_metadata' | 'building_sender_index' | 'computing_recommendations' | 'finalizing',
     progressPct: number,
     readinessStatus: 'syncing',
   ): Promise<void> {

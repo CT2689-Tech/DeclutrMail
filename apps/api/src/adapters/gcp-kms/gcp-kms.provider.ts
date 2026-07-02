@@ -14,9 +14,7 @@ import type { KmsProvider } from '@declutrmail/shared/contracts';
  *     network, KMS 5xx, …).
  */
 export type KmsAccessErrorReason =
-  | 'kms_returned_no_ciphertext'
-  | 'kms_returned_no_plaintext'
-  | 'kms_call_failed';
+  'kms_returned_no_ciphertext' | 'kms_returned_no_plaintext' | 'kms_call_failed';
 
 /** Operation that produced the {@link KmsAccessErrorReason}. */
 export type KmsOperation = 'encrypt' | 'decrypt';

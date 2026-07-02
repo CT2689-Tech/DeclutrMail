@@ -47,11 +47,7 @@ export interface SyncNowResponse {
  *   - `UNKNOWN` — everything else, including 500s.
  */
 export type SyncNowErrorCode =
-  | 'SYNC_NOT_READY'
-  | 'RATE_LIMITED'
-  | 'NO_ACTIVE_MAILBOX'
-  | 'MAILBOX_NOT_OWNED'
-  | 'UNKNOWN';
+  'SYNC_NOT_READY' | 'RATE_LIMITED' | 'NO_ACTIVE_MAILBOX' | 'MAILBOX_NOT_OWNED' | 'UNKNOWN';
 
 export class SyncNowError extends Error {
   readonly code: SyncNowErrorCode;

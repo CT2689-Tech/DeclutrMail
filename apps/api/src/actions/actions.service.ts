@@ -432,8 +432,7 @@ export class ActionsService {
     selector: ArchiveSelector;
     primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
     secondary?:
-      | { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined }
-      | undefined;
+      { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
     override: boolean;
   }): Promise<CompositeActionEnqueueResult> {
@@ -720,8 +719,7 @@ export class ActionsService {
     senderIds: string[];
     primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
     secondary?:
-      | { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined }
-      | undefined;
+      { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
   }): Promise<BulkActionEnqueueResult> {
     if (!this.queue) {

@@ -67,8 +67,7 @@ const INBOX_LIMIT_FALLBACK: InboxLimitDetails = { limit: 1, connected: 1 };
 export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
   if (!(error instanceof ApiError) || error.status !== 402) return null;
   const body = error.body as
-    | { error?: { code?: unknown; details?: Record<string, unknown> } }
-    | undefined;
+    { error?: { code?: unknown; details?: Record<string, unknown> } } | undefined;
   const code = body?.error?.code;
   const d = body?.error?.details ?? {};
   if (code === 'FREE_CAP_REACHED') {
