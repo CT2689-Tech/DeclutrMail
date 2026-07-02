@@ -1,5 +1,8 @@
 'use client';
 
+import type { ReactNode } from 'react';
+import { isValidElement } from 'react';
+
 import { color, font, radius } from '../tokens/tokens';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 
@@ -14,14 +17,9 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Honest-nav trim (U-NAV, D207): the sidebar lists ONLY surfaces that
-// are real on main. `screener` (PR #220) and `billing` (PR #219) are
-// unmerged — their routes are RoutePlaceholder stubs, so the nav does
-// not advertise them. Re-add each entry when its PR lands; `LabelKey`
-// keeps both ids so the labels stay ready. Trimmed entries (restore
-// verbatim):
-//   { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' }
-//   { id: 'billing', icon: 'M2 6h20v12H2zM2 10h20' }
+// Honest nav (U-NAV, D207): the sidebar lists ONLY surfaces that are
+// real on main. `screener` (PR #220) and `billing` (PR #219) shipped,
+// so their fb75b05-trimmed entries are restored verbatim below.
 const NAV: NavGroup[] = [
   {
     heading: null,
@@ -34,6 +32,7 @@ const NAV: NavGroup[] = [
       { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
       { id: 'followups', icon: 'M3 12h6l3-9 6 18 3-9h3' },
       { id: 'snoozed', icon: 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
+      { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' },
       { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
       { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
     ],
@@ -42,6 +41,7 @@ const NAV: NavGroup[] = [
     heading: 'Account',
     items: [
       { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
+      { id: 'billing', icon: 'M2 6h20v12H2zM2 10h20' },
       {
         id: 'settings',
         icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
@@ -57,7 +57,12 @@ export function Sidebar({
 }: {
   active: string;
   onNavigate: (id: string) => void;
-  counts?: Partial<Record<string, string | number>>;
+  /**
+   * Per-item badge slot. A `string | number` renders the built-in
+   * count pill; a React element renders as-is (bring-your-own badge —
+   * the web app mounts its D74 `ScreenerBadge` this way).
+   */
+  counts?: Partial<Record<string, string | number | ReactNode>>;
 }) {
   const labels = useLabels();
   return (
@@ -172,21 +177,24 @@ export function Sidebar({
                   <path d={item.icon} />
                 </svg>
                 <span style={{ flex: 1 }}>{labels[item.id]}</span>
-                {badge != null && (
-                  <span
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: 10,
-                      fontWeight: 600,
-                      padding: '1px 6px',
-                      borderRadius: radius.pill,
-                      background: on ? color.primary : color.mutedBg,
-                      color: on ? '#FFFFFF' : color.fgMuted,
-                    }}
-                  >
-                    {badge}
-                  </span>
-                )}
+                {badge != null &&
+                  (isValidElement(badge) ? (
+                    badge
+                  ) : (
+                    <span
+                      style={{
+                        fontFamily: font.mono,
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: '1px 6px',
+                        borderRadius: radius.pill,
+                        background: on ? color.primary : color.mutedBg,
+                        color: on ? '#FFFFFF' : color.fgMuted,
+                      }}
+                    >
+                      {badge}
+                    </span>
+                  ))}
               </button>
             );
           })}

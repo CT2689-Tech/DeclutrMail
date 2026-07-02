@@ -193,28 +193,31 @@ describe('D211 — edge-state inventory contract', () => {
     }
   });
 
-  it('records every placeholder route as placeholder-covered and nothing else', () => {
-    // The 2 remaining RoutePlaceholder stubs (billing / screener) are
-    // static server renders — their one designed state is the
-    // placeholder itself. Recording any other state as built would be
-    // aspiration, not reality. (`quiet` graduated to a real feature
-    // screen in U18 — D92/D95; `snoozed` in U19 — D78; `settings-index`
-    // in U23 — D34/D116/D216.)
-    const placeholderScreens: ScreenId[] = ['billing', 'screener'];
-    for (const screen of placeholderScreens) {
+  it('records no remaining RoutePlaceholder stubs — every route is a real screen', () => {
+    // The last 2 stubs graduated: billing in #219 (D119/D120),
+    // screener in #220 (D71–D77) — after `quiet` (U18 — D92/D95),
+    // `snoozed` (U19 — D78) and `settings-index` (U23 — D34/D116/
+    // D216). A graduated screen must declare real loading + error
+    // coverage and drop its placeholder claim; a NEW placeholder
+    // route would legitimately flip this test and gets re-asserted
+    // deliberately, not by accident.
+    for (const screen of screens) {
       const coverage = EDGE_STATE_INVENTORY[screen];
-      expect(coverage.placeholder.required, `${screen}.placeholder should be required`).toBe(true);
-      expect(coverage.placeholder.status, `${screen}.placeholder should be covered`).toBe(
-        'covered',
-      );
-      for (const state of EDGE_STATES) {
-        if (state === 'placeholder') continue;
-        expect(
-          coverage[state].status,
-          `${screen}.${state} must be n/a while the route is a RoutePlaceholder stub`,
-        ).toBe('n/a');
+      expect(coverage.placeholder.status, `${screen}.placeholder must be n/a`).toBe('n/a');
+    }
+    const graduated: ScreenId[] = ['billing', 'screener'];
+    for (const screen of graduated) {
+      const coverage = EDGE_STATE_INVENTORY[screen];
+      for (const state of ['loading', 'error'] as const) {
+        expect(coverage[state].required, `${screen}.${state} must be required`).toBe(true);
+        expect(coverage[state].status, `${screen}.${state} must record real coverage`).toMatch(
+          /^(covered|implemented)$/,
+        );
       }
     }
+    // The screener's D77 under-tier upsell (Free/Plus must never fire
+    // a 402-bound query) is launch-mandatory coverage.
+    expect(EDGE_STATE_INVENTORY.screener['free-cap-reached'].status).toBe('covered');
   });
 
   it('covers the App Router error surfaces (D167)', () => {

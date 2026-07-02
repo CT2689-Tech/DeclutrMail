@@ -18,9 +18,13 @@
  *      the shell while a request is pending — and stays absent on the
  *      happy path.
  *
- *   5. Happy path: children render inside the shell, and the nav is
- *      honest — trimmed placeholder surfaces (Screener #220, Billing
- *      #219) never appear.
+ *   5. Happy path: children render inside the shell, and the nav
+ *      lists every built surface — including Screener (#220) and
+ *      Billing (#219), restored after both shipped.
+ *
+ *   6. Screener badge (D74/D77): the count query fires ONLY for tiers
+ *      with the `screener` capability — a Free/Plus session must never
+ *      hit an endpoint the server would 402.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -66,11 +70,13 @@ function ok(payload: unknown): Response {
 
 /**
  * Stubs for a fully-authed render. `onboardedAt` / `deletionRequest`
- * select the ladder branch under test.
+ * select the ladder branch under test; `tier` (default `pro`) selects
+ * the screener-badge gating branch (D74/D77).
  */
 function authedHandlers(opts: {
   onboardedAt: string | null;
   deletionRequest?: { effectiveAt: string; status: 'pending' | 'executing' };
+  tier?: 'free' | 'plus' | 'pro';
 }): FetchStubHandler[] {
   return [
     {
@@ -90,8 +96,8 @@ function authedHandlers(opts: {
               },
             ],
             activeMailboxId: 'mb-1',
-            tier: 'pro',
-            cleanupRemaining: null,
+            tier: opts.tier ?? 'pro',
+            cleanupRemaining: opts.tier === 'free' ? 5 : null,
           },
         }),
     },
@@ -193,15 +199,25 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
   });
 
-  it('renders children + an honest nav (no Screener/Billing) on the happy path, with no banner', async () => {
-    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+  it('renders children + the full nav (incl. Screener/Billing) on the happy path, with no banner', async () => {
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ]);
 
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    // Trimmed placeholder surfaces must not be advertised (D207).
-    expect(screen.queryByText('Screener')).not.toBeInTheDocument();
-    expect(screen.queryByText('Billing')).not.toBeInTheDocument();
+    // Screener + Billing shipped — their entries are back in the nav
+    // (D207 honest nav; trimmed by fb75b05 while the routes were stubs).
+    // The nav renders twice below `sm` widths never reached here, but
+    // getAllBy* keeps this robust to the drawer variant.
+    expect(screen.getAllByText('Screener').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Billing').length).toBeGreaterThan(0);
     // Kept surfaces are present (spot-check both nav groups).
     expect(screen.getByText('Triage')).toBeInTheDocument();
     expect(screen.getByText('Autopilot')).toBeInTheDocument();
@@ -224,6 +240,57 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // The banner is additive — the app stays usable behind it.
     expect(screen.getByText('authed app body')).toBeInTheDocument();
     expect(replaceSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('(app) layout — screener badge tier gating (D74/D77)', () => {
+  it('renders the pending-count badge for a Pro workspace', async () => {
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'pro' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 3 } }),
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByLabelText('3 new senders waiting in Screener')).toBeInTheDocument();
+  });
+
+  it('renders no badge at zero pending — a calm sidebar is the resting state', async () => {
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'pro' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/waiting in Screener/)).not.toBeInTheDocument();
+  });
+
+  it('NEVER fires the count query for an under-tier workspace (the server would 402)', async () => {
+    const countSpy = vi.fn(() => ok({ data: { pending: 3 } }));
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'free' }),
+      { method: 'GET', path: '/api/screener/count', respond: countSpy },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    // The nav still lists Screener (the route renders the D77 upsell
+    // for under-tier visitors) — but the badge query never fires and
+    // no badge renders. A 402 must never surface as an error state.
+    expect(screen.getAllByText('Screener').length).toBeGreaterThan(0);
+    expect(countSpy).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText(/waiting in Screener/)).not.toBeInTheDocument();
   });
 });
 

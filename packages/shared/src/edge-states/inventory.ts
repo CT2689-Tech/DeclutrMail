@@ -99,7 +99,8 @@ export type ScreenId =
   | 'settings-privacy'
   | 'admin-security'
   | 'quiet'
-  // Placeholder routes — `RoutePlaceholder` stubs so the nav doesn't lie.
+  // Graduated from `RoutePlaceholder` stubs: billing in #219 (D119/
+  // D120), screener in #220 (D71–D77).
   | 'billing'
   | 'screener'
   // App Router error surfaces (D167) — not (app) routes.
@@ -570,30 +571,59 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
-  // ── Placeholder routes ──────────────────────────────────────────
-  // Static server-rendered `RoutePlaceholder` stubs (no data fetch →
-  // no loading / empty / error of their own). The placeholder IS the
-  // one designed state each ships; variants live in the shared
-  // route-placeholder stories file.
-
+  // Billing (D119/D120 — #219). Graduated from a RoutePlaceholder
+  // stub. Screen-level loading + full-screen error(+retry) branches
+  // ship in `billing-screen.tsx` (no dedicated story exports — hence
+  // `implemented`); the tier-shaped states (FreeTier / ProSubscriber /
+  // CancelScheduled / PastDue / BillingDisabled) are storied.
   billing: {
-    loading: { required: false, status: 'n/a' },
-    empty: { required: false, status: 'n/a' },
-    error: { required: false, status: 'n/a' },
-    'partial-error': { required: false, status: 'n/a' },
-    offline: { required: false, status: 'n/a' },
-    unauthorized: { required: false, status: 'n/a' },
+    loading: {
+      required: true,
+      implementation: 'apps/web/src/features/billing/billing-screen.tsx',
+      status: 'implemented',
+    },
+    empty: {
+      // `subscription: null` (no subscription record — every Free
+      // workspace) renders the current-plan card from `me`'s tier —
+      // the FreeTier story.
+      required: true,
+      storybook: 'apps/web/src/features/billing/billing-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      implementation: 'apps/web/src/features/billing/billing-screen.tsx',
+      status: 'implemented',
+    },
+    'partial-error': {
+      // 503 BILLING_DISABLED is a DESIGNED degraded render (notice +
+      // me-derived plan card while subscription management is dark),
+      // not the full-screen error — the BillingDisabled story.
+      required: false,
+      storybook: 'apps/web/src/features/billing/billing-screen.stories.tsx',
+      status: 'covered',
+    },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
     'sync-in-progress': { required: false, status: 'n/a' },
     'sync-failed-transient': { required: false, status: 'n/a' },
     'quota-exceeded': { required: false, status: 'n/a' },
-    'free-cap-reached': { required: false, status: 'n/a' },
-    'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'n/a' },
-    placeholder: {
-      required: true,
-      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
-      status: 'covered',
+    'free-cap-reached': {
+      // The plan card SHOWS the cleanup-remaining position; the
+      // cap-HIT surface is the layout-mounted UpgradeModal (D19/D77/
+      // D81), not a billing-screen state.
+      required: false,
+      status: 'n/a',
     },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   // Quiet hours config (U18 — D92/D95). Per-mailbox cards, each with
@@ -629,24 +659,56 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
+  // Screener queue (D71–D77 — #220). Graduated from a RoutePlaceholder
+  // stub. `composeScreenerState` branches error → loading → empty →
+  // ready (error-first, the launch-gap audit class), and each branch
+  // is storied in `screener-screen.stories.tsx`.
   screener: {
-    loading: { required: false, status: 'n/a' },
-    empty: { required: false, status: 'n/a' },
-    error: { required: false, status: 'n/a' },
-    'partial-error': { required: false, status: 'n/a' },
-    offline: { required: false, status: 'n/a' },
-    unauthorized: { required: false, status: 'n/a' },
-    'sync-in-progress': { required: false, status: 'n/a' },
-    'sync-failed-transient': { required: false, status: 'n/a' },
-    'quota-exceeded': { required: false, status: 'n/a' },
-    'free-cap-reached': { required: false, status: 'n/a' },
-    'sender-deleted-upstream': { required: false, status: 'n/a' },
-    'account-deletion-pending': { required: false, status: 'n/a' },
-    placeholder: {
+    loading: {
       required: true,
-      storybook: 'apps/web/src/features/route-placeholder/route-placeholder.stories.tsx',
+      storybook: 'apps/web/src/features/screener/screener-screen.stories.tsx',
       status: 'covered',
     },
+    empty: {
+      // D76 calm single-line state — the Empty story.
+      required: true,
+      storybook: 'apps/web/src/features/screener/screener-screen.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/screener/screener-screen.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': {
+      // Single queue query — no partial-render design.
+      required: false,
+      status: 'n/a',
+    },
+    offline: { required: false, status: 'todo' },
+    unauthorized: { required: false, status: 'todo' },
+    'sync-in-progress': { required: false, status: 'todo' },
+    'sync-failed-transient': { required: false, status: 'todo' },
+    'quota-exceeded': { required: false, status: 'todo' },
+    'free-cap-reached': {
+      // The D77 under-tier upsell: Free/Plus workspaces get
+      // `ScreenerProUpsell` instead of the queue (and never fire a
+      // query the server would 402) — the ProUpsell story. Housed
+      // under free-cap-reached per the triage precedent (the tier
+      // upgrade-nudge state).
+      required: true,
+      storybook: 'apps/web/src/features/screener/screener-screen.stories.tsx',
+      status: 'covered',
+    },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': {
+      // Layout-mounted GracePeriodBanner (U-NAV) — renders above every
+      // (app) screen while a deletion request is pending (D216).
+      required: false,
+      implementation: 'apps/web/src/app/(app)/layout.tsx',
+      status: 'implemented',
+    },
+    placeholder: { required: false, status: 'n/a' },
   },
 
   // Settings index (U23 — D34/D114/D116/D216). Graduated from a

@@ -1,15 +1,14 @@
 // Honest-nav contract for the sidebar (U-NAV, D207).
 //
-// The nav must list ONLY surfaces that are real on main. Placeholder
-// routes (Screener — PR #220, Billing — PR #219) are trimmed until
-// their feature PRs land; advertising a stub from the primary nav is
-// the dishonesty class D207's loop framing exists to prevent. When a
-// trimmed surface ships, its entry returns to `NAV` in `sidebar.tsx`
-// and moves to KEPT_LABELS here.
+// The nav must list ONLY surfaces that are real on main. The two
+// entries trimmed while their routes were placeholders — Screener
+// (PR #220) and Billing (PR #219) — shipped, so both are back in
+// `NAV` and asserted here as kept surfaces.
 //
 // SSR-rendered (`react-dom/server`) like the other shared-package
 // tests — no jsdom toolchain is wired into this package.
 
+import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Sidebar } from './sidebar';
@@ -21,22 +20,21 @@ const KEPT_LABELS = [
   'Brief',
   'Follow-ups',
   'Snoozed',
+  'Screener',
   'Quiet',
   'Activity',
   'Autopilot',
+  'Billing',
   'Settings',
 ] as const;
 
-/** Trimmed until #220 (Screener) / #219 (Billing) merge. */
-const TRIMMED_LABELS = ['Screener', 'Billing'] as const;
-
-function renderSidebar(): string {
+function renderSidebar(counts: Partial<Record<string, string | number | ReactNode>> = {}) {
   return renderToStaticMarkup(
-    <Sidebar active="senders" onNavigate={() => undefined} counts={{}} />,
+    <Sidebar active="senders" onNavigate={() => undefined} counts={counts} />,
   );
 }
 
-describe('Sidebar — honest-nav trim (D207)', () => {
+describe('Sidebar — honest nav (D207)', () => {
   it('lists every built surface', () => {
     const html = renderSidebar();
     for (const label of KEPT_LABELS) {
@@ -44,14 +42,20 @@ describe('Sidebar — honest-nav trim (D207)', () => {
     }
   });
 
-  it('does not advertise placeholder surfaces (screener, billing)', () => {
-    const html = renderSidebar();
-    for (const label of TRIMMED_LABELS) {
-      expect(html, `nav must NOT list "${label}" while its route is a stub`).not.toContain(label);
-    }
-  });
-
   it('marks the active item with aria-current', () => {
     expect(renderSidebar()).toContain('aria-current="page"');
+  });
+
+  it('renders string | number badges in the built-in pill', () => {
+    expect(renderSidebar({ senders: '12+' })).toContain('12+');
+    expect(renderSidebar({ senders: 3 })).toContain('>3</span>');
+  });
+
+  it('renders a React-element badge as-is (bring-your-own badge, D74)', () => {
+    const html = renderSidebar({
+      screener: <span data-testid="custom-badge">7</span>,
+    });
+    expect(html).toContain('data-testid="custom-badge"');
+    expect(html).toContain('>7</span>');
   });
 });

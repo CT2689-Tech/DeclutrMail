@@ -40,7 +40,8 @@ export function AppShell({
 }: {
   active: string;
   onNavigate: (id: string) => void;
-  counts?: Partial<Record<string, string | number>>;
+  /** Per-item badge slot — see `Sidebar`'s `counts` doc. */
+  counts?: Partial<Record<string, string | number | ReactNode>>;
   /**
    * Optional slot rendered at the right edge of the topbar. The web
    * app uses this for the account menu (switch mailbox, disconnect,
