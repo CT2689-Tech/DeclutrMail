@@ -18,7 +18,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ActionToolbar, resolveShortcut } from './action-toolbar';
+import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 
 function rowById(id: string): TriageDecisionRow {
@@ -105,6 +105,67 @@ describe('ActionToolbar — render (D29, D31)', () => {
     expect(archiveSection).toMatch(/disabled/);
     const keepSection = html.slice(html.indexOf('>Keep<') - 600, html.indexOf('>Keep<'));
     expect(keepSection).not.toMatch(/disabled=""/);
+  });
+});
+
+describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', () => {
+  const NO_CHANNEL_COPY = 'No unsubscribe channel found — Archive handles senders like this.';
+  const PROTECTED_COPY = 'Protected — destructive verbs are disabled for this sender';
+
+  it('verbDisabledReason truth-table — reason exactly when a gate is off', () => {
+    const noChannel = rowById('t-shipping'); // unsubscribeMethod 'none', unprotected
+    const oneClick = rowById('t-linkedin'); // unsubscribeMethod 'one_click'
+    const vip = rowById('t-sarah'); // protected
+
+    expect(verbDisabledReason('Unsubscribe', noChannel)).toBe(NO_CHANNEL_COPY);
+    expect(verbDisabledReason('Archive', noChannel)).toBeNull();
+    expect(verbDisabledReason('Later', noChannel)).toBeNull();
+    expect(verbDisabledReason('Keep', noChannel)).toBeNull();
+
+    expect(verbDisabledReason('Unsubscribe', oneClick)).toBeNull();
+
+    expect(verbDisabledReason('Unsubscribe', vip)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Archive', vip)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Later', vip)).toBe(PROTECTED_COPY);
+    expect(verbDisabledReason('Keep', vip)).toBeNull();
+  });
+
+  it('the disabled Unsubscribe pill carries the reason as title + aria-label', () => {
+    // The audit's dead end: chip says "Unsubscribe · 95% RECOMMENDED"
+    // while the U pill is disabled with no explanation.
+    const row = rowById('t-shipping');
+    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
+    expect(html).toContain(`title="${NO_CHANNEL_COPY}"`);
+    expect(html).toContain(`aria-label="Unsubscribe (U) — ${NO_CHANNEL_COPY}"`);
+    // And the pill really is disabled (capability gate unchanged).
+    const uIdx = html.indexOf('>Unsubscribe<');
+    expect(html.slice(uIdx - 800, uIdx)).toMatch(/disabled/);
+  });
+
+  it('renders the reason as visible text — not hover-only (disabled buttons leave the tab order)', () => {
+    const row = rowById('t-shipping');
+    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
+    expect(html).toContain('role="note"');
+    // Twice: once in the title/aria attrs, once as the visible note.
+    expect(html.split('No unsubscribe channel found').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('senders WITH a channel show no reason line', () => {
+    for (const id of ['t-linkedin', 't-django', 't-groupon']) {
+      const html = renderToStaticMarkup(<ActionToolbar row={rowById(id)} onAction={() => {}} />);
+      expect(html).not.toContain('No unsubscribe channel found');
+      expect(html).not.toContain('role="note"');
+    }
+  });
+
+  it('protected rows title their disabled verbs with the protection reason, no note line', () => {
+    const html = renderToStaticMarkup(
+      <ActionToolbar row={rowById('t-sarah')} onAction={() => {}} />,
+    );
+    // The row header's Protected/VIP badge explains the row; the
+    // toolbar only mirrors the copy into the disabled pills' titles.
+    expect(html).toContain(`title="${PROTECTED_COPY}"`);
+    expect(html).not.toContain('role="note"');
   });
 });
 

@@ -75,6 +75,12 @@ export function ActionToolbar({
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
+  // No-channel reason, surfaced as visible text below the verbs (W2).
+  // Protected rows are excluded — the row header's Protected/VIP badge
+  // already explains why their destructive verbs are inert.
+  const unsubNoChannelReason =
+    row.protectionReason === null ? verbDisabledReason('Unsubscribe', row) : null;
+
   useEffect(() => {
     if (!keyboardEnabled || disabled) return;
     const onKey = (e: KeyboardEvent) => {
@@ -112,6 +118,12 @@ export function ActionToolbar({
     >
       {VERB_ORDER.map((verb) => {
         const verbIsDisabled = disabled || verbDisabled(verb, row);
+        // Why this verb is inert (W2 — a disabled pill with no reason
+        // is a dead end; the audit caught "Unsubscribe · 95%
+        // RECOMMENDED" beside a disabled U pill). Gate reasons only —
+        // the transient busy state already announces via the row's
+        // SR status line.
+        const reason = verbDisabledReason(verb, row);
         const isHighlighted = recommendedVerb === verb && !verbIsDisabled;
         const tone = isHighlighted
           ? verb === 'Unsubscribe'
@@ -127,6 +139,7 @@ export function ActionToolbar({
             size="md"
             disabled={verbIsDisabled}
             onClick={() => onAction(verb)}
+            {...(reason != null ? { title: reason } : {})}
             iconRight={
               isHighlighted ? (
                 <Kbd
@@ -142,7 +155,11 @@ export function ActionToolbar({
                 <Kbd>{VERB_SHORTCUT[verb]}</Kbd>
               )
             }
-            ariaLabel={`${verb} (${VERB_SHORTCUT[verb]})`}
+            ariaLabel={
+              reason != null
+                ? `${verb} (${VERB_SHORTCUT[verb]}) — ${reason}`
+                : `${verb} (${VERB_SHORTCUT[verb]})`
+            }
           >
             {verb}
           </Button>
@@ -160,6 +177,23 @@ export function ActionToolbar({
       >
         Preview before anything changes
       </span>
+      {/* Visible reason when Unsubscribe is gated off for lack of a
+          channel — the title attr alone is hover-only and disabled
+          buttons drop out of the tab order, so the reason must also
+          exist as plain text (W2). */}
+      {unsubNoChannelReason != null && (
+        <span
+          role="note"
+          style={{
+            width: '100%',
+            fontSize: 11.5,
+            color: color.fgSoft,
+            lineHeight: 1.5,
+          }}
+        >
+          {unsubNoChannelReason}
+        </span>
+      )}
     </div>
   );
 }
@@ -170,4 +204,24 @@ function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {
   if (verb === 'Archive') return !canArchive(row);
   if (verb === 'Unsubscribe') return !canUnsubscribe(row);
   return !canLater(row); // Later
+}
+
+/**
+ * Human-readable reason a verb's capability gate is off, or `null`
+ * when the verb is available (W2 — every disabled pill states why).
+ * Exported so tests pin the copy alongside the gate truth-table.
+ *
+ * Copy is descriptive per D209 — states what IS and the reliable
+ * alternative, no apology, no jargon.
+ */
+export function verbDisabledReason(verb: ActionVerb, row: TriageDecisionRow): string | null {
+  if (verb === 'Keep') return null;
+  if (row.protectionReason !== null) {
+    // Mirrors the row badge's title so the two surfaces never drift.
+    return 'Protected — destructive verbs are disabled for this sender';
+  }
+  if (verb === 'Unsubscribe' && row.unsubscribeMethod === 'none') {
+    return 'No unsubscribe channel found — Archive handles senders like this.';
+  }
+  return null;
 }

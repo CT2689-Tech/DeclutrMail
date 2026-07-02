@@ -1,6 +1,6 @@
 'use client';
 
-import { Avatar, Pill, tokens } from '@declutrmail/shared';
+import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import { ActionToolbar } from './action-toolbar';
@@ -92,6 +92,15 @@ export function TriageRow({
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
+  // W1 (2026-07-02 audit) — below the xs ceiling the single-row grid's
+  // auto columns (verdict pill + Recommended hint) consume the full
+  // viewport and the identity cell (`minmax(0, 1fr)`) collapses to
+  // zero width: avatar + chip render, sender name/domain vanish. At
+  // ≤480px the header stacks instead — identity keeps the full track
+  // on row 1, the pill moves to row 2, and the Recommended hint drops
+  // (the pill's "· NN%" already carries the recommendation).
+  const isNarrow = useIsAtMost('xs');
+
   return (
     <div
       aria-busy={busy}
@@ -123,7 +132,9 @@ export function TriageRow({
         aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} triage detail`}
         style={{
           display: 'grid',
-          gridTemplateColumns: '32px minmax(0, 1fr) auto auto 18px',
+          gridTemplateColumns: isNarrow
+            ? '32px minmax(0, 1fr) 18px'
+            : '32px minmax(0, 1fr) auto auto 18px',
           gap: 12,
           alignItems: 'center',
           padding: '12px 14px',
@@ -142,6 +153,7 @@ export function TriageRow({
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
             <span
+              title={row.senderName}
               style={{
                 fontWeight: 600,
                 fontSize: 14,
@@ -177,6 +189,7 @@ export function TriageRow({
             )}
           </div>
           <span
+            title={row.senderDomain}
             style={{
               fontFamily: font.mono,
               fontSize: 10.5,
@@ -192,6 +205,7 @@ export function TriageRow({
               stays on one line on desktop because the grid template
               keeps the identity cell minmax(0, 1fr). */}
           <span
+            title={whyLine(row)}
             style={{
               fontSize: 12,
               color: color.fgSoft,
@@ -205,8 +219,13 @@ export function TriageRow({
           </span>
         </div>
 
-        {/* Verdict pill — the engine's current recommendation. */}
-        <Pill tone={VERDICT_TONE[row.verdict]}>
+        {/* Verdict pill — the engine's current recommendation. On the
+            stacked narrow layout it moves to its own row under the
+            identity block (W1). */}
+        <Pill
+          tone={VERDICT_TONE[row.verdict]}
+          style={isNarrow ? { gridColumn: 2, gridRow: 2, justifySelf: 'start' } : {}}
+        >
           {verdictToVerb(row.verdict)}
           {recommendedVerb !== null && (
             <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
@@ -216,23 +235,29 @@ export function TriageRow({
           )}
         </Pill>
 
-        {/* Recommended verb hint — only when D31 highlight applies. */}
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: recommendedVerb !== null ? color.primary : color.fgMuted,
-            visibility: recommendedVerb !== null ? 'visible' : 'hidden',
-          }}
-          aria-hidden={recommendedVerb === null}
-        >
-          Recommended
-        </span>
+        {/* Recommended verb hint — only when D31 highlight applies.
+            Dropped from the stacked narrow layout: the pill's "· NN%"
+            carries the recommendation and the hint's auto column is
+            exactly what crushed the identity cell (W1). */}
+        {!isNarrow && (
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: recommendedVerb !== null ? color.primary : color.fgMuted,
+              visibility: recommendedVerb !== null ? 'visible' : 'hidden',
+            }}
+            aria-hidden={recommendedVerb === null}
+          >
+            Recommended
+          </span>
+        )}
 
-        {/* Chevron — rotates to indicate expand state. */}
+        {/* Chevron — rotates to indicate expand state. Pinned to the
+            first row's trailing column on the stacked layout. */}
         <span
           aria-hidden="true"
           style={{
@@ -244,6 +269,7 @@ export function TriageRow({
             fontSize: 14,
             transform: expanded ? 'rotate(90deg)' : 'none',
             transition: 'transform 0.15s',
+            ...(isNarrow ? { gridColumn: 3, gridRow: 1 } : null),
           }}
         >
           ›

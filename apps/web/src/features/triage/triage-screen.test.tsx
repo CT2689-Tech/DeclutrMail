@@ -22,6 +22,7 @@ import {
   TRIAGE_SESSION_STATS,
   TRIAGE_SESSION_STATS_FREE,
   TRIAGE_SESSION_STATS_PRO,
+  TRIAGE_SESSION_STATS_QUIET,
   type TriageScreenState,
 } from './data';
 import { resetTriageStore } from './store';
@@ -155,6 +156,37 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).not.toContain('Estimated impact');
   });
 
+  it('renders the D212 resting state when the queue is empty and nothing was decided today (W5)', () => {
+    // The inbox-zero moment for a user who cleared nothing today —
+    // a fresh morning visit or a new mailbox. The D33 celebration
+    // ("You cleared today's queue." over four zero tiles) would be a
+    // false claim here, so the shared EmptyState renders instead.
+    const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
+    expect(html).toContain('Nothing needs a decision.');
+    expect(html).toContain('Autopilot keeps watch');
+    // Next-step framing (D212): a real link to Senders.
+    expect(html).toContain('href="/senders"');
+    expect(html).toContain('Browse senders');
+    // Never the false celebration, never its zero tiles.
+    expect(html).not.toContain('cleared today');
+    expect(html).not.toContain('Come back tomorrow');
+    expect(html).not.toContain('Decided');
+    // Must not look like an error state (D212).
+    expect(html).not.toContain('Try again');
+    expect(html).not.toContain('Loading triage queue');
+  });
+
+  it('renders the resting state for kind=ready with [] rows and no decisions today (W5)', () => {
+    const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS_QUIET });
+    expect(html).toContain('Nothing needs a decision.');
+  });
+
+  it('keeps the D33 celebration when the user DID decide today', () => {
+    const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
+    expect(html).toContain('cleared today');
+    expect(html).not.toContain('Nothing needs a decision.');
+  });
+
   it('renders the skeleton when state.kind=loading', () => {
     const html = renderState({ kind: 'loading' });
     expect(html).toContain('Loading triage queue');
@@ -185,6 +217,7 @@ describe('TriageScreen — D227 hard rule + D32 no-bulk', () => {
     const states: TriageScreenState[] = [
       { kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS },
       { kind: 'empty', stats: TRIAGE_SESSION_STATS },
+      { kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET },
       { kind: 'loading' },
       { kind: 'error', error: new Error('boom'), retry: () => {} },
     ];

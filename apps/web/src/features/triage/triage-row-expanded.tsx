@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { fmtCompact, type TriageDecisionRow } from './data';
+import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 
 const { color, font } = tokens;
 
@@ -49,10 +49,9 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             row.readRate >= 0.5 ? color.primary : row.readRate >= 0.2 ? color.fg : color.amber
           }
         />
-        <Stat
-          label="last seen"
-          value={row.lastDays === 0 ? 'today' : row.lastDays === 1 ? '1d' : `${row.lastDays}d`}
-        />
+        {/* Derived via `lastSeenLabel` so this card can never
+            contradict the collapsed row's quiet-90d copy (audit W3). */}
+        <Stat label="last seen" value={lastSeenLabel(row)} />
         <Stat label="all-time" value={fmtCompact(row.totalAllTime)} />
       </div>
 
