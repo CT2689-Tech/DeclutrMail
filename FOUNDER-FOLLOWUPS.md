@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
+**Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
+**Why:** `/privacy` `/terms` `/refunds` are LIVE on declutrmail.com. Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.
+**How:** (1) confirm refund window (2026-06-26 stack-review followup proposed 14-day pro-rata) + governing law, then have an agent apply the copy edit and bump the last-updated stamps; (2) create/alias the two mailboxes at the mail host; (3) recheck privacy §7 deletion wording when the D232 deletion UI fully ships.
+**Verifies by:** markers gone from the live pages; both mailboxes deliver.
+**Status:** Open
+
 ### 2026-06-29 — IMPL-LOG-DRIFT: 49 🔵 rows stale >14 days un-verified (verify-d backlog)
 **Source:** impl-log-drift-oracle (scheduled task, 2026-06-29 sweep)
 **Why:** 49 D-rows sit at 🔵 (merge-shipped) but were never flipped 🔵→🟢 via `pnpm verify-d`; all merged ≥17 days ago (oldest 40d). 🔵 is meant to be transient — a large stale backlog means the plan's verified-state is no longer trustworthy as a launch-readiness signal. This is the first run to flag stale-🔵 (prior 2026-05-27 sweep predated the backlog).
@@ -77,6 +84,16 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Why:** #237 (Codex adversarial review on CI) needed a funded `OPENAI_API_KEY`. Founder opted not to spend OpenAI quota; adversarial review now runs as a Claude-subagent phase of the in-session PR-review workflow instead (no metered cost). The earlier "Add OPENAI_API_KEY" follow-up is moot.
 **Verifies by:** N/A — no secret to add.
 **Status:** Skipped 2026-06-26 (superseded by in-session Claude adversarial review)
+
+### 2026-06-13 — Decide how `claude/*` web-session branches satisfy the §6 branch gates
+**Source:** PR #227 (self-hosting feasibility doc; session 2026-06-13; captured to main 2026-07-02 when #227 closed)
+**Why:** Claude Code web sessions are mandated onto `claude/<slug>` branches, but the two authoritative CI gates — "Branch follows CLAUDE.md §6 convention" and "PR body references D-decisions or is bootstrap-exempt" (`.github/workflows`, regex `^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-)`) — don't recognize the `claude/` prefix. So **every** web-session PR fails both gates by construction. On #227 the agent declined to paper over it (won't fake a `Closes D###`; won't rename off the mandated branch without explicit permission), leaving both gates red. This will recur on every future web-session PR.
+**How (pick one):**
+1. **Per-PR rename** — move the work to `chore/bootstrap-<topic>` (or `chore/distill-<topic>`), which both gates already exempt. Cleanest per-PR fix; agent needs explicit go-ahead to switch branches (closes the old PR, opens a fresh one).
+2. **Leave red** — accept the two red gates on feasibility/scratch PRs that won't merge as-is.
+3. **Allowlist `claude/*`** — add the prefix to the regex in both gate workflows (and the §6 doc + local hooks for parity). Fixes it for all future web sessions; note `pull_request` checks run the workflow from `main`, so this only takes effect once merged to `main`. Architecturally significant → founder-owned.
+**Verifies by:** chosen path applied — a future web-session PR shows both gates green, or "leave red" is recorded as accepted policy.
+**Status:** Open
 
 ### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
 **Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
