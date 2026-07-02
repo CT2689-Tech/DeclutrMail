@@ -226,7 +226,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D172 | Monorepo with pnpm + Turborepo; 3 apps + 3 packages | ⬜ |  |  |  |
 | D173 | Mobile architecture stance: **Refactor-when-ready (Option A + C discipline) | 🔵 | #11 |  |  |
 | D174 | `.worktreeinclude` content (Claude subagent worktree setup) | ⬜ |  |  |  |
-| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | ⬜ |  |  |  |
+| D175 | Content Security Policy (CSP): **Strict from day 1, nonce-based | 🔵 | #201 |  |  |
 | D176 | Bot protection: **Cloudflare Turnstile on signup/OAuth init | ⬜ |  |  |  |
 | D177 | Secret management: **GCP Secret Manager + env var refs | ⬜ |  |  |  |
 | D178 | Dependency scanning: **Dependabot + Snyk free tier | ⬜ |  |  |  |
