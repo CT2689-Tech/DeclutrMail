@@ -3,11 +3,14 @@ import path from 'node:path';
 
 import { request, type FullConfig } from '@playwright/test';
 
+import { dbConnect } from './helpers/db';
 import { E2E_ENV } from './helpers/env';
+import { applyBillingSeed } from './helpers/seed-billing';
 
 /**
- * Global setup — authenticate once via the D206 dev test-login and
- * persist the session cookies as `storageState` for every spec.
+ * Global setup — seed the Gmail-free synthetic workspace, then
+ * authenticate once via the D206 dev test-login and persist the
+ * session cookies as `storageState` for every spec.
  *
  * `GET /api/auth/dev/login?email=…` issues the three real session
  * cookies (`dm_access` / `dm_refresh` / `dm_csrf`) on the localhost
@@ -19,6 +22,18 @@ import { E2E_ENV } from './helpers/env';
  * Set-Cookie side effect.
  */
 export default async function globalSetup(_config: FullConfig): Promise<void> {
+  // Gmail-free billing seed (D183) — BEFORE any login: the dev-login
+  // never creates users, so the synthetic billing user must already
+  // exist (and a Gmail-free environment may set E2E_LOGIN_EMAIL to it,
+  // needing no founder account at all). Idempotent; fixed synthetic ids
+  // only — the founder's rows are never touched.
+  const sql = dbConnect();
+  try {
+    await applyBillingSeed(sql);
+  } finally {
+    await sql.end();
+  }
+
   const ctx = await request.newContext({ baseURL: E2E_ENV.apiUrl });
   const res = await ctx.get(`/api/auth/dev/login?email=${encodeURIComponent(E2E_ENV.loginEmail)}`, {
     maxRedirects: 0,

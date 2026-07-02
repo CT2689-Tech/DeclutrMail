@@ -14,12 +14,18 @@ interface Envelope<T> {
  * session the browser uses (the storageState written by global-setup).
  * Mutating calls attach the `X-CSRF-Token` double-submit header read
  * from the persisted `dm_csrf` cookie (mirrors `apps/web/src/lib/api/client.ts`).
+ *
+ * Specs that authenticate as a DIFFERENT user (billing-upgrade's
+ * synthetic workspace) pass their own storage-state path; the default
+ * stays the suite-wide state global-setup writes.
  */
 export class ApiClient {
   private ctx: APIRequestContext | null = null;
 
+  constructor(private readonly storageStatePath: string = E2E_ENV.storageStatePath) {}
+
   private csrfToken(): string {
-    const state = JSON.parse(readFileSync(E2E_ENV.storageStatePath, 'utf8')) as {
+    const state = JSON.parse(readFileSync(this.storageStatePath, 'utf8')) as {
       cookies: { name: string; value: string }[];
     };
     const csrf = state.cookies.find((c) => c.name === 'dm_csrf');
@@ -31,7 +37,7 @@ export class ApiClient {
     if (!this.ctx) {
       this.ctx = await request.newContext({
         baseURL: E2E_ENV.apiUrl,
-        storageState: E2E_ENV.storageStatePath,
+        storageState: this.storageStatePath,
       });
     }
     return this.ctx;
@@ -53,6 +59,23 @@ export class ApiClient {
     }
     const body = (await res.json()) as Envelope<T>;
     return body.data;
+  }
+
+  /**
+   * Raw GET — status + parsed body, NEVER throwing on an HTTP error
+   * status. For asserting DESIGNED 4xx/5xx states (the 402 entitlement
+   * gates, 503 BILLING_DISABLED) where `get()`'s throw-on-!ok is wrong.
+   */
+  async getRaw(path: string): Promise<{ status: number; body: unknown }> {
+    const ctx = await this.context();
+    const res = await ctx.get(path, { timeout: ApiClient.TIMEOUT_MS });
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null; // non-JSON body — the status alone carries the assert
+    }
+    return { status: res.status(), body };
   }
 
   async post<T>(path: string, json?: unknown): Promise<T> {
