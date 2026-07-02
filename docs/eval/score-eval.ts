@@ -25,7 +25,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { runCascade, type SenderSignals } from '@declutrmail/workers';
+import { isGovernmentDomain, runCascade, type SenderSignals } from '@declutrmail/workers';
 
 const TARGET_ACCURACY_PCT = 85;
 
@@ -118,7 +118,14 @@ function rowToSignals(row: Record<string, string>): SenderSignals {
     totalMessages: Number(row.total_messages),
     monthlyVolume: Number(row.monthly_volume),
     spikeRatio: Number(row.spike_ratio),
-    hasUnsubscribeHeader: row.has_unsub === 't' || row.has_unsub === 'true',
+    // The eval CSV predates the channel split — `has_unsub` is a single
+    // BOOL_OR over unsubscribe_url/one_click (regenerate-eval-set.sql).
+    // Map true → 'one_click': Gmail has required RFC 8058 one-click for
+    // bulk senders since 2024, so it is the faithful reading for the
+    // marketing mail this set labels. Regenerate the CSV with method
+    // granularity to sharpen mailto-only rows.
+    unsubscribeChannel: row.has_unsub === 't' || row.has_unsub === 'true' ? 'one_click' : 'none',
+    isGovDomain: isGovernmentDomain(row.domain ?? ''),
     // activity_log was empty in the eval DB — defer when log gets data.
     userManuallyArchivedCount: 0,
   };

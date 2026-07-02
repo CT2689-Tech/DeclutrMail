@@ -47,6 +47,9 @@ const RULE_PHRASE = {
   score_archive: 'Recommended: archive to keep them out of your inbox.',
   score_unsubscribe: 'Recommended: unsubscribe to stop the stream.',
   score_inconclusive: 'Recommended: decide later — signals are mixed.',
+  score_no_unsub_channel: 'Recommended: decide later — this sender offers no unsubscribe link.',
+  score_quiet_stream:
+    'Recommended: decide later — too quiet a stream to be worth unsubscribing from.',
 } as const satisfies Record<CascadeRuleId, string>;
 
 /**
