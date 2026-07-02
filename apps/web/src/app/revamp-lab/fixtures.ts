@@ -239,3 +239,209 @@ export function isTypingTarget(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   return t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName);
 }
+
+// ─────────────────────────────────────────────────────────────
+// Extra fixtures for the Senders / Brief / Billing screen builds.
+// Kept SEPARATE from LAB_SENDERS on purpose — LAB_SENDERS backs the
+// already-verified Today/Triage interaction in all three directions;
+// widening it would shift "1/8" progress counts that were smoke-tested.
+// The Senders management screen gets its own, larger fixture list.
+// ─────────────────────────────────────────────────────────────
+
+export const LAB_ALL_SENDERS: LabSender[] = [
+  ...LAB_SENDERS,
+  {
+    id: 'bestbuy',
+    name: 'Best Buy Notifications',
+    email: 'notifications@bestbuy.com',
+    domain: 'bestbuy.com',
+    perMonth: 9,
+    readRate: 0.08,
+    lastSeenDays: 4,
+    lifetime: 302,
+    recommended: 'archive',
+    confidence: 74,
+    reasoning: 'Order + promo mix, opened occasionally around purchases only.',
+    signals: ['Read rate 8%', '9 messages/month'],
+    unsubChannel: 'one-click',
+  },
+  {
+    id: 'mudfactor',
+    name: 'Mud Factor LIVERMORE 2021',
+    email: 'info@mudfactor.com',
+    domain: 'mudfactor.com',
+    perMonth: 0,
+    readRate: 0.4,
+    lastSeenDays: 420,
+    lifetime: 6,
+    recommended: 'archive',
+    confidence: 90,
+    reasoning: 'One-time event mail from 2021 — nothing since.',
+    signals: ['Last seen 420 days ago', '6 lifetime messages'],
+    unsubChannel: 'one-click',
+  },
+  {
+    id: 'aa',
+    name: 'American Airlines AA',
+    email: 'aadvantage@aa.com',
+    domain: 'aa.com',
+    perMonth: 6,
+    readRate: 0.22,
+    lastSeenDays: 12,
+    lifetime: 188,
+    recommended: 'keep',
+    confidence: 68,
+    reasoning: 'Travel account activity — occasional but relevant.',
+    signals: ['Read rate 22%', 'AAdvantage account mail'],
+    unsubChannel: 'mailto',
+  },
+  {
+    id: 'usps',
+    name: 'USPS Informed Delivery',
+    email: 'auto-reply@usps.com',
+    domain: 'usps.com',
+    perMonth: 30,
+    readRate: 0.61,
+    lastSeenDays: 0,
+    lifetime: 2104,
+    recommended: 'keep',
+    confidence: 93,
+    reasoning: 'Daily delivery digest you open most mornings.',
+    signals: ['Read rate 61%', 'Daily cadence'],
+    unsubChannel: null,
+  },
+  {
+    id: 'venmo',
+    name: 'Venmo',
+    email: 'venmo@venmo.com',
+    domain: 'venmo.com',
+    perMonth: 14,
+    readRate: 0.55,
+    lastSeenDays: 1,
+    lifetime: 967,
+    recommended: 'keep',
+    confidence: 85,
+    reasoning: 'Payment notifications — high relevance.',
+    signals: ['Read rate 55%', 'Transactional pattern'],
+    unsubChannel: null,
+  },
+  {
+    id: 'amex',
+    name: 'American Express Travel',
+    email: 'travel@americanexpress.com',
+    domain: 'americanexpress.com',
+    perMonth: 3,
+    readRate: 0.1,
+    lastSeenDays: 40,
+    lifetime: 74,
+    recommended: 'unsubscribe',
+    confidence: 71,
+    reasoning: 'Travel offers, rarely opened.',
+    signals: ['Read rate 10%', 'Promotional cadence'],
+    unsubChannel: 'one-click',
+  },
+  {
+    id: 'geico',
+    name: 'GEICO Claims',
+    email: 'claims@geico.com',
+    domain: 'geico.com',
+    perMonth: 2,
+    readRate: 0.3,
+    lastSeenDays: 88,
+    lifetime: 41,
+    recommended: 'keep',
+    confidence: 60,
+    reasoning: 'Low volume, insurance-relevant when it arrives.',
+    signals: ['Read rate 30%', 'Low volume'],
+    unsubChannel: 'mailto',
+  },
+];
+
+/** active <7d · quiet 7-90d · dormant >90d (mirrors the real Senders filters). */
+export function activityBucket(s: LabSender): 'active' | 'quiet' | 'dormant' {
+  if (s.lastSeenDays < 7) return 'active';
+  if (s.lastSeenDays <= 90) return 'quiet';
+  return 'dormant';
+}
+
+export interface BriefItem {
+  sender: string;
+  domain: string;
+  subject: string;
+}
+
+/** Mirrors the real Brief's Reply / FYI / Noise structure (live-verified 2026-07-02). */
+export const LAB_BRIEF = {
+  reply: [
+    {
+      sender: 'LinkedIn',
+      domain: 'linkedin.com',
+      subject: '1 new Lead Member of Technical Staff opening at Amazon Science',
+    },
+    {
+      sender: 'RetailMeNot',
+      domain: 'retailmenot.com',
+      subject: '✈️ Southwest One-Ways From $59 | Kohl’s Vacay Shop',
+    },
+    { sender: 'Dennis Gorelik', domain: 'gmail.com', subject: 'Sr. Java Developer — Dallas, TX' },
+  ] satisfies BriefItem[],
+  fyi: [
+    { sender: 'E-Trade', domain: 'etrade.com', subject: 'Dividend payment posted to your account' },
+    { sender: 'TripIt', domain: 'tripit.com', subject: 'Hotel receipt confirmed — Tahoe City' },
+    { sender: 'Wells Fargo', domain: 'wellsfargo.com', subject: 'Your balance summary is ready' },
+  ] satisfies BriefItem[],
+  noiseCount: 37,
+  noiseSenderCount: 28,
+  narrative:
+    'Two items worth a look — a Lead Member of Technical Staff opening at Amazon Science, and a Sr. Java Developer listing in Dallas. Everything else settles on its own.',
+} as const;
+
+export interface LabTier {
+  id: 'free' | 'plus' | 'pro';
+  name: string;
+  tagline: string;
+  priceMonthly: number;
+  priceAnnual: number;
+  features: string[];
+  cta: string;
+  popular?: boolean;
+}
+
+/** Numbers match the live pricing screen (verified 2026-07-02 walk). */
+export const LAB_TIERS: LabTier[] = [
+  {
+    id: 'free',
+    name: 'Free',
+    tagline: 'See what’s noisy.',
+    priceMonthly: 0,
+    priceAnnual: 0,
+    features: ['1 mailbox', 'Unlimited Unsubscribe', '7-day undo', '5 lifetime bulk cleanups'],
+    cta: 'Start free',
+  },
+  {
+    id: 'plus',
+    name: 'Plus',
+    tagline: 'Clean it yourself, unlimited.',
+    priceMonthly: 9,
+    priceAnnual: 90,
+    features: [
+      'Unlimited Keep · Archive · Later · Delete',
+      '1 mailbox',
+      '7-day undo',
+      'Autopilot presets',
+    ],
+    cta: 'Get Plus',
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    tagline: 'Let DeclutrMail keep it clean.',
+    priceMonthly: 19,
+    priceAnnual: 190,
+    features: ['Everything in Plus', '2nd mailbox', '30-day undo', 'Autopilot on autopilot'],
+    cta: 'Get Pro',
+    popular: true,
+  },
+];
+
+export const LAB_FOUNDING_PRO = { price: 129, regular: 190, seatsLeft: 250 } as const;

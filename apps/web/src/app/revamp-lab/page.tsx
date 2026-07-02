@@ -10,6 +10,7 @@ import { Inter_Tight, Newsreader, Space_Grotesk } from 'next/font/google';
 import { StackDirection } from './stack';
 import { ConsoleDirection } from './console';
 import { StudyDirection } from './study';
+import { LAB_SCREENS, type LabScreen } from './screens';
 
 const grotesk = Space_Grotesk({ subsets: ['latin'], variable: '--lab-grotesk', display: 'swap' });
 const interTight = Inter_Tight({
@@ -36,34 +37,45 @@ const DIRECTIONS: Array<{ id: DirectionId; label: string; tagline: string }> = [
   { id: 'study', label: '3 · The Study', tagline: 'the app as a morning edition — reading calm' },
 ];
 
-function fromHash(): DirectionId {
-  if (typeof window === 'undefined') return 'stack';
-  const h = window.location.hash.replace('#', '');
-  return (DIRECTIONS.find((d) => d.id === h)?.id ?? 'stack') as DirectionId;
+function parseHash(): { dir: DirectionId; screen: LabScreen } {
+  if (typeof window === 'undefined') return { dir: 'stack', screen: 'today' };
+  const raw = window.location.hash.replace('#', '');
+  const [d, s] = raw.split('.');
+  const dir = (DIRECTIONS.find((x) => x.id === d)?.id ?? 'stack') as DirectionId;
+  const screen = (LAB_SCREENS.find((x) => x.id === s)?.id ?? 'today') as LabScreen;
+  return { dir, screen };
 }
 
 export default function RevampLabPage() {
   const [dir, setDir] = useState<DirectionId>('stack');
+  const [screen, setScreen] = useState<LabScreen>('today');
   const [mobile, setMobile] = useState(false);
 
   useEffect(() => {
-    setDir(fromHash());
-    const onHash = () => setDir(fromHash());
-    window.addEventListener('hashchange', onHash);
-    return () => window.removeEventListener('hashchange', onHash);
+    const sync = () => {
+      const parsed = parseHash();
+      setDir(parsed.dir);
+      setScreen(parsed.screen);
+    };
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
   }, []);
 
+  // Direction tabs reset to that direction's default screen (Today);
+  // in-direction nav (Landing/Senders/Brief/…) uses plain hash links.
   const pick = (id: DirectionId) => {
     setDir(id);
+    setScreen('today');
     window.location.hash = id;
   };
 
   const active = DIRECTIONS.find((d) => d.id === dir)!;
   const body =
     dir === 'stack' ? (
-      <StackDirection mobile={mobile} />
+      <StackDirection mobile={mobile} screen={screen} />
     ) : dir === 'console' ? (
-      <ConsoleDirection mobile={mobile} />
+      <ConsoleDirection mobile={mobile} screen={screen} />
     ) : (
       <StudyDirection mobile={mobile} />
     );

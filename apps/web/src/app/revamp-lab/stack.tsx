@@ -15,6 +15,11 @@ import {
   type LabSender,
   type ResolvedAction,
 } from './fixtures';
+import { LAB_SCREENS, type LabScreen } from './screens';
+import { StackLanding } from './stack-landing';
+import { StackSenders } from './stack-senders';
+import { StackBrief } from './stack-brief';
+import { StackBilling } from './stack-billing';
 
 const C = {
   bg: '#F4F2ED',
@@ -51,7 +56,7 @@ function toneStyle(verb: VerbId, disabled: boolean): React.CSSProperties {
   return base;
 }
 
-export function StackDirection({ mobile }: { mobile: boolean }) {
+export function StackDirection({ mobile, screen }: { mobile: boolean; screen: LabScreen }) {
   const [queue, setQueue] = useState<LabSender[]>(LAB_SENDERS);
   const [resolved, setResolved] = useState<ResolvedAction[]>([]);
   const [preview, setPreview] = useState<VerbId | null>(null);
@@ -128,7 +133,7 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
+      if (isTypingTarget(e.target) || screen !== 'today') return;
       const k = e.key.toLowerCase();
       if (k === 'escape') return setPreview(null);
       if (k === 'enter' && preview) return finish(preview);
@@ -142,7 +147,7 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act, finish, preview, undo]);
+  }, [act, finish, preview, screen, undo]);
 
   // Mobile swipe-right = recommended verb (preview still gates commit, D226).
   const onPointerDown = (e: React.PointerEvent) => {
@@ -161,6 +166,8 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
   };
 
   const totals = sessionTotals(resolved);
+
+  if (screen === 'landing') return <StackLanding mobile={mobile} />;
 
   return (
     <div
@@ -189,7 +196,7 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
           Declutr<span style={{ color: C.indigo }}>Mail</span>
         </div>
         <nav
-          aria-label="Lab nav (decorative)"
+          aria-label="Screens"
           style={{
             display: 'flex',
             gap: 2,
@@ -200,20 +207,20 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
             fontWeight: 600,
           }}
         >
-          {(['Today', 'Senders', 'Rules'] as const).map((s, i) => (
-            <span
-              key={s}
-              title={i === 0 ? undefined : 'Lab: decorative'}
+          {LAB_SCREENS.map((s) => (
+            <a
+              key={s.id}
+              href={`#stack.${s.id}`}
               style={{
                 padding: '6px 16px',
                 borderRadius: 999,
-                background: i === 0 ? C.ink : 'transparent',
-                color: i === 0 ? '#fff' : C.soft,
-                cursor: 'default',
+                background: screen === s.id ? C.ink : 'transparent',
+                color: screen === s.id ? '#fff' : C.soft,
+                textDecoration: 'none',
               }}
             >
-              {s}
-            </span>
+              {s.label}
+            </a>
           ))}
         </nav>
         {!mobile && (
@@ -235,7 +242,13 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
           padding: mobile ? '8px 16px 120px' : '24px 32px 48px',
         }}
       >
-        {current ? (
+        {screen === 'senders' ? (
+          <StackSenders mobile={mobile} />
+        ) : screen === 'brief' ? (
+          <StackBrief mobile={mobile} />
+        ) : screen === 'billing' ? (
+          <StackBilling mobile={mobile} />
+        ) : current ? (
           <>
             {/* Session header + progress */}
             <div style={{ width: mobile ? '100%' : 560, marginBottom: 18 }}>
@@ -788,7 +801,7 @@ export function StackDirection({ mobile }: { mobile: boolean }) {
       </main>
 
       {/* Undo toast */}
-      {toast && (
+      {screen === 'today' && toast && (
         <div
           style={{
             position: mobile ? 'absolute' : 'fixed',

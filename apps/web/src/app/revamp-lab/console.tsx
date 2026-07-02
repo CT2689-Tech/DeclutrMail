@@ -16,6 +16,11 @@ import {
   type LabSender,
   type ResolvedAction,
 } from './fixtures';
+import { LAB_SCREENS, type LabScreen } from './screens';
+import { ConsoleLanding } from './console-landing';
+import { ConsoleSenders } from './console-senders';
+import { ConsoleBrief } from './console-brief';
+import { ConsoleBilling } from './console-billing';
 
 const C = {
   bg: '#0E1114',
@@ -52,7 +57,7 @@ function spark(s: LabSender): string {
   return pts.join(' ');
 }
 
-export function ConsoleDirection({ mobile }: { mobile: boolean }) {
+export function ConsoleDirection({ mobile, screen }: { mobile: boolean; screen: LabScreen }) {
   const [queue, setQueue] = useState<LabSender[]>(LAB_SENDERS);
   const [log, setLog] = useState<ResolvedAction[]>([]);
   const [focus, setFocus] = useState(0);
@@ -117,7 +122,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return;
+      if (isTypingTarget(e.target) || screen !== 'today') return;
       const k = e.key.toLowerCase();
       // Arrows move focus. Deliberately NOT vim j/k: K is the Keep verb
       // (product vocabulary wins over navigation convention).
@@ -155,7 +160,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [act, batchPreview, commit, preview, queue.length, say, undo]);
+  }, [act, batchPreview, commit, preview, queue.length, say, screen, undo]);
 
   const totals = sessionTotals(log);
   const cohorts = useMemo(
@@ -255,6 +260,8 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
     </div>
   );
 
+  if (screen === 'landing') return <ConsoleLanding mobile={mobile} />;
+
   return (
     <div
       style={{
@@ -285,6 +292,29 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
             OPERATOR CONSOLE
           </span>
         </div>
+        {!mobile && (
+          <nav aria-label="Screens" style={{ display: 'flex', gap: 4 }}>
+            {LAB_SCREENS.map((s) => (
+              <a
+                key={s.id}
+                href={`#console.${s.id}`}
+                style={{
+                  fontFamily: mono,
+                  fontSize: 10.5,
+                  letterSpacing: '0.06em',
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  textDecoration: 'none',
+                  background: screen === s.id ? C.panel2 : 'transparent',
+                  color: screen === s.id ? C.teal : C.dim,
+                  border: `1px solid ${screen === s.id ? C.teal + '55' : 'transparent'}`,
+                }}
+              >
+                {s.label.toUpperCase()}
+              </a>
+            ))}
+          </nav>
+        )}
         <div
           style={{
             fontFamily: mono,
@@ -309,8 +339,42 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
         </div>
       </header>
 
-      {/* Mobile cohort chips */}
+      {/* Mobile screen nav */}
       {mobile && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            padding: '8px 14px',
+            overflowX: 'auto',
+            borderBottom: `1px solid ${C.line}`,
+          }}
+        >
+          {LAB_SCREENS.map((s) => (
+            <a
+              key={s.id}
+              href={`#console.${s.id}`}
+              style={{
+                fontFamily: mono,
+                fontSize: 10.5,
+                letterSpacing: '0.06em',
+                whiteSpace: 'nowrap',
+                padding: '6px 10px',
+                borderRadius: 6,
+                textDecoration: 'none',
+                background: screen === s.id ? C.panel2 : 'transparent',
+                color: screen === s.id ? C.teal : C.dim,
+                border: `1px solid ${screen === s.id ? C.teal + '55' : C.line}`,
+              }}
+            >
+              {s.label.toUpperCase()}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile cohort chips */}
+      {mobile && screen === 'today' && (
         <div
           style={{
             display: 'flex',
@@ -341,7 +405,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
 
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {/* Left rail */}
-        {!mobile && (
+        {!mobile && screen === 'today' && (
           <aside
             style={{
               width: 216,
@@ -423,7 +487,10 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
 
         {/* Center queue */}
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          {batchPreview && (
+          {screen === 'senders' && <ConsoleSenders mobile={mobile} />}
+          {screen === 'brief' && <ConsoleBrief mobile={mobile} />}
+          {screen === 'billing' && <ConsoleBilling mobile={mobile} />}
+          {screen === 'today' && batchPreview && (
             <div
               role="dialog"
               aria-label="Batch preview"
@@ -485,239 +552,250 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
             </div>
           )}
 
-          {queue.length > 0 ? (
-            <div style={{ flex: 1, overflowY: 'auto', padding: mobile ? '4px 0 90px' : '4px 0' }}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: mobile
-                    ? '1fr auto'
-                    : 'minmax(0,1.6fr) 90px 90px minmax(0,1fr)',
-                  padding: mobile ? '8px 14px' : '8px 20px',
-                  fontFamily: mono,
-                  fontSize: 9.5,
-                  letterSpacing: '0.1em',
-                  color: C.faint,
-                  borderBottom: `1px solid ${C.line}`,
-                }}
-              >
-                <span>SENDER</span>
-                {!mobile && <span>VOL/MO</span>}
-                {!mobile && <span>READ</span>}
-                <span>ENGINE</span>
-              </div>
-              {queue.map((s, i) => {
-                const focused = i === focus;
-                return (
-                  <div key={s.id}>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        setFocus(i);
-                        setPreview(null);
-                        if (mobile) setSheet(true);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !preview) {
+          {screen === 'today' &&
+            (queue.length > 0 ? (
+              <div style={{ flex: 1, overflowY: 'auto', padding: mobile ? '4px 0 90px' : '4px 0' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: mobile
+                      ? '1fr auto'
+                      : 'minmax(0,1.6fr) 90px 90px minmax(0,1fr)',
+                    padding: mobile ? '8px 14px' : '8px 20px',
+                    fontFamily: mono,
+                    fontSize: 9.5,
+                    letterSpacing: '0.1em',
+                    color: C.faint,
+                    borderBottom: `1px solid ${C.line}`,
+                  }}
+                >
+                  <span>SENDER</span>
+                  {!mobile && <span>VOL/MO</span>}
+                  {!mobile && <span>READ</span>}
+                  <span>ENGINE</span>
+                </div>
+                {queue.map((s, i) => {
+                  const focused = i === focus;
+                  return (
+                    <div key={s.id}>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
                           setFocus(i);
+                          setPreview(null);
                           if (mobile) setSheet(true);
-                        }
-                      }}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: mobile
-                          ? '1fr auto'
-                          : 'minmax(0,1.6fr) 90px 90px minmax(0,1fr)',
-                        alignItems: 'center',
-                        padding: mobile ? '12px 14px' : '10px 20px',
-                        background: focused ? C.panel2 : 'transparent',
-                        borderLeft: `2px solid ${focused ? C.teal : 'transparent'}`,
-                        cursor: 'pointer',
-                        fontSize: 13,
-                      }}
-                    >
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ fontWeight: 600 }}>{s.name}</span>
-                        {s.protected && (
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !preview) {
+                            setFocus(i);
+                            if (mobile) setSheet(true);
+                          }
+                        }}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: mobile
+                            ? '1fr auto'
+                            : 'minmax(0,1.6fr) 90px 90px minmax(0,1fr)',
+                          alignItems: 'center',
+                          padding: mobile ? '12px 14px' : '10px 20px',
+                          background: focused ? C.panel2 : 'transparent',
+                          borderLeft: `2px solid ${focused ? C.teal : 'transparent'}`,
+                          cursor: 'pointer',
+                          fontSize: 13,
+                        }}
+                      >
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ fontWeight: 600 }}>{s.name}</span>
+                          {s.protected && (
+                            <span
+                              style={{
+                                fontFamily: mono,
+                                fontSize: 9,
+                                color: C.teal,
+                                marginLeft: 8,
+                              }}
+                            >
+                              ◆ PROTECTED
+                            </span>
+                          )}
                           <span
-                            style={{ fontFamily: mono, fontSize: 9, color: C.teal, marginLeft: 8 }}
+                            style={{
+                              display: 'block',
+                              fontFamily: mono,
+                              fontSize: 10.5,
+                              color: C.faint,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
                           >
-                            ◆ PROTECTED
+                            {s.email}
+                          </span>
+                        </span>
+                        {!mobile && (
+                          <span style={{ fontFamily: mono, fontSize: 12, color: C.dim }}>
+                            {s.perMonth}
+                          </span>
+                        )}
+                        {!mobile && (
+                          <span
+                            style={{
+                              fontFamily: mono,
+                              fontSize: 12,
+                              color: s.readRate < 0.05 ? C.red : C.dim,
+                            }}
+                          >
+                            {Math.round(s.readRate * 100)}%
                           </span>
                         )}
                         <span
                           style={{
-                            display: 'block',
                             fontFamily: mono,
                             fontSize: 10.5,
-                            color: C.faint,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
+                            color: toneColor(s.recommended),
+                            textAlign: mobile ? 'right' : 'left',
                           }}
                         >
-                          {s.email}
+                          {verbById(s.recommended).label.toUpperCase()} · {s.confidence}%
                         </span>
-                      </span>
-                      {!mobile && (
-                        <span style={{ fontFamily: mono, fontSize: 12, color: C.dim }}>
-                          {s.perMonth}
-                        </span>
-                      )}
-                      {!mobile && (
-                        <span
+                      </div>
+
+                      {/* Inline preview strip (D226) under the focused row */}
+                      {focused && preview && !mobile && current && (
+                        <div
+                          role="dialog"
+                          aria-label="Action preview"
                           style={{
-                            fontFamily: mono,
-                            fontSize: 12,
-                            color: s.readRate < 0.05 ? C.red : C.dim,
+                            margin: '0 20px 8px',
+                            borderLeft: `2px solid ${toneColor(preview)}`,
+                            background: C.panel,
+                            padding: '10px 14px',
+                            fontSize: 12.5,
+                            lineHeight: 1.5,
                           }}
                         >
-                          {Math.round(s.readRate * 100)}%
-                        </span>
+                          {(() => {
+                            const p = previewCopy(preview, current);
+                            return (
+                              <span>
+                                <b style={{ color: toneColor(preview) }}>
+                                  {verbById(preview).label.toUpperCase()}
+                                </b>{' '}
+                                — {p.does} <span style={{ color: C.faint }}>{p.doesNot}</span>{' '}
+                                <span style={{ color: C.teal }}>{p.undo}</span>
+                                <span
+                                  style={{
+                                    fontFamily: mono,
+                                    fontSize: 10,
+                                    color: C.faint,
+                                    marginLeft: 10,
+                                  }}
+                                >
+                                  ⏎ COMMIT · ⎋ ABORT
+                                </span>
+                              </span>
+                            );
+                          })()}
+                        </div>
                       )}
-                      <span
-                        style={{
-                          fontFamily: mono,
-                          fontSize: 10.5,
-                          color: toneColor(s.recommended),
-                          textAlign: mobile ? 'right' : 'left',
-                        }}
-                      >
-                        {verbById(s.recommended).label.toUpperCase()} · {s.confidence}%
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Queue clear — terminal receipt */
+              <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 20 }}>
+                <div style={{ width: mobile ? '100%' : 460 }}>
+                  <div
+                    style={{
+                      fontFamily: mono,
+                      fontSize: 11,
+                      color: C.green,
+                      letterSpacing: '0.1em',
+                    }}
+                  >
+                    ▮ QUEUE CLEAR — 0 PENDING
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 14,
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 10,
+                      background: C.panel,
+                      padding: 18,
+                      fontFamily: mono,
+                      fontSize: 12,
+                      lineHeight: 1.9,
+                    }}
+                  >
+                    <div style={{ color: C.faint }}>── CLEANUP RECEIPT ──────────────</div>
+                    <div>
+                      SENDERS DECIDED{' '}
+                      <span style={{ float: 'right', color: C.teal }}>{totals.decided}</span>
+                    </div>
+                    <div>
+                      EMAILS HANDLED{' '}
+                      <span style={{ float: 'right', color: C.teal }}>
+                        {totals.emails.toLocaleString('en-US')}
                       </span>
                     </div>
-
-                    {/* Inline preview strip (D226) under the focused row */}
-                    {focused && preview && !mobile && current && (
-                      <div
-                        role="dialog"
-                        aria-label="Action preview"
-                        style={{
-                          margin: '0 20px 8px',
-                          borderLeft: `2px solid ${toneColor(preview)}`,
-                          background: C.panel,
-                          padding: '10px 14px',
-                          fontSize: 12.5,
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {(() => {
-                          const p = previewCopy(preview, current);
-                          return (
-                            <span>
-                              <b style={{ color: toneColor(preview) }}>
-                                {verbById(preview).label.toUpperCase()}
-                              </b>{' '}
-                              — {p.does} <span style={{ color: C.faint }}>{p.doesNot}</span>{' '}
-                              <span style={{ color: C.teal }}>{p.undo}</span>
-                              <span
-                                style={{
-                                  fontFamily: mono,
-                                  fontSize: 10,
-                                  color: C.faint,
-                                  marginLeft: 10,
-                                }}
-                              >
-                                ⏎ COMMIT · ⎋ ABORT
-                              </span>
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    )}
+                    <div>
+                      UNSUBSCRIBED{' '}
+                      <span style={{ float: 'right', color: C.amber }}>
+                        {totals.byVerb.unsubscribe}
+                      </span>
+                    </div>
+                    <div>
+                      {PRIVACY_BADGE_HEADLINE.toUpperCase()}{' '}
+                      <span style={{ float: 'right', color: C.green }}>✓</span>
+                    </div>
+                    <div style={{ color: C.faint }}>─────────────────────────────────</div>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            /* Queue clear — terminal receipt */
-            <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 20 }}>
-              <div style={{ width: mobile ? '100%' : 460 }}>
-                <div
-                  style={{ fontFamily: mono, fontSize: 11, color: C.green, letterSpacing: '0.1em' }}
-                >
-                  ▮ QUEUE CLEAR — 0 PENDING
-                </div>
-                <div
-                  style={{
-                    marginTop: 14,
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 10,
-                    background: C.panel,
-                    padding: 18,
-                    fontFamily: mono,
-                    fontSize: 12,
-                    lineHeight: 1.9,
-                  }}
-                >
-                  <div style={{ color: C.faint }}>── CLEANUP RECEIPT ──────────────</div>
-                  <div>
-                    SENDERS DECIDED{' '}
-                    <span style={{ float: 'right', color: C.teal }}>{totals.decided}</span>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                    <button
+                      onClick={() => say('LAB MOCK — real share card ships post-pick.')}
+                      style={{
+                        background: C.teal,
+                        color: '#0E1114',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '9px 16px',
+                        fontWeight: 700,
+                        fontSize: 12.5,
+                        fontFamily: ui,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Copy receipt
+                    </button>
+                    <button
+                      onClick={() => {
+                        setQueue(LAB_SENDERS);
+                        setLog([]);
+                        setBatchDone(false);
+                        setFocus(0);
+                      }}
+                      style={{
+                        background: 'transparent',
+                        color: C.dim,
+                        border: `1px solid ${C.line}`,
+                        borderRadius: 8,
+                        padding: '9px 16px',
+                        fontSize: 12.5,
+                        fontFamily: ui,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Reset demo
+                    </button>
                   </div>
-                  <div>
-                    EMAILS HANDLED{' '}
-                    <span style={{ float: 'right', color: C.teal }}>
-                      {totals.emails.toLocaleString('en-US')}
-                    </span>
-                  </div>
-                  <div>
-                    UNSUBSCRIBED{' '}
-                    <span style={{ float: 'right', color: C.amber }}>
-                      {totals.byVerb.unsubscribe}
-                    </span>
-                  </div>
-                  <div>
-                    {PRIVACY_BADGE_HEADLINE.toUpperCase()}{' '}
-                    <span style={{ float: 'right', color: C.green }}>✓</span>
-                  </div>
-                  <div style={{ color: C.faint }}>─────────────────────────────────</div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <button
-                    onClick={() => say('LAB MOCK — real share card ships post-pick.')}
-                    style={{
-                      background: C.teal,
-                      color: '#0E1114',
-                      border: 'none',
-                      borderRadius: 8,
-                      padding: '9px 16px',
-                      fontWeight: 700,
-                      fontSize: 12.5,
-                      fontFamily: ui,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Copy receipt
-                  </button>
-                  <button
-                    onClick={() => {
-                      setQueue(LAB_SENDERS);
-                      setLog([]);
-                      setBatchDone(false);
-                      setFocus(0);
-                    }}
-                    style={{
-                      background: 'transparent',
-                      color: C.dim,
-                      border: `1px solid ${C.line}`,
-                      borderRadius: 8,
-                      padding: '9px 16px',
-                      fontSize: 12.5,
-                      fontFamily: ui,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Reset demo
-                  </button>
                 </div>
               </div>
-            </div>
-          )}
+            ))}
 
           {/* Session log */}
-          {log.length > 0 && queue.length > 0 && (
+          {screen === 'today' && log.length > 0 && queue.length > 0 && (
             <div style={{ borderTop: `1px solid ${C.line}`, maxHeight: 132, overflowY: 'auto' }}>
               {[...log].reverse().map((r) => (
                 <div
@@ -766,7 +844,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
         </main>
 
         {/* Right evidence panel */}
-        {!mobile && current && (
+        {!mobile && screen === 'today' && current && (
           <aside style={{ width: 300, borderLeft: `1px solid ${C.line}`, overflowY: 'auto' }}>
             {evidence}
           </aside>
@@ -774,7 +852,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
       </div>
 
       {/* Mobile evidence bottom sheet */}
-      {mobile && sheet && current && (
+      {mobile && screen === 'today' && sheet && current && (
         <div
           role="dialog"
           aria-label={`Evidence: ${current.name}`}
@@ -905,7 +983,7 @@ export function ConsoleDirection({ mobile }: { mobile: boolean }) {
       )}
 
       {/* Status bar — the palette that teaches shortcuts */}
-      {!mobile && (
+      {!mobile && screen === 'today' && (
         <footer
           style={{
             borderTop: `1px solid ${C.line}`,
