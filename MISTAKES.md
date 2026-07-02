@@ -511,3 +511,11 @@ collision case").
 **Correct approach:** Structural gates verify shape (module boundaries, types, tokens, story coverage); they never run the app, so they miss correctness, races, flow-completeness, and "ships green / breaks live" defects (the §8 class). Every substantive PR needs an adversarial pass (default-to-skepticism, attack-surface-first) AND independent verification of each finding before merge — not just the compliance gates.
 **Rule:** Green CI + clean structural gates ≠ correct. Run an adversarial "try to break it" review (correctness/data-loss/races/idempotency/auth/flow) + self-verify each finding before recommending merge. Diverse lenses beat one reviewer; verification filters plausible-but-wrong findings.
 **Enforcement update:** This session ran the adversarial review as a Claude subagent workflow (replacing the OpenAI Codex CI of #237, closed — no metered quota). Candidate: keep adversarial review as a standard phase of every PR-review workflow. Promote to CLAUDE.md §7/§8 if a third wave of green-but-broken PRs appears.
+
+## 2026-07-02 — cloud-smoke harness generated an invalid cookie domain (merged before caught)
+**PR:** #239 (bug) → #249 (fix)
+**Caught by:** Codex stop-time review, post-merge
+**What happened:** scripts/cloud-smoke.sh's generated .env.local hardcoded `COOKIE_DOMAIN=localhost`, so the harness API emitted session cookies with an explicit `Domain=localhost` attribute — rejected/ignored by cookie engines (RFC 6265 host-only is the correct localhost form). It also directly contradicted .env.example:130's documented rule ("Local: leave UNSET"), which the real local env follows. The pre-merge audit reviewed the script for prod-path exposure and secrets but never diffed its generated env against .env.example's per-env rules.
+**Correct approach:** Any script that GENERATES an env file must be checked variable-by-variable against .env.example's documented per-env guidance, not just for secret leakage.
+**Rule:** Generated env ≠ example env — diff generated vars against .env.example's rules as part of reviewing any env-writing script.
+**Enforcement update:** Comment anchor added in the heredoc (#249) pointing at .env.example:130-131; none automated (recurrence promotes a check into the script-review checklist).

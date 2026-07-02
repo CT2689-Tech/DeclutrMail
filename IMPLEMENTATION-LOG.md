@@ -57,7 +57,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D3 | Screen scope at V2 launch: **Bundle-loyal (ship everything) | ⬜ |  |  |  |
 | D4 | OAuth verification: **Already approved (from V1) | ⬜ |  |  |  |
 | D5 | Gmail API quota plan: **Throttled queue + defer scaling decision | 🟢 | #22 | workers/rate-limiter.test.ts (all green) + ADR 0005 |  |
-| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Drift fix 2026-06-11: gate built, but D6 follow-ons missing — completion email, +24h reminder email, push delivery (sync-gate.tsx PushPermissionAsk captures consent only) and funnel events |
+| D6 | Sync readiness gate: **Strict gate everywhere + waiting polish | 🟡 | #21 | initial-sync.worker.test.ts: D6 sync gate stage-sequence + monotonic progress + terminal-ready | Truth sweep 2026-07-02: gate, sync-complete email + 24h reminder (apps/api/src/notifications/sync-ready-email.trigger.ts, worker.ts:593,1841) and push delivery (users.watch via gmail-watch.service.ts:87 + WatchRenewalWorker worker.ts:1239) ALL built — 2026-06-11 note stale. Remaining leg: onboarding funnel events audit |
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
@@ -85,7 +85,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🟢 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis |  |
 | D32 | No bulk operations in Triage | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted |  |
 | D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge |  |
-| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🟡 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Drift fix 2026-06-11: sheet-skip preference is in-memory only (apps/web/src/features/triage/store.ts:31-35); no persistence, no Settings toggle, no conflict-reopen |
+| D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
@@ -152,7 +152,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D98 | Pro gating | ⬜ |  |  |  |
 | D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D100 | Condition vocabulary (sender-layer only per D22) | ⬜ |  |  |  |
-| D101 | Preset library at launch (5 rules) | 🟡 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Drift fix 2026-06-11: presets never seeded in prod (seedAutopilotPresets exported but uncalled outside tests) and AutopilotApplyWorker is not registered in apps/api/src/worker.ts |
+| D101 | Preset library at launch (5 rules) | 🔵 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Truth sweep 2026-07-02 (🟡→🔵): seedAutopilotPresets called on connect (outbox-consumer-router.ts:87); autopilot apply + action workers registered (worker.ts:1493-1533); rules UI shipped — 2026-06-11 note stale. NOTE plan says 8 launch presets, code ships 5 (open decision DQ13). Pending verify-d |
 | D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | 🟢 | #108 | packages/db/tests/autopilot-rules.test.ts — scope default + UNIQUE(mailbox, preset_key) |  |
 | D103 | Custom rule builder UI | ⬜ |  |  |  |
 | D104 | Observe mode UI (per D10) | 🟢 | #108 | apps/api/src/autopilot/autopilot.read-service.spec.ts — listPendingSuggestions + dismissMatch (observe-mode surface) |  |
@@ -276,14 +276,14 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
-| D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🟡 |  |  | Drift fix 2026-06-11 (understated): 5 policies + cron idempotency + base-worker timeout/dead-letter event built (packages/workers/src/worker-policies.ts:54-101, base-declutr-worker.ts); cron_runs/dead_letter_jobs tables + DeadLetterWorker + WatchRenewalWorker missing |
+| D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 |  |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
 | D226 | Action lifecycle ordering (resolves SC-1) | 🟢 | #44, #180 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180 |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
-| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🔵 | #192 | packages/shared/src/components/privacy-badge.test.tsx (10/10) + sync-gate.test.tsx banned-phrase-absent assertions | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
+| D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #192 | 2026-07-02 audit: PrivacyBadge mounted sync-gate/landing/pricing/settings; banned-phrase negative tests; live content check app.declutrmail.com/privacy | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
 | D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
 | D230 | Mailto unsubscribe deferred to manual-only at launch | 🔵 | #185 |  |  |
 | D231 | `GmailOpenLinkService` with tested fallback strategies | ⬜ |  |  |  |
-| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🟡 | #33 | apps/api/src/account/deletion.service.spec.ts — D232 default window | Drift fix 2026-06-11: schedule computation only (apps/api/src/account/deletion.service.ts:29-47); no persisted deletion intent, no controller, no deletion job, no UI |
+| D232 | Account deletion respects undo windows (max-of, or typed waiver) | 🔵 | #33 | apps/api/src/account/deletion.service.spec.ts — D232 default window | Truth sweep 2026-07-02 (🟡→🔵): persisted intent + AccountController GET/POST/cancel (account.controller.ts:44-73) + AccountDeletionPurgeWorker 5-min sweep (worker.ts:1665-1706) + typed-confirm UI, grace banner and deletion emails shipped — 2026-06-11 schedule-only note stale. Pending verify-d |
 | D233 | Offline destructive actions are draft intents, never auto-replay | ⬜ |  |  |  |
 | D234 | Custom-rule production API gated at `is_preset=false` | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts — patchRule null for is_preset=false → 404 |  |
 | D235 | Partitioning deferred behind measured thresholds | ⬜ |  |  |  |

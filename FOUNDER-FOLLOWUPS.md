@@ -28,7 +28,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
 **Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
-**Why:** `/privacy` `/terms` `/refunds` are LIVE on declutrmail.com. Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.
+**Why:** `/privacy` `/terms` `/refunds` are LIVE on **app.declutrmail.com** (apex + www still serve the Squarespace placeholder — F10 DNS cutover remains open; the placeholder 200s every path, so status-code checks against the apex are meaningless). Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.
 **How:** (1) confirm refund window (2026-06-26 stack-review followup proposed 14-day pro-rata) + governing law, then have an agent apply the copy edit and bump the last-updated stamps; (2) create/alias the two mailboxes at the mail host; (3) recheck privacy §7 deletion wording when the D232 deletion UI fully ships.
 **Verifies by:** markers gone from the live pages; both mailboxes deliver.
 **Status:** Open
