@@ -140,7 +140,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D86 | Exclusion rules: **Filter out non-followup-worthy threads | 🟢 | #105 | packages/workers/src/followup-check.worker.test.ts — exclusion rules (bulk recipients/mailing-lists/noreply@) |  |
 | D87 | Schema: **followup_tracker denormalized table | 🟢 | #104 | packages/db/tests/followup-tracker.test.ts — D87 defaults |  |
 | D88 | User dismissal: **"Mark resolved" affordance per row | 🟢 | #106 | apps/api/src/followups/followup.read-service.spec.ts |  |
-| D89 | Pro gating | ⬜ |  |  |  |
+| D89 | Pro gating | 🔵 | #245 |  |  |
 | D90 | Followups screen layout | 🔵 | #111 |  |  |
 | D91 | Followups empty state | 🟢 | #111 | apps/api/src/followups/followup.read-service.spec.ts |  |
 | D92 | Trigger: **Both manual toggle + scheduled recurring windows | 🔵 | #216 |  |  |
