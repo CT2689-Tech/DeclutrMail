@@ -30,8 +30,8 @@ importers:
         specifier: ^10.6.0
         version: 10.6.0(jiti@2.6.1)
       globals:
-        specifier: ^15.14.0
-        version: 15.15.0
+        specifier: ^17.7.0
+        version: 17.7.0
       husky:
         specifier: ^9.1.7
         version: 9.1.7
@@ -3354,8 +3354,8 @@ packages:
     resolution: {integrity: sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w==}
     engines: {node: '>=20'}
 
-  globals@15.15.0:
-    resolution: {integrity: sha512-7ACyT3wmyp3I61S4fG682L0VA2RGD9otkqGJIwNUMF1SWUombIIk+af1unuDYgMm082aHYwD+mzJvv9Iu8dsgg==}
+  globals@17.7.0:
+    resolution: {integrity: sha512-Czmyns5dUsq4seFBR/Kdydhmo8y9kC79hiSkPn0YcGtNnYWnrgt0vjrSjx9tspoDGWm2CMarffRuLjM4xUz8xg==}
     engines: {node: '>=18'}
 
   google-auth-library@10.9.0:
@@ -7508,7 +7508,7 @@ snapshots:
     dependencies:
       ini: 6.0.0
 
-  globals@15.15.0: {}
+  globals@17.7.0: {}
 
   google-auth-library@10.9.0:
     dependencies:
