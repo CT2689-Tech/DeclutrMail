@@ -18,6 +18,7 @@ import {
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { ApiError } from '@/lib/api/client';
+import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // the senders feature owns unsubscribe; D220's allowlist gates a
@@ -281,9 +282,18 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
    * Run the mutation for `verb` against `row` after the preview has
    * been seen (D226). The only place a mutation fires — both the
    * sheet-confirm path and the inline-preview path call it.
+   *
+   * `source` is the surface that confirmed the decision — it feeds the
+   * D159 `triage_action_taken` event, which fires ONLY on mutation
+   * success (never on preview open, never optimistically).
    */
   const dispatchAction = useCallback(
-    (verb: ActionVerb, row: TriageDecisionRow, details?: ConfirmDetails) => {
+    (
+      verb: ActionVerb,
+      row: TriageDecisionRow,
+      details: ConfirmDetails | undefined,
+      source: 'sheet' | 'inline',
+    ) => {
       clearPending();
 
       // Re-entry guard — one decision confirms at a time (mirrors the
@@ -307,6 +317,14 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           { senderId: row.senderId },
           {
             onSuccess: () => {
+              // Keep is policy-only (D40) — no messages move, so 0.
+              void track('triage_action_taken', {
+                verb: 'keep',
+                sender_id: row.senderId,
+                matched_recommendation: row.verdict === 'keep',
+                affected_messages: 0,
+                source,
+              });
               invalidateAfterDecision(qc);
               setExpandedRow(null);
             },
@@ -334,6 +352,17 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           { senderId: row.senderId },
           {
             onSuccess: (res) => {
+              // One decision → one event: the optional backlog archive
+              // below is a follow-on of THIS decision, never a second
+              // `triage_action_taken`. The unsub itself moves no
+              // messages, so 0.
+              void track('triage_action_taken', {
+                verb: 'unsubscribe',
+                sender_id: row.senderId,
+                matched_recommendation: row.verdict === 'unsubscribe',
+                affected_messages: 0,
+                source,
+              });
               invalidateAfterDecision(qc);
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
@@ -387,13 +416,23 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       enqueueComposite.mutate(
         { senderId: row.senderId, primary: { type: primaryType, olderThanDays: null } },
         {
-          onSuccess: (res) =>
+          onSuccess: (res) => {
+            // `primaryCount` is the server's real coverage count from
+            // the enqueue accept — never a client estimate.
+            void track('triage_action_taken', {
+              verb: primaryType,
+              sender_id: row.senderId,
+              matched_recommendation: row.verdict === primaryType,
+              affected_messages: res.primaryCount,
+              source,
+            });
             setActiveAction({
               actionId: res.actionId,
               rowId: row.id,
               senderName: row.senderName,
               verb,
-            }),
+            });
+          },
           onError: (err) => {
             // 409 PROTECTED_SENDER and 402 FREE_CAP_REACHED are
             // designed states — no Sentry. The 402 already surfaced
@@ -445,7 +484,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     (verb: ActionVerb, row: TriageDecisionRow) => {
       if (row.id === busyRowId) return;
       if (verb === 'Keep') {
-        dispatchAction(verb, row);
+        // Keep has no preview surface (D40 — non-destructive, applies
+        // immediately); recorded as 'inline' (row-level dispatch).
+        dispatchAction(verb, row, undefined, 'inline');
         return;
       }
       const sheetableVerb = verb as SheetableVerb;
@@ -476,7 +517,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           persistSheetPref({ [VERB_TO_WIRE[verb]]: true });
         }
       }
-      dispatchAction(pendingAction.verb, pendingRow, details);
+      dispatchAction(pendingAction.verb, pendingRow, details, 'sheet');
     },
     [pendingAction, pendingRow, dispatchAction, setRememberPreference, persistSheetPref],
   );
@@ -495,10 +536,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         pendingAction.verb === verb
       ) {
         // Second click on the same verb confirms.
-        dispatchAction(verb, row, {
-          archiveHistoric: verb === 'Unsubscribe',
-          rememberPreference: true,
-        });
+        dispatchAction(
+          verb,
+          row,
+          { archiveHistoric: verb === 'Unsubscribe', rememberPreference: true },
+          'inline',
+        );
         return;
       }
       onRowAction(verb, row);

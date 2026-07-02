@@ -12,6 +12,7 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
+import { track } from '@/lib/posthog';
 
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
@@ -99,6 +100,17 @@ export function TriageUndoTray() {
   const revertToken = useCallback(
     async (token: string): Promise<void> => {
       if (inFlight != null || revert.isPending) return;
+      // D159 — fires at CLICK time (row button or Z), once per attempt
+      // (the single-slot guard above already dedupes re-clicks). Only
+      // the entry's kind + age ship; the token itself is a live
+      // capability and never reaches telemetry.
+      const entry = entriesQuery.data?.find((e) => e.token === token);
+      if (entry) {
+        void track('undo_clicked', {
+          verb: entry.actionKind,
+          age_ms: Date.now() - new Date(entry.createdAt).getTime(),
+        });
+      }
       // Hide the entry while the revert confirms; a failure puts it back.
       setInFlight({ token, actionId: null });
       try {
@@ -128,7 +140,7 @@ export function TriageUndoTray() {
         void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
       }
     },
-    [inFlight, revert, qc],
+    [inFlight, revert, qc, entriesQuery.data],
   );
 
   // Reverse-job lifecycle — terminal only on server confirmation.

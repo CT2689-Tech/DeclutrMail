@@ -73,71 +73,86 @@ onboarding funnel insight. No per-user breakdown beyond `user_id`.
 
 ### `sync_started`
 
-**When fired.** On `POST /api/sync/start` accept, after the worker has
-enqueued the first batch. Also emitted by the Pub/Sub webhook handler
-when a `historyId` advance enqueues a delta-sync.
+**When fired.** Client-side today: the FE sync gate (`useSyncGateFunnel`)
+fires it on its FIRST in-progress observation (`queued`/`syncing`) of
+the D224 status poll — once per gate view, ref-guarded against the 3s
+poll re-fires; a mailbox already `ready` on mount fires nothing. A
+future server-side emitter (`POST /api/sync/start` accept, Pub/Sub
+delta-sync) will carry a non-null `sync_id` — analysis discriminates FE
+vs BE fires on that field.
 
 **Payload.**
 
-| Field        | Type                                          | Notes              |
-| ------------ | --------------------------------------------- | ------------------ |
-| `sync_id`    | `string`                                      | UUID               |
-| `mailbox_id` | `string`                                      | UUID               |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off |
+| Field        | Type                                          | Notes                                                     |
+| ------------ | --------------------------------------------- | --------------------------------------------------------- |
+| `sync_id`    | `string \| null`                              | UUID; `null` for FE gate fires (no id on the status poll) |
+| `mailbox_id` | `string`                                      | UUID                                                      |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`    |
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
 
 ### `sync_completed`
 
-**When fired.** When the sync state machine reaches the terminal state
-(`success` or `failed`), or when a partial-completion deadline elapses
-(`partial`). Per D224, this matches the real `current_stage` reaching
-the end — not a fake-progress trigger.
+**When fired.** Client-side today: the FE sync gate fires it on an
+observed transition into `ready` (`success`) or `failed` — only AFTER
+an observed start (never an unpaired completion), once per transition
+(ref-guarded). A transient `failed` that recovers to `ready` emits a
+second completion with `outcome: 'success'` — analysis takes the
+mailbox's last outcome. Per D224 the readiness is real worker state —
+not a fake-progress trigger. A future server-side emitter adds
+`partial` + real counts.
 
 **Payload.**
 
-| Field              | Type                                 | Notes                                 |
-| ------------------ | ------------------------------------ | ------------------------------------- |
-| `sync_id`          | `string`                             | UUID — matches `sync_started.sync_id` |
-| `mailbox_id`       | `string`                             | UUID                                  |
-| `messages_indexed` | `number`                             | Final count                           |
-| `duration_ms`      | `number`                             | Wall-clock from start to terminal     |
-| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state                        |
+| Field              | Type                                 | Notes                                                                           |
+| ------------------ | ------------------------------------ | ------------------------------------------------------------------------------- |
+| `sync_id`          | `string \| null`                     | UUID; `null` for FE gate fires                                                  |
+| `mailbox_id`       | `string`                             | UUID                                                                            |
+| `messages_indexed` | `number`                             | Final count; `-1` when unknown (FE — no counts on the poll)                     |
+| `duration_ms`      | `number`                             | FE: observed wait (first in-progress poll → terminal); BE: full sync wall-clock |
+| `outcome`          | `'success' \| 'partial' \| 'failed'` | Terminal state; FE fires never emit `partial`                                   |
 
 **Retention / aggregation.** 90 days raw. Powers sync-success-rate and
 sync-duration-p50/p95 dashboards.
 
 ### `triage_action_taken`
 
-**When fired.** After the preview-confirmed mutation succeeds and the
-undo token is issued — per D226's strict order (sheet → preview →
-mutation → undo). NEVER fired optimistically.
+**When fired.** When the preview-confirmed mutation succeeds — per
+D226's strict order (sheet → preview → mutation → undo): the intent
+POST for Keep/Unsubscribe, the composite-enqueue accept for
+Archive/Later. NEVER fired optimistically or on preview open; a failed
+mutation fires nothing. One decision → one event (the unsubscribe
+sheet's optional backlog archive does not emit a second event).
 
 **Payload.**
 
-| Field               | Type                                              | Notes                       |
-| ------------------- | ------------------------------------------------- | --------------------------- |
-| `verb`              | `'keep' \| 'archive' \| 'unsubscribe' \| 'later'` | Canonical K/A/U/L (D227)    |
-| `sender_id`         | `string`                                          | UUID                        |
-| `affected_messages` | `number`                                          | Count covered by the action |
-| `source`            | `'sheet' \| 'inline' \| 'shortcut'`               | UI entry point              |
+| Field                    | Type                                                          | Notes                                                                                 |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `verb`                   | `'keep' \| 'archive' \| 'unsubscribe' \| 'later' \| 'delete'` | Canonical K/A/U/L/D (D227)                                                            |
+| `sender_id`              | `string`                                                      | UUID                                                                                  |
+| `matched_recommendation` | `boolean`                                                     | User's verb equals the engine verdict for the row (D21/D29)                           |
+| `affected_messages`      | `number`                                                      | Server coverage count; `0` for Keep/Unsubscribe (no messages move); `-1` when unknown |
+| `source`                 | `'sheet' \| 'inline' \| 'shortcut'`                           | Confirm surface; Keep (no preview, D40) records as `inline`                           |
 
 **Retention / aggregation.** 1y raw. Powers the "triage actions per
 user per week" cohort and the K/A/U/L mix dashboard.
 
 ### `undo_clicked`
 
-**When fired.** When the user clicks the undo affordance on a toast or
-the activity log entry, and the undo succeeds server-side.
+**When fired.** At CLICK time on the undo affordance — the D35 tray's
+per-row Undo button or the Z (undo-last) shortcut — once per attempt
+(the tray's single-in-flight guard dedupes re-clicks). Fires whether or
+not the revert later succeeds: the click IS the regret signal. No
+`action_id` is sent — the FE only holds the undo TOKEN at click time,
+and a live capability token must never reach telemetry.
 
 **Payload.**
 
-| Field       | Type                                              | Notes                              |
-| ----------- | ------------------------------------------------- | ---------------------------------- |
-| `action_id` | `string`                                          | UUID — matches the original action |
-| `verb`      | `'keep' \| 'archive' \| 'unsubscribe' \| 'later'` | The action being undone            |
-| `age_ms`    | `number`                                          | Time from action to undo           |
+| Field    | Type                                                                          | Notes                                         |
+| -------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| `verb`   | `'keep' \| 'archive' \| 'unsubscribe' \| 'later' \| 'delete' \| 'apply-rule'` | The undone action's kind (`undo_action_kind`) |
+| `age_ms` | `number`                                                                      | Time from action to undo click                |
 
 **Retention / aggregation.** 1y raw. Drives "regret rate" (undo within
 60s) and the undo-window sizing decision.
