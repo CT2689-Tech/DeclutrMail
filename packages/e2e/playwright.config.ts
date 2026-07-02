@@ -59,13 +59,24 @@ import { E2E_ENV, loadRootEnvLocal } from './helpers/env';
  *
  * ## CI status (honest scope)
  *
- * LOCAL-ONLY for now. All three golden specs need a mailbox whose
- * senders/messages came from a real Gmail sync, and `undo.spec.ts`
- * performs (then reverses) a real Gmail mutation. There is no
- * Gmail-free seed path yet, so a CI workflow would either fake the
+ * LOCAL-ONLY for now. The Gmail-dependent specs (the three golden
+ * flows + followups-dismiss) need a mailbox whose senders/messages
+ * came from a real Gmail sync, and `undo.spec.ts` performs (then
+ * reverses) a real Gmail mutation. There is no Gmail-free seed path
+ * for THOSE flows, so a CI workflow running them would either fake the
  * stack or run zero specs — neither is acceptable (CLAUDE.md §10).
- * Each spec runtime-probes the stack via `requireLiveStack()` and
- * skips with an explicit reason when the stack/mailbox is absent.
+ * Each runtime-probes the stack via `requireLiveStack()` and skips
+ * with an explicit reason when the stack/mailbox is absent.
+ *
+ * `billing-upgrade.spec.ts` is the exception: it runs GMAIL-FREE.
+ * `global-setup` applies an idempotent synthetic-workspace seed
+ * (helpers/seed-billing.ts — fixed `e2eb…` ids, never the founder's
+ * rows) and the spec drives paywall → signed Paddle webhook → tier
+ * flip → gates open with no Gmail API involvement and no worker. A
+ * future CI job can run JUST this spec against a booted
+ * postgres+redis+api+web stack (env recipe in the spec header; set
+ * `E2E_LOGIN_EMAIL` to the synthetic user so no founder account is
+ * needed — the seed runs before the dev-login).
  */
 loadRootEnvLocal();
 
