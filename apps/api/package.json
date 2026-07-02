@@ -47,7 +47,7 @@
     "@swc/core": "^1.15.33",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
-    "@types/node": "^22.10.5",
+    "@types/node": "^26.1.0",
     "typescript": "^5.7.3",
     "vitest": "^2.1.8"
   }
