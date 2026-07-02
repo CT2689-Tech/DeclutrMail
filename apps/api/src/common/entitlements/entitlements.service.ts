@@ -5,10 +5,12 @@ import { actionJobs, mailboxAccounts, workspaces } from '@declutrmail/db';
 import { ACTION_REGISTRY } from '@declutrmail/shared/actions';
 import {
   cleanupActionsLifetimeFor,
+  hasCapability,
   inboxLimitFor,
+  type Capability,
   type TierId,
 } from '@declutrmail/shared/entitlements';
-import { COMPOSITE_PRIMARY_VERBS } from '@declutrmail/shared/contracts';
+import { COMPOSITE_PRIMARY_VERBS, ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
@@ -213,4 +215,42 @@ export class EntitlementsService {
       });
     }
   }
+}
+
+/**
+ * Per-capability upgrade copy for the 402 `PRO_FEATURE_REQUIRED`
+ * envelope. Keyed by the D19 manifest capability; a capability without
+ * an entry falls back to the error registry's generic line. The
+ * `screener` entry is the exact D77 copy `ScreenerService` shipped
+ * with — extracting the gate must not reword it.
+ */
+const CAPABILITY_UPGRADE_MESSAGES: Partial<Record<Capability, string>> = {
+  screener: 'The Screener is part of the Pro plan. Upgrade to review new senders in one place.',
+  autopilot: 'Autopilot is part of the Pro plan. Upgrade to automate your inbox rules.',
+  brief: 'The Daily Brief is part of the Pro plan. Upgrade to get your morning inbox summary.',
+  quiet: 'Quiet hours are part of the Pro plan. Upgrade to schedule when Autopilot acts.',
+  snoozed:
+    'The Snoozed list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
+  followups:
+    'Follow-ups are part of the Pro plan. Upgrade to track threads still waiting on a reply.',
+};
+
+/**
+ * D19/D77 Pro-capability gate — throws 402 `PRO_FEATURE_REQUIRED` when
+ * `tier`'s manifest capability set lacks `capability`. Team/enterprise
+ * carry the pro set, so the plan's "tier ∈ {pro, team, enterprise}"
+ * unlock rule falls out of the manifest, never a hardcoded list.
+ *
+ * A pure function (not a service method) so both DI paths share it
+ * without mock churn: `ScreenerService.assertScreenerCapability`
+ * (mailbox-resolved tier) and `CapabilityGuard` (principal-resolved
+ * tier).
+ */
+export function assertTierCapability(tier: TierId, capability: Capability): void {
+  if (hasCapability(tier, capability)) return;
+  throw new AppException({
+    code: 'PRO_FEATURE_REQUIRED',
+    message: CAPABILITY_UPGRADE_MESSAGES[capability] ?? ERROR_CODES.PRO_FEATURE_REQUIRED.message,
+    details: { capability, tier },
+  });
 }

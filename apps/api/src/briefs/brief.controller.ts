@@ -5,6 +5,11 @@
 // wraps the result in the D202 envelope.
 //
 // AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` + `CsrfGuard`.
+//
+// TIER (D19): the Brief is a Pro capability — every route 402s
+// `PRO_FEATURE_REQUIRED` for under-tier workspaces via
+// `CapabilityGuard` (the FE TierGate on /brief never fetches
+// pre-upgrade; this is the server half of that gate).
 
 import {
   BadRequestException,
@@ -21,13 +26,15 @@ import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { BriefReadService } from './brief.read-service.js';
 import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
 
 @Controller('briefs')
-@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
+@RequiresCapability('brief')
 export class BriefController {
   constructor(private readonly reads: BriefReadService) {}
 

@@ -20,6 +20,7 @@ import {
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
+import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { UsersService } from '../users/users.service.js';
 import { MailboxAccountsService, type MailboxSummary } from './mailbox-accounts.service.js';
 
@@ -110,6 +111,11 @@ export class MailboxesController {
    * GET /api/mailboxes/:id/quiet-hours — the stored config (null until
    * first configured) + `activeNow` from the SAME predicate the
    * Autopilot action sweep defers on (U18 — D92/D93/D95).
+   *
+   * D19: deliberately NOT capability-gated — the /quiet screen renders
+   * for every tier today (the D98 FE preview card isn't built), so an
+   * under-tier session still needs this read to mount. The Pro value
+   * (the config WRITE that makes Autopilot defer) is gated on the PUT.
    */
   @Get(':id/quiet-hours')
   async getQuietHours(
@@ -129,9 +135,14 @@ export class MailboxesController {
    * `quiet_hours` key — sibling keys (`gmail_watch`, the manual quiet
    * toggle) survive (co-tenancy contract, see
    * packages/workers/src/quiet-hours-state.ts).
+   *
+   * D19/D98: quiet hours are a Pro capability — the WRITE 402s
+   * `PRO_FEATURE_REQUIRED` for under-tier workspaces (the GET stays
+   * open; see above).
    */
   @Put(':id/quiet-hours')
-  @UseGuards(CsrfGuard)
+  @UseGuards(CsrfGuard, CapabilityGuard)
+  @RequiresCapability('quiet')
   async putQuietHours(
     @CurrentUser() user: SessionPrincipal,
     @Param('id') id: string,

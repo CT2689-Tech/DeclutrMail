@@ -5,6 +5,7 @@ import { AUTOPILOT_ACTION_QUEUE, createRedisConnection } from '@declutrmail/work
 import type { AutopilotActionJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { AutopilotController } from './autopilot.controller.js';
 import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.read-service.js';
@@ -36,7 +37,7 @@ import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.
  * REDIS_URL is optional per the fail-open contract.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule],
+  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
   controllers: [AutopilotController],
   providers: [
     {

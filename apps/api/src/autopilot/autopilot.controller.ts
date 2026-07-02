@@ -8,6 +8,11 @@
 // authenticated mailbox; the controller reads it via `@CurrentMailbox()`.
 // State-changing routes also pass through `CsrfGuard`.
 //
+// TIER (D19): Autopilot is a Pro capability — every route 402s
+// `PRO_FEATURE_REQUIRED` for under-tier workspaces via
+// `CapabilityGuard`, EXCEPT the rules list, which onboarding's Step-4
+// seed poll reads on every tier (see `@CapabilityExempt` below).
+//
 // PRIVACY (D7, D228): read-only against engine signals + rule
 // metadata; nothing returned contains body content. `sender_key` in
 // match responses is the sha256 hex digest, never the raw email.
@@ -35,6 +40,11 @@ import {
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import {
+  CapabilityExempt,
+  CapabilityGuard,
+  RequiresCapability,
+} from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { AutopilotReadService } from './autopilot.read-service.js';
@@ -52,13 +62,23 @@ const ALLOWED_MODES = new Set(['observe', 'active', 'paused']);
 const ALLOWED_SCOPES = new Set(['account', 'all_accounts', 'workspace']);
 
 @Controller('autopilot')
-@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
+@UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
+@RequiresCapability('autopilot')
 export class AutopilotController {
   constructor(private readonly reads: AutopilotReadService) {}
 
-  /** GET /api/autopilot/rules — list all Autopilot rules for the caller's mailbox. */
+  /**
+   * GET /api/autopilot/rules — list all Autopilot rules for the caller's
+   * mailbox.
+   *
+   * D19 exemption: onboarding's Step-4 seed poll (`step-preset-pick`)
+   * reads this list on EVERY tier — the preset names/modes are catalog
+   * metadata, not the Pro value. Suggestions, matches, and every
+   * mutation stay behind the class-level `@RequiresCapability`.
+   */
   @Get('rules')
   @RateLimit('triage-load')
+  @CapabilityExempt()
   async listRules(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<AutopilotRule[]>> {
     const accountId = mailbox.id;
     const rules = await this.reads.listRules(accountId);
