@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 
 import { AuthCryptoModule } from '../auth/auth-crypto.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { UsersModule } from '../users/users.module.js';
 import { CurrentMailboxGuard } from './current-mailbox.guard.js';
 import { GmailWatchService } from './gmail-watch.service.js';
@@ -28,7 +29,8 @@ import { MailboxesController } from './mailboxes.controller.js';
   //   MailboxAccountsModule imports AuthModule (controllers use JwtGuard + CsrfGuard)
   // Both modules are eagerly loaded, so the forwardRef resolves once
   // Nest finishes wiring both.
-  imports: [AuthCryptoModule, UsersModule, forwardRef(() => AuthModule)],
+  // `EntitlementsModule` backs `CapabilityGuard` on the quiet-hours PUT.
+  imports: [AuthCryptoModule, UsersModule, forwardRef(() => AuthModule), EntitlementsModule],
   providers: [MailboxAccountsService, GmailWatchService, CurrentMailboxGuard],
   controllers: [MailboxesController],
   // Re-export `UsersModule` so importers (Senders/Triage/Undo/etc.)

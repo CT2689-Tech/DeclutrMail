@@ -11,6 +11,12 @@
 // `CsrfGuard` (double-submit cookie) — matching `PATCH
 // /api/senders/:id/policy`.
 //
+// TIER (D19/D83): the Snoozed review surface is a Pro capability —
+// every route 402s `PRO_FEATURE_REQUIRED` for under-tier workspaces
+// via `CapabilityGuard`. The Later VERB itself stays on every tier
+// (it rides the action pipeline + the D19 free cleanup quota); only
+// this review/manage surface is Pro.
+//
 // PRIVACY (D7, D228): list rows carry sender display metadata, counts,
 // and timestamps only. Never fetches from Gmail (the worker owns the
 // Gmail boundary); never returns message content.
@@ -34,13 +40,15 @@ import type {
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SnoozeService } from './snooze.service.js';
 import { SnoozedReadService } from './snoozed.read-service.js';
 
 @Controller('snoozed')
-@UseGuards(JwtGuard, CurrentMailboxGuard)
+@UseGuards(JwtGuard, CurrentMailboxGuard, CapabilityGuard)
+@RequiresCapability('snoozed')
 export class SnoozedController {
   constructor(
     private readonly reads: SnoozedReadService,

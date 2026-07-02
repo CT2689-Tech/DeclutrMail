@@ -2,11 +2,12 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { screenerQuarantine, senders } from '@declutrmail/db';
-import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { ActionsService } from '../actions/actions.service.js';
-import { AppException } from '../common/app-exception.js';
-import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import {
+  assertTierCapability,
+  EntitlementsService,
+} from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { ScreenerDecideResult, ScreenerDecideVerb } from './screener.types.js';
 
@@ -51,14 +52,9 @@ export class ScreenerService {
     // reject the request — nothing to gate here (mirrors
     // EntitlementsService.assertCleanupCapacity).
     if (!ws) return;
-    if (!hasCapability(ws.tier, 'screener')) {
-      throw new AppException({
-        code: 'PRO_FEATURE_REQUIRED',
-        message:
-          'The Screener is part of the Pro plan. Upgrade to review new senders in one place.',
-        details: { capability: 'screener', tier: ws.tier },
-      });
-    }
+    // Shared D19 gate (same 402 + copy this method always threw) — the
+    // other Pro surfaces reach it via `CapabilityGuard`.
+    assertTierCapability(ws.tier, 'screener');
   }
 
   /**

@@ -9,6 +9,7 @@ import {
 import type { SnoozeLabelMapStore, SnoozeWakeJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { SendersPolicyService } from './senders-policy.service.js';
 import { SendersController } from './senders.controller.js';
@@ -52,7 +53,7 @@ import { SNOOZE_LABEL_MAP_TOKEN, SNOOZE_WAKE_QUEUE_TOKEN } from './snoozed.token
  * Redis-backed routes degrade per their service docs without it.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule],
+  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
   controllers: [SendersController, SnoozedController],
   providers: [
     SendersReadService,
