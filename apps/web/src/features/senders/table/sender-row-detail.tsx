@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import type { TimeseriesPointDto } from '@/lib/api/senders';
+import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import {
   canLater,
@@ -11,7 +12,6 @@ import {
   isStandingProtected,
   recommendAction,
   relTimeLabel,
-  sampleSubjects,
   type ActionRequest,
   type Sender,
 } from '../data';
@@ -29,10 +29,24 @@ export type RowDetailTimeseries =
   | { status: 'ready'; points: TimeseriesPointDto[] };
 
 /**
+ * Recent-subjects data for the expanded panel — same closed-union
+ * discipline as `RowDetailTimeseries` (D211).
+ */
+export type RowDetailSubjects =
+  | { status: 'loading' }
+  | { status: 'error'; retry: () => void }
+  | { status: 'ready'; subjects: string[] };
+
+/** Panel shows at most this many recent subjects — no pagination here. */
+const SUBJECT_PREVIEW_COUNT = 3;
+
+/**
  * Data-wired variant — fetches the sender's real 12-month timeseries
- * (same query key the Sender Detail page uses, so an expand pre-warms
- * that cache). Mounts only when a row expands, which is what makes
- * this a fetch-on-expand: collapsed rows never query.
+ * and recent messages (same query keys the Sender Detail page uses, so
+ * an expand pre-warms that cache; the messages hook is shared with the
+ * Detail page's list, first page only — the panel never paginates).
+ * Mounts only when a row expands, which is what makes this a
+ * fetch-on-expand: collapsed rows never query.
  */
 export function SenderRowDetailLive({
   s,
@@ -47,7 +61,20 @@ export function SenderRowDetailLive({
     : query.isError
       ? { status: 'error', retry: () => void query.refetch() }
       : { status: 'ready', points: query.data.data };
-  return <SenderRowDetail s={s} onAction={onAction} timeseries={timeseries} />;
+
+  const messages = useSenderMessages(s.id);
+  const subjects: RowDetailSubjects = messages.isPending
+    ? { status: 'loading' }
+    : messages.isError
+      ? { status: 'error', retry: () => void messages.refetch() }
+      : {
+          status: 'ready',
+          subjects: (messages.data.pages[0]?.data ?? [])
+            .slice(0, SUBJECT_PREVIEW_COUNT)
+            .map((m) => m.subject),
+        };
+
+  return <SenderRowDetail s={s} onAction={onAction} timeseries={timeseries} subjects={subjects} />;
 }
 
 /** Inline detail panel revealed when a sender row is expanded. */
@@ -55,14 +82,15 @@ export function SenderRowDetail({
   s,
   onAction,
   timeseries,
+  subjects,
 }: {
   s: Sender;
   onAction: (req: ActionRequest) => void;
   timeseries: RowDetailTimeseries;
+  subjects: RowDetailSubjects;
 }) {
   const rec = recommendAction(s);
   const recLabel = rec ?? 'Keep';
-  const subjects = sampleSubjects(s);
 
   const recTone: 'warn' | 'dark' | null =
     rec === 'Unsubscribe' ? 'warn' : rec === 'Later' ? 'dark' : null;
@@ -221,38 +249,7 @@ export function SenderRowDetail({
       {/* Chart + recent subjects */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <VolumeChartCard timeseries={timeseries} lastBarColor={lastBarColor} />
-
-        <div
-          style={{
-            background: color.card,
-            border: `1px solid ${color.line}`,
-            borderRadius: 10,
-            padding: '14px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          <Eyebrow>Recent subjects</Eyebrow>
-          <div>
-            {subjects.map((subj, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: '6px 0',
-                  borderBottom: i === subjects.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
-                  fontSize: 12.5,
-                  color: color.fg,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {subj}
-              </div>
-            ))}
-          </div>
-        </div>
+        <RecentSubjectsCard subjects={subjects} />
       </div>
 
       {/* Decide + footer */}
@@ -480,6 +477,108 @@ function VolumeChartCard({
             {points.length > 1 && last != null && <span>{monthYearLabel(last.yearMonth)}</span>}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Recent-subjects card on the expanded panel — the first page of the
+ * sender's real `GET /api/senders/:id/messages` rows (same list the
+ * Sender Detail page shows), capped at {@link SUBJECT_PREVIEW_COUNT}.
+ */
+function RecentSubjectsCard({ subjects }: { subjects: RowDetailSubjects }) {
+  const stateCopy = (text: string, retry?: () => void) => (
+    <div
+      style={{
+        padding: '6px 0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontFamily: font.mono,
+        fontSize: 11,
+        color: color.fgMuted,
+      }}
+    >
+      {text}
+      {retry != null && (
+        <button
+          type="button"
+          onClick={retry}
+          style={{
+            all: 'unset',
+            cursor: 'pointer',
+            fontFamily: font.mono,
+            fontSize: 11,
+            fontWeight: 600,
+            color: color.fgSoft,
+            textDecoration: 'underline',
+          }}
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      aria-busy={subjects.status === 'loading'}
+      style={{
+        background: color.card,
+        border: `1px solid ${color.line}`,
+        borderRadius: 10,
+        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <Eyebrow>Recent subjects</Eyebrow>
+
+      {subjects.status === 'loading' && (
+        <div aria-hidden="true">
+          {Array.from({ length: SUBJECT_PREVIEW_COUNT }).map((_, i) => (
+            <div key={i} style={{ padding: '6px 0' }}>
+              <div
+                style={{
+                  height: 12,
+                  width: `${88 - i * 14}%`,
+                  background: color.mutedBg,
+                  borderRadius: 3,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {subjects.status === 'error' && stateCopy("Couldn't load recent subjects", subjects.retry)}
+
+      {subjects.status === 'ready' &&
+        subjects.subjects.length === 0 &&
+        stateCopy('No recent messages')}
+
+      {subjects.status === 'ready' && subjects.subjects.length > 0 && (
+        <div>
+          {subjects.subjects.map((subj, i) => (
+            <div
+              key={i}
+              style={{
+                padding: '6px 0',
+                borderBottom:
+                  i === subjects.subjects.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
+                fontSize: 12.5,
+                color: color.fg,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {subj}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
