@@ -238,12 +238,33 @@ describe('SenderTable', () => {
   });
 
   it('expand chevron toggles the expanded row and updates aria-expanded', async () => {
-    // The expanded panel fetches the sender's real timeseries on mount.
+    // The expanded panel fetches the sender's real timeseries and
+    // recent messages on mount.
     installFetchStub([
       {
         method: 'GET',
         path: /^\/api\/senders\/[^/]+\/timeseries$/,
         respond: () => jsonOk({ data: [{ yearMonth: '2026-07-01', volume: 61, readCount: 3 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                id: 'm1',
+                providerMessageId: 'prov-m1',
+                providerThreadId: 'thread-m1',
+                subject: 'Your statement is ready',
+                snippet: 'snippet',
+                internalDate: '2026-07-01T10:00:00.000Z',
+                isUnread: false,
+                sizeBytes: null,
+              },
+            ],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
       },
     ]);
     render(<Harness {...{}} />);
@@ -257,6 +278,8 @@ describe('SenderTable', () => {
     ).toBe('true');
     // Chart in the panel renders the fetched month — not fabricated bars.
     expect(await screen.findByText(/peak 61\/mo/i)).toBeTruthy();
+    // Subjects card renders the fetched subject — not the old SUBJECT_POOL.
+    expect(await screen.findByText('Your statement is ready')).toBeTruthy();
   });
 
   it('suppresses the magnitude bar when globalMaxTotal is 0', () => {

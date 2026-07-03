@@ -1,17 +1,20 @@
 /**
- * Tests for the expanded-row detail panel's volume chart.
+ * Tests for the expanded-row detail panel's volume chart and
+ * Recent subjects card.
  *
- * The chart previously rendered a seeded pseudo-random series (a §10
- * "no fake completion" violation); it now renders the sender's real
- * `sender_timeseries` months. Covers:
+ * Both previously rendered fixtures (a §10 "no fake completion"
+ * violation — the chart a seeded pseudo-random series, the subjects a
+ * canned SUBJECT_POOL sample); they now render the sender's real
+ * `sender_timeseries` months and real recent-message subjects. Covers:
  *
  *   • Presentational states (D211): loading skeleton, error + retry,
- *     empty ("No volume history yet"), ready (one bar per month row,
- *     peak label, month-range footer).
- *   • `SenderRowDetailLive`: fetches `/api/senders/:id/timeseries` on
- *     mount (= on expand) and maps the envelope into the states above;
- *     a 4xx becomes the error state without retry storms
- *     (`retryUnless4xx`), and Retry refetches.
+ *     empty ("No volume history yet" / "No recent messages"), ready
+ *     (one bar per month row + peak label; one line per subject,
+ *     capped at 3).
+ *   • `SenderRowDetailLive`: fetches `/api/senders/:id/timeseries` and
+ *     `/api/senders/:id/messages` on mount (= on expand) and maps the
+ *     envelopes into the states above; a 4xx becomes the error state
+ *     without retry storms (`retryUnless4xx`), and Retry refetches.
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -23,6 +26,7 @@ import type { Sender } from '../data';
 import {
   SenderRowDetail,
   SenderRowDetailLive,
+  type RowDetailSubjects,
   type RowDetailTimeseries,
 } from './sender-row-detail';
 
@@ -50,8 +54,47 @@ const TIMESERIES = [
   { yearMonth: '2026-07-01', volume: 5, readCount: 0 },
 ];
 
-function renderDetail(timeseries: RowDetailTimeseries) {
-  return render(<SenderRowDetail s={sender()} onAction={() => {}} timeseries={timeseries} />);
+function messageRow(overrides: { id: string; subject: string }) {
+  return {
+    id: overrides.id,
+    providerMessageId: `prov-${overrides.id}`,
+    providerThreadId: `thread-${overrides.id}`,
+    subject: overrides.subject,
+    snippet: 'snippet',
+    internalDate: '2026-07-01T10:00:00.000Z',
+    isUnread: false,
+    sizeBytes: null,
+  };
+}
+
+const MESSAGES = [
+  messageRow({ id: 'm1', subject: 'Your July statement is ready' }),
+  messageRow({ id: 'm2', subject: 'Security alert: new sign-in' }),
+  messageRow({ id: 'm3', subject: 'Weekly digest — 12 new updates' }),
+  messageRow({ id: 'm4', subject: 'Fourth message beyond the preview cap' }),
+];
+
+function messagesEnvelope(rows: ReturnType<typeof messageRow>[]) {
+  return { data: rows, meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } } };
+}
+
+const READY_SUBJECTS: RowDetailSubjects = {
+  status: 'ready',
+  subjects: MESSAGES.slice(0, 3).map((m) => m.subject),
+};
+
+function renderDetail(
+  timeseries: RowDetailTimeseries,
+  subjects: RowDetailSubjects = READY_SUBJECTS,
+) {
+  return render(
+    <SenderRowDetail
+      s={sender()}
+      onAction={() => {}}
+      timeseries={timeseries}
+      subjects={subjects}
+    />,
+  );
 }
 
 describe('SenderRowDetail volume chart', () => {
@@ -93,6 +136,38 @@ describe('SenderRowDetail volume chart', () => {
   });
 });
 
+describe('SenderRowDetail recent subjects', () => {
+  const CHART_READY: RowDetailTimeseries = { status: 'ready', points: TIMESERIES };
+
+  it('ready: renders one line per real subject', () => {
+    renderDetail(CHART_READY, READY_SUBJECTS);
+    expect(screen.getByText('Your July statement is ready')).toBeTruthy();
+    expect(screen.getByText('Security alert: new sign-in')).toBeTruthy();
+    expect(screen.getByText('Weekly digest — 12 new updates')).toBeTruthy();
+  });
+
+  it('ready + no rows: renders the calm empty state', () => {
+    renderDetail(CHART_READY, { status: 'ready', subjects: [] });
+    expect(screen.getByText(/no recent messages/i)).toBeTruthy();
+  });
+
+  it('loading: marks the card busy and shows skeleton lines, no data claims', () => {
+    const { container } = renderDetail(CHART_READY, { status: 'loading' });
+    // Chart is ready, so the only busy card is the subjects one.
+    expect(container.querySelectorAll('[aria-busy="true"]').length).toBe(1);
+    expect(screen.queryByText('Your July statement is ready')).toBeNull();
+    expect(screen.queryByText(/no recent messages/i)).toBeNull();
+  });
+
+  it('error: shows the error copy and wires the Retry button', () => {
+    const retry = vi.fn();
+    renderDetail(CHART_READY, { status: 'error', retry });
+    expect(screen.getByText(/couldn't load recent subjects/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('SenderRowDetailLive', () => {
   function renderLive() {
     const client = createTestQueryClient();
@@ -103,17 +178,28 @@ describe('SenderRowDetailLive', () => {
     );
   }
 
+  const timeseriesHandler = {
+    method: 'GET' as const,
+    path: /^\/api\/senders\/[^/]+\/timeseries$/,
+    respond: () => jsonOk({ data: TIMESERIES }),
+  };
+  const messagesHandler = {
+    method: 'GET' as const,
+    path: /^\/api\/senders\/[^/]+\/messages$/,
+    respond: () => jsonOk(messagesEnvelope(MESSAGES)),
+  };
+
   it('fetches the sender timeseries on mount and renders the real bars', async () => {
     const requested: string[] = [];
     installFetchStub([
       {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/timeseries$/,
-        respond: (_req, url) => {
+        ...timeseriesHandler,
+        respond: (_req: Request, url: URL) => {
           requested.push(url.pathname);
           return jsonOk({ data: TIMESERIES });
         },
       },
+      messagesHandler,
     ]);
     renderLive();
     const chart = await screen.findByRole('img', { name: /peak 20 per month/i });
@@ -121,19 +207,69 @@ describe('SenderRowDetailLive', () => {
     expect(requested).toEqual(['/api/senders/sender-1/timeseries']);
   });
 
+  it('fetches the sender messages on mount and renders the first 3 real subjects', async () => {
+    const requested: string[] = [];
+    installFetchStub([
+      timeseriesHandler,
+      {
+        ...messagesHandler,
+        respond: (_req: Request, url: URL) => {
+          requested.push(url.pathname);
+          return jsonOk(messagesEnvelope(MESSAGES));
+        },
+      },
+    ]);
+    renderLive();
+    expect(await screen.findByText('Your July statement is ready')).toBeTruthy();
+    expect(screen.getByText('Security alert: new sign-in')).toBeTruthy();
+    expect(screen.getByText('Weekly digest — 12 new updates')).toBeTruthy();
+    // 4th row exists on the wire but the panel caps the preview at 3.
+    expect(screen.queryByText('Fourth message beyond the preview cap')).toBeNull();
+    expect(requested).toEqual(['/api/senders/sender-1/messages']);
+  });
+
+  it('renders the calm empty state when the sender has no recent messages', async () => {
+    installFetchStub([
+      timeseriesHandler,
+      { ...messagesHandler, respond: () => jsonOk(messagesEnvelope([])) },
+    ]);
+    renderLive();
+    expect(await screen.findByText(/no recent messages/i)).toBeTruthy();
+  });
+
   it('maps a 4xx to the error state (no retry storm) and Retry refetches', async () => {
     let fail = true;
     installFetchStub([
       {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        ...timeseriesHandler,
         respond: () => (fail ? jsonNotFound('sender_not_found') : jsonOk({ data: TIMESERIES })),
       },
+      messagesHandler,
     ]);
     renderLive();
     expect(await screen.findByText(/couldn't load volume history/i)).toBeTruthy();
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(await screen.findByRole('img', { name: /peak 20 per month/i })).toBeTruthy();
+  });
+
+  it('maps a messages 4xx to the subjects error state while the chart stays ready', async () => {
+    let fail = true;
+    installFetchStub([
+      timeseriesHandler,
+      {
+        ...messagesHandler,
+        respond: () =>
+          fail ? jsonNotFound('sender_not_found') : jsonOk(messagesEnvelope(MESSAGES)),
+      },
+    ]);
+    renderLive();
+    expect(await screen.findByText(/couldn't load recent subjects/i)).toBeTruthy();
+    // The chart's own fetch succeeded — its error copy must NOT show.
+    expect(await screen.findByRole('img', { name: /peak 20 per month/i })).toBeTruthy();
+    expect(screen.queryByText(/couldn't load volume history/i)).toBeNull();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(await screen.findByText('Your July statement is ready')).toBeTruthy();
   });
 });
