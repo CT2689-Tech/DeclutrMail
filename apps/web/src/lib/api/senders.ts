@@ -452,6 +452,12 @@ export interface ListSendersParams {
    * present; `false` = exclude; omit = no constraint.
    */
   unsubReady?: TriStateFilter | undefined;
+  /**
+   * D38 "you replied" tri-state. `true` = only senders the user has
+   * replied to; `false` = exclude; omit = no constraint. Maps to wire
+   * `?replied=true` / `?replied=not`.
+   */
+  replied?: TriStateFilter | undefined;
   /** D38 — "quiet for N days+" filter. 30 / 90 / 180 / 365 + raw number. */
   windowDays?: number | undefined;
   /** D38 — case-insensitive domain substring (mailbox-wide). */
@@ -550,6 +556,7 @@ export function fetchSenders(
         : undefined,
       unsub_ready:
         params.unsubReady === true ? 'true' : params.unsubReady === false ? 'not' : undefined,
+      replied: params.replied === true ? 'true' : params.replied === false ? 'not' : undefined,
       window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
       domain: params.domain ? params.domain : undefined,
     },

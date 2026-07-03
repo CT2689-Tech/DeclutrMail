@@ -332,6 +332,55 @@ describe('SendersScreen — edge states', () => {
     expect(lastQ).toBe('dealskhoj');
   });
 
+  it('narrows the list server-side when the "you replied" chip is toggled (D38)', async () => {
+    // Regression: the chip wrote URL state and the BE accepted ?replied=,
+    // but the FE never sent it — a silent no-op. The stub returns the
+    // replied-to sender ONLY when ?replied=true, so its appearance proves
+    // the param reached the server (and the row set actually narrowed).
+    const REPLIED_ROW = {
+      ...ROW,
+      id: 'replied',
+      displayName: 'Replied Sender',
+      email: 'friend@replied.example',
+      domain: 'replied.example',
+    };
+    let lastReplied: string | null = null;
+    installFetchStub([
+      weeklyHeroHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          lastReplied = url.searchParams.get('replied');
+          const match = lastReplied === 'true';
+          return jsonOk({
+            data: match ? [REPLIED_ROW] : [ROW, REPLIED_ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: match ? 1 : 2,
+                globalMaxTotal: 120,
+                asOf: '2026-05-29T12:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    // Unfiltered page shows both senders.
+    await screen.findAllByText(/Sender A/);
+    expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /you replied/i }));
+
+    // The refetch carries replied=true and the non-replied sender drops out.
+    await waitFor(() => expect(screen.queryByText(/Sender A/)).toBeNull(), { timeout: 2000 });
+    expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
+    expect(lastReplied).toBe('true');
+  });
+
   it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
     installFetchStub([
       weeklyHeroHandler(),
