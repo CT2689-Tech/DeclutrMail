@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import type { TimeseriesPointDto } from '@/lib/api/senders';
+import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import {
   canLater,
   canUnsubscribe,
@@ -16,13 +18,47 @@ import {
 
 const { color, font } = tokens;
 
-/** Inline detail panel revealed when a sender row is expanded. */
-export function SenderRowDetail({
+/**
+ * Volume-chart data for the expanded panel, as a closed union so the
+ * render layer can't mix states (D211 — loading / error / empty /
+ * ready are each a designed state, never a fallthrough).
+ */
+export type RowDetailTimeseries =
+  | { status: 'loading' }
+  | { status: 'error'; retry: () => void }
+  | { status: 'ready'; points: TimeseriesPointDto[] };
+
+/**
+ * Data-wired variant — fetches the sender's real 12-month timeseries
+ * (same query key the Sender Detail page uses, so an expand pre-warms
+ * that cache). Mounts only when a row expands, which is what makes
+ * this a fetch-on-expand: collapsed rows never query.
+ */
+export function SenderRowDetailLive({
   s,
   onAction,
 }: {
   s: Sender;
   onAction: (req: ActionRequest) => void;
+}) {
+  const query = useSenderTimeseries(s.id);
+  const timeseries: RowDetailTimeseries = query.isPending
+    ? { status: 'loading' }
+    : query.isError
+      ? { status: 'error', retry: () => void query.refetch() }
+      : { status: 'ready', points: query.data.data };
+  return <SenderRowDetail s={s} onAction={onAction} timeseries={timeseries} />;
+}
+
+/** Inline detail panel revealed when a sender row is expanded. */
+export function SenderRowDetail({
+  s,
+  onAction,
+  timeseries,
+}: {
+  s: Sender;
+  onAction: (req: ActionRequest) => void;
+  timeseries: RowDetailTimeseries;
 }) {
   const rec = recommendAction(s);
   const recLabel = rec ?? 'Keep';
@@ -60,18 +96,6 @@ export function SenderRowDetail({
     return `${s.monthly}/mo at ${read}% read — no strong signal either way.`;
   }, [s, rec]);
 
-  const bars = useMemo(() => {
-    const weekly = Math.max(1, Math.round(s.monthly / 4));
-    const seed = s.id.charCodeAt(0) * 9301 + 49297;
-    const out: number[] = [];
-    for (let i = 0; i < 12; i++) {
-      const r = ((seed * (i + 1)) % 233280) / 233280;
-      out.push(Math.max(1, Math.round(weekly * (0.55 + r * 0.95))));
-    }
-    if (s.spike) out[11] = Math.round((out[11] ?? weekly) * 1.8);
-    return out;
-  }, [s]);
-  const maxBar = Math.max(...bars, 1);
   const lastBarColor =
     recTone === 'warn' ? color.amber : recTone === 'dark' ? color.fg : color.primary;
 
@@ -196,57 +220,7 @@ export function SenderRowDetail({
 
       {/* Chart + recent subjects */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div
-          style={{
-            background: color.card,
-            border: `1px solid ${color.line}`,
-            borderRadius: 10,
-            padding: '14px 16px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <Eyebrow>Last 12 weeks</Eyebrow>
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 10,
-                color: color.fgMuted,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              peak {maxBar}/wk
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 64 }}>
-            {bars.map((h, i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1,
-                  height: `${Math.max(6, (h / maxBar) * 100)}%`,
-                  background: i === bars.length - 1 ? lastBarColor : 'rgba(14,20,19,0.12)',
-                  borderRadius: 2,
-                }}
-              />
-            ))}
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontFamily: font.mono,
-              fontSize: 9,
-              color: color.fgMuted,
-              letterSpacing: '0.08em',
-            }}
-          >
-            <span>12w ago</span>
-            <span>this week</span>
-          </div>
-        </div>
+        <VolumeChartCard timeseries={timeseries} lastBarColor={lastBarColor} />
 
         <div
           style={{
@@ -337,6 +311,176 @@ export function SenderRowDetail({
           View in Gmail ↗
         </a>
       </div>
+    </div>
+  );
+}
+
+/** "Aug 2025" from a first-of-month ISO date ("2025-08-01"). */
+function monthYearLabel(yearMonth: string): string {
+  const [y, m] = yearMonth.split('-');
+  const names = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  const name = names[Math.max(0, Math.min(11, Number(m ?? '1') - 1))] ?? '';
+  return `${name} ${y ?? ''}`.trim();
+}
+
+const CHART_BODY_HEIGHT = 64;
+
+/**
+ * Monthly volume mini-chart on the expanded panel — the same
+ * `sender_timeseries` months the Sender Detail volume chart renders
+ * (sparse: months with no mail have no row and no bar, matching the
+ * Detail chart's bar-per-row convention).
+ */
+function VolumeChartCard({
+  timeseries,
+  lastBarColor,
+}: {
+  timeseries: RowDetailTimeseries;
+  lastBarColor: string;
+}) {
+  const points = timeseries.status === 'ready' ? timeseries.points : [];
+  const maxBar = Math.max(1, ...points.map((p) => p.volume));
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  return (
+    <div
+      aria-busy={timeseries.status === 'loading'}
+      style={{
+        background: color.card,
+        border: `1px solid ${color.line}`,
+        borderRadius: 10,
+        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <Eyebrow>Volume / 12 months</Eyebrow>
+        {points.length > 0 && (
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10,
+              color: color.fgMuted,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            peak {maxBar}/mo
+          </span>
+        )}
+      </div>
+
+      {timeseries.status === 'loading' && (
+        <div
+          aria-hidden="true"
+          style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: CHART_BODY_HEIGHT }}
+        >
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              style={{ flex: 1, height: '38%', background: color.mutedBg, borderRadius: 2 }}
+            />
+          ))}
+        </div>
+      )}
+
+      {timeseries.status === 'error' && (
+        <div
+          style={{
+            height: CHART_BODY_HEIGHT,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            fontFamily: font.mono,
+            fontSize: 11,
+            color: color.fgMuted,
+          }}
+        >
+          Couldn&apos;t load volume history
+          <button
+            type="button"
+            onClick={timeseries.retry}
+            style={{
+              all: 'unset',
+              cursor: 'pointer',
+              fontFamily: font.mono,
+              fontSize: 11,
+              fontWeight: 600,
+              color: color.fgSoft,
+              textDecoration: 'underline',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {timeseries.status === 'ready' && points.length === 0 && (
+        <div
+          style={{
+            height: CHART_BODY_HEIGHT,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: font.mono,
+            fontSize: 11,
+            color: color.fgMuted,
+          }}
+        >
+          No volume history yet
+        </div>
+      )}
+
+      {timeseries.status === 'ready' && points.length > 0 && (
+        <>
+          <div
+            role="img"
+            aria-label={`Monthly volume over ${points.length} month${points.length === 1 ? '' : 's'}, peak ${maxBar} per month`}
+            style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: CHART_BODY_HEIGHT }}
+          >
+            {points.map((p, i) => (
+              <div
+                key={p.yearMonth}
+                style={{
+                  flex: 1,
+                  height: `${Math.max(2, (p.volume / maxBar) * 100)}%`,
+                  background: i === points.length - 1 ? lastBarColor : 'rgba(14,20,19,0.12)',
+                  borderRadius: 2,
+                }}
+              />
+            ))}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontFamily: font.mono,
+              fontSize: 9,
+              color: color.fgMuted,
+              letterSpacing: '0.08em',
+            }}
+          >
+            <span>{first != null ? monthYearLabel(first.yearMonth) : ''}</span>
+            {points.length > 1 && last != null && <span>{monthYearLabel(last.yearMonth)}</span>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

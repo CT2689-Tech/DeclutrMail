@@ -24,6 +24,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { SenderListRow, SenderListDirection, SenderListSort } from '@/lib/api/senders';
+import { installFetchStub, jsonOk } from '@/test/fetch-stub';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { SenderTable, type SenderTableProps } from './sender-table';
 import { __internals } from './sender-table';
 
@@ -58,25 +60,30 @@ function Harness(initial: Partial<SenderTableProps>) {
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     initial.selectedIds ?? new Set(),
   );
+  // Stable per-mount client — the expanded row's `SenderRowDetailLive`
+  // fetches the sender timeseries via TanStack Query.
+  const [client] = useState(createTestQueryClient);
   return (
-    <SenderTable
-      rows={initial.rows ?? [row()]}
-      globalMaxTotal={initial.globalMaxTotal ?? 6471}
-      sort={sort}
-      direction={direction}
-      onSortChange={(next) => {
-        setSort(next.sort);
-        setDirection(next.direction);
-      }}
-      selectedIds={selectedIds}
-      onSelectionChange={setSelectedIds}
-      onAction={initial.onAction ?? (() => {})}
-      loading={initial.loading}
-      error={initial.error}
-      onRetry={initial.onRetry}
-      emptyKind={initial.emptyKind}
-      density={initial.density}
-    />
+    <QueryWrapper client={client}>
+      <SenderTable
+        rows={initial.rows ?? [row()]}
+        globalMaxTotal={initial.globalMaxTotal ?? 6471}
+        sort={sort}
+        direction={direction}
+        onSortChange={(next) => {
+          setSort(next.sort);
+          setDirection(next.direction);
+        }}
+        selectedIds={selectedIds}
+        onSelectionChange={setSelectedIds}
+        onAction={initial.onAction ?? (() => {})}
+        loading={initial.loading}
+        error={initial.error}
+        onRetry={initial.onRetry}
+        emptyKind={initial.emptyKind}
+        density={initial.density}
+      />
+    </QueryWrapper>
   );
 }
 
@@ -193,7 +200,15 @@ describe('SenderTable', () => {
     expect((checkbox as HTMLInputElement).checked).toBe(false);
   });
 
-  it('expand chevron toggles the expanded row and updates aria-expanded', () => {
+  it('expand chevron toggles the expanded row and updates aria-expanded', async () => {
+    // The expanded panel fetches the sender's real timeseries on mount.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [{ yearMonth: '2026-07-01', volume: 61, readCount: 3 }] }),
+      },
+    ]);
     render(<Harness {...{}} />);
     const chevron = screen.getByRole('button', { name: /expand bank of america/i });
     expect(chevron.getAttribute('aria-expanded')).toBe('false');
@@ -203,6 +218,8 @@ describe('SenderTable', () => {
         .getByRole('button', { name: /collapse bank of america/i })
         .getAttribute('aria-expanded'),
     ).toBe('true');
+    // Chart in the panel renders the fetched month — not fabricated bars.
+    expect(await screen.findByText(/peak 61\/mo/i)).toBeTruthy();
   });
 
   it('suppresses the magnitude bar when globalMaxTotal is 0', () => {
