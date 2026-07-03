@@ -55,9 +55,10 @@
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { NumericDisplay, tokens } from '@declutrmail/shared';
-import { getActionDescriptor } from '@declutrmail/shared/actions';
+import { SenderActionRow } from '../action-row';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
+import { ReadBucketText, TrendChip } from '../fact-language';
 import { UNSUB_PILL } from '../grid/sender-card';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
 import { intentOf, type SenderIntent } from '../uplift-d/intent';
@@ -67,7 +68,6 @@ import type {
   SenderListRow,
   SenderListSort,
   UnsubscribeMethod,
-  VolumeTrendBucket,
 } from '@/lib/api/senders';
 
 const { color, font, radius, text } = tokens;
@@ -79,9 +79,13 @@ export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search
  * Row-level verb the table emits up to the consumer.
  * Spec v1.2 Decision 1 (ADR-0019) widens the canonical set to K/A/U/L/D —
  * Delete joins as a row verb so the popover row + bulk surface route the
- * same shape end-to-end.
+ * same shape end-to-end. `keep` joined with the 2026-07-03 consistency
+ * pass: the row now renders the shared `SenderActionRow` (primary verb +
+ * ⋯ ActionPopover — ADR-0016 A5), and the popover's registry set is
+ * K/A/U/L/D on every surface. Keep is non-destructive so the consumer
+ * routes it straight to `performAction` (D40), no preview.
  */
-export type SenderTableVerb = 'archive' | 'later' | 'unsubscribe' | 'delete';
+export type SenderTableVerb = 'keep' | 'archive' | 'later' | 'unsubscribe' | 'delete';
 
 export interface SenderTableProps {
   /** Page rows in the order the wire returned them (BE-sorted). */
@@ -143,6 +147,11 @@ const COLUMNS: ReadonlyArray<{
   { key: null, label: '' }, // checkbox
   { key: 'name', label: 'Sender' },
   { key: 'total', label: 'Total', alignRight: true },
+  // Monthly cadence — the number the grid card leads with. Present on
+  // both views so the Grid↔Table toggle never drops a fact (2026-07-03
+  // consistency pass). Not sortable: the wire `SenderListSort` union
+  // has no volume axis yet.
+  { key: null, label: 'Monthly', alignRight: true },
   { key: null, label: 'Trend' },
   { key: null, label: 'Read' },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
@@ -272,7 +281,14 @@ function SortHeader({
   };
 
   if (col.key === null) {
-    return <th scope="col" style={baseStyle} />;
+    // Non-sortable columns still render their label — this branch used
+    // to drop it, leaving Trend / Read / Unsub (and now Monthly) with
+    // blank headers.
+    return (
+      <th scope="col" style={baseStyle}>
+        {col.label}
+      </th>
+    );
   }
   return (
     <th scope="col" aria-sort={ariaSort} style={baseStyle}>
@@ -483,12 +499,28 @@ function SenderRow({
           <TotalCell value={sender.totalReceived} max={globalMaxTotal} accent={toneAccent} />
         </td>
 
+        <td
+          style={{
+            ...cellStyle,
+            textAlign: 'right',
+            width: 90,
+            fontFamily: font.mono,
+            fontSize: text.sm,
+            fontVariantNumeric: 'tabular-nums',
+            color: color.fgSoft,
+          }}
+        >
+          {/* Monthly cadence — same fact the card leads with ("N in last
+              30d"). Nullable when the sender has no timeseries rows. */}
+          {sender.monthlyVolume != null ? `${sender.monthlyVolume.toLocaleString()}/mo` : '—'}
+        </td>
+
         <td style={{ ...cellStyle, width: 90 }}>
           <TrendChip bucket={sender.volumeTrend} />
         </td>
 
         <td style={{ ...cellStyle, width: 90 }}>
-          <ReadCell rate={sender.readRate} />
+          <ReadBucketText rate={sender.readRate} />
         </td>
 
         <td
@@ -508,8 +540,20 @@ function SenderRow({
           <UnsubGlyph method={sender.unsubscribeMethod} />
         </td>
 
-        <td style={{ ...cellStyle, width: 280 }}>
-          <VerbButtons sender={sender} onAction={onAction} />
+        <td style={{ ...cellStyle, width: 170 }}>
+          {/* Shared action grammar (ADR-0016 A5 + ADR-0019): derived
+              primary verb + ⋯ ActionPopover — the same `SenderActionRow`
+              the grid card renders, replacing the three hardcoded inline
+              buttons. `adapted` is the FE `Sender` shape the shared row
+              reads; verbs bridge back to the table's lowercase union. */}
+          <SenderActionRow
+            sender={adapted}
+            onAction={(req) => {
+              const mapped = ROW_VERB_TO_TABLE[req.verb];
+              if (mapped === null) return;
+              onAction({ verb: mapped, sender });
+            }}
+          />
         </td>
 
         <td style={{ ...cellStyle, width: 32 }}>
@@ -596,100 +640,12 @@ const ROW_TONE_ACCENT: Record<SenderIntent, string> = {
   people: 'transparent',
 };
 
-const TREND_LABEL: Record<VolumeTrendBucket, string> = {
-  up: '↑ Up',
-  down: '↓ Down',
-  steady: '— Steady',
-  quiet: '◐ Quiet',
-  dormant: '○ Dormant',
-  new: '• New',
-};
-
-const TREND_COLOR: Record<VolumeTrendBucket, string> = {
-  up: color.amber,
-  down: color.emerald,
-  steady: color.fgMuted,
-  quiet: color.fgMuted,
-  dormant: color.fgMuted,
-  new: color.primary,
-};
-
-function TrendChip({ bucket }: { bucket: VolumeTrendBucket | null }) {
-  if (bucket === null) {
-    return (
-      <span aria-label="No trend data" style={{ color: color.fgMuted }}>
-        —
-      </span>
-    );
-  }
-  return (
-    <span
-      aria-label={`Trend: ${TREND_LABEL[bucket]}`}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '2px 8px',
-        borderRadius: radius.pill,
-        background: color.mutedBg,
-        color: TREND_COLOR[bucket],
-        fontFamily: font.mono,
-        fontSize: text.xs,
-        fontWeight: 600,
-      }}
-    >
-      {TREND_LABEL[bucket]}
-    </span>
-  );
-}
-
-/**
- * Read-rate as a discrete bucket label, never a raw percentage.
- * Buckets follow the existing tightening-brief vocabulary:
- *   - null         — "—"     (no timeseries yet)
- *   - 0            — "Never" (red pill)
- *   - 0 < r < 0.30 — "Low"   (amber)
- *   - 0.30..0.70   — "Mid"   (neutral)
- *   - 0.70..1.00   — "High"  (emerald)
- * Raw percentages are deliberately omitted — false precision on small
- * baselines (Codex review on the senders-tightening brief).
- */
-function ReadCell({ rate }: { rate: number | null }) {
-  if (rate === null) return <span style={{ color: color.fgMuted }}>—</span>;
-  if (rate === 0) {
-    return (
-      <span
-        aria-label="Read rate: never marked read"
-        style={{
-          display: 'inline-flex',
-          padding: '1px 6px',
-          borderRadius: radius.pill,
-          background: color.redBg,
-          color: color.red,
-          fontFamily: font.mono,
-          fontSize: text.xs,
-          fontWeight: 700,
-        }}
-      >
-        Never
-      </span>
-    );
-  }
-  const label = rate < 0.3 ? 'Low' : rate < 0.7 ? 'Mid' : 'High';
-  const c = rate < 0.3 ? color.amber : rate < 0.7 ? color.fgMuted : color.emerald;
-  return (
-    <span
-      aria-label={`Read rate: ${label}`}
-      style={{
-        fontFamily: font.mono,
-        fontSize: text.sm,
-        fontWeight: 600,
-        color: c,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
+// Trend + read-state rendering moved to `../fact-language.tsx`
+// (2026-07-03 consistency pass) — the table, the grid card stat strip,
+// and the detail stats strip previously each carried their own copy
+// with CONFLICTING tones (`up` was amber here but primary on the
+// detail strip; `down` used emerald — the A3 trust hue). One module,
+// one vocabulary.
 
 const UNSUB_GLYPH: Record<UnsubscribeMethod, { glyph: string; label: string }> = {
   one_click: { glyph: '✓', label: 'One-click unsubscribe available' },
@@ -719,16 +675,20 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
 }
 
 /**
- * Row action verbs on the Senders surface: Archive / Later / Unsubscribe.
- * Keep is deliberately NOT a row action here — on the management table,
- * *not acting* already means "keep it for now"; the explicit Keep verb (K)
- * belongs to the Triage ritual (D227). Protect is a standing *status*, not
- * a verb — it renders as the ⭐ indicator on the name cell, never a button.
- * Labels + shortcuts are read from the Action Registry (ADR-0015) at render
- * time — the single source of truth shared with the SelectionBar, the
- * confirm modal, and the keyboard cheatsheet.
+ * Bridge — the shared `SenderActionRow` + `SenderRowDetail` emit
+ * canonical-cased verbs ('Archive' / 'Keep' / …); the table's public
+ * `onAction` speaks the lowercase `SenderTableVerb` union. Keep routes
+ * through (non-destructive, consumer applies immediately per D40);
+ * Protect stays a status star (D42/D43), never a row verb.
  */
-const VERB_ORDER: readonly SenderTableVerb[] = ['archive', 'later', 'unsubscribe'];
+const ROW_VERB_TO_TABLE: Record<ActionVerb, SenderTableVerb | null> = {
+  Keep: 'keep',
+  Archive: 'archive',
+  Unsubscribe: 'unsubscribe',
+  Later: 'later',
+  Delete: 'delete',
+  Protect: null,
+};
 
 /**
  * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
@@ -752,52 +712,6 @@ function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
     >
       ★
     </span>
-  );
-}
-
-function VerbButtons({
-  sender,
-  onAction,
-}: {
-  sender: SenderListRow;
-  onAction: SenderTableProps['onAction'];
-}) {
-  return (
-    <div style={{ display: 'inline-flex', gap: 4 }}>
-      {VERB_ORDER.map((verb) => {
-        const { copy, shortcut } = getActionDescriptor(verb);
-        const label = copy.primary;
-        return (
-          <button
-            key={verb}
-            type="button"
-            onClick={(e) => {
-              // Defense in depth — stop the click bubbling to any future
-              // row-level handler. Today there is none; this keeps a
-              // future regression caller from accidentally double-firing.
-              e.stopPropagation();
-              onAction({ verb, sender });
-            }}
-            aria-label={`${label} ${displayLabel(sender)}`}
-            title={shortcut ? `${label} (${shortcut})` : label}
-            style={{
-              all: 'unset',
-              cursor: 'pointer',
-              padding: '4px 10px',
-              borderRadius: radius.sm,
-              border: `1px solid ${color.line}`,
-              background: color.card,
-              fontFamily: font.sans,
-              fontSize: text.sm,
-              fontWeight: 500,
-              color: color.fg,
-            }}
-          >
-            {label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -825,22 +739,13 @@ function ExpandedRow({
   // Adapt the wire row to the FE `Sender` shape SenderRowDetail expects.
   // Memoised on the row id since adaptation is identity-stable per row.
   const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
-  // Bridge — SenderRowDetail emits canonical-cased verbs (Archive /
-  // Unsubscribe / Later / Keep / Protect). The parent's `onAction`
-  // expects lowercase `SenderTableVerb`. Map + filter (Keep/Protect
-  // aren't in the table's verb union).
-  const VERB_MAP: Record<ActionVerb, SenderTableVerb | null> = {
-    Archive: 'archive',
-    Unsubscribe: 'unsubscribe',
-    Later: 'later',
-    // Spec v1.2 Decision 1 — Delete routes through the composite modal
-    // (the row detail surface) the same as Archive/Later.
-    Delete: 'delete',
-    Keep: null,
-    Protect: null,
-  };
+  // Bridge — SenderRowDetail emits canonical-cased verbs; the parent's
+  // `onAction` expects lowercase `SenderTableVerb`. Shared module-scope
+  // map (also used by the row's SenderActionRow) — Keep now routes
+  // instead of silently no-op'ing (pre-2026-07-03 the panel's Keep
+  // button mapped to null and dropped the click on the floor).
   const bridgedAction = (req: { verb: ActionVerb; senders: Sender[] }) => {
-    const mapped = VERB_MAP[req.verb];
+    const mapped = ROW_VERB_TO_TABLE[req.verb];
     if (mapped === null) return;
     onAction({ verb: mapped, sender });
   };
