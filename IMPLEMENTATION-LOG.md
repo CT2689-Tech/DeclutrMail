@@ -89,7 +89,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
-| D38 | First-time education: **Onboarding-only tour + tooltips on hover | ⬜ |  |  | Drift fix 2026-06-11: no tour/coachmark code exists; prior "(D38)" tags on PRs #12 and #158–#178 were umbrella mis-tags — that evidence is invalid for D38 |
+| D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #261 |  | Drift fix 2026-06-11: no tour/coachmark code exists; prior "(D38)" tags on PRs #12 and #158–#178 were umbrella mis-tags — that evidence is invalid for D38 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
 | D41 | Clicking a recent-message subject: **Open in Gmail (new tab, deep link) | 🔵 | #30 |  |  |
