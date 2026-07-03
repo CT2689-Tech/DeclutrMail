@@ -12,7 +12,7 @@ import {
   type Sender,
 } from '../data';
 import { RowCheckbox } from './row-checkbox';
-import { SenderRowDetail } from './sender-row-detail';
+import { SenderRowDetailLive } from './sender-row-detail';
 
 const { color, font } = tokens;
 
@@ -341,7 +341,7 @@ export function SenderListRow({
         </span>
       </div>
 
-      {expanded && <SenderRowDetail s={s} onAction={onAction} />}
+      {expanded && <SenderRowDetailLive s={s} onAction={onAction} />}
     </>
   );
 }

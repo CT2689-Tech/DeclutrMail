@@ -59,7 +59,7 @@ import { getActionDescriptor } from '@declutrmail/shared/actions';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
 import { UNSUB_PILL } from '../grid/sender-card';
-import { SenderRowDetail } from '../table/sender-row-detail';
+import { SenderRowDetailLive } from '../table/sender-row-detail';
 import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
 import type {
@@ -847,7 +847,7 @@ function ExpandedRow({
   return (
     <tr data-dm-expanded-for={sender.id}>
       <td colSpan={COLUMNS.length} style={{ padding: '12px 12px 16px 48px', background: color.bg }}>
-        <SenderRowDetail s={adapted} onAction={bridgedAction} />
+        <SenderRowDetailLive s={adapted} onAction={bridgedAction} />
       </td>
     </tr>
   );
