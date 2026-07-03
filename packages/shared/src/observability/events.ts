@@ -103,14 +103,25 @@ export interface EventPayloads {
     duration_ms: number;
   };
   sync_started: {
-    sync_id: string;
+    /**
+     * `syncs.id` UUID when emitted server-side; `null` when emitted by
+     * the FE sync gate — the D224 status poll carries no sync id, so
+     * analysis discriminates FE vs BE fires on this field.
+     */
+    sync_id: string | null;
     mailbox_id: string;
     trigger: 'initial' | 'manual' | 'pubsub' | 'cron';
   };
   sync_completed: {
-    sync_id: string;
+    /** See `sync_started.sync_id` — `null` for FE gate fires. */
+    sync_id: string | null;
     mailbox_id: string;
+    /** Final indexed count; -1 when unknown (the D224 status poll carries no counts). */
     messages_indexed: number;
+    /**
+     * Wall-clock ms. FE gate fires measure the OBSERVED wait (first
+     * in-progress poll → terminal), not the server-side sync duration.
+     */
     duration_ms: number;
     outcome: 'success' | 'partial' | 'failed';
   };
@@ -121,12 +132,22 @@ export interface EventPayloads {
   triage_action_taken: {
     verb: Verb;
     sender_id: string;
+    /** True when the user's verb equals the engine's verdict for the row (D21/D29). */
+    matched_recommendation: boolean;
+    /** Messages the mutation covers (server count); -1 when not cheaply available. */
     affected_messages: number;
     source: 'sheet' | 'inline' | 'shortcut';
   };
   undo_clicked: {
-    action_id: string;
-    verb: Verb;
+    /**
+     * The reverted action's kind — mirrors the `undo_action_kind` pg
+     * enum (kept inline so this file stays import-free). `apply-rule`
+     * covers Autopilot reverts; the rest are KAULD verbs. No action_id
+     * here: the FE only holds the undo TOKEN at click time, and a live
+     * capability token must never reach telemetry.
+     */
+    verb: Verb | 'apply-rule';
+    /** Age of the undo token at click — ms since the action landed. */
     age_ms: number;
   };
   unsubscribe_attempted: {

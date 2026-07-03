@@ -7,6 +7,7 @@ import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
+import { track } from '@/lib/posthog';
 
 /**
  * Triage daily ritual route (D29, D33, D207).
@@ -29,6 +30,14 @@ export default function TriagePage() {
   const { me } = useAuth();
   const queue = useTriageQueue();
   const stats = useTriageStats();
+
+  // D159 funnel — one page_viewed per triage route mount (billing-
+  // screen pattern). Lives on the ROUTE, not `TriageScreen`: the
+  // screen also renders inside onboarding step 5 and Storybook, where
+  // a 'triage' page view would be a lie.
+  useEffect(() => {
+    void track('page_viewed', { page: 'triage', mailbox_id: me.activeMailboxId });
+  }, [me.activeMailboxId]);
 
   const state = composeTriageState({
     rows: queue.data,

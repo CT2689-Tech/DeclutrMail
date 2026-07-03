@@ -7,6 +7,7 @@ import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
 import { SyncGate, type SyncGateEscape } from '@/features/onboarding/sync-gate';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
 import {
   useCompleteOnboarding,
   useOnboardingState,
@@ -132,6 +133,9 @@ function AuthedFlow() {
   const sync = useSyncStatus(activeMailboxId ?? undefined, {
     enabled: activeMailboxId != null,
   });
+  // D159 sync lifecycle — one started/completed pair per observed
+  // initial sync (ref-guarded against the 3s poll re-fires).
+  useSyncGateFunnel(sync.data, activeMailboxId);
 
   const step: AuthedOnboardingStep = deriveAuthedStep({
     state: {
@@ -260,6 +264,8 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
   // Gate THAT mailbox explicitly so it survives the user switching
   // their active mailbox back to the primary mid-sync.
   const sync = useSyncStatus(mailboxId);
+  // D159 sync lifecycle for the secondary mailbox's initial sync.
+  useSyncGateFunnel(sync.data, mailboxId);
   const ready = sync.data?.is_ready_for_triage ?? false;
 
   useEffect(() => {
