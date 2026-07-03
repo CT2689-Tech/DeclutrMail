@@ -155,17 +155,22 @@ export type TriageScreenState =
   | { kind: 'error'; error: unknown; retry: () => void };
 
 /**
- * Deterministic fixture — 8 rows that cover the edge cases the
+ * Deterministic fixture — 9 rows that cover the edge cases the
  * Storybook variants and tests reason about:
  *
  *   • 2 Keep   — one VIP-protected, one engagement-protected
  *   • 3 Archive — varied confidence (0.94 / 0.88 / 0.66)
- *   • 2 Unsubscribe — one one-click (D9), one mailto (D230 deferred)
+ *   • 3 Unsubscribe — one one-click (D9), one mailto (D230 deferred),
+ *     one with NO channel (`unsubscribeMethod: 'none'`) — the live
+ *     shape the 2026-07-02 audit caught (W2/W3): recommended verb
+ *     disabled + quiet-90d sender.
  *   • 1 Later
  *
  * Ordering is "highest impact first" (Archive/Unsubscribe at the top,
  * Keep at the bottom). The engine in production sorts by a different
- * key — fixtures here just need to be stable and varied.
+ * key — fixtures here just need to be stable and varied. New rows are
+ * APPENDED (not impact-sorted) because sibling tests pin rows by index
+ * (`TRIAGE_QUEUE[0]`/`[1]` in action-sheet + screen-actions tests).
  */
 export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
   // ── Archive · high confidence (0.94) ─────────────────────────────
@@ -377,6 +382,40 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     lastDays: 2,
     totalAllTime: 84,
   },
+
+  // ── Unsubscribe · NO channel (`unsubscribeMethod: 'none'`) ────────
+  // Mirrors the live queue shape the 2026-07-02 audit flagged (W2/W3):
+  // the engine recommends Unsubscribe at high confidence for a sender
+  // with no List-Unsubscribe header, so the U pill is disabled — the
+  // toolbar must explain why. Also quiet-90d (`last90dMessages: 0`)
+  // with a stale `lastDays: 0`, the exact pair behind the
+  // "Quiet 90d · 555 lifetime" vs "LAST SEEN today" contradiction.
+  // Appended last so index-pinned tests (TRIAGE_QUEUE[0]/[1]) hold.
+  {
+    id: 't-shipping',
+    senderId: 'sid-shipping',
+    senderKey: 'sk_shipping',
+    senderName: 'Shipment Tracking',
+    senderEmail: 'shipment-tracking@bigstore.example',
+    senderDomain: 'bigstore.example',
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'none',
+    verdict: 'unsubscribe',
+    confidence: 0.95,
+    reasoning:
+      'Zero messages in the past 90 days at 0% read — this sender fills the archive without being seen.',
+    signals: [
+      'Read rate: 0% over the last 90 days',
+      'Quiet: no messages in the last 90 days',
+      'No unsubscribe channel advertised by this sender',
+    ],
+    protectionReason: null,
+    monthlyVolume: 0,
+    last90dMessages: 0,
+    readRate: 0,
+    lastDays: 0,
+    totalAllTime: 555,
+  },
 ];
 
 /**
@@ -428,6 +467,26 @@ export const TRIAGE_SESSION_STATS_PRO: TriageSessionStats = {
   tier: 'pro',
 };
 
+/**
+ * Quiet snapshot — the queue is empty and the user decided NOTHING
+ * today (fresh morning visit, or a new mailbox with no scored senders
+ * yet). Drives the D212 resting empty state — the D33 "you cleared
+ * today's queue" celebration would be false here (a grid of four
+ * zeros under a claim the user cleared something). Mirrors the live
+ * `/api/triage/stats` payload observed 2026-07-02.
+ */
+export const TRIAGE_SESSION_STATS_QUIET: TriageSessionStats = {
+  decidedToday: 0,
+  archivedToday: 0,
+  unsubscribedToday: 0,
+  laterToday: 0,
+  streakDays: 0,
+  freeRemaining: null,
+  futureEmailsSkipped: null,
+  minutesSavedPerWeek: null,
+  tier: 'pro',
+};
+
 // ─── Capability gates ─────────────────────────────────────────────
 // Mirrors the senders feature: protected rows can only be Kept;
 // Unsubscribe is hidden when no `List-Unsubscribe` header was seen.
@@ -448,6 +507,30 @@ export function canLater(row: TriageDecisionRow): boolean {
 export function canUnsubscribe(row: TriageDecisionRow): boolean {
   if (row.protectionReason !== null) return false;
   return row.unsubscribeMethod !== 'none';
+}
+
+/**
+ * Display value for the "last seen" stat — derived so it can never
+ * contradict the quiet-90d copy that `last90dMessages` drives (the
+ * 2026-07-02 audit's W3: a row read "Quiet 90d · 555 lifetime" while
+ * the stat card said "LAST SEEN today").
+ *
+ * When the sender has ZERO messages inside the rolling 90-day window,
+ * any `lastDays < 90` is internally inconsistent — the aggregate
+ * window is computed in SQL from real rows, while `lastDays` rides a
+ * raw-SQL `MAX(internal_date)` that the BE currently collapses to `0`
+ * (see the PR body — data-layer fix tracked separately). The window
+ * wins: render "90d+" unless `lastDays` already agrees.
+ */
+export function lastSeenLabel(
+  row: Pick<TriageDecisionRow, 'lastDays' | 'last90dMessages'>,
+): string {
+  if (row.last90dMessages === 0) {
+    return row.lastDays >= 90 ? `${row.lastDays}d` : '90d+';
+  }
+  if (row.lastDays === 0) return 'today';
+  if (row.lastDays === 1) return '1d';
+  return `${row.lastDays}d`;
 }
 
 /** Compact "12.4k" formatter — matches senders/data.ts:fmtCompact. */

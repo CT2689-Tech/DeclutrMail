@@ -1,14 +1,22 @@
 'use client';
 
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import type { TriageSessionStats } from './data';
 
 const { color, font } = tokens;
 
 /**
- * The triage empty state (D33).
+ * The triage empty state (D33 + D212).
  *
- * Five pieces, in this order:
+ * Two shapes, split on `stats.decidedToday`:
+ *
+ *   - `decidedToday === 0` — the D212 RESTING state ("Nothing needs a
+ *     decision."): the queue is empty but the user cleared nothing
+ *     today, so the celebration below would be a false claim over
+ *     four zero tiles. Renders the shared `<EmptyState>` primitive.
+ *   - `decidedToday > 0` — the D33 ritual-completion state below.
+ *
+ * The D33 state is five pieces, in this order:
  *
  *   1. Stats summary — what the user got done today (decided / archived
  *      / unsubscribed / later) plus the streak day count. The number
@@ -43,6 +51,44 @@ export function TriageEmptyState({
   stats: TriageSessionStats;
   onOpenUpgrade?: () => void;
 }) {
+  // D212 resting state (2026-07-02 audit W5) — the queue is empty and
+  // the user decided NOTHING today: a fresh morning visit, or a new
+  // mailbox before the engine scores anything. The D33 celebration
+  // below would be false here ("You cleared today's queue." over a
+  // grid of four zeros), so the inbox-zero moment renders the shared
+  // D212 EmptyState instead: calm, mental-model copy, one next step.
+  // The single editorial phrase is the ADR-0011 allowance for
+  // first-class empty states.
+  if (stats.decidedToday === 0) {
+    return (
+      <EmptyState
+        title="Nothing needs a decision."
+        description="New senders queue here as mail arrives — Autopilot keeps watch in the meantime."
+        action={
+          <a
+            href="/senders"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 32,
+              padding: '0 14px',
+              background: color.card,
+              color: color.fg,
+              border: `1px solid ${color.line}`,
+              borderRadius: 7,
+              fontFamily: font.sans,
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Browse senders
+          </a>
+        }
+      />
+    );
+  }
+
   const showPlusNudge =
     stats.tier === 'free' && stats.freeRemaining != null && stats.freeRemaining <= 5;
   const showProNudge = stats.tier === 'plus';

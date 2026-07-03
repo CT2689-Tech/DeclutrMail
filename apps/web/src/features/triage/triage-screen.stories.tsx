@@ -9,14 +9,17 @@
 // story shapes do not change.
 //
 // Variants covered (D210 + D211/D212 + Storybook contract):
-//   • Default          — populated queue, 8 rows
+//   • Default          — populated queue, 9 rows
 //   • Empty            — D33 stats summary + come back tomorrow
 //   • EmptyFreeTier    — D33 with the upgrade nudge visible
+//   • EmptyQuiet       — D212 resting state (nothing decided today)
 //   • Loading          — skeleton stack
 //   • RowExpanded      — one row expanded with toolbar visible
 //   • ActionSheetOpen  — sheet mounted with embedded preview
 //   • InlinePreview    — D34 remember-preference path
 //   • KeyboardFocus    — focus-state guard for the row chrome
+//   • UnsubNoChannel   — engine recommends U but no channel exists
+//                        (W2 — disabled pill states its reason)
 
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -26,6 +29,7 @@ import {
   TRIAGE_SESSION_STATS,
   TRIAGE_SESSION_STATS_FREE,
   TRIAGE_SESSION_STATS_PRO,
+  TRIAGE_SESSION_STATS_QUIET,
 } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
@@ -144,6 +148,20 @@ export const EmptyProTier: Story<typeof TriageScreen> = {
 };
 
 /**
+ * Empty (quiet) — the D212 resting state: queue empty AND nothing
+ * decided today (fresh morning visit / new mailbox). Renders the
+ * shared `<EmptyState>` ("Nothing needs a decision.") instead of the
+ * D33 celebration, which would otherwise claim "You cleared today's
+ * queue." over four zero tiles.
+ */
+export const EmptyQuiet: Story<typeof TriageScreen> = {
+  args: {
+    state: { kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET },
+  },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/**
  * Row expanded — exercises the D36 collapse/expand pattern and the
  * D29/D227 toolbar visibility. The Storybook play hook expands the
  * first row before the story renders so the screenshot is stable.
@@ -227,4 +245,27 @@ export const KeyboardFocus: Story<typeof TriageScreen> = {
     },
   },
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/**
+ * Unsubscribe recommended, no channel (W2 — 2026-07-02 audit). The
+ * engine chip says "Unsubscribe · 95%" but the sender advertises no
+ * List-Unsubscribe header, so the U pill is disabled — and must say
+ * why: title attr on the pill + the visible reason line under the
+ * toolbar ("No unsubscribe channel found — Archive handles senders
+ * like this.").
+ */
+export const UnsubNoChannel: Story<typeof TriageScreen> = {
+  args: {
+    state: {
+      kind: 'ready',
+      rows: TRIAGE_QUEUE.filter((r) => r.id === 't-shipping'),
+      stats: TRIAGE_SESSION_STATS,
+    },
+  },
+  render: (args: PageArgs) => {
+    resetTriageStore();
+    useTriageStore.setState({ expandedRowId: 't-shipping' });
+    return frame(<TriageScreen {...args} />);
+  },
 };
