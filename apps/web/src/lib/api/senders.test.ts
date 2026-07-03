@@ -60,6 +60,32 @@ describe('fetchSenders', () => {
     expect(env.meta.pagination.hasMore).toBe(true);
   });
 
+  it('encodes the replied tri-state as ?replied=true / not / omitted (D38)', async () => {
+    // Regression: the "you replied" chip wrote URL state but the fetcher
+    // never mapped it to the wire, so the chip was a silent no-op.
+    const observed: Array<string | null> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          observed.push(url.searchParams.get('replied'));
+          return jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          });
+        },
+      },
+    ]);
+
+    await fetchSenders({ replied: true });
+    await fetchSenders({ replied: false });
+    await fetchSenders({ replied: null });
+    await fetchSenders();
+
+    expect(observed).toEqual(['true', 'not', null, null]);
+  });
+
   it('omits empty params', async () => {
     let observedUrl: URL | null = null;
     installFetchStub([

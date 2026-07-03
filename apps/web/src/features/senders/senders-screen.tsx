@@ -173,6 +173,7 @@ export function SendersScreen() {
     activity: compose.activity ?? undefined,
     activityNegate: compose.activity ? compose.activityNegate : undefined,
     unsubReady: compose.unsubReady,
+    replied: compose.replied,
     windowDays: compose.windowDays ?? undefined,
     domain: compose.domain ?? undefined,
     isProtected: compose.protectedFlag,

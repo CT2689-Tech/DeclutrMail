@@ -63,6 +63,8 @@ export interface UseSendersOptions {
   activityNegate?: boolean | undefined;
   /** D38 compose strip — unsub-readiness tri-state. */
   unsubReady?: TriStateFilter | undefined;
+  /** D38 compose strip — "you replied" tri-state. */
+  replied?: TriStateFilter | undefined;
   /** D38 compose strip — "quiet for N days+" filter. */
   windowDays?: number | undefined;
   /** D38 compose strip — domain substring. */
@@ -91,6 +93,7 @@ export function useSenders(options: UseSendersOptions = {}) {
       activity: options.activity,
       activityNegate: options.activityNegate,
       unsubReady: options.unsubReady,
+      replied: options.replied,
       windowDays: options.windowDays,
       domain: options.domain,
     }),
@@ -107,6 +110,7 @@ export function useSenders(options: UseSendersOptions = {}) {
           activity: options.activity,
           activityNegate: options.activityNegate,
           unsubReady: options.unsubReady,
+          replied: options.replied,
           windowDays: options.windowDays,
           domain: options.domain,
           cursor: pageParam ?? undefined,
