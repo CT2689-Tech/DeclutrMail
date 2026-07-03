@@ -13,8 +13,10 @@
  * variance (`stretch` — card stretches the primary button, the table
  * keeps it inline-width).
  *
- * Every pick routes through `onAction` → the caller's D226 preview
- * path. This component never mutates.
+ * Every pick emits through `onAction`; this component never mutates.
+ * Destructive picks (Archive / Unsubscribe / Later / Delete) ride the
+ * caller's D226 preview; Keep is non-destructive and the caller
+ * applies it immediately per D40 — no preview by design.
  */
 
 import { useState } from 'react';
