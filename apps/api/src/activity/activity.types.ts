@@ -11,7 +11,7 @@
 // snippet, or non-allowlisted headers; the read service constructs
 // these rows from `activity_log` + `senders` + `undo_journal` only.
 
-import type { ActivityRuleRef } from '@declutrmail/shared/contracts';
+import type { ActivityRuleRef, CanonicalVerb } from '@declutrmail/shared/contracts';
 
 import type { ActivityLogEntry } from '@declutrmail/db';
 
@@ -120,6 +120,55 @@ export interface ActivityStats {
  * subset; an empty/missing param means "no verb filter" (all verbs).
  */
 export type ActivityVerbFilter = ActivityLogEntry['action'];
+
+/**
+ * Aggregate cleanup totals for one mailbox within a window — the
+ * numbers a user would share / see at inbox-zero (DQ16 "cleanup
+ * receipt" prerequisite; no D covers aggregate stats yet, D-number
+ * pending founder ratification — see docs/execution/decision-queue.md).
+ *
+ * Counts only the five canonical verbs (K/A/U/L/D, D227 + ADR-0019);
+ * feature-specific actions (`followup-dismiss`, VIP/Protect toggles)
+ * are not cleanup decisions and are excluded from every field.
+ *
+ * Derived from existing tables only (`activity_log` + `undo_journal`);
+ * read-only, no schema changes.
+ */
+export interface ActivitySummary {
+  /** Echo of the resolved window param (D55 vocabulary). */
+  window: ActivityWindow;
+  /**
+   * ISO-8601 `occurred_at` of the EARLIEST counted activity row — the
+   * honest "counting since …" stamp for the receipt. Null when the
+   * window contains no canonical-verb activity. For bounded windows
+   * this is ≥ the window start; for `'all'` it is the first decision
+   * ever recorded on the mailbox.
+   */
+  since: string | null;
+  /**
+   * Distinct senders the user decided on in the window —
+   * `COUNT(DISTINCT sender_key)` over canonical-verb rows.
+   * Account-scoped rows (`sender_key IS NULL`) do not count.
+   */
+  decidedSenders: number;
+  /** Row counts per canonical verb (a decision each, D227 K/A/U/L/D). */
+  byVerb: Record<CanonicalVerb, number>;
+  /**
+   * Total messages moved by canonical-verb decisions —
+   * `SUM(affected_count)`. Keep rows contribute 0 by design (the
+   * verdict is recorded; no messages move).
+   */
+  emailsHandled: number;
+  /**
+   * Undos the user performed (`undo_journal.reverted_at` within the
+   * window). FLOOR, not an exact historical total: the undo-expiry
+   * worker prunes journal rows ~1 day after `expires_at` (7d Free /
+   * 30d Pro windows), so reverts older than the pruning horizon are
+   * gone. Exact for recent windows; undercounts for `'all'`. An exact
+   * lifetime count would need a schema change — out of scope here.
+   */
+  undoCount: number;
+}
 
 /** Pagination `meta` carries `total` so D59 stats can show the window total. */
 export interface ActivityListMeta {

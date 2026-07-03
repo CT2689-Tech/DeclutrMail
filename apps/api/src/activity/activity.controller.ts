@@ -25,6 +25,7 @@ import type {
   ActivityListMeta,
   ActivityRow,
   ActivitySourceFilter,
+  ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
 } from './activity.types.js';
@@ -174,6 +175,32 @@ export class ActivityController {
         dateTo: dateTo ? dateTo.toISOString() : null,
       },
     };
+  }
+
+  /**
+   * GET /api/activity/summary — aggregate cleanup totals for the
+   * caller's mailbox (DQ16 share-receipt prerequisite).
+   *
+   * Query params:
+   *   - `window` — `'7d' | '30d' | '90d' | 'all'`. Default `'30d'`.
+   *     Same D55 vocabulary + fallback behaviour as the list endpoint.
+   *
+   * Read-only; returns a plain D202 envelope (no meta — the window
+   * echo lives in the payload). See {@link ActivitySummary} for field
+   * semantics, including the `undoCount` floor caveat.
+   */
+  @Get('summary')
+  @RateLimit('triage-load')
+  async summary(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('window') rawWindow: string | undefined,
+  ): Promise<Envelope<ActivitySummary>> {
+    const summary = await this.reads.summarizeActivity({
+      mailboxAccountId: mailbox.id,
+      window: resolveWindow(rawWindow),
+      nowMs: Date.now(),
+    });
+    return { data: summary };
   }
 }
 

@@ -974,4 +974,239 @@ describe('ActivityReadService', () => {
       expect(rows[0]!.rule).toBeNull();
     });
   });
+
+  // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
+
+  describe('summarizeActivity (DQ16 share receipt)', () => {
+    it('counts ONLY the current mailbox — decisions + undos seeded in both mailboxes', async () => {
+      // Both mailboxes (distinct users/workspaces via seedMailbox) get
+      // decisions under the SAME sender_key strings — sender_key is
+      // per-mailbox namespaced, so a query that lost the mailbox
+      // predicate would inflate every field below and fail.
+      for (const senderKey of ['sk-shared-1', 'sk-shared-2']) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+          source: 'triage',
+          action: 'archive',
+          affectedCount: 10,
+          senderKey,
+        });
+        await seedActivity(db, {
+          mailboxAccountId: mailboxB.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+          source: 'triage',
+          action: 'archive',
+          affectedCount: 100,
+          senderKey,
+        });
+      }
+      await seedActivity(db, {
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+        affectedCount: 100,
+        senderKey: 'sk-b-only',
+      });
+      // One reverted undo in EACH mailbox.
+      await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 5 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+      });
+      await seedUndoToken(db, mailboxB.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 5 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+      });
+
+      const a = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(a.byVerb).toEqual({ keep: 0, archive: 2, unsubscribe: 0, later: 0, delete: 0 });
+      expect(a.decidedSenders).toBe(2);
+      expect(a.emailsHandled).toBe(20);
+      expect(a.undoCount).toBe(1);
+
+      const b = await svc.summarizeActivity({
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(b.byVerb).toEqual({ keep: 0, archive: 2, unsubscribe: 0, later: 0, delete: 1 });
+      expect(b.decidedSenders).toBe(3);
+      expect(b.emailsHandled).toBe(300);
+      expect(b.undoCount).toBe(1);
+    });
+
+    it('aggregates byVerb + emailsHandled across all five canonical verbs; non-canonical actions excluded', async () => {
+      const verbs = [
+        { action: 'keep', affectedCount: 0, daysAgo: 1 },
+        { action: 'archive', affectedCount: 12, daysAgo: 2 },
+        { action: 'unsubscribe', affectedCount: 3, daysAgo: 3 },
+        { action: 'later', affectedCount: 4, daysAgo: 4 },
+        { action: 'delete', affectedCount: 6, daysAgo: 5 },
+      ] as const;
+      for (const [i, v] of verbs.entries()) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - v.daysAgo * ONE_DAY_MS),
+          source: 'manual',
+          action: v.action,
+          affectedCount: v.affectedCount,
+          senderKey: `sk-${i}`,
+        });
+      }
+      // OLDEST row is non-canonical — must be excluded from byVerb,
+      // emailsHandled, decidedSenders AND `since`.
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 20 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'followup-dismiss',
+        affectedCount: 7,
+        senderKey: 'sk-followup',
+      });
+
+      const summary = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(summary.byVerb).toEqual({ keep: 1, archive: 1, unsubscribe: 1, later: 1, delete: 1 });
+      expect(summary.emailsHandled).toBe(25);
+      expect(summary.decidedSenders).toBe(5);
+      // `since` = earliest CANONICAL row (-5d delete), not the -20d
+      // followup-dismiss row.
+      expect(summary.since).toBe(new Date(NOW_MS - 5 * ONE_DAY_MS).toISOString());
+      expect(summary.window).toBe('30d');
+    });
+
+    it('decidedSenders dedupes a sender decided under multiple verbs; null sender_key rows never count', async () => {
+      // Same sender: archived, then later'd.
+      for (const action of ['archive', 'later'] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+          source: 'manual',
+          action,
+          senderKey: 'sk-same',
+        });
+      }
+      // Account-scoped canonical row (no sender_key).
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+
+      const summary = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(summary.decidedSenders).toBe(1);
+      expect(summary.byVerb.archive).toBe(2);
+      expect(summary.byVerb.later).toBe(1);
+    });
+
+    it('window bound: 7d excludes older rows; all includes them and moves `since` back', async () => {
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 2,
+        senderKey: 'sk-recent',
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 20 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+        affectedCount: 9,
+        senderKey: 'sk-old',
+      });
+
+      const week = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        nowMs: NOW_MS,
+      });
+      expect(week.byVerb.archive).toBe(1);
+      expect(week.byVerb.delete).toBe(0);
+      expect(week.emailsHandled).toBe(2);
+      expect(week.decidedSenders).toBe(1);
+      expect(week.since).toBe(new Date(NOW_MS - 3 * ONE_DAY_MS).toISOString());
+
+      const all = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: 'all',
+        nowMs: NOW_MS,
+      });
+      expect(all.byVerb.delete).toBe(1);
+      expect(all.emailsHandled).toBe(11);
+      expect(all.decidedSenders).toBe(2);
+      expect(all.since).toBe(new Date(NOW_MS - 20 * ONE_DAY_MS).toISOString());
+    });
+
+    it('undoCount counts REVERTED journal rows only, bounded by reverted_at', async () => {
+      // Reverted 2d ago — inside 7d.
+      await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 5 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      // Reverted 10d ago — outside 7d, inside all.
+      await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - 10 * ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - 10 * ONE_DAY_MS),
+      });
+      // Live token, never reverted — never counts.
+      await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 5 * ONE_DAY_MS),
+      });
+      // Revert triggered but never confirmed (executed_at set,
+      // reverted_at null) — not a completed undo; never counts.
+      await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 5 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+      });
+
+      const week = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        nowMs: NOW_MS,
+      });
+      expect(week.undoCount).toBe(1);
+
+      const all = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: 'all',
+        nowMs: NOW_MS,
+      });
+      expect(all.undoCount).toBe(2);
+    });
+
+    it('returns zeros + since=null for a mailbox with no activity', async () => {
+      const summary = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(summary).toEqual({
+        window: '30d',
+        since: null,
+        decidedSenders: 0,
+        byVerb: { keep: 0, archive: 0, unsubscribe: 0, later: 0, delete: 0 },
+        emailsHandled: 0,
+        undoCount: 0,
+      });
+    });
+  });
 });
