@@ -1516,8 +1516,12 @@ function SendersScreenContent({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
-          {/* Grid/Table toggle (D49) — per-session, defaults to grid. */}
-          <ViewToggle />
+          {/* Grid/Table toggle (D49) — per-session, defaults to grid.
+              Hidden on mobile: D49 says "Mobile = always card list (no
+              table option)", and the body force-renders grid below `sm`
+              anyway — showing the toggle there lets it read pressed
+              while the table never appears. */}
+          {!isMobile && <ViewToggle />}
           <Button tone="dark" onClick={() => toast('Add-VIP flow opens here', 'info')}>
             + Add VIP
           </Button>
