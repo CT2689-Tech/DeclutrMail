@@ -11,9 +11,15 @@
 //   • Loading  — skeleton bars while the timeseries fetch is in flight
 //   • Error    — fetch failed; calm copy + Retry
 //   • Empty    — sender has no `sender_timeseries` rows yet
+// plus the same four states for the Recent subjects card (real
+// first-page `/api/senders/:id/messages` rows, capped at 3).
 
 import type { Sender } from '../data';
-import { SenderRowDetail, type RowDetailTimeseries } from './sender-row-detail';
+import {
+  SenderRowDetail,
+  type RowDetailSubjects,
+  type RowDetailTimeseries,
+} from './sender-row-detail';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -36,7 +42,7 @@ const meta: StoryMeta<typeof SenderRowDetail> = {
     docs: {
       description: {
         component:
-          "Inline detail panel revealed when a sender row is expanded. The volume chart renders the sender's real 12-month `sender_timeseries` (fetched on expand by `SenderRowDetailLive`; same query key as the Sender Detail page). Verbs are canonical K/A/U/L per D227; every action routes through the parent's D226 preview.",
+          "Inline detail panel revealed when a sender row is expanded. The volume chart renders the sender's real 12-month `sender_timeseries` and the Recent subjects card the sender's real recent messages (both fetched on expand by `SenderRowDetailLive`; same query keys as the Sender Detail page). Verbs are canonical K/A/U/L per D227; every action routes through the parent's D226 preview.",
       },
     },
   },
@@ -80,24 +86,73 @@ const READY: RowDetailTimeseries = {
   ],
 };
 
+const SUBJECTS: RowDetailSubjects = {
+  status: 'ready',
+  subjects: [
+    'Your July statement is ready',
+    'Security alert: new sign-in on Chrome',
+    'Weekly digest — 12 new updates',
+  ],
+};
+
 const noop = () => undefined;
 
 /** Ready — real monthly volumes; note the missing month (2025-11) has no bar. */
 export const Ready: Story<typeof SenderRowDetail> = {
-  args: { s: sender(), onAction: noop, timeseries: READY },
+  args: { s: sender(), onAction: noop, timeseries: READY, subjects: SUBJECTS },
 };
 
-/** Loading — timeseries fetch in flight; skeleton bars, no data claims. */
+/** Loading — both fetches in flight; skeleton bars + lines, no data claims. */
 export const Loading: Story<typeof SenderRowDetail> = {
-  args: { s: sender(), onAction: noop, timeseries: { status: 'loading' } },
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: { status: 'loading' },
+    subjects: { status: 'loading' },
+  },
 };
 
-/** Error — fetch failed; calm copy + Retry. */
+/** Error — both fetches failed; calm copy + Retry. */
 export const ErrorState: Story<typeof SenderRowDetail> = {
-  args: { s: sender(), onAction: noop, timeseries: { status: 'error', retry: noop } },
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: { status: 'error', retry: noop },
+    subjects: { status: 'error', retry: noop },
+  },
 };
 
-/** Empty — sender has no timeseries rows yet. */
+/** Empty — sender has no timeseries rows and no messages yet. */
 export const Empty: Story<typeof SenderRowDetail> = {
-  args: { s: sender(), onAction: noop, timeseries: { status: 'ready', points: [] } },
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: { status: 'ready', points: [] },
+    subjects: { status: 'ready', subjects: [] },
+  },
+};
+
+/** Subjects still loading while the chart is ready — states are independent. */
+export const SubjectsLoading: Story<typeof SenderRowDetail> = {
+  args: { s: sender(), onAction: noop, timeseries: READY, subjects: { status: 'loading' } },
+};
+
+/** Subjects fetch failed while the chart is ready; calm copy + Retry. */
+export const SubjectsError: Story<typeof SenderRowDetail> = {
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: READY,
+    subjects: { status: 'error', retry: noop },
+  },
+};
+
+/** Sender has volume history but no messages in the recent window. */
+export const SubjectsEmpty: Story<typeof SenderRowDetail> = {
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: READY,
+    subjects: { status: 'ready', subjects: [] },
+  },
 };
