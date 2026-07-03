@@ -99,8 +99,11 @@ export interface ActionPopoverProps {
 /**
  * `<ActionPopover>` — render a K/A/U/L/D overflow menu.
  *
- * Self-closes on pick. The trigger (`⋯` button) lives at each
- * call-site; this component is purely the dropdown surface.
+ * Self-closes on the keyboard-shortcut pick path only; the CLICK path
+ * leaves closing to the consumer — call `onClose()` inside your
+ * `onPick` (both `SenderActionRow` consumers do). The trigger (`⋯`
+ * button) lives at each call-site; this component is purely the
+ * dropdown surface.
  */
 export function ActionPopover({
   verbs = VERB_REGISTRY.map((v) => v.id),

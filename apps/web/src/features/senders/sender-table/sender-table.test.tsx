@@ -40,8 +40,10 @@ function row(overrides: Partial<SenderListRow> = {}): SenderListRow {
     lastSeenAt: overrides.lastSeenAt ?? '2026-05-28T13:01:34.000Z',
     totalReceived: overrides.totalReceived ?? 6471,
     repliedCount: 0,
-    monthlyVolume: overrides.monthlyVolume ?? 61,
-    readRate: overrides.readRate ?? 0,
+    // `in`-check (not `??`) so tests can override these to null — the
+    // wire fields are nullable when the sender has no timeseries rows.
+    monthlyVolume: 'monthlyVolume' in overrides ? overrides.monthlyVolume! : 61,
+    readRate: 'readRate' in overrides ? overrides.readRate! : 0,
     volumeTrend: overrides.volumeTrend ?? 'steady',
     unsubscribeMethod: overrides.unsubscribeMethod ?? 'none',
     lastReview: overrides.lastReview ?? null,
@@ -129,26 +131,60 @@ describe('SenderTable', () => {
     expect(screen.getByRole('button', { name: /expand bank of america/i })).toBeTruthy();
   });
 
-  it('verb buttons call onAction with the correct verb + sender row (no mutation)', () => {
+  it('primary verb button calls onAction with the derived verb (no mutation)', () => {
+    // Fixture row: unprotected, recently seen, no engine verdict →
+    // `deriveDefaultPrimary` falls back to the `people` intent → Keep.
     const onAction = vi.fn();
     render(<Harness onAction={onAction} />);
-    fireEvent.click(screen.getByRole('button', { name: /^archive bank of america/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^keep$/i }));
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenCalledWith(
-      expect.objectContaining({ verb: 'archive', sender: expect.objectContaining({ id: 'r-1' }) }),
+      expect.objectContaining({ verb: 'keep', sender: expect.objectContaining({ id: 'r-1' }) }),
     );
   });
 
-  it('surfaces only the three move verbs — Keep is NOT a row action (D227, F3)', () => {
-    render(<Harness {...{}} />);
-    // Archive / Later / Unsubscribe render…
-    expect(screen.getByRole('button', { name: /^archive bank of america/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^later bank of america/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^unsubscribe bank of america/i })).toBeTruthy();
-    // …Keep does not. On the management table, not-acting already means
-    // "keep"; the explicit Keep verb lives in Triage, and it must never
-    // re-appear here mapped to Protect (the bug Codex flagged on #142).
-    expect(screen.queryByRole('button', { name: /^keep bank of america/i })).toBeNull();
+  it('row renders the shared action grammar — primary + ⋯ popover with K/A/U/L/D (ADR-0016 A5)', () => {
+    const onAction = vi.fn();
+    render(<Harness onAction={onAction} />);
+    // No inline three-button strip anymore — one primary + one trigger.
+    expect(screen.queryByRole('button', { name: /^archive$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
+    const menu = screen.getByRole('menu', { name: /sender actions/i });
+    expect(menu).toBeTruthy();
+    // Full registry set present as menu items.
+    for (const verb of [/keep/i, /archive/i, /unsubscribe/i, /later/i, /delete/i]) {
+      expect(screen.getByRole('menuitem', { name: verb })).toBeTruthy();
+    }
+    // A pick routes through onAction with the lowercase table verb.
+    fireEvent.click(screen.getByRole('menuitem', { name: /archive/i }));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ verb: 'archive', sender: expect.objectContaining({ id: 'r-1' }) }),
+    );
+    // Popover self-closes after the pick.
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('popover disables destructive verbs for standing-protected rows', () => {
+    render(
+      <Harness
+        rows={[
+          row({
+            protectionFlags: {
+              isVip: false,
+              isProtected: true,
+              protectionReason: null,
+              protectionSetAt: null,
+            },
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
+    // Protected rows: Archive/Later/Unsubscribe/Delete all gated by the
+    // shared capability predicates; Keep stays available.
+    expect(screen.getByRole('menuitem', { name: /archive/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /delete/i })).toBeDisabled();
+    expect(screen.getByRole('menuitem', { name: /keep/i })).not.toBeDisabled();
   });
 
   it('renders the read-only Protect ⭐ status for standing-protected / VIP rows only', () => {
@@ -175,20 +211,21 @@ describe('SenderTable', () => {
     expect(screen.getByRole('img', { name: /^protected$/i })).toBeTruthy();
   });
 
-  it('sources verb label + shortcut tooltip from the Action Registry (D227)', () => {
+  it('renders the shared fact vocabulary — read bucket + monthly cadence cell', () => {
+    // readRate 0 → "Never" (amber, no pill); monthlyVolume 61 → "61/mo".
     render(<Harness {...{}} />);
-    // Label is the registry copy; the shortcut is invisible inline but
-    // surfaced via the title tooltip (§3.1).
-    const archive = screen.getByRole('button', { name: /^archive bank of america/i });
-    expect(archive).toHaveAttribute('title', 'Archive (A)');
-    expect(screen.getByRole('button', { name: /^later bank of america/i })).toHaveAttribute(
-      'title',
-      'Later (L)',
-    );
-    expect(screen.getByRole('button', { name: /^unsubscribe bank of america/i })).toHaveAttribute(
-      'title',
-      'Unsubscribe (U)',
-    );
+    expect(screen.getByLabelText(/read rate: never marked read/i)).toHaveTextContent('Never');
+    expect(screen.getByText('61/mo')).toBeTruthy();
+    // Monthly is nullable — no-timeseries rows render an em-dash.
+    // (Covered separately to keep this case single-row.)
+  });
+
+  it('renders em-dash monthly + read placeholders when the sender has no timeseries', () => {
+    render(<Harness rows={[row({ monthlyVolume: null, readRate: null })]} />);
+    // Two independent facts degrade independently to "—".
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/\/mo$/)).toBeNull();
   });
 
   it('checkbox toggles the selection set without mutating the input', () => {
@@ -238,9 +275,9 @@ describe('SenderTable', () => {
     const { container } = render(<Harness rows={[]} loading={true} />);
     const skeletonRows = container.querySelectorAll('tr[data-dm-sender-skeleton]');
     expect(skeletonRows.length).toBeGreaterThan(0);
-    // Column count: 9 cells per row matches COLUMNS.length.
+    // Column count: 10 cells per row matches COLUMNS.length.
     const first = skeletonRows[0]!;
-    expect(first.children.length).toBe(9);
+    expect(first.children.length).toBe(10);
   });
 
   it('renders an error row with retry when error + onRetry are provided', () => {
