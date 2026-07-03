@@ -1859,13 +1859,17 @@ function SendersScreenContent({
 
 /**
  * Map the SenderTable's action vocabulary to the `ActionVerb` shape
- * `ConfirmActionModal` consumes. The table surfaces only the three move
- * verbs (Archive / Later / Unsubscribe) — Keep lives in Triage and Protect
- * is a status star, not a row verb (D227) — so this map no longer carries a
- * `keep` entry, which previously mis-routed the "Keep" button to Protect
- * (Codex review of #142, F3).
+ * `ConfirmActionModal` consumes. The table row renders the shared
+ * `SenderActionRow` (2026-07-03 consistency pass), so the full K/A/U/L/D
+ * registry set routes through — including Keep, which `requestAction`
+ * applies immediately (non-destructive, D40) rather than previewing.
+ * The #142 F3 bug this map once guarded against was Keep MIS-ROUTING to
+ * Protect; the fix is the correct mapping, not the missing entry (the
+ * missing entry made the expand-panel's Keep silently no-op). Protect
+ * remains a status star, never a row verb (D227).
  */
 const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
+  keep: 'Keep',
   archive: 'Archive',
   unsubscribe: 'Unsubscribe',
   later: 'Later',
