@@ -199,15 +199,18 @@ export function legacyVerbFromId(
 
 /**
  * Lead-button tone derivation for the primary CTA. Tone semantics
- * locked by D26/D31 + ADR-0019: Unsubscribe = amber `warn`; Keep =
- * dark; Delete = `warn` (red maps to warn until the danger tone lands
- * as a Button prop — design-system follow-up); others = neutral.
+ * locked by ADR-0016 A5 (consolidating D26/D31) + ADR-0019: Keep =
+ * teal `primary`; Archive = `dark`; Unsubscribe = amber `warn`;
+ * Later = neutral `default`; Delete = `danger`. Delete is overflow-
+ * only today (`canBePrimary: false` in the registry) but stays mapped
+ * so no future call site can collide it with Unsubscribe's amber.
  */
 export function leadButtonTone(
   verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' | 'Delete',
-): 'warn' | 'dark' | 'default' {
+): 'warn' | 'dark' | 'default' | 'primary' | 'danger' {
   if (verb === 'Unsubscribe') return 'warn';
-  if (verb === 'Delete') return 'warn';
-  if (verb === 'Keep') return 'dark';
+  if (verb === 'Delete') return 'danger';
+  if (verb === 'Keep') return 'primary';
+  if (verb === 'Archive') return 'dark';
   return 'default';
 }

@@ -1010,7 +1010,10 @@ export function ConfirmActionModal({
               Cancel
             </Button>
             <Button
-              tone={isDeleteVerb || danger ? 'warn' : 'primary'}
+              // Delete-tone CTA fill is one of the three sanctioned
+              // `color.danger` uses (ADR-0019 §accent) — amber stays
+              // Unsubscribe's tone (ADR-0016 A5).
+              tone={isDeleteVerb ? 'danger' : danger ? 'warn' : 'primary'}
               disabled={confirmDisabled}
               onClick={() => onConfirm(buildConfirmOpts())}
               iconRight={

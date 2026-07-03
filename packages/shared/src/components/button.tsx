@@ -12,7 +12,7 @@ const TONES: Record<ButtonTone, { bg: string; fg: string; br: string; hover: str
   dark: { bg: color.fg, fg: '#FFFFFF', br: color.fg, hover: '#000000' },
   warn: { bg: color.amber, fg: '#FFFFFF', br: color.amber, hover: '#92400E' },
   ok: { bg: color.primary, fg: '#FFFFFF', br: color.primary, hover: color.primaryDeep },
-  danger: { bg: color.red, fg: '#FFFFFF', br: color.red, hover: '#7F1D1D' },
+  danger: { bg: color.danger, fg: '#FFFFFF', br: color.danger, hover: color.dangerDeep },
   ghost: { bg: 'transparent', fg: color.fgSoft, br: 'transparent', hover: 'rgba(14,20,19,0.04)' },
 };
 
