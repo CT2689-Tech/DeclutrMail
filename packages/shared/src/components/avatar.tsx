@@ -1,48 +1,58 @@
-'use client';
-
-import { useState } from 'react';
-import { avatarColors, color, font } from '../tokens/tokens';
-
 /**
- * Sender avatar — multi-source logo with graceful fallback.
+ * Sender avatar — deterministic MONOGRAM (ADR-0024).
  *
- * Source order (each falls through on 404 / load error):
- *   1. Clearbit Logo API (logo.clearbit.com/{domain}) — the gold
- *      standard. Returns the company's actual high-res brand mark
- *      (PNG, transparent). Hits for ~90% of well-known senders.
- *   2. DuckDuckGo favicon (icons.duckduckgo.com/ip3/{domain}.ico) —
- *      cleaner than Google S2 for non-mainstream domains. Returns a
- *      bigger / less blurry icon than S2's default crop.
- *   3. Google S2 (google.com/s2/favicons?…&sz=N) — broadest coverage,
- *      lowest quality. The last logo attempt before falling to the
- *      coloured initial.
- *   4. Coloured initial bubble — when every favicon source 404s.
+ * One silhouette everywhere: rounded square, hairline border, a single
+ * initial on a muted per-domain tint. No third-party fetches.
  *
- * Each tier renders the same outer chrome (rounded square card) so
- * the silhouette stays consistent regardless of which source resolves.
+ * This replaces the previous 3-tier favicon waterfall
+ * (Clearbit → DuckDuckGo → Google S2 → colored initial). Two reasons,
+ * both in ADR-0024:
  *
- * Discriminated-union tier state — replaces the prior `number` so an
- * accidental `setTier(17)` cannot fall through to a missing branch.
+ *   1. PRIVACY. Every rendered sender fired that sender's domain to up
+ *      to three third parties from the user's browser (with the user's
+ *      IP attached) — broadcasting the correspondent list of a product
+ *      whose wedge is "we don't read your mail". A logo tier may
+ *      return later ONLY behind a first-party `/api/icons/:domain`
+ *      proxy + quality gate (deferred — see ADR-0024).
+ *   2. CONSISTENCY. Mixed sources meant high-res brand PNGs next to
+ *      upscaled 16px favicons next to saturated letter bubbles — page-
+ *      level variance that read as cheap. Uniform monograms trade
+ *      per-item fidelity for page-level coherence.
+ *
+ * Tint derivation: djb2 hash of the brand-level root domain (falls
+ * back to the display name) → hue; fixed low saturation + high
+ * lightness so every tint sits inside the cool/editorial palette (D2)
+ * instead of the retired `avatarColors` saturated set. Same domain ⇒
+ * same tint on every surface, session after session.
+ *
+ * Decorative by contract: every call site renders the sender name
+ * adjacent, so the monogram stays `aria-hidden` (unchanged from the
+ * previous fallback bubble).
  */
-export type AvatarTier = 'clearbit' | 'ddg' | 's2' | 'fallback';
 
-const TIER_ORDER: readonly AvatarTier[] = ['clearbit', 'ddg', 's2', 'fallback'] as const;
+import { color, font } from '../tokens/tokens';
 
-function nextTier(t: AvatarTier): AvatarTier {
-  const i = TIER_ORDER.indexOf(t);
-  return TIER_ORDER[i + 1] ?? 'fallback';
+/** djb2 — tiny, stable, good spread for short ASCII strings. */
+function hashString(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 33) ^ s.charCodeAt(i);
+  }
+  return h >>> 0;
 }
 
 /**
- * Module-scope memo of the highest known-good tier per root domain.
- * Avoids paying 3 sequential 404 round-trips on every render for a
- * domain that has already proven its favicon source. Lives at module
- * scope (not React state) so the cache survives unmount/remount cycles
- * during scroll — the dominant cost path. Bounded only by the number
- * of distinct sender domains in a session; never evicted (memory
- * footprint is one short string per domain).
+ * Brand-level root for tint stability — strips the mailbox-provider
+ * prefixes bulk senders use (mail1.brand.com → brand.com) so every
+ * subdomain of a brand shares one tint. Same regex the favicon tiers
+ * used for the same reason.
  */
-const knownBestTier = new Map<string, AvatarTier>();
+function brandRoot(domain: string | undefined, name: string): string {
+  const root = (domain ?? '')
+    .replace(/^.*@/, '')
+    .replace(/^(mail\d*|e\d*|em|email|news|notify|notification|alerts?|updates?|mailer)\./i, '');
+  return root.length > 0 ? root : name;
+}
 
 export function Avatar({
   name,
@@ -53,103 +63,32 @@ export function Avatar({
   domain?: string;
   size?: number;
 }) {
-  const idx = (name.charCodeAt(0) || 0) % avatarColors.length;
-  const fill = avatarColors[idx] ?? '#666666';
   const initial = (name.trim()[0] ?? '?').toUpperCase();
-  const root = (domain ?? '')
-    .replace(/^.*@/, '')
-    // strip common bulk-mail prefixes so the brand-level domain resolves
-    // (e.g. mail1.brand.com → brand.com — Clearbit only knows the brand).
-    .replace(/^(mail\d*|e\d*|em|email|news|notify|notification|alerts?|updates?|mailer)\./i, '');
-
-  // Lazy init reads from the module-scope memo so a known-good tier
-  // skips straight past the failing sources on the next mount. Avatars
-  // in this app live inside per-sender rows/cards keyed by sender.id,
-  // so re-mounting happens naturally when `domain` changes — no
-  // re-sync effect is needed.
-  const [tier, setTier] = useState<AvatarTier>(() => knownBestTier.get(root) ?? 'clearbit');
-
-  // Tier === 'fallback' = give up, render the initial bubble.
-  if (root.length === 0 || tier === 'fallback') {
-    return (
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: size,
-          height: size,
-          borderRadius: 8,
-          background: fill,
-          color: '#FFFFFF',
-          fontFamily: font.sans,
-          fontSize: size * 0.42,
-          fontWeight: 700,
-          letterSpacing: '-0.01em',
-          flexShrink: 0,
-        }}
-      >
-        {initial}
-      </span>
-    );
-  }
-
-  const fetchPx = Math.min(256, Math.max(64, Math.round(size * 2.5)));
-  // Compose the URL for the current tier.
-  const src = tierUrl(tier, root, fetchPx);
+  const hue = hashString(brandRoot(domain, name)) % 360;
 
   return (
     <span
+      aria-hidden="true"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
         width: size,
         height: size,
-        borderRadius: 8,
-        background: '#FFFFFF',
+        borderRadius: Math.max(6, Math.round(size * 0.28)),
+        background: `hsl(${hue} 30% 94%)`,
         border: `1px solid ${color.border}`,
-        overflow: 'hidden',
+        color: `hsl(${hue} 26% 34%)`,
+        fontFamily: font.mono,
+        fontSize: size * 0.4,
+        fontWeight: 500,
+        letterSpacing: '0.01em',
+        lineHeight: 1,
         flexShrink: 0,
+        userSelect: 'none',
       }}
     >
-      <img
-        src={src}
-        alt=""
-        width={size}
-        height={size}
-        loading="lazy"
-        onLoad={() => {
-          // Memoise the first tier that successfully rendered for this
-          // root domain so the next mount skips straight to it.
-          knownBestTier.set(root, tier);
-        }}
-        onError={() => setTier((t) => nextTier(t))}
-        style={{ display: 'block', objectFit: 'contain', width: '100%', height: '100%' }}
-      />
+      {initial}
     </span>
   );
-}
-
-/**
- * URL composer for the favicon-bearing tiers. Excludes `'fallback'` at
- * the type level — the caller's early-return guarantees we never reach
- * this with `'fallback'`, and excluding it lets the switch be truly
- * exhaustive (any future tier added to the union must be handled here
- * to keep TS green).
- */
-function tierUrl(tier: Exclude<AvatarTier, 'fallback'>, root: string, fetchPx: number): string {
-  switch (tier) {
-    case 'clearbit':
-      return `https://logo.clearbit.com/${root}?size=${fetchPx}`;
-    case 'ddg':
-      return `https://icons.duckduckgo.com/ip3/${root}.ico`;
-    case 's2':
-      return `https://www.google.com/s2/favicons?domain=${root}&sz=${fetchPx}`;
-    default: {
-      const _exhaustive: never = tier;
-      return _exhaustive;
-    }
-  }
 }

@@ -157,17 +157,10 @@ export const breakpoint = {
   lg: 1280,
 } as const;
 
-/** Deterministic avatar fills, picked by sender-name char code. */
-export const avatarColors = [
-  '#0E7490',
-  '#7C3AED',
-  '#059669',
-  '#0891B2',
-  '#DC2626',
-  '#0369A1',
-  '#B45309',
-  '#15803D',
-] as const;
+// `avatarColors` (the saturated monogram fills) retired with ADR-0024 —
+// the Avatar derives a muted per-domain tint itself, inside the D2
+// cool/editorial palette. The saturated set included hues outside the
+// ADR-0016 A3 accent map (violet, red, green).
 
 export const tokens = {
   color,
@@ -177,7 +170,6 @@ export const tokens = {
   radius,
   shadow,
   breakpoint,
-  avatarColors,
 } as const;
 
 export type Tokens = typeof tokens;

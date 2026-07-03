@@ -54,7 +54,7 @@
 
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
-import { NumericDisplay, tokens } from '@declutrmail/shared';
+import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { SenderActionRow } from '../action-row';
 import { adaptSenderListRow } from '../api/adapters';
 import type { ActionVerb, Sender } from '../data';
@@ -437,61 +437,67 @@ function SenderRow({
         </td>
 
         <td style={{ ...cellStyle, maxWidth: 320 }}>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-              minWidth: 0,
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-              <ProtectStar flags={sender.protectionFlags} />
-              <span
-                style={{
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  letterSpacing: '-0.005em',
-                }}
-              >
-                {displayLabel(sender)}
-              </span>
-              {/* Unsub status chip (D9 Wave 2) — same trigger + copy map
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            {/* Identity anchor (ADR-0024) — the same monogram the grid
+                card and detail header render, so the Grid↔Table toggle
+                keeps the sender's visual identity. */}
+            <Avatar name={displayLabel(sender)} domain={sender.domain} size={22} />
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                minWidth: 0,
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                <ProtectStar flags={sender.protectionFlags} />
+                <span
+                  style={{
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    letterSpacing: '-0.005em',
+                  }}
+                >
+                  {displayLabel(sender)}
+                </span>
+                {/* Unsub status chip (D9 Wave 2) — same trigger + copy map
                   as the grid card so list ↔ grid never contradict:
                   shown while a standing unsubscribe policy exists,
                   copy keyed by the execution outcome. */}
-              {sender.policyType === 'unsubscribe' && (
-                <span
-                  title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 9.5,
-                    letterSpacing: '0.10em',
-                    textTransform: 'uppercase',
-                    color: color.primary,
-                    background: color.primarySoft,
-                    border: `1px solid ${color.primaryBorder}`,
-                    borderRadius: 999,
-                    padding: '1px 6px',
-                    flex: '0 0 auto',
-                  }}
-                >
-                  {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
-                </span>
-              )}
-            </span>
-            <span
-              style={{
-                color: color.fgMuted,
-                fontSize: text.sm,
-                fontFamily: font.mono,
-                letterSpacing: '0.005em',
-              }}
-            >
-              {sender.domain}
-            </span>
+                {sender.policyType === 'unsubscribe' && (
+                  <span
+                    title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
+                    style={{
+                      fontFamily: font.mono,
+                      fontSize: 9.5,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      color: color.primary,
+                      background: color.primarySoft,
+                      border: `1px solid ${color.primaryBorder}`,
+                      borderRadius: 999,
+                      padding: '1px 6px',
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
+                  </span>
+                )}
+              </span>
+              <span
+                style={{
+                  color: color.fgMuted,
+                  fontSize: text.sm,
+                  fontFamily: font.mono,
+                  letterSpacing: '0.005em',
+                }}
+              >
+                {sender.domain}
+              </span>
+            </div>
           </div>
         </td>
 
