@@ -38,10 +38,26 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // carry a stale (or missing) nonce. Any future inline <Script> must
   // read the nonce the same way: `(await headers()).get('x-nonce')`.
   // https://nextjs.org/docs/app/guides/content-security-policy
-  await headers();
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} ${fraunces.variable}`}>
+    // suppressHydrationWarning: theme-init.js sets `data-theme` before
+    // hydration, so the client html attributes legitimately differ
+    // from the server-rendered ones.
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrainsMono.variable} ${fraunces.variable}`}
+      suppressHydrationWarning
+    >
       <body>
+        {/* Theme resolver — parser-blocking on purpose so a stored dark
+            preference applies before first paint (no light flash).
+            Nonced: script-src is 'strict-dynamic', which ignores 'self'
+            host-source in CSP3 — without the nonce this static asset
+            would be blocked (see src/middleware.ts D175 notes).
+            suppressHydrationWarning: browsers hide the nonce attribute
+            from DOM reads, so the client always sees "" — a known,
+            harmless mismatch on any nonced tag. */}
+        <script src="/theme-init.js" nonce={nonce} suppressHydrationWarning />
         <Providers>{children}</Providers>
       </body>
     </html>

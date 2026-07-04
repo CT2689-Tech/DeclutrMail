@@ -20,7 +20,13 @@ const { color, font } = tokens;
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
+    // data-theme="light" PINS this public subtree to the light palette
+    // regardless of the app preference — landing.css carries hardcoded
+    // light-design hexes, so following the app's dark theme here would
+    // produce seams. Token custom properties re-resolve at this node
+    // (see [data-theme='light'] in @declutrmail/shared tokens.css).
     <main
+      data-theme="light"
       style={{
         minHeight: '100vh',
         background: color.bg,

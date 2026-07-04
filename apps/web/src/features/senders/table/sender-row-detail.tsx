@@ -51,9 +51,12 @@ const SUBJECT_PREVIEW_COUNT = 3;
 export function SenderRowDetailLive({
   s,
   onAction,
+  variant = 'row',
 }: {
   s: Sender;
   onAction: (req: ActionRequest) => void;
+  /** 'row' = expanded table row (default); 'panel' = SenderPeek sheet. */
+  variant?: 'row' | 'panel';
 }) {
   const query = useSenderTimeseries(s.id);
   const timeseries: RowDetailTimeseries = query.isPending
@@ -74,7 +77,15 @@ export function SenderRowDetailLive({
             .map((m) => m.subject),
         };
 
-  return <SenderRowDetail s={s} onAction={onAction} timeseries={timeseries} subjects={subjects} />;
+  return (
+    <SenderRowDetail
+      s={s}
+      onAction={onAction}
+      timeseries={timeseries}
+      subjects={subjects}
+      variant={variant}
+    />
+  );
 }
 
 /** Inline detail panel revealed when a sender row is expanded. */
@@ -83,11 +94,20 @@ export function SenderRowDetail({
   onAction,
   timeseries,
   subjects,
+  variant = 'row',
 }: {
   s: Sender;
   onAction: (req: ActionRequest) => void;
   timeseries: RowDetailTimeseries;
   subjects: RowDetailSubjects;
+  /**
+   * 'row' (default) — expanded table row: 68px indent aligns under the
+   * avatar column, bottom hairline separates from the next row.
+   * 'panel' — hosted in the SenderPeek dialog (grid parity / mobile
+   * sheet): tight padding, no bottom hairline; the auto-fit grids
+   * below stack on their own at sheet width.
+   */
+  variant?: 'row' | 'panel';
 }) {
   const rec = recommendAction(s);
   const recLabel = rec ?? 'Keep';
@@ -141,9 +161,9 @@ export function SenderRowDetail({
   return (
     <div
       style={{
-        padding: '20px 24px 22px 68px',
-        background: 'rgba(14,20,19,0.022)',
-        borderBottom: `1px solid ${color.lineSoft}`,
+        padding: variant === 'panel' ? '16px 16px 18px 19px' : '20px 24px 22px 68px',
+        background: color.paper,
+        borderBottom: variant === 'panel' ? 'none' : `1px solid ${color.lineSoft}`,
         boxShadow: `inset 3px 0 0 ${color.primary}`,
         display: 'flex',
         flexDirection: 'column',
@@ -157,13 +177,15 @@ export function SenderRowDetail({
           border: `1px solid ${calloutBorder}`,
           borderRadius: 12,
           padding: '16px 20px',
-          display: 'grid',
-          gridTemplateColumns: '1fr auto',
+          display: 'flex',
+          flexWrap: 'wrap',
           gap: 16,
           alignItems: 'center',
         }}
       >
-        <div style={{ minWidth: 0 }}>
+        {/* 34ch basis: full sentence + button share the row at table
+            width; the button wraps below inside the narrow sheet. */}
+        <div style={{ minWidth: 0, flex: '1 1 34ch' }}>
           <Eyebrow tone={recTone === 'warn' ? 'amber' : recTone === 'dark' ? 'default' : 'primary'}>
             {rec ? `Recommended · ${recLabel}` : 'No recommendation · Keep'}
           </Eyebrow>
@@ -190,8 +212,15 @@ export function SenderRowDetail({
         )}
       </div>
 
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+      {/* Stat cards — auto-fit: 4-across at table width (unchanged),
+          2×2 inside the narrow SenderPeek sheet. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+          gap: 10,
+        }}
+      >
         {stats.map((stat) => (
           <div
             key={stat.k}
@@ -246,8 +275,15 @@ export function SenderRowDetail({
         ))}
       </div>
 
-      {/* Chart + recent subjects */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+      {/* Chart + recent subjects — side-by-side at table width,
+          stacked inside the narrow SenderPeek sheet. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gap: 14,
+        }}
+      >
         <VolumeChartCard timeseries={timeseries} lastBarColor={lastBarColor} />
         <RecentSubjectsCard subjects={subjects} />
       </div>
@@ -457,7 +493,9 @@ function VolumeChartCard({
                 style={{
                   flex: 1,
                   height: `${Math.max(2, (p.volume / maxBar) * 100)}%`,
-                  background: i === points.length - 1 ? lastBarColor : 'rgba(14,20,19,0.12)',
+                  // color.border (themed ink-alpha), not a literal dark
+                  // rgba — the literal vanished on the dark theme.
+                  background: i === points.length - 1 ? lastBarColor : color.border,
                   borderRadius: 2,
                 }}
               />

@@ -51,7 +51,7 @@ export function ViewToggle() {
               padding: '5px 12px',
               borderRadius: 6,
               background: active ? color.fg : 'transparent',
-              color: active ? '#FFFFFF' : color.fgSoft,
+              color: active ? color.fgInverse : color.fgSoft,
               border: 'none',
               fontFamily: font.sans,
               fontSize: 12,

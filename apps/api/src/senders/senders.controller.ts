@@ -598,8 +598,13 @@ function encodeCursorKey(sort: SenderListSort, row: SenderListRow): string {
       return row.lastSeenAt;
     case 'first_seen':
       return row.firstSeenAt;
-    case 'name':
-      return row.displayName;
+    case 'name': {
+      // Mirror the read service's effective-name expression
+      // (LOWER(COALESCE(NULLIF(TRIM(display_name),''), email))) — the
+      // cursor key must be the value the ORDER BY actually sorted on.
+      const trimmed = row.displayName.trim();
+      return (trimmed === '' ? row.email : trimmed).toLowerCase();
+    }
     case 'read':
     case 'recommended':
       // Filtered upstream by SUPPORTED_SORTS; defense in depth.

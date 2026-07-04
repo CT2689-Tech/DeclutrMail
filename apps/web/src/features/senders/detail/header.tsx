@@ -195,7 +195,9 @@ function PolicyChip({
   tooltip: string;
 }) {
   const fillBg = tone === 'vip' ? 'rgba(180, 83, 9, 0.12)' : color.primarySoft;
-  const fillFg = tone === 'vip' ? '#92400E' : color.primary;
+  // color.amber (themed), not the old '#92400E' literal — dark brown
+  // text vanished on the dark theme's amber wash.
+  const fillFg = tone === 'vip' ? color.amber : color.primary;
   const fillBr = tone === 'vip' ? 'rgba(180, 83, 9, 0.40)' : color.primaryBorder;
   return (
     <button
