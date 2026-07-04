@@ -431,7 +431,11 @@ describe('ActionsService', () => {
       //   >90d     = 100 + 200 + 400              = 3
       //   >180d    = 200 + 400                    = 2
       //   >365d    = 400                          = 1
-      //   monthly  = inbox messages WITHIN last 30 days = m-2d → 1
+      //   monthly  = ALL inbound messages WITHIN last 30 days regardless
+      //              of labels = m-2d + m-archived → 2. The strip's
+      //              "N /mo" mirrors the senders-list card (last30dMsgs),
+      //              NOT the inbox-scoped buckets — an archived-recent
+      //              sender must not read "0 /mo" (live bug 2026-07-03).
       expect(res.counts).toEqual({
         all: 5,
         olderThan30d: 4,
@@ -439,7 +443,7 @@ describe('ActionsService', () => {
         olderThan180d: 2,
         olderThan365d: 1,
       });
-      expect(res.sender.monthly).toBe(1);
+      expect(res.sender.monthly).toBe(2);
       expect(res.sender.domain).toBe('shop.example');
       expect(res.unsubAvailable).toBe(false);
       expect(res.protected).toBe(false);
