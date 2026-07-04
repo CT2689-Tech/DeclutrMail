@@ -327,6 +327,17 @@ describe('SenderTable', () => {
 });
 
 describe('SenderTable / __internals', () => {
+  it('relativeDate — epoch-zero dates render "—", not "56y ago"', () => {
+    // Gmail reports internalDate=0 for some spam messages; the sender
+    // row must not present the Unix epoch as a real last-seen fact.
+    expect(__internals.relativeDate('1970-01-01T00:00:00.000Z')).toBe('—');
+    expect(__internals.relativeDate('not-a-date')).toBe('—');
+    // Sanity: a real recent date still renders a relative label.
+    expect(__internals.relativeDate(new Date(Date.now() - 86400000).toISOString())).toBe(
+      'Yesterday',
+    );
+  });
+
   it('nextSortFor — flips direction when the same column is clicked', () => {
     expect(__internals.nextSortFor('total', true, 'desc')).toEqual({
       sort: 'total',

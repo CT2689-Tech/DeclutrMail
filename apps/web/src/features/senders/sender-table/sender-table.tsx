@@ -57,6 +57,7 @@ import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { SenderActionRow } from '../action-row';
 import { adaptSenderListRow } from '../api/adapters';
+import { EPOCH_GUARD_DAYS } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
 import { UNSUB_PILL } from '../grid/sender-card';
@@ -888,6 +889,9 @@ function relativeDate(iso: string): string {
   const diff = Math.max(0, now - then);
   const day = 24 * 60 * 60 * 1000;
   const days = Math.floor(diff / day);
+  // Epoch guard — Gmail reports internalDate=0 for some spam, which
+  // otherwise renders as "56y ago". Same threshold as data.ts relTime.
+  if (days > EPOCH_GUARD_DAYS) return '—';
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
   if (days < 30) return `${days}d ago`;
