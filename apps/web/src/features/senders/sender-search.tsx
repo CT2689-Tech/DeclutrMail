@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, tokens } from '@declutrmail/shared';
 import { useSenderSuggestions } from './api/use-sender-suggestions';
 import type { Sender } from './data';
@@ -8,6 +8,14 @@ import type { Sender } from './data';
 const { color, font } = tokens;
 
 const SUGGEST_DEBOUNCE_MS = 150;
+
+/**
+ * How long after the last keystroke the HOST learns about the new
+ * query (the host render is the expensive whole-screen narrow — see
+ * the semi-controlled block in the component). The host adds its own
+ * fetch debounce on top, so total keystroke→fetch stays ~300ms.
+ */
+const NOTIFY_DEBOUNCE_MS = 150;
 
 /**
  * Sender search w/ live typeahead.
@@ -45,15 +53,58 @@ export function SenderSearch({
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [debounced, setDebounced] = useState(value);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Debounce the term that feeds the BE typeahead. The visible input
-  // stays controlled by `value` — only the network query trails.
+  // SEMI-controlled input (keystroke-eating fix, 2026-07-03 smoke).
+  // The DOM input renders from LOCAL state and the host is notified on
+  // a short DEBOUNCE — never per keystroke. Both halves matter:
+  //   - Local state: the input's own re-render is tiny, so a keystroke
+  //     echoes instantly.
+  //   - Debounced notify: the host's query state re-renders the whole
+  //     screen (50 cards, ~hundreds of ms in dev). When that render was
+  //     tied to each keystroke, any commit that landed later than the
+  //     next keystroke re-asserted a stale value onto the DOM input and
+  //     ATE the characters typed in between (live repro: "chase" →
+  //     "cha"). With the debounce the heavy render happens once per
+  //     typing pause, when no keystroke is in flight to clobber.
+  // `lastSentRef` distinguishes our own echo (host handing back what we
+  // sent — ignore) from an external set (host cleared the search /
+  // picked a suggestion — adopt).
+  const [text, setText] = useState(value);
+  const lastSentRef = useRef(value);
+  const notifyTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), SUGGEST_DEBOUNCE_MS);
-    return () => window.clearTimeout(id);
+    if (value !== lastSentRef.current) {
+      lastSentRef.current = value;
+      setText(value);
+    }
   }, [value]);
+  useEffect(
+    () => () => {
+      if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
+    },
+    [],
+  );
+  const commit = (next: string) => {
+    setText(next);
+    if (notifyTimerRef.current !== null) window.clearTimeout(notifyTimerRef.current);
+    notifyTimerRef.current = window.setTimeout(() => {
+      notifyTimerRef.current = null;
+      lastSentRef.current = next;
+      // Transition: the host update is a whole-screen narrow — keep it
+      // interruptible so a keystroke arriving mid-render still wins.
+      startTransition(() => onChange(next));
+    }, NOTIFY_DEBOUNCE_MS);
+  };
+
+  const [debounced, setDebounced] = useState(text);
+
+  // Debounce the term that feeds the BE typeahead. The visible input
+  // stays controlled by local `text` — only the network query trails.
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(text), SUGGEST_DEBOUNCE_MS);
+    return () => window.clearTimeout(id);
+  }, [text]);
 
   const remote = useSenderSuggestions(debounced, { limit: 8 });
 
@@ -62,17 +113,17 @@ export function SenderSearch({
   // then we surface the loaded-page matches so the dropdown isn't empty
   // mid-typing.
   const fallbackMatches = useMemo(() => {
-    const q = value.trim().toLowerCase();
+    const q = text.trim().toLowerCase();
     if (!q) return [];
     return senders
       .filter((s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q))
       .slice(0, 6)
       .map((s) => ({ id: s.id, name: s.name, domain: s.domain, monthly: s.monthly }));
-  }, [value, senders]);
+  }, [text, senders]);
 
   // Resolve the dropdown row set. Empty query → nothing. Remote result
   // available → use it. Otherwise the fallback while we wait.
-  const trimmed = value.trim();
+  const trimmed = text.trim();
   const matches = useMemo(() => {
     if (trimmed.length === 0) return [];
     if (remote.suggestions.length > 0 || (!remote.loading && !remote.error)) {
@@ -95,7 +146,7 @@ export function SenderSearch({
 
   useEffect(() => {
     setActive(0);
-  }, [value]);
+  }, [text]);
 
   useEffect(() => {
     if (!open) return;
@@ -109,17 +160,30 @@ export function SenderSearch({
   const showList = open && (matches.length > 0 || (remote.loading && trimmed.length > 0));
 
   const pick = (s: { id: string; name: string; domain: string }) => {
-    if (onPick) onPick(s);
-    else onChange(s.name);
+    // A pick is a discrete click — flush any pending keystroke notify
+    // and tell the host NOW (no debounce; nothing can clobber it).
+    if (notifyTimerRef.current !== null) {
+      window.clearTimeout(notifyTimerRef.current);
+      notifyTimerRef.current = null;
+    }
+    if (onPick) {
+      // The host will hand the picked name back via `value` — let the
+      // external-set sync adopt it (do NOT pre-mark as our own echo).
+      onPick(s);
+    } else {
+      setText(s.name);
+      lastSentRef.current = s.name;
+      onChange(s.name);
+    }
     setOpen(false);
   };
 
   return (
     <div ref={ref} style={{ position: 'relative', width: 220 }}>
       <input
-        value={value}
+        value={text}
         onChange={(e) => {
-          onChange(e.target.value);
+          commit(e.target.value);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}

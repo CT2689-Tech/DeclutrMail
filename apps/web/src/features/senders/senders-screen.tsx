@@ -156,8 +156,11 @@ export function SendersScreen() {
   // (#145) — debounced so typing doesn't fire a request per keystroke.
   // `keepPreviousData` (in useSenders) holds the list while the new term
   // resolves, so the screen never blanks to a skeleton mid-search.
+  // 150ms (was 300): SenderSearch now debounces its own notify by
+  // 150ms before this state even updates (keystroke-eating fix), so
+  // the stacked total keystroke→fetch stays ~300ms.
   const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query.trim(), 300);
+  const debouncedQuery = useDebouncedValue(query.trim(), 150);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
   // the two share ONE infinite-query cache entry per (category, limit,
   // isProtected, sort, direction, q) — page sizes stay uniform across the
