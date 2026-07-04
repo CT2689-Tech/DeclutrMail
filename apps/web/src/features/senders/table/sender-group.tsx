@@ -83,7 +83,7 @@ export function SenderGroup({
             height: 22,
             borderRadius: 5,
             background: open ? color.fg : color.paper,
-            color: open ? '#FFFFFF' : color.fgSoft,
+            color: open ? color.fgInverse : color.fgSoft,
             fontFamily: font.mono,
             fontSize: 12,
             transform: open ? 'rotate(90deg)' : 'none',

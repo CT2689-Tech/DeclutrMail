@@ -43,15 +43,16 @@ describe('<DecisionTimeline /> — Variant D', () => {
       <DecisionTimeline items={[{ id: '1', when: 'today', current: true, what: 'x' }]} />,
     );
     // Filled node: background uses the primary token; SSR renders the
-    // inline style attribute verbatim.
-    expect(filled).toContain('background:#006B5F');
+    // inline style attribute verbatim. Tokens are var() references
+    // since the dark-mode pass — assert the token, not a hex.
+    expect(filled).toContain('background:var(--dm-primary)');
   });
 
-  it('renders non-current items outlined (background = card / white)', () => {
+  it('renders non-current items outlined (background = card)', () => {
     const outlined = renderToStaticMarkup(
       <DecisionTimeline items={[{ id: '1', when: '3w ago', what: 'x' }]} />,
     );
-    expect(outlined).toContain('background:#FFFFFF');
+    expect(outlined).toContain('background:var(--dm-card)');
   });
 
   it('renders a connector line for all items except the last', () => {

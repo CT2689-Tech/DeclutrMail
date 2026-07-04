@@ -1,9 +1,21 @@
 /* ─────────────────────────────────────────────────────────────
    DeclutrMail — design tokens + base reset.
    Source of truth for CSS-side values; the typed mirror lives in
-   src/tokens/tokens.ts (used for inline styles in components).
-   Warm-newsprint palette, deep-teal accent. Type/spacing scales
-   are normalised — not the prototype's ad-hoc sizes.
+   src/tokens/tokens.ts (whose color/shadow entries are var()
+   REFERENCES into this file, so inline styles re-theme with the
+   active [data-theme]). Warm-newsprint palette, deep-teal accent.
+   Type/spacing scales are normalised — not the prototype's ad-hoc
+   sizes.
+
+   Theming contract:
+   - `:root` carries the light palette (the D2 default).
+   - `[data-theme='dark']` overrides the same custom properties.
+   - `[data-theme='light']` re-asserts light so a subtree can pin
+     itself (the public (marketing) group stays light regardless of
+     the app preference).
+   - The resolver script in apps/web/src/app/layout.tsx sets
+     `data-theme` on <html> BEFORE first paint (localStorage
+     'dm-theme', falling back to prefers-color-scheme).
    ───────────────────────────────────────────────────────────── */
 :root {
   /* Font families. The --dm-font-* custom properties are overridden
@@ -12,6 +24,11 @@
   --dm-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --dm-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --dm-font-display: 'Fraunces', 'Times New Roman', serif;
+}
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
 
   /* Warm-newsprint surface stack */
   --dm-bg: #fafaf7;
@@ -27,13 +44,146 @@
   --dm-border: rgba(14, 20, 19, 0.14);
   --dm-line: rgba(14, 20, 19, 0.1);
   --dm-line-soft: rgba(14, 20, 19, 0.06);
+  --dm-muted-bg: #eff2f5;
 
   /* Deep-teal accent */
   --dm-primary: #006b5f;
   --dm-primary-deep: #00463f;
+  --dm-primary-soft: rgba(0, 107, 95, 0.08);
+  --dm-primary-border: rgba(0, 107, 95, 0.35);
+  --dm-primary-wash: hsl(174 60% 96%);
+  --dm-mint: #79e6dc;
+
+  /* Semantic hues */
+  --dm-amber: #b45309;
+  --dm-amber-bg: rgba(245, 158, 11, 0.1);
+  --dm-emerald: #047857;
+  --dm-emerald-bg: rgba(5, 150, 105, 0.1);
+  --dm-red: #b91c1c;
+  --dm-red-bg: rgba(220, 38, 38, 0.06);
+  --dm-red-border: rgba(220, 38, 38, 0.25);
+
+  /* Canonical danger family */
+  --dm-danger: #a12525;
+  --dm-danger-bg: rgba(161, 37, 37, 0.06);
+  --dm-danger-border: rgba(161, 37, 37, 0.3);
+  --dm-danger-deep: #7a1a1a;
+
+  /* Inverse-surface tokens (dark chips/bars on the current theme) */
+  --dm-fg-inverse: #ffffff;
+  --dm-fg-inverse-soft: rgba(255, 255, 255, 0.7);
+  --dm-fg-inverse-muted: rgba(255, 255, 255, 0.55);
+  --dm-line-inverse: rgba(255, 255, 255, 0.16);
+
+  /* Dashboard accent (ADR-0009 scope) */
+  --dm-dash-accent: #7c3aed;
+  --dm-dash-accent-soft: rgba(124, 58, 237, 0.1);
+  --dm-dash-accent-border: rgba(124, 58, 237, 0.2);
+
+  /* Avatar monogram tint lightness (ADR-0024 — hue stays per-domain
+     in JS; the theme owns how light the fill/ink render). */
+  --dm-avatar-bg-l: 94%;
+  --dm-avatar-fg-l: 34%;
+
+  /* Elevation */
+  --dm-shadow-card: 0 1px 2px rgba(20, 30, 50, 0.04), 0 0 0 1px rgba(20, 30, 50, 0.012);
+  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.14);
+  --dm-shadow-lift: 0 8px 24px -8px rgba(20, 30, 50, 0.1), 0 2px 6px -2px rgba(20, 30, 50, 0.05);
+
+  /* Scrollbar + scrim */
+  --dm-scrollbar: rgba(14, 20, 19, 0.14);
+  --dm-scrollbar-hover: rgba(14, 20, 19, 0.24);
+  --dm-scrim: rgba(14, 20, 19, 0.34);
 
   /* Focus ring */
   --dm-ring: #006b5f;
+}
+
+/* Dark theme — same ink-forward editorial restraint, inverted. The
+   surface stack keeps the faint warm-green cast of the light ink so
+   the paper metaphor survives the flip. Accents brighten one step for
+   AA contrast on dark surfaces. */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --dm-bg: #0f1211;
+  --dm-paper: #141817;
+  --dm-card: #1a1f1e;
+
+  --dm-fg: #f1f4f3;
+  --dm-fg-soft: #b6bfbb;
+  --dm-fg-muted: #8b948f;
+
+  --dm-border: rgba(238, 246, 243, 0.18);
+  --dm-line: rgba(238, 246, 243, 0.12);
+  --dm-line-soft: rgba(238, 246, 243, 0.07);
+  --dm-muted-bg: #222826;
+
+  --dm-primary: #2fb5a0;
+  --dm-primary-deep: #52c9b6;
+  --dm-primary-soft: rgba(47, 181, 160, 0.14);
+  --dm-primary-border: rgba(47, 181, 160, 0.42);
+  --dm-primary-wash: hsl(174 40% 11%);
+  --dm-mint: #79e6dc;
+
+  --dm-amber: #e3a75c;
+  --dm-amber-bg: rgba(227, 167, 92, 0.12);
+  --dm-emerald: #3fcf9d;
+  --dm-emerald-bg: rgba(63, 207, 157, 0.12);
+  --dm-red: #f27d7d;
+  --dm-red-bg: rgba(242, 125, 125, 0.1);
+  --dm-red-border: rgba(242, 125, 125, 0.35);
+
+  --dm-danger: #e5636a;
+  --dm-danger-bg: rgba(229, 99, 106, 0.12);
+  --dm-danger-border: rgba(229, 99, 106, 0.4);
+  --dm-danger-deep: #f28389;
+
+  /* On dark, "inverse" surfaces (built on --dm-fg) are LIGHT, so
+     inverse ink flips to near-black. */
+  --dm-fg-inverse: #10201d;
+  --dm-fg-inverse-soft: rgba(16, 32, 29, 0.72);
+  --dm-fg-inverse-muted: rgba(16, 32, 29, 0.56);
+  --dm-line-inverse: rgba(16, 32, 29, 0.18);
+
+  --dm-dash-accent: #a78bfa;
+  --dm-dash-accent-soft: rgba(167, 139, 250, 0.16);
+  --dm-dash-accent-border: rgba(167, 139, 250, 0.3);
+
+  --dm-avatar-bg-l: 24%;
+  --dm-avatar-fg-l: 82%;
+
+  --dm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.55);
+  --dm-shadow-lift: 0 8px 24px -8px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
+
+  --dm-scrollbar: rgba(238, 246, 243, 0.16);
+  --dm-scrollbar-hover: rgba(238, 246, 243, 0.28);
+  --dm-scrim: rgba(0, 0, 0, 0.55);
+
+  --dm-ring: #2fb5a0;
+}
+
+/* Back-compat aliases — a handful of call sites reached for
+   `var(--color-*)` / `var(--font-*)` before these were ever defined
+   (they silently inherited). Alias them to the canonical set so those
+   surfaces join the theme instead of falling through. */
+:root,
+[data-theme='light'],
+[data-theme='dark'] {
+  --color-bg: var(--dm-bg);
+  --color-card: var(--dm-card);
+  --color-fg: var(--dm-fg);
+  --color-fg-soft: var(--dm-fg-soft);
+  --color-fg-muted: var(--dm-fg-muted);
+  --color-line: var(--dm-line);
+  --color-border: var(--dm-border);
+  --color-primary: var(--dm-primary);
+  --color-amber: var(--dm-amber);
+  --color-amber-bg: var(--dm-amber-bg);
+  --font-sans: var(--dm-font-sans);
+  --font-mono: var(--dm-font-mono);
+  --font-display: var(--dm-font-display);
 }
 
 *,
@@ -65,6 +215,14 @@ body {
   font-feature-settings: 'ss01', 'cv11';
 }
 
+/* Theme flip is a whole-canvas change — ease the swap so it reads as
+   intentional, not a flash. Skipped under reduced-motion below. */
+html[data-theme] body {
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
 button {
   font: inherit;
   color: inherit;
@@ -82,13 +240,13 @@ button {
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: rgba(14, 20, 19, 0.14);
+  background: var(--dm-scrollbar);
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(14, 20, 19, 0.24);
+  background: var(--dm-scrollbar-hover);
   background-clip: padding-box;
 }
 
@@ -100,9 +258,7 @@ button {
 }
 [data-dm-lift]:hover {
   transform: translateY(-1px);
-  box-shadow:
-    0 8px 24px -8px rgba(20, 30, 50, 0.1),
-    0 2px 6px -2px rgba(20, 30, 50, 0.05);
+  box-shadow: var(--dm-shadow-lift);
 }
 
 @keyframes dm-toast-in {

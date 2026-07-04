@@ -65,7 +65,7 @@ export function UnsubMailtoCallout({
         rel="noopener noreferrer"
         style={{
           background: color.primary,
-          color: '#FFFFFF',
+          color: color.fgInverse,
           borderRadius: 6,
           padding: '5px 12px',
           fontSize: 12,

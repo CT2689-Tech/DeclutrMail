@@ -76,9 +76,12 @@ export function Avatar({
         width: size,
         height: size,
         borderRadius: Math.max(6, Math.round(size * 0.28)),
-        background: `hsl(${hue} 30% 94%)`,
+        // Hue stays per-domain; LIGHTNESS is theme-owned
+        // (styles/tokens.css --dm-avatar-*-l) so monograms keep their
+        // muted tint on dark surfaces instead of glowing paper-white.
+        background: `hsl(${hue} 30% var(--dm-avatar-bg-l, 94%))`,
         border: `1px solid ${color.border}`,
-        color: `hsl(${hue} 26% 34%)`,
+        color: `hsl(${hue} 26% var(--dm-avatar-fg-l, 34%))`,
         fontFamily: font.mono,
         fontSize: size * 0.4,
         fontWeight: 500,

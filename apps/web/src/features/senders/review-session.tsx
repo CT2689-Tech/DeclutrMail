@@ -428,7 +428,7 @@ export function ReviewSession({
           disabled={changeCount === 0}
           onClick={apply}
           iconRight={
-            <Kbd style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}>
+            <Kbd style={{ background: color.lineInverse, border: 'none', color: color.fgInverse }}>
               ⌘⏎
             </Kbd>
           }
@@ -471,7 +471,7 @@ function Segmented({
             style={{
               padding: '4px 10px',
               background: on ? onBg : 'transparent',
-              color: on ? '#FFFFFF' : color.fgSoft,
+              color: on ? color.fgInverse : color.fgSoft,
               border: 'none',
               borderRadius: 4,
               fontFamily: font.sans,
