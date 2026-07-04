@@ -13,9 +13,9 @@ const TONES: Record<ButtonTone, { bg: string; fg: string; br: string; hover: str
   default: { bg: color.card, fg: color.fg, br: color.line, hover: color.lineSoft },
   primary: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
   dark: { bg: color.fg, fg: color.fgInverse, br: color.fg, hover: color.fgSoft },
-  warn: { bg: color.amber, fg: color.fgInverse, br: color.amber, hover: '#92400E' },
+  warn: { bg: color.amber, fg: color.fgInverse, br: color.amber, hover: color.amberDeep },
   ok: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
-  danger: { bg: color.red, fg: color.fgInverse, br: color.red, hover: '#7F1D1D' },
+  danger: { bg: color.red, fg: color.fgInverse, br: color.red, hover: color.redDeep },
   ghost: { bg: 'transparent', fg: color.fgSoft, br: 'transparent', hover: color.lineSoft },
 };
 

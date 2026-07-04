@@ -75,6 +75,15 @@ export function SenderSearch({
   const notifyTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (value !== lastSentRef.current) {
+      // External set wins over anything in flight — cancel the pending
+      // keystroke notify, or a stale timer would fire AFTER the adopt
+      // and resurrect the cleared/replaced query in the host (Codex
+      // review 2026-07-03: "Clear search & filters" undone by the
+      // timer, input and list out of sync).
+      if (notifyTimerRef.current !== null) {
+        window.clearTimeout(notifyTimerRef.current);
+        notifyTimerRef.current = null;
+      }
       lastSentRef.current = value;
       setText(value);
     }

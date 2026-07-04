@@ -40,10 +40,14 @@ export const color = {
 
   /** Semantic hues. */
   amber: 'var(--dm-amber)',
+  /** Hover/pressed step for amber fills — brighter on dark (inverse text). */
+  amberDeep: 'var(--dm-amber-deep)',
   amberBg: 'var(--dm-amber-bg)',
   emerald: 'var(--dm-emerald)',
   emeraldBg: 'var(--dm-emerald-bg)',
   red: 'var(--dm-red)',
+  /** Hover/pressed step for red fills — brighter on dark (inverse text). */
+  redDeep: 'var(--dm-red-deep)',
   redBg: 'var(--dm-red-bg)',
   redBorder: 'var(--dm-red-border)',
 

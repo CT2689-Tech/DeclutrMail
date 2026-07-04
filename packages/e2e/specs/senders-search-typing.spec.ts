@@ -46,6 +46,34 @@ test('typing a multi-word query keeps every keystroke', async ({ page }) => {
     .toBe(query);
 });
 
+test('picking a suggestion mid-typing is not undone by the pending notify timer', async ({
+  page,
+}) => {
+  // Codex-flagged race: an external value set (suggestion pick / clear)
+  // must CANCEL the debounced keystroke notify — otherwise the stale
+  // timer fires ~150ms later and resurrects the typed fragment over
+  // the picked name, leaving input and list out of sync.
+  await page.goto('/senders');
+
+  const input = page.getByRole('combobox', { name: 'Search senders' });
+  await expect(input).toBeVisible();
+  await input.click();
+  await page.keyboard.type('githu', { delay: 45 });
+
+  const option = page.getByRole('option').first();
+  await expect(option).toBeVisible();
+  // Click immediately — inside the 150ms notify window of the last key.
+  await option.click();
+
+  // The picked sender's name replaces the fragment…
+  await expect(input).not.toHaveValue('githu');
+  const picked = await input.inputValue();
+  expect(picked.length).toBeGreaterThan(0);
+  // …and STAYS replaced after every debounce window has elapsed.
+  await page.waitForTimeout(600);
+  await expect(input).toHaveValue(picked);
+});
+
 test('backspacing to empty restores the unfiltered list', async ({ page }) => {
   await page.goto('/senders');
 
