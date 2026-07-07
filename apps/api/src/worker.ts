@@ -14,6 +14,7 @@ import {
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
+  buildAutopilotApplyDeltaTrigger,
   createAutopilotExecutionChain,
   createRedisConnection,
   DEAD_LETTER_INTERVAL_MS,
@@ -621,6 +622,15 @@ async function bootstrap(): Promise<void> {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
   });
 
+  // Autopilot apply-queue PRODUCER — constructed here (above the
+  // IncrementalSyncWorker that fires it); the CONSUMER + the rest of
+  // the autopilot execution chain are registered further down with the
+  // other autopilot queues. Also handed to the outbox consumer router
+  // (sync_ready + score_run_completed producers) below.
+  const autopilotApplyQueue = new Queue<AutopilotApplyJobData>(AUTOPILOT_APPLY_QUEUE, {
+    connection,
+  });
+
   // IncrementalSyncWorker consumer (D8, D229 follow-up). Producer side
   // is the webhook (`WebhooksModule` enqueues on every verified Pub/Sub
   // push); consumer runs here in the same worker process so the
@@ -645,6 +655,12 @@ async function bootstrap(): Promise<void> {
         { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
       );
     },
+    // Delta processed → debounced Autopilot apply sweep (D100 "on new
+    // message arrival"; 2026-07-07 P0 — known-sender mail never
+    // re-triggered enabled rules because score runs only fire via
+    // onNewSender above). The trigger collapses a webhook burst into
+    // one sweep per 5-min window via the window-end jobId + delay.
+    onDeltaProcessed: buildAutopilotApplyDeltaTrigger(autopilotApplyQueue),
   });
   incrementalSync.setObserver(observer);
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
@@ -1458,12 +1474,11 @@ async function bootstrap(): Promise<void> {
    * a DELAYED sweep when a quiet window defers it. One-click unsub
    * intents route to the existing `unsub-execution` queue via its
    * canonical job options. Producers: the outbox consumer router
-   * (sync_ready + score_run_completed → apply queue, wired below) and
-   * the API's approve endpoints (action queue).
+   * (sync_ready + score_run_completed → apply queue, wired below), the
+   * incremental-sync delta trigger (`autopilotApplyQueue` constructed
+   * next to the IncrementalSyncWorker above), and the API's approve
+   * endpoints (action queue).
    */
-  const autopilotApplyQueue = new Queue<AutopilotApplyJobData>(AUTOPILOT_APPLY_QUEUE, {
-    connection,
-  });
   const autopilotActionQueue = new Queue<AutopilotActionJobData>(AUTOPILOT_ACTION_QUEUE, {
     connection,
   });

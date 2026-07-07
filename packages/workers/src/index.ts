@@ -148,6 +148,10 @@ export type {
 export { materializeAutopilotSignals } from './autopilot-signals.js';
 export type { AutopilotSignalRow } from './autopilot-signals.js';
 export {
+  AUTOPILOT_APPLY_DELTA_WINDOW_MS,
+  buildAutopilotApplyDeltaTrigger,
+} from './autopilot-delta-trigger.js';
+export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
   autopilotActionJobOptions,

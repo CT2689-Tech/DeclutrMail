@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-07 — Autopilot real-time trigger rides the Pub/Sub push pipeline (subscription still deferred)
+**Source:** session — `fix/d100-autopilot-apply-on-sync-delta` (P0: known-sender mail never re-triggered enabled rules)
+**Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
+**How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
+**Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
+**Status:** Open
+
 ### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
 **Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
 **Why:** `/privacy` `/terms` `/refunds` are LIVE on **app.declutrmail.com** (apex + www still serve the Squarespace placeholder — F10 DNS cutover remains open; the placeholder 200s every path, so status-code checks against the apex are meaningless). Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.

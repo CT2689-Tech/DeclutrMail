@@ -20,6 +20,28 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-07-07 — Trailing-edge debounce via BullMQ window-end jobId + delay
+
+**Context:** fix/d100 — collapsing incremental-sync webhook bursts into one
+Autopilot apply sweep per window without missing the window's last delta.
+
+**Finding:** enqueueing with `jobId = ${scope}-…-${windowEndMs}` and
+`delay = windowEndMs - now` gives a trailing-edge debounce entirely inside
+BullMQ: every producer in the window computes the SAME id (dedup collapses
+the burst into one pending delayed job) and the job runs only AT window
+end, after the window's last delta has landed. The tempting alternative —
+run-now + window-keyed dedup (leading edge) — silently skips any delta
+that arrives later in an already-swept window: the P0 being fixed, in
+miniature. Verified live: two real sync enqueues 6s apart → one delayed
+apply job → promoted at the exact window boundary (19:15:00.038Z).
+
+**Rule (provisional):** for event-paced sweeps that must both collapse
+bursts AND never miss the tail, key the BullMQ jobId on the window END and
+delay to it — don't enqueue immediately with dedup.
+
+**Distillation trigger:** promote to CLAUDE.md (worker-policy section
+alongside D203/D225 notes) if the pattern recurs ≥3 times.
+
 ## 2026-06-05 — Reuse migration SQL as worker post-pass to keep three derive paths single-sourced
 
 **Context:** spec v1.3 + mig 0022 add `senders.replied_count` + the auto-protect-on-replied-≥3 rule. The derived state has THREE entry points: the migration's backfill (initial deploy), `InitialSyncWorker.buildSenderIndex` (full rebuild), and `IncrementalSyncWorker` (per-webhook delta). Each could implement the formula independently — and silently drift from each other.
