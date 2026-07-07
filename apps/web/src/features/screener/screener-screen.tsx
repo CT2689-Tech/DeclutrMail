@@ -103,6 +103,13 @@ export function ScreenerScreen({
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
 
+  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
+  // its Storybook stories mount without an auth shim; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'screener', mailbox_id: null });
+  }, []);
+
   // screener_queue_viewed — once per mount, on the first settled state.
   const viewedFired = useRef(false);
   useEffect(() => {

@@ -138,6 +138,13 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 export function SendersScreen() {
+  // D159 — one page_viewed per route mount, loading/error branches
+  // included (the content component only mounts on success).
+  // `mailbox_id: null`: useAuth lives in the content component; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'senders', mailbox_id: null });
+  }, []);
   // Sort + direction come from the Zustand store (D200 client-state)
   // so the new SenderTable's header click and a future
   // sort-shortcut/keyboard surface both write through one seam.

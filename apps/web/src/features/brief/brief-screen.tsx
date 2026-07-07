@@ -60,6 +60,13 @@ const { color, font } = tokens;
 export function BriefScreen() {
   const query = useBriefToday();
 
+  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
+  // its Storybook stories mount without an auth shim; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'brief', mailbox_id: null });
+  }, []);
+
   if (query.isLoading) return <LoadingState />;
 
   if (query.isError) {

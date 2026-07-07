@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   EmptyState,
@@ -136,6 +136,13 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
   const [activateTarget, setActivateTarget] = useState<AutopilotRuleDto | null>(null);
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
+
+  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
+  // its Storybook stories mount without an auth shim; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'autopilot', mailbox_id: null });
+  }, []);
 
   const rules: AutopilotRuleDto[] =
     state.kind === 'ready' || state.kind === 'empty' ? state.rules : [];

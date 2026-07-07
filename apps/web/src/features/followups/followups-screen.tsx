@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, type FocusEvent, type MouseEvent } from 'react';
+import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 
 import { Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
+import { track } from '@/lib/posthog';
 
 import { useDismissFollowup } from './api/use-dismiss-followup';
 import { useFollowups } from './api/use-followups';
@@ -41,6 +42,13 @@ const { color, font } = tokens;
 export function FollowupsScreen() {
   const query = useFollowups();
   const dismiss = useDismissFollowup();
+
+  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
+  // its Storybook stories mount without an auth shim; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'followups', mailbox_id: null });
+  }, []);
 
   // Group BEFORE early-returning so the hook list is stable across
   // every render branch.

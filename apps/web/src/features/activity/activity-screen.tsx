@@ -67,6 +67,13 @@ export function ActivityScreen() {
   const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
   const query = useActivity(filters, { hasInFlightAction: inFlightActionPolls > 0 });
 
+  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
+  // its Storybook stories mount without an auth shim; PostHog
+  // `identify` ties the event to the user regardless.
+  useEffect(() => {
+    void track('page_viewed', { page: 'activity', mailbox_id: null });
+  }, []);
+
   const writeUrl = useCallback(
     (updates: Record<string, string | null>) => {
       const sp = new URLSearchParams(params.toString());
