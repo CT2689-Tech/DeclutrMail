@@ -12,7 +12,15 @@
 // the secondary-connect gate. See `page.tsx`'s docblock.
 
 import type { ReactNode } from 'react';
+import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
-  return children;
+  return (
+    <>
+      {children}
+      {/* D147 consent ask — onboarding is a fresh visitor's first app
+          surface, so the analytics opt-in must be answerable here too. */}
+      <CookieConsentBanner />
+    </>
+  );
 }

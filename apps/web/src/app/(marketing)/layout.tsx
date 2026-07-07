@@ -18,6 +18,7 @@
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
 
+import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 
@@ -93,6 +94,11 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
     >
       <JsonLd data={SITE_JSON_LD} />
       {children}
+      {/* D147 consent ask — a small client island (the one JS addition
+          this shell carries besides page-level islands). INSIDE the
+          light-pinned <main> so the banner matches the marketing
+          palette even when the app preference is dark. */}
+      <CookieConsentBanner />
     </main>
   );
 }

@@ -98,6 +98,19 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     expect(s.isVip).toBe(false);
   });
 
+  it('carries unsubscribeMethod through so the row can derive unsub-ready (ADR-0019)', () => {
+    // Regression: the adapter used to drop this field, leaving the
+    // action row's `unsub_ready` fact permanently false — the primary
+    // CTA could never derive Unsubscribe from the wire.
+    expect(adaptSenderListRow(listRow({ unsubscribeMethod: 'one_click' })).unsubscribeMethod).toBe(
+      'one_click',
+    );
+    expect(adaptSenderListRow(listRow({ unsubscribeMethod: 'mailto' })).unsubscribeMethod).toBe(
+      'mailto',
+    );
+    expect(adaptSenderListRow(listRow({ unsubscribeMethod: null })).unsubscribeMethod).toBeNull();
+  });
+
   it('carries the REAL total_received to Sender.total — never monthly × 12', () => {
     // Regression guard for the fabrication removal: `total` must be the
     // factual all-time count, not the old `monthly × 12` synthesis (which

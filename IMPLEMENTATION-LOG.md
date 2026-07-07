@@ -198,7 +198,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D144 | Honest "Choose competitor if..." callouts | ⬜ |  |  |  |
 | D145 | `/compare` index page | ⬜ |  |  |  |
 | D146 | Privacy + Terms generation: **Claude-drafted from CASA/methodology + lawyer review at user-threshold | 🔵 | #199 |  |  |
-| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | ⬜ |  |  |  |
+| D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282 |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | ⬜ |  |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
 | D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |

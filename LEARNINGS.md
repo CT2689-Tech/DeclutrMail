@@ -20,6 +20,29 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-07-07 — cloud-smoke.sh in web-session containers: two known bootstrap gaps
+
+**Context:** Standing up the real stack (pg + redis + api + web) in a
+Claude Code web container via `./scripts/cloud-smoke.sh` to smoke the
+senders polish batch (D49/D227 primary-CTA wiring).
+**Finding:** Two gaps block the first `up`/browse cycle: (1) `up` fails
+silently at initdb when `/tmp/dmlogs` was pre-created by root — the
+`runuser -u postgres` initdb can't write its log there ("Permission
+denied"), yet the API wait-loop still prints "API up" because the API
+boots without a DB; `chmod 777 /tmp/dmlogs` before `up` fixes it.
+(2) `cloud-seed.sql` never sets `users.onboarded_at`, so every app
+route redirects to `/onboarding` and the smoke stalls;
+`UPDATE users SET onboarded_at = now()` after `seed` unblocks. Also:
+Playwright pinned at 1.60 wants `chromium_headless_shell-1228` which
+isn't in `/opt/pw-browsers` — launch with
+`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'`.
+**Rule (provisional):** In a web-session container run
+`chmod 777 /tmp/dmlogs` (after the script's first mkdir) and set
+`onboarded_at` right after `seed`; consider folding both into
+`cloud-smoke.sh` (`chmod` in `up`, `onboarded_at` in the seed SQL).
+**Distillation trigger:** fold into `scripts/cloud-smoke.sh` +
+`cloud-seed.sql` directly if one more session trips on either gap.
+
 ## 2026-06-05 — Reuse migration SQL as worker post-pass to keep three derive paths single-sourced
 
 **Context:** spec v1.3 + mig 0022 add `senders.replied_count` + the auto-protect-on-replied-≥3 rule. The derived state has THREE entry points: the migration's backfill (initial deploy), `InitialSyncWorker.buildSenderIndex` (full rebuild), and `IncrementalSyncWorker` (per-webhook delta). Each could implement the formula independently — and silently drift from each other.
@@ -878,3 +901,8 @@ verb-add breaks a downstream enum a 2nd time.
 **Finding:** Next's metadata merge shallow-REPLACES the whole `openGraph` object per segment: `app/opengraph-image.tsx` attaches its image to the ROOT segment's metadata, so any page exporting its own `openGraph` (even without `images`) loses og:image + twitter:image entirely. Confirmed against a prod build (dev + prod behave the same). The landing page had shipped this way — no og:image since its openGraph block landed. Metadata unit tests can't catch it (the gap only exists in the RESOLVED head, not the config object); a curl of the built HTML found it immediately.
 **Rule (provisional):** Any marketing page that declares `openGraph` must pin `images` explicitly — build page metadata via `features/marketing/page-metadata.ts` (`marketingPageMetadata()`), never a hand-rolled block. Smoke og:image with curl on the prod build whenever page metadata changes.
 **Distillation trigger:** promote to CLAUDE.md §8 smoke table if a page ships without og:image again despite the helper.
+## 2026-07-07 — posthog-js silently drops ALL captures from automated browsers (bot filter)
+**Context:** D147 consent-gate smoke + Playwright spec. After "Accept all" the SDK initialized (config/flags requests, ph_* storage written) but no capture EVER left the browser — no error, no log, nothing to intercept.
+**Finding:** posthog-js `capture()` returns early for a "likely bot" (`isLikelyBot`): UA blocklist (contains `headlesschrome`), `userAgentData.brands`, and — decisive — `navigator.webdriver`, which is ALWAYS true under Playwright, headed or not. So an analytics e2e can never see events without countermeasures, and worse, a NEGATIVE assertion ("declined ⇒ zero posthog requests") passes vacuously against a broken gate. Neutralizing all three signals (UA override + init-script `webdriver`/`userAgentData` shims) made captures flow; found via `ph_debug` localStorage flag + reading dist source maps (`sourcesContent`) for the drop condition.
+**Rule (provisional):** Any spec asserting analytics traffic (positive OR negative) must spoof non-bot signals first (see `packages/e2e/specs/cookie-consent.spec.ts`), and should pair network assertions with `ph_*` storage-artifact assertions, which survive transport quirks.
+**Distillation trigger:** promote to CLAUDE.md §8 smoke table if a second analytics-observing spec trips on the bot filter.
