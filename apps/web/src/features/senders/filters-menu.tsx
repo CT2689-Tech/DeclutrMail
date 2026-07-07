@@ -79,7 +79,7 @@ export function FiltersMenu({
               fontSize: 10,
               fontWeight: 700,
               background: color.primary,
-              color: '#FFFFFF',
+              color: color.fgInverse,
               padding: '0 5px',
               borderRadius: 9999,
             }}

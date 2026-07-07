@@ -74,7 +74,7 @@ export function ScreenIntro({
           height: 28,
           borderRadius: radius.pill,
           background: color.primary,
-          color: '#FFFFFF',
+          color: color.fgInverse,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',

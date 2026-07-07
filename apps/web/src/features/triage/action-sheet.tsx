@@ -236,9 +236,9 @@ export function ActionSheet({
               iconRight={
                 <Kbd
                   style={{
-                    background: 'rgba(255,255,255,0.16)',
+                    background: color.lineInverse,
                     border: 'none',
-                    color: '#FFFFFF',
+                    color: color.fgInverse,
                   }}
                 >
                   ⌘⏎

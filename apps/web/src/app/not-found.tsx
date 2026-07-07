@@ -50,7 +50,7 @@ function CtaLink({
         height: 32,
         padding: '0 14px',
         background: isPrimary ? color.primary : color.card,
-        color: isPrimary ? '#FFFFFF' : color.fg,
+        color: isPrimary ? color.fgInverse : color.fg,
         border: `1px solid ${isPrimary ? color.primary : color.line}`,
         borderRadius: 7,
         fontFamily: font.sans,

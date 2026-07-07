@@ -7,13 +7,16 @@ export type ButtonTone = 'default' | 'primary' | 'dark' | 'warn' | 'ok' | 'dange
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const TONES: Record<ButtonTone, { bg: string; fg: string; br: string; hover: string }> = {
-  default: { bg: color.card, fg: color.fg, br: color.line, hover: 'rgba(14,20,19,0.04)' },
-  primary: { bg: color.primary, fg: '#FFFFFF', br: color.primary, hover: color.primaryDeep },
-  dark: { bg: color.fg, fg: '#FFFFFF', br: color.fg, hover: '#000000' },
-  warn: { bg: color.amber, fg: '#FFFFFF', br: color.amber, hover: '#92400E' },
-  ok: { bg: color.primary, fg: '#FFFFFF', br: color.primary, hover: color.primaryDeep },
-  danger: { bg: color.danger, fg: '#FFFFFF', br: color.danger, hover: color.dangerDeep },
-  ghost: { bg: 'transparent', fg: color.fgSoft, br: 'transparent', hover: 'rgba(14,20,19,0.04)' },
+  // Filled tones use fgInverse (not literal white): the dark theme
+  // BRIGHTENS these fills (fg → near-white; primary/amber/red lighten
+  // one step), so their lettering must flip to near-black with them.
+  default: { bg: color.card, fg: color.fg, br: color.line, hover: color.lineSoft },
+  primary: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
+  dark: { bg: color.fg, fg: color.fgInverse, br: color.fg, hover: color.fgSoft },
+  warn: { bg: color.amber, fg: color.fgInverse, br: color.amber, hover: color.amberDeep },
+  ok: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
+  danger: { bg: color.danger, fg: color.fgInverse, br: color.danger, hover: color.dangerDeep },
+  ghost: { bg: 'transparent', fg: color.fgSoft, br: 'transparent', hover: color.lineSoft },
 };
 
 const SIZES: Record<

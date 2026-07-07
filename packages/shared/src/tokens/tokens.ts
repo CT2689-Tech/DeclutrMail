@@ -3,42 +3,53 @@
  * Components consume these via inline styles so the prototype's
  * editorial look ports with full fidelity. Scales are normalised:
  * the prototype's ad-hoc sizes collapse here into clean steps.
+ *
+ * Color + shadow values are CSS custom-property REFERENCES (not
+ * literals): the actual hex lives in styles/tokens.css under
+ * `:root` (light) and `[data-theme='dark']`, so every inline style
+ * that reads `tokens.color.*` re-themes when the html attribute
+ * flips. Never compare or do math on these strings — they are
+ * `var(...)` expressions, resolved only by the browser.
  */
 
 export const color = {
   /** Warm-newsprint surface stack — deepest → top. */
-  bg: '#FAFAF7',
-  paper: '#F4F4F0',
-  card: '#FFFFFF',
+  bg: 'var(--dm-bg)',
+  paper: 'var(--dm-paper)',
+  card: 'var(--dm-card)',
 
   /** Ink. */
-  fg: '#0E1413',
-  fgSoft: '#4B5552',
-  fgMuted: '#646D69',
+  fg: 'var(--dm-fg)',
+  fgSoft: 'var(--dm-fg-soft)',
+  fgMuted: 'var(--dm-fg-muted)',
 
   /** Lines / borders. */
-  border: 'rgba(14,20,19,0.14)',
-  line: 'rgba(14,20,19,0.10)',
-  lineSoft: 'rgba(14,20,19,0.06)',
-  mutedBg: '#EFF2F5',
+  border: 'var(--dm-border)',
+  line: 'var(--dm-line)',
+  lineSoft: 'var(--dm-line-soft)',
+  mutedBg: 'var(--dm-muted-bg)',
 
   /** Deep-teal accent. */
-  primary: '#006B5F',
-  primaryDeep: '#00463F',
-  primarySoft: 'rgba(0,107,95,0.08)',
-  primaryBorder: 'rgba(0,107,95,0.35)',
+  primary: 'var(--dm-primary)',
+  primaryDeep: 'var(--dm-primary-deep)',
+  primarySoft: 'var(--dm-primary-soft)',
+  primaryBorder: 'var(--dm-primary-border)',
   /** Pale teal wash — informational banner backgrounds. */
-  primaryWash: 'hsl(174 60% 96%)',
-  mint: '#79E6DC',
+  primaryWash: 'var(--dm-primary-wash)',
+  mint: 'var(--dm-mint)',
 
   /** Semantic hues. */
-  amber: '#B45309',
-  amberBg: 'rgba(245,158,11,0.10)',
-  emerald: '#047857',
-  emeraldBg: 'rgba(5,150,105,0.10)',
-  red: '#B91C1C',
-  redBg: 'rgba(220,38,38,0.06)',
-  redBorder: 'rgba(220,38,38,0.25)',
+  amber: 'var(--dm-amber)',
+  /** Hover/pressed step for amber fills — brighter on dark (inverse text). */
+  amberDeep: 'var(--dm-amber-deep)',
+  amberBg: 'var(--dm-amber-bg)',
+  emerald: 'var(--dm-emerald)',
+  emeraldBg: 'var(--dm-emerald-bg)',
+  red: 'var(--dm-red)',
+  /** Hover/pressed step for red fills — brighter on dark (inverse text). */
+  redDeep: 'var(--dm-red-deep)',
+  redBg: 'var(--dm-red-bg)',
+  redBorder: 'var(--dm-red-border)',
 
   /**
    * Canonical danger family (FOUNDER-FOLLOWUPS 2026-06-05).
@@ -59,10 +70,10 @@ export const color = {
    * Legacy `color.red` stays for one release for backward-compat, then
    * gets removed in the follow-up distill PR.
    */
-  danger: '#A12525',
-  dangerBg: 'rgba(161,37,37,0.06)',
-  dangerBorder: 'rgba(161,37,37,0.30)',
-  dangerDeep: '#7A1A1A',
+  danger: 'var(--dm-danger)',
+  dangerBg: 'var(--dm-danger-bg)',
+  dangerBorder: 'var(--dm-danger-border)',
+  dangerDeep: 'var(--dm-danger-deep)',
 
   /**
    * Inverse-surface tokens (FOUNDER-FOLLOWUPS 2026-06-05).
@@ -72,10 +83,10 @@ export const color = {
    * 0.55|0.65|0.7|0.16)` literals scattered across ~6 call sites with
    * three named alphas + an inverse line.
    */
-  fgInverse: '#FFFFFF',
-  fgInverseSoft: 'rgba(255,255,255,0.70)',
-  fgInverseMuted: 'rgba(255,255,255,0.55)',
-  lineInverse: 'rgba(255,255,255,0.16)',
+  fgInverse: 'var(--dm-fg-inverse)',
+  fgInverseSoft: 'var(--dm-fg-inverse-soft)',
+  fgInverseMuted: 'var(--dm-fg-inverse-muted)',
+  lineInverse: 'var(--dm-line-inverse)',
 
   /**
    * Dashboard-surface palette extension per ADR-0009 (amends D2).
@@ -94,9 +105,9 @@ export const color = {
    * is tracked in FOUNDER-FOLLOWUPS.md (2026-05-25 entry).
    */
   dashboard: {
-    accent: '#7C3AED',
-    accentSoft: 'rgba(124, 58, 237, 0.10)',
-    accentBorder: 'rgba(124, 58, 237, 0.20)',
+    accent: 'var(--dm-dash-accent)',
+    accentSoft: 'var(--dm-dash-accent-soft)',
+    accentBorder: 'var(--dm-dash-accent-border)',
   },
 } as const;
 
@@ -144,9 +155,9 @@ export const radius = {
 } as const;
 
 export const shadow = {
-  card: '0 1px 2px rgba(20,30,50,0.04), 0 0 0 1px rgba(20,30,50,0.012)',
-  pop: '0 10px 28px rgba(0,0,0,0.14)',
-  lift: '0 8px 24px -8px rgba(20,30,50,0.10), 0 2px 6px -2px rgba(20,30,50,0.05)',
+  card: 'var(--dm-shadow-card)',
+  pop: 'var(--dm-shadow-pop)',
+  lift: 'var(--dm-shadow-lift)',
 } as const;
 
 /** Responsive ceilings (px) — see useIsAtMost. */

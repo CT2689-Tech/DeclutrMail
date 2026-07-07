@@ -32,7 +32,7 @@ export function CategoryChip({
         gap: 7,
         padding: '5px 11px 5px 12px',
         background: active ? color.fg : color.card,
-        color: active ? '#FFFFFF' : color.fg,
+        color: active ? color.fgInverse : color.fg,
         border: `1px solid ${active ? color.fg : color.border}`,
         borderRadius: 9999,
         fontFamily: font.sans,
@@ -50,7 +50,7 @@ export function CategoryChip({
           fontSize: 10,
           fontWeight: 700,
           fontVariantNumeric: 'tabular-nums',
-          color: active ? 'rgba(255,255,255,0.85)' : color.fgMuted,
+          color: active ? color.fgInverseSoft : color.fgMuted,
         }}
       >
         {count}

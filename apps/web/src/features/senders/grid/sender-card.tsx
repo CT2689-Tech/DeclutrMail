@@ -17,6 +17,7 @@
  * content, attachments, or non-allowlisted headers.
  */
 
+import { useState } from 'react';
 import {
   Avatar,
   NumericDisplay,
@@ -26,9 +27,10 @@ import {
 } from '@declutrmail/shared';
 import { SenderActionRow } from '../action-row';
 import { ReadBucketText } from '../fact-language';
-import { isStandingProtected, type Sender } from '../data';
+import { EPOCH_GUARD_DAYS, isStandingProtected, type Sender } from '../data';
 import type { ActionRequest } from '../data';
 import { intentOf } from '../uplift-d/intent';
+import { SenderPeek } from './sender-peek';
 
 const { color, font, radius } = tokens;
 
@@ -102,6 +104,11 @@ export function SenderCard({
 }: SenderCardProps) {
   const intent = intentOf(sender);
   const protectedNow = isStandingProtected(sender);
+  // Quick-peek dialog (grid↔table parity) — renders the same
+  // `SenderRowDetailLive` panel the table's expand-row shows. Opened
+  // from the identity block below; closes on Escape / backdrop / a
+  // verb fire (the D226 confirm modal takes over from there).
+  const [peekOpen, setPeekOpen] = useState(false);
 
   return (
     <article
@@ -157,7 +164,26 @@ export function SenderCard({
             />
           )}
         </span>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Identity block doubles as the quick-peek opener — a real
+            <button> (keyboard + SR reachable), NOT a clickable-card
+            wrapper: checkbox and verb buttons stay siblings, matching
+            the table's dedicated-expand-control contract. */}
+        <button
+          type="button"
+          onClick={() => setPeekOpen(true)}
+          title="Peek at recent emails and volume"
+          aria-haspopup="dialog"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            textAlign: 'left',
+            cursor: 'pointer',
+            display: 'block',
+          }}
+        >
           <div
             style={{
               display: 'flex',
@@ -214,7 +240,7 @@ export function SenderCard({
           >
             {sender.domain}
           </div>
-        </div>
+        </button>
         {sender.spark && sender.spark.length > 0 && (
           // ADR-0016 §B3 — sparkline color uniformly neutral; tone
           // semantics removed from card chrome.
@@ -240,12 +266,40 @@ export function SenderCard({
           v1.2 Decision 13: `hero` reserved for true hero moments
           (Weekly Hero slice + KPI strip cells), not every card. */}
       <div>
-        <NumericDisplay
-          value={sender.monthly}
-          suffix="in last 30d"
-          variant="display"
-          style={{ display: 'flex' }}
-        />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <NumericDisplay
+            value={sender.monthly}
+            suffix="in last 30d"
+            variant="display"
+            style={{ display: 'flex' }}
+          />
+          {/* Lifetime volume — the number the default "Most emails
+              ever" sort ranks by. Without it a top-ranked sender with
+              a quiet month reads as a sort bug (2026-07-03 smoke:
+              cards showed 72 / 0 / 8 under total-desc). Same fact the
+              magnitude bar below encodes, now legible. */}
+          {sender.total !== undefined && (
+            <span
+              title="Lifetime emails received — what 'Most emails ever' sorts by"
+              style={{
+                fontFamily: font.mono,
+                fontSize: 10.5,
+                color: color.fgMuted,
+                whiteSpace: 'nowrap',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {sender.total.toLocaleString()} ever
+            </span>
+          )}
+        </div>
 
         {/* Magnitude under-bar (spec v1.2 Decision 13 + ADR-0016 §B1).
             2px bar width-proportional to mailbox max. Amber when
@@ -306,7 +360,19 @@ export function SenderCard({
               ("marked read" is the honest fact). Same words + tones as
               the table's Read column. */}
           <Stat label="Read" value={<ReadBucketText rate={sender.read} />} />
-          <Stat label="Last seen" value={sender.lastDays > 0 ? `${sender.lastDays}d` : 'today'} />
+          {/* Epoch guard: Gmail reports internalDate=0 for some spam
+              messages, which lands here as ~20,000d. "—" is the honest
+              render — we don't know when. */}
+          <Stat
+            label="Last seen"
+            value={
+              sender.lastDays > EPOCH_GUARD_DAYS
+                ? '—'
+                : sender.lastDays > 0
+                  ? `${sender.lastDays}d`
+                  : 'today'
+            }
+          />
           <Stat
             label="You replied"
             value={sender.repliedCount !== undefined ? `${sender.repliedCount}×` : '—'}
@@ -319,6 +385,19 @@ export function SenderCard({
           to the table row; capabilities + primary derivation live in
           one place now. */}
       <SenderActionRow sender={sender} onAction={onAction} stretch />
+
+      {peekOpen && (
+        <SenderPeek
+          sender={sender}
+          onClose={() => setPeekOpen(false)}
+          onAction={(req) => {
+            // Hand off to the D226 confirm modal and close the peek —
+            // two stacked dialogs would fight for focus + Escape.
+            setPeekOpen(false);
+            onAction(req);
+          }}
+        />
+      )}
     </article>
   );
 }

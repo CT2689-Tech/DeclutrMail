@@ -704,7 +704,17 @@ export function fmtCompact(n: number): string {
   return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
 }
 
+/**
+ * Above this, a "days since last seen" value is not a date — it's the
+ * Unix epoch leaking through. Gmail reports `internalDate: 0` for some
+ * spam messages (verified live 2026-07-03: 8 senders at 1970-01-01),
+ * which adapts to ~20,600 days. 9,000d (~24.6y) sits far above any
+ * real retention window and far below the epoch distance.
+ */
+export const EPOCH_GUARD_DAYS = 9000;
+
 export function relTime(days: number): string {
+  if (days > EPOCH_GUARD_DAYS) return 'unknown';
   if (days <= 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days}d ago`;

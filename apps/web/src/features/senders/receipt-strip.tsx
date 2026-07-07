@@ -67,7 +67,7 @@ export function ReceiptStrip({
           height: 22,
           borderRadius: 9999,
           background: color.emerald,
-          color: '#FFFFFF',
+          color: color.fgInverse,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',

@@ -700,7 +700,7 @@ export function ConfirmActionModal({
                         padding: '6px 12px',
                         borderRadius: 999,
                         background: active ? color.fg : 'transparent',
-                        color: active ? '#FFFFFF' : color.fgSoft,
+                        color: active ? color.fgInverse : color.fgSoft,
                         border: `1px solid ${active ? color.fg : color.line}`,
                         cursor: 'pointer',
                         transition: 'background 120ms, color 120ms',
@@ -776,7 +776,7 @@ export function ConfirmActionModal({
                             ? color.danger
                             : color.fg
                           : 'transparent',
-                        color: active ? '#FFFFFF' : color.fgSoft,
+                        color: active ? color.fgInverse : color.fgSoft,
                         border: `1px solid ${active ? (opt.value === 'delete' ? color.danger : color.fg) : color.line}`,
                         cursor: 'pointer',
                         transition: 'background 120ms, color 120ms',
@@ -1018,7 +1018,7 @@ export function ConfirmActionModal({
               onClick={() => onConfirm(buildConfirmOpts())}
               iconRight={
                 <Kbd
-                  style={{ background: 'rgba(255,255,255,0.16)', border: 'none', color: '#FFFFFF' }}
+                  style={{ background: color.lineInverse, border: 'none', color: color.fgInverse }}
                 >
                   ⌘⏎
                 </Kbd>

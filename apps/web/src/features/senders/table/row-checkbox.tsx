@@ -32,7 +32,7 @@ export function RowCheckbox({
         borderRadius: 4,
         border: `1.5px solid ${checked ? color.primary : 'rgba(14,20,19,0.28)'}`,
         background: checked ? color.primary : color.card,
-        color: '#FFFFFF',
+        color: color.fgInverse,
         cursor: 'pointer',
       }}
     >

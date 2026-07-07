@@ -99,7 +99,7 @@ export function Sidebar({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#FFFFFF',
+            color: color.fgInverse,
             fontSize: 13,
             fontWeight: 700,
           }}
@@ -189,7 +189,7 @@ export function Sidebar({
                         padding: '1px 6px',
                         borderRadius: radius.pill,
                         background: on ? color.primary : color.mutedBg,
-                        color: on ? '#FFFFFF' : color.fgMuted,
+                        color: on ? color.fgInverse : color.fgMuted,
                       }}
                     >
                       {badge}

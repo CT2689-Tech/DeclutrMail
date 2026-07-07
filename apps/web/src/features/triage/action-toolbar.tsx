@@ -144,9 +144,9 @@ export function ActionToolbar({
               isHighlighted ? (
                 <Kbd
                   style={{
-                    background: 'rgba(255,255,255,0.16)',
+                    background: color.lineInverse,
                     border: 'none',
-                    color: '#FFFFFF',
+                    color: color.fgInverse,
                   }}
                 >
                   {VERB_SHORTCUT[verb]}
