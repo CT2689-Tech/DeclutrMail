@@ -52,6 +52,12 @@ export interface TimelineItem {
 export interface DecisionTimelineProps {
   /** Optional small heading above the timeline. */
   heading?: ReactNode;
+  /**
+   * Optional right-aligned affordance on the heading row — the detail
+   * page passes a "View in Activity →" link so history dead-ends stop
+   * at this card (2026-07-07 founder smoke feedback).
+   */
+  action?: ReactNode;
   /** Items rendered top → bottom (newest first by convention). */
   items: TimelineItem[];
 }
@@ -61,7 +67,7 @@ export interface DecisionTimelineProps {
  * ADR-0012. Renders a connector line between items via an absolutely-
  * positioned ::after on each non-last row.
  */
-export function DecisionTimeline({ heading, items }: DecisionTimelineProps) {
+export function DecisionTimeline({ heading, action, items }: DecisionTimelineProps) {
   return (
     <section
       style={{
@@ -74,20 +80,32 @@ export function DecisionTimeline({ heading, items }: DecisionTimelineProps) {
         fontFamily: font.sans,
       }}
     >
-      {heading != null && (
-        <h3
+      {(heading != null || action != null) && (
+        <div
           style={{
-            fontSize: text.xs,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
-            color: color.fgMuted,
-            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: space[3],
             marginBottom: space[4],
-            marginTop: 0,
           }}
         >
-          {heading}
-        </h3>
+          {heading != null && (
+            <h3
+              style={{
+                fontSize: text.xs,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: color.fgMuted,
+                fontWeight: 500,
+                margin: 0,
+              }}
+            >
+              {heading}
+            </h3>
+          )}
+          {action}
+        </div>
       )}
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
         {items.map((item, i) => {
