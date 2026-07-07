@@ -575,3 +575,11 @@ collision case").
 **Correct approach:** Pin the card explicitly wherever `openGraph` is declared. Now centralized in `features/marketing/page-metadata.ts` (`marketingPageMetadata()`), used by all five marketing pages; `marketing-metadata.test.ts` asserts `og.images`/`twitter.images` on every page, and the prod-smoke checklist includes a curl for `og:image`.
 **Rule:** Declaring `metadata.openGraph` on a page = owning the ENTIRE og object, images included — never declare it partially.
 **Enforcement update:** shared helper + per-page image assertions in `marketing-metadata.test.ts`; LEARNINGS 2026-07-07 entry documents the merge behavior.
+
+## 2026-07-07 — llms.txt shipped a refund overclaim ("every paid plan / 30-day") contradicting the published policy
+**PR:** #283 (D132 SEO batch); fixed on-branch in caf469c by the gate review
+**Caught by:** design-system-agent + SEO gate review, [BLOCKING]
+**What happened:** The hand-written `public/llms.txt` copy echoed the landing FAQ's "30-day money-back guarantee on every paid plan", which contradicts /refunds (14-day pro-rata window, pending confirmation) on duration and D121 (Pro-only) on scope. The privacy lines in the same file were quoted verbatim from the locked copy module, but the refund line was composed fresh — exactly the paraphrase path the D228 rule exists to prevent, on a surface the microcopy hook never scans (`.txt` is outside its file-type filter).
+**Correct approach:** A machine-readable marketing surface must either quote a locked copy module verbatim or stay claim-neutral and link the policy ("paid plans carry a money-back guarantee — see the refund policy for terms", the shipped fix). Never state numbers the legal pages don't state.
+**Rule:** A static marketing file may not carry a quantified product claim (price, window, guarantee) unless that exact claim is pinned by a test to its source-of-truth module/manifest.
+**Enforcement update:** none yet — the review's fast-follow proposes pinning llms.txt to the locked copy module with a test. The underlying three-surface refund decision is tracked in FOUNDER-FOLLOWUPS 2026-07-07.
