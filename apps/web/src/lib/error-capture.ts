@@ -34,7 +34,18 @@ export type ErrorBoundary =
   | 'senders'
   | 'activity'
   | 'brief'
-  | 'autopilot';
+  | 'autopilot'
+  // 2026-07-04 launch audit — every remaining app route gets its own
+  // boundary (RouteErrorScreen callers).
+  | 'triage'
+  | 'settings'
+  | 'billing'
+  | 'screener'
+  | 'followups'
+  | 'quiet'
+  | 'snoozed'
+  | 'admin-security'
+  | 'onboarding';
 
 /** Closed set used both as the type union and the runtime allowlist. */
 const VALID_BOUNDARIES = new Set<ErrorBoundary>([
@@ -45,6 +56,15 @@ const VALID_BOUNDARIES = new Set<ErrorBoundary>([
   'activity',
   'brief',
   'autopilot',
+  'triage',
+  'settings',
+  'billing',
+  'screener',
+  'followups',
+  'quiet',
+  'snoozed',
+  'admin-security',
+  'onboarding',
 ]);
 
 /**
