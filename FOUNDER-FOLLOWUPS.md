@@ -26,6 +26,20 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-07 — Refund-guarantee drift across three surfaces: one canonical call needed (D121 vs /refunds vs landing FAQ)
+**Source:** PR #283 gate review (design-system-agent + SEO review; [BLOCKING] llms.txt overclaim fixed on-branch in caf469c)
+**Why:** Three public surfaces state three different refund terms: D121 (plan) says 30-day money-back on Pro; /refunds §3 says a 14-day pro-rata window (shipped "Pending confirmation" — the window decision is already tracked in the 2026-07-02 entry); the landing FAQ says "30-day money-back guarantee on every paid plan" in BOTH the visible copy and the FAQPage JSON-LD that PR #283 emits from the same source. llms.txt was softened to "see the refund policy for terms", so the machine-readable trust file no longer overclaims — but the FAQ ↔ policy contradiction stands, and crawlers read both the FAQ markup and the policy page.
+**How:** Decide the canonical guarantee (duration + which tiers, i.e. adopt D121's 30-day-Pro, the 14-day pro-rata default, or something else). Then one copy-pass PR: /refunds §§2–3 (+ bump last-updated), the FAQ answer in `apps/web/src/features/marketing/landing/faq.tsx` (single source — visible copy and FAQPage JSON-LD update together), and optionally restore a specific claim in `apps/web/public/llms.txt`.
+**Verifies by:** all three surfaces state identical terms; landing + legal-pages tests green; the "Pending confirmation" marker is gone from /refunds §3.
+**Status:** Open
+
+### 2026-07-07 — Ship D147 cookie-consent banner before setting NEXT_PUBLIC_POSTHOG_KEY in prod web env
+**Source:** session (D132 SEO batch PR — page_viewed added to /privacy, /terms, /refunds, /beta)
+**Why:** The published privacy policy (§6 Cookies and analytics) promises PostHog "is initialized only after you accept it in the cookie banner; it is off by default." Today every marketing `track()` call (landing, pricing, and now the legal + beta pages) fires unconditionally whenever `NEXT_PUBLIC_POSTHOG_KEY` is set — the only gate is the env var. D147 (cookie consent banner, ⬜ not started) is the unit that makes the policy claim true; all call sites already route through the single `apps/web/src/lib/posthog.ts` seam, so D147 can gate them centrally with no call-site edits.
+**How:** Keep `NEXT_PUBLIC_POSTHOG_KEY` UNSET in the production Vercel env (https://vercel.com → project → Settings → Environment Variables) until the D147 banner PR merges. If it is already set in prod, remove it until D147 lands.
+**Verifies by:** Prod page loads make zero requests to `*.posthog.com` while the key is unset; after D147 merges + key is set, requests appear only after consent is accepted.
+**Status:** Open
+
 ### 2026-07-02 — Legal pages live with two "Pending confirmation" markers + mailboxes to create
 **Source:** PR #199 merge (D146; founder blanket merge-all-safe 2026-07-02)
 **Why:** `/privacy` `/terms` `/refunds` are LIVE on **app.declutrmail.com** (apex + www still serve the Squarespace placeholder — F10 DNS cutover remains open; the placeholder 200s every path, so status-code checks against the apex are meaningless). Two copy decisions ship as visible "Pending confirmation" markers (refunds §3 refund window; terms §10 governing law India/Mumbai), and the pages reference `privacy@declutrmail.com` + `support@declutrmail.com`, which must accept mail before launch traffic.

@@ -75,4 +75,35 @@ describe('landing page — D134', () => {
     expect(metadata.description).toContain('handful of sender decisions');
     expect(JSON.stringify(metadata.title)).toContain('Control Gmail by sender, not by email.');
   });
+
+  it('emits FAQPage JSON-LD mirroring the rendered FAQ verbatim (D132 SEO batch)', () => {
+    const { container } = renderLanding();
+    const scripts = Array.from(container.querySelectorAll('script[type="application/ld+json"]'));
+    const faq = scripts
+      .map((s) => JSON.parse(s.textContent ?? '') as Record<string, unknown>)
+      .find((data) => data['@type'] === 'FAQPage') as {
+      '@context': string;
+      mainEntity: Array<{
+        '@type': string;
+        name: string;
+        acceptedAnswer: { '@type': string; text: string };
+      }>;
+    };
+    expect(faq).toBeDefined();
+    expect(faq['@context']).toBe('https://schema.org');
+
+    // Google requires marked-up Q&A to appear on the page: every
+    // Question must match a rendered <details> pair, in order.
+    const rendered = Array.from(container.querySelectorAll('.dm-mkt-faq details'));
+    expect(faq.mainEntity).toHaveLength(rendered.length);
+    faq.mainEntity.forEach((question, i) => {
+      expect(question['@type']).toBe('Question');
+      expect(question.acceptedAnswer['@type']).toBe('Answer');
+      expect(question.name).toBe(rendered[i]?.querySelector('summary')?.textContent);
+      // The answer text (minus the optional trailing <a> markup) must
+      // be the rendered answer copy.
+      const plain = question.acceptedAnswer.text.replace(/ <a href=[^>]*>.*<\/a>$/, '');
+      expect(rendered[i]?.querySelector('.dm-mkt-faq-a')?.textContent).toContain(plain);
+    });
+  });
 });

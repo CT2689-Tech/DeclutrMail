@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import NotFound from './not-found';
+import NotFound, { metadata } from './not-found';
 
 describe('NotFound page — D167', () => {
   it('renders without crashing outside the authed shell', () => {
@@ -42,6 +42,12 @@ describe('NotFound page — D167', () => {
     const sendersLink = screen.getByRole('link', { name: /open senders/i });
     expect(triageLink).toHaveAttribute('href', '/triage');
     expect(sendersLink).toHaveAttribute('href', '/senders');
+  });
+
+  it('carries noindex + a description in page metadata (D132 SEO batch)', () => {
+    expect(metadata.title).toBe('Page not found — DeclutrMail');
+    expect(metadata.description).toBeTruthy();
+    expect(metadata.robots).toEqual({ index: false });
   });
 
   it('respects D227 — the banned product-UI verb does not appear', () => {

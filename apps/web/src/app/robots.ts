@@ -12,6 +12,8 @@
 
 import type { MetadataRoute } from 'next';
 
+import { siteUrl } from '@/features/marketing/landing/urls';
+
 /** Top-level authed paths — mirrors `apps/web/src/app/(app)/*` + onboarding. */
 export const AUTHED_APP_PATHS = [
   '/activity',
@@ -40,5 +42,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [...AUTHED_APP_PATHS],
       },
     ],
+    sitemap: `${siteUrl()}/sitemap.xml`,
   };
 }

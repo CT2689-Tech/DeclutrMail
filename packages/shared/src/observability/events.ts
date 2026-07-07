@@ -207,7 +207,12 @@ export interface EventPayloads {
       // 2026-07-04 launch audit — remaining app surfaces wired.
       | 'screener'
       | 'followups'
-      | 'quiet';
+      | 'quiet'
+      // 2026-07-07 SEO batch (D132) — public legal + beta surfaces.
+      | 'privacy'
+      | 'terms'
+      | 'refunds'
+      | 'beta';
     mailbox_id: string | null;
   };
 

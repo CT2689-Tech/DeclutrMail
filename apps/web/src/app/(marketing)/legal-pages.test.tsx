@@ -13,9 +13,12 @@
  *   3. Google Limited Use disclosure links the official policy URL.
  *   4. Footer cross-links — every legal page links to all three
  *      legal routes (the unit's navigation contract).
+ *   5. D159 (D132 batch) — each page emits page_viewed exactly once
+ *      via the PageViewTracker island; the posthog module is mocked so
+ *      the no-fetch proof stays intact.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
   PRIVACY_BADGE_HEADLINE,
@@ -27,22 +30,36 @@ import PrivacyPolicyPage from './privacy/page';
 import TermsOfServicePage from './terms/page';
 import RefundPolicyPage from './refunds/page';
 
+const { trackSpy } = vi.hoisted(() => ({
+  trackSpy: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
+
 const PAGES = [
-  { name: '/privacy', Page: PrivacyPolicyPage, heading: 'Privacy Policy' },
-  { name: '/terms', Page: TermsOfServicePage, heading: 'Terms of Service' },
-  { name: '/refunds', Page: RefundPolicyPage, heading: 'Refund Policy' },
+  { name: '/privacy', Page: PrivacyPolicyPage, heading: 'Privacy Policy', page: 'privacy' },
+  { name: '/terms', Page: TermsOfServicePage, heading: 'Terms of Service', page: 'terms' },
+  { name: '/refunds', Page: RefundPolicyPage, heading: 'Refund Policy', page: 'refunds' },
 ] as const;
+
+beforeEach(() => {
+  trackSpy.mockClear();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe.each(PAGES)('$name — D146', ({ Page, heading }) => {
+describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
   it('renders without any fetch and without a QueryClient (D134)', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     render(<Page />);
     expect(screen.getByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('emits page_viewed exactly once on mount (D159)', () => {
+    render(<Page />);
+    expect(trackSpy.mock.calls).toEqual([['page_viewed', { page, mailbox_id: null }]]);
   });
 
   it('cross-links all three legal routes in the chrome', () => {

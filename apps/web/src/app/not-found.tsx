@@ -1,10 +1,10 @@
 // 404 page (D167).
 //
 // Calm-branded, never apologetic — matches the D209 microcopy hard
-// rule and the D2 cool/Vercel palette via shared tokens (D1: Geist
-// Sans + JetBrains Mono are wired at the root layout). No new colours
-// or fonts are introduced here; everything reads off
-// `@declutrmail/shared`'s token surface.
+// rule and the D2 cool/Vercel palette via shared tokens (Inter /
+// JetBrains Mono / Fraunces are wired at the root layout — see
+// layout.tsx). No new colours or fonts are introduced here; everything
+// reads off `@declutrmail/shared`'s token surface.
 //
 // The page does NOT auto-fire a Sentry event — a 404 is an expected
 // outcome (link rot, typed URLs) and would otherwise spam the
@@ -16,13 +16,18 @@
 // users who prefer the directory view. We surface both so the user is
 // not forced into a single path.
 
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 
 const { color, font, text } = tokens;
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Page not found — DeclutrMail',
+  description: 'The link may be stale, or the page may have moved. Your mailbox is untouched.',
+  // Belt-and-braces: 404s already return HTTP 404, but an explicit
+  // noindex keeps soft-404 URL variants out of the index too.
+  robots: { index: false },
 };
 
 // Anchor-shaped CTAs styled to read like our `<Button />` primitive —
