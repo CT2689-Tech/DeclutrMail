@@ -6,12 +6,19 @@ import {
   type EventName,
   type EventProps,
 } from '@declutrmail/shared/observability';
+import { hasAnalyticsConsent } from './cookie-consent';
 
 /**
  * PostHog browser wrapper (D159).
  *
- * Gated on `NEXT_PUBLIC_POSTHOG_KEY`. With no key, every `track()` call
- * is a silent no-op so local dev and tests run unaffected.
+ * Gated on TWO conditions, both required:
+ *   - cookie consent (D147): the visitor chose "Accept all" in the
+ *     cookie banner. Analytics is opt-in — with no choice (or
+ *     "Essential only") the SDK is never imported, never initialized,
+ *     and writes nothing. This is the privacy-policy promise
+ *     ("initialized only after you accept it in the cookie banner").
+ *   - `NEXT_PUBLIC_POSTHOG_KEY`. With no key, every `track()` call is
+ *     a silent no-op so local dev and tests run unaffected.
  *
  * Privacy posture (D7, D228):
  *   - Event names are a CLOSED UNION (`EventName` in `@declutrmail/shared/observability`).
@@ -41,6 +48,11 @@ let sdkPromise: Promise<PosthogSdk | null> | null = null;
 
 async function loadSdk(): Promise<PosthogSdk | null> {
   if (typeof window === 'undefined') return null;
+  // D147 consent gate. Checked on EVERY call — before the cached
+  // promise, too — so consent granted mid-session takes effect on the
+  // next call without a reload, and a future withdrawal surface stops
+  // capture immediately even after the SDK has loaded.
+  if (!hasAnalyticsConsent()) return null;
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
   if (!key) return null;
 
@@ -68,8 +80,9 @@ async function loadSdk(): Promise<PosthogSdk | null> {
 }
 
 /**
- * Capture a typed product event. No-op when `NEXT_PUBLIC_POSTHOG_KEY`
- * is unset or when running server-side.
+ * Capture a typed product event. No-op without "Accept all" cookie
+ * consent (D147), when `NEXT_PUBLIC_POSTHOG_KEY` is unset, or when
+ * running server-side.
  *
  * Type signature enforces:
  *   - `eventName` is one of the closed-union literals from `EventName`

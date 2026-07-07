@@ -15,6 +15,7 @@
 
 import type { ReactNode } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 
 const { color, font } = tokens;
 
@@ -35,6 +36,11 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      {/* D147 consent ask — a small client island (the one JS addition
+          this shell carries besides page-level islands). INSIDE the
+          light-pinned <main> so the banner matches the marketing
+          palette even when the app preference is dark. */}
+      <CookieConsentBanner />
     </main>
   );
 }
