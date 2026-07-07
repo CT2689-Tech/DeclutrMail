@@ -173,6 +173,9 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     // refines the pill copy with the real execution outcome.
     unsubPending: row.policyType === 'unsubscribe',
     unsubStatus: row.unsubStatus ?? null,
+    // List-Unsubscribe method — carried verbatim so the action row can
+    // derive the ADR-0019 `unsub_ready` primary fact ('one_click').
+    unsubscribeMethod: row.unsubscribeMethod ?? null,
   };
   return sender;
 }

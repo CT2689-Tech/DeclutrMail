@@ -40,6 +40,10 @@ const GROUP_TO_CATEGORY: Record<SenderGroup, GmailCategory> = {
 
 /** Pick a plausible unsubscribe method from the sender's group + protect flag. */
 function pickUnsubscribeMethod(s: Sender): UnsubscribeMethod | null {
+  // Explicit fixture value wins — `Sender.unsubscribeMethod` mirrors the
+  // wire field, so a seed can pin the method instead of riding the group
+  // heuristic below.
+  if (s.unsubscribeMethod !== undefined) return s.unsubscribeMethod;
   if (s.group === 'primary' || s.protected) return null;
   // Heuristic: promotions usually have one-click List-Unsubscribe-Post;
   // social/forums usually have mailto. Updates default to none unless
