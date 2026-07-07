@@ -866,3 +866,9 @@ verb-add breaks a downstream enum a 2nd time.
 **Finding:** all Section-2 hard rules held; 45 commits in last 7d, all guardrails intact
 **Rule (provisional):** —
 **Distillation trigger:** —
+
+## 2026-07-04 — Headless preview tab never runs IntersectionObserver callbacks (2nd rendering-steps trap)
+**Context:** live smoke of the senders infinite-scroll sentinel (ADR-0025 `infiniteScroll` flag). Sentinel visible, scrolled into view, no fetch; even a hand-rolled probe IO's callback never fired (30s timeout).
+**Finding:** IO callbacks run during the browser's rendering steps; the preview tab reports `visibilityState === 'hidden'` and performs NO rendering steps, so IO never fires — same root cause as the 2026-07-03 TanStack-retryer freeze. Anything gated on rendering steps (IO, rAF, ResizeObserver) is untestable live in this harness.
+**Rule (provisional):** Smoke scroll/visibility-triggered behavior via a unit test that drives the observer callback by hand; live-verify only the non-IO half of the chain (manual button → fetch → append). Say so in the PR smoke notes.
+**Distillation trigger:** 2nd instance (retryer 2026-07-03, IO 2026-07-04) — promote a "headless preview cannot execute rendering-steps callbacks (IO/rAF/retryer)" line to CLAUDE.md §8 smoke table.

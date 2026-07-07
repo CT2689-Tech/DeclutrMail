@@ -37,6 +37,14 @@ export const FLAG_MANIFEST = {
       'pass). Off: cards render without the peek affordance; all verbs ' +
       'remain reachable through the card itself.',
   },
+  infiniteScroll: {
+    default: true,
+    description:
+      'Auto-fetch the next senders page when the list bottom scrolls ' +
+      'into view (D49/D202 — kills the load-more click wall on large ' +
+      'mailboxes). Off: the manual "Load more senders" button is the ' +
+      'only pagination affordance (it stays rendered either way).',
+  },
 } as const satisfies Record<string, FlagDefinition>;
 
 export type FeatureFlag = keyof typeof FLAG_MANIFEST;
