@@ -167,7 +167,7 @@ export function ComposeStrip({
   );
 }
 
-function hasAnyFilter(s: ComposeState): boolean {
+export function hasAnyFilter(s: ComposeState): boolean {
   return (
     s.activity !== null ||
     s.unsubReady !== null ||

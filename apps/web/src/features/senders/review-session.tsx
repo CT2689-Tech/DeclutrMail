@@ -1,5 +1,21 @@
 'use client';
 
+/**
+ * ReviewSession — guided per-sender decision ritual (modal card stack).
+ *
+ * NO LIVE MOUNT today: the Senders-screen opener was retired with the
+ * editorial hero (spec v1.2 Decision 4) and its dead wiring removed in
+ * the 2026-07-04 dead-code sweep. Kept as the chassis for the planned
+ * dormant-sweep wizard (guided chunked review over a compose scope).
+ *
+ * Wiring rules for whoever resurrects it:
+ *   - Destructive buckets must route through `requestAction` so the
+ *     mandatory D226 preview gates every mutation — never fire verbs
+ *     directly from session results.
+ *   - A 'lock' (Protect) decision wires to `setPolicy({ isProtected:
+ *     true })` — Protect is a standing-policy toggle, never a verb fire.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';

@@ -860,3 +860,9 @@ verb-add breaks a downstream enum a 2nd time.
 **Finding:** Every /senders visit silently redirected to /onboarding step 4 — all lead-CTA locators timed out with zero errors. Cause: `useOnboardingGate` bounces any user with `users.onboarded_at IS NULL`, and `scripts/cloud-seed.sql` seeds the founder user without setting it. The gate's own docstring carries the backfill: `UPDATE users SET onboarded_at = now() WHERE …` — one statement fixes the whole smoke. (Also hit: root-owned /tmp/dmlogs breaks `runuser -u postgres` initdb logging on a fresh container — `chmod 777 /tmp/dmlogs` first.)
 **Rule (provisional):** After `cloud-smoke.sh seed`, set `onboarded_at` on the seeded user before browser smokes of authed app routes (or fix cloud-seed.sql to do it — founder call, it may want to smoke onboarding itself).
 **Distillation trigger:** fold into scripts/cloud-smoke.sh seed step if a second session trips on the redirect.
+
+## 2026-07-05 — Security-regression sweep clean
+**Context:** weekly automated sweep
+**Finding:** all Section-2 hard rules held; 45 commits in last 7d, all guardrails intact
+**Rule (provisional):** —
+**Distillation trigger:** —
