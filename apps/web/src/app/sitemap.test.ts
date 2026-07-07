@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import sitemap, { MARKETING_PATHS } from './sitemap';
-import { AUTHED_APP_PATHS } from './robots';
+import robots, { AUTHED_APP_PATHS } from './robots';
 
 describe('sitemap — D134', () => {
   it('lists every marketing route against the canonical origin', () => {
@@ -28,5 +28,9 @@ describe('sitemap — D134', () => {
     for (const authedPath of AUTHED_APP_PATHS) {
       expect(urls).not.toContain(authedPath);
     }
+  });
+
+  it('robots.txt points crawlers at this sitemap (D132 SEO batch)', () => {
+    expect(robots().sitemap).toBe('https://declutrmail.com/sitemap.xml');
   });
 });

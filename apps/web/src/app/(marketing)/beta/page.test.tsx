@@ -31,6 +31,11 @@ async function renderPage(params: Record<string, string> = {}) {
   return render(await BetaPage({ searchParams: Promise.resolve(params) }));
 }
 
+/** All track() calls for one event name (the page now emits two kinds). */
+function callsFor(event: string) {
+  return trackSpy.mock.calls.filter(([name]) => name === event);
+}
+
 describe('/beta page — F7 private-beta waitlist', () => {
   it('renders the invite-only copy with waitlist + founder-contact CTAs and no fetch', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
@@ -53,18 +58,27 @@ describe('/beta page — F7 private-beta waitlist', () => {
 
   it('does NOT emit beta_gate_denied on an organic visit', async () => {
     await renderPage();
-    expect(trackSpy).not.toHaveBeenCalled();
+    expect(callsFor('beta_gate_denied')).toHaveLength(0);
   });
 
   it('emits beta_gate_denied exactly once when redirected with ?reason=not_invited', async () => {
     await renderPage({ reason: 'not_invited' });
 
-    expect(trackSpy).toHaveBeenCalledTimes(1);
+    expect(callsFor('beta_gate_denied')).toHaveLength(1);
     expect(trackSpy).toHaveBeenCalledWith('beta_gate_denied', { source: 'oauth_callback' });
   });
 
   it('treats an unknown reason value as an organic visit (no emit)', async () => {
     await renderPage({ reason: 'something-else' });
-    expect(trackSpy).not.toHaveBeenCalled();
+    expect(callsFor('beta_gate_denied')).toHaveLength(0);
+  });
+
+  it('emits page_viewed exactly once on every variant (D159, D132 batch)', async () => {
+    await renderPage();
+    expect(callsFor('page_viewed')).toEqual([['page_viewed', { page: 'beta', mailbox_id: null }]]);
+
+    trackSpy.mockClear();
+    await renderPage({ reason: 'not_invited' });
+    expect(callsFor('page_viewed')).toEqual([['page_viewed', { page: 'beta', mailbox_id: null }]]);
   });
 });

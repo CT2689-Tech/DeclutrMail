@@ -7,7 +7,7 @@ import { HowItWorks, PrivacyDesk, Problem, Ritual } from '@/features/marketing/l
 import { PricingTeaser } from '@/features/marketing/landing/pricing-teaser';
 import { Faq } from '@/features/marketing/landing/faq';
 import { FinalCta, Footer } from '@/features/marketing/landing/footer';
-import { siteUrl } from '@/features/marketing/landing/urls';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 /**
  * Public landing page at `/` (D134 structure, D223 locked headline).
@@ -28,25 +28,12 @@ const TITLE = 'DeclutrMail — Control Gmail by sender, not by email.';
 const DESCRIPTION =
   'DeclutrMail turns thousands of emails into a handful of sender decisions — with automation, privacy-first indexing, and 7-day undo.';
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl()),
-  title: { absolute: TITLE },
+// metadataBase is inherited from the root layout (D128 origin).
+export const metadata: Metadata = marketingPageMetadata({
+  title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: '/' },
-  openGraph: {
-    title: TITLE,
-    description: DESCRIPTION,
-    url: '/',
-    siteName: 'DeclutrMail',
-    type: 'website',
-    locale: 'en_US',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: TITLE,
-    description: DESCRIPTION,
-  },
-};
+  path: '/',
+});
 
 export default function LandingPage() {
   return (

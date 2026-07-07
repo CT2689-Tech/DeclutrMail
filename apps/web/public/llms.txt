@@ -1,0 +1,18 @@
+# DeclutrMail
+
+> DeclutrMail is a Gmail cleanup service. You decide once per sender — Keep, Archive, Unsubscribe, Later, or Delete — and every action shows a preview before it runs and stays reversible for your plan's undo window (7 days on Free and Plus, 30 on Pro).
+
+Privacy is the product's boundary, stated literally: Full bodies fetched: 0.
+DeclutrMail stores only: Sender (name + email), Subject, Gmail Preview (the short snippet shown in your inbox list), Dates (received), Gmail labels, Read/unread state.
+It never fetches or stores: Full message body, HTML, Attachments, Inline images, Raw MIME, Headers other than the ones above.
+
+## Pages
+
+- [How it works](https://declutrmail.com/#how-it-works): the per-sender cleanup ritual — connect Gmail, review senders by volume, decide once per sender
+- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; every paid plan carries a 30-day money-back guarantee
+- [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
+
+## Legal
+
+- [Terms of service](https://declutrmail.com/terms)
+- [Refund policy](https://declutrmail.com/refunds)

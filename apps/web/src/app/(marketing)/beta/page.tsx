@@ -18,6 +18,7 @@ import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
+import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
 const { color, font, text } = tokens;
@@ -89,6 +90,7 @@ export default async function BetaPage({
         padding: 24,
       }}
     >
+      <PageViewTracker page="beta" />
       {denied ? <BetaDeniedTracker /> : null}
       <div
         style={{

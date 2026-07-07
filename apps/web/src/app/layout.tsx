@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import '@declutrmail/shared/tokens.css';
 import { isFeatureEnabled } from '@/lib/flags';
+import { siteUrl } from '@/features/marketing/landing/urls';
 import { Providers } from './providers';
 
 const inter = Inter({
@@ -25,6 +26,9 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
+  // Site-wide base so per-page relative canonical / og:url values
+  // resolve against the canonical origin (D128 — declutrmail.com).
+  metadataBase: new URL(siteUrl()),
   title: 'DeclutrMail',
   description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
 };

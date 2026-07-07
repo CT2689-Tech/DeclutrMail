@@ -1,4 +1,5 @@
-// Refund Policy (D146) — public, static, no client JS.
+// Refund Policy (D146) — public, static prose; the only client JS is
+// the D159 page-view tracker island.
 //
 // Required by both payment providers (D117): Paddle (merchant of
 // record outside India) and Razorpay (India) each require a published
@@ -10,12 +11,15 @@
 
 import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection, LegalNote } from '@/features/marketing/legal-layout';
+import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = marketingPageMetadata({
   title: 'Refund Policy — DeclutrMail',
   description:
     'How refunds and cancellations work for DeclutrMail subscriptions, whether you purchased through Paddle (global) or Razorpay (India).',
-};
+  path: '/refunds',
+});
 
 const LAST_UPDATED = '2026-06-11';
 
@@ -32,6 +36,7 @@ const TOC = [
 export default function RefundPolicyPage() {
   return (
     <LegalPageLayout title="Refund Policy" lastUpdated={LAST_UPDATED} toc={TOC}>
+      <PageViewTracker page="refunds" />
       <LegalSection id="summary" title="1. The short version">
         <p>
           If DeclutrMail isn&rsquo;t working out, tell us within 14 days of being charged and we
