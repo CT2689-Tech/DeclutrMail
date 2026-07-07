@@ -100,6 +100,15 @@ export interface Sender {
    */
   unsubStatus?: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
   /**
+   * List-Unsubscribe method from the sender's headers — mirrors the
+   * wire `SenderListRow.unsubscribeMethod`. `'one_click'` is the
+   * `unsub_ready` fact behind the ADR-0019 primary-CTA rule;
+   * `'mailto'` is manual at launch (D230) so it never auto-recommends.
+   * Optional because Weekly-Hero + legacy fixtures don't carry it;
+   * absent ⇒ not unsub-ready.
+   */
+  unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null;
+  /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
    * route a sender into the "Protect" intent bucket (intentOf OR-s
    * them) — a VIP must never surface as a Cleanup recommendation.

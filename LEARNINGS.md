@@ -20,6 +20,29 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-07-07 — cloud-smoke.sh in web-session containers: two known bootstrap gaps
+
+**Context:** Standing up the real stack (pg + redis + api + web) in a
+Claude Code web container via `./scripts/cloud-smoke.sh` to smoke the
+senders polish batch (D49/D227 primary-CTA wiring).
+**Finding:** Two gaps block the first `up`/browse cycle: (1) `up` fails
+silently at initdb when `/tmp/dmlogs` was pre-created by root — the
+`runuser -u postgres` initdb can't write its log there ("Permission
+denied"), yet the API wait-loop still prints "API up" because the API
+boots without a DB; `chmod 777 /tmp/dmlogs` before `up` fixes it.
+(2) `cloud-seed.sql` never sets `users.onboarded_at`, so every app
+route redirects to `/onboarding` and the smoke stalls;
+`UPDATE users SET onboarded_at = now()` after `seed` unblocks. Also:
+Playwright pinned at 1.60 wants `chromium_headless_shell-1228` which
+isn't in `/opt/pw-browsers` — launch with
+`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'`.
+**Rule (provisional):** In a web-session container run
+`chmod 777 /tmp/dmlogs` (after the script's first mkdir) and set
+`onboarded_at` right after `seed`; consider folding both into
+`cloud-smoke.sh` (`chmod` in `up`, `onboarded_at` in the seed SQL).
+**Distillation trigger:** fold into `scripts/cloud-smoke.sh` +
+`cloud-seed.sql` directly if one more session trips on either gap.
+
 ## 2026-06-05 — Reuse migration SQL as worker post-pass to keep three derive paths single-sourced
 
 **Context:** spec v1.3 + mig 0022 add `senders.replied_count` + the auto-protect-on-replied-≥3 rule. The derived state has THREE entry points: the migration's backfill (initial deploy), `InitialSyncWorker.buildSenderIndex` (full rebuild), and `IncrementalSyncWorker` (per-webhook delta). Each could implement the formula independently — and silently drift from each other.
