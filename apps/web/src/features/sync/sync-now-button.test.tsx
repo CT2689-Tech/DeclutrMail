@@ -21,7 +21,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { SyncNowButton } from './sync-now-button';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@declutrmail/shared')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, toast: vi.fn() };
 });
 
