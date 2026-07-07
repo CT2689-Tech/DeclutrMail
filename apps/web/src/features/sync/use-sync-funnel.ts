@@ -12,19 +12,23 @@ import { track } from '@/lib/posthog';
  * onboarding gate + the D116 secondary-connect gate), so `trigger` is
  * always `'initial'`.
  *
- * Transition semantics (each fires ONCE — a ref guards against the 3s
- * poll re-observing the same state, per the `useMailboxSyncToasts`
- * precedent):
+ * Transition semantics (each fires ONCE per started/completed pair — a
+ * ref guards against the 3s poll re-observing the same state, per the
+ * `useMailboxSyncToasts` precedent):
  *
  *   - `sync_started`: the FIRST in-progress observation
- *     (`queued`/`syncing`) for this mount. A mailbox already `ready`
- *     on mount fires nothing — no sync was observed.
+ *     (`queued`/`syncing`) since mount or since the last completion. A
+ *     mailbox already `ready` on mount fires nothing — no sync was
+ *     observed.
  *   - `sync_completed`: a transition INTO `ready` or `failed` AFTER an
  *     observed start — never an unpaired completion (a mailbox first
- *     seen already terminal stays silent). A transient `failed` that
- *     recovers to `ready` (see `syncRefetchInterval`) emits a second
- *     completion with `outcome: 'success'` — both observations are
- *     real; analysis takes the mailbox's last outcome.
+ *     seen already terminal stays silent). Each completion CLOSES its
+ *     pair, so a transient `failed` that recovers (see
+ *     `syncRefetchInterval`) emits a fresh pair once `queued`/`syncing`
+ *     is re-observed, with `duration_ms` clocked from the SECOND start
+ *     — not inflated across the failed period + retry gap. A `failed` →
+ *     `ready` flip with no in-progress observation in between stays
+ *     silent: there is no new start to pair the recovery with.
  *
  * Payload honesty (CLAUDE.md §10 — no fake events): the status poll
  * carries no sync id or message counts, so `sync_id` is `null` and
@@ -58,6 +62,10 @@ export function useSyncGateFunnel(status: SyncStatus | undefined, mailboxId: str
         duration_ms: Date.now() - observedStartAt.current,
         outcome: readiness === 'ready' ? 'success' : 'failed',
       });
+      // Close the pair. Without this, a failed → syncing → ready
+      // recovery within one mount drops its second sync_started and
+      // clocks the second completion from the ORIGINAL start.
+      observedStartAt.current = null;
     }
   }, [status, mailboxId]);
 }

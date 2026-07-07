@@ -4,9 +4,11 @@
  * The contract under test: `sync_started` fires ONCE on the first
  * in-progress observation, `sync_completed` fires ONCE per transition
  * into a terminal readiness — and the 3s poll re-observing the same
- * state fires NOTHING (the ref guard). Payloads follow the taxonomy's
- * FE conventions: `sync_id: null`, `messages_indexed: -1`, observed
- * (not server-side) `duration_ms`.
+ * state fires NOTHING (the ref guard). Each completion CLOSES its
+ * pair: a later re-observed `queued`/`syncing` opens a fresh pair with
+ * its own clock. Payloads follow the taxonomy's FE conventions:
+ * `sync_id: null`, `messages_indexed: -1`, observed (not server-side)
+ * `duration_ms`.
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -121,5 +123,57 @@ describe('useSyncGateFunnel (D159)', () => {
     const { rerender } = renderFunnel(undefined);
     rerender({ status: status('syncing', 10), mailboxId: null });
     expect(h.track).not.toHaveBeenCalled();
+  });
+
+  it('a full failed → recovery cycle emits a second pair with duration_ms from the SECOND start', () => {
+    // Pin the clock so duration_ms is exact — the inflated-duration bug
+    // (second completion clocked from the FIRST start) is invisible to
+    // a greater-than-zero assertion.
+    const now = vi.spyOn(Date, 'now');
+    try {
+      now.mockReturnValue(1_000);
+      const { rerender } = renderFunnel(status('syncing', 10));
+      expect(startedCalls()).toHaveLength(1);
+
+      // 5s in, the transient failure lands (the 2026-05-28 stale-job
+      // pattern — see syncRefetchInterval): first pair completes.
+      now.mockReturnValue(6_000);
+      rerender({ status: status('failed', 10), mailboxId: 'mb-1' });
+      expect(completedCalls()).toHaveLength(1);
+      expect(h.track).toHaveBeenCalledWith(
+        'sync_completed',
+        expect.objectContaining({ outcome: 'failed', duration_ms: 5_000 }),
+      );
+
+      // 10s retry gap (the slower failed-poll cadence), then the real
+      // sync is re-observed in progress: a FRESH pair starts.
+      now.mockReturnValue(16_000);
+      rerender({ status: status('syncing', 20), mailboxId: 'mb-1' });
+      expect(startedCalls()).toHaveLength(2);
+
+      // 3s later it lands: duration_ms is 16s → 19s, NOT 1s → 19s
+      // (18_000 would mean the failed period + retry gap leaked in).
+      now.mockReturnValue(19_000);
+      rerender({ status: status('ready', 100), mailboxId: 'mb-1' });
+      expect(completedCalls()).toHaveLength(2);
+      expect(h.track).toHaveBeenLastCalledWith(
+        'sync_completed',
+        expect.objectContaining({ outcome: 'success', duration_ms: 3_000 }),
+      );
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('failed → ready with NO in-progress observation between them adds no second completion', () => {
+    const { rerender } = renderFunnel(status('syncing', 30));
+    rerender({ status: status('failed', 30), mailboxId: 'mb-1' });
+    expect(completedCalls()).toHaveLength(1);
+
+    // The completion closed the pair; a direct flip to ready has no
+    // newly-observed start to pair with, so it stays silent.
+    rerender({ status: status('ready', 100), mailboxId: 'mb-1' });
+    expect(startedCalls()).toHaveLength(1);
+    expect(completedCalls()).toHaveLength(1);
   });
 });
