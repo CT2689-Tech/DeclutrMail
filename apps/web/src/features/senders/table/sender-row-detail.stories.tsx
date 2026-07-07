@@ -102,6 +102,22 @@ export const Ready: Story<typeof SenderRowDetail> = {
   args: { s: sender(), onAction: noop, timeseries: READY, subjects: SUBJECTS },
 };
 
+/**
+ * Panel variant — the SAME component hosted inside the grid's
+ * SenderPeek dialog (grid↔table parity, 2026-07-03): tight padding,
+ * no bottom hairline. At sheet width the auto-fit grids stack
+ * (stats 2×2, chart above subjects) — resize the canvas to see it.
+ */
+export const PanelVariant: Story<typeof SenderRowDetail> = {
+  args: {
+    s: sender(),
+    onAction: noop,
+    timeseries: READY,
+    subjects: SUBJECTS,
+    variant: 'panel',
+  },
+};
+
 /** Loading — both fetches in flight; skeleton bars + lines, no data claims. */
 export const Loading: Story<typeof SenderRowDetail> = {
   args: {

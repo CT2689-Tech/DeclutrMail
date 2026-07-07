@@ -35,7 +35,10 @@ export function toast(msg: string, tone: ToastTone = 'info'): void {
 }
 
 const TONE_BG: Record<ToastTone, string> = {
-  info: '#1F2826',
+  // Ink chip — was the literal '#1F2826'; the fg token keeps the same
+  // near-black chip on light and flips to a light chip on dark, so the
+  // fgInverse text below stays readable in both themes.
+  info: color.fg,
   success: color.emerald,
   warn: color.amber,
   danger: color.red,
@@ -80,7 +83,7 @@ export function ToastHost() {
             gap: 9,
             padding: '10px 16px',
             background: TONE_BG[t.tone],
-            color: '#FFFFFF',
+            color: color.fgInverse,
             borderRadius: radius.pill,
             fontFamily: font.sans,
             fontSize: 13,

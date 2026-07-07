@@ -176,9 +176,9 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     const row = rowById('t-groupon');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // The recommended-verb highlight wraps the Kbd in white text on a
-    // translucent overlay — the inline `color:#FFFFFF` is the
+    // translucent overlay — the inline `color:var(--dm-fg-inverse)` is the
     // load-bearing signal.
-    expect(html).toContain('color:#FFFFFF');
+    expect(html).toContain('color:var(--dm-fg-inverse)');
   });
 
   it('does NOT highlight when confidence is far below threshold (0.66)', () => {
@@ -187,7 +187,7 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     const row = rowById('t-nextdoor');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // No white-text overlay means no highlighted verb chip.
-    expect(html).not.toContain('color:#FFFFFF');
+    expect(html).not.toContain('color:var(--dm-fg-inverse)');
   });
 
   // D31 says "highlight only when confidence > 0.85". The boundary
@@ -204,21 +204,21 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.84)} onAction={() => {}} />,
       );
-      expect(html).not.toContain('color:#FFFFFF');
+      expect(html).not.toContain('color:var(--dm-fg-inverse)');
     });
 
     it('confidence = 0.85 → recommended verb is NOT emphasised (strict >)', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.85)} onAction={() => {}} />,
       );
-      expect(html).not.toContain('color:#FFFFFF');
+      expect(html).not.toContain('color:var(--dm-fg-inverse)');
     });
 
     it('confidence = 0.86 → recommended verb IS emphasised', () => {
       const html = renderToStaticMarkup(
         <ActionToolbar row={withConfidence(0.86)} onAction={() => {}} />,
       );
-      expect(html).toContain('color:#FFFFFF');
+      expect(html).toContain('color:var(--dm-fg-inverse)');
     });
   });
 });

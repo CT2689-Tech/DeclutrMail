@@ -580,6 +580,42 @@ describe('SendersReadService', () => {
         expect(rows.map((r) => r.displayName)).toEqual(['Alpha', 'Mid', 'Zebra']);
       });
 
+      it('sort=name falls back to email for empty displayName (no blanks-first pile)', async () => {
+        // Bulk senders often ship an empty From-header name — raw
+        // display_name ASC piled them first as blanks (2026-07-03 live
+        // smoke: 983 rows). The effective-name COALESCE must interleave
+        // them by email among the named rows, on BOTH sides of a named
+        // neighbour.
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'aardvark@x.com',
+          displayName: '',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'nn@x.com',
+          displayName: 'Beta',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'zulu@x.com',
+          displayName: '  ',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          sort: 'name',
+          direction: 'asc',
+          cursor: null,
+          limit: 25,
+        });
+        expect(rows.map((r) => r.email)).toEqual(['aardvark@x.com', 'nn@x.com', 'zulu@x.com']);
+      });
+
       it('sort=first_seen ASC orders by firstSeenAt oldest-first', async () => {
         await seedSender(db, {
           mailboxAccountId: mailboxId,

@@ -2163,6 +2163,22 @@ function buildLastReview(
  *                     For very large mailboxes a `(mailbox, lower(name))`
  *                     covering index becomes worth adding.
  */
+/**
+ * Effective sort/cursor expression for `sort=name`. Two honesty fixes
+ * over raw `display_name` (2026-07-03 live smoke):
+ *   - Bulk senders often ship an empty From-header display name (983
+ *     rows live) — raw ASC piles them first as blanks. COALESCE onto
+ *     email mirrors the FE's `displayLabel` fallback so the order
+ *     matches what the row shows.
+ *   - The DB collation is byte-ordered ('C'), so "Zebra" sorted before
+ *     "aardvark". LOWER() makes A→Z case-insensitive — what the label
+ *     promises.
+ * Used by BOTH the ORDER BY and the keyset predicate — the two must
+ * stay in lockstep (and the controller's `encodeCursorKey` must emit
+ * the same lowered value) or pagination tears at page seams.
+ */
+const effectiveNameSql = sql<string>`LOWER(COALESCE(NULLIF(TRIM(${senders.displayName}), ''), ${senders.email}))`;
+
 function buildSortOrderBy(sort: SenderListSort, direction: SenderListDirection): SQL[] {
   const orient = direction === 'asc' ? asc : desc;
   const column = (() => {
@@ -2174,7 +2190,7 @@ function buildSortOrderBy(sort: SenderListSort, direction: SenderListDirection):
       case 'first_seen':
         return senders.firstSeenAt;
       case 'name':
-        return senders.displayName;
+        return effectiveNameSql;
       default:
         // `read` and `recommended` are screened off by SUPPORTED_SORTS
         // upstream; throwing here is the defense-in-depth.
@@ -2239,9 +2255,12 @@ function buildCursorPredicate(
       )!;
     }
     case 'name': {
+      // Compare on the SAME effective-name expression the ORDER BY
+      // uses — cursoring on raw display_name while ordering on the
+      // COALESCE would tear pages at every empty-name boundary.
       return or(
-        op(senders.displayName, cursor.key),
-        and(eq(senders.displayName, cursor.key), op(senders.id, cursor.id)),
+        op(effectiveNameSql, cursor.key),
+        and(eq(effectiveNameSql, cursor.key), op(senders.id, cursor.id)),
       )!;
     }
     default:

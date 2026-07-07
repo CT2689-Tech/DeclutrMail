@@ -1076,7 +1076,7 @@ function BulkActionBar({
         gap: 14,
         padding: '12px 16px',
         background: color.fg,
-        color: '#FFFFFF',
+        color: color.fgInverse,
         border: `1px solid ${color.fg}`,
         borderRadius: 12,
         boxShadow: shadow.lift,
@@ -1089,7 +1089,7 @@ function BulkActionBar({
           fontSize: 10,
           letterSpacing: '0.14em',
           textTransform: 'uppercase',
-          color: 'rgba(255,255,255,0.55)',
+          color: color.fgInverseMuted,
         }}
       >
         Selection
@@ -1098,13 +1098,13 @@ function BulkActionBar({
         style={{
           fontSize: 13.5,
           fontWeight: 600,
-          color: '#FFFFFF',
+          color: color.fgInverse,
           fontVariantNumeric: 'tabular-nums',
         }}
       >
         {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
         {revertableCount < selectedIds.size && (
-          <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.65)', marginLeft: 8 }}>
+          <span style={{ fontWeight: 400, color: color.fgInverseSoft, marginLeft: 8 }}>
             · {revertableCount} undoable
           </span>
         )}
@@ -1119,7 +1119,7 @@ function BulkActionBar({
           fontSize: 13,
           fontWeight: 600,
           color: color.fg,
-          background: '#FFFFFF',
+          background: color.card,
           border: 'none',
           padding: '8px 16px',
           borderRadius: 999,
@@ -1135,7 +1135,7 @@ function BulkActionBar({
         style={{
           background: 'transparent',
           border: 'none',
-          color: 'rgba(255,255,255,0.7)',
+          color: color.fgInverseSoft,
           fontFamily: font.mono,
           fontSize: 11,
           letterSpacing: '0.04em',
@@ -1819,7 +1819,7 @@ function Chip({
         fontFamily: font.sans,
         border: `1px solid ${isActive ? activeBg : color.lineSoft}`,
         background: isActive ? activeBg : 'transparent',
-        color: isActive ? '#FFFFFF' : color.fg,
+        color: isActive ? color.fgInverse : color.fg,
         borderRadius: 999,
         cursor: 'pointer',
         transition: 'background 120ms ease, border-color 120ms ease',
@@ -1833,7 +1833,7 @@ function Chip({
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: isActive ? '#FFFFFF' : dot,
+            background: isActive ? color.fgInverse : dot,
             // Faint ring so the dot reads on hover even when fill matches bg
             boxShadow: isActive ? 'none' : `0 0 0 1px ${dot}33`,
           }}

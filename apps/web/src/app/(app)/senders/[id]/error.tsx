@@ -148,7 +148,7 @@ export default function SenderDetailError({
               height: 32,
               padding: '0 14px',
               background: color.primary,
-              color: '#FFFFFF',
+              color: color.fgInverse,
               border: `1px solid ${color.primary}`,
               borderRadius: 7,
               fontFamily: font.sans,

@@ -262,8 +262,10 @@ export class ActionsService {
    * confirm's "this sender is Protected" warning. `unsubAvailable` is
    * true when the sender has any unsubscribe method recorded; used by the
    * FE to know whether to render the Unsubscribe primary chip enabled.
-   * `monthly` is the inbound-message count for the past 30 days, used in
-   * the sender context strip ("12/mo").
+   * `monthly` is the inbound-message count for the past 30 days across
+   * ALL labels (not just INBOX), used in the sender context strip
+   * ("12/mo") — it must match the senders-list card figure
+   * (read-service `last30dMsgs`), not the inbox-scoped bucket counts.
    */
   async previewComposite(input: {
     mailboxAccountId: string;
@@ -320,7 +322,22 @@ export class ActionsService {
         olderThan90d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '90 days')::int`,
         olderThan180d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '180 days')::int`,
         olderThan365d: sql<number>`count(*) FILTER (WHERE m.internal_date <= now() - interval '365 days')::int`,
-        monthly: sql<number>`count(*) FILTER (WHERE m.internal_date >= now() - interval '30 days')::int`,
+        // `monthly` deliberately does NOT read the inbox-scoped subquery
+        // the buckets aggregate over: the context strip's "N /mo" must
+        // equal the senders-list figure (read-service `last30dMsgs`),
+        // which counts ALL inbound mail in the window regardless of
+        // labels. Scoped to INBOX it rendered "0 /mo" for any sender
+        // whose recent mail was already archived (live bug 2026-07-03).
+        // Scalar subquery (no outer refs) — legal in an aggregate
+        // select; postgres-js returns it as a string, `toCount` coerces.
+        monthly: sql<number | string>`(
+          SELECT count(*)::int
+          FROM ${mailMessages}
+          WHERE ${mailMessages.mailboxAccountId} = ${mailboxAccountId}
+            AND ${mailMessages.senderKey} = ${sender.senderKey}
+            AND ${mailMessages.isOutbound} = false
+            AND ${mailMessages.internalDate} >= now() - interval '30 days'
+        )`,
         recentAll: sql<
           string[]
         >`COALESCE(array_agg(m.subject ORDER BY m.internal_date DESC) FILTER (WHERE m.rn_all <= 5), ARRAY[]::text[])`,

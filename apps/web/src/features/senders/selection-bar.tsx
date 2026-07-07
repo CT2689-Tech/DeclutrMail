@@ -57,7 +57,9 @@ export function SelectionBar({
         boxShadow: '0 14px 34px -10px rgba(0,0,0,0.45)',
       }}
     >
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: '#FFFFFF' }}>
+      <span
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: color.fgInverse }}
+      >
         <strong
           style={{
             fontFamily: font.mono,
@@ -68,7 +70,7 @@ export function SelectionBar({
         >
           {senders.length}
         </strong>
-        <span style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>
+        <span style={{ fontSize: 12.5, color: color.fgInverseSoft }}>
           sender{senders.length === 1 ? '' : 's'} selected
         </span>
         <button
@@ -76,7 +78,7 @@ export function SelectionBar({
           style={{
             background: 'transparent',
             border: 'none',
-            color: 'rgba(255,255,255,0.55)',
+            color: color.fgInverseMuted,
             fontFamily: font.mono,
             fontSize: 10.5,
             textTransform: 'uppercase',
@@ -115,9 +117,9 @@ export function SelectionBar({
               gap: 6,
               height: 32,
               padding: '0 14px',
-              background: danger ? color.danger : primary ? color.amber : 'rgba(255,255,255,0.10)',
-              color: '#FFFFFF',
-              border: `1px solid ${danger ? color.danger : primary ? color.amber : 'rgba(255,255,255,0.18)'}`,
+              background: danger ? color.danger : primary ? color.amber : color.lineInverse,
+              color: color.fgInverse,
+              border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
               borderRadius: 7,
               fontFamily: font.sans,
               fontSize: 12.5,

@@ -8,10 +8,12 @@ export type PillTone = 'default' | 'primary' | 'amber' | 'emerald' | 'red' | 'da
 const PILL_TONES: Record<PillTone, { bg: string; fg: string; br: string }> = {
   default: { bg: color.mutedBg, fg: color.fg, br: color.border },
   primary: { bg: color.primarySoft, fg: color.primary, br: color.primaryBorder },
-  amber: { bg: color.amberBg, fg: '#92400E', br: 'rgba(245,158,11,0.30)' },
+  // Semantic fgs ride the theme tokens (not the old darker literals) so
+  // the washes stay readable when the dark palette brightens them.
+  amber: { bg: color.amberBg, fg: color.amber, br: 'rgba(245,158,11,0.30)' },
   emerald: { bg: color.emeraldBg, fg: color.emerald, br: 'rgba(5,150,105,0.25)' },
-  red: { bg: color.redBg, fg: '#991B1B', br: color.redBorder },
-  dark: { bg: color.fg, fg: '#FFFFFF', br: color.fg },
+  red: { bg: color.redBg, fg: color.red, br: color.redBorder },
+  dark: { bg: color.fg, fg: color.fgInverse, br: color.fg },
 };
 
 /** Small rounded status/label chip. */
