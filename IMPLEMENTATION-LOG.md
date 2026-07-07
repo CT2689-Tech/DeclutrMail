@@ -151,7 +151,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D97 | Brief and Quiet interaction | ⬜ |  |  |  |
 | D98 | Pro gating | ⬜ |  |  |  |
 | D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
-| D100 | Condition vocabulary (sender-layer only per D22) | ⬜ |  |  |  |
+| D100 | Condition vocabulary (sender-layer only per D22) | 🔵 | #284 |  |  |
 | D101 | Preset library at launch (5 rules) | 🔵 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Truth sweep 2026-07-02 (🟡→🔵): seedAutopilotPresets called on connect (outbox-consumer-router.ts:87); autopilot apply + action workers registered (worker.ts:1493-1533); rules UI shipped — 2026-06-11 note stale. NOTE plan says 8 launch presets, code ships 5 (open decision DQ13). Pending verify-d |
 | D102 | Rule scope: **Per-inbox default; "Apply to all inboxes" toggle per rule | 🟢 | #108 | packages/db/tests/autopilot-rules.test.ts — scope default + UNIQUE(mailbox, preset_key) |  |
 | D103 | Custom rule builder UI | ⬜ |  |  |  |
