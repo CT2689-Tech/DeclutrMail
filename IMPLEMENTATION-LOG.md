@@ -183,7 +183,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D129 | Hero tagline: *"Clean Gmail by controlling senders, not individual emails."* | ⬜ |  |  |  |
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
-| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | ⬜ |  |  |  |
+| D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283 |  |  |
 | D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
 | D134 | Landing page 10-section structure | 🔵 | #202 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
