@@ -50,6 +50,34 @@ describe('SyncStatusSchema', () => {
     expect(parsed).toEqual(payload);
   });
 
+  it('accepts last_synced_at as an ISO datetime', () => {
+    const parsed = SyncStatusSchema.parse({
+      ...VALID_READY,
+      last_synced_at: '2026-07-07T18:04:12.000Z',
+    });
+    expect(parsed.last_synced_at).toBe('2026-07-07T18:04:12.000Z');
+  });
+
+  it('accepts last_synced_at: null (no completed run yet)', () => {
+    const parsed = SyncStatusSchema.parse({
+      ...VALID_QUEUED,
+      last_synced_at: null,
+    });
+    expect(parsed.last_synced_at).toBeNull();
+  });
+
+  it('accepts an OMITTED last_synced_at (pre-field responses stay valid)', () => {
+    expect(SyncStatusSchema.parse(VALID_READY).last_synced_at).toBeUndefined();
+  });
+
+  it('rejects a non-datetime last_synced_at', () => {
+    const result = SyncStatusSchema.safeParse({
+      ...VALID_READY,
+      last_synced_at: 'yesterday-ish',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects progress_pct > 100', () => {
     const result = SyncStatusSchema.safeParse({
       ...VALID_SYNCING,

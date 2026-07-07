@@ -255,6 +255,7 @@ export class SyncService {
         currentStage: providerSyncState.currentStage,
         progressPct: providerSyncState.progressPct,
         errorCode: providerSyncState.errorCode,
+        lastSyncedAt: providerSyncState.lastSyncedAt,
       })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
@@ -268,6 +269,9 @@ export class SyncService {
       current_stage: row.currentStage,
       progress_pct: row.progressPct,
       is_ready_for_triage: row.readinessStatus === 'ready',
+      // Wall-clock freshness for the "synced Xm ago" label + the
+      // Sync-now completion watch. Null until the first run finishes.
+      last_synced_at: row.lastSyncedAt === null ? null : row.lastSyncedAt.toISOString(),
     } as const;
 
     // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,
