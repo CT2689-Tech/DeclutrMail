@@ -17,6 +17,7 @@ import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
+import { isFeatureEnabled } from '@/lib/flags';
 
 /**
  * Authed app chrome. Wires the routing-agnostic AppShell to the
@@ -159,7 +160,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             }}
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <ThemeToggle />
+                {isFeatureEnabled('darkMode') && <ThemeToggle />}
                 <SyncNowButton />
                 <AccountMenu />
               </div>
