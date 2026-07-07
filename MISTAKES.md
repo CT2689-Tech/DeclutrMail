@@ -568,6 +568,21 @@ collision case").
 **Rule:** A `??` fallback on a production surface may only fall back to an HONEST value (empty/absent), never to a fixture helper — grep new modals/panels for imports from fixture modules before merge.
 **Enforcement update:** `sampleSubjects` + `SUBJECT_POOL` + the rest of the fixture-era helpers (FACETS, detectCohorts, detectPatterns, pick*Slice) are DELETED from `features/senders/data.ts` in the same sweep, so this fallback class can no longer compile against them. Class has now recurred 3× — distillation candidate for CLAUDE.md §10 ("no fixture fallback behind `??`").
 
+## 2026-07-07 — Landing page shipped with no og:image (openGraph config replaced the file-convention card)
+**PR:** landing page unit (D134; openGraph block) — found + fixed in the D132 SEO batch PR
+**Caught by:** manual prod-build smoke (curl + grep of rendered head) during the D132 SEO batch
+**What happened:** `(marketing)/page.tsx` exported `openGraph` without `images`, which shallow-replaced the root segment's metadata and dropped the `app/opengraph-image.tsx` card — `/` rendered no og:image / twitter:image at all, so link shares carried no preview card. Every green gate passed: the gap only exists in the resolved HTML head, not in any config object a unit test inspects.
+**Correct approach:** Pin the card explicitly wherever `openGraph` is declared. Now centralized in `features/marketing/page-metadata.ts` (`marketingPageMetadata()`), used by all five marketing pages; `marketing-metadata.test.ts` asserts `og.images`/`twitter.images` on every page, and the prod-smoke checklist includes a curl for `og:image`.
+**Rule:** Declaring `metadata.openGraph` on a page = owning the ENTIRE og object, images included — never declare it partially.
+**Enforcement update:** shared helper + per-page image assertions in `marketing-metadata.test.ts`; LEARNINGS 2026-07-07 entry documents the merge behavior.
+
+## 2026-07-07 — llms.txt shipped a refund overclaim ("every paid plan / 30-day") contradicting the published policy
+**PR:** #283 (D132 SEO batch); fixed on-branch in caf469c by the gate review
+**Caught by:** design-system-agent + SEO gate review, [BLOCKING]
+**What happened:** The hand-written `public/llms.txt` copy echoed the landing FAQ's "30-day money-back guarantee on every paid plan", which contradicts /refunds (14-day pro-rata window, pending confirmation) on duration and D121 (Pro-only) on scope. The privacy lines in the same file were quoted verbatim from the locked copy module, but the refund line was composed fresh — exactly the paraphrase path the D228 rule exists to prevent, on a surface the microcopy hook never scans (`.txt` is outside its file-type filter).
+**Correct approach:** A machine-readable marketing surface must either quote a locked copy module verbatim or stay claim-neutral and link the policy ("paid plans carry a money-back guarantee — see the refund policy for terms", the shipped fix). Never state numbers the legal pages don't state.
+**Rule:** A static marketing file may not carry a quantified product claim (price, window, guarantee) unless that exact claim is pinned by a test to its source-of-truth module/manifest.
+**Enforcement update:** none yet — the review's fast-follow proposes pinning llms.txt to the locked copy module with a test. The underlying three-surface refund decision is tracked in FOUNDER-FOLLOWUPS 2026-07-07.
 ## 2026-07-07 — Daily Brief froze a false "quiet yesterday" (zero-count race against lagging sync)
 **PR:** #279 (fix); shipped originally with the BriefSnapshotWorker (D61–D70 slice)
 **Caught by:** founder manual smoke ("Brief — why is this empty?") — gates, CI, and 42 worker tests were green

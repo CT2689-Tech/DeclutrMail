@@ -1,4 +1,5 @@
-// Privacy Policy (D146) — public, static, no client JS.
+// Privacy Policy (D146) — public, static prose; the only client JS is
+// the D159 page-view tracker island.
 //
 // CONTENT CONTRACT (CLAUDE.md §2.1, D7, D228): the "what we store /
 // what we never store" lists are imported from
@@ -18,12 +19,15 @@ import {
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
+import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = marketingPageMetadata({
   title: 'Privacy Policy — DeclutrMail',
   description:
     'What DeclutrMail stores (sender, subject, Gmail preview, dates, labels, read state), what it never stores (bodies, attachments, images), and your rights.',
-};
+  path: '/privacy',
+});
 
 const LAST_UPDATED = '2026-06-11';
 
@@ -45,6 +49,7 @@ const TOC = [
 export default function PrivacyPolicyPage() {
   return (
     <LegalPageLayout title="Privacy Policy" lastUpdated={LAST_UPDATED} toc={TOC}>
+      <PageViewTracker page="privacy" />
       <LegalSection id="who-we-are" title="1. Who we are">
         <p>
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail

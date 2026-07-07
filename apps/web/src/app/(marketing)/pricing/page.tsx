@@ -8,12 +8,14 @@
 import type { Metadata } from 'next';
 
 import { PricingScreen } from '@/features/marketing/pricing/pricing-screen';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = marketingPageMetadata({
   title: 'Pricing — DeclutrMail',
   description:
     'Free shows you what’s noisy. Plus lets you clean it yourself. Pro keeps it clean for you. Five verbs, every action undoable, full bodies fetched: 0.',
-};
+  path: '/pricing',
+});
 
 export default function PricingPage() {
   return <PricingScreen />;

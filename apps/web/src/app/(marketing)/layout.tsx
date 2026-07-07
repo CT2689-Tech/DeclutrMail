@@ -5,19 +5,76 @@
 // The root layout still supplies fonts + tokens.css + the QueryClient,
 // so marketing pages share the design language of the app.
 //
-// This file intentionally ships before any pages do: landing, legal
-// and pricing land in later units. Keep this shell minimal — page-level
-// chrome (nav, footer) belongs to those units, not here.
+// This shell also emits the site-wide structured data (D132 SEO
+// batch): one JSON-LD graph with the Organization and the
+// SoftwareApplication (offers derived from the D19 tier manifest —
+// re-pricing there flows through here with no edit). Page-specific
+// structured data (the landing FAQPage) lives with the page content.
 //
 // Server component on purpose: no client JS is needed for a static
 // public shell, and keeping it server-side guarantees no client hook
 // can accidentally reach for `useAuth()` at the layout level.
 
 import type { ReactNode } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
+
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
+import { JsonLd } from '@/features/marketing/json-ld';
+import { siteUrl } from '@/features/marketing/landing/urls';
 
 const { color, font } = tokens;
+
+/**
+ * One schema.org Offer per purchasable tier price point (D19 ladder).
+ * The Founding Pro promo is deliberately excluded: it is a
+ * limited-redemption price, and structured data has no way to expire
+ * with the 250th redemption.
+ */
+function tierOffers() {
+  return Object.values(TIER_MANIFEST)
+    .filter((tier) => tier.purchasable)
+    .flatMap((tier) =>
+      (['monthly', 'annual'] as const).flatMap((cycle) => {
+        const price = tier.prices[cycle];
+        if (!price) return [];
+        return [
+          {
+            '@type': 'Offer',
+            name: price.usdCents === 0 ? tier.name : `${tier.name} — ${cycle}`,
+            price: price.usdCents / 100,
+            priceCurrency: 'USD',
+            url: `${siteUrl()}/pricing`,
+          },
+        ];
+      }),
+    );
+}
+
+const ORGANIZATION_ID = `${siteUrl()}/#organization`;
+
+const SITE_JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': ORGANIZATION_ID,
+      name: 'DeclutrMail',
+      url: siteUrl(),
+      logo: `${siteUrl()}/icons/icon-512.png`,
+      email: 'support@declutrmail.com',
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: 'DeclutrMail',
+      url: siteUrl(),
+      description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
+      applicationCategory: 'UtilitiesApplication',
+      operatingSystem: 'Web',
+      offers: tierOffers(),
+      publisher: { '@id': ORGANIZATION_ID },
+    },
+  ],
+};
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
@@ -35,6 +92,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
         fontFamily: font.sans,
       }}
     >
+      <JsonLd data={SITE_JSON_LD} />
       {children}
       {/* D147 consent ask — a small client island (the one JS addition
           this shell carries besides page-level islands). INSIDE the

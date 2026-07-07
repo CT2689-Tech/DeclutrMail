@@ -1,4 +1,5 @@
-// Terms of Service (D146) — public, static, no client JS.
+// Terms of Service (D146) — public, static prose; the only client JS
+// is the D159 page-view tracker island.
 //
 // FOUNDER-REVIEW-GATED: legal copy ships only after founder sign-off
 // (D146 — lawyer review deferred until validation threshold). The
@@ -7,12 +8,15 @@
 
 import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection, LegalNote } from '@/features/marketing/legal-layout';
+import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
-export const metadata: Metadata = {
+export const metadata: Metadata = marketingPageMetadata({
   title: 'Terms of Service — DeclutrMail',
   description:
     'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
-};
+  path: '/terms',
+});
 
 const LAST_UPDATED = '2026-06-11';
 
@@ -34,6 +38,7 @@ const TOC = [
 export default function TermsOfServicePage() {
   return (
     <LegalPageLayout title="Terms of Service" lastUpdated={LAST_UPDATED} toc={TOC}>
+      <PageViewTracker page="terms" />
       <LegalSection id="service" title="1. The service">
         <p>
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
