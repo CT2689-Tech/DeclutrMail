@@ -27,8 +27,12 @@ export const metadata = {
   description: 'DeclutrMail is in private beta. Join the waitlist to get your invite.',
 };
 
+// support@ is the address the legal pages already publish (D146);
+// the mailbox itself is a tracked FOUNDER-FOLLOWUPS launch item. Was
+// the founder's personal Gmail — a leak on a public marketing page
+// (2026-07-04 launch audit).
 const FOUNDER_MAILTO =
-  'mailto:chintan.a.thakkar@gmail.com?subject=DeclutrMail%20beta%20invite%20request';
+  'mailto:support@declutrmail.com?subject=DeclutrMail%20beta%20invite%20request';
 
 // Same anchor-shaped CTA as not-found.tsx — Next's <Link> must own the
 // element, so the Button primitive can't be reused directly.

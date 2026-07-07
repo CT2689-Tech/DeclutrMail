@@ -203,7 +203,11 @@ export interface EventPayloads {
       | 'mailboxes'
       | 'pricing'
       | 'snoozed'
-      | 'billing';
+      | 'billing'
+      // 2026-07-04 launch audit — remaining app surfaces wired.
+      | 'screener'
+      | 'followups'
+      | 'quiet';
     mailbox_id: string | null;
   };
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/contracts';
 
@@ -31,6 +33,13 @@ const { color, font } = tokens;
 export function QuietRoute() {
   const { me } = useAuth();
   const mailboxes = me.mailboxes;
+
+  // `mailbox_id: null` — this page renders one card per connected
+  // mailbox (D95), so no single mailbox scopes the view; PostHog
+  // `identify` ties the event to the user.
+  useEffect(() => {
+    void track('page_viewed', { page: 'quiet', mailbox_id: null });
+  }, []);
 
   return (
     <div style={{ display: 'grid', gap: 16, maxWidth: 720 }}>
