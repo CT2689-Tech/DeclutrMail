@@ -8,9 +8,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import {
   automationRules,
   mailboxAccounts,
+  mailMessages,
   providerSyncState,
   ruleMatchLog,
   schema,
+  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -362,6 +364,121 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     const jobIds = add.mock.calls.map((c) => (c[2] as { jobId: string }).jobId);
     expect(jobIds[0]).toBe(jobIds[1]); // BullMQ dedups the burst on jobId
     expect(jobIds[2]).not.toBe(jobIds[0]);
+  });
+
+  it('steady state — a swept-clean sender is NOT re-matched every window; new mail re-arms it', async () => {
+    const db = await freshDb();
+    const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');
+
+    // Sweep 1 — the delta's message is in INBOX, so the Active rule
+    // matches and writes one approved row (the D100 fix working).
+    const { applyAdd } = await runSyncDelta(db, mailboxId, knownSenderDelta());
+    const [, jobData] = applyAdd.mock.calls[0] as [
+      string,
+      { mailboxAccountId: string; triggeredAtMs: number },
+    ];
+    const { chain } = buildChain(db);
+    const first = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(first.activeMatches).toBe(1);
+
+    // Simulate the action worker having executed the archive: the
+    // INBOX label leaves the local projection and the match resolves.
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['CATEGORY_PROMOTIONS'] })
+      .where(and(eq(mailMessages.mailboxAccountId, mailboxId)));
+    await db
+      .update(ruleMatchLog)
+      .set({ intentApplied: true, resolvedAt: NOW })
+      .where(eq(ruleMatchLog.mailboxAccountId, mailboxId));
+
+    // Sweep 2 (next delta window, nothing new in INBOX) — the rule
+    // still MATCHES the sender, but acting would be a 0-affected no-op,
+    // so no new approved row is inserted. Without this gate every
+    // 5-min window re-wrote rule_match_log + action_jobs +
+    // "archived 0" activity rows forever.
+    const second = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(second.activeMatches).toBe(0);
+    expect(second.activeSkippedNotActionable).toBeGreaterThan(0);
+    const afterSecond = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(
+        and(eq(ruleMatchLog.mailboxAccountId, mailboxId), eq(ruleMatchLog.senderKey, senderKey)),
+      );
+    expect(afterSecond).toHaveLength(1); // still just sweep 1's row
+
+    // New mail arrives → sender is actionable again → sweep 3 writes a
+    // fresh approved row. The D100 re-trigger semantics survive the gate.
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'm-new-2',
+      providerThreadId: 'thread-new-2',
+      senderKey,
+      subject: 'Deals again',
+      snippet: 'more deals',
+      labelIds: ['INBOX', 'UNREAD', 'CATEGORY_PROMOTIONS'],
+      isUnread: true,
+      internalDate: NOW,
+    });
+    const third = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(third.activeMatches).toBe(1);
+    const afterThird = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(
+        and(eq(ruleMatchLog.mailboxAccountId, mailboxId), eq(ruleMatchLog.senderKey, senderKey)),
+      );
+    expect(afterThird).toHaveLength(2);
+  });
+
+  it('unsubscribe rules skip senders already carrying the one-way unsubscribe policy', async () => {
+    const db = await freshDb();
+    const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');
+    // Swap the enabled rule: archive preset off, noisy-unsub preset on.
+    await db
+      .update(automationRules)
+      .set({ enabled: false })
+      .where(eq(automationRules.mailboxAccountId, mailboxId));
+    await db
+      .update(automationRules)
+      .set({ enabled: true, mode: 'active' })
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mailboxId),
+          eq(automationRules.presetKey, 'auto_unsubscribe_noisy'),
+        ),
+      );
+    await db
+      .update(triageDecisions)
+      .set({ verdict: 'unsubscribe', confidence: '0.95' })
+      .where(eq(triageDecisions.mailboxAccountId, mailboxId));
+    // The sender already unsubscribed (one-way projection, D58).
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      policyType: 'unsubscribe',
+    });
+
+    const { applyAdd } = await runSyncDelta(db, mailboxId, knownSenderDelta());
+    const [, jobData] = applyAdd.mock.calls[0] as [
+      string,
+      { mailboxAccountId: string; triggeredAtMs: number },
+    ];
+    const { chain, actionAdd } = buildChain(db);
+    const result = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+
+    // Matcher fires, gate skips: no approved row, no action sweep —
+    // previously this re-wrote a match row every sweep just for the
+    // action worker's already-unsubscribed guard to no-op it.
+    expect(result.activeMatches).toBe(0);
+    expect(result.activeSkippedNotActionable).toBeGreaterThan(0);
+    expect(actionAdd).not.toHaveBeenCalled();
+    const matches = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.mailboxAccountId, mailboxId));
+    expect(matches).toHaveLength(0);
   });
 
   it('a failing delta trigger is swallowed — the sync run still succeeds (best-effort)', async () => {

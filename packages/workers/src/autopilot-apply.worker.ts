@@ -56,6 +56,21 @@ export interface AutopilotApplyJobResult {
   observeMatches: number;
   /** Subset of `matchesWritten` that wrote with `mode_at_match='active'`. */
   activeMatches: number;
+  /**
+   * Active-mode matches SKIPPED because acting would be a no-op: label
+   * verbs (archive/later) with zero INBOX messages for the sender, or
+   * an unsubscribe verb for a sender already carrying the one-way
+   * `policy_type='unsubscribe'` projection. Without this gate the
+   * delta-triggered cadence (D100) re-executes the full match set as
+   * 0-affected actions every sweep — unbounded `rule_match_log` /
+   * `action_jobs` / `activity_log` growth and an Activity feed full of
+   * "archived 0" noise. New mail flips the sender back to actionable
+   * (INBOX count > 0), so the D100 re-trigger semantics are preserved.
+   * Observe-mode suggestions are NOT gated: the pending-dedup index
+   * already bounds them, and a suggestion is meaningful even when the
+   * inbox is momentarily clear.
+   */
+  activeSkippedNotActionable: number;
   /** Senders considered (after the protect-filter). */
   sendersConsidered: number;
   /** Wall-clock ms. */
@@ -163,6 +178,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         matchesWritten: 0,
         observeMatches: 0,
         activeMatches: 0,
+        activeSkippedNotActionable: 0,
         sendersConsidered: 0,
         durationMs: Date.now() - startedAt,
       };
@@ -177,6 +193,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     let matchesWritten = 0;
     let observeMatches = 0;
     let activeMatches = 0;
+    let activeSkippedNotActionable = 0;
     let rulesEvaluated = 0;
     let rulesFailed = 0;
     let rulesSkippedMalformed = 0;
@@ -228,10 +245,22 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       try {
         rulesEvaluated += 1;
         const matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
-        for (const { senderKey, signals, decision } of eligible) {
+        for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of eligible) {
           const input: PresetInput = { signals, triageDecision: decision };
           const result = def.match(input, threshold);
           if (!result.matched) continue;
+          // Active-mode actionability gate (see the
+          // `activeSkippedNotActionable` docstring): skip the insert
+          // when executing the verb would be a 0-affected no-op.
+          // Observe-mode suggestions pass through — the pending-dedup
+          // index bounds those.
+          if (modeAtMatch === 'active') {
+            const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
+            if (!actionable) {
+              activeSkippedNotActionable += 1;
+              continue;
+            }
+          }
           // Confidence stored on the match row: the engine's current
           // confidence if a decision row exists; otherwise the rule's
           // threshold (or 0 for non-threshold presets) as a stable default.
@@ -345,6 +374,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       matchesWritten,
       observeMatches,
       activeMatches,
+      activeSkippedNotActionable,
       sendersConsidered: eligible.length,
       durationMs: Date.now() - startedAt,
     };
