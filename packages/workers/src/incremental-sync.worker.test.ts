@@ -243,6 +243,17 @@ describe('IncrementalSyncWorker', () => {
       new Map(),
     );
 
+    // Seed a prior terminal-failure marker: a successful no-op run must
+    // clear it (the guarded cursor update only clears on ADVANCE), or
+    // the FE completion watch would keep fail-fasting on a stale stamp.
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date('2026-07-01T00:00:00Z'),
+        lastIncrementalErrorCode: 'GMAIL_HISTORY_GONE',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
     const before = await db
       .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
       .from(providerSyncState)
@@ -262,6 +273,9 @@ describe('IncrementalSyncWorker', () => {
     expect(state!.lastSyncedAt).not.toBeNull();
     // Cursor untouched — only the freshness stamp moved.
     expect(state!.lastHistoryId).toBe(1000n);
+    // Success supersedes the failure marker.
+    expect(state!.lastIncrementalErrorAt).toBeNull();
+    expect(state!.lastIncrementalErrorCode).toBeNull();
   });
 
   it('idempotent on redelivered `messagesAdded` — second run does not double-count totalReceived', async () => {

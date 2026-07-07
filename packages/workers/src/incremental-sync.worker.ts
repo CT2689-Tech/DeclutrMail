@@ -354,10 +354,17 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // "nothing new" case where the cursor guard above matches no row.
     // The Sync-now completion watch (D38/D224) compares this value
     // against its pre-click baseline, so a no-op sync must still move
-    // it or the FE could never confirm the run finished.
+    // it or the FE could never confirm the run finished. A success also
+    // clears any prior incremental terminal-failure marker (the guarded
+    // cursor update above only does so when the cursor ADVANCES).
     await this.deps.db
       .update(providerSyncState)
-      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+      .set({
+        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
+        lastIncrementalErrorAt: null,
+        lastIncrementalErrorCode: null,
+      })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
 
     return {

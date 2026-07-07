@@ -68,6 +68,17 @@ export const SyncStatusSchema = z
      * message-derived data, so the §2.1 posture is unchanged.
      */
     last_synced_at: z.string().datetime().nullable().optional(),
+    /**
+     * Terminal INCREMENTAL failure marker
+     * (`provider_sync_state.last_incremental_error_at/_code`). Set when
+     * an incremental run dead-letters WITHOUT flipping
+     * `readiness_status` (initial sync owns that); cleared by the next
+     * successful run. The Sync-now completion watch ends early with an
+     * error toast when this stamp moves — otherwise a failed run would
+     * leave the user waiting on a completion that never comes.
+     */
+    last_sync_error_at: z.string().datetime().nullable().optional(),
+    last_sync_error_code: z.string().min(1).nullable().optional(),
   })
   .strict();
 

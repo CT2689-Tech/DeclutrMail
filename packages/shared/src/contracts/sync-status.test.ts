@@ -78,6 +78,33 @@ describe('SyncStatusSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts the incremental failure pair (at + code), null, or omitted', () => {
+    const withError = SyncStatusSchema.parse({
+      ...VALID_READY,
+      last_sync_error_at: '2026-07-07T18:10:00.000Z',
+      last_sync_error_code: 'GMAIL_HISTORY_GONE',
+    });
+    expect(withError.last_sync_error_code).toBe('GMAIL_HISTORY_GONE');
+
+    const cleared = SyncStatusSchema.parse({
+      ...VALID_READY,
+      last_sync_error_at: null,
+      last_sync_error_code: null,
+    });
+    expect(cleared.last_sync_error_at).toBeNull();
+
+    expect(SyncStatusSchema.parse(VALID_READY).last_sync_error_at).toBeUndefined();
+  });
+
+  it('rejects a non-datetime last_sync_error_at and an empty error code', () => {
+    expect(SyncStatusSchema.safeParse({ ...VALID_READY, last_sync_error_at: 'nope' }).success).toBe(
+      false,
+    );
+    expect(SyncStatusSchema.safeParse({ ...VALID_READY, last_sync_error_code: '' }).success).toBe(
+      false,
+    );
+  });
+
   it('rejects progress_pct > 100', () => {
     const result = SyncStatusSchema.safeParse({
       ...VALID_SYNCING,

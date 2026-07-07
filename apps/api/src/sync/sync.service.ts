@@ -256,6 +256,8 @@ export class SyncService {
         progressPct: providerSyncState.progressPct,
         errorCode: providerSyncState.errorCode,
         lastSyncedAt: providerSyncState.lastSyncedAt,
+        lastIncrementalErrorAt: providerSyncState.lastIncrementalErrorAt,
+        lastIncrementalErrorCode: providerSyncState.lastIncrementalErrorCode,
       })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
@@ -272,6 +274,11 @@ export class SyncService {
       // Wall-clock freshness for the "synced Xm ago" label + the
       // Sync-now completion watch. Null until the first run finishes.
       last_synced_at: row.lastSyncedAt === null ? null : row.lastSyncedAt.toISOString(),
+      // Incremental terminal-failure marker — lets the completion watch
+      // fail fast instead of waiting on a stamp that will never move.
+      last_sync_error_at:
+        row.lastIncrementalErrorAt === null ? null : row.lastIncrementalErrorAt.toISOString(),
+      last_sync_error_code: row.lastIncrementalErrorCode,
     } as const;
 
     // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,

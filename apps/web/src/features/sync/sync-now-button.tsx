@@ -29,14 +29,20 @@ const { color, font, radius } = tokens;
  *     running. `aria-busy`, label "Syncing…", disabled.
  *
  * Completion watch: the 202 from `POST /v1/sync/incremental` only means
- * "queued" — it says nothing about the run finishing. On success we
- * snapshot the pre-click `last_synced_at` and re-poll `GET /v1/sync/
- * status` every 3s until the timestamp MOVES (worker stamps it on every
- * completed run, including no-op runs), then toast "Inbox up to date"
- * and re-invalidate the feature caches so fresh rows actually appear.
+ * "queued" — it says nothing about the run finishing. Before the
+ * mutate, the baseline (`last_synced_at` + `last_sync_error_at`) is
+ * snapshotted from a FRESH refetch (the cached value can be hours old
+ * once ready, and pre-click drift would false-positive the first
+ * poll). Then the watch re-polls `GET /v1/sync/status` every 3s:
+ *   - success — `last_synced_at` moved (worker stamps it on every
+ *     completed run, no-ops included) → "Inbox up to date" + feature
+ *     caches re-invalidated so fresh rows actually appear;
+ *   - failure — `last_sync_error_at` moved (a dead-lettered run never
+ *     stamps the success timestamp) → error toast, watch ends early
+ *     instead of waiting on a completion that never comes;
+ *   - timeout — 90s with neither → honest "still running" note.
  * Baseline COMPARISON (not wall-clock) sidesteps client/server clock
- * skew. A 90s timeout downgrades to an "it'll finish in the background"
- * toast rather than spinning forever.
+ * skew.
  *
  * Privacy posture: the button NEVER renders message-derived data —
  * the cursor + last-history-id never reach the UI string; the freshness
@@ -64,18 +70,39 @@ function relAge(iso: string, nowMs: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Pre-click snapshot the watch compares against. */
+interface WatchBaseline {
+  synced: string | null;
+  error: string | null;
+}
+
+/**
+ * `current` is STRICTLY newer than the baseline. Both values are
+ * server-generated stamps, so this never mixes clocks. Strictly-newer
+ * (not merely different) keeps a stale render that still carries a
+ * PRE-baseline value from reading as a completion.
+ */
+function movedPast(current: string | null, base: string | null): boolean {
+  if (current === null) return false;
+  if (base === null) return true;
+  return new Date(current).getTime() > new Date(base).getTime();
+}
+
 export function SyncNowButton() {
   const status = useSyncStatus();
   const sync = useSyncNow('app_shell');
   const qc = useQueryClient();
 
-  // Pre-click `last_synced_at` snapshot the watch compares against.
-  const baselineRef = useRef<string | null>(null);
+  const baselineRef = useRef<WatchBaseline | null>(null);
+  // `arming` covers the pre-mutate baseline refetch; `watching` covers
+  // the post-202 completion poll. Both disable the button.
+  const [arming, setArming] = useState(false);
   const [watching, setWatching] = useState(false);
   // Re-render tick so "2m ago" ages without any data change.
   const [, setTick] = useState(0);
 
   const lastSyncedAt = status.data?.last_synced_at ?? null;
+  const lastErrorAt = status.data?.last_sync_error_at ?? null;
 
   // Age the freshness label once a minute.
   useEffect(() => {
@@ -84,7 +111,8 @@ export function SyncNowButton() {
     return () => clearInterval(t);
   }, [lastSyncedAt]);
 
-  // Watch driver — re-poll status while watching; time out politely.
+  // Watch driver — re-poll status while watching; time out honestly
+  // (we do NOT know the run will finish; a dead worker never stamps).
   useEffect(() => {
     if (!watching) return undefined;
     const poll = setInterval(() => {
@@ -92,7 +120,10 @@ export function SyncNowButton() {
     }, WATCH_POLL_MS);
     const timeout = setTimeout(() => {
       setWatching(false);
-      toast('Sync is taking longer than usual — it will finish in the background.', 'info');
+      toast(
+        'Sync is taking longer than expected — the “synced” time above will update when it completes.',
+        'info',
+      );
     }, WATCH_TIMEOUT_MS);
     return () => {
       clearInterval(poll);
@@ -100,11 +131,22 @@ export function SyncNowButton() {
     };
   }, [watching, qc]);
 
-  // Completion detector — `last_synced_at` moved past the baseline.
+  // Outcome detector. Success = `last_synced_at` moved past the
+  // baseline. Failure = the incremental error stamp moved (a
+  // dead-lettered run never stamps `last_synced_at`, so without this
+  // the watch would wait on a completion that never comes).
   useEffect(() => {
     if (!watching) return;
-    if (lastSyncedAt === null) return;
-    if (lastSyncedAt === baselineRef.current) return;
+    const baseline = baselineRef.current;
+    if (baseline === null) return;
+
+    if (movedPast(lastErrorAt, baseline.error)) {
+      setWatching(false);
+      toast('Sync failed — check the mailbox connection and try again.', 'danger');
+      return;
+    }
+
+    if (!movedPast(lastSyncedAt, baseline.synced)) return;
     setWatching(false);
     toast('Inbox up to date — synced just now.', 'success');
     // The 202-time invalidation in `useSyncNow` fires before the worker
@@ -114,14 +156,41 @@ export function SyncNowButton() {
     void qc.invalidateQueries({ queryKey: ['activity'] });
     void qc.invalidateQueries({ queryKey: ['brief'] });
     void qc.invalidateQueries({ queryKey: ['sender-detail'] });
-  }, [watching, lastSyncedAt, qc]);
+  }, [watching, lastSyncedAt, lastErrorAt, qc]);
 
   // Only render when the mailbox is past initial-sync. Pre-ready states
   // (`queued` / `syncing`) already render the sync-gate.
   const ready = status.data?.readiness_status === 'ready';
   if (!ready) return null;
 
-  const busy = sync.isPending || watching;
+  const busy = arming || sync.isPending || watching;
+
+  const startSync = async () => {
+    if (busy) return;
+    setArming(true);
+    // Baseline from a FRESH read, not the mounted cache: the status
+    // query stops refetching once ready, so the cached stamp can be
+    // hours old — an unrelated drift-sweep in between would otherwise
+    // false-positive the completion check on the first poll.
+    let fresh: WatchBaseline = { synced: lastSyncedAt, error: lastErrorAt };
+    try {
+      const r = await status.refetch();
+      if (r.data) {
+        fresh = {
+          synced: r.data.last_synced_at ?? null,
+          error: r.data.last_sync_error_at ?? null,
+        };
+      }
+    } catch {
+      // Refetch failure → fall back to the cached snapshot; the 90s
+      // timeout still bounds the worst case.
+    }
+    baselineRef.current = fresh;
+    sync.mutate(undefined, {
+      onSuccess: () => setWatching(true),
+      onSettled: () => setArming(false),
+    });
+  };
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
@@ -141,10 +210,7 @@ export function SyncNowButton() {
       )}
       <button
         type="button"
-        onClick={() => {
-          baselineRef.current = lastSyncedAt;
-          sync.mutate(undefined, { onSuccess: () => setWatching(true) });
-        }}
+        onClick={() => void startSync()}
         disabled={busy}
         aria-busy={busy}
         aria-label="Check Gmail for new emails"
