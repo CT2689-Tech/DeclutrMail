@@ -6,11 +6,8 @@
 // packages/shared/src/components/ and re-points both consumers' imports
 // in the same commit.
 //
-// Wired in by:
-//   - feat/d038-senders-list-uplift-d  (consumes InboxStoryHero,
-//     KpiStrip, intentOf/groupByIntent) — pending PR
-//   - feat/d039-senders-detail-uplift-d  (consumes KpiStrip,
-//     DecisionTimeline) — pending PR
+// InboxStoryHero + WeeklyProgress deleted in the 2026-07-04 dead-code
+// sweep (retired by spec v1.2 Decision 4, zero consumers).
 
 export { intentOf, groupByIntent, INTENT_ORDER, INTENT_META } from './intent';
 export type { SenderIntent, IntentMeta, IntentBucket } from './intent';
@@ -18,11 +15,5 @@ export type { SenderIntent, IntentMeta, IntentBucket } from './intent';
 export { KpiStrip } from './kpi-strip';
 export type { KpiStripProps, KpiCellProps } from './kpi-strip';
 
-export { InboxStoryHero } from './inbox-story-hero';
-export type { InboxStoryHeroProps } from './inbox-story-hero';
-
 export { DecisionTimeline } from './decision-timeline';
 export type { DecisionTimelineProps, TimelineItem } from './decision-timeline';
-
-export { WeeklyProgress } from './weekly-progress';
-export type { WeeklyProgressProps } from './weekly-progress';

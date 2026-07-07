@@ -78,26 +78,6 @@ function renderScreenWithToasts() {
   );
 }
 
-/** Stock weekly-hero response (non-Monday, empty slices) — the bare
- * minimum the screen needs to render without errors. Per-test handlers
- * override this when the hero is what's under test. */
-function weeklyHeroHandler(
-  overrides: Partial<{ isMonday: boolean; slices: unknown[]; weekOf: string }> = {},
-) {
-  return {
-    method: 'GET' as const,
-    path: '/api/senders/weekly-hero',
-    respond: () =>
-      jsonOk({
-        data: {
-          isMonday: overrides.isMonday ?? false,
-          weekOf: overrides.weekOf ?? '2026-05-25',
-          slices: overrides.slices ?? [],
-        },
-      }),
-  };
-}
-
 /**
  * Stock /api/senders/summary response (#145, real-data counts). Defaults
  * match a small, single-sender mailbox so tests that don't care about
@@ -173,7 +153,7 @@ function oneSenderHandler() {
 
 describe('SendersScreen — edge states', () => {
   beforeEach(() => {
-    installFetchStub([weeklyHeroHandler()]);
+    installFetchStub([]);
     // Reset the per-session view to grid (D49 — default) so a prior
     // test that flipped the toggle doesn't leak into the next.
     useSendersStore.setState({ view: 'grid' });
@@ -183,7 +163,6 @@ describe('SendersScreen — edge states', () => {
   it('shows a loading skeleton while the initial fetch is in-flight', () => {
     // Handler that never resolves keeps the query in pending state.
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -197,7 +176,6 @@ describe('SendersScreen — edge states', () => {
 
   it('renders the error branch with a retry CTA on 500', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -218,7 +196,6 @@ describe('SendersScreen — edge states', () => {
 
   it('renders the empty-mailbox state when the API returns an empty page', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -237,52 +214,6 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
   });
 
-  // Retired per spec v1.2 Decision 4 — Editorial Hero (InboxStoryHero) +
-  // WeeklyHero were removed from Senders; Senders is now a lean power
-  // tool (header → KPI strip → chips/sort → grid). "emails reached you"
-  // copy lived on InboxStoryHero, no longer rendered. Test kept for
-  // history; tracker entry in FOUNDER-FOLLOWUPS covers rewrite as a
-  // KPI-strip-only assertion if useful.
-  it.skip('renders the editorial hero + KPI strip when the list resolves', async () => {
-    // Two senders × monthlyVolume 30 = 60 emails reached you.
-    // Variant D hero (per ADR-0011) frames the user's mailbox in
-    // narrative form rather than the prior "N senders mail you" header.
-    installFetchStub([
-      weeklyHeroHandler(),
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW, { ...ROW, id: 'b', displayName: 'Sender B' }],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    renderScreen();
-    // Hero story line — "60 emails reached you." (totalMonthly = 60).
-    // React renders the number inside a <span> so the text is split;
-    // match the trailing plain text and assert the count separately.
-    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.getByText('60')).toBeInTheDocument();
-    // Breadcrumb names the active mailbox (D116) — not a static "default
-    // mailbox" — so a multi-mailbox switch is visible.
-    expect(screen.getByText(/Senders · me@example\.com/)).toBeInTheDocument();
-    // Hero meta strip — "Active senders" replaces the dropped "Reading time / mo"
-    // (that cell rode an uncalibrated coefficient on top of the broken
-    // per-sender-latest-month sum and was dropped in the D38 rewrite).
-    expect(screen.getByText(/Active senders/i)).toBeInTheDocument();
-    // KPI strip — "Noise reducible" is unique to the strip.
-    expect(screen.getByText(/Noise reducible/i)).toBeInTheDocument();
-    // Intent filter chips replaced the Gmail-category chips.
-    expect(screen.getByRole('button', { name: /^All\b/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Clean up/ })).toBeInTheDocument();
-  });
-
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
     // The founder's bug: searching "dealskhoj" returned nothing because the
     // FE filtered only the loaded ≤50-row page. With server-side search the
@@ -298,7 +229,6 @@ describe('SendersScreen — edge states', () => {
     };
     let lastQ: string | null = null;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -346,7 +276,6 @@ describe('SendersScreen — edge states', () => {
     };
     let lastReplied: string | null = null;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -383,7 +312,6 @@ describe('SendersScreen — edge states', () => {
 
   it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -412,7 +340,6 @@ describe('SendersScreen — edge states', () => {
     let archivePosted = false;
     let undoPosted = false;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -506,7 +433,6 @@ describe('SendersScreen — edge states', () => {
     // dead Undo (the dealskhoj.in class of bug).
     let statusPolled = false;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -571,7 +497,6 @@ describe('SendersScreen — edge states', () => {
     // a no-op (the primary dealskhoj.in fix; the execution guard is backup).
     let archivePosted = false;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -623,7 +548,6 @@ describe('SendersScreen — edge states', () => {
     // and still let the user proceed (the worker resolves the real set).
     let archivePosted = false;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -690,7 +614,6 @@ describe('SendersScreen — edge states', () => {
     // for the same sender. The real inbox count must gate the toggle. But
     // Unsubscribe is future-only, so a 0 count must NOT block its confirm.
     installFetchStub([
-      weeklyHeroHandler(),
       oneSenderHandler(),
       {
         method: 'GET',
@@ -722,7 +645,6 @@ describe('SendersScreen — edge states', () => {
     // into Archive/Delete past via the chip row, which surfaces the
     // time-window chip row underneath when active.
     installFetchStub([
-      weeklyHeroHandler(),
       oneSenderHandler(),
       {
         method: 'GET',
@@ -752,7 +674,6 @@ describe('SendersScreen — edge states', () => {
     // ACTUAL sample length, trimmed to the bucket total, even when the
     // wire returns more subjects than the count (drift defense).
     installFetchStub([
-      weeklyHeroHandler(),
       oneSenderHandler(),
       {
         method: 'GET',
@@ -818,7 +739,6 @@ describe('SendersScreen — edge states', () => {
 
   it('ignores the verb shortcut while a modal is already open', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -845,7 +765,7 @@ describe('SendersScreen — edge states', () => {
   });
 
   it('honors L and U shortcuts too (advertised aria-keyshortcuts are truthful)', async () => {
-    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    installFetchStub([oneSenderHandler()]);
     renderScreen();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -860,7 +780,7 @@ describe('SendersScreen — edge states', () => {
   });
 
   it('does not fire a verb shortcut while typing in the search field', async () => {
-    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    installFetchStub([oneSenderHandler()]);
     renderScreen();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -872,7 +792,7 @@ describe('SendersScreen — edge states', () => {
   });
 
   it('does not fire a verb shortcut while the cheatsheet is open', async () => {
-    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    installFetchStub([oneSenderHandler()]);
     renderScreen();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -884,7 +804,7 @@ describe('SendersScreen — edge states', () => {
   });
 
   it('does not stack the cheatsheet on top of an open preview', async () => {
-    installFetchStub([weeklyHeroHandler(), oneSenderHandler()]);
+    installFetchStub([oneSenderHandler()]);
     renderScreen();
 
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
@@ -908,7 +828,6 @@ describe('SendersScreen — edge states', () => {
       protectionFlags: { ...ROW.protectionFlags, isProtected: true, protectionReason: 'manual' },
     };
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1016,7 +935,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     let bulkBody: unknown = null;
     let undoPosted = false;
     installFetchStub([
-      weeklyHeroHandler(),
       TWO_SENDER_LIST,
       BULK_PREVIEW_OK,
       {
@@ -1125,7 +1043,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
     let enqueueAttempted = false;
     installFetchStub([
-      weeklyHeroHandler(),
       TWO_SENDER_LIST,
       BULK_PREVIEW_OK,
       {
@@ -1152,7 +1069,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it('surfaces a partial batch failure but keeps the succeeded portion undoable', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       TWO_SENDER_LIST,
       BULK_PREVIEW_OK,
       {
@@ -1202,7 +1118,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it('routes bulk Delete through the destructive preview and blocks confirm when the preview fails', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       TWO_SENDER_LIST,
       {
         method: 'POST',
@@ -1224,7 +1139,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   });
 
   it('offers Delete on the selection bar with the registry shortcut advertised', async () => {
-    installFetchStub([weeklyHeroHandler(), TWO_SENDER_LIST, BULK_PREVIEW_OK]);
+    installFetchStub([TWO_SENDER_LIST, BULK_PREVIEW_OK]);
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     const deleteBtn = screen.getByTitle('Delete (D)');
@@ -1245,7 +1160,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // became "1 sender" in the sheet when one was protected. The preview
     // must state the narrowing, never leave the user to spot it.
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1280,7 +1194,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it('toasts instead of opening a preview when the whole selection is protected', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1320,100 +1233,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 });
 
 /**
- * Weekly Hero (D47, D48) + grid/table toggle (D49). These tests
- * exercise the BE-driven Hero visibility branch and the per-session
- * view toggle.
+ * Grid/table toggle (D49) + cursor pagination (D202). These tests
+ * exercise the per-session view toggle and "Load more".
  */
-describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
+describe('SendersScreen — view toggle (D49)', () => {
   beforeEach(() => {
     useSendersStore.setState({ view: 'grid' });
   });
   afterEach(() => resetFetchStub());
-
-  const HERO_SLICE = {
-    kind: 'high_confidence' as const,
-    totalCount: 3,
-    senders: [
-      {
-        id: 'a',
-        displayName: 'Sender A',
-        email: 'a@example.com',
-        domain: 'example.com',
-        monthlyVolume: 30,
-        readRate: 0.05,
-        sparkline: new Array<number>(12).fill(0),
-      },
-    ],
-  };
-
-  // Retired per spec v1.2 Decision 4 — WeeklyHero moves to Brief
-  // (separate ADR + PR). Senders no longer renders it.
-  it.skip('shows the Weekly Hero only when isMonday=true (D47)', async () => {
-    installFetchStub([
-      // Hero present on a Monday with at least one slice.
-      {
-        method: 'GET',
-        path: '/api/senders/weekly-hero',
-        respond: () =>
-          jsonOk({
-            data: { isMonday: true, weekOf: '2026-05-11', slices: [HERO_SLICE] },
-          }),
-      },
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    // The live Hero carries a stable `data-testid` for this kind of
-    // visibility assertion — surface-not-text contract.
-    await waitFor(() => expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument());
-  });
-
-  // Retired per spec v1.2 Decision 4 — WeeklyHero moves to Brief.
-  it.skip('shows the suggestions rail every day when slices exist (was Monday-only per D47)', async () => {
-    // The Monday-only gate was dropped — the suggestions rail is the
-    // founder-validated premium surface and BE recomputes slices on
-    // every request, so it makes more sense to always surface when
-    // slices >= MIN. Only an empty slices array OR a session-level
-    // `Not now` dismissal hides it now.
-    installFetchStub([
-      weeklyHeroHandler({ isMonday: false, slices: [HERO_SLICE] }),
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.getByTestId('weekly-hero-live')).toBeInTheDocument();
-  });
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
     const ROW_B = {
@@ -1423,7 +1250,6 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
       email: 'b@example.com',
     };
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1460,7 +1286,6 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
 
   it('does not render "Load more" when the first page is the last (hasMore=false)', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1480,39 +1305,8 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
     expect(screen.queryByRole('button', { name: /load more senders/i })).not.toBeInTheDocument();
   });
 
-  // Retired per spec v1.2 Decision 4 — WeeklyHero moves to Brief; empty-
-  // card guard moves with it.
-  it.skip('hides the Hero on Monday when every slice has < 3 senders (D48 empty-card guard)', async () => {
-    installFetchStub([
-      // BE responds with isMonday=true but slices=[] — the empty-card
-      // guard already happened server-side.
-      weeklyHeroHandler({ isMonday: true, slices: [] }),
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.queryByTestId('weekly-hero-live')).not.toBeInTheDocument();
-  });
-
   it('defaults to grid view and flips to table when the toggle is clicked (D49)', async () => {
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1544,152 +1338,22 @@ describe('SendersScreen — Weekly Hero (D47, D48) + view toggle (D49)', () => {
 });
 
 /**
- * Real-data counts mandate (#145) — the hero, KPI strip, and intent chips
- * MUST reflect mailbox-wide aggregates from `/api/senders/summary`, NOT
- * the ≤50-row loaded page. Each test installs ONE eligible sender on the
- * list but a much larger summary; if a number under test reads the loaded
- * page, it'll show 1 / 30 instead of the summary's larger figure and the
- * assertion will fail.
+ * Real-data counts mandate (#145) — headline figures MUST reflect
+ * mailbox-wide aggregates from the server (`?q=` forwarded to both the
+ * list and summary endpoints; hero count from `meta.query.totalMatching`),
+ * never the ≤50-row loaded page.
  */
 describe('SendersScreen — summary-driven aggregates (#145)', () => {
   beforeEach(() => {
-    installFetchStub([weeklyHeroHandler()]);
+    installFetchStub([]);
     useSendersStore.setState({ view: 'grid' });
   });
   afterEach(() => resetFetchStub());
-
-  // Pre-existing failure on feat/d038-prod-ready-pass tip (e44201d)
-  // before the 2026-06-09 ultra-review fix slate landed. Component KPI
-  // strip + summary hook still wired (useSendersSummary at L204), but
-  // the screen.getByText('7748') never resolves — the summary handler
-  // path matches yet the rendered DOM lacks the number. Likely a real-
-  // data-counts seating mismatch after the spec v1.2 D4 retirement of
-  // the editorial hero. Skipped with a follow-up rather than rewritten
-  // here — outside the ultra-review scope.
-  it.skip('KPI "Senders" reflects mailbox-wide totals (NOT loaded page length)', async () => {
-    // List returns ONE row on the loaded page but advertises a
-    // 7748-sender mailbox via `meta.query.totalMatching` (the BE's
-    // canonical "matching senders" count). Summary mirrors the same
-    // mailbox-wide totals. The pre-#145 code rendered `senders.length`
-    // → 1; the wired-up code reads either source and shows 7748.
-    installFetchStub([
-      weeklyHeroHandler(),
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 50 },
-              query: {
-                totalMatching: 7748,
-                globalMaxTotal: 6471,
-                asOf: '2026-06-01T00:00:00.000Z',
-              },
-            },
-          }),
-      },
-      sendersSummaryHandler({
-        totalSenders: 7748,
-        activeSenders: 493,
-        last30dVolume: 12345,
-        noiseReducible: 32,
-        protected: 50,
-        needsReview: 1500,
-        byBucket: {
-          one_time: 4817,
-          protect: 50,
-          people: 520,
-          needs_review: 172,
-          quiet: 246,
-          dormant: 1624,
-          bulk: 312,
-          other: 7,
-        },
-      }),
-    ]);
-
-    renderScreen();
-    // The mailbox-wide total 7748 renders in both the "All" chip and the
-    // "Senders" KPI cell — both sources route to summary / totalMatching.
-    // Asserting `length >= 2` proves BOTH surfaces re-bound to the
-    // mailbox-wide source, not the loaded-page count.
-    await waitFor(() => expect(screen.getAllByText('7748').length).toBeGreaterThanOrEqual(2));
-  });
-
-  // See preceding it.skip — same pre-existing KPI-rendering gap.
-  it.skip('KPI strip surfaces summary.activeSenders + summary.needsReview', async () => {
-    // The 8-bucket chip filtering is deferred; the legacy 4-intent chips
-    // remain for visual filtering. Assert the new KPI strip cells route
-    // through the summary instead.
-    installFetchStub([
-      weeklyHeroHandler(),
-      oneSenderHandler(),
-      sendersSummaryHandler({
-        totalSenders: 1050,
-        activeSenders: 433,
-        last30dVolume: 5000,
-        noiseReducible: 28,
-        protected: 42,
-        needsReview: 234,
-        byBucket: {
-          one_time: 100,
-          protect: 42,
-          people: 200,
-          needs_review: 234,
-          quiet: 100,
-          dormant: 250,
-          bulk: 100,
-          other: 24,
-        },
-      }),
-    ]);
-
-    renderScreen();
-    // 433 active senders + 234 needs review — both come ONLY from the summary.
-    await waitFor(() => expect(screen.getAllByText('433').length).toBeGreaterThan(0));
-    expect(screen.getAllByText('234').length).toBeGreaterThan(0);
-  });
-
-  // Retired per spec v1.2 Decision 4 — editorial hero with "N emails
-  // reached you" copy was removed from Senders (InboxStoryHero retired).
-  it.skip('hero "N emails reached you in the last 30 days" uses summary.last30dVolume', async () => {
-    installFetchStub([
-      weeklyHeroHandler(),
-      oneSenderHandler(),
-      sendersSummaryHandler({
-        totalSenders: 100,
-        activeSenders: 50,
-        // Loaded page sums to monthly=30 (ROW). Pre-rewrite the hero
-        // would show 30. After rewrite the hero reads `summary.last30dVolume`.
-        last30dVolume: 99999,
-        noiseReducible: 40,
-        protected: 5,
-        needsReview: 25,
-        byBucket: {
-          one_time: 0,
-          protect: 5,
-          people: 60,
-          needs_review: 25,
-          quiet: 5,
-          dormant: 5,
-          bulk: 0,
-          other: 0,
-        },
-      }),
-    ]);
-
-    renderScreen();
-    await waitFor(() => expect(screen.getByText('99999')).toBeInTheDocument());
-    expect(screen.getByText(/emails reached you in the last 30 days/i)).toBeInTheDocument();
-  });
 
   it('typed search forwards ?q= to both the list AND the summary endpoint', async () => {
     const summaryQ = { value: null as string | null };
     let listQ: string | null = null;
     installFetchStub([
-      weeklyHeroHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -1727,32 +1391,5 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
     });
     await waitFor(() => expect(summaryQ.value).toBe('foo'), { timeout: 2000 });
     expect(listQ).toBe('foo');
-  });
-
-  // Retired per spec v1.2 Decision 4 — editorial hero gone, so the
-  // in-flight fallback assertion ("emails reached you" copy from loaded
-  // page) no longer has a render target.
-  it.skip('falls back to loaded-page derivation while the summary is in flight', async () => {
-    // Summary never resolves — the screen MUST still render with loaded-page
-    // numbers, never blank. Edge state coverage per D211/D212.
-    installFetchStub([
-      weeklyHeroHandler(),
-      oneSenderHandler(),
-      {
-        method: 'GET',
-        path: '/api/senders/summary',
-        respond: () => new Promise<Response>(() => {}),
-      },
-    ]);
-
-    renderScreen();
-    // Hero renders with the loaded-page derivation — `30` from ROW.monthly
-    // appears in the hero story alongside "emails reached you". Multiple
-    // `30` text nodes can exist on the screen (e.g. the sender card's
-    // per-month volume), so just assert the hero anchor renders and the
-    // number appears at least once — both prove the fallback path runs
-    // without blanking the screen.
-    await waitFor(() => expect(screen.getByText(/emails reached you/i)).toBeInTheDocument());
-    expect(screen.getAllByText('30').length).toBeGreaterThan(0);
   });
 });

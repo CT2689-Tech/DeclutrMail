@@ -15,22 +15,18 @@ import {
   canDelete,
   canLater,
   canUnsubscribe,
-  detectCohorts,
   isStandingProtected,
   VERB_PAST,
   type ActionRequest,
   type ActionVerb,
-  type Cohort,
-  type ReviewKind,
   type Sender,
 } from './data';
 import { SenderSearch } from './sender-search';
-import { ComposeStrip, type ComposeState } from './compose-strip';
+import { ComposeStrip, hasAnyFilter, type ComposeState } from './compose-strip';
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
-import { ReviewSession, type ReviewResult } from './review-session';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { useSenders } from './api/use-senders';
@@ -59,14 +55,8 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
 import { ViewToggle } from './view-toggle';
 import { useSendersStore } from './store';
-import type {
-  SenderListDirection,
-  SenderListRow,
-  SenderListSort,
-  SenderSummaryDto,
-} from '@/lib/api/senders';
+import type { SenderListRow } from '@/lib/api/senders';
 import { SenderTable, type SenderTableVerb } from './sender-table';
-import { groupByIntent, intentOf, INTENT_META, type SenderIntent } from './uplift-d';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -113,22 +103,23 @@ const VERB_BY_KEY: Record<string, 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'
 let receiptSeq = 0;
 
 /**
- * The Senders screen — Variant D weekly-cleanup-cockpit composition.
+ * The Senders screen — lean power-surface composition (spec v1.2).
  *
- * Composition (per ~/.claude/plans/how-can-we-uplift-foamy-cloud.md §D1):
+ * Composition:
  *   1. Brand header + search + +Add VIP
- *   2. InboxStoryHero — editorial framing + outcome CTA + trust line
- *   3. WeeklyProgress — retention loop (hidden when no decisions queued)
- *   4. KpiStrip — Senders / Noise reducible / Time cost / Protected / Needs review
- *   5. CohortRail — bulk-review suggestions
- *   6. Intent filter chips — All / Clean up / Move later / Protect / People
- *   7. Intent-grouped tables (per ADR-0012; replaces Gmail-category groups)
+ *   2. Hero number (`meta.query.totalMatching`, BE-honest) + ComposeStrip
+ *      — multi-axis fact filters + sort (D38); state is URL-backed
+ *   3. Grid of SenderCards (D49 default) or flat-sortable SenderTable
+ *      (ADR-0014), toggled; both share verbs + selection + D226 modal
+ *
+ * The editorial-hero era (InboxStoryHero / WeeklyProgress / CohortRail /
+ * Weekly Hero / intent chip rows) was retired by spec v1.2 Decision 4 —
+ * engagement framing ships on Brief; this screen stays a tool.
  *
  * Data flow (D200): `useSenders()` returns the paginated wire shape;
  * we adapt rows to the `Sender` UI shape via `adaptSenderListRow`.
- * Intent grouping is a pure client-side derivation over the existing
- * `lastReview.verdict` + `protected` fields — no new wire data, no
- * schema migration, no ML (D222 honored).
+ * Search + compose narrowing are SERVER-side (#145 / D38) — the loaded
+ * pages are the visible set; no client re-filtering.
  *
  * Edge states (D211/D212): loading / error / empty are first-class
  * branches handled inline below.
@@ -215,7 +206,6 @@ export function SendersScreen() {
   // in parallel with the list (TanStack will not block the screen on it);
   // a missing/in-flight summary falls back to loaded-page derivations.
   const summaryQuery = useSendersSummary({ q: debouncedQuery });
-  const summary = summaryQuery.data?.data;
   // Surface a sustained summary fetch failure so headline KPIs/hero/chips
   // do NOT silently fall back to the loaded-page derivation — the very
   // bug #145 set out to fix. Boolean flag drives a small "approximate"
@@ -252,7 +242,6 @@ export function SendersScreen() {
       onLoadMore={() => void sendersQuery.fetchNextPage()}
       query={query}
       onQueryChange={setQuery}
-      summary={summary}
       summaryFailed={summaryFailed}
       totalMatching={totalMatching}
       filterCounts={filterCounts}
@@ -279,7 +268,6 @@ function SendersScreenContent({
   onLoadMore,
   query,
   onQueryChange: setQuery,
-  summary: _summary,
   summaryFailed,
   totalMatching,
   filterCounts,
@@ -298,17 +286,10 @@ function SendersScreenContent({
   query: string;
   onQueryChange: (next: string) => void;
   /**
-   * Mailbox-wide aggregates (#145). When present, drives the hero, KPI
-   * strip, and intent chips. When undefined (initial load / refetch),
-   * the loaded-page derivation is used as a fallback so the screen does
-   * not blank — the summary populates within milliseconds of the list.
-   */
-  summary: SenderSummaryDto | undefined;
-  /**
-   * True when the summary fetch has failed and we are running on the
-   * loaded-page derivation. Drives a small "Live totals approximate"
-   * badge in the KPI strip so the user is not silently shown numbers
-   * derived from ≤50 loaded rows when the mailbox is bigger.
+   * True when the mailbox-wide summary fetch (#145) has failed. Drives
+   * the small "Live totals approximate" banner so the user is not
+   * silently shown numbers derived from ≤50 loaded rows when the
+   * mailbox is bigger.
    */
   summaryFailed: boolean;
   /** D38 — BE-honest count for the active compose (page-1 snapshot). */
@@ -334,14 +315,9 @@ function SendersScreenContent({
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
   const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
-  const [activeIntent, setActiveIntent] = useState<SenderIntent | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
-  const [review, setReview] = useState<{ slice: Sender[]; kind: ReviewKind } | null>(null);
-  // State previously holding doneThisWeek + heroDismissed retired
-  // with the Senders Weekly Hero + WeeklyProgress render (spec v1.2
-  // Decision 4). Engagement loop ships on Brief.
 
   // P6 — real single-sender Archive (D226). `enqueue` fires the action;
   // `activeAction` holds the in-flight handle that `actionStatus` polls to
@@ -492,75 +468,6 @@ function SendersScreenContent({
   // returns to Table without a re-click.
   const isMobile = useIsAtMost('sm');
   const view = isMobile ? 'grid' : storeView;
-  // useWeeklyHero retired from Senders (spec v1.2 Decision 4); the
-  // Weekly Hero now lives on Brief. The hook + its observability
-  // effect move to apps/web/src/features/brief/ in the Brief redesign.
-
-  // CohortRail render removed per spec v1.2 Decision 4. Cohort
-  // detection retained internally for potential resurrect as
-  // "Saved filters" post-launch (no production consumer today).
-  const _cohorts = useMemo(() => detectCohorts(senders), [senders]);
-
-  // Search is now server-side (#145) — `senders` already arrives filtered
-  // by the active `q`, so the base for downstream counts + grouping is
-  // just the loaded set (no client-side re-filtering of a single page).
-  const queryBase = senders;
-
-  // Intent-grouped buckets — replaces the prior Gmail-category groups
-  // per ADR-0012. INTENT_ORDER is honored; empty buckets are kept so
-  // the filter chips show real counts even for empty intents.
-  const intentBuckets = useMemo(() => groupByIntent(queryBase), [queryBase]);
-
-  // Intent chip counts. The chip row currently shows the legacy
-  // 4-intent grouping (Clean up / Move later / Protect / People) for
-  // row-level filtering — that grouping comes from the loaded-page
-  // `groupByIntent` and is used for visual filtering only. Mailbox-wide
-  // chip totals come from `summary.byBucket` (8 buckets) and surface
-  // via the KPI strip + new bucket chips below. The two are coexisting
-  // until the chip-click-to-filter wiring is rewritten to honor the
-  // 8-bucket priority server-side.
-  // intentCounts retained as `_intentCounts` for the in-Grid intent
-  // bucket headers; chip-row consumer retired with the fact-chip
-  // replacement (spec v1.2 Decision 2). Phase 2 PR-FE3 deletes both.
-  const _intentCounts = useMemo<Record<SenderIntent, number>>(() => {
-    const counts: Record<SenderIntent, number> = {
-      cleanup: 0,
-      later: 0,
-      protect: 0,
-      people: 0,
-    };
-    for (const b of intentBuckets) counts[b.intent] = b.items.length;
-    return counts;
-  }, [intentBuckets]);
-
-  // Fact filter chip (spec v1.2 Decision 2 + Decision 3). Replaces the
-  // legacy intent chip row. Each chip is a fact predicate (no inference)
-  // applied client-side over the loaded page; Phase 1 BE adds matching
-  // server-side filter params (`?activity` etc.) so the chip narrows
-  // mailbox-wide. Predicates use existing Sender fields:
-  //   - active   = lastDays <= 30 && monthly > 0
-  //   - quiet    = lastDays > 30 && lastDays <= 180
-  //   - dormant  = lastDays > 180
-  //   - replied  = repliedCount > 0
-  //   - unsub_ready = (proxy) lastReview.verdict === 'unsubscribe' until
-  //                   wire field lands in Phase 1 BE
-  // D38 — fact-chip row, matchFactChip helper, factChipCounts and
-  // factFilteredSenders retired here. The ComposeStrip (above) owns the
-  // multi-axis compose, the BE owns the predicate evaluation, and
-  // `senders` arrives already-filtered for the active scope.
-
-  // Visible groups after the active-intent filter. When `activeIntent` is
-  // null ('All' chip), every non-empty group renders; when set, only that
-  // group renders expanded. Intent grouping retains for visual bucketing
-  // until Phase 2 PR-FE3 retires `intentOf` entirely.
-  const visibleGroups = useMemo(
-    () =>
-      intentBuckets
-        .filter((b) => b.items.length > 0)
-        .filter((b) => activeIntent === null || b.intent === activeIntent),
-    [intentBuckets, activeIntent],
-  );
-
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
@@ -612,42 +519,20 @@ function SendersScreenContent({
     [selected],
   );
 
-  // Visual row orders the range logic walks — grid order is the
-  // BE-sorted loaded list; table order is the same list after the
-  // table's client-side search/intent narrowing (`filterTableRows`).
+  // Visual row orders the range logic walks. Search + compose filters
+  // are server-side (#145 / D38), so the loaded pages ARE the visible
+  // set for both views — grid walks the adapted list, table walks the
+  // same rows in wire shape (it needs `totalReceived` + `lastReview`
+  // verbatim, which the adapter drops).
   const gridOrderedIds = useMemo(() => senders.map((s) => s.id), [senders]);
-  const tableRows = useMemo(
-    () => filterTableRows(wireRows, queryBase, activeIntent, senders),
-    [wireRows, queryBase, activeIntent, senders],
-  );
+  const tableRows = wireRows;
   const tableOrderedIds = useMemo(() => tableRows.map((r) => r.id), [tableRows]);
-
-  // Hero / KPI numbers. The server-side summary (#145) IS the source of
-  // truth for headline figures — `totalMonthly`, `noiseReducible`,
-  // `protectedCount`, `needsReview`, and `cleanupCount` (= byIntent.cleanup)
-  // are all mailbox-wide aggregates. The loaded-page derivation
-  // remains the fallback for the milliseconds before the summary
-  // populates AND for the time-cost / avg-read / estSaved fields, which
-  // still need per-sender read-rate (not on the summary wire).
-  // computeTotals + the local `totals` aggregate retired with the KPI
-  // strip (D38). `summary` still drives the in-flight banner; chip
-  // counts now come from `filterCounts` on the wire.
-
-  // applyCohort retired with CohortRail render (spec v1.2 Decision 4).
-  const _applyCohort = (cohort: Cohort) => {
-    setActiveIntent(null);
-    setQuery('');
-    setSelected(new Set(cohort.ids));
-    toast(`Selected ${cohort.ids.length} senders — choose an action below`, 'info');
-  };
 
   // Search suggestion picked. The BE typeahead spans the whole mailbox,
   // so the chosen sender may not be on the current list page. Set the
-  // query to its name (BE list narrows to that single row) and drop the
-  // intent filter so the row is guaranteed visible.
+  // query to its name (BE list narrows to that single row).
   const onSearchPick = useCallback((s: { id: string; name: string; domain: string }) => {
     setQuery(s.name);
-    setActiveIntent(null);
   }, []);
 
   const performAction = useCallback(
@@ -1447,43 +1332,6 @@ function SendersScreenContent({
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedSenders, requestBulkAction]);
 
-  const closeReview = useCallback(() => setReview(null), []);
-  const applyReview = useCallback(
-    (result: ReviewResult) => {
-      const slice = review?.slice ?? [];
-      setReview(null);
-      // The 'lock' (Protect) bucket was removed with the Protect tracer
-      // tail in `performAction` — ReviewSession itself has no live
-      // opener on this screen (nothing calls `setReview` with a slice),
-      // so the bucket was double-dead: unreachable entry feeding a
-      // fabricated receipt. If ReviewSession is resurrected post-launch
-      // ("Saved filters"), wire 'lock' to `setPolicy({ isProtected:
-      // true })` — never to a verb fire.
-      const buckets: [ActionVerb, Sender[]][] = [
-        ['Unsubscribe', slice.filter((s) => result.decisions[s.id] === 'unsub')],
-        ['Later', slice.filter((s) => result.decisions[s.id] === 'later')],
-      ];
-      // Destructive buckets route through `requestAction` so the
-      // mandatory D226 preview gates the mutation — `performAction`
-      // directly would skip the preview and (post-D52) reach the REAL
-      // bulk pipeline. The preview modal owns the historic-mail choice
-      // (secondary chip row), superseding the session's archiveHistoric
-      // flag. `requestAction` previews ONE request at a time, so a
-      // multi-bucket result keeps only the last destructive bucket
-      // pending — conservative: nothing ever fires un-previewed.
-      for (const [verb, list] of buckets) {
-        if (list.length === 0) continue;
-        requestAction({ verb, senders: list });
-      }
-    },
-    [review, requestAction],
-  );
-
-  // onStartReview retired with InboxStoryHero render (spec v1.2
-  // Decision 4). Brief screen reframes the "start review" flow as
-  // its own hero CTA. The ReviewSession primitive remains available
-  // for direct invocation from chip rows or saved filters post-launch.
-
   return (
     <div
       style={{
@@ -1550,18 +1398,6 @@ function SendersScreenContent({
           onDismiss={() => setMailtoFollowup(null)}
         />
       )}
-
-      {/*
-        Weekly Hero, InboxStoryHero, WeeklyProgress, CohortRail
-        ALL REMOVED from Senders per spec v1.2 Decision 4.
-        WeeklyHero moves to Brief (separate ADR + PR); InboxStoryHero
-        retired entirely (editorial inference banned per Decision 6);
-        WeeklyProgress moves to Brief; CohortRail retire-then-resurrect
-        as "Saved filters" post-launch.
-
-        Senders becomes a lean power tool: header → KPI strip → chips
-        + sort + result-count strip → grid/table. No editorial frame.
-      */}
 
       {/*
         Honest-failure banner — appears only when the mailbox-wide summary
@@ -1706,30 +1542,30 @@ function SendersScreenContent({
         </div>
       )}
 
-      {/* Intent-grouped tables */}
-      {visibleGroups.length === 0 && senders.length === 0 ? (
+      {/* List body. Search + compose narrow SERVER-side, so an empty
+          loaded set with an active query/filter means "no matches" —
+          not "not synced yet". (The no-match branch was unreachable
+          before this split: the not-synced branch keyed on the same
+          `senders.length === 0` and always won.) */}
+      {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
         <EmptyState
-          title="No senders yet"
-          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
-        />
-      ) : visibleGroups.length === 0 ? (
-        <EmptyState
-          title={
-            query
-              ? `No senders match "${query}"`
-              : `No senders in ${activeIntent ? INTENT_META[activeIntent].label : 'this group'}`
-          }
+          title={query ? `No senders match "${query}"` : 'No senders match these filters'}
           body="Try a different search or clear the filters."
           action={
             <Button
               onClick={() => {
                 setQuery('');
-                setActiveIntent(null);
+                clearCompose();
               }}
             >
               Clear search & filters
             </Button>
           }
+        />
+      ) : senders.length === 0 ? (
+        <EmptyState
+          title="No senders yet"
+          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
         />
       ) : view === 'grid' ? (
         // D49 default — grid of cards. `senders` arrives already
@@ -1780,7 +1616,7 @@ function SendersScreenContent({
           emptyKind={
             query.trim() !== ''
               ? 'no-search-match'
-              : activeIntent !== null
+              : hasAnyFilter(compose)
                 ? 'no-filter-match'
                 : 'no-senders'
           }
@@ -1809,11 +1645,6 @@ function SendersScreenContent({
           <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
             {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
           </Button>
-          {(query || activeIntent !== null) && (
-            <span style={{ fontSize: 12, color: color.fgMuted }}>
-              Loads the next page, then re-applies your search and filters.
-            </span>
-          )}
         </div>
       )}
 
@@ -1844,14 +1675,6 @@ function SendersScreenContent({
         }
       />
 
-      <ReviewSession
-        open={review !== null}
-        kind={review?.kind ?? 'promo'}
-        senders={review?.slice ?? []}
-        onApply={applyReview}
-        onCancel={closeReview}
-      />
-
       {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
       <KeyboardCheatsheet />
     </div>
@@ -1880,206 +1703,6 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   // routes through the same composite confirm modal as Archive/Later.
   delete: 'Delete',
 };
-
-// SortMenu retired — replaced by the `SortChip` axis inside
-// `ComposeStrip`. The (column × direction) vocabulary + grouping
-// lives in `compose-strip.tsx` alongside the other axis chips so the
-// strip reads as one filter+sort surface. Removing it from this file
-// trimmed ~150 LOC of inline menu code.
-
-// Placeholder type kept so any imports elsewhere keep compiling; the
-// chip surface in compose-strip declares its own narrower union.
-type GridSortColumn = 'total' | 'last_seen' | 'first_seen' | 'name';
-
-/**
- * Every (column × direction) pair the menu offers, in render order,
- * grouped by column. Labels are user-intent copy — "Most emails ever"
- * reads more naturally than "total ↓" for the value the column holds,
- * "Newest / Oldest" for dates, "A → Z / Z → A" for name. The wire
- * `direction` ('asc' | 'desc') stays the BE truth; this map is the
- * menu's display layer only.
- */
-const SORT_OPTIONS: ReadonlyArray<{
-  sort: GridSortColumn;
-  direction: SenderListDirection;
-  label: string;
-  group: string;
-}> = [
-  { sort: 'total', direction: 'desc', label: 'Most emails ever', group: 'Volume' },
-  { sort: 'total', direction: 'asc', label: 'Fewest emails ever', group: 'Volume' },
-  { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
-  { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
-  { sort: 'first_seen', direction: 'desc', label: 'Newest senders', group: 'First seen' },
-  { sort: 'first_seen', direction: 'asc', label: 'Oldest senders', group: 'First seen' },
-  { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
-  { sort: 'name', direction: 'desc', label: 'Z → A', group: 'Name' },
-];
-
-/** Trigger-label fallback for any sort outside `GridSortColumn`. */
-const COLUMN_FALLBACK_LABEL: Record<GridSortColumn, string> = {
-  total: 'volume',
-  last_seen: 'last seen',
-  first_seen: 'first seen',
-  name: 'name',
-};
-
-/** Resolve the trigger-label for the currently active sort + direction. */
-function activeSortLabel(sort: SenderListSort, direction: SenderListDirection): string {
-  const match = SORT_OPTIONS.find((o) => o.sort === sort && o.direction === direction);
-  if (match) return match.label;
-  // Reserved-but-unsupported column or an unhandled direction — fall
-  // back to the raw column id with an arrow so the strip never goes
-  // blank if a URL or store seeds an odd value.
-  const colLabel = (COLUMN_FALLBACK_LABEL as Record<string, string>)[sort] ?? sort;
-  return `${colLabel} ${direction === 'desc' ? '↓' : '↑'}`;
-}
-
-// Inline `SortMenu` retired with the result-count strip (D38).
-// `ComposeStrip` now owns the sort affordance via its `SortChip`.
-// The block below is the dead body, sliced into a no-op so the file
-// is one well-defined export per concern; Phase 5 dead-code sweep
-// removes it.
-function _retiredSortMenu({
-  sort,
-  direction,
-  onPick,
-}: {
-  sort: SenderListSort;
-  direction: SenderListDirection;
-  onPick: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: globalThis.MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  // Group options by `group` for render. Insertion order preserved
-  // because the source array is already grouped (Object.entries on a
-  // plain object preserves insertion order for string keys).
-  const groups = SORT_OPTIONS.reduce<Record<string, (typeof SORT_OPTIONS)[number][]>>(
-    (acc, opt) => {
-      const arr = acc[opt.group] ?? [];
-      arr.push(opt);
-      acc[opt.group] = arr;
-      return acc;
-    },
-    {},
-  );
-
-  return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Change sort"
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          color: 'var(--color-fg-soft)',
-          background: 'transparent',
-          border: 'none',
-          padding: 0,
-          cursor: 'pointer',
-          letterSpacing: '0.04em',
-        }}
-      >
-        sorted by {activeSortLabel(sort, direction).toLowerCase()} ▾
-      </button>
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            left: 0,
-            zIndex: 60,
-            minWidth: 220,
-            background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: 9,
-            boxShadow: tokens.shadow.pop,
-            padding: 4,
-            fontFamily: font.sans,
-          }}
-        >
-          {Object.entries(groups).map(([groupLabel, options]) => (
-            <div key={groupLabel}>
-              <div
-                style={{
-                  padding: '6px 10px 2px',
-                  fontFamily: font.mono,
-                  fontSize: 10,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: color.fgMuted,
-                }}
-              >
-                {groupLabel}
-              </div>
-              {options.map((opt) => {
-                const active = opt.sort === sort && opt.direction === direction;
-                return (
-                  <button
-                    key={`${opt.sort}-${opt.direction}`}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={active}
-                    onClick={() => {
-                      onPick({ sort: opt.sort, direction: opt.direction });
-                      setOpen(false);
-                    }}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      width: '100%',
-                      padding: '7px 10px',
-                      background: active ? color.primarySoft : 'transparent',
-                      border: 'none',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontFamily: font.sans,
-                      fontSize: 12.5,
-                      color: color.fg,
-                    }}
-                  >
-                    <span
-                      aria-hidden
-                      style={{
-                        width: 12,
-                        color: active ? color.primary : 'transparent',
-                        fontWeight: 600,
-                      }}
-                    >
-                      ✓
-                    </span>
-                    <span style={{ flex: 1 }}>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-    </span>
-  );
-}
 
 /**
  * D38 — derive the top-N domain suggestions for the ComposeStrip's
@@ -2150,52 +1773,6 @@ function BulkSelectButton({
     </button>
   );
 }
-
-/**
- * Filter the wire-shape rows for the flat-table view.
- *
- * The table consumes `SenderListRow` directly (so it sees
- * `totalReceived` + `lastReview` + `protectionFlags` verbatim from the
- * wire), but the screen still owns the active client filters — search
- * query and intent chip. We index the adapted senders by id and walk
- * the wire rows in BE-sort order so the table's row order mirrors the
- * server's `sort=total DESC` (or whichever sort is active).
- */
-function filterTableRows(
-  wireRows: readonly SenderListRow[],
-  searched: readonly Sender[],
-  activeIntent: SenderIntent | null,
-  allAdapted: readonly Sender[],
-): SenderListRow[] {
-  const searchedIds = new Set(searched.map((s) => s.id));
-  const adaptedById = new Map(allAdapted.map((s) => [s.id, s] as const));
-  return wireRows.filter((row) => {
-    if (!searchedIds.has(row.id)) return false;
-    if (activeIntent === null) return true;
-    const adapted = adaptedById.get(row.id);
-    return adapted !== undefined && intentOf(adapted) === activeIntent;
-  });
-}
-
-// SenderTotals + computeTotals retired with the KPI strip (D38). The
-// hero number rides `meta.query.totalMatching` (BE-honest, scope-
-// aware) and the chip counts ride `meta.query.filterCounts` — both
-// computed server-side. Intent-derived aggregates (cleanup / needs_
-// review) belong on Brief per spec v1.2 Decision 4.
-
-// renderHeroStory, renderCtaCopy, mapHeroSliceToReviewKind RETIRED
-// alongside the InboxStoryHero + WeeklyHeroLive renders (spec v1.2
-// Decisions 4, 6). Hero copy moves to Brief per Decision 5; editorial
-// inference like "About 29% was noise" banned. Phase 5 dead-code
-// sweep deletes them from this file entirely; the comment marker
-// preserves the deletion intent for the next agent.
-
-// IntentChip RETIRED in favor of FactChip (spec v1.2 Decision 2 +
-// Decision 3). Phase 5 dead-code sweep removes the empty signature.
-
-// FactChip retired with the fact-chip row (D38). The ComposeStrip
-// owns the multi-axis filter surface. Phase 5 dead-code sweep can
-// drop this comment marker when it lands.
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
 function LoadingState() {

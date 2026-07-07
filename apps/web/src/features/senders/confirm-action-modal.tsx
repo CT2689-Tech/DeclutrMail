@@ -3,7 +3,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
-import { sampleSubjects, verbDisplay, type ActionRequest, type ActionVerb } from './data';
+import { verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
 const { color, font } = tokens;
 
@@ -106,9 +106,8 @@ function pickBucketCount(
  * Mirror of `pickBucketCount` for the "Show what will move" recent-
  * subjects panel (spec v1.3 — recent beats oldest for 3-sec sender
  * recognition). Returns the BE-returned top-5 subjects for the chip
- * the user has selected. Returns `undefined` when the preview hasn't
- * loaded yet so the caller can fall back to the fixture pool during
- * the in-flight flash.
+ * the user has selected; `undefined` while the preview is in flight
+ * (the disclosure renders nothing until real data lands — §10).
  */
 function pickBucketSubjects(
   buckets: CompositeActionPreviewResult['recentSubjects'] | undefined,
@@ -390,10 +389,12 @@ export function ConfirmActionModal({
     senders.length === 1
       ? pickBucketSubjects(compositePreview?.recentSubjects, olderThanDays)
       : undefined;
+  // Wire subjects ONLY — no fixture fallback. Before the composite
+  // preview resolves, `compositeCount` is undefined so the disclosure
+  // button below never renders; a fabricated "what will move" list on
+  // the D226 trust surface is worse than none (§10 no-fake-data).
   const subjectsPreview =
-    senders.length === 1
-      ? (subjectsFromWire ?? sampleSubjects(senders[0]!)).slice(0, Math.min(5, compositeCount ?? 5))
-      : [];
+    senders.length === 1 ? (subjectsFromWire ?? []).slice(0, Math.min(5, compositeCount ?? 5)) : [];
 
   // D226 honesty — when the eligibility gate narrowed the selection
   // before this preview opened, say so: the user saw "N selected" in
