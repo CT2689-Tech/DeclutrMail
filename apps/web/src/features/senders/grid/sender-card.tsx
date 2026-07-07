@@ -197,6 +197,10 @@ export function SenderCard({
             }}
           >
             <span
+              // Full identity on hover — duplicate display names are
+              // only distinguishable by the underlying address
+              // (2026-07-07 founder smoke feedback).
+              title={sender.email ? `${sender.name} <${sender.email}>` : sender.name}
               style={{
                 fontFamily: font.sans,
                 fontSize: 14,

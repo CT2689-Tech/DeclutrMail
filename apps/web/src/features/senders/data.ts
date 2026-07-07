@@ -53,6 +53,13 @@ export interface Sender {
   id: string;
   name: string;
   domain: string;
+  /**
+   * Full sender address (`senders.email`). Optional because fixture /
+   * Weekly-Hero shapes predate it; when present it disambiguates
+   * duplicate display names ("Amazon.com" ×5) via hover titles —
+   * the D7 allowlist already covers sender identity.
+   */
+  email?: string;
   /** Emails per month (recent cadence). */
   monthly: number;
   /**

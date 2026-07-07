@@ -227,6 +227,55 @@ describe('IncrementalSyncWorker', () => {
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
     expect(state!.lastHistoryId).toBe(1500n);
+    // Freshness stamp — every completed run records `last_synced_at`
+    // (the Sync-now completion watch compares this against its
+    // pre-click baseline).
+    expect(state!.lastSyncedAt).not.toBeNull();
+  });
+
+  it('a run with NO new history still stamps last_synced_at (no-op sync must confirm completion)', async () => {
+    // Empty history page at the SAME historyId: no events, cursor guard
+    // (`lastHistoryId < candidate`) matches nothing — the exact case
+    // where the pre-fix code left `provider_sync_state` untouched and
+    // the FE could never tell the run finished.
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records: [], historyId: '1000' } }],
+      new Map(),
+    );
+
+    // Seed a prior terminal-failure marker: a successful no-op run must
+    // clear it (the guarded cursor update only clears on ADVANCE), or
+    // the FE completion watch would keep fail-fasting on a stale stamp.
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date('2026-07-01T00:00:00Z'),
+        lastIncrementalErrorCode: 'GMAIL_HISTORY_GONE',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+    const before = await db
+      .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(before[0]!.lastSyncedAt).toBeNull();
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1000' }, CTX);
+    expect(result.recordsProcessed).toBe(0);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastSyncedAt).not.toBeNull();
+    // Cursor untouched — only the freshness stamp moved.
+    expect(state!.lastHistoryId).toBe(1000n);
+    // Success supersedes the failure marker.
+    expect(state!.lastIncrementalErrorAt).toBeNull();
+    expect(state!.lastIncrementalErrorCode).toBeNull();
   });
 
   it('idempotent on redelivered `messagesAdded` — second run does not double-count totalReceived', async () => {

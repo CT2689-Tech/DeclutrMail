@@ -350,6 +350,23 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         );
     }
 
+    // Stamp `last_synced_at` on EVERY successful run — including the
+    // "nothing new" case where the cursor guard above matches no row.
+    // The Sync-now completion watch (D38/D224) compares this value
+    // against its pre-click baseline, so a no-op sync must still move
+    // it or the FE could never confirm the run finished. A success also
+    // clears any prior incremental terminal-failure marker (the guarded
+    // cursor update above only does so when the cursor ADVANCES).
+    await this.deps.db
+      .update(providerSyncState)
+      .set({
+        lastSyncedAt: new Date(),
+        updatedAt: new Date(),
+        lastIncrementalErrorAt: null,
+        lastIncrementalErrorCode: null,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
     return {
       recordsProcessed: events.length,
       added,

@@ -14,6 +14,10 @@
  *   - `error_code`       — present only when `readiness_status === 'failed'`
  *   - `is_ready_for_triage` — derived convenience boolean
  *                            (`readiness_status === 'ready'`)
+ *   - `last_synced_at`   — 2026-07-07 founder-requested extension: ISO
+ *                          timestamp of the last completed sync run, so
+ *                          the shell can render "synced Xm ago" and the
+ *                          Sync-now button can confirm completion.
  *
  * No body data, no headers, no message content of any kind — stage
  * enum + numeric progress + an allowlisted boolean. Safe by construction
@@ -56,6 +60,25 @@ export const SyncStatusSchema = z
     progress_pct: z.number().int().min(0).max(100),
     is_ready_for_triage: z.boolean(),
     error_code: z.string().min(1).optional(),
+    /**
+     * ISO-8601 wall-clock of the last COMPLETED sync run (initial or
+     * incremental), from `provider_sync_state.last_synced_at`. `null`
+     * when no run has finished yet; optional so pre-field responses and
+     * existing fixtures stay valid. Wall-clock only — carries no
+     * message-derived data, so the §2.1 posture is unchanged.
+     */
+    last_synced_at: z.string().datetime().nullable().optional(),
+    /**
+     * Terminal INCREMENTAL failure marker
+     * (`provider_sync_state.last_incremental_error_at/_code`). Set when
+     * an incremental run dead-letters WITHOUT flipping
+     * `readiness_status` (initial sync owns that); cleared by the next
+     * successful run. The Sync-now completion watch ends early with an
+     * error toast when this stamp moves — otherwise a failed run would
+     * leave the user waiting on a completion that never comes.
+     */
+    last_sync_error_at: z.string().datetime().nullable().optional(),
+    last_sync_error_code: z.string().min(1).nullable().optional(),
   })
   .strict();
 
