@@ -10,8 +10,10 @@
  * reaches a terminal state; `useRevertUndo` reverses a completed action by
  * its undo token (which itself enqueues a reverse job polled the same way).
  *
- * Only `archive` has a BE pipeline today, so these hooks are archive-scoped
- * (the worker rejects other verbs fail-closed — see `labelChangeForVerb`).
+ * Historical note: `archive` was the first (and briefly only) verb with
+ * a BE pipeline; `later` + `delete` now ride the composite endpoint and
+ * the same worker (`labelChangeForVerb` handles all three). The
+ * archive-named hooks here remain the single-sender Archive wire.
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';

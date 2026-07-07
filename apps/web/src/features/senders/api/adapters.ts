@@ -138,6 +138,9 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
   const sender: Sender = {
     id: row.id,
     name: row.displayName || row.email,
+    // Full address rides along so cards/rows can expose it on hover —
+    // duplicate display names are otherwise indistinguishable.
+    email: row.email,
     domain: row.domain,
     monthly,
     // Real all-time received count (`senders.total_received`) — carried

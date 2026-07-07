@@ -131,6 +131,47 @@ describe('SenderTable', () => {
     expect(screen.getByRole('button', { name: /expand bank of america/i })).toBeTruthy();
   });
 
+  it('row-body click toggles expansion (pointer convenience — chevron stays the accessible control)', () => {
+    render(<Harness {...{}} />);
+    const chevron = screen.getByRole('button', { name: /expand bank of america/i });
+    expect(chevron.getAttribute('aria-expanded')).toBe('false');
+
+    // Click a non-interactive part of the row (the sender name text).
+    fireEvent.click(screen.getByText('Bank of America'));
+    expect(
+      screen
+        .getByRole('button', { name: /collapse bank of america/i })
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
+
+    // Second click collapses again.
+    fireEvent.click(screen.getByText('Bank of America'));
+    expect(
+      screen.getByRole('button', { name: /expand bank of america/i }).getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it('clicks on interactive descendants do NOT toggle expansion', () => {
+    render(<Harness {...{}} />);
+    // Checkbox click → selection changes, row does NOT expand.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select bank of america/i }));
+    expect(
+      screen.getByRole('button', { name: /expand bank of america/i }).getAttribute('aria-expanded'),
+    ).toBe('false');
+    // Verb click → onAction fires elsewhere, row still does NOT expand.
+    fireEvent.click(screen.getByRole('button', { name: /^keep$/i }));
+    expect(
+      screen.getByRole('button', { name: /expand bank of america/i }).getAttribute('aria-expanded'),
+    ).toBe('false');
+  });
+
+  it('sender name carries the full address as a hover title (duplicate display names)', () => {
+    render(<Harness {...{}} />);
+    expect(
+      screen.getByTitle('Bank of America <onlinebanking@ealerts.bankofamerica.com>'),
+    ).toBeTruthy();
+  });
+
   it('primary verb button calls onAction with the derived verb (no mutation)', () => {
     // Fixture row: unprotected, recently seen, no engine verdict →
     // `deriveDefaultPrimary` falls back to the `people` intent → Keep.

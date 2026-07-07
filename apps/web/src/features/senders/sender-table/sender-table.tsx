@@ -14,10 +14,14 @@
  *    a real `<th aria-sort>`.
  *
  * 2. **Row is NOT `role=button`.** The chevron in the trailing column
- *    is the dedicated expand control. Checkbox, verbs, and the chevron
- *    are siblings — never nested interactives, never a clickable row
- *    that wraps three clickable children. Clicking the row body is a
- *    no-op so a screen reader sees a single landmark per cell.
+ *    is the dedicated ACCESSIBLE expand control (`aria-expanded`).
+ *    Checkbox, verbs, and the chevron are siblings — never nested
+ *    interactives. The row body additionally accepts a plain pointer
+ *    click as an expand convenience (2026-07-07 founder smoke feedback:
+ *    match Triage's whole-row affordance) — but it carries NO role, NO
+ *    tabindex, and clicks originating on interactive descendants are
+ *    ignored, so the a11y tree still sees a single landmark per cell
+ *    and keyboard/screen-reader flows are unchanged.
  *
  * 3. **Magnitude bar scales to `meta.query.globalMaxTotal`.** Mailbox-
  *    wide UNFILTERED max — a filtered view does NOT rescale to its own
@@ -401,7 +405,22 @@ function SenderRow({
 
   return (
     <>
-      <tr data-dm-sender-id={sender.id} data-dm-selected={selected || undefined}>
+      <tr
+        data-dm-sender-id={sender.id}
+        data-dm-selected={selected || undefined}
+        onClick={(e) => {
+          // Pointer-only convenience — never steal clicks meant for the
+          // checkbox / verbs / popover / chevron (or anything focusable
+          // that lands in a cell later). The chevron stays the sole
+          // accessible expand control; see architecture note 2.
+          const target = e.target as HTMLElement;
+          if (target.closest('button, a, input, select, textarea, label, [role="button"]')) {
+            return;
+          }
+          setExpanded((v) => !v);
+        }}
+        style={{ cursor: 'pointer' }}
+      >
         <td
           style={{
             ...cellStyle,
@@ -454,6 +473,11 @@ function SenderRow({
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
                 <ProtectStar flags={sender.protectionFlags} />
                 <span
+                  // Full identity on hover — duplicate display names
+                  // ("Amazon.com" ×5) are only distinguishable by the
+                  // underlying address, which the row otherwise never
+                  // renders (2026-07-07 founder smoke feedback).
+                  title={`${displayLabel(sender)} <${sender.email}>`}
                   style={{
                     fontWeight: 600,
                     whiteSpace: 'nowrap',

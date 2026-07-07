@@ -1162,7 +1162,29 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       <RecentMessages messages={recentMessages} />
 
       {/* 4. Decision timeline — replaces D46 table-style history */}
-      <DecisionTimeline heading="Decision timeline" items={timelineItems} />
+      <DecisionTimeline
+        heading="Decision timeline"
+        // Cross-link into the Activity feed pre-filtered to this sender.
+        // `sender_q` is Activity's substring filter over name/email —
+        // the full address is the collision-safe query.
+        action={
+          <a
+            href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
+            style={{
+              fontFamily: font.mono,
+              fontSize: 11,
+              color: color.fgSoft,
+              textDecoration: 'none',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            View in Activity →
+          </a>
+        }
+        items={timelineItems}
+      />
 
       <ConfirmActionModal
         request={pendingAction}

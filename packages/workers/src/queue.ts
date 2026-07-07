@@ -88,10 +88,23 @@ export function incrementalSyncJobOptions(
 }
 
 /**
- * Enqueue an incremental-sync job. Idempotent — BullMQ ignores a
- * duplicate jobId, so redelivered webhooks AND concurrent producers
+ * Enqueue an incremental-sync job. Idempotent for LIVE jobs — BullMQ
+ * dedups by jobId, so redelivered webhooks AND concurrent producers
  * (controller path + reconciler) cannot double-enqueue the same
- * `(mailboxAccountId, endHistoryId)` pair.
+ * `(mailboxAccountId, endHistoryId)` pair while one is waiting/active.
+ *
+ * TERMINAL residue is replaced, same semantics as
+ * `ensureInitialSyncJob` below (Codex "terminal residue must not block
+ * reconnect"). A completed ack is retained for 24h and a failed job
+ * forever (`removeOnFail: false`), and both satisfy `getJob` — without
+ * the state check, a quiet mailbox (cursor unchanged) turned "Sync
+ * now" into a silent no-op for a day (2026-07-07 integrated smoke:
+ * 202 → dedup-drop → 90s watch timeout), and a DEAD-LETTERED
+ * incremental bricked the cursor permanently: every webhook/drift/
+ * manual enqueue at that cursor dropped against the failed ack, so
+ * nothing could ever retry. Re-running a completed cursor is a no-op
+ * server-side (empty history → stamps `last_synced_at`), which is
+ * exactly the completion signal the D38/D224 watch consumes.
  */
 export async function ensureIncrementalSyncJob(
   queue: Queue<IncrementalSyncJobData>,
@@ -102,7 +115,20 @@ export async function ensureIncrementalSyncJob(
   const jobId = `${data.mailboxAccountId}__${data.endHistoryId}`;
   const existing = await queue.getJob(jobId);
   if (existing) {
-    return 'noop';
+    const state = await existing.getState();
+    // `unknown` = hash evicted; a thin handle BullMQ can't schedule.
+    const nonLive = state === 'completed' || state === 'failed' || state === 'unknown';
+    if (!nonLive) {
+      return 'noop'; // genuinely in flight (waiting/active/delayed)
+    }
+    // Lost race: `remove()` rejects if a worker locked the job between
+    // `getState()` and here. Treat as noop — the now-live attempt IS
+    // the sync the caller wanted.
+    try {
+      await existing.remove();
+    } catch {
+      return 'noop';
+    }
   }
   await queue.add(
     INCREMENTAL_SYNC_JOB,
