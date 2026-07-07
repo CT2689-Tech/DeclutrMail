@@ -1305,6 +1305,87 @@ describe('SendersScreen — view toggle (D49)', () => {
     expect(screen.queryByRole('button', { name: /load more senders/i })).not.toBeInTheDocument();
   });
 
+  it('auto-fetches the next page when the sentinel intersects (infiniteScroll flag)', async () => {
+    // Manual IntersectionObserver harness — happy-dom has no layout, so
+    // intersection is driven by hand: capture the observer callback and
+    // fire it as if the sentinel scrolled into the 400px margin.
+    const callbacks: IntersectionObserverCallback[] = [];
+    const observed: Element[] = [];
+    class FakeIO {
+      cb: IntersectionObserverCallback;
+      constructor(cb: IntersectionObserverCallback) {
+        this.cb = cb;
+        callbacks.push(cb);
+      }
+      observe(el: Element) {
+        observed.push(el);
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    const prevIO = globalThis.IntersectionObserver;
+    globalThis.IntersectionObserver = FakeIO as unknown as typeof IntersectionObserver;
+
+    try {
+      const ROW_B = {
+        ...ROW,
+        id: 'page2',
+        displayName: 'Second Page Sender',
+        email: 'b@example.com',
+      };
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) =>
+            url.searchParams.get('cursor')
+              ? jsonOk({
+                  data: [ROW_B],
+                  meta: {
+                    pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                    query: {
+                      totalMatching: 0,
+                      globalMaxTotal: 0,
+                      asOf: '2026-05-29T12:00:00.000Z',
+                    },
+                  },
+                })
+              : jsonOk({
+                  data: [ROW],
+                  meta: {
+                    pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 },
+                    query: {
+                      totalMatching: 0,
+                      globalMaxTotal: 0,
+                      asOf: '2026-05-29T12:00:00.000Z',
+                    },
+                  },
+                }),
+        },
+      ]);
+
+      renderScreen();
+      await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
+      const sentinel = screen.getByTestId('load-more-sentinel');
+      expect(observed).toContain(sentinel);
+
+      // Scroll the sentinel "into view" — next page fetches with NO click.
+      act(() => {
+        callbacks.at(-1)!(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+
+      await waitFor(() => expect(screen.getByText('Second Page Sender')).toBeInTheDocument());
+      // Last page landed (hasMore=false) — sentinel + button both unmount.
+      expect(screen.queryByTestId('load-more-sentinel')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /load more senders/i })).not.toBeInTheDocument();
+    } finally {
+      globalThis.IntersectionObserver = prevIO;
+    }
+  });
+
   it('defaults to grid view and flips to table when the toggle is clicked (D49)', async () => {
     installFetchStub([
       {

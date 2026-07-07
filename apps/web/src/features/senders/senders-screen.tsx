@@ -22,6 +22,7 @@ import {
   type Sender,
 } from './data';
 import { SenderSearch } from './sender-search';
+import { isFeatureEnabled } from '@/lib/flags';
 import { ComposeStrip, hasAnyFilter, type ComposeState } from './compose-strip';
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
@@ -534,6 +535,8 @@ function SendersScreenContent({
   const gridOrderedIds = useMemo(() => senders.map((s) => s.id), [senders]);
   const tableRows = wireRows;
   const tableOrderedIds = useMemo(() => tableRows.map((r) => r.id), [tableRows]);
+
+  const infiniteScrollEnabled = isFeatureEnabled('infiniteScroll');
 
   // Search suggestion picked. The BE typeahead spans the whole mailbox,
   // so the chosen sender may not be on the current list page. Set the
@@ -1635,9 +1638,13 @@ function SendersScreenContent({
         page at a time; without this control a mailbox with more senders
         than a page silently truncated at the first page. Shown only when
         the server reports another page AND we have senders rendered (so it
-        never appears under the "no senders yet" empty state). When a
-        search / intent filter is active, the caption tells the user the
-        next page is loaded server-side and re-filtered client-side.
+        never appears under the "no senders yet" empty state).
+
+        infiniteScroll flag (ADR-0025): a sentinel above the button
+        auto-fetches when it scrolls into view — a 7,839-sender mailbox
+        is otherwise a 150+ click wall. The button always stays: it is
+        the keyboard/AT affordance and the no-IntersectionObserver
+        fallback.
       */}
       {hasNextPage && senders.length > 0 && (
         <div
@@ -1649,6 +1656,9 @@ function SendersScreenContent({
             padding: '8px 0 4px',
           }}
         >
+          {infiniteScrollEnabled && (
+            <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
+          )}
           <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
             {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
           </Button>
@@ -1779,6 +1789,38 @@ function BulkSelectButton({
       {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
     </button>
   );
+}
+
+/**
+ * infiniteScroll flag (ADR-0025) — 1px sentinel that fires `onVisible`
+ * when scrolled near the viewport (400px prefetch margin), so the next
+ * page loads before the user reaches the bottom.
+ *
+ * Re-arms on every `busy` flip: IntersectionObserver only fires on
+ * threshold CROSSINGS, and with short pages the sentinel can stay
+ * inside the margin across a fetch — recreating the observer makes it
+ * re-report visibility immediately, chaining pages until the sentinel
+ * finally leaves the margin (or `hasNextPage` unmounts it). No
+ * IntersectionObserver (very old browsers / non-DOM test envs) ⇒
+ * silently inert — the manual button is the fallback affordance.
+ */
+function LoadMoreSentinel({ onVisible, busy }: { onVisible: () => void; busy: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (busy) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) onVisible();
+      },
+      { rootMargin: '400px 0px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [busy, onVisible]);
+  return <div ref={ref} data-testid="load-more-sentinel" aria-hidden style={{ height: 1 }} />;
 }
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
