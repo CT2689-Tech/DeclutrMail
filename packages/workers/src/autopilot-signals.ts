@@ -26,6 +26,18 @@ export interface AutopilotSignalRow {
   senderKey: string;
   signals: PresetSignals;
   decision: { verdict: TriageVerdict; confidence: number } | null;
+  /**
+   * Actionability facts for ACTIVE-mode matching (not part of
+   * `PresetSignals` — preset matchers and the dry-run preview answer
+   * "does the rule match", these answer "would acting do anything").
+   * The apply worker skips active-mode inserts for non-actionable
+   * matches; without that gate every delta-triggered sweep (D100)
+   * re-executes the full match set as 0-affected actions — unbounded
+   * `rule_match_log`/`action_jobs`/`activity_log` growth plus an
+   * Activity feed full of "archived 0" entries.
+   */
+  inboxCount: number;
+  isUnsubscribed: boolean;
 }
 
 /**
@@ -63,7 +75,11 @@ export async function materializeAutopilotSignals(
   const keys = senderRows.map((r) => r.senderKey);
 
   const policyRows = await db
-    .select({ senderKey: senderPolicies.senderKey, isProtected: senderPolicies.isProtected })
+    .select({
+      senderKey: senderPolicies.senderKey,
+      isProtected: senderPolicies.isProtected,
+      policyType: senderPolicies.policyType,
+    })
     .from(senderPolicies)
     .where(
       and(
@@ -72,6 +88,12 @@ export async function materializeAutopilotSignals(
       ),
     );
   const isProtectedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected]));
+  // Same projection the action worker's already-unsubscribed guard
+  // reads (`policy_type='unsubscribe'`) — matching at the source keeps
+  // the apply pass from re-inserting matches that guard would no-op.
+  const isUnsubscribedBy = new Map(
+    policyRows.map((r) => [r.senderKey, r.policyType === 'unsubscribe']),
+  );
 
   const decisionRows = await db
     .select({
@@ -133,11 +155,15 @@ export async function materializeAutopilotSignals(
     });
   }
 
-  // Total messages per sender — count(*) only; no body access.
+  // Total + INBOX-labeled messages per sender — count(*) only; no body
+  // access. The INBOX predicate mirrors the action worker's
+  // `resolveSenderInboxIds` exactly, so "actionable at match time" and
+  // "resolvable at act time" cannot drift.
   const totalRows = await db
     .select({
       senderKey: mailMessages.senderKey,
       total: sql<number>`count(*)::int`,
+      inbox: sql<number>`count(*) FILTER (WHERE 'INBOX' = ANY(${mailMessages.labelIds}))::int`,
     })
     .from(mailMessages)
     .where(
@@ -149,24 +175,27 @@ export async function materializeAutopilotSignals(
     .groupBy(mailMessages.senderKey);
   const totalBy = new Map(
     totalRows
-      .filter((r): r is { senderKey: string; total: number } => r.senderKey !== null)
-      .map((r) => [r.senderKey, r.total]),
+      .filter((r): r is { senderKey: string; total: number; inbox: number } => r.senderKey !== null)
+      .map((r) => [r.senderKey, { total: r.total, inbox: r.inbox }]),
   );
 
   const dayMs = 24 * 60 * 60 * 1000;
   return senderRows.map((s) => {
     const ts = tsAgg.get(s.senderKey) ?? { volume: 0, reads: 0 };
+    const counts = totalBy.get(s.senderKey) ?? { total: 0, inbox: 0 };
     const signals: PresetSignals = {
       isProtected: Boolean(isProtectedBy.get(s.senderKey) ?? false),
       firstSeenDaysAgo: Math.floor((now.getTime() - s.firstSeenAt.getTime()) / dayMs),
       lastSeenDaysAgo: Math.floor((now.getTime() - s.lastSeenAt.getTime()) / dayMs),
-      totalMessages: totalBy.get(s.senderKey) ?? 0,
+      totalMessages: counts.total,
       readRate90d: ts.volume > 0 ? ts.reads / ts.volume : 0,
     };
     return {
       senderKey: s.senderKey,
       signals,
       decision: decisionBy.get(s.senderKey) ?? null,
+      inboxCount: counts.inbox,
+      isUnsubscribed: isUnsubscribedBy.get(s.senderKey) ?? false,
     };
   });
 }

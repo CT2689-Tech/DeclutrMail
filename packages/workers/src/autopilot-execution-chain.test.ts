@@ -8,6 +8,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import {
   automationRules,
   mailboxAccounts,
+  mailMessages,
   schema,
   senders,
   triageDecisions,
@@ -116,6 +117,20 @@ async function seedMatchableMailbox(
     generatedBy: 'template',
     producedAt: NOW,
     expiresAt: new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000),
+  });
+  // One INBOX message keeps the sender ACTIONABLE — active-mode
+  // matching skips senders with nothing to act on (the D100 cadence
+  // guard), so a matchable fixture must have inbox presence.
+  await db.insert(mailMessages).values({
+    mailboxAccountId: mailboxId,
+    providerMessageId: 'm-chain-1',
+    providerThreadId: 't-chain-1',
+    senderKey,
+    subject: '',
+    snippet: '',
+    internalDate: NOW,
+    labelIds: ['INBOX'],
+    isUnread: true,
   });
   return mailboxId;
 }

@@ -26,6 +26,11 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-07 — Autopilot real-time trigger rides the Pub/Sub push pipeline (subscription still deferred)
+**Source:** session — `fix/d100-autopilot-apply-on-sync-delta` (P0: known-sender mail never re-triggered enabled rules)
+**Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
+**How:** no new steps — finish the 2026-05-21 entry (Cloud Run deploy → create the Pub/Sub push subscription pointing at `/api/webhooks/gmail` with the OIDC service account).
+**Verifies by:** prod log line `worker.succeeded` for `AutopilotApplyWorker` with a `-delta-` jobId within ~5 min of sending a mail from an already-known sender to a connected mailbox.
 ### 2026-07-07 — Refund-guarantee drift across three surfaces: one canonical call needed (D121 vs /refunds vs landing FAQ)
 **Source:** PR #283 gate review (design-system-agent + SEO review; [BLOCKING] llms.txt overclaim fixed on-branch in caf469c)
 **Why:** Three public surfaces state three different refund terms: D121 (plan) says 30-day money-back on Pro; /refunds §3 says a 14-day pro-rata window (shipped "Pending confirmation" — the window decision is already tracked in the 2026-07-02 entry); the landing FAQ says "30-day money-back guarantee on every paid plan" in BOTH the visible copy and the FAQPage JSON-LD that PR #283 emits from the same source. llms.txt was softened to "see the refund policy for terms", so the machine-readable trust file no longer overclaims — but the FAQ ↔ policy contradiction stands, and crawlers read both the FAQ markup and the policy page.

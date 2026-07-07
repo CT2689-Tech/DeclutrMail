@@ -67,6 +67,21 @@ export interface IncrementalSyncDeps {
    * net.
    */
   onNewSender?: (mailboxAccountId: string, senderKey: string) => Promise<void>;
+  /**
+   * Fired once per run that processed ≥1 history record — the D100
+   * "on new message arrival" Autopilot trigger. New mail from a
+   * KNOWN sender changes its signals (volume, last_seen, unread)
+   * without inserting a `senders` row, so `onNewSender` never fires
+   * for it and — before this hook — no apply sweep ever re-ran an
+   * enabled rule after the sync_ready sweep (2026-07-07 P0 audit).
+   * The composition root wires this to the debounced apply-queue
+   * producer (`buildAutopilotApplyDeltaTrigger`).
+   *
+   * BEST-EFFORT, same contract as `onNewSender`: a failure is
+   * WARN-logged and the run still succeeds — the next delta (or
+   * sync_ready / score-run trigger) is the safety net.
+   */
+  onDeltaProcessed?: (mailboxAccountId: string) => Promise<void>;
 }
 
 /**
@@ -350,6 +365,26 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         );
     }
 
+    // Delta processed → Autopilot apply trigger (D100 "on new message
+    // arrival"). Fires on recordsProcessed > 0 — NOT on the counters —
+    // so a label-only delta (read/unread flips feed the engagement
+    // signals) still sweeps. Best-effort per the `onDeltaProcessed`
+    // contract.
+    if (events.length > 0 && this.deps.onDeltaProcessed) {
+      try {
+        await this.deps.onDeltaProcessed(mailboxAccountId);
+      } catch (err) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'sync.delta_callback_failed',
+            mailboxAccountId,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
+    }
+
     // Stamp `last_synced_at` on EVERY successful run — including the
     // "nothing new" case where the cursor guard above matches no row.
     // The Sync-now completion watch (D38/D224) compares this value
@@ -357,6 +392,8 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // it or the FE could never confirm the run finished. A success also
     // clears any prior incremental terminal-failure marker (the guarded
     // cursor update above only does so when the cursor ADVANCES).
+    // Kept LAST before the return so the stamp means "run finished",
+    // delta callback included.
     await this.deps.db
       .update(providerSyncState)
       .set({
