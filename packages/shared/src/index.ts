@@ -151,6 +151,18 @@ export type {
   TierPrices,
 } from './entitlements/index';
 
+// ADR-0025 — feature-flag manifest + resolution. Pure TS (also
+// importable via the `@declutrmail/shared/flags` subpath by consumers
+// that must avoid the React component tree, e.g. API/worker modules).
+export {
+  FLAG_MANIFEST,
+  FEATURE_FLAGS,
+  flagEnvKey,
+  resolveFlag,
+  resolveAllFlags,
+} from './flags/index';
+export type { FeatureFlag, FlagDefinition } from './flags/index';
+
 // D7 + D228 — privacy copy module. Re-exported so consumers can pull
 // canonical wording without depending on the components subtree.
 export {

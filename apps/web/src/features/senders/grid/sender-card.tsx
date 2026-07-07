@@ -30,6 +30,7 @@ import { ReadBucketText } from '../fact-language';
 import { EPOCH_GUARD_DAYS, isStandingProtected, type Sender } from '../data';
 import type { ActionRequest } from '../data';
 import { intentOf } from '../uplift-d/intent';
+import { isFeatureEnabled } from '@/lib/flags';
 import { SenderPeek } from './sender-peek';
 
 const { color, font, radius } = tokens;
@@ -109,6 +110,7 @@ export function SenderCard({
   // from the identity block below; closes on Escape / backdrop / a
   // verb fire (the D226 confirm modal takes over from there).
   const [peekOpen, setPeekOpen] = useState(false);
+  const peekEnabled = isFeatureEnabled('senderPeek');
 
   return (
     <article
@@ -167,12 +169,14 @@ export function SenderCard({
         {/* Identity block doubles as the quick-peek opener — a real
             <button> (keyboard + SR reachable), NOT a clickable-card
             wrapper: checkbox and verb buttons stay siblings, matching
-            the table's dedicated-expand-control contract. */}
+            the table's dedicated-expand-control contract. senderPeek
+            flag off (ADR-0025): stays a plain block, no dialog
+            affordance. */}
         <button
           type="button"
-          onClick={() => setPeekOpen(true)}
-          title="Peek at recent emails and volume"
-          aria-haspopup="dialog"
+          onClick={peekEnabled ? () => setPeekOpen(true) : undefined}
+          title={peekEnabled ? 'Peek at recent emails and volume' : undefined}
+          aria-haspopup={peekEnabled ? 'dialog' : undefined}
           style={{
             flex: 1,
             minWidth: 0,
@@ -180,7 +184,7 @@ export function SenderCard({
             border: 'none',
             padding: 0,
             textAlign: 'left',
-            cursor: 'pointer',
+            cursor: peekEnabled ? 'pointer' : 'default',
             display: 'block',
           }}
         >
@@ -386,7 +390,7 @@ export function SenderCard({
           one place now. */}
       <SenderActionRow sender={sender} onAction={onAction} stretch />
 
-      {peekOpen && (
+      {peekEnabled && peekOpen && (
         <SenderPeek
           sender={sender}
           onClose={() => setPeekOpen(false)}

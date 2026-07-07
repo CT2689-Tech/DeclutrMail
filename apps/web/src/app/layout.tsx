@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
 import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
 import '@declutrmail/shared/tokens.css';
+import { isFeatureEnabled } from '@/lib/flags';
 import { Providers } from './providers';
 
 const inter = Inter({
@@ -57,7 +58,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             suppressHydrationWarning: browsers hide the nonce attribute
             from DOM reads, so the client always sees "" — a known,
             harmless mismatch on any nonced tag. */}
-        <script src="/theme-init.js" nonce={nonce} suppressHydrationWarning />
+        {/* darkMode flag off ⇒ skip the resolver entirely: data-theme is
+            never set, so the app renders light even for users with a
+            stored dark preference (ADR-0025 kill-switch semantics). */}
+        {isFeatureEnabled('darkMode') && (
+          <script src="/theme-init.js" nonce={nonce} suppressHydrationWarning />
+        )}
         <Providers>{children}</Providers>
       </body>
     </html>
