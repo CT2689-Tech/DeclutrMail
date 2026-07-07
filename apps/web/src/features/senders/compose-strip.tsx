@@ -449,10 +449,17 @@ function DomainMenu({
   useEffect(() => {
     setDraft(value ?? '');
   }, [value]);
+  // Focus/select ONLY on open. Must not share the listener effect below:
+  // its deps include `draft`, so it re-runs per keystroke — a select()
+  // there highlights the whole input after every key and the next key
+  // replaces it ("can only type one letter", founder-reported 2026-07-04).
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
     inputRef.current?.select();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
     const onDoc = (e: Event) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         const trimmed = draft.trim().toLowerCase();
@@ -472,8 +479,7 @@ function DomainMenu({
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-    // eslint-disable-next-line
-  }, [open, draft, value]);
+  }, [open, draft, value, onChange]);
   const active = !!value;
   const label = value ?? 'any';
   const filtered =
