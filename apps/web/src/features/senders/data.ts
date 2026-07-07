@@ -53,6 +53,13 @@ export interface Sender {
   id: string;
   name: string;
   domain: string;
+  /**
+   * Full sender address (`senders.email`). Optional because fixture /
+   * Weekly-Hero shapes predate it; when present it disambiguates
+   * duplicate display names ("Amazon.com" ×5) via hover titles —
+   * the D7 allowlist already covers sender identity.
+   */
+  email?: string;
   /** Emails per month (recent cadence). */
   monthly: number;
   /**
@@ -99,6 +106,15 @@ export interface Sender {
    * no tracked execution (mailto-manual per D230, or method none).
    */
   unsubStatus?: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  /**
+   * List-Unsubscribe method from the sender's headers — mirrors the
+   * wire `SenderListRow.unsubscribeMethod`. `'one_click'` is the
+   * `unsub_ready` fact behind the ADR-0019 primary-CTA rule;
+   * `'mailto'` is manual at launch (D230) so it never auto-recommends.
+   * Optional because Weekly-Hero + legacy fixtures don't carry it;
+   * absent ⇒ not unsub-ready.
+   */
+  unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null;
   /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
    * route a sender into the "Protect" intent bucket (intentOf OR-s

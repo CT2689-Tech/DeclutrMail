@@ -6,6 +6,7 @@ import { AppShell, ToastHost } from '@declutrmail/shared';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 import { GracePeriodBanner } from '@/features/account-deletion/grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
+import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
 import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
@@ -67,9 +68,15 @@ import { isFeatureEnabled } from '@/lib/flags';
  */
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <AuthProvider>
-      <AppChrome>{children}</AppChrome>
-    </AuthProvider>
+    <>
+      <AuthProvider>
+        <AppChrome>{children}</AppChrome>
+      </AuthProvider>
+      {/* D147 consent ask — outside AuthProvider on purpose: consent is
+          auth-independent and must stay answerable through every branch
+          of the ladder above (loading skeleton, reconnect gate, normal). */}
+      <CookieConsentBanner />
+    </>
   );
 }
 

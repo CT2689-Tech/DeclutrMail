@@ -138,6 +138,9 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
   const sender: Sender = {
     id: row.id,
     name: row.displayName || row.email,
+    // Full address rides along so cards/rows can expose it on hover —
+    // duplicate display names are otherwise indistinguishable.
+    email: row.email,
     domain: row.domain,
     monthly,
     // Real all-time received count (`senders.total_received`) — carried
@@ -173,6 +176,9 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     // refines the pill copy with the real execution outcome.
     unsubPending: row.policyType === 'unsubscribe',
     unsubStatus: row.unsubStatus ?? null,
+    // List-Unsubscribe method — carried verbatim so the action row can
+    // derive the ADR-0019 `unsub_ready` primary fact ('one_click').
+    unsubscribeMethod: row.unsubscribeMethod ?? null,
   };
   return sender;
 }

@@ -41,6 +41,28 @@ delay to it — don't enqueue immediately with dedup.
 
 **Distillation trigger:** promote to CLAUDE.md (worker-policy section
 alongside D203/D225 notes) if the pattern recurs ≥3 times.
+## 2026-07-07 — cloud-smoke.sh in web-session containers: two known bootstrap gaps
+
+**Context:** Standing up the real stack (pg + redis + api + web) in a
+Claude Code web container via `./scripts/cloud-smoke.sh` to smoke the
+senders polish batch (D49/D227 primary-CTA wiring).
+**Finding:** Two gaps block the first `up`/browse cycle: (1) `up` fails
+silently at initdb when `/tmp/dmlogs` was pre-created by root — the
+`runuser -u postgres` initdb can't write its log there ("Permission
+denied"), yet the API wait-loop still prints "API up" because the API
+boots without a DB; `chmod 777 /tmp/dmlogs` before `up` fixes it.
+(2) `cloud-seed.sql` never sets `users.onboarded_at`, so every app
+route redirects to `/onboarding` and the smoke stalls;
+`UPDATE users SET onboarded_at = now()` after `seed` unblocks. Also:
+Playwright pinned at 1.60 wants `chromium_headless_shell-1228` which
+isn't in `/opt/pw-browsers` — launch with
+`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'`.
+**Rule (provisional):** In a web-session container run
+`chmod 777 /tmp/dmlogs` (after the script's first mkdir) and set
+`onboarded_at` right after `seed`; consider folding both into
+`cloud-smoke.sh` (`chmod` in `up`, `onboarded_at` in the seed SQL).
+**Distillation trigger:** fold into `scripts/cloud-smoke.sh` +
+`cloud-seed.sql` directly if one more session trips on either gap.
 
 ## 2026-06-05 — Reuse migration SQL as worker post-pass to keep three derive paths single-sourced
 
@@ -894,3 +916,9 @@ verb-add breaks a downstream enum a 2nd time.
 **Finding:** IO callbacks run during the browser's rendering steps; the preview tab reports `visibilityState === 'hidden'` and performs NO rendering steps, so IO never fires — same root cause as the 2026-07-03 TanStack-retryer freeze. Anything gated on rendering steps (IO, rAF, ResizeObserver) is untestable live in this harness.
 **Rule (provisional):** Smoke scroll/visibility-triggered behavior via a unit test that drives the observer callback by hand; live-verify only the non-IO half of the chain (manual button → fetch → append). Say so in the PR smoke notes.
 **Distillation trigger:** 2nd instance (retryer 2026-07-03, IO 2026-07-04) — promote a "headless preview cannot execute rendering-steps callbacks (IO/rAF/retryer)" line to CLAUDE.md §8 smoke table.
+
+## 2026-07-07 — posthog-js silently drops ALL captures from automated browsers (bot filter)
+**Context:** D147 consent-gate smoke + Playwright spec. After "Accept all" the SDK initialized (config/flags requests, ph_* storage written) but no capture EVER left the browser — no error, no log, nothing to intercept.
+**Finding:** posthog-js `capture()` returns early for a "likely bot" (`isLikelyBot`): UA blocklist (contains `headlesschrome`), `userAgentData.brands`, and — decisive — `navigator.webdriver`, which is ALWAYS true under Playwright, headed or not. So an analytics e2e can never see events without countermeasures, and worse, a NEGATIVE assertion ("declined ⇒ zero posthog requests") passes vacuously against a broken gate. Neutralizing all three signals (UA override + init-script `webdriver`/`userAgentData` shims) made captures flow; found via `ph_debug` localStorage flag + reading dist source maps (`sourcesContent`) for the drop condition.
+**Rule (provisional):** Any spec asserting analytics traffic (positive OR negative) must spoof non-bot signals first (see `packages/e2e/specs/cookie-consent.spec.ts`), and should pair network assertions with `ph_*` storage-artifact assertions, which survive transport quirks.
+**Distillation trigger:** promote to CLAUDE.md §8 smoke table if a second analytics-observing spec trips on the bot filter.

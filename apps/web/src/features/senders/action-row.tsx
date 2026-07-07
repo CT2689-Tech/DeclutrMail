@@ -61,6 +61,33 @@ const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep'
   people: 'Keep',
 };
 
+/**
+ * Fact-rule primary derivation (ADR-0019) for a row's lead CTA.
+ *
+ * `unsub_ready` = the wire List-Unsubscribe method is `'one_click'`
+ * (mailto stays manual at launch per D230, so it never auto-recommends)
+ * AND the sender passes `canUnsubscribe` — the same capability gate the
+ * ⋯ popover reads, so the primary can never offer a verb the popover
+ * disables on the same row (e.g. a one-click sender in group 'primary').
+ *
+ * Registry rule order guarantees protected → Keep wins over unsub-ready
+ * (`deriveDefaultPrimary` checks `protected` first — D42/D43).
+ *
+ * Falls back to the legacy `intentOf` lead verb when neither rule's
+ * antecedent fires — preserves continuity until Phase 2 PR-FE2 lands
+ * the fact-first cut.
+ */
+export function derivePrimaryVerbId(sender: Sender): VerbId {
+  const factPrimary = deriveDefaultPrimary({
+    protected: sender.protected === true || sender.isVip === true,
+    unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
+    lastSeenDays: sender.lastDays,
+  });
+  return factPrimary === 'keep'
+    ? mapLegacyVerb(LEAD_VERB_BY_INTENT[intentOf(sender)])
+    : factPrimary;
+}
+
 export function SenderActionRow({
   sender,
   onAction,
@@ -73,16 +100,7 @@ export function SenderActionRow({
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // Fact-rule primary derivation (ADR-0019). Falls back to the legacy
-  // `intentOf` lead verb when neither rule's antecedent fires —
-  // preserves continuity until Phase 2 PR-FE2 lands the fact-first cut.
-  const factPrimary = deriveDefaultPrimary({
-    protected: sender.protected === true || sender.isVip === true,
-    unsubReady: false, // wire field lands in Phase 1 BE; until then fall back
-    lastSeenDays: sender.lastDays,
-  });
-  const primaryVerbId: VerbId =
-    factPrimary === 'keep' ? mapLegacyVerb(LEAD_VERB_BY_INTENT[intentOf(sender)]) : factPrimary;
+  const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
   // Capability gates — the same predicates every action surface reads
   // (data.ts). Delete follows `canDelete` (blocked for standing-

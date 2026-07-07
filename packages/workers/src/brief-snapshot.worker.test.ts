@@ -465,6 +465,88 @@ describe('BriefSnapshotWorker', () => {
     expect(allRows[0]!.briefPayload.reply[0]!.subject).toBe('first');
   });
 
+  it('zero-count-race heal — an EMPTY frozen brief is replaced once backfilled mail makes it non-empty', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+
+    // Run 1 — sync hasn't backfilled yesterday yet: zero inbound rows,
+    // an empty D70 brief lands.
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    const r1 = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(r1.briefsGenerated).toBe(1);
+    expect(r1.emptyBriefs).toBe(1);
+
+    // Sync catches up — yesterday's mail appears AFTER the brief froze.
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'arrived late via sync backfill',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    // Run 2 — the empty run is NOT frozen: it is rebuilt and replaced.
+    const r2 = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(r2.briefsGenerated).toBe(1);
+    expect(r2.emptyBriefs).toBe(0);
+
+    const healed = await db
+      .select({ id: briefRuns.id, briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(healed).toHaveLength(1);
+    expect(healed[0]!.briefPayload.reply).toHaveLength(1);
+    expect(healed[0]!.briefPayload.reply[0]!.subject).toBe('arrived late via sync backfill');
+
+    // Run 3 — now non-empty, the D69 frozen-once invariant re-engages.
+    const r3 = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(r3.briefsGenerated).toBe(0);
+  });
+
+  it('zero-count-race heal — a still-empty rebuild leaves the existing empty run untouched (no churn)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    const r1 = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(r1.emptyBriefs).toBe(1);
+
+    const before = await db
+      .select({ id: briefRuns.id, generatedAt: briefRuns.generatedAt })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    // Nothing arrived — the second tick must be a pure no-op.
+    const r2 = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(r2.briefsGenerated).toBe(0);
+    expect(r2.emptyBriefs).toBe(0);
+
+    const after = await db
+      .select({ id: briefRuns.id, generatedAt: briefRuns.generatedAt })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(after).toEqual(before);
+  });
+
   it('senders without a triage decision land in Reply (conservative default)', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

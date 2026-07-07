@@ -38,6 +38,12 @@ export function ScreenerBadge({ count }: { count: number }) {
 
   if (count <= 0) return null;
 
+  // Cap the RENDERED count — a large quarantine backlog (thousands of
+  // pending senders is normal on a first sync) would otherwise print
+  // its full width into the 220px sidebar. The aria-label keeps the
+  // real number for assistive tech.
+  const shown = count > 99 ? '99+' : String(count);
+
   return (
     <>
       <style>{`
@@ -65,7 +71,7 @@ export function ScreenerBadge({ count }: { count: number }) {
           animation: pulsing ? 'dm-screener-pulse 1.5s ease-out 1' : 'none',
         }}
       >
-        {count}
+        {shown}
       </span>
     </>
   );

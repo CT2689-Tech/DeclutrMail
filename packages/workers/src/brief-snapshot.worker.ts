@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -119,7 +119,9 @@ const FYI_MAX = BRIEF_FYI_MAX;
  * `BriefSnapshotWorker:${scheduledAtMinute}` plus the D69 UNIQUE on
  * `(mailbox_account_id, run_date_local)` make the worker fully
  * re-runnable: re-runs within the same local-date for the same mailbox
- * are no-ops because the upsert uses `ON CONFLICT DO NOTHING`.
+ * are no-ops once a NON-EMPTY brief is frozen (`ON CONFLICT DO
+ * NOTHING`); an EMPTY brief stays replaceable so a zero-count race
+ * against lagging sync can self-heal on a later tick.
  *
  * What the worker DOES:
  *   - Iterates every mailbox in `mailbox_accounts`.
@@ -139,7 +141,12 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     'template'`).
  *   - Empty-day handling per D70: if yesterday had zero inbound
  *     messages, writes an empty-section brief with the D70 calm copy.
- *   - Upserts into `brief_runs` ON CONFLICT (mailbox, date) DO NOTHING.
+ *     The empty run is NOT frozen — later ticks rebuild it and replace
+ *     it the first time a non-empty payload lands (zero-count-race
+ *     heal, 2026-07-07).
+ *   - Upserts into `brief_runs` ON CONFLICT (mailbox, date) DO NOTHING;
+ *     the heal path UPDATEs the existing row guarded on it still being
+ *     empty.
  *
  * What the worker does NOT do (deferred):
  *   - Haiku LLM narrative (D62) — needs the Anthropic adapter the
@@ -163,6 +170,35 @@ const FYI_MAX = BRIEF_FYI_MAX;
  * touched. The Haiku adapter, when wired, will pass the D62 allowed
  * fields (sender + subject + Gmail snippet) — all allowlisted.
  */
+/**
+ * All three D63 sections empty. Unknown / malformed shapes count as
+ * NON-empty so the heal path can never clobber a payload it doesn't
+ * understand.
+ */
+function isEmptyBriefPayload(p: unknown): boolean {
+  if (typeof p !== 'object' || p === null) return false;
+  const b = p as { reply?: unknown; fyi?: unknown; noise?: unknown };
+  return (
+    Array.isArray(b.reply) &&
+    b.reply.length === 0 &&
+    Array.isArray(b.fyi) &&
+    b.fyi.length === 0 &&
+    Array.isArray(b.noise) &&
+    b.noise.length === 0
+  );
+}
+
+/**
+ * SQL twin of `isEmptyBriefPayload` — the heal UPDATE's where-guard, so
+ * a concurrent tick that already healed the row makes this one a no-op
+ * instead of a double-write.
+ */
+function briefRunIsEmptySql() {
+  return sql`jsonb_array_length(${briefRuns.briefPayload}->'reply') = 0
+    and jsonb_array_length(${briefRuns.briefPayload}->'fyi') = 0
+    and jsonb_array_length(${briefRuns.briefPayload}->'noise') = 0`;
+}
+
 export class BriefSnapshotWorker extends BaseDeclutrWorker<
   BriefSnapshotJobData,
   BriefSnapshotResult
@@ -262,11 +298,17 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     const todayStart = new Date(yesterdayStart);
     todayStart.setUTCDate(todayStart.getUTCDate() + 1);
 
-    // D69 frozen-once — skip if today's Brief already exists. The
-    // upsert below would do the same via ON CONFLICT, but the early
-    // skip avoids the per-mailbox aggregation work entirely.
+    // D69 frozen-once — but ONLY once the frozen brief is NON-empty.
+    // An empty brief can be the zero-count race, not a quiet day: the
+    // hourly tick can land minutes after 00:00 UTC while incremental
+    // sync is still backfilling yesterday's rows, count zero, and
+    // freeze a false "quiet yesterday" for the whole day (2026-07-07
+    // founder smoke: Jul 6 had 125 inbound rows, brief said quiet).
+    // So an EMPTY run stays replaceable — later ticks rebuild (cheap:
+    // a zero-row day short-circuits to template without the LLM) and
+    // overwrite it the first time a non-empty payload lands.
     const [existing] = await this.deps.db
-      .select({ id: briefRuns.id })
+      .select({ id: briefRuns.id, briefPayload: briefRuns.briefPayload })
       .from(briefRuns)
       .where(
         and(
@@ -275,13 +317,17 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         ),
       )
       .limit(1);
-    if (existing) return null;
+    if (existing && !isEmptyBriefPayload(existing.briefPayload)) return null;
 
     const { payload, generatedBy } = await this.buildPayload(
       mailboxAccountId,
       yesterdayStart,
       todayStart,
     );
+
+    // Existing empty run + still-empty rebuild — nothing new to say;
+    // keep the frozen empty row untouched (no churn, no log spam).
+    if (existing && isEmptyBriefPayload(payload)) return null;
 
     // D63 defense-in-depth — Zod validates the EXACT three-section
     // shape (reply/fyi/noise + narrative + caps) right before insert.
@@ -291,24 +337,35 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // counts the failure and continues to the next mailbox.
     briefPayloadSchema.parse(payload);
 
-    const inserted = await this.deps.db
-      .insert(briefRuns)
-      .values({
-        workspaceId,
-        mailboxAccountId,
-        runDateLocal: todayLocal,
-        generatedBy,
-        briefPayload: payload,
-        generatedAt: now,
-      })
-      .onConflictDoNothing({
-        target: [briefRuns.mailboxAccountId, briefRuns.runDateLocal],
-      })
-      .returning({ id: briefRuns.id });
-    if (inserted.length === 0) return null;
+    if (existing) {
+      // Heal path — replace the frozen EMPTY run with the first
+      // non-empty rebuild. Guarded on the row still being empty so a
+      // concurrent tick that healed it first wins and this one no-ops.
+      const updated = await this.deps.db
+        .update(briefRuns)
+        .set({ generatedBy, briefPayload: payload, generatedAt: now })
+        .where(and(eq(briefRuns.id, existing.id), briefRunIsEmptySql()))
+        .returning({ id: briefRuns.id });
+      if (updated.length === 0) return null;
+    } else {
+      const inserted = await this.deps.db
+        .insert(briefRuns)
+        .values({
+          workspaceId,
+          mailboxAccountId,
+          runDateLocal: todayLocal,
+          generatedBy,
+          briefPayload: payload,
+          generatedAt: now,
+        })
+        .onConflictDoNothing({
+          target: [briefRuns.mailboxAccountId, briefRuns.runDateLocal],
+        })
+        .returning({ id: briefRuns.id });
+      if (inserted.length === 0) return null;
+    }
 
-    const isEmpty =
-      payload.reply.length === 0 && payload.fyi.length === 0 && payload.noise.length === 0;
+    const isEmpty = isEmptyBriefPayload(payload);
 
     // Structured log — picked up by the same collector as every other
     // worker JSON line. The `kind: 'brief.generated'` selector + the
