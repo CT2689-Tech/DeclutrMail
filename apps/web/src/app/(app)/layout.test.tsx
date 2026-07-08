@@ -294,6 +294,41 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
   });
 });
 
+describe('(app) layout — passive sync-error banner (D224)', () => {
+  it('mounts the banner above the shell when the latest sync outcome is a fresh error', async () => {
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () =>
+          ok({
+            data: {
+              readiness_status: 'ready',
+              current_stage: 'ready',
+              progress_pct: 100,
+              is_ready_for_triage: true,
+              last_synced_at: null,
+              last_sync_error_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+              last_sync_error_code: 'GMAIL_HISTORY_GONE',
+            },
+          }),
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByTestId('sync-error-banner')).toBeInTheDocument();
+    // Additive — the app stays usable behind it.
+    expect(screen.getByText('authed app body')).toBeInTheDocument();
+  });
+});
+
 describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
   /** Authed `me` with ZERO connected mailboxes (active = null). */
   function noMailboxMe(): FetchStubHandler {
