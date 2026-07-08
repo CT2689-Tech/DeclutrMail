@@ -11,16 +11,27 @@
 // dashboard. The 500 boundary (`error.tsx`) is where Sentry capture
 // belongs (D167 + D170).
 //
-// Routing back: the canonical "home" for the authed app is /triage
-// (the daily ritual surface); Senders is the secondary landing for
-// users who prefer the directory view. We surface both so the user is
-// not forced into a single path.
+// Routing back is audience-aware (D140). A SIGNED-IN visitor is offered
+// the app destinations — /triage (the daily ritual) + /senders (the
+// directory). An ANONYMOUS visitor is offered marketing destinations —
+// / (home) + /pricing — because /triage would only bounce them through
+// a sign-in redirect. Audience is read from the session cookie's
+// presence (see SESSION_COOKIE below).
 
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 
 const { color, font, text } = tokens;
+
+// Session cookie set by the API on sign-in (HttpOnly JWT). Its mere
+// PRESENCE is enough to route the 404 CTAs — an expired-but-present
+// cookie still means "returning user", so "Back to Triage" (which
+// refreshes or redirects to sign-in) is the right destination; a truly
+// anonymous visitor has no cookie and gets the marketing CTAs instead.
+// We never decode it here — presence, not validity, drives copy.
+const SESSION_COOKIE = 'dm_access';
 
 export const metadata: Metadata = {
   title: 'Page not found — DeclutrMail',
@@ -70,7 +81,30 @@ function CtaLink({
   );
 }
 
-export default function NotFound() {
+/**
+ * The 404 page. Async server component: reads the session cookie to
+ * decide which destinations to offer, then hands a plain boolean to the
+ * presentational {@link NotFoundView} (so tests/stories render the view
+ * synchronously without a request context). Reading `cookies()` opts
+ * the page out of static prerendering — correct for a 404, which is
+ * request-scoped by nature.
+ */
+export default async function NotFound() {
+  const authed = (await cookies()).has(SESSION_COOKIE);
+  return <NotFoundView authed={authed} />;
+}
+
+/**
+ * Presentational 404. `authed` picks the destinations: a signed-in user
+ * is routed back into the app (Triage / Senders); an anonymous visitor
+ * gets marketing destinations (Home / Pricing) — sending them to /triage
+ * would just bounce through a sign-in redirect. Exported for unit tests
+ * + Storybook, which drive `authed` explicitly.
+ */
+export function NotFoundView({ authed }: { authed: boolean }) {
+  const body = authed
+    ? 'The link may be stale, or the page may have moved. Your mailbox and decisions are untouched.'
+    : 'The link may be stale, or the page may have moved.';
   return (
     <main
       style={{
@@ -132,8 +166,7 @@ export default function NotFound() {
             margin: 0,
           }}
         >
-          The link may be stale, or the page may have moved. Your mailbox and decisions are
-          untouched.
+          {body}
         </p>
 
         <div
@@ -145,12 +178,25 @@ export default function NotFound() {
             justifyContent: 'center',
           }}
         >
-          <CtaLink href="/triage" tone="primary">
-            Back to Triage
-          </CtaLink>
-          <CtaLink href="/senders" tone="default">
-            Open Senders
-          </CtaLink>
+          {authed ? (
+            <>
+              <CtaLink href="/triage" tone="primary">
+                Back to Triage
+              </CtaLink>
+              <CtaLink href="/senders" tone="default">
+                Open Senders
+              </CtaLink>
+            </>
+          ) : (
+            <>
+              <CtaLink href="/" tone="primary">
+                Back to home
+              </CtaLink>
+              <CtaLink href="/pricing" tone="default">
+                See pricing
+              </CtaLink>
+            </>
+          )}
         </div>
       </div>
     </main>

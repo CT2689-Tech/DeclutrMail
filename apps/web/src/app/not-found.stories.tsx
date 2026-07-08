@@ -9,8 +9,7 @@
 // When the seed merges, swap the shims for `@storybook/react`
 // imports — the story shapes do not change.
 
-import type { ComponentProps } from 'react';
-import NotFound from './not-found';
+import { NotFoundView } from './not-found';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -19,21 +18,20 @@ type StoryMeta<C extends (...args: never) => unknown> = {
   tags?: readonly string[];
 };
 
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
+type Story = {
   parameters?: Record<string, unknown>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
+  render: () => ReturnType<typeof NotFoundView>;
 };
 
-const meta: StoryMeta<typeof NotFound> = {
+const meta: StoryMeta<typeof NotFoundView> = {
   title: 'AppShell/Errors/NotFound',
-  component: NotFound,
+  component: NotFoundView,
   parameters: {
     layout: 'fullscreen',
     docs: {
       description: {
         component:
-          'Custom 404 page (D167). Calm, branded, never apologetic — matches D209 microcopy. Routes back to /triage (the daily ritual) and /senders. No Sentry capture (404s are expected outcomes).',
+          'Custom 404 page (D167 / D140). Calm, branded, never apologetic — matches D209 microcopy. Audience-aware: a signed-in visitor is routed back into the app (Triage / Senders); an anonymous visitor gets marketing destinations (Home / Pricing). No Sentry capture (404s are expected outcomes).',
       },
     },
   },
@@ -42,7 +40,12 @@ const meta: StoryMeta<typeof NotFound> = {
 
 export default meta;
 
-/** Default — the only state the 404 page has. */
-export const Default: Story<typeof NotFound> = {
-  render: (_args: ComponentProps<typeof NotFound>) => <NotFound />,
+/** Signed-in visitor — routed back into the app. */
+export const Authed: Story = {
+  render: () => <NotFoundView authed />,
+};
+
+/** Anonymous visitor — routed to marketing destinations. */
+export const Anonymous: Story = {
+  render: () => <NotFoundView authed={false} />,
 };
