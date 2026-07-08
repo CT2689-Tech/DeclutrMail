@@ -61,7 +61,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
-| D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
+| D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | 🔵 | #295 |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | 🟢 | #48 | packages/workers/src/sender-key.test.ts (all green) |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🟢 | #53 | packages/workers/src/outbox-dispatcher.worker.test.ts |  |
