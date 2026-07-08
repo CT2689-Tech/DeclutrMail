@@ -35,7 +35,10 @@ const SESSION_COOKIE = 'dm_access';
 
 export const metadata: Metadata = {
   title: 'Page not found — DeclutrMail',
-  description: 'The link may be stale, or the page may have moved. Your mailbox is untouched.',
+  // Audience-neutral (the page serves both signed-in + anonymous
+  // visitors, D140) — the mailbox reassurance is authed-only and lives
+  // in the branched in-page body, not this shared meta tag.
+  description: 'The link may be stale, or the page may have moved.',
   // Belt-and-braces: 404s already return HTTP 404, but an explicit
   // noindex keeps soft-404 URL variants out of the index too.
   robots: { index: false },
