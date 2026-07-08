@@ -206,7 +206,9 @@ export default function PrivacyPolicyPage() {
           We use essential cookies for sign-in and billing — these are required for the service to
           function and do not need consent. Optional analytics (PostHog) is initialized only after
           you accept it in the cookie banner; it is off by default. We never use advertising cookies
-          or cross-site trackers, and our analytics never sees your inbox content.
+          or cross-site trackers, and our analytics never sees your inbox content. You can change or
+          withdraw your choice at any time on the <a href="/cookies">Cookie preferences</a> page
+          (also in the app under Settings); withdrawal takes effect immediately.
         </p>
       </LegalSection>
 

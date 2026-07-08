@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { hasAnalyticsConsent, readStoredConsent } from '@/lib/cookie-consent';
+import { hasAnalyticsConsent, readStoredConsent, storeConsent } from '@/lib/cookie-consent';
 import { CookieConsentBanner } from './cookie-consent-banner';
 
 function clearStoredConsent(): void {
@@ -40,6 +40,17 @@ describe('CookieConsentBanner (D147)', () => {
     expect(screen.queryByTestId('cookie-consent-banner')).not.toBeInTheDocument();
     expect(readStoredConsent()).toBe('all');
     expect(hasAnalyticsConsent()).toBe(true);
+  });
+
+  it('retires live when another surface stores the choice (the D147 preferences card)', async () => {
+    render(<CookieConsentBanner />);
+    await screen.findByTestId('cookie-consent-banner');
+
+    // The cookie-preferences card calls storeConsent; the banner must
+    // hear the change event and retire without a remount.
+    act(() => storeConsent('essential'));
+
+    expect(screen.queryByTestId('cookie-consent-banner')).not.toBeInTheDocument();
   });
 
   it('never returns once a choice is stored (fresh mount stays empty)', async () => {

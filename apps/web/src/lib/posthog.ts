@@ -6,7 +6,7 @@ import {
   type EventName,
   type EventProps,
 } from '@declutrmail/shared/observability';
-import { hasAnalyticsConsent } from './cookie-consent';
+import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
 
 /**
  * PostHog browser wrapper (D159).
@@ -114,6 +114,25 @@ export async function resetIdentity(): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
   sdk.reset();
+}
+
+/**
+ * Withdraw analytics consent (GDPR Art. 7(3) — the D147 banner's
+ * counterpart). Grabs the SDK handle FIRST, while consent still reads
+ * "all" (null when it never loaded — no consent, no key, server-side),
+ * then flips the stored choice to "essential" in both stores. Because
+ * `loadSdk` re-checks consent on every call, `track()` and
+ * `identifyUser()` no-op immediately after the flip — no reload needed.
+ * `reset()` additionally drops the identity the SDK stored locally.
+ *
+ * The upgrade path needs no counterpart here: storing "all"
+ * (`storeConsent('all')`) is enough, since the same per-call gate picks
+ * consent up on the next `track()`.
+ */
+export async function withdrawAnalyticsConsent(): Promise<void> {
+  const sdk = await loadSdk();
+  storeConsent('essential');
+  if (sdk) sdk.reset();
 }
 
 /** Test seam — drops the cached SDK promise so a fresh init happens. */

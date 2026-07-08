@@ -212,7 +212,9 @@ export interface EventPayloads {
       | 'privacy'
       | 'terms'
       | 'refunds'
-      | 'beta';
+      | 'beta'
+      // D147 consent change/withdrawal surface (GDPR Art. 7(3)).
+      | 'cookies';
     mailbox_id: string | null;
   };
 
