@@ -16,7 +16,7 @@ import {
 } from '@declutrmail/db';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
@@ -466,6 +466,28 @@ describe('UnsubExecutionWorker', () => {
   });
 
   describe('SSRF hardening', () => {
+    // The stored-URL SSRF guard is DEFENSE IN DEPTH: it must reject a
+    // malicious `unsubscribe_url` even when one somehow reaches the row
+    // — a legacy pre-0032 record, a parser regression, or a manual DB
+    // edit. Migration 0032's `senders_unsub_method_url_aligned_chk`
+    // normally forbids a `one_click` sender with a non-https URL, so we
+    // drop it here to STAGE that adversarial precondition, then restore
+    // it in afterAll so the rest of the file keeps the production
+    // invariant. (The https-but-private-IP cases below satisfy the
+    // constraint and don't need the drop; the http:// / unparseable
+    // cases do.)
+    beforeAll(async () => {
+      await db.execute(
+        sql`ALTER TABLE senders DROP CONSTRAINT IF EXISTS senders_unsub_method_url_aligned_chk`,
+      );
+    });
+    afterAll(async () => {
+      await resetDb(db); // clear the staged violating rows before re-adding
+      await db.execute(
+        sql`ALTER TABLE senders ADD CONSTRAINT senders_unsub_method_url_aligned_chk CHECK (CASE unsubscribe_method WHEN 'one_click' THEN unsubscribe_url LIKE 'https://%' WHEN 'mailto' THEN unsubscribe_url LIKE 'mailto:%' ELSE unsubscribe_url IS NULL END)`,
+      );
+    });
+
     async function runAgainst(
       url: string,
       opts: { allowInsecure?: boolean; resolveHost?: (h: string) => Promise<string[]> } = {},
