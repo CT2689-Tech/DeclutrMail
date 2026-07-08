@@ -3,7 +3,8 @@
  * wiring of the settings index:
  *
  *   - every section renders (Mailboxes / Actions / Email / Senders /
- *     Privacy / Plan / Account) with #218's deletion section mounted
+ *     Privacy / Cookies / Plan / Account) with #218's deletion section
+ *     mounted
  *   - D34 toggle → PATCH /api/me/action-sheet-prefs with the single
  *     changed key, and the triage Zustand store mirrors the result
  *   - email reminders toggle → PATCH /api/me/email-prefs round trip
@@ -129,6 +130,10 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Email notifications' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Standing policies' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
+    // D147 cookie change/withdrawal card, with the effective default
+    // (no stored choice → essential-only) selected.
+    expect(screen.getByRole('heading', { name: 'Cookie preferences' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /essential only/i })).toBeChecked();
     expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
     // #218's AccountDeletionSection.
     expect(screen.getByRole('heading', { name: 'Delete account and data' })).toBeInTheDocument();

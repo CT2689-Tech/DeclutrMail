@@ -25,6 +25,15 @@
 
 export type CookieConsent = 'all' | 'essential';
 
+/**
+ * Fired on `window` by `storeConsent` so the consent surfaces stay in
+ * sync WITHIN a tab: the banner and the preferences card can be mounted
+ * at once (e.g. a first visit landing on /cookies or Settings), and a
+ * choice made on either must reflect on the other immediately — the
+ * `storage` event only fires in OTHER tabs.
+ */
+export const CONSENT_CHANGE_EVENT = 'dm-cookie-consent-change';
+
 const STORAGE_KEY = 'dm-cookie-consent';
 const COOKIE_NAME = 'dm_cookie_consent';
 /**
@@ -71,6 +80,7 @@ export function storeConsent(choice: CookieConsent): void {
     // the choice, and `readStoredConsent` reads either store.
   }
   document.cookie = `${COOKIE_NAME}=${choice}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
+  window.dispatchEvent(new Event(CONSENT_CHANGE_EVENT));
 }
 
 /**

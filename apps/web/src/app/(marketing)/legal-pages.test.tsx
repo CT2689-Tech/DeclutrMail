@@ -1,5 +1,6 @@
 /**
- * Tests for the legal pages (D146): /privacy, /terms, /refunds.
+ * Tests for the legal pages (D146): /privacy, /terms, /refunds — plus
+ * /cookies (D147's withdrawal surface, same legal-layout chrome).
  *
  * Contracts locked here:
  *
@@ -29,16 +30,23 @@ import {
 import PrivacyPolicyPage from './privacy/page';
 import TermsOfServicePage from './terms/page';
 import RefundPolicyPage from './refunds/page';
+import CookiePreferencesPage from './cookies/page';
 
 const { trackSpy } = vi.hoisted(() => ({
   trackSpy: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
+vi.mock('@/lib/posthog', () => ({
+  track: trackSpy,
+  // /cookies mounts CookiePreferences, which imports the withdrawal
+  // helper; never called in these render-contract tests.
+  withdrawAnalyticsConsent: vi.fn().mockResolvedValue(undefined),
+}));
 
 const PAGES = [
   { name: '/privacy', Page: PrivacyPolicyPage, heading: 'Privacy Policy', page: 'privacy' },
   { name: '/terms', Page: TermsOfServicePage, heading: 'Terms of Service', page: 'terms' },
   { name: '/refunds', Page: RefundPolicyPage, heading: 'Refund Policy', page: 'refunds' },
+  { name: '/cookies', Page: CookiePreferencesPage, heading: 'Cookie Preferences', page: 'cookies' },
 ] as const;
 
 beforeEach(() => {
@@ -91,6 +99,14 @@ describe('/privacy content — D7 + D228 posture', () => {
   it('never uses the banned pre-D228 phrase "Bodies read: 0"', () => {
     const { container } = render(<PrivacyPolicyPage />);
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
+  });
+
+  it('§6 links the /cookies withdrawal surface (GDPR Art. 7(3), D147)', () => {
+    render(<PrivacyPolicyPage />);
+    expect(screen.getByRole('link', { name: 'Cookie preferences' })).toHaveAttribute(
+      'href',
+      '/cookies',
+    );
   });
 
   it('carries the Google Limited Use disclosure with the official policy link', () => {

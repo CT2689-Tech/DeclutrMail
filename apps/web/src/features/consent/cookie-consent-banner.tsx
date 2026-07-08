@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
-import { readStoredConsent, storeConsent, type CookieConsent } from '@/lib/cookie-consent';
+import {
+  CONSENT_CHANGE_EVENT,
+  readStoredConsent,
+  storeConsent,
+  type CookieConsent,
+} from '@/lib/cookie-consent';
 
 const { color, font, shadow } = tokens;
 
@@ -28,7 +33,13 @@ export function CookieConsentBanner() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    setVisible(readStoredConsent() === null);
+    const sync = () => setVisible(readStoredConsent() === null);
+    sync();
+    // A choice can also arrive from the D147 cookie-preferences card
+    // mounted on the same page (/cookies, Settings) — retire the ask
+    // the moment ANY surface stores one.
+    window.addEventListener(CONSENT_CHANGE_EVENT, sync);
+    return () => window.removeEventListener(CONSENT_CHANGE_EVENT, sync);
   }, []);
 
   if (!visible) return null;

@@ -17,6 +17,7 @@ import { metadata as pricing } from './pricing/page';
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
+import { metadata as cookies } from './cookies/page';
 
 const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> = [
   { name: 'landing', metadata: landing, path: '/' },
@@ -24,6 +25,7 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'privacy', metadata: privacy, path: '/privacy' },
   { name: 'terms', metadata: terms, path: '/terms' },
   { name: 'refunds', metadata: refunds, path: '/refunds' },
+  { name: 'cookies', metadata: cookies, path: '/cookies' },
 ];
 
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {

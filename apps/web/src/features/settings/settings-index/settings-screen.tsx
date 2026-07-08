@@ -9,6 +9,7 @@ import type { ActionSheetPrefs } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
+import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import {
@@ -33,8 +34,9 @@ const { color, font } = tokens;
  *   3. Email prefs      — D165 reminder toggle
  *   4. Sender lists     — link to /settings/senders (VIP + Protected)
  *   5. Privacy & Data   — link to /settings/privacy (D116/D217)
- *   6. Plan & Billing   — current plan summary + /billing link
- *   7. Account          — #218's deletion section (danger zone, last)
+ *   6. Cookies          — D147 consent change/withdrawal card
+ *   7. Plan & Billing   — current plan summary + /billing link
+ *   8. Account          — #218's deletion section (danger zone, last)
  *
  * Deep link: `?cancelDeletion=1` (from the D216 "deletion scheduled"
  * email) scrolls to + highlights the Account section so the cancel
@@ -158,6 +160,9 @@ export function SettingsScreen() {
         href="/settings/privacy"
         cta="Open Privacy & Data"
       />
+
+      <SectionLabel>Cookies</SectionLabel>
+      <CookiePreferences />
 
       <SectionLabel>Plan &amp; billing</SectionLabel>
       <PlanCard
