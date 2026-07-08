@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -71,6 +71,19 @@ export interface AutopilotApplyJobResult {
    * inbox is momentarily clear.
    */
   activeSkippedNotActionable: number;
+  /**
+   * Active-mode matches SKIPPED because an UNAPPLIED approved row for
+   * the same (rule, sender) already sits in `rule_match_log`. That row
+   * already queues the sender for the next action sweep, so a twin
+   * adds nothing. The case this closes (2026-07-07 Codex stop-review):
+   * during a quiet-hours deferral (D92/D93) the action worker holds
+   * execution, so nothing empties the INBOX — the actionability gate
+   * above keeps passing while approved rows bypass the pending-only
+   * dedup index, and every 5-min delta window (D100) stacked another
+   * duplicate; at quiet end the pile executed as one real action plus
+   * N−1 0-affected "archived 0" activity rows.
+   */
+  activeSkippedAlreadyQueued: number;
   /** Senders considered (after the protect-filter). */
   sendersConsidered: number;
   /** Wall-clock ms. */
@@ -179,6 +192,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         observeMatches: 0,
         activeMatches: 0,
         activeSkippedNotActionable: 0,
+        activeSkippedAlreadyQueued: 0,
         sendersConsidered: 0,
         durationMs: Date.now() - startedAt,
       };
@@ -194,6 +208,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     let observeMatches = 0;
     let activeMatches = 0;
     let activeSkippedNotActionable = 0;
+    let activeSkippedAlreadyQueued = 0;
     let rulesEvaluated = 0;
     let rulesFailed = 0;
     let rulesSkippedMalformed = 0;
@@ -244,7 +259,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       // the result envelope so observability sees partial failures.
       try {
         rulesEvaluated += 1;
-        const matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
+        let matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
         for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of eligible) {
           const input: PresetInput = { signals, triageDecision: decision };
           const result = def.match(input, threshold);
@@ -266,6 +281,36 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           // threshold (or 0 for non-threshold presets) as a stable default.
           const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
           matchesForRule.push({ senderKey, confidence, reason: result.reason });
+        }
+
+        // Already-queued dedup (see `activeSkippedAlreadyQueued`): drop
+        // active-mode candidates that already have an unapplied approved
+        // row for this rule. `perMailboxPolicy` serializes apply sweeps
+        // per mailbox, so check-then-insert cannot race another sweep;
+        // the action worker flipping `intent_applied=true` concurrently
+        // only makes the check conservative (skip now, re-arm next
+        // sweep once the sender is actionable again).
+        if (modeAtMatch === 'active' && matchesForRule.length > 0) {
+          const queuedRows = await this.deps.db
+            .select({ senderKey: ruleMatchLog.senderKey })
+            .from(ruleMatchLog)
+            .where(
+              and(
+                eq(ruleMatchLog.ruleId, rule.id),
+                eq(ruleMatchLog.resolution, 'approved'),
+                eq(ruleMatchLog.intentApplied, false),
+                inArray(
+                  ruleMatchLog.senderKey,
+                  matchesForRule.map((m) => m.senderKey),
+                ),
+              ),
+            );
+          if (queuedRows.length > 0) {
+            const queuedKeys = new Set(queuedRows.map((r) => r.senderKey));
+            const kept = matchesForRule.filter((m) => !queuedKeys.has(m.senderKey));
+            activeSkippedAlreadyQueued += matchesForRule.length - kept.length;
+            matchesForRule = kept;
+          }
         }
 
         if (matchesForRule.length > 0) {
@@ -351,7 +396,16 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     // matches (auto-approved, `intent_applied=false`). Best-effort —
     // a Redis blip here must not fail an otherwise-successful sweep;
     // the next trigger's sweep is the safety net.
-    if (activeMatches > 0 && this.deps.onActiveMatchesPending) {
+    //
+    // ALSO chain when the already-queued dedup skipped candidates:
+    // those unapplied rows still need an action sweep to execute them.
+    // Before the dedup, the duplicate insert was (accidentally) the
+    // recovery path for rows stranded by an indefinite manual quiet —
+    // re-chaining on skip keeps that recovery without the duplicates.
+    // A quiet-deferred sweep writes nothing durable, so re-chaining
+    // during quiet is a cheap no-op that re-schedules the same
+    // quiet-end delayed job (deduped by jobId).
+    if ((activeMatches > 0 || activeSkippedAlreadyQueued > 0) && this.deps.onActiveMatchesPending) {
       try {
         await this.deps.onActiveMatchesPending(mailboxAccountId);
       } catch (err) {
@@ -375,6 +429,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       observeMatches,
       activeMatches,
       activeSkippedNotActionable,
+      activeSkippedAlreadyQueued,
       sendersConsidered: eligible.length,
       durationMs: Date.now() - startedAt,
     };
