@@ -16,6 +16,7 @@ import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { useSenders } from '@/features/senders/api/use-senders';
+import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { isFeatureEnabled } from '@/lib/flags';
@@ -153,6 +154,10 @@ function AppChrome({ children }: { children: ReactNode }) {
       <SyncNowAnimationStyle />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <GracePeriodBanner />
+        {/* Passive incremental-sync failure surface (D224). Main shell
+            branch ONLY — the no-active-mailbox branch above has no
+            mailbox to sync, and its status poll would just 409. */}
+        <SyncErrorBanner />
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
