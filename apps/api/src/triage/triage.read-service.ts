@@ -54,6 +54,30 @@ export interface TriageQueueRow {
   totalAllTime: number;
 }
 
+/**
+ * D214 — the "Today" strip atop Triage. Situational awareness for the
+ * daily ritual, computed from real rows (no fake completion §10):
+ *
+ *   You received {receivedToday} emails from {sendersToday} senders.
+ *   DeclutrMail handled {handledAutomatically} automatically.
+ *   {queuedDecisions} sender decisions can reduce future noise by
+ *   ~{noiseReductionPct}%.
+ *
+ * `noiseReductionPct` is the queued non-Keep senders' share of the
+ * mailbox's last-90-day inbound volume — the same rolling window every
+ * other triage signal uses. `null` when the queue is empty or the
+ * mailbox has no 90-day volume to take a share of.
+ */
+export interface TodaySummary {
+  receivedToday: number;
+  sendersToday: number;
+  /** Messages moved today by Autopilot (`activity_log.source='autopilot'`). */
+  handledAutomatically: number;
+  /** Queue length the user will actually see (D30 clamp applied). */
+  queuedDecisions: number;
+  noiseReductionPct: number | null;
+}
+
 /** Stats for the daily ritual empty state — mirrors the FE shape. */
 export interface TriageSessionStats {
   decidedToday: number;
@@ -377,6 +401,92 @@ export class TriageReadService {
       futureEmailsSkipped: projection.futureEmailsSkipped,
       minutesSavedPerWeek: projection.minutesSavedPerWeek,
       tier,
+    };
+  }
+
+  /**
+   * D214 — aggregate the "Today" strip. Four cheap reads:
+   *
+   *   1. Today's inbound volume + distinct senders (`mail_messages`,
+   *      `internal_date >= today start UTC`, inbound only).
+   *   2. Autopilot's handled count (`activity_log.source='autopilot'`,
+   *      SUM(affected_count) — messages moved, not rule fires).
+   *   3. The queue itself via `listQueue` (same D30 clamp + decided-
+   *      sender exclusion the user's queue read uses, so the strip's
+   *      decision count can never disagree with the queue below it).
+   *   4. The mailbox's last-90d inbound total, for the noise share.
+   *
+   * D7 / D228: counts over metadata only.
+   */
+  async getTodaySummary(input: { mailboxAccountId: string; now?: Date }): Promise<TodaySummary> {
+    const now = input.now ?? new Date();
+    const todayStartUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    const [received] = await this.db
+      .select({
+        total: count(),
+        senders: sql<number>`COUNT(DISTINCT ${mailMessages.senderKey})`,
+      })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
+          eq(mailMessages.isOutbound, false),
+          gte(mailMessages.internalDate, todayStartUtc),
+        ),
+      );
+
+    const [autopilot] = await this.db
+      .select({
+        handled: sql<number>`COALESCE(SUM(${activityLog.affectedCount}), 0)`,
+      })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.mailboxAccountId, input.mailboxAccountId),
+          eq(activityLog.source, 'autopilot'),
+          gte(activityLog.occurredAt, todayStartUtc),
+        ),
+      );
+
+    // The queue the user will see — same clamp, ordering, and decided-
+    // sender exclusion as GET /api/triage/queue. `last90dMessages` is
+    // already aggregated per row, so the noise share reuses it.
+    const queueRows = await this.listQueue({
+      mailboxAccountId: input.mailboxAccountId,
+      limit: 12,
+    });
+    const queuedNoise = queueRows
+      .filter((r) => r.verdict !== 'keep')
+      .reduce((sum, r) => sum + r.last90dMessages, 0);
+
+    let noiseReductionPct: number | null = null;
+    if (queueRows.length > 0 && queuedNoise > 0) {
+      const ninetyDaysAgo = new Date(todayStartUtc.getTime() - 90 * 86_400_000);
+      const [volume] = await this.db
+        .select({ total: count() })
+        .from(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
+            eq(mailMessages.isOutbound, false),
+            gte(mailMessages.internalDate, ninetyDaysAgo),
+          ),
+        );
+      const total = Number(volume?.total ?? 0);
+      if (total > 0) {
+        noiseReductionPct = Math.min(100, Math.round((queuedNoise / total) * 100));
+      }
+    }
+
+    return {
+      receivedToday: Number(received?.total ?? 0),
+      sendersToday: Number(received?.senders ?? 0),
+      handledAutomatically: Number(autopilot?.handled ?? 0),
+      queuedDecisions: queueRows.length,
+      noiseReductionPct,
     };
   }
 
