@@ -13,7 +13,11 @@ import {
 import { ApiError } from '@/lib/api/client';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 
-import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
+import type {
+  AutopilotMatchDto,
+  AutopilotRuleDto,
+  AutopilotRulePreviewResultDto,
+} from '@/lib/api/autopilot';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -130,6 +134,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const approveMatches = useApproveMatches();
   const approveAllForRule = useApproveAllForRule();
   const rulePreview = useRulePreview();
+  // Separate mutation instance for the activation modal's first-sweep
+  // preview (D226) — the rule card's inline panel and the modal must
+  // not stomp each other's state.
+  const activatePreview = useRulePreview();
 
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
@@ -193,37 +201,35 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     return out;
   }, [rules, suggestions]);
 
-  /** D104 day-7 banner set — elapsed observe window, still enabled. */
+  /**
+   * D10 day-7 prompt set — elapsed observe window, still enabled, NOT
+   * dismissed, and ≥1 pending match (the uncapped server digest — a
+   * silent week earns no prompt).
+   */
   const elapsedObserveRules = useMemo(
-    () => rules.filter((r) => r.enabled && r.mode === 'observe' && r.observeWindowElapsed),
+    () =>
+      rules.filter(
+        (r) =>
+          r.enabled &&
+          r.mode === 'observe' &&
+          r.observeWindowElapsed &&
+          r.observePromptDismissedAt == null &&
+          (r.observeDigest?.pendingTotal ?? 0) > 0,
+      ),
     [rules],
   );
 
   /** Dry-run panel state for the (single) open preview (D103/D192). */
   const previewState: RulePreviewState | null = useMemo(() => {
     if (previewRuleId == null) return null;
-    if (rulePreview.isPending) return { status: 'loading' };
-    if (rulePreview.isError) {
-      const err = rulePreview.error;
-      return {
-        status: 'error',
-        message:
-          err instanceof ApiError
-            ? `Dry-run failed (HTTP ${err.status}).`
-            : 'Dry-run failed. Please retry.',
-      };
-    }
-    if (rulePreview.data != null && rulePreview.data.ruleId === previewRuleId) {
-      return { status: 'ready', result: rulePreview.data };
-    }
-    return { status: 'loading' };
-  }, [
-    previewRuleId,
-    rulePreview.isPending,
-    rulePreview.isError,
-    rulePreview.error,
-    rulePreview.data,
-  ]);
+    return derivePreviewState(rulePreview, previewRuleId);
+  }, [previewRuleId, rulePreview]);
+
+  /** First-sweep preview state for the activation modal (D226). */
+  const activatePreviewState: RulePreviewState = useMemo(() => {
+    if (activateTarget == null) return { status: 'loading' };
+    return derivePreviewState(activatePreview, activateTarget.id);
+  }, [activateTarget, activatePreview]);
 
   // ── Rule mutations (D101) ──────────────────────────────────────────
 
@@ -281,7 +287,48 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     );
   };
 
-  // ── Activation (D104 day-7 prompt → D226 preview → PATCH) ─────────
+  // ── Activation (D10 day-7 prompt → D226 preview → PATCH) ──────────
+
+  /**
+   * Opening the modal ALSO fires the first-sweep dry-run — the D226
+   * preview the confirm button gates on (`activatePreviewState`).
+   */
+  const openActivate = (rule: AutopilotRuleDto) => {
+    patchRule.reset();
+    activatePreview.reset();
+    setActivateTarget(rule);
+    activatePreview.mutate(rule.id);
+  };
+
+  /** D10 — persist the day-7 prompt dismissal on the rule row. */
+  const onDismissPrompt = (rule: AutopilotRuleDto) => {
+    void track('autopilot_suggestion_decided', {
+      decision: 'rejected',
+      suggestion_kind: 'preset_change',
+      count: 1,
+    });
+    addBreadcrumb({
+      category: 'action',
+      message: 'autopilot: day-7 prompt dismissed',
+      level: 'info',
+    });
+    patchRule.mutate(
+      { ruleId: rule.id, patch: { observePromptDismissed: true } },
+      {
+        onSuccess: () => toast('Prompt dismissed — the rule keeps observing', 'info'),
+        onError: (err) => {
+          toast(patchFailureMessage(err), 'warn');
+          captureFeatureException(err, { surface: 'autopilot', reason: 'prompt_dismiss_failed' });
+        },
+      },
+    );
+  };
+
+  /** Rule whose prompt-dismiss PATCH is in flight (banner button state). */
+  const dismissingPromptRuleId =
+    patchRule.isPending && patchRule.variables?.patch.observePromptDismissed === true
+      ? patchRule.variables.ruleId
+      : null;
 
   const onActivateConfirm = () => {
     if (activateTarget == null) return;
@@ -500,12 +547,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       {state.kind === 'ready' && (
         <ObserveWindowBanner
           rules={elapsedObserveRules}
-          pendingCountByRule={pendingCountByRule}
-          pendingApproximate={pendingBufferTruncated}
-          onActivate={(rule) => {
-            patchRule.reset();
-            setActivateTarget(rule);
-          }}
+          onActivate={openActivate}
+          onDismiss={onDismissPrompt}
+          dismissingRuleId={dismissingPromptRuleId}
         />
       )}
 
@@ -661,6 +705,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         rule={activateTarget}
         pendingCount={activateTarget != null ? (pendingCountByRule.get(activateTarget.id) ?? 0) : 0}
         pendingApproximate={pendingBufferTruncated}
+        preview={activatePreviewState}
+        onRetryPreview={() => {
+          if (activateTarget != null) activatePreview.mutate(activateTarget.id);
+        }}
         isActivating={activateTarget != null && patchRule.isPending}
         error={activateError}
         onCancel={() => {
@@ -675,6 +723,38 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 /** PATCH failure toast copy — shared by toggle/threshold/resume. */
 function patchFailureMessage(err: unknown): string {
   return err instanceof ApiError ? `Couldn't save (${err.status})` : "Couldn't save the rule";
+}
+
+/**
+ * Dry-run mutation → panel state, shared by the rule-card inline panel
+ * and the activation modal (D103/D226) so the two surfaces derive the
+ * loading/error/ready branches identically. Stale data from a PREVIOUS
+ * rule (mismatched `ruleId`) renders as loading, never as ready.
+ */
+function derivePreviewState(
+  mutation: {
+    isPending: boolean;
+    isError: boolean;
+    error: unknown;
+    data: AutopilotRulePreviewResultDto | undefined;
+  },
+  ruleId: string,
+): RulePreviewState {
+  if (mutation.isPending) return { status: 'loading' };
+  if (mutation.isError) {
+    const err = mutation.error;
+    return {
+      status: 'error',
+      message:
+        err instanceof ApiError
+          ? `Dry-run failed (HTTP ${err.status}).`
+          : 'Dry-run failed. Please retry.',
+    };
+  }
+  if (mutation.data != null && mutation.data.ruleId === ruleId) {
+    return { status: 'ready', result: mutation.data };
+  }
+  return { status: 'loading' };
 }
 
 /** Modal-error string from a mutation error (null when no error). */

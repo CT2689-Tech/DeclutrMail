@@ -26,6 +26,7 @@ import {
   PRESET_RULES_ALL_FIVE,
   PRESET_RULES_ALL_PAUSED,
   PRESET_RULES_OBSERVE,
+  RULE_PREVIEW_RESULT,
 } from './fixtures';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
@@ -188,7 +189,10 @@ export const ApproveConfirmOpen: Story<typeof ApproveConfirmModal> = {
 
 /**
  * D226 — the day-7 Observe → Active preview. States what changes
- * going forward and that already-collected suggestions stay pending.
+ * going forward, that already-collected suggestions stay pending, and
+ * what the FIRST active sweep would do right now (dry-run resolved —
+ * Confirm enabled). Loading/error gating variants live in the
+ * ActivateRuleModal stories.
  */
 export const ActivateConfirmOpen: Story<typeof ActivateRuleModal> = {
   render: () =>
@@ -197,6 +201,8 @@ export const ActivateConfirmOpen: Story<typeof ActivateRuleModal> = {
         rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
         pendingCount={2}
         pendingApproximate={false}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
         isActivating={false}
         error={null}
         onCancel={() => undefined}

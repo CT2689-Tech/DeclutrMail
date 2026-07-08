@@ -2,13 +2,16 @@
 
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
 
 const { color, font } = tokens;
 
 /**
- * D104 day-7 prompt — shown once a rule's 7-day Observe window has
- * elapsed (`observeWindowElapsed`, computed server-side).
+ * D10 day-7 prompt — shown once a rule's 7-day Observe window has
+ * elapsed (`observeWindowElapsed`, computed server-side) AND the rule
+ * collected at least one pending match (`observeDigest.pendingTotal`,
+ * uncapped server count — a silent week earns no prompt).
  *
  * Honest copy contract (D99/D192 locked semantics):
  *
@@ -18,25 +21,32 @@ const { color, font } = tokens;
  *     until the user explicitly switches it to Active — this banner
  *     is the explicit switch's entry point, not a countdown to one.
  *
+ * Dismissible (D10): "Not now" persists `observe_prompt_dismissed_at`
+ * on the rule row via PATCH, so the prompt stays gone across reloads.
+ * A later mode change clears the dismissal server-side (a fresh
+ * Observe window re-arms the prompt).
+ *
  * Activation itself goes through the D226 preview modal
  * (`ActivateRuleModal`) — the banner only opens it.
  */
 export function ObserveWindowBanner({
   rules,
-  pendingCountByRule,
-  pendingApproximate,
   onActivate,
+  onDismiss,
+  dismissingRuleId,
 }: {
-  /** Rules with `observeWindowElapsed && mode==='observe' && enabled`. */
-  rules: AutopilotRuleDto[];
-  pendingCountByRule: Map<string, number>;
   /**
-   * True when the pending buffer hit the BE's 50-row page cap — the
-   * per-rule counts are then floors, not totals (honest copy below).
+   * Rules with `enabled && mode==='observe' && observeWindowElapsed &&
+   * observePromptDismissedAt == null && observeDigest.pendingTotal > 0`
+   * (the screen derives this set).
    */
-  pendingApproximate: boolean;
+  rules: AutopilotRuleDto[];
   /** Opens the activate preview modal for one rule. */
   onActivate: (rule: AutopilotRuleDto) => void;
+  /** Persists the D10 prompt dismissal for one rule. */
+  onDismiss: (rule: AutopilotRuleDto) => void;
+  /** Rule whose dismissal PATCH is in flight (disables its buttons). */
+  dismissingRuleId: string | null;
 }) {
   if (rules.length === 0) return null;
 
@@ -58,8 +68,8 @@ export function ObserveWindowBanner({
         <Eyebrow>Observe window complete</Eyebrow>
         <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, margin: '2px 0 0' }}>
           {rules.length === 1
-            ? '1 rule finished its 7-day observe window.'
-            : `${rules.length} rules finished their 7-day observe windows.`}
+            ? 'Autopilot has been watching for a week.'
+            : `Autopilot has been watching for a week — ${rules.length} rules are ready.`}
         </div>
         <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
           During the window, matches were collected as suggestions without touching your mail.
@@ -81,7 +91,9 @@ export function ObserveWindowBanner({
       >
         {rules.map((rule) => {
           const name = presetDisplayName(rule.presetKey, rule.name);
-          const pending = pendingCountByRule.get(rule.id) ?? 0;
+          const digest = observeDigestSummary(rule);
+          const pending = rule.observeDigest?.pendingTotal ?? 0;
+          const isDismissing = dismissingRuleId === rule.id;
           return (
             <li
               key={rule.id}
@@ -94,14 +106,25 @@ export function ObserveWindowBanner({
             >
               <span style={{ flex: 1, minWidth: 0, color: color.fgSoft }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>{name}</strong>
-                {pendingApproximate
-                  ? ` has ${pending} pending suggestion${pending === 1 ? '' : 's'} in the latest 50 below.`
-                  : ` collected ${pending} pending suggestion${pending === 1 ? '' : 's'} during its window.`}
+                {digest != null
+                  ? ` — ${lowerFirst(digest)}.`
+                  : ` — ${pending} pending suggestion${pending === 1 ? '' : 's'} collected.`}{' '}
+                Activate?
               </span>
               <Button
                 tone="default"
                 size="sm"
+                onClick={() => onDismiss(rule)}
+                disabled={isDismissing}
+                ariaLabel={`Dismiss activation prompt for rule ${name}`}
+              >
+                {isDismissing ? 'Dismissing…' : 'Not now'}
+              </Button>
+              <Button
+                tone="default"
+                size="sm"
                 onClick={() => onActivate(rule)}
+                disabled={isDismissing}
                 ariaLabel={`Switch rule ${name} to Active`}
               >
                 Switch to Active…
@@ -112,4 +135,9 @@ export function ObserveWindowBanner({
       </ul>
     </div>
   );
+}
+
+/** "Would have archived…" → "would have archived…" for mid-sentence use. */
+function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1);
 }

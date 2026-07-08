@@ -94,6 +94,8 @@ export const Active: Story<typeof RuleCard> = {
       mode: 'active',
       observeWindowEndsAt: null,
       observeWindowElapsed: false,
+      // BE contract: the digest is an Observe-mode surface — null otherwise.
+      observeDigest: null,
     },
   },
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
@@ -108,6 +110,7 @@ export const Paused: Story<typeof RuleCard> = {
       mode: 'paused',
       observeWindowEndsAt: null,
       observeWindowElapsed: false,
+      observeDigest: null,
     },
   },
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
@@ -141,6 +144,22 @@ export const PreviewError: Story<typeof RuleCard> = {
     ...baseArgs,
     previewOpen: true,
     preview: { status: 'error', message: 'Dry-run failed (HTTP 500).' },
+  },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
+/**
+ * D10/D101 — a quiet observe week: the digest is zero-filled, so the
+ * "would have…" line stays hidden (no noise when nothing matched).
+ */
+export const ObserveQuietWeek: Story<typeof RuleCard> = {
+  args: {
+    ...baseArgs,
+    rule: {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      observeDigest: { pendingTotal: 0, senders7d: 0, messages7d: 0 },
+    },
+    pendingCount: 0,
   },
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
 };

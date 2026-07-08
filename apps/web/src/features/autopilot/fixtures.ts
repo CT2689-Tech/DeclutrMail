@@ -30,6 +30,8 @@ export const AUTO_ARCHIVE_LOW_ENGAGEMENT: AutopilotRuleDto = {
   // Window ended NOW − 7h… the seed week elapsed: WEEK_AGO + 7d = NOW.
   observeWindowEndsAt: NOW,
   observeWindowElapsed: true,
+  observePromptDismissedAt: null,
+  observeDigest: { pendingTotal: 34, senders7d: 34, messages7d: 212 },
   confidenceThreshold: 0.7,
   scope: 'account',
   actionKind: 'archive',
@@ -51,6 +53,8 @@ export const AUTO_UNSUBSCRIBE_NOISY: AutopilotRuleDto = {
   modeChangedAt: TWO_DAYS_AGO,
   observeWindowEndsAt: IN_FIVE_DAYS,
   observeWindowElapsed: false,
+  observePromptDismissedAt: null,
+  observeDigest: { pendingTotal: 3, senders7d: 2, messages7d: 11 },
   confidenceThreshold: 0.9,
   scope: 'account',
   actionKind: 'unsubscribe',
@@ -72,6 +76,8 @@ export const NEWSLETTER_GRAVEYARD: AutopilotRuleDto = {
   modeChangedAt: TWO_DAYS_AGO,
   observeWindowEndsAt: IN_FIVE_DAYS,
   observeWindowElapsed: false,
+  observePromptDismissedAt: null,
+  observeDigest: { pendingTotal: 5, senders7d: 3, messages7d: 9 },
   confidenceThreshold: null,
   scope: 'account',
   actionKind: 'unsubscribe',
@@ -93,6 +99,8 @@ export const LONG_DORMANT_UNSUBSCRIBE: AutopilotRuleDto = {
   modeChangedAt: TWO_DAYS_AGO,
   observeWindowEndsAt: IN_FIVE_DAYS,
   observeWindowElapsed: false,
+  observePromptDismissedAt: null,
+  observeDigest: { pendingTotal: 0, senders7d: 0, messages7d: 0 },
   confidenceThreshold: null,
   scope: 'account',
   actionKind: 'unsubscribe',
@@ -118,6 +126,8 @@ export const SCREEN_NEW_SENDERS: AutopilotRuleDto = {
   modeChangedAt: TWO_DAYS_AGO,
   observeWindowEndsAt: IN_FIVE_DAYS,
   observeWindowElapsed: false,
+  observePromptDismissedAt: null,
+  observeDigest: { pendingTotal: 1, senders7d: 1, messages7d: 2 },
   confidenceThreshold: null,
   scope: 'account',
   actionKind: 'later',
@@ -150,6 +160,8 @@ export const PRESET_RULES_ALL_PAUSED: AutopilotRuleDto[] = PRESET_RULES_OBSERVE.
   modeChangedAt: NOW,
   observeWindowEndsAt: null,
   observeWindowElapsed: false,
+  // Digest is an Observe-mode surface — null outside Observe (BE contract).
+  observeDigest: null,
 }));
 
 export const PENDING_SUGGESTIONS: AutopilotMatchDto[] = [

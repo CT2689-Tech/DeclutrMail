@@ -1,9 +1,12 @@
-// Storybook CSF3 stories for the D104 day-7 observe-window banner.
+// Storybook CSF3 stories for the D10 day-7 observe-window prompt.
 //
 // Same lightweight local CSF shims as the AutopilotScreen stories.
 // The banner's honest-copy contract: matches were collected WITHOUT
 // acting, and nothing auto-promotes — the user explicitly switches a
 // rule to Active (which then goes through the D226 preview modal).
+// Each row carries the Observe-mode digest ("would have archived N
+// emails from M senders in the last 7 days") and a persisted "Not now"
+// dismissal (D10).
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -33,7 +36,7 @@ const meta: StoryMeta<typeof ObserveWindowBanner> = {
     docs: {
       description: {
         component:
-          'D104 day-7 prompt. Listed rules finished their 7-day Observe window — suggestions were collected without touching mail, and the rule keeps observing until the user explicitly switches it to Active (no auto-promote). The CTA opens the D226 ActivateRuleModal preview.',
+          'D10 day-7 prompt. Listed rules finished their 7-day Observe window with ≥1 pending match — suggestions were collected without touching mail, and the rule keeps observing until the user explicitly switches it to Active (no auto-promote). Each row shows the verb-honest digest, a persisted "Not now" dismissal, and the CTA that opens the D226 ActivateRuleModal preview.',
       },
     },
   },
@@ -53,13 +56,13 @@ function frame(children: React.ReactNode) {
   return <div style={{ padding: 16, background: color.bg, maxWidth: 760 }}>{children}</div>;
 }
 
-/** One rule finished its window. */
+/** One rule finished its window — digest copy + Not now + Switch to Active. */
 export const OneRule: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT],
-    pendingCountByRule: new Map([[AUTO_ARCHIVE_LOW_ENGAGEMENT.id, 2]]),
-    pendingApproximate: false,
     onActivate: () => undefined,
+    onDismiss: () => undefined,
+    dismissingRuleId: null,
   },
   render: (args: BannerArgs) => frame(<ObserveWindowBanner {...args} />),
 };
@@ -68,29 +71,20 @@ export const OneRule: Story<typeof ObserveWindowBanner> = {
 export const MultipleRules: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT, ELAPSED_GRAVEYARD],
-    pendingCountByRule: new Map([
-      [AUTO_ARCHIVE_LOW_ENGAGEMENT.id, 2],
-      [ELAPSED_GRAVEYARD.id, 1],
-    ]),
-    pendingApproximate: false,
     onActivate: () => undefined,
+    onDismiss: () => undefined,
+    dismissingRuleId: null,
   },
   render: (args: BannerArgs) => frame(<ObserveWindowBanner {...args} />),
 };
 
-/**
- * The buffer hit the BE's 50-row cap — counts are floors, and the
- * copy switches to "in the latest 50" (honest counts, U15 smoke).
- */
-export const TruncatedBuffer: Story<typeof ObserveWindowBanner> = {
+/** A "Not now" PATCH is in flight — that row's buttons disable. */
+export const DismissInFlight: Story<typeof ObserveWindowBanner> = {
   args: {
     rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT, ELAPSED_GRAVEYARD],
-    pendingCountByRule: new Map([
-      [AUTO_ARCHIVE_LOW_ENGAGEMENT.id, 41],
-      [ELAPSED_GRAVEYARD.id, 9],
-    ]),
-    pendingApproximate: true,
     onActivate: () => undefined,
+    onDismiss: () => undefined,
+    dismissingRuleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
   },
   render: (args: BannerArgs) => frame(<ObserveWindowBanner {...args} />),
 };
