@@ -26,13 +26,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-08 — D49 grid/table toggle retired in Senders — RATIFY or REVERT (plan-drift)
-**Source:** PR #294 (senders Tier-2/3 suite) — the buildout rearchitected Senders around the grid as the single adaptive surface and removed the `[Grid | Table]` toggle.
-**Why:** D49 ("Always grid; table is per-session toggle") is a **locked** decision, so removing the table is plan-drift (CLAUDE.md §3 — the founder's call). Shipped under the founder's explicit "best-expertise / don't-wait / long-term-solution" directive because the new **brand rollup** (eTLD+1 grouping) is a stronger analytical/scan surface than the flat sortable table (it directly kills the "134 amazon.com rows" scan cost the table never solved), and mobile was already grid-only per D49 itself.
-**How:** Either (a) **ratify** grid-only → patch D49 in the plan + `IMPLEMENTATION-LOG` to "table view retired; brand rollup is the analytical surface"; or (b) **revert** → restore `view-toggle.tsx` + the store `view`/`setView` slice + the `SenderTable` render branch in `senders-screen.tsx` (the `SenderTable` component still exists on main; the rollup/bulk/saved-views work is independent of the decision).
-**Verifies by:** D49 in the plan matches what ships; no orphaned `view` references (`rg "SendersView|setView" apps/web/src/features/senders`).
-**Status:** Open
-
 ### 2026-07-08 — Quiet "Release now" + Screener bulk-decide: finish the deferred halves (D75/D96)
 **Source:** PR #298 (screener/quiet suite) — the read slice (held-count + ends-at) shipped complete; two scaffolded-but-unfinished features were reverted rather than shipped half-built (§10 no-stub).
 **Why:** The original agent scaffolded a quiet "Release now" endpoint (contract `QuietReleaseResult` + workers `persistQuietRelease`/`isQuietWindowReleased`) and a Screener bulk-decide, but neither was finished — release-now needs the `autopilot-action` BullMQ queue injected into `MailboxesModule` (module wiring), and bulk-decide was never started. Shipping the dead plumbing would have been fake completion.
@@ -1502,6 +1495,13 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-07-08 — D49 grid/table toggle retired in Senders — RATIFY or REVERT (plan-drift)
+**Source:** PR #294 (senders Tier-2/3 suite) — the buildout rearchitected Senders around the grid as the single adaptive surface and removed the `[Grid | Table]` toggle.
+**Why:** D49 ("Always grid; table is per-session toggle") is a **locked** decision, so removing the table is plan-drift (CLAUDE.md §3 — the founder's call). Shipped under the founder's explicit "best-expertise / don't-wait / long-term-solution" directive because the new **brand rollup** (eTLD+1 grouping) is a stronger analytical/scan surface than the flat sortable table, and mobile was already grid-only per D49 itself.
+**How:** Either (a) **ratify** grid-only; or (b) **revert** → restore `view-toggle.tsx` + the store `view`/`setView` slice + the `SenderTable` render branch.
+**Verifies by:** D49 in the plan matches what ships; no orphaned `view` references.
+**Status:** Done 2026-07-08 — founder chose **REVERT (b)**. PR #300 restored the `[Grid | Table]` toggle: store `view` slice (D200), `view-toggle.tsx`, and the grid/table branch in `senders-screen.tsx` re-wired to the surviving `SenderTable` (row verbs → shared D226 preview). Live-smoked (dev-login, real 7,854-sender mailbox): flip round-trips, table renders 50 rows, Archive row verb opens the preview; 31 senders-screen tests green. D49 now ships as originally locked — no plan patch needed.
 
 ### 2026-06-06 — Triage engine over-recommends Unsubscribe on receipt / financial / gov senders
 **Source:** session 2026-06-06 (full-branch smoke, Triage row inspection)

@@ -46,8 +46,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
+import { ViewToggle } from './view-toggle';
+import { SenderTable, type SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
+import type { SenderListRow } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { track } from '@/lib/posthog';
@@ -93,6 +96,22 @@ const VERB_BY_KEY: Record<string, 'Keep' | 'Archive' | 'Later' | 'Unsubscribe' |
   l: 'Later',
   u: 'Unsubscribe',
   d: 'Delete',
+};
+
+/**
+ * Map the SenderTable's lowercase row-verb vocabulary to the `ActionVerb`
+ * shape `ConfirmActionModal` consumes (D49 Table view). The table row
+ * renders the shared `SenderActionRow`, so the full K/A/U/L/D registry
+ * routes through — including Keep, which `requestAction` applies
+ * immediately (non-destructive, D40) rather than previewing. Protect
+ * stays a status star, never a row verb (D227).
+ */
+const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
+  keep: 'Keep',
+  archive: 'Archive',
+  unsubscribe: 'Unsubscribe',
+  later: 'Later',
+  delete: 'Delete',
 };
 
 let receiptSeq = 0;
@@ -180,6 +199,14 @@ export function SendersScreen() {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
   }, [sendersQuery.data]);
+  // Carry the wire rows through verbatim for the flat-table view — the
+  // SenderTable consumes the wire `SenderListRow` directly (it needs
+  // `totalReceived` and `lastReview`, which the FE `Sender` adapter
+  // drops for legacy reasons). Grid mode reads the adapted `senders`.
+  const allWireRows = useMemo<SenderListRow[]>(() => {
+    const pages = sendersQuery.data?.pages ?? [];
+    return pages.flatMap((p) => p.data);
+  }, [sendersQuery.data]);
   // Page-1 meta.query.globalMaxTotal — the magnitude-bar denominator
   // (ADR-0014 + senders list contract). Page-1's value is
   // authoritative for the duration of a scroll: subsequent pages
@@ -231,6 +258,7 @@ export function SendersScreen() {
   return (
     <SendersScreenContent
       senders={allSenders}
+      wireRows={allWireRows}
       globalMaxTotal={globalMaxTotal}
       hasNextPage={sendersQuery.hasNextPage}
       isFetchingNextPage={sendersQuery.isFetchingNextPage}
@@ -256,6 +284,7 @@ export function SendersScreen() {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders,
+  wireRows,
   globalMaxTotal,
   hasNextPage,
   isFetchingNextPage,
@@ -270,6 +299,9 @@ function SendersScreenContent({
   clearCompose,
 }: {
   senders: Sender[];
+  /** Raw wire rows (BE order) for the flat-table view (D49). Grid mode
+   *  reads the adapted `senders`; Table mode consumes these directly. */
+  wireRows: SenderListRow[];
   globalMaxTotal: number;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -460,6 +492,9 @@ function SendersScreenContent({
   const sortCol = useSendersStore((s) => s.sort);
   const sortDirection = useSendersStore((s) => s.direction);
   const setSortState = useSendersStore((s) => s.setSort);
+  // Per-session grid/table view (D49). Default is grid; the segmented
+  // ViewToggle in the header flips it. Deliberately non-persistent.
+  const view = useSendersStore((s) => s.view);
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
@@ -528,6 +563,9 @@ function SendersScreenContent({
       ),
     [gridEntries],
   );
+  // Table view is a flat BE-ordered list (no rollup), so the shift-range
+  // walk order is simply the wire-row order.
+  const tableOrderedIds = useMemo(() => wireRows.map((r) => r.id), [wireRows]);
 
   const infiniteScrollEnabled = isFeatureEnabled('infiniteScroll');
 
@@ -1612,6 +1650,9 @@ function SendersScreenContent({
             {senders.length > 0 && (
               <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
             )}
+            {/* D49 — segmented [Grid | Table] switch. Per-session,
+                non-persistent (each visit starts in grid). */}
+            <ViewToggle />
           </span>
         </div>
       )}
@@ -1641,18 +1682,44 @@ function SendersScreenContent({
           title="No senders yet"
           body="Once your mailbox finishes syncing, the senders who mail you will appear here."
         />
-      ) : (
-        // D49 — grid of cards, the single adaptive surface (the Table
-        // toggle was retired; founder-approved 2026-07-08 senders
-        // suite). `senders` arrives already BE-filtered for the active
-        // compose (D38); D51 brand rollup groups ≥3 senders sharing a
-        // registrable domain into one expandable group row.
+      ) : view === 'grid' ? (
+        // D49 default — grid of cards. `senders` arrives already
+        // BE-filtered for the active compose (D38); D51 brand rollup
+        // groups ≥3 senders sharing a registrable domain into one
+        // expandable group row.
         <SenderGrid
           entries={gridEntries}
           selectedIds={selected}
           onToggleSelect={(id, shiftKey) => toggleWithRange(gridOrderedIds, id, shiftKey ?? false)}
           onAction={requestAction}
           globalMaxTotal={globalMaxTotal}
+        />
+      ) : (
+        // D49 Table — flat, sortable list over the wire rows (ADR-0014).
+        // BE sort order (sort + direction) is the canonical row order;
+        // the table does NOT intent-bucket. Row verbs bridge into the
+        // shared `requestAction` shape so ConfirmActionModal / receipt /
+        // undo stay identical to Grid mode (D226).
+        <SenderTable
+          rows={wireRows}
+          globalMaxTotal={globalMaxTotal}
+          sort={sortCol}
+          direction={sortDirection}
+          onSortChange={(next) => setSortState(next)}
+          selectedIds={selected}
+          onSelectionChange={(next) => setSelected(new Set(next))}
+          onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
+          onAction={({ verb, sender }) => {
+            const adapted = adaptSenderListRow(sender);
+            requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
+          }}
+          emptyKind={
+            query.trim() !== ''
+              ? 'no-search-match'
+              : hasAnyFilter(compose)
+                ? 'no-filter-match'
+                : 'no-senders'
+          }
         />
       )}
 
