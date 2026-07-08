@@ -9,10 +9,13 @@ import {
   parseActionSheetPrefs,
   parseBriefPrefs,
   parseEmailPrefs,
+  parseSenderViews,
+  SenderViewsPutSchema,
   type ActionSheetPrefs,
   type BriefPrefs,
   type Envelope,
   type MeSettings,
+  type SavedSenderView,
 } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
@@ -52,6 +55,7 @@ export class MeSettingsController {
       emailPrefs: parseEmailPrefs(current?.preferences),
       actionSheetPrefs: parseActionSheetPrefs(current?.preferences),
       briefPrefs: parseBriefPrefs(current?.preferences),
+      senderViews: parseSenderViews(current?.preferences),
     });
   }
 
@@ -114,5 +118,38 @@ export class MeSettingsController {
     };
     await this.users.patchPreferences(user.userId, { briefPrefs: merged });
     return ok({ briefPrefs: merged });
+  }
+
+  /**
+   * PATCH /api/me/sender-views — D51 saved sender filter views.
+   *
+   * FULL-REPLACE set-state: the body carries the complete list (≤ 10 —
+   * `SENDER_VIEWS_CAP`, enforced by the schema), so save / rename /
+   * delete are all the same idempotent write. Duplicate names 400 —
+   * the FE Views menu addresses views by name.
+   */
+  @Patch('sender-views')
+  @UseGuards(CsrfGuard)
+  @RateLimit('default')
+  async putSenderViews(
+    @CurrentUser() user: SessionPrincipal,
+    @Body() body: unknown,
+  ): Promise<Envelope<{ senderViews: SavedSenderView[] }>> {
+    const parsed = SenderViewsPutSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid sender-views body.',
+      });
+    }
+    const names = parsed.data.views.map((v) => v.name);
+    if (new Set(names).size !== names.length) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: 'View names must be unique.',
+      });
+    }
+    await this.users.patchPreferences(user.userId, { senderViews: parsed.data.views });
+    return ok({ senderViews: parsed.data.views });
   }
 }

@@ -1,0 +1,34 @@
+-- 0031_activity_action_unsubscribe_confirmed.sql
+--
+-- Founder decision 2026-07-08 — the unsubscribe OUTCOME gets its own
+-- audit row, rendered distinct from the intent row. Today the intent
+-- click writes `activity_log(action='unsubscribe')` (the DECISION);
+-- when `UnsubExecutionWorker` completes the RFC 8058 POST, the outcome
+-- has nowhere distinct to land — a second 'unsubscribe' row would be
+-- indistinguishable from a re-click in the Activity timeline (D56
+-- filters group by `action`). `'unsubscribe_confirmed'` is the outcome
+-- verb: "the brand's endpoint accepted the unsubscribe."
+--
+-- This migration ships the enum value only, ahead of the activity-suite
+-- PR that writes + renders it — same staging as 0024 (verb before
+-- producer), so the producer PR carries zero migration risk.
+--
+-- Value spelling follows the 0028 precedent (snake_case for non-verb,
+-- feature-specific audit entries: `marked_vip`, `unmarked_protected`).
+-- Not a K/A/U/L/D canonical verb (D227) — it is an outcome record, not
+-- a user-facing action; UI copy stays within the canonical verb set.
+--
+-- The `ADD VALUE` form is forward-only-friendly: Postgres supports it
+-- without recreating the type, and the new value is usable immediately
+-- after commit. `IF NOT EXISTS` makes the forward statement idempotent
+-- so re-applying on an environment that already ran it is a no-op.
+--
+-- The `.rollback` companion drops + recreates the type without the
+-- value; the rollback fails on the USING cast if any row carries it
+-- (correct semantics — you cannot rollback if data depends on the new
+-- value).
+--
+-- Privacy (D7, D228): metadata only — the activity_log row records the
+-- action kind + sender_key, never message content.
+
+ALTER TYPE "public"."activity_action" ADD VALUE IF NOT EXISTS 'unsubscribe_confirmed';

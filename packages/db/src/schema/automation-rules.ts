@@ -132,6 +132,19 @@ export const automationRules = pgTable(
       .notNull()
       .default(sql`now()`),
     /**
+     * D10 — when the user dismissed the day-7 "switch to Active?"
+     * prompt for this rule. NULL = never dismissed (prompt eligible
+     * once the Observe window elapses). Cleared on every mode
+     * transition so a fresh Observe window re-arms the prompt. Lives on
+     * the rule row (not users.preferences) because the prompt is
+     * per-rule per-mailbox and its anchor (`mode_changed_at`) already
+     * lives here — one row owns the whole prompt lifecycle.
+     */
+    observePromptDismissedAt: timestamp('observe_prompt_dismissed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /**
      * Confidence floor for threshold-bearing presets (#1, #2). NULL means
      * the rule does not gate on engine confidence. `numeric(3,2)` matches
      * `triage_decisions.confidence` so equality lines up.

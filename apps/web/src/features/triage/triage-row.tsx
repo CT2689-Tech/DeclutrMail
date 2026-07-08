@@ -4,9 +4,10 @@ import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import { ActionToolbar } from './action-toolbar';
-import type { TriageDecisionRow } from './data';
+import { canArchive, canLater, type TriageDecisionRow } from './data';
 import { verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
 import { TriageRowExpanded } from './triage-row-expanded';
+import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 
 const { color, font } = tokens;
 
@@ -63,11 +64,19 @@ function whyLine(row: TriageDecisionRow): string {
  * Per D198 / D36 only one row is expanded at a time — the
  * `expanded` flag is driven from the feature's Zustand store so the
  * queue and the action sheet can both read it.
+ *
+ * Mobile (D37, ≤xs): the card goes vertical — the four verb buttons
+ * render full-width at the bottom even while collapsed, and swipe
+ * gestures (→ Keep, ← Archive, ↑ Later; see `use-swipe-verb.ts`)
+ * augment them. Unsubscribe stays button-only. Swipes route through
+ * the same onAction path, so D226's preview still gates every
+ * destructive verb.
  */
 export function TriageRow({
   row,
   expanded,
   busy = false,
+  hero = false,
   onToggleExpand,
   onAction,
   inlinePreview,
@@ -80,6 +89,14 @@ export function TriageRow({
    * the K/A/U/L shortcuts release until the server confirms.
    */
   busy?: boolean;
+  /**
+   * D26 — the queue's FIRST card is the triage hero: the engine's
+   * reasoning renders inline under the why-line while collapsed
+   * (1–2 lines, "premium, transparent"). Every other surface keeps
+   * reasoning behind an interaction (the expanded body here; the
+   * `Why?` popover on Sender Detail).
+   */
+  hero?: boolean;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -101,10 +118,25 @@ export function TriageRow({
   // (the pill's "· NN%" already carries the recommendation).
   const isNarrow = useIsAtMost('xs');
 
+  // D37 — swipe gestures on the mobile card. A swipe resolves to the
+  // SAME onAction path the buttons use (destructive verbs still open
+  // the D226 sheet/preview — a swipe never mutates directly), gated by
+  // the row's capability rules. Touch pointers only.
+  const { drag, handlers: swipeHandlers } = useSwipeVerb({
+    enabled: isNarrow && !busy,
+    onVerb: (verb: SwipeVerb) => {
+      if (verb === 'Archive' && !canArchive(row)) return;
+      if (verb === 'Later' && !canLater(row)) return;
+      onAction(verb);
+    },
+  });
+
   return (
     <div
       aria-busy={busy}
+      {...(isNarrow ? swipeHandlers : {})}
       style={{
+        position: 'relative',
         background: color.card,
         border: `1px solid ${expanded ? color.primaryBorder : color.line}`,
         borderRadius: 10,
@@ -114,6 +146,12 @@ export function TriageRow({
           : '0 1px 2px rgba(20,30,50,0.04)',
         transition: 'border-color 0.15s, box-shadow 0.15s, opacity 0.15s',
         opacity: busy ? 0.6 : 1,
+        // pan-y: vertical drags stay with the browser (list scrolling
+        // survives); horizontal swipes reach the pointer handlers. An
+        // up-swipe resolves only when the page doesn't consume it as a
+        // scroll — the Later button always remains (gestures augment,
+        // never replace).
+        ...(isNarrow ? { touchAction: 'pan-y' as const } : null),
       }}
     >
       {/* Collapsed header — always rendered. */}
@@ -217,6 +255,26 @@ export function TriageRow({
           >
             {whyLine(row)}
           </span>
+          {/* D26 — hero card only: the engine's reasoning inline,
+              clamped to 2 lines. Hidden while expanded (the expanded
+              body renders the same copy in its Reasoning block). */}
+          {hero && !expanded && (
+            <span
+              data-dm-hero-reasoning
+              style={{
+                fontSize: 12,
+                color: color.fgMuted,
+                marginTop: 2,
+                lineHeight: 1.45,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {row.reasoning}
+            </span>
+          )}
         </div>
 
         {/* Verdict pill — the engine's current recommendation. On the
@@ -276,12 +334,44 @@ export function TriageRow({
         </span>
       </div>
 
+      {/* D37 mobile card — the four verb buttons render full-width at
+          the bottom of the card, collapsed AND expanded (the desktop
+          toolbar only mounts on expand). One toolbar instance either
+          way, so the K/A/U/L key listener never doubles up. */}
+      {isNarrow && (
+        <div style={{ padding: expanded ? '12px 14px 0' : '0 14px 12px' }}>
+          <ActionToolbar row={row} onAction={onAction} keyboardEnabled={!busy} disabled={busy} />
+          {/* D37 hint layer — gestures are invisible without it. */}
+          <div
+            aria-hidden="true"
+            style={{
+              marginTop: 6,
+              fontFamily: font.mono,
+              fontSize: 9.5,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+              textAlign: 'center',
+            }}
+          >
+            Swipe · → Keep · ← Archive · ↑ Later
+          </div>
+        </div>
+      )}
+
       {/* Expanded body — toolbar + stats + reasoning + (maybe) inline preview. */}
       {expanded && (
         <div id={`triage-row-body-${row.id}`} style={{ display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '12px 14px 0' }}>
-            <ActionToolbar row={row} onAction={onAction} keyboardEnabled={!busy} disabled={busy} />
-          </div>
+          {!isNarrow && (
+            <div style={{ padding: '12px 14px 0' }}>
+              <ActionToolbar
+                row={row}
+                onAction={onAction}
+                keyboardEnabled={!busy}
+                disabled={busy}
+              />
+            </div>
+          )}
           <TriageRowExpanded row={row} />
           {inlinePreview != null && (
             <div style={{ padding: '0 18px 18px' }}>
@@ -294,6 +384,41 @@ export function TriageRow({
               />
             </div>
           )}
+        </div>
+      )}
+      {/* D37 — live gesture feedback: while a touch drag would resolve
+          to a verb, name it over the card so releasing is informed. */}
+      {drag?.wouldResolve != null && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.82)',
+            backdropFilter: 'blur(1px)',
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: drag.wouldResolve === 'Keep' ? color.primary : color.fg,
+            }}
+          >
+            {drag.wouldResolve === 'Keep'
+              ? '→ Keep'
+              : drag.wouldResolve === 'Archive'
+                ? '← Archive'
+                : '↑ Later'}
+          </span>
         </div>
       )}
       {/* SR announcement while the decision confirms server-side. */}

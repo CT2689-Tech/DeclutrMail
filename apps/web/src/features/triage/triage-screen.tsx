@@ -1,18 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
-// Cross-feature query-key imports are deliberate (not a D198/D199
-// boundary breach): each feature owns its keys, and exports them as the
-// invalidation contract other features use to mark its caches stale
-// after a mutation. Only the keys cross the boundary — never behavior.
-import { activityKeys } from '@/features/activity/api/query-keys';
-import { sendersKeys } from '@/features/senders/api/query-keys';
 import {
   useActionStatus,
+  useBatchStatus,
+  useBulkActionPreview,
   useCompositePreview,
+  useEnqueueBulkAction,
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
@@ -35,19 +32,24 @@ import {
 } from '@/features/settings/api/use-me-settings';
 
 import { useKeepIntent } from './api/use-triage-actions';
-import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
+import { invalidateAfterDecision } from './api/invalidate';
 import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import type { PreviewCount } from './action-preview';
+import { BatchActionSheet } from './batch-action-sheet';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
   type TriageDecisionRow,
   type TriageScreenState,
 } from './data';
+import type { DomainBatch } from './domain-batch';
+import type { BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
+import { TriageKeyboardHelp } from './keyboard-help';
+import { SessionProgress } from './session-progress';
 import { useTriageStore, type SheetableVerb } from './store';
+import { TodayStrip } from './today-strip';
 import { TriageQueue } from './triage-queue';
-import { UNDO_TRAY_QUERY_KEY } from './triage-undo-tray';
 import type { ActionVerb } from './types';
 
 const { color, font } = tokens;
@@ -63,22 +65,6 @@ export const DEFAULT_TRIAGE_STATE: TriageScreenState = {
   rows: [...TRIAGE_QUEUE],
   stats: TRIAGE_SESSION_STATS,
 };
-
-/**
- * Mark every surface a confirmed decision touches as stale (D200):
- * the queue (the decided sender leaves it — server-confirmed, never
- * optimistic), stats (decidedToday moved), the activity feed (the
- * audit row), the senders list (inbox counts moved), and the undo
- * tray (a fresh token may exist). Keys are not partitioned by mailbox
- * — `resetMailboxScopedCache` owns the switch invariant.
- */
-function invalidateAfterDecision(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
-  void qc.invalidateQueries({ queryKey: TRIAGE_STATS_KEY });
-  void qc.invalidateQueries({ queryKey: activityKeys.all });
-  void qc.invalidateQueries({ queryKey: sendersKeys.all });
-  void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
-}
 
 /**
  * Triage screen — the V2 daily ritual (D29, D33, D36, D207).
@@ -136,6 +122,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const clearPending = useTriageStore((s) => s.clearPending);
   const setRememberPreference = useTriageStore((s) => s.setRememberPreference);
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
+  const sessionDecidedCount = useTriageStore((s) => s.sessionDecidedCount);
+  const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
 
   const keepIntent = useKeepIntent();
   const unsubIntent = useRecordUnsubscribeIntent();
@@ -159,6 +147,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     rowId: string;
     senderName: string;
     verb: 'Archive' | 'Later';
+    /**
+     * True when this job is the optional backlog-archive that rides an
+     * Unsubscribe decision (D9). The unsub already counted toward the
+     * session burn-down — a follow-on must not count twice.
+     */
+    followOn?: boolean;
   } | null>(null);
   const [intentRowId, setIntentRowId] = useState<string | null>(null);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
@@ -179,6 +173,84 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
+
+  // Domain-batch pipeline (one composite decision over a same-domain
+  // run; see triage-queue.tsx). `pendingBatch` mounts the batch sheet
+  // (D226 preview); `batchAction` is the one enqueued batch confirming
+  // server-side — polled like the single-row slot above.
+  const [pendingBatch, setPendingBatch] = useState<{
+    verb: BatchVerb;
+    batch: DomainBatch;
+  } | null>(null);
+  const [batchAction, setBatchAction] = useState<{
+    batchId: string;
+    domain: string;
+    senderCount: number;
+    verb: BatchVerb;
+  } | null>(null);
+  const enqueueBulk = useEnqueueBulkAction();
+  const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
+
+  // D226 — the batch sheet's REAL aggregated counts. Enabled only
+  // while the sheet is open (>1 eligible sender by construction).
+  const pendingBatchSenderIds = pendingBatch
+    ? pendingBatch.batch.rows.filter((r) => r.protectionReason === null).map((r) => r.senderId)
+    : null;
+  const bulkPreview = useBulkActionPreview(pendingBatchSenderIds);
+  const batchSheetOpen = pendingBatch != null;
+  useEffect(() => {
+    if (!bulkPreview.isError || !batchSheetOpen) return;
+    // Mandatory-preview failures must be observable (same rule as the
+    // single-sender composite preview above).
+    captureFeatureException(bulkPreview.error, {
+      surface: 'triage',
+      reason: 'bulk_preview',
+    });
+  }, [bulkPreview.isError, bulkPreview.error, batchSheetOpen]);
+
+  // Batch lifecycle — terminal only on server confirmation (D226).
+  useEffect(() => {
+    if (!batchAction) return;
+    if (batchStatus.isError) {
+      captureFeatureException(batchStatus.error, {
+        surface: 'triage',
+        reason: 'batch_status_poll',
+      });
+      toast(`Couldn't confirm the ${batchAction.domain} batch — see Activity`, 'warn');
+      setBatchAction(null);
+      return;
+    }
+    const data = batchStatus.data;
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      // Partial failures keep status 'done' and surface via failed > 0
+      // — those senders stay in the queue, so say so (failures DO
+      // toast; clean success stays silent per D35).
+      if (data.failed > 0) {
+        toast(
+          `Couldn't move ${data.failed} of ${data.total} ${batchAction.domain} senders — see Activity`,
+          'warn',
+        );
+      }
+      invalidateAfterDecision(qc);
+      incrementSessionDecided(data.done);
+      setExpandedRow(null);
+    } else {
+      toast(
+        `Couldn't ${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch — see Activity`,
+        'warn',
+      );
+    }
+    setBatchAction(null);
+  }, [
+    batchStatus.data,
+    batchStatus.isError,
+    batchStatus.error,
+    batchAction,
+    qc,
+    setExpandedRow,
+    incrementSessionDecided,
+  ]);
 
   useEffect(() => {
     if (!unsubWatch) return;
@@ -261,6 +333,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     if (data.status === 'done') {
       // No success toast (D35 — the tray is the feedback channel).
       invalidateAfterDecision(qc);
+      // Session burn-down: count on server confirmation only (D226).
+      // A backlog-archive riding an Unsubscribe already counted.
+      if (!activeAction.followOn) incrementSessionDecided();
       setExpandedRow(null);
     } else {
       toast(
@@ -276,6 +351,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     activeAction,
     qc,
     setExpandedRow,
+    incrementSessionDecided,
   ]);
 
   /**
@@ -298,9 +374,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
 
       // Re-entry guard — one decision confirms at a time (mirrors the
       // senders single-slot flow; flow-completeness 2026-06-06 class).
+      // The domain-batch slot counts: a batch IS a decision confirming.
       if (
         activeAction != null ||
         intentRowId != null ||
+        batchAction != null ||
+        enqueueBulk.isPending ||
         enqueueComposite.isPending ||
         keepIntent.isPending ||
         unsubIntent.isPending
@@ -326,6 +405,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 source,
               });
               invalidateAfterDecision(qc);
+              incrementSessionDecided();
               setExpandedRow(null);
             },
             onError: (err) => {
@@ -364,6 +444,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 source,
               });
               invalidateAfterDecision(qc);
+              incrementSessionDecided();
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
                 setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
@@ -380,6 +461,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                         rowId: row.id,
                         senderName: row.senderName,
                         verb: 'Archive',
+                        // The unsub decision already counted (above).
+                        followOn: true,
                       }),
                     onError: (err) => {
                       // 402 FREE_CAP_REACHED — the upgrade prompt
@@ -458,12 +541,15 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     [
       activeAction,
       intentRowId,
+      batchAction,
+      enqueueBulk.isPending,
       enqueueComposite,
       keepIntent,
       unsubIntent,
       qc,
       clearPending,
       setExpandedRow,
+      incrementSessionDecided,
     ],
   );
 
@@ -550,6 +636,88 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   );
 
   /**
+   * A domain-batch card asked for a verb — open the batch sheet (the
+   * D226-mandatory preview for the composite decision). Same single-
+   * slot rule as dispatchAction: one decision confirms at a time.
+   */
+  const onBatchVerb = useCallback(
+    (verb: BatchVerb, batch: DomainBatch) => {
+      if (
+        activeAction != null ||
+        intentRowId != null ||
+        batchAction != null ||
+        enqueueBulk.isPending ||
+        enqueueComposite.isPending ||
+        keepIntent.isPending ||
+        unsubIntent.isPending
+      ) {
+        toast('Still confirming your last decision — give it a moment.', 'info');
+        return;
+      }
+      clearPending();
+      setPendingBatch({ verb, batch });
+    },
+    [
+      activeAction,
+      intentRowId,
+      batchAction,
+      enqueueBulk.isPending,
+      enqueueComposite.isPending,
+      keepIntent.isPending,
+      unsubIntent.isPending,
+      clearPending,
+    ],
+  );
+
+  /**
+   * Batch sheet confirm — ONE composite `POST /api/actions` with the
+   * senders selector (ADR-0020). The batch handle is polled until the
+   * worker fan-out settles; the run's rows leave the queue only on the
+   * refetch that server confirmation triggers (D226).
+   */
+  const onBatchConfirm = useCallback(() => {
+    if (pendingBatch == null) return;
+    const { verb, batch } = pendingBatch;
+    const eligible = batch.rows.filter((r) => r.protectionReason === null);
+    setPendingBatch(null);
+    enqueueBulk.mutate(
+      {
+        senderIds: eligible.map((r) => r.senderId),
+        primary: { type: verb === 'Archive' ? 'archive' : 'later', olderThanDays: null },
+      },
+      {
+        onSuccess: (res) => {
+          // One composite decision → one event. `primary` count comes
+          // from the preview totals when it loaded; -1 otherwise (the
+          // enqueue accept has no aggregate count).
+          void track('bulk_action_taken', {
+            verb: verb === 'Archive' ? 'archive' : 'later',
+            selected_count: res.senderCount,
+            affected_messages: bulkPreview.data?.totals.all ?? -1,
+            source: 'triage_domain_batch',
+          });
+          setBatchAction({
+            batchId: res.batchId,
+            domain: batch.domain,
+            senderCount: res.senderCount,
+            verb,
+          });
+        },
+        onError: (err) => {
+          // 402 FREE_CAP_REACHED — the UpgradeModal (global handler)
+          // already explains; skip Sentry + the generic toast.
+          if (err instanceof ApiError && err.status === 402) return;
+          captureFeatureException(err, {
+            surface: 'triage',
+            reason: 'enqueue_domain_batch',
+          });
+          toast(`Couldn't ${verb.toLowerCase()} the ${batch.domain} batch — try again`, 'warn');
+        },
+      },
+    );
+  }, [pendingBatch, enqueueBulk, bulkPreview.data]);
+
+  /**
    * Escape clears an INLINE pending preview — the contract the comment
    * above promises. Only the pending decision is discarded; the row
    * stays expanded so the user keeps their place. The sheet surface is
@@ -586,27 +754,50 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         fontFamily: font.sans,
       }}
     >
-      {/* Header — matches Senders screen typography. */}
-      <div>
-        <Eyebrow>Triage · default mailbox</Eyebrow>
-        <h1
-          style={{
-            fontFamily: font.display,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
-            margin: '4px 0 0',
-          }}
-        >
-          {state.kind === 'ready'
-            ? `${state.rows.length} decisions, one at a time.`
-            : state.kind === 'empty'
-              ? 'All caught up.'
-              : state.kind === 'error'
-                ? "Couldn't load your decisions."
-                : 'Loading your decisions…'}
-        </h1>
+      {/* Header — matches Senders screen typography. The session
+          burn-down sits opposite the title (renders only after the
+          first confirmed decision). */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          gap: 16,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <Eyebrow>Triage · default mailbox</Eyebrow>
+          <h1
+            style={{
+              fontFamily: font.display,
+              fontSize: 26,
+              fontWeight: 600,
+              letterSpacing: '-0.018em',
+              margin: '4px 0 0',
+            }}
+          >
+            {state.kind === 'ready'
+              ? `${state.rows.length} decisions, one at a time.`
+              : state.kind === 'empty'
+                ? 'All caught up.'
+                : state.kind === 'error'
+                  ? "Couldn't load your decisions."
+                  : 'Loading your decisions…'}
+          </h1>
+        </div>
+        {(state.kind === 'ready' || state.kind === 'empty') && (
+          <SessionProgress
+            decided={sessionDecidedCount}
+            remaining={state.kind === 'ready' ? state.rows.length : 0}
+          />
+        )}
       </div>
+
+      {/* D214 — the "Today" strip: situational awareness above the
+          decision queue. Self-fetching; renders nothing while loading
+          or when the mailbox has no signal yet. */}
+      <TodayStrip />
 
       <ScreenIntro
         id="triage"
@@ -643,6 +834,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           onAction={onRowActionWithInlineConfirm}
           busyRowId={busyRowId}
           previewInboxCount={previewInboxCount}
+          onBatchVerb={onBatchVerb}
+          batchBusyDomain={batchAction?.domain ?? null}
         />
       )}
 
@@ -655,6 +848,19 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
       />
+
+      {/* Batch sheet — the D226 preview for a domain-batch decision. */}
+      <BatchActionSheet
+        open={pendingBatch != null}
+        verb={pendingBatch?.verb ?? 'Archive'}
+        batch={pendingBatch?.batch ?? null}
+        preview={bulkPreview.isError ? 'unavailable' : (bulkPreview.data ?? 'loading')}
+        onCancel={() => setPendingBatch(null)}
+        onConfirm={onBatchConfirm}
+      />
+
+      {/* `?` reveals the shortcut overlay — real bindings only. */}
+      <TriageKeyboardHelp />
     </div>
   );
 }

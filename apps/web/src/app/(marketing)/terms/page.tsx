@@ -1,13 +1,12 @@
 // Terms of Service (D146) — public, static prose; the only client JS
 // is the D159 page-view tracker island.
 //
-// FOUNDER-REVIEW-GATED: legal copy ships only after founder sign-off
-// (D146 — lawyer review deferred until validation threshold). The
-// governing-law clause (Section 10) defaults to India and is
-// explicitly flagged for founder confirmation in the PR.
+// FOUNDER-CONFIRMED 2026-07-08 (D121 batch): governing law = India,
+// courts of Mumbai (Section 10). Lawyer review remains deferred until
+// the D146 validation threshold.
 
 import type { Metadata } from 'next';
-import { LegalPageLayout, LegalSection, LegalNote } from '@/features/marketing/legal-layout';
+import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -18,7 +17,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/terms',
 });
 
-const LAST_UPDATED = '2026-06-11';
+const LAST_UPDATED = '2026-07-08';
 
 const TOC = [
   { id: 'service', label: 'The service' },
@@ -166,12 +165,6 @@ export default function TermsOfServicePage() {
       </LegalSection>
 
       <LegalSection id="governing-law" title="10. Governing law">
-        <LegalNote>
-          <p style={{ margin: 0 }}>
-            <strong>Pending confirmation:</strong> the governing law and venue below are a default
-            and are under review. This section may change before it is final.
-          </p>
-        </LegalNote>
         <p>
           These terms are governed by the laws of India, and the courts at Mumbai, Maharashtra have
           exclusive jurisdiction over disputes arising from them — except that if you purchased

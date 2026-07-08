@@ -68,6 +68,20 @@ export interface TriageState {
   expandedRowId: string | null;
   /** In-flight action awaiting preview-confirm. */
   pendingAction: PendingAction | null;
+  /**
+   * Decisions confirmed since this tab mounted — feeds the session
+   * burn-down in the header ("3 decided · 5 to go"). Client-only per
+   * D200 (the durable per-day count is `stats.decidedToday`, a server
+   * read). Incremented ONLY on server confirmation (D226 — never
+   * optimistically); a domain batch increments by its sender count.
+   */
+  sessionDecidedCount: number;
+  /**
+   * Domain-batch cards dismissed this session ("decide one by one").
+   * Keyed by registrable domain — a session-scoped view preference,
+   * so it lives here (D200), never on the server.
+   */
+  dismissedBatchDomains: string[];
 }
 
 export interface TriageActions {
@@ -81,6 +95,10 @@ export interface TriageActions {
   openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
+  /** Bump the session burn-down by `by` confirmed decisions (default 1). */
+  incrementSessionDecided: (by?: number) => void;
+  /** Collapse a domain-batch card back to per-sender rows for this session. */
+  dismissBatchDomain: (domain: string) => void;
 }
 
 /** Default — sheet shows for every verb (D34). */
@@ -94,6 +112,8 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   rememberPreference: { ...DEFAULT_PREFS },
   expandedRowId: null,
   pendingAction: null,
+  sessionDecidedCount: 0,
+  dismissedBatchDomains: [],
 
   setRememberPreference: (verb, value) =>
     set((s) => ({
@@ -107,6 +127,16 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   openPending: (verb, rowId, surface) => set({ pendingAction: { verb, rowId, surface } }),
 
   clearPending: () => set({ pendingAction: null }),
+
+  incrementSessionDecided: (by = 1) =>
+    set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),
+
+  dismissBatchDomain: (domain) =>
+    set((s) =>
+      s.dismissedBatchDomains.includes(domain)
+        ? s
+        : { dismissedBatchDomains: [...s.dismissedBatchDomains, domain] },
+    ),
 }));
 
 /**
@@ -119,5 +149,7 @@ export function resetTriageStore(): void {
     rememberPreference: { ...DEFAULT_PREFS },
     expandedRowId: null,
     pendingAction: null,
+    sessionDecidedCount: 0,
+    dismissedBatchDomains: [],
   });
 }

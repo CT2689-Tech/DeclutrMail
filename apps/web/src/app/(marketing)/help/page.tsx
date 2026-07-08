@@ -9,8 +9,9 @@
 //
 // CONTENT CONTRACT (CLAUDE.md §2.1, D7, D228): the storage answer
 // quotes the locked privacy copy module from `@declutrmail/shared`
-// verbatim — never paraphrased. Refund terms are an open founder
-// decision, so the refund answer states NO number and links /refunds.
+// verbatim — never paraphrased. Refund terms were founder-confirmed
+// 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
+// the answer states it and links /refunds for the full terms.
 
 import type { Metadata } from 'next';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
@@ -27,7 +28,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = '2026-07-08';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -86,8 +87,8 @@ const FAQS: ReadonlyArray<{
   {
     id: 'refunds',
     q: 'Is there a refund policy?',
-    a: 'Yes. You can cancel anytime and keep access until the end of the period you paid for; refund terms are set out in the refund policy.',
-    link: { href: '/refunds', label: 'Refund policy →' },
+    a: 'Yes — every paid plan comes with a 30-day money-back guarantee: tell us within 30 days of a charge and we refund it in full. You can also cancel anytime and keep access until the end of the period you paid for.',
+    link: { href: '/refunds', label: 'See the refund policy for full terms →' },
   },
   {
     id: 'contact-support',

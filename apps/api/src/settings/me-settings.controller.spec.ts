@@ -35,6 +35,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       emailPrefs: { reminders: true },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { weekends: false },
+      senderViews: [],
     });
   });
 
@@ -43,12 +44,14 @@ describe('MeSettingsController — GET /api/me/settings', () => {
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { weekends: true },
+      senderViews: [VIEW],
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { weekends: true },
+      senderViews: [VIEW],
     });
   });
 
@@ -56,13 +59,71 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     const { controller } = makeController({
       emailPrefs: { reminders: false },
       actionSheetPrefs: 'garbage',
+      senderViews: 'garbage',
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { weekends: false },
+      senderViews: [],
     });
+  });
+});
+
+/** Minimal valid saved view (D51) for the GET/PATCH round-trip specs. */
+const VIEW = {
+  name: 'Quiet unsub-ready',
+  compose: {
+    activity: 'quiet' as const,
+    activityNegate: false,
+    unsubReady: true,
+    replied: null,
+    protectedFlag: null,
+    windowDays: null,
+    domain: null,
+    unsubIgnored: false,
+  },
+  sort: 'total' as const,
+  direction: 'desc' as const,
+};
+
+describe('MeSettingsController — PATCH /api/me/sender-views (D51)', () => {
+  it('persists a full-replace list and echoes it back', async () => {
+    const { controller, users } = makeController({});
+    const result = await controller.putSenderViews(USER, { views: [VIEW] });
+    expect(result.data).toEqual({ senderViews: [VIEW] });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u1', { senderViews: [VIEW] });
+  });
+
+  it('accepts an empty list (delete-last-view path)', async () => {
+    const { controller, users } = makeController({ senderViews: [VIEW] });
+    const result = await controller.putSenderViews(USER, { views: [] });
+    expect(result.data).toEqual({ senderViews: [] });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u1', { senderViews: [] });
+  });
+
+  it('400 above the 10-view cap', async () => {
+    const { controller, users } = makeController({});
+    const views = Array.from({ length: 11 }, (_, i) => ({ ...VIEW, name: `v${i}` }));
+    await expect(controller.putSenderViews(USER, { views })).rejects.toThrow(BadRequestException);
+    expect(users.patchPreferences).not.toHaveBeenCalled();
+  });
+
+  it('400 on duplicate names', async () => {
+    const { controller, users } = makeController({});
+    await expect(controller.putSenderViews(USER, { views: [VIEW, VIEW] })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(users.patchPreferences).not.toHaveBeenCalled();
+  });
+
+  it('400 on a malformed body', async () => {
+    const { controller, users } = makeController({});
+    await expect(controller.putSenderViews(USER, { views: [{ name: 'x' }] })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(users.patchPreferences).not.toHaveBeenCalled();
   });
 });
 

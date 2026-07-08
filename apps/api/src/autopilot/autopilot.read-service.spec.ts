@@ -7,6 +7,7 @@ import {
   AUTOPILOT_PRESET_KEYS,
   automationRules,
   mailboxAccounts,
+  mailMessages,
   ruleMatchLog,
   schema,
   senders,
@@ -249,6 +250,32 @@ describe('AutopilotReadService', () => {
       const ruleIdB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
       const result = await service.patchRule(mailboxA, ruleIdB, { enabled: true });
       expect(result).toBeNull();
+    });
+
+    it('D10 — observePromptDismissed=true stamps the dismissal; false clears it', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const dismissed = await service.patchRule(mailboxA, ruleId, {
+        observePromptDismissed: true,
+      });
+      expect(dismissed!.observePromptDismissedAt).not.toBeNull();
+
+      const cleared = await service.patchRule(mailboxA, ruleId, {
+        observePromptDismissed: false,
+      });
+      expect(cleared!.observePromptDismissedAt).toBeNull();
+    });
+
+    it('D10 — a mode transition re-arms the prompt (clears the dismissal)', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, ruleId, { observePromptDismissed: true });
+
+      const paused = await service.patchRule(mailboxA, ruleId, { mode: 'paused' });
+      expect(paused!.observePromptDismissedAt).toBeNull();
+
+      // A non-mode PATCH does NOT touch the dismissal.
+      await service.patchRule(mailboxA, ruleId, { observePromptDismissed: true });
+      const toggled = await service.patchRule(mailboxA, ruleId, { enabled: true });
+      expect(toggled!.observePromptDismissedAt).not.toBeNull();
     });
   });
 
@@ -718,6 +745,116 @@ describe('AutopilotReadService', () => {
       const rule = await service.getRule(mailboxA, ruleId);
       expect(rule!.observeWindowElapsed).toBe(false);
       expect(rule!.observeWindowEndsAt).not.toBeNull();
+    });
+  });
+
+  describe('observe digest (D10/D101)', () => {
+    const SENDER_1 = 'd1'.repeat(32);
+    const SENDER_2 = 'd2'.repeat(32);
+    const SENDER_3 = 'd3'.repeat(32);
+    const SENDER_4 = 'd4'.repeat(32);
+
+    async function seedMessages(
+      mailboxId: string,
+      senderKey: string,
+      counts: { inbox: number; archived: number },
+    ): Promise<void> {
+      const rows = [
+        ...Array.from({ length: counts.inbox }, (_, i) => ({ labels: ['INBOX'], i, tag: 'in' })),
+        ...Array.from({ length: counts.archived }, (_, i) => ({
+          labels: [] as string[],
+          i,
+          tag: 'out',
+        })),
+      ];
+      if (rows.length === 0) return;
+      await db.insert(mailMessages).values(
+        rows.map((r) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `${senderKey.slice(0, 8)}-${r.tag}-${r.i}`,
+          providerThreadId: `t-${senderKey.slice(0, 8)}-${r.tag}-${r.i}`,
+          senderKey,
+          internalDate: new Date(),
+          labelIds: r.labels,
+          isUnread: false,
+        })),
+      );
+    }
+
+    async function seedPending(
+      mailboxId: string,
+      ruleId: string,
+      senderKey: string,
+      matchedAt: Date,
+      resolution: 'pending' | 'dismissed' = 'pending',
+    ): Promise<void> {
+      await db.insert(ruleMatchLog).values({
+        ruleId,
+        mailboxAccountId: mailboxId,
+        senderKey,
+        modeAtMatch: 'observe',
+        confidence: '0.90',
+        reason: 'digest-test',
+        matchedAt,
+        resolution,
+      });
+    }
+
+    it('counts pending observe matches joined to INBOX messages, scoped to the last 7 days', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const now = Date.now();
+      const oneDayAgo = new Date(now - 1 * 86_400_000);
+      const twoDaysAgo = new Date(now - 2 * 86_400_000);
+      const tenDaysAgo = new Date(now - 10 * 86_400_000);
+
+      // Two in-window pending senders (≥2 rows on BOTH sides of the join).
+      await seedPending(mailboxA, ruleId, SENDER_1, oneDayAgo);
+      await seedPending(mailboxA, ruleId, SENDER_2, twoDaysAgo);
+      // Out-of-window pending match — in pendingTotal, out of the 7d counts.
+      await seedPending(mailboxA, ruleId, SENDER_3, tenDaysAgo);
+      // Dismissed match — excluded everywhere.
+      await seedPending(mailboxA, ruleId, SENDER_4, oneDayAgo, 'dismissed');
+
+      // Messages: only INBOX-labelled rows count; archived rows do not.
+      await seedMessages(mailboxA, SENDER_1, { inbox: 3, archived: 2 });
+      await seedMessages(mailboxA, SENDER_2, { inbox: 1, archived: 0 });
+      await seedMessages(mailboxA, SENDER_3, { inbox: 5, archived: 0 });
+      await seedMessages(mailboxA, SENDER_4, { inbox: 4, archived: 0 });
+
+      // Cross-tenant noise — same sender keys in mailbox B.
+      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      await seedPending(mailboxB, ruleB, SENDER_1, oneDayAgo);
+      await seedMessages(mailboxB, SENDER_1, { inbox: 9, archived: 0 });
+
+      const rules = await service.listRules(mailboxA);
+      const rule = rules.find((r) => r.id === ruleId);
+      expect(rule!.observeDigest).toEqual({
+        pendingTotal: 3,
+        senders7d: 2,
+        messages7d: 4, // 3 (sender 1) + 1 (sender 2); archived + out-of-window excluded
+      });
+
+      // Tenant isolation — B sees only its own row.
+      const bRules = await service.listRules(mailboxB);
+      const bRule = bRules.find((r) => r.id === ruleB);
+      expect(bRule!.observeDigest).toEqual({ pendingTotal: 1, senders7d: 1, messages7d: 9 });
+    });
+
+    it('zero-fills the digest for an observe rule with no pending matches', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeDigest).toEqual({ pendingTotal: 0, senders7d: 0, messages7d: 0 });
+    });
+
+    it('is null outside observe mode even when stale pending rows exist', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await seedPending(mailboxA, ruleId, SENDER_1, new Date());
+      await db
+        .update(automationRules)
+        .set({ mode: 'active' })
+        .where(eq(automationRules.id, ruleId));
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeDigest).toBeNull();
     });
   });
 });

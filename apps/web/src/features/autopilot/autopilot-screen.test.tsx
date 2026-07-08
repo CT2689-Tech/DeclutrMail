@@ -37,7 +37,7 @@ import {
   RULE_PREVIEW_RESULT,
 } from './fixtures';
 import type { AutopilotScreenState, SuggestionWithRule } from './types';
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
 function ready(rules = PRESET_RULES_OBSERVE): AutopilotScreenState {
@@ -134,6 +134,23 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // D227 — the screen-new-senders preset surfaces as Later, never "Screen".
     expect(within(rulesList).getByText(/later for new senders/i)).toBeInTheDocument();
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the observe digest on enabled observe-mode cards, verb-honest (D10/D101)', () => {
+    renderScreen({ kind: 'ready', rules: PRESET_RULES_ALL_FIVE, suggestions: [] });
+    const rulesList = screen.getByRole('list', { name: /autopilot rules/i });
+    // Archive preset — message + sender counts.
+    expect(
+      within(rulesList).getByText(
+        /would have archived 212 emails from 34 senders in the last 7 days/i,
+      ),
+    ).toBeInTheDocument();
+    // Unsubscribe preset — sender count only (intent acts per sender).
+    expect(
+      within(rulesList).getByText(/would have unsubscribed from 2 senders in the last 7 days/i),
+    ).toBeInTheDocument();
+    // Disabled rule (long-dormant) shows NO digest line even in observe mode.
+    expect(within(rulesList).queryAllByText(/would have/i)).toHaveLength(4);
   });
 
   it('PATCHes { enabled: false } when an enabled rule is toggled off', async () => {
@@ -233,9 +250,79 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
   });
 
-  it('previews first (D226), then PATCHes mode=active on confirm — never before', async () => {
+  it('hides the day-7 prompt for a dismissed rule (D10 — persisted dismissal)', () => {
+    const dismissed = PRESET_RULES_OBSERVE.map((r) =>
+      r.id === AUTO_ARCHIVE_LOW_ENGAGEMENT.id
+        ? { ...r, observePromptDismissedAt: '2026-05-25T10:00:00.000Z' }
+        : r,
+    );
+    renderScreen({ kind: 'ready', rules: dismissed, suggestions: [] });
+    expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the day-7 prompt when the window elapsed with ZERO pending matches (D10)', () => {
+    const quietWeek = PRESET_RULES_OBSERVE.map((r) =>
+      r.id === AUTO_ARCHIVE_LOW_ENGAGEMENT.id
+        ? { ...r, observeDigest: { pendingTotal: 0, senders7d: 0, messages7d: 0 } }
+        : r,
+    );
+    renderScreen({ kind: 'ready', rules: quietWeek, suggestions: [] });
+    expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
+  });
+
+  it('the prompt carries the verb-honest digest numbers (D10)', () => {
+    renderScreen(ready());
+    const banner = screen.getByRole('status');
+    expect(
+      within(banner).getByText(/would have archived 212 emails from 34 senders/i),
+    ).toBeInTheDocument();
+  });
+
+  it('"Not now" persists the dismissal via PATCH observePromptDismissed (D10)', async () => {
     const observed: Array<{ path: string; body: unknown }> = [];
     installFetchStub([
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req, url) => {
+          observed.push({ path: url.pathname, body: await req.json() });
+          return jsonOk({
+            data: {
+              ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+              observePromptDismissedAt: '2026-05-26T10:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen(ready());
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /dismiss activation prompt for rule auto-archive low-engagement/i,
+      }),
+    );
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]!.path).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}`);
+    expect(observed[0]!.body).toEqual({ observePromptDismissed: true });
+  });
+
+  it('gates Confirm on the first-sweep preview, then PATCHes mode=active on confirm (D226)', async () => {
+    const observed: Array<{ path: string; body: unknown }> = [];
+    let releasePreview!: () => void;
+    const previewGate = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: async () => {
+          await previewGate;
+          return jsonOk({ data: RULE_PREVIEW_RESULT });
+        },
+      },
       {
         method: 'PATCH',
         path: /\/api\/autopilot\/rules\/[^/]+$/,
@@ -251,14 +338,52 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
       screen.getByRole('button', { name: /switch rule auto-archive low-engagement to active/i }),
     );
 
-    // Modal renders — the preview MUST be visible before the mutation.
+    // Modal renders — the preview MUST be visible before the mutation,
+    // and Confirm stays DISABLED until the dry-run resolves.
     const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
     expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
+    const confirm = within(dialog).getByRole('button', { name: /switch to active/i });
+    expect(confirm).toBeDisabled();
     expect(observed).toHaveLength(0);
 
-    await userEvent.click(within(dialog).getByRole('button', { name: /switch to active/i }));
+    releasePreview();
+    await waitFor(() => expect(confirm).toBeEnabled());
+    // The first-sweep dry-run rendered inside the sheet.
+    expect(
+      within(dialog).getByText(/senders would match if this rule were active now/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]!.body).toEqual({ mode: 'active' });
+  });
+
+  it('keeps Confirm locked when the dry-run fails; retry re-fires it (D226)', async () => {
+    let previewCalls = 0;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () => {
+          previewCalls += 1;
+          return previewCalls === 1 ? jsonServerError() : jsonOk({ data: RULE_PREVIEW_RESULT });
+        },
+      },
+    ]);
+
+    renderScreen(ready());
+    await userEvent.click(
+      screen.getByRole('button', { name: /switch rule auto-archive low-engagement to active/i }),
+    );
+
+    const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
+    await waitFor(() => expect(within(dialog).getByText(/dry-run failed/i)).toBeInTheDocument());
+    const confirm = within(dialog).getByRole('button', { name: /switch to active/i });
+    expect(confirm).toBeDisabled();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /try again/i }));
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(previewCalls).toBe(2);
   });
 });
 

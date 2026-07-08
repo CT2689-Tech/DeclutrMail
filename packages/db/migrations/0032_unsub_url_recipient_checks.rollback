@@ -1,0 +1,19 @@
+-- Rollback for 0032_unsub_url_recipient_checks.sql
+--
+-- Drops the four CHECK constraints. The defensive heals (out-of-
+-- contract URLs → NULL, inbound recipient_emails → NULL) are NOT
+-- undone — the rollback restores the prior shape, not the prior data
+-- (0023 precedent). Re-applying the forward migration is idempotent
+-- because the heal WHERE clauses match no rows on a healed table.
+
+ALTER TABLE "mail_messages"
+  DROP CONSTRAINT IF EXISTS "mail_messages_unsubscribe_url_https_chk";
+--> statement-breakpoint
+ALTER TABLE "mail_messages"
+  DROP CONSTRAINT IF EXISTS "mail_messages_unsubscribe_mailto_scheme_chk";
+--> statement-breakpoint
+ALTER TABLE "mail_messages"
+  DROP CONSTRAINT IF EXISTS "mail_messages_recipient_emails_outbound_chk";
+--> statement-breakpoint
+ALTER TABLE "senders"
+  DROP CONSTRAINT IF EXISTS "senders_unsub_method_url_aligned_chk";

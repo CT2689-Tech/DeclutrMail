@@ -1,6 +1,6 @@
 /**
- * `useTriageQueue` + `useTriageStats` — TanStack Query hooks for the
- * Triage daily ritual (D20, D29, D30, D33).
+ * `useTriageQueue` + `useTriageStats` + `useTodaySummary` — TanStack
+ * Query hooks for the Triage daily ritual (D20, D29, D30, D33, D214).
  *
  * The two queries fire in parallel; the page composes a
  * `TriageScreenState` from their combined results so the existing
@@ -17,6 +17,19 @@ import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/da
 
 export const TRIAGE_QUEUE_KEY = ['triage', 'queue'] as const;
 export const TRIAGE_STATS_KEY = ['triage', 'stats'] as const;
+export const TODAY_SUMMARY_KEY = ['triage', 'today-summary'] as const;
+
+/**
+ * D214 — the "Today" strip payload. Mirrors the BE `TodaySummary`
+ * (apps/api/src/triage/triage.read-service.ts) verbatim.
+ */
+export interface TodaySummary {
+  receivedToday: number;
+  sendersToday: number;
+  handledAutomatically: number;
+  queuedDecisions: number;
+  noiseReductionPct: number | null;
+}
 
 export function useTriageQueue() {
   return useQuery({
@@ -36,6 +49,24 @@ export function useTriageStats() {
     queryKey: TRIAGE_STATS_KEY,
     queryFn: async ({ signal }) => {
       const envelope = await apiGet<TriageSessionStats>('/api/triage/stats', {
+        signal,
+      });
+      return envelope.data;
+    },
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * D214 — data for `<TodayStrip>`. Same 30s stale time as its siblings;
+ * the strip is situational awareness, not a live ticker. The Brief
+ * feature (D189) reuses this query when it lands.
+ */
+export function useTodaySummary() {
+  return useQuery({
+    queryKey: TODAY_SUMMARY_KEY,
+    queryFn: async ({ signal }) => {
+      const envelope = await apiGet<TodaySummary>('/api/triage/today-summary', {
         signal,
       });
       return envelope.data;

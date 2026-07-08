@@ -5,12 +5,13 @@
 // record outside India) and Razorpay (India) each require a published
 // refund/cancellation policy.
 //
-// FOUNDER-REVIEW-GATED: the 14-day pro-rata window is a recommended
-// default and is explicitly flagged for founder confirmation in the
-// PR before merge.
+// FOUNDER-CONFIRMED 2026-07-08 (D121): 30-day money-back guarantee on
+// every paid plan, with a fair-use clause (one guarantee use per
+// customer; bulk-consume-then-refund may be declined). This replaced
+// the interim 14-day pro-rata default.
 
 import type { Metadata } from 'next';
-import { LegalPageLayout, LegalSection, LegalNote } from '@/features/marketing/legal-layout';
+import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -21,12 +22,12 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/refunds',
 });
 
-const LAST_UPDATED = '2026-06-11';
+const LAST_UPDATED = '2026-07-08';
 
 const TOC = [
   { id: 'summary', label: 'The short version' },
   { id: 'cancellation', label: 'Cancellation' },
-  { id: 'refund-window', label: 'Refund window' },
+  { id: 'refund-window', label: '30-day money-back guarantee' },
   { id: 'paddle', label: 'Purchases outside India (Paddle)' },
   { id: 'razorpay', label: 'Purchases in India (Razorpay)' },
   { id: 'exclusions', label: 'What is not refundable' },
@@ -39,10 +40,10 @@ export default function RefundPolicyPage() {
       <PageViewTracker page="refunds" />
       <LegalSection id="summary" title="1. The short version">
         <p>
-          If DeclutrMail isn&rsquo;t working out, tell us within 14 days of being charged and we
-          will refund the unused portion of your subscription. You can cancel anytime and keep
-          access until the end of the period you paid for. Refunds go back to your original payment
-          method.
+          Every paid plan comes with a <strong>30-day money-back guarantee</strong>. If DeclutrMail
+          isn&rsquo;t working out, tell us within 30 days of being charged and we will refund the
+          charge in full. You can cancel anytime and keep access until the end of the period you
+          paid for. Refunds go back to your original payment method.
         </p>
       </LegalSection>
 
@@ -51,28 +52,25 @@ export default function RefundPolicyPage() {
           You can cancel your subscription at any time from Settings → Billing. Cancellation stops
           future renewals; your paid features stay active until the end of the current billing
           period, after which your account moves to the Free plan. Canceling does not delete any of
-          your data.
+          your data. Cancellation on its own does not trigger a refund — if you also want your money
+          back, the 30-day guarantee in Section 3 covers it.
         </p>
       </LegalSection>
 
-      <LegalSection id="refund-window" title="3. Refund window">
-        <LegalNote>
-          <p style={{ margin: 0 }}>
-            <strong>Pending confirmation:</strong> the window and pro-rata terms below are a
-            recommended default and are under review. They may change before they are final.
-          </p>
-        </LegalNote>
+      <LegalSection id="refund-window" title="3. 30-day money-back guarantee">
         <p>
-          Refund requests made within <strong>14 days</strong> of a charge — your first purchase or
-          a renewal — are honored on a <strong>pro-rata basis</strong>: we refund the value of the
-          remaining, unused part of the billing period from the date your request is received. If
-          you request a refund within 14 days of your very first purchase and have barely used the
-          service, we will simply refund the charge in full.
+          Refund requests made within <strong>30 days</strong> of a charge — your first purchase or
+          a renewal — are refunded <strong>in full</strong>. This applies to every paid plan,
+          monthly and annual, including the Founding Pro annual offer. Refunds are processed through
+          the payment provider you purchased from — Paddle outside India, Razorpay in India — back
+          to your original payment method (Sections 4 and 5).
         </p>
         <p>
-          This applies to all paid plans, monthly and annual, including the Founding Pro annual
-          offer. Statutory refund rights in your country (for example, EU consumer withdrawal
-          rights) are not limited by this policy.
+          One fair-use note, so the guarantee stays sustainable: the money-back guarantee can be
+          used once per customer. We may also decline a refund where account activity shows the
+          service was consumed in bulk and then refunded — for example, running a full cleanup of a
+          mailbox and immediately requesting the money back. Statutory refund rights in your country
+          (for example, EU consumer withdrawal rights) are not limited by this policy.
         </p>
       </LegalSection>
 
@@ -103,10 +101,12 @@ export default function RefundPolicyPage() {
 
       <LegalSection id="exclusions" title="6. What is not refundable">
         <ul>
-          <li>Charges older than the refund window in Section 3, except where law requires.</li>
           <li>
-            Periods already consumed — refunds are calculated on the unused remainder of the billing
-            period.
+            Charges older than the 30-day guarantee window in Section 3, except where law requires.
+          </li>
+          <li>
+            A second use of the money-back guarantee — it can be used once per customer (Section
+            3&rsquo;s fair-use terms).
           </li>
           <li>
             Accounts terminated for violating our <a href="/terms">Terms of Service</a> (abuse,

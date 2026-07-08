@@ -9,7 +9,7 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 ## Pages
 
 - [How it works](https://declutrmail.com/#how-it-works): the per-sender cleanup ritual — connect Gmail, review senders by volume, decide once per sender
-- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a money-back guarantee — see the refund policy for terms
+- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works, what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
 - [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests

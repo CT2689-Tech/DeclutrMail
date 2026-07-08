@@ -462,6 +462,13 @@ export interface ListSendersParams {
   windowDays?: number | undefined;
   /** D38 — case-insensitive domain substring (mailbox-wide). */
   domain?: string | undefined;
+  /**
+   * D51 — "unsub'd, still emailing": senders with a standing
+   * `policy_type='unsubscribe'` whose mail kept arriving after the
+   * policy was recorded. `true` = require; omit = no constraint. No
+   * negated form (not a surface). Maps to wire `?unsub_ignored=true`.
+   */
+  unsubIgnored?: boolean | undefined;
 }
 
 /**
@@ -495,6 +502,8 @@ export interface SenderListQueryMeta {
     unsubReady: number;
     repliedTo: number;
     protected: number;
+    /** D51 — "unsub'd, still emailing" axis count (mailbox-wide). */
+    unsubIgnored: number;
   };
   /** ISO-8601 — when the meta was computed server-side (observational). */
   asOf: string;
@@ -559,6 +568,7 @@ export function fetchSenders(
       replied: params.replied === true ? 'true' : params.replied === false ? 'not' : undefined,
       window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
       domain: params.domain ? params.domain : undefined,
+      unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
     },
     signal,
   }) as Promise<SenderListEnvelope>;

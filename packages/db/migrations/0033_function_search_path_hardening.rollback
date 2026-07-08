@@ -1,0 +1,9 @@
+-- Rollback for 0033_function_search_path_hardening.sql
+--
+-- `RESET search_path` removes the pinned per-function setting,
+-- restoring the pre-0033 role-mutable resolution (and re-surfacing the
+-- Supabase `function_search_path_mutable` advisory).
+
+ALTER FUNCTION public.set_updated_at() RESET search_path;
+--> statement-breakpoint
+ALTER FUNCTION public.outbox_notify_inserted() RESET search_path;
