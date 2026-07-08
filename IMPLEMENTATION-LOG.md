@@ -102,7 +102,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🟢 | #115 | apps/api/src/senders/senders.controller.spec.ts |  |
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
-| D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
+| D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | 🔵 | #294 |  |  |
 | D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
