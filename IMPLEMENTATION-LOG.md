@@ -188,7 +188,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D134 | Landing page 10-section structure | 🔵 | #202 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
-| D137 | FAQ content (10 questions) | ⬜ |  |  |  |
+| D137 | FAQ content (10 questions) | 🔵 | #290 |  |  |
 | D138 | Trust strip content (just after hero) | ⬜ |  |  |  |
 | D139 | Methodology: **Layered (summary + expandable deep sections) | ⬜ |  |  |  |
 | D140 | Diagrams: **3 conceptual, no architecture | ⬜ |  |  |  |
@@ -270,7 +270,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218 |  |  |
 | D217 | Privacy & Data settings sub-page at launch | ⬜ |  |  |  |
 | D218 | Public `/changelog` at launch | ⬜ |  |  |  |
-| D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | ⬜ |  |  |  |
+| D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | 🔵 | #290 |  |  |
 | D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
 | D221 | Decision Queue framing copy (locks Codex §8 framing) | ⬜ |  |  |  |
 | D222 | Auto-Protect via category prediction REJECTED at all versions (extends D22) | ⬜ |  |  |  |
