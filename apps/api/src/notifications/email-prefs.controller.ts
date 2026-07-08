@@ -24,8 +24,9 @@ import { UsersService } from '../users/users.service.js';
  * send time, so a flipped toggle takes effect on the very next queued
  * reminder.
  *
- * Only REMINDER emails are toggleable — system emails (sync-complete,
- * deletion notices) are non-opt-out per D165 (CAN-SPAM/GDPR
+ * Toggleable categories (D165): `reminders` (the 24h nudge) and
+ * `syncComplete` ("your inbox is ready" completion alerts). SYSTEM
+ * emails (deletion notices) are non-opt-out per D165 (CAN-SPAM/GDPR
  * transactional carve-out), so no key for them exists.
  */
 @Controller('me/email-prefs')
@@ -54,6 +55,7 @@ export class EmailPrefsController {
       // Spread only the keys the patch actually set (optional keys
       // would otherwise overwrite with `undefined`).
       ...(parsed.data.reminders !== undefined ? { reminders: parsed.data.reminders } : {}),
+      ...(parsed.data.syncComplete !== undefined ? { syncComplete: parsed.data.syncComplete } : {}),
     };
     await this.users.patchPreferences(user.userId, { emailPrefs: merged });
     return ok({ emailPrefs: merged });

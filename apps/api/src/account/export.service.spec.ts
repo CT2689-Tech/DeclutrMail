@@ -200,6 +200,52 @@ describe('DataExportService.streamCsv', () => {
   });
 });
 
+describe('DataExportService.streamSendersCsv', () => {
+  it('emits EXACTLY the sender-metadata columns — no subject/snippet (D7 pin)', async () => {
+    const service = makeService({ senders: [SENDER_ROW] });
+    const csv = await collect(service.streamSendersCsv('ws-1'));
+    const lines = csv.trimEnd().split('\n');
+    // The header is the privacy contract: sender metadata + the user's
+    // standing decisions ONLY. A subject/snippet/body column appearing
+    // here must fail this test before it reaches review.
+    expect(lines[0]).toBe(
+      'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_vip,is_protected,snoozed_until',
+    );
+    expect(lines[0]).not.toMatch(/subject|snippet|preview|body/);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe(
+      'user@example.com,news@acme.com,Acme,acme.com,promotions,' +
+        '2025-01-01T00:00:00.000Z,2026-06-01T00:00:00.000Z,12,archive,false,false,',
+    );
+  });
+
+  it('emits only the header when there are no senders', async () => {
+    const service = makeService({ senders: [] });
+    const csv = await collect(service.streamSendersCsv('ws-1'));
+    expect(csv.trimEnd().split('\n')).toHaveLength(1);
+  });
+});
+
+describe('DataExportService.streamDecisionsCsv', () => {
+  it('emits EXACTLY the decision-metadata columns — no subject/snippet (D7 pin)', async () => {
+    const service = makeService({ activity: [ACTIVITY_ROW] });
+    const csv = await collect(service.streamDecisionsCsv('ws-1'));
+    const lines = csv.trimEnd().split('\n');
+    expect(lines[0]).toBe('mailbox_email,occurred_at,source,action,affected_count,sender_email');
+    expect(lines[0]).not.toMatch(/subject|snippet|preview|body/);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toBe(
+      'user@example.com,2026-06-02T10:00:00.000Z,triage,archive,3,news@acme.com',
+    );
+  });
+
+  it('emits only the header when there are no decisions', async () => {
+    const service = makeService({ activity: [] });
+    const csv = await collect(service.streamDecisionsCsv('ws-1'));
+    expect(csv.trimEnd().split('\n')).toHaveLength(1);
+  });
+});
+
 describe('csvField', () => {
   it('passes plain values through unquoted', () => {
     expect(csvField('plain')).toBe('plain');

@@ -221,28 +221,96 @@ export class DataExportService {
     yield 'mailbox_email,sender_email,sender_name,subject,gmail_preview,received_at,labels,unread\n';
     const mailboxes = await this.listMailboxes(workspaceId);
     for (const mb of mailboxes) {
-      let after: string | null = null;
-      for (;;) {
-        const batch = await this.messageBatch(mb.id, after);
-        if (batch.length === 0) break;
-        let chunk = '';
-        for (const row of batch) {
-          chunk +=
-            [
-              csvField(mb.email),
-              csvField(row.senderEmail ?? ''),
-              csvField(row.senderName ?? ''),
-              csvField(row.subject),
-              csvField(row.snippet),
-              csvField(row.receivedAt.toISOString()),
-              csvField(row.labels.join(' ')),
-              csvField(row.unread ? 'unread' : 'read'),
-            ].join(',') + '\n';
-        }
-        yield chunk;
-        after = batch[batch.length - 1]!.id;
-        if (batch.length < DataExportService.BATCH_SIZE) break;
-      }
+      yield* this.streamCsvRows(
+        (after) => this.messageBatch(mb.id, after),
+        (row) =>
+          [
+            csvField(mb.email),
+            csvField(row.senderEmail ?? ''),
+            csvField(row.senderName ?? ''),
+            csvField(row.subject),
+            csvField(row.snippet),
+            csvField(row.receivedAt.toISOString()),
+            csvField(row.labels.join(' ')),
+            csvField(row.unread ? 'unread' : 'read'),
+          ].join(',') + '\n',
+      );
+    }
+  }
+
+  /**
+   * Senders CSV — the sender index + standing policies, one row per
+   * sender across every mailbox. SENDER METADATA ONLY (D7/D228): no
+   * subject/snippet column exists in this dataset by construction —
+   * the spec pins the header to exactly these columns.
+   */
+  async *streamSendersCsv(workspaceId: string): AsyncGenerator<string> {
+    yield 'mailbox_email,sender_email,sender_name,domain,gmail_category,first_seen_at,last_seen_at,total_received,policy_type,is_vip,is_protected,snoozed_until\n';
+    const mailboxes = await this.listMailboxes(workspaceId);
+    for (const mb of mailboxes) {
+      yield* this.streamCsvRows(
+        (after) => this.senderBatch(mb.id, after),
+        (row) =>
+          [
+            csvField(mb.email),
+            csvField(row.email),
+            csvField(row.name ?? ''),
+            csvField(row.domain ?? ''),
+            csvField(row.gmailCategory ?? ''),
+            csvField(row.firstSeenAt.toISOString()),
+            csvField(row.lastSeenAt.toISOString()),
+            csvField(String(Number(row.totalReceived ?? 0))),
+            csvField(row.policyType ?? ''),
+            csvField(row.isVip ? 'true' : 'false'),
+            csvField(row.isProtected ? 'true' : 'false'),
+            csvField(row.snoozedUntil?.toISOString() ?? ''),
+          ].join(',') + '\n',
+      );
+    }
+  }
+
+  /**
+   * Decisions CSV — the user's decision history (activity log), one
+   * row per entry across every mailbox. ACTION METADATA ONLY (D7/D228):
+   * no subject/snippet column exists in this dataset by construction.
+   */
+  async *streamDecisionsCsv(workspaceId: string): AsyncGenerator<string> {
+    yield 'mailbox_email,occurred_at,source,action,affected_count,sender_email\n';
+    const mailboxes = await this.listMailboxes(workspaceId);
+    for (const mb of mailboxes) {
+      yield* this.streamCsvRows(
+        (after) => this.activityBatch(mb.id, after),
+        (row) =>
+          [
+            csvField(mb.email),
+            csvField(row.occurredAt.toISOString()),
+            csvField(row.source),
+            csvField(row.action),
+            csvField(String(row.affectedCount)),
+            csvField(row.senderEmail ?? ''),
+          ].join(',') + '\n',
+      );
+    }
+  }
+
+  /**
+   * Stream one CSV dataset's rows for a mailbox: fetch keyset batches
+   * via `fetchBatch`, serialize each row (including its trailing
+   * newline) with `toLine`. The caller owns the header row.
+   */
+  private async *streamCsvRows<T extends { id: string }>(
+    fetchBatch: (afterId: string | null) => Promise<T[]>,
+    toLine: (row: T) => string,
+  ): AsyncGenerator<string> {
+    let after: string | null = null;
+    for (;;) {
+      const batch = await fetchBatch(after);
+      if (batch.length === 0) break;
+      let chunk = '';
+      for (const row of batch) chunk += toLine(row);
+      yield chunk;
+      after = batch[batch.length - 1]!.id;
+      if (batch.length < DataExportService.BATCH_SIZE) break;
     }
   }
 

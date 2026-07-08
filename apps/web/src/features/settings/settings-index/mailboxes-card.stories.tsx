@@ -2,12 +2,16 @@
 // D114/D115 scoped). Local CSF shims per the existing stories pattern.
 //
 // Variants covered:
-//   • TwoConnected   — both accounts active, one marked Active
-//   • Syncing        — second account mid initial-sync
-//   • SyncFailed     — readiness failed tag
-//   • Disconnected   — one account disconnected
-//   • AtLimit        — connect disabled at the tier's inboxLimit
-//   • Empty          — zero mailboxes connected
+//   • TwoConnected     — both accounts active, one marked Active,
+//                        humanized last-synced stamps
+//   • Syncing          — second account mid initial-sync
+//   • SyncFailed       — readiness failed tag
+//   • NeedsReconnect   — OAuth grant gone on an active account
+//                        (danger tag + Reconnect affordance)
+//   • Disconnected     — one account disconnected (Reconnect)
+//   • AtLimit          — connect + reconnect disabled at the tier's
+//                        inboxLimit
+//   • Empty            — zero mailboxes connected
 
 import type { ComponentProps } from 'react';
 import { MailboxesCard } from './mailboxes-card';
@@ -33,7 +37,7 @@ const meta: StoryMeta<typeof MailboxesCard> = {
     docs: {
       description: {
         component:
-          'Settings → Mailboxes (D114 "Inboxes", scoped). Read-only list of connected Gmail accounts with status / readiness / active marker, plus connect-another gated by the tier inboxLimit. Switch / disconnect / reconnect stay in the header account menu (reuse, not rebuild).',
+          'Settings → Mailboxes (D114 "Inboxes" + D115 health, scoped). Connected Gmail accounts with status / readiness / last-synced stamp / active marker, a Reconnect affordance for disconnected or invalid-grant accounts (same OAuth flow as connect-another), and connect-another gated by the tier inboxLimit. Switch / disconnect stay in the header account menu (reuse, not rebuild).',
       },
     },
   },
@@ -62,10 +66,23 @@ const MAILBOX_B = {
   readiness: 'ready' as const,
 };
 
+/** Health map with fresh last-synced stamps (relative to story render). */
+const HEALTHY = {
+  [MAILBOX_A.id]: {
+    lastSyncedAt: new Date(Date.now() - 4 * 60_000).toISOString(),
+    needsReconnect: false,
+  },
+  [MAILBOX_B.id]: {
+    lastSyncedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+    needsReconnect: false,
+  },
+};
+
 const baseArgs: CardArgs = {
   mailboxes: [MAILBOX_A, MAILBOX_B],
   activeMailboxId: MAILBOX_A.id,
   inboxLimit: 2,
+  healthById: HEALTHY,
   onConnect: noop,
 };
 
@@ -78,6 +95,7 @@ export const Syncing: Story<typeof MailboxesCard> = {
     ...baseArgs,
     inboxLimit: 3,
     mailboxes: [MAILBOX_A, { ...MAILBOX_B, readiness: 'syncing' as const }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
   },
 };
 
@@ -86,6 +104,21 @@ export const SyncFailed: Story<typeof MailboxesCard> = {
     ...baseArgs,
     inboxLimit: 3,
     mailboxes: [MAILBOX_A, { ...MAILBOX_B, readiness: 'failed' as const }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+export const NeedsReconnect: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    healthById: {
+      [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id],
+      [MAILBOX_B.id]: {
+        lastSyncedAt: new Date(Date.now() - 26 * 60 * 60_000).toISOString(),
+        needsReconnect: true,
+      },
+    },
   },
 };
 
@@ -94,6 +127,7 @@ export const Disconnected: Story<typeof MailboxesCard> = {
     ...baseArgs,
     inboxLimit: 3,
     mailboxes: [MAILBOX_A, { ...MAILBOX_B, status: 'disconnected' as const }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
   },
 };
 
@@ -106,5 +140,6 @@ export const Empty: Story<typeof MailboxesCard> = {
     ...baseArgs,
     mailboxes: [],
     activeMailboxId: null,
+    healthById: {},
   },
 };
