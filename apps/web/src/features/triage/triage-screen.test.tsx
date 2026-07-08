@@ -91,7 +91,7 @@ describe('TriageScreen — empty / loading branches', () => {
     // Stats tile labels
     expect(html).toContain('Decided');
     expect(html).toContain('Archived');
-    expect(html).toContain('Unsubscribed');
+    expect(html).toContain('Unsubscribes');
     expect(html).toContain('To Later');
     // The actual values appear
     expect(html).toContain(String(TRIAGE_SESSION_STATS.decidedToday));

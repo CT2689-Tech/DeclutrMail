@@ -159,12 +159,14 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
     // The redesigned metrics block renders one tile per verb. Each
-    // tile pairs a label (Archived / Unsubscribed / Kept …) with the
+    // tile pairs a label (Archived / Unsubscribes / Kept …) with the
     // window count displayed as a large display-font numeral. Labels
     // also appear on the verb-filter chip row, so `getAllByText` is
-    // intentional — we assert the labels render somewhere.
+    // intentional — we assert the labels render somewhere. The
+    // unsubscribe bucket counts requests, so the honest label is
+    // "Unsubscribes", never the success-claiming "Unsubscribed" (D9).
     await waitFor(() => expect(screen.getAllByText(/^Archived$/).length).toBeGreaterThan(0));
-    expect(screen.getAllByText(/^Unsubscribed$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Unsubscribes$/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/^Kept$/).length).toBeGreaterThan(0);
     // Counts render as standalone numerals — assert the trio.
     expect(screen.getAllByText('12').length).toBeGreaterThan(0);

@@ -181,7 +181,11 @@ export function TriageEmptyState({
       >
         <StatTile label="Decided" value={stats.decidedToday} />
         <StatTile label="Archived" value={stats.archivedToday} />
-        <StatTile label="Unsubscribed" value={stats.unsubscribedToday} />
+        {/* D9 — counts unsubscribe DECISIONS this session, which execute
+            async (one-click may fail, mailto is manual). "Unsubscribes"
+            counts the actions taken without claiming verified success;
+            "Unsubscribed" would overclaim (mirrors the Activity tile). */}
+        <StatTile label="Unsubscribes" value={stats.unsubscribedToday} />
         <StatTile label="To Later" value={stats.laterToday} />
       </div>
 

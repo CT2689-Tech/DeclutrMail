@@ -461,7 +461,15 @@ function MetricsHeader({
   const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
     { key: 'archived', label: 'Archived', accent: color.fg },
     { key: 'deleted', label: 'Deleted', accent: color.amber },
-    { key: 'unsubscribed', label: 'Unsubscribed', accent: color.primary },
+    // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
+    // intent rows), which for one-click include attempts that may fail
+    // and mailto that we never confirm. "Unsubscribes" (a count of the
+    // actions taken) makes no completion claim; "Unsubscribed" would
+    // overclaim success. Confirmed outcomes render per-row as
+    // "Unsubscribe confirmed" (never aggregated as verified success —
+    // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
+    // metric-definition options if an exact confirmed count is wanted.
+    { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
     { key: 'kept', label: 'Kept', accent: color.emerald },
     { key: 'later', label: 'Later', accent: color.fgSoft },
   ];
@@ -607,7 +615,9 @@ const VERB_CHIPS: ReadonlyArray<{
 }> = [
   { value: 'archive', label: 'Archived', dot: color.fgSoft },
   { value: 'delete', label: 'Deleted', dot: color.amber },
-  { value: 'unsubscribe', label: 'Unsubscribed', dot: color.primary },
+  // D9 — filters the `unsubscribe` intent rows; label matches the tile
+  // ("Unsubscribes", not the success-claiming "Unsubscribed").
+  { value: 'unsubscribe', label: 'Unsubscribes', dot: color.primary },
   { value: 'later', label: 'Later', dot: color.dashboard.accent },
   { value: 'keep', label: 'Kept', dot: color.emerald },
   { value: 'followup-dismiss', label: 'Followups', dot: color.fgMuted },

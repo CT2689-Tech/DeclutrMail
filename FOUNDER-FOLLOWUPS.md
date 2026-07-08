@@ -26,12 +26,12 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
-### 2026-07-08 — Activity "Unsubscribed" stats tile counts REQUESTS, not confirmed unsubscribes
-**Source:** PR #301 (unsubscribe_confirmed outcome row) — the row-level honesty fix landed; the aggregate metric is a separate decision I did NOT make silently.
-**Why:** The Activity stats tile + verb chip "Unsubscribed: N" count `activity_log.action='unsubscribe'` (intent) rows — i.e. unsubscribe *requests*, which for one-click senders include attempts that later FAILED (the row itself now honestly reads "Unsubscribe requested" per D9, but the tile still says "Unsubscribed"). So the aggregate softly overclaims. Counting `unsubscribe_confirmed` instead would be exact for one-click but would UNDERCOUNT mailto (D230 manual — never confirmed by us), so there's no clean swap.
-**How:** Founder decides the metric definition: (a) keep counting requests, relabel the tile/chip to "Unsubscribes" / "Unsubscribe requests" (neutral, no completion promise); or (b) count `unsubscribe_confirmed` for one-click + `unsubscribe` for mailto (needs the method on the activity row or a policy join — schema/read-service work); or (c) leave as-is (95% one-click success per D9 makes the overcount small). Recommend (a) — cheapest, removes the promise, no schema change.
-**Verifies by:** the tile/chip copy matches what it counts; no per-surface "Unsubscribed" claims a completion that didn't happen.
-**Status:** Open
+### 2026-07-08 — OPTIONAL: exact confirmed-unsubscribe count (aggregate now honest via relabel)
+**Source:** PR #301 (unsubscribe_confirmed outcome row) — a 2nd Codex stop-review flagged the aggregate as still overclaiming success. FIXED in-PR by relabel (option (a) below); this entry now tracks only the optional exact-count enhancement.
+**Why:** The Activity stats tile + verb chip AND the Triage session burn-down counted `activity_log.action='unsubscribe'` (intent) rows but labeled them "Unsubscribed" (verified success) — an overclaim, since one-click attempts can fail and mailto (D230) is never confirmed. **Resolved:** all three surfaces relabeled "Unsubscribed" → **"Unsubscribes"** (a count of actions taken, no completion claim); the confirmed outcome renders per-row as "Unsubscribe confirmed". The count itself is unchanged (still counts actions), so mailto is not undercounted.
+**How (remaining, optional):** if you later want an EXACT "successfully unsubscribed" number: count `unsubscribe_confirmed` for one-click + `unsubscribe` intent for mailto — needs the unsubscribe method on the activity row (or a `sender_policies` join in the read-service). Deferred because it needs schema/read-service work and the relabel already removes the false promise. (Option (c) "leave as-is" is now moot — the label no longer promises success.)
+**Verifies by:** no aggregate labels an unsubscribe as a verified success; an exact confirmed count, if built, matches `COUNT(unsubscribe_confirmed) + mailto intents`.
+**Status:** Open (optional enhancement only — the overclaim itself is fixed)
 
 ### 2026-07-08 — Quiet "Release now" + Screener bulk-decide: finish the deferred halves (D75/D96)
 **Source:** PR #298 (screener/quiet suite) — the read slice (held-count + ends-at) shipped complete; two scaffolded-but-unfinished features were reverted rather than shipped half-built (§10 no-stub).
