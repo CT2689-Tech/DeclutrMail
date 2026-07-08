@@ -13,6 +13,7 @@
  *   ?protected=true | not
  *   ?window=30 | 90 | 180 | 365
  *   ?domain=<substring>
+ *   ?unsub_ignored=true
  *
  * Sort / search live on their own keys (`sort`, `direction`, `q`).
  * Cursor is intentionally NOT carried in URL state — it's a transient
@@ -108,6 +109,7 @@ export function useComposeState(): {
       protectedFlag: parseTri(params.get('protected')),
       windowDays: parseWindow(params.get('window')),
       domain: params.get('domain')?.trim() || null,
+      unsubIgnored: params.get('unsub_ignored') === 'true',
     };
   }, [appRouter, localState]);
 
@@ -126,6 +128,7 @@ export function useComposeState(): {
       out.delete('protected');
       out.delete('window');
       out.delete('domain');
+      out.delete('unsub_ignored');
       if (next.activity) {
         out.set('activity', next.activityNegate ? `not-${next.activity}` : next.activity);
       }
@@ -137,6 +140,7 @@ export function useComposeState(): {
       else if (next.protectedFlag === false) out.set('protected', 'not');
       if (next.windowDays !== null) out.set('window', String(next.windowDays));
       if (next.domain) out.set('domain', next.domain);
+      if (next.unsubIgnored) out.set('unsub_ignored', 'true');
       const qs = out.toString();
       // `router.replace` keeps the nav stack tidy (compose changes are
       // not "back-able" moments — Esc / clear is the cleaner affordance).

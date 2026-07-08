@@ -180,6 +180,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(res.meta.pagination).toEqual({
         nextCursor: null,
@@ -213,6 +214,7 @@ describe('SendersController', () => {
         MAILBOX,
         undefined,
         '2',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -268,6 +270,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       const decoded = decodeCursor(res.meta.pagination.nextCursor);
       expect(decoded).toEqual({
@@ -283,6 +286,7 @@ describe('SendersController', () => {
           undefined,
           undefined,
           'not-base64!!!',
+          undefined,
           undefined,
           undefined,
           undefined,
@@ -314,6 +318,7 @@ describe('SendersController', () => {
           undefined,
           undefined,
           undefined,
+          undefined,
         ),
       ).rejects.toThrow(/sort/i);
     });
@@ -335,6 +340,7 @@ describe('SendersController', () => {
           undefined,
           undefined,
           undefined,
+          undefined,
         ),
       ).rejects.toThrow(/direction/i);
     });
@@ -350,6 +356,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         'last_seen',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -387,6 +394,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(reads.listSenders).toHaveBeenCalledWith(
         expect.objectContaining({ category: 'promotions' }),
@@ -398,6 +406,7 @@ describe('SendersController', () => {
       await ctrl.list(
         MAILBOX,
         'not-real',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -431,6 +440,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(reads.listSenders).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
     });
@@ -443,6 +453,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         'true',
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -474,6 +485,7 @@ describe('SendersController', () => {
           undefined,
           undefined,
           raw,
+          undefined,
           undefined,
           undefined,
           undefined,
@@ -514,6 +526,7 @@ describe('SendersController', () => {
         undefined,
         undefined,
         undefined,
+        undefined,
       );
       expect(res.meta.query).toEqual({
         totalMatching: 1852,
@@ -542,6 +555,7 @@ describe('SendersController', () => {
           undefined,
           undefined,
           raw,
+          undefined,
           undefined,
           undefined,
           undefined,

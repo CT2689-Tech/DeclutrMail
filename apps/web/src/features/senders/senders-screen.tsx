@@ -1,15 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Button,
-  EmptyState,
-  Eyebrow,
-  ScreenIntro,
-  tokens,
-  toast,
-  useIsAtMost,
-} from '@declutrmail/shared';
+import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import {
   canArchive,
   canDelete,
@@ -54,10 +46,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
-import { ViewToggle } from './view-toggle';
+import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
-import type { SenderListRow } from '@/lib/api/senders';
-import { SenderTable, type SenderTableVerb } from './sender-table';
+import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
+import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -90,11 +82,13 @@ const ELIGIBLE: Record<'Archive' | 'Later' | 'Unsubscribe' | 'Delete', (s: Sende
 
 /**
  * Selection-scoped bulk-action shortcuts (D227 K/A/U/L/D). These mirror
- * the SelectionBar buttons exactly — a press routes through the SAME
- * `requestAction` (the mandatory D226 preview), never a direct mutation.
- * Keep (K) has no bulk affordance on this surface, so A/L/U/D bind.
+ * the SelectionBar buttons exactly — destructive presses route through
+ * the SAME `requestAction` (the mandatory D226 preview), never a direct
+ * mutation; Keep (K) applies immediately (D40 — standing-policy write,
+ * non-destructive, no preview) exactly like the bar's Keep button.
  */
-const VERB_BY_KEY: Record<string, 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'> = {
+const VERB_BY_KEY: Record<string, 'Keep' | 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'> = {
+  k: 'Keep',
   a: 'Archive',
   l: 'Later',
   u: 'Unsubscribe',
@@ -110,8 +104,9 @@ let receiptSeq = 0;
  *   1. Brand header + search (Add-VIP CTA hidden until the flow ships)
  *   2. Hero number (`meta.query.totalMatching`, BE-honest) + ComposeStrip
  *      — multi-axis fact filters + sort (D38); state is URL-backed
- *   3. Grid of SenderCards (D49 default) or flat-sortable SenderTable
- *      (ADR-0014), toggled; both share verbs + selection + D226 modal
+ *   3. Grid of SenderCards (D49 — the single adaptive surface; the
+ *      Table toggle was retired, founder-approved 2026-07-08) with D51
+ *      brand-rollup group rows; verbs + selection + D226 modal shared
  *
  * The editorial-hero era (InboxStoryHero / WeeklyProgress / CohortRail /
  * Weekly Hero / intent chip rows) was retired by spec v1.2 Decision 4 —
@@ -147,8 +142,8 @@ export function SendersScreen() {
     void track('page_viewed', { page: 'senders', mailbox_id: null });
   }, []);
   // Sort + direction come from the Zustand store (D200 client-state)
-  // so the new SenderTable's header click and a future
-  // sort-shortcut/keyboard surface both write through one seam.
+  // so the ComposeStrip's sort chip and a future sort-shortcut/keyboard
+  // surface both write through one seam.
   const sort = useSendersStore((s) => s.sort);
   const direction = useSendersStore((s) => s.direction);
   // Search lives here (above the fetch) so it drives the server query
@@ -179,18 +174,11 @@ export function SendersScreen() {
     windowDays: compose.windowDays ?? undefined,
     domain: compose.domain ?? undefined,
     isProtected: compose.protectedFlag,
+    unsubIgnored: compose.unsubIgnored || undefined,
   });
   const allSenders = useMemo<Sender[]>(() => {
     const pages = sendersQuery.data?.pages ?? [];
     return pages.flatMap((p) => p.data.map((row) => adaptSenderListRow(row)));
-  }, [sendersQuery.data]);
-  // Carry the wire rows through verbatim for the flat-table view — the
-  // SenderTable consumes the wire `SenderListRow` directly (it needs
-  // `totalReceived` and `lastReview`, which the FE `Sender` adapter
-  // drops for legacy reasons).
-  const allWireRows = useMemo<SenderListRow[]>(() => {
-    const pages = sendersQuery.data?.pages ?? [];
-    return pages.flatMap((p) => p.data);
   }, [sendersQuery.data]);
   // Page-1 meta.query.globalMaxTotal — the magnitude-bar denominator
   // (ADR-0014 + senders list contract). Page-1's value is
@@ -243,7 +231,6 @@ export function SendersScreen() {
   return (
     <SendersScreenContent
       senders={allSenders}
-      wireRows={allWireRows}
       globalMaxTotal={globalMaxTotal}
       hasNextPage={sendersQuery.hasNextPage}
       isFetchingNextPage={sendersQuery.isFetchingNextPage}
@@ -269,7 +256,6 @@ export function SendersScreen() {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders,
-  wireRows,
   globalMaxTotal,
   hasNextPage,
   isFetchingNextPage,
@@ -284,7 +270,6 @@ function SendersScreenContent({
   clearCompose,
 }: {
   senders: Sender[];
-  wireRows: SenderListRow[];
   globalMaxTotal: number;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -312,6 +297,7 @@ function SendersScreenContent({
         unsubReady: number;
         repliedTo: number;
         protected: number;
+        unsubIgnored: number;
       }
     | undefined;
   /** D38 — URL-backed compose state. */
@@ -345,6 +331,11 @@ function SendersScreenContent({
   // D40 — Keep is a standing-policy write (`policy_type='keep'`), not a
   // Gmail mutation. The hook owns the senders/activity invalidation.
   const setPolicy = useSetSenderPolicy();
+  // D51 — saved filter views (users.preferences.senderViews). One
+  // full-replace mutation covers save + delete; apply is client-side
+  // (write the compose URL state + sort store).
+  const savedViews = useSenderViews();
+  const saveViews = useSaveSenderViews();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     actionId: string;
@@ -464,18 +455,11 @@ function SendersScreenContent({
     });
     captureFeatureException(err, { surface: 'senders', reason: 'bulk_preview' });
   }, [bulkPreviewQuery.isError, bulkPreviewQuery.error, bulkPreviewSenderIds]);
-  const storeView = useSendersStore((s) => s.view);
-  const tableSort = useSendersStore((s) => s.sort);
-  const tableDirection = useSendersStore((s) => s.direction);
-  const setTableSort = useSendersStore((s) => s.setSort);
-  // Mobile = Grid-only (handoff). On viewports below the `sm` breakpoint
-  // the screen forces Grid even if the store says Table; the table's
-  // 9-column layout does not fit a phone-width viewport and the
-  // existing Grid view scrolls cleanly. The override is presentation-
-  // only — the store value is preserved so re-entering on desktop
-  // returns to Table without a re-click.
-  const isMobile = useIsAtMost('sm');
-  const view = isMobile ? 'grid' : storeView;
+  // Sort state (D200 store) — read by the ComposeStrip's sort chip and
+  // written by it + the saved-views apply path below.
+  const sortCol = useSendersStore((s) => s.sort);
+  const sortDirection = useSendersStore((s) => s.direction);
+  const setSortState = useSendersStore((s) => s.setSort);
   const selectedSenders = useMemo(
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
@@ -527,14 +511,23 @@ function SendersScreenContent({
     [selected],
   );
 
-  // Visual row orders the range logic walks. Search + compose filters
-  // are server-side (#145 / D38), so the loaded pages ARE the visible
-  // set for both views — grid walks the adapted list, table walks the
-  // same rows in wire shape (it needs `totalReceived` + `lastReview`
-  // verbatim, which the adapter drops).
-  const gridOrderedIds = useMemo(() => senders.map((s) => s.id), [senders]);
-  const tableRows = wireRows;
-  const tableOrderedIds = useMemo(() => tableRows.map((r) => r.id), [tableRows]);
+  // D51 brand rollup — group loaded senders by registrable domain
+  // (eTLD+1); domains with ≥3 senders collapse into one expandable
+  // group row. Client-side over the loaded pages BY DESIGN: the list
+  // endpoint's cursor pagination is per-sender (ADR-0014) and the
+  // loaded pages ARE the visible set (#145 / D38 narrow server-side).
+  const gridEntries = useMemo(() => rollupByDomain(senders), [senders]);
+  // Visual row order the shift-range logic walks — flattened rollup
+  // order (group members sit inline at the group's position), matching
+  // what the grid renders when groups are expanded. Collapsed members
+  // aren't clickable, so ordering them inline is safe either way.
+  const gridOrderedIds = useMemo(
+    () =>
+      gridEntries.flatMap((e) =>
+        e.kind === 'sender' ? [e.sender.id] : e.senders.map((s) => s.id),
+      ),
+    [gridEntries],
+  );
 
   const infiniteScrollEnabled = isFeatureEnabled('infiniteScroll');
 
@@ -1268,7 +1261,15 @@ function SendersScreenContent({
   // sheet), and a full drop explains itself in a toast instead of
   // opening an empty preview.
   const requestBulkAction = useCallback(
-    (verb: keyof typeof ELIGIBLE) => {
+    (verb: 'Keep' | keyof typeof ELIGIBLE) => {
+      // Keep (D40) — a standing-policy write, non-destructive: no
+      // eligibility gate (protected senders can be Kept) and no D226
+      // preview; `performAction`'s Keep branch fans the policy PATCHes.
+      if (verb === 'Keep') {
+        if (selectedSenders.length === 0) return;
+        requestAction({ verb: 'Keep', senders: selectedSenders });
+        return;
+      }
       const eligible = selectedSenders.filter(ELIGIBLE[verb]);
       if (eligible.length === 0) {
         if (selectedSenders.length === 0) return;
@@ -1314,7 +1315,64 @@ function SendersScreenContent({
     [pendingAction, performAction],
   );
 
-  // Selection-scoped K/A/U/L shortcuts (D227). A press acts on the current
+  // D51 saved views — apply / save-current / delete. The contract's
+  // `compose` shape mirrors `ComposeState` field-for-field, so apply is
+  // a straight state write; save snapshots the live compose + sort.
+  const applySavedView = useCallback(
+    (name: string) => {
+      const view = savedViews.find((v) => v.name === name);
+      if (!view) return;
+      setCompose({ ...view.compose });
+      setSortState({ sort: view.sort, direction: view.direction });
+    },
+    [savedViews, setCompose, setSortState],
+  );
+  const saveCurrentView = useCallback(
+    (name: string) => {
+      // The store can only hold a BE-supported sort (unsupported ones
+      // 400 at the list endpoint), but narrow defensively — the saved
+      // contract admits only the four Slice-1 columns.
+      const sort =
+        sortCol === 'total' ||
+        sortCol === 'last_seen' ||
+        sortCol === 'first_seen' ||
+        sortCol === 'name'
+          ? sortCol
+          : 'total';
+      const next: SavedSenderView[] = [
+        ...savedViews.filter((v) => v.name !== name),
+        { name, compose: { ...compose }, sort, direction: sortDirection },
+      ];
+      if (next.length > SENDER_VIEWS_CAP) {
+        toast(`Saved views are capped at ${SENDER_VIEWS_CAP} — delete one first`, 'warn');
+        return;
+      }
+      saveViews.mutate(next, {
+        onSuccess: () => toast(`Saved view "${name}"`, 'success'),
+        onError: (err) => {
+          captureFeatureException(err, { surface: 'senders', reason: 'save_view' });
+          toast(`Couldn't save the view "${name}"`, 'warn');
+        },
+      });
+    },
+    [savedViews, compose, sortCol, sortDirection, saveViews],
+  );
+  const deleteSavedView = useCallback(
+    (name: string) => {
+      saveViews.mutate(
+        savedViews.filter((v) => v.name !== name),
+        {
+          onError: (err) => {
+            captureFeatureException(err, { surface: 'senders', reason: 'delete_view' });
+            toast(`Couldn't delete the view "${name}"`, 'warn');
+          },
+        },
+      );
+    },
+    [savedViews, saveViews],
+  );
+
+  // Selection-scoped K/A/U/L/D shortcuts (D227). A press acts on the current
   // selection exactly like the SelectionBar — through the mandatory D226
   // preview, never a direct mutation. Guarded so the keys are inert while
   // typing in a field or while any modal (preview / cheatsheet / review)
@@ -1378,12 +1436,9 @@ function SendersScreenContent({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
-          {/* Grid/Table toggle (D49) — per-session, defaults to grid.
-              Hidden on mobile: D49 says "Mobile = always card list (no
-              table option)", and the body force-renders grid below `sm`
-              anyway — showing the toggle there lets it read pressed
-              while the table never appears. */}
-          {!isMobile && <ViewToggle />}
+          {/* The Grid/Table toggle was retired (founder-approved,
+              2026-07-08 senders suite) — the grid is the single adaptive
+              surface; sorting lives on the ComposeStrip sort chip. */}
           {/* "+ Add VIP" header CTA is hidden until the real Add-VIP flow
               ships (2026-07-07 audit, founder call: hide now, build later)
               — a toast stub as a primary CTA violates §10 no-fake-completion. */}
@@ -1493,15 +1548,24 @@ function SendersScreenContent({
                   unsubReady: filterCounts.unsubReady,
                   repliedTo: filterCounts.repliedTo,
                   protected: filterCounts.protected,
+                  unsubIgnored: filterCounts.unsubIgnored,
                 }
               : undefined
           }
           onChange={(next: ComposeState) => setCompose(next)}
           onClear={clearCompose}
           domainSuggestions={topDomains(senders)}
-          sort={tableSort}
-          direction={tableDirection}
-          onSortChange={(next) => setTableSort(next)}
+          sort={sortCol}
+          direction={sortDirection}
+          onSortChange={(next) => setSortState(next)}
+          views={{
+            names: savedViews.map((v) => v.name),
+            onApply: applySavedView,
+            onSave: saveCurrentView,
+            onDelete: deleteSavedView,
+            canSaveCurrent: hasAnyFilter(compose),
+            capReached: savedViews.length >= SENDER_VIEWS_CAP,
+          }}
         />
       )}
 
@@ -1577,59 +1641,18 @@ function SendersScreenContent({
           title="No senders yet"
           body="Once your mailbox finishes syncing, the senders who mail you will appear here."
         />
-      ) : view === 'grid' ? (
-        // D49 default — grid of cards. `senders` arrives already
-        // BE-filtered for the active compose (D38). The legacy
-        // `visibleGroups` intent bucketing is no longer consulted for
-        // the card grid render.
+      ) : (
+        // D49 — grid of cards, the single adaptive surface (the Table
+        // toggle was retired; founder-approved 2026-07-08 senders
+        // suite). `senders` arrives already BE-filtered for the active
+        // compose (D38); D51 brand rollup groups ≥3 senders sharing a
+        // registrable domain into one expandable group row.
         <SenderGrid
-          senders={senders}
+          entries={gridEntries}
           selectedIds={selected}
           onToggleSelect={(id, shiftKey) => toggleWithRange(gridOrderedIds, id, shiftKey ?? false)}
           onAction={requestAction}
           globalMaxTotal={globalMaxTotal}
-        />
-      ) : (
-        // Slice 1 Step 7a — flat-sortable SenderTable (ADR-0014,
-        // senders list contract). Replaces the intent-grouped tables
-        // that previously lived behind the Table toggle; that pattern
-        // is preserved in `./table/sender-group.tsx` for the in-Grid
-        // intent rails but is no longer the toggle target.
-        //
-        // Visible-set semantics for Table mode:
-        //   - The BE sort order (sort + direction) is the canonical row
-        //     order — the table does NOT intent-bucket. The intent
-        //     chips above still apply as a client-side filter when one
-        //     is active.
-        //   - Search restricts to senders whose name/email/domain
-        //     matches the query (same as Grid mode's `queryBase`).
-        // We re-derive the visible set from `wireRows` so the table
-        // gets BE-order rows with the full `SenderListRow` shape
-        // (including `totalReceived`, which the FE adapter drops).
-        <SenderTable
-          rows={tableRows}
-          globalMaxTotal={globalMaxTotal}
-          sort={tableSort}
-          direction={tableDirection}
-          onSortChange={(next) => setTableSort(next)}
-          selectedIds={selected}
-          onSelectionChange={(next) => setSelected(new Set(next))}
-          onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
-          onAction={({ verb, sender }) => {
-            // Bridge wire-row verbs into the existing
-            // `requestAction({ verb, senders: Sender[] })` shape so
-            // ConfirmActionModal / receipt / undo wiring stay shared
-            // with Grid mode (D226).
-            const adapted = adaptSenderListRow(sender);
-            requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
-          }}
-          emptyKind={
-            query.trim() !== ''
-              ? 'no-search-match'
-              : hasAnyFilter(compose)
-                ? 'no-filter-match'
-                : 'no-senders'
-          }
         />
       )}
 
@@ -1699,27 +1722,6 @@ function SendersScreenContent({
 }
 
 /* ────────────────── HELPERS ────────────────── */
-
-/**
- * Map the SenderTable's action vocabulary to the `ActionVerb` shape
- * `ConfirmActionModal` consumes. The table row renders the shared
- * `SenderActionRow` (2026-07-03 consistency pass), so the full K/A/U/L/D
- * registry set routes through — including Keep, which `requestAction`
- * applies immediately (non-destructive, D40) rather than previewing.
- * The #142 F3 bug this map once guarded against was Keep MIS-ROUTING to
- * Protect; the fix is the correct mapping, not the missing entry (the
- * missing entry made the expand-panel's Keep silently no-op). Protect
- * remains a status star, never a row verb (D227).
- */
-const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
-  keep: 'Keep',
-  archive: 'Archive',
-  unsubscribe: 'Unsubscribe',
-  later: 'Later',
-  // Spec v1.2 Decision 1 (ADR-0019) — Delete joins the row verb set;
-  // routes through the same composite confirm modal as Archive/Later.
-  delete: 'Delete',
-};
 
 /**
  * D38 — derive the top-N domain suggestions for the ComposeStrip's
