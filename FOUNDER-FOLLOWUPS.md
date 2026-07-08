@@ -26,6 +26,27 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-08 — D49 grid/table toggle retired in Senders — RATIFY or REVERT (plan-drift)
+**Source:** PR #294 (senders Tier-2/3 suite) — the buildout rearchitected Senders around the grid as the single adaptive surface and removed the `[Grid | Table]` toggle.
+**Why:** D49 ("Always grid; table is per-session toggle") is a **locked** decision, so removing the table is plan-drift (CLAUDE.md §3 — the founder's call). Shipped under the founder's explicit "best-expertise / don't-wait / long-term-solution" directive because the new **brand rollup** (eTLD+1 grouping) is a stronger analytical/scan surface than the flat sortable table (it directly kills the "134 amazon.com rows" scan cost the table never solved), and mobile was already grid-only per D49 itself.
+**How:** Either (a) **ratify** grid-only → patch D49 in the plan + `IMPLEMENTATION-LOG` to "table view retired; brand rollup is the analytical surface"; or (b) **revert** → restore `view-toggle.tsx` + the store `view`/`setView` slice + the `SenderTable` render branch in `senders-screen.tsx` (the `SenderTable` component still exists on main; the rollup/bulk/saved-views work is independent of the decision).
+**Verifies by:** D49 in the plan matches what ships; no orphaned `view` references (`rg "SendersView|setView" apps/web/src/features/senders`).
+**Status:** Open
+
+### 2026-07-08 — Quiet "Release now" + Screener bulk-decide: finish the deferred halves (D75/D96)
+**Source:** PR #298 (screener/quiet suite) — the read slice (held-count + ends-at) shipped complete; two scaffolded-but-unfinished features were reverted rather than shipped half-built (§10 no-stub).
+**Why:** The original agent scaffolded a quiet "Release now" endpoint (contract `QuietReleaseResult` + workers `persistQuietRelease`/`isQuietWindowReleased`) and a Screener bulk-decide, but neither was finished — release-now needs the `autopilot-action` BullMQ queue injected into `MailboxesModule` (module wiring), and bulk-decide was never started. Shipping the dead plumbing would have been fake completion.
+**How:** (1) Release-now — provide `QUIET_SWEEP_QUEUE` (the autopilot-action `Queue | null`, fail-open like `AUTOPILOT_ACTION_QUEUE_TOKEN`) to `MailboxAccountsService`; add `POST /api/mailboxes/:id/quiet-hours/release` → `persistQuietRelease` + enqueue an autopilot-action sweep + return `QuietReleaseResult`; re-add the reverted contract type + workers exports; add a service integration spec. (2) Screener bulk-decide — allow-all-from-domain / select-many endpoint + contract + UI.
+**Verifies by:** `POST /quiet-hours/release` returns `{released, sweepEnqueued}` and a `worker.succeeded` autopilot-action log line follows; bulk-decide applies to every matching sender in one call.
+**Status:** Open
+
+### 2026-07-08 — Wave-2 launch backlog (post wave-0 Tier-2/3 buildout)
+**Source:** session — wave-0 shipped 7 suites (PRs #292-298, all merged: db-hardening, triage, senders, autopilot, brief, settings, screener/quiet). Wave-2 items remain from the launch-command-center backlog.
+**Why:** The founder asked for the full Tier-1→3 backlog. Wave-0 delivered the feature suites; wave-2 is a distinct, large effort best run with a fresh context budget (main-thread only — background subagents die on session restarts).
+**How:** Priority order — (1) **Activity suite** (now unblocked by the `unsubscribe_confirmed` enum on main: distinct unsub-outcome row, verb/autopilot-vs-manual filter chips, undo-from-row while token live, infinite scroll, stats header, mobile card list); (2) **Marketing** (vs-Unroll.me/CleanEmail/SaneBox compare pages D142-145, /changelog, methodology, CASA/certifications, INR pricing display, 404 authed-vs-anon); (3) **Platform** (Playwright nightly e2e lane, concurrent mailbox-connect DB guard, stuck-sync watchdog, monotonic history-id guard, infra-snapshot workflow fix — push workflow hunks from the main checkout per the gh workflow-scope quirk); (4) onboarding funnel PostHog audit; (5) browser push (D163); (6) quality chores (branded ID types, assertNever tails, activity envelope Zod parse, D204 outbox extraction, verify-d sweep, 8 skipped senders tests, PGlite hook-timeout bump, Storybook gaps, error-code registry).
+**Verifies by:** each ships as its own verified PR; `pnpm verify-d` for the closed D-rows.
+**Status:** Open
+
 ### 2026-07-07 — Autopilot real-time trigger rides the Pub/Sub push pipeline (subscription still deferred)
 **Source:** session — `fix/d100-autopilot-apply-on-sync-delta` (P0: known-sender mail never re-triggered enabled rules)
 **Why:** the new incremental-sync delta trigger makes enabled Autopilot rules re-fire on new mail — but its REAL-TIME path only runs in prod once Gmail webhooks flow. The Pub/Sub **topic** is provisioned and `GMAIL_PUBSUB_TOPIC` is set (local + GH secrets; `sync-infra-state.md` §at-a-glance), while the push **subscription** + Cloud Run deploy remain ⏳ Deferred — tracked in the Open 2026-05-21 "SETUP: provision Gmail sync infrastructure" entry (step 4 tail). Until those land, the trigger still works but at drift-sweep cadence (the 5-min `incremental_drift` sweep enqueues syncs for cursors stale >10 min), i.e. rules re-fire within ~5-15 min of new mail rather than within the 5-min debounce window of a webhook.
