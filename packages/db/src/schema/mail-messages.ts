@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   integer,
   pgTable,
@@ -205,6 +206,24 @@ export const mailMessages = pgTable(
       table.mailboxAccountId,
       table.providerThreadId,
       table.internalDate,
+    ),
+    /**
+     * Channel-split scheme invariants (migration 0032, FOUNDER-FOLLOWUPS
+     * 2026-05-22). The header parser enforces these shapes; the CHECKs
+     * make the DB reject a future writer that misses the docstrings.
+     */
+    unsubscribeUrlHttps: check(
+      'mail_messages_unsubscribe_url_https_chk',
+      sql`${table.unsubscribeUrl} IS NULL OR ${table.unsubscribeUrl} LIKE 'https://%'`,
+    ),
+    unsubscribeMailtoScheme: check(
+      'mail_messages_unsubscribe_mailto_scheme_chk',
+      sql`${table.unsubscribeMailtoUrl} IS NULL OR ${table.unsubscribeMailtoUrl} LIKE 'mailto:%'`,
+    ),
+    /** ADR-0004: recipients are stored for OUTBOUND messages only (D7). */
+    recipientEmailsOutbound: check(
+      'mail_messages_recipient_emails_outbound_chk',
+      sql`${table.recipientEmails} IS NULL OR ${table.isOutbound} = true`,
     ),
   }),
 );

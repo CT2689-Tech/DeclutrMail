@@ -64,6 +64,17 @@ export const activityAction = pgEnum('activity_action', [
   'unmarked_vip',
   'marked_protected',
   'unmarked_protected',
+  // Founder decision 2026-07-08 — the unsubscribe OUTCOME row, written
+  // when the brand's RFC 8058 endpoint accepts the unsubscribe. Kept
+  // distinct from 'unsubscribe' (the intent/decision row) so the
+  // Activity timeline renders the confirmation separately from the
+  // click and D56 filters can distinguish the two. Not a K/A/U/L/D
+  // canonical verb (D227) — an outcome record, not a user action.
+  // DB enum mirror migration is packages/db/migrations/
+  // 0031_activity_action_unsubscribe_confirmed.sql. The producer lands
+  // in the activity-suite PR (value ships ahead of it — 0024 staging
+  // precedent).
+  'unsubscribe_confirmed',
 ]);
 
 export const activityLog = pgTable(

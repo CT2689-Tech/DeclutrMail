@@ -1,0 +1,33 @@
+-- 0033_function_search_path_hardening.sql
+--
+-- Supabase security advisory `function_search_path_mutable`
+-- (FOUNDER-FOLLOWUPS 2026-06-08): `public.set_updated_at()` (0000) and
+-- `public.outbox_notify_inserted()` (0008) run with a role-mutable
+-- `search_path`. Risk: a role that can create objects in an earlier
+-- schema on the caller's path could shadow an unqualified name the
+-- function resolves at call time. Low actual exposure here — both
+-- bodies only touch `NEW.*` and `pg_notify` (pg_catalog), and RLS
+-- denies anon writes to `public` (0026) — but pinning the path closes
+-- the advisory and future-proofs the bodies against edits that add
+-- unqualified table references.
+--
+-- `SET search_path = pg_catalog, public` stores the setting ON the
+-- function (proconfig), so every invocation runs with the pinned path
+-- regardless of the caller's session setting.
+--
+-- The sibling advisory (`extension_in_public` — citext installed in
+-- `public`) is CONSCIOUSLY SKIPPED: relocating the extension needs
+-- `ALTER EXTENSION citext SET SCHEMA extensions` plus retyping every
+-- `public.citext` column, a far larger blast radius than a WARN-level
+-- schema-pollution advisory justifies pre-launch. Tracked in the same
+-- FOUNDER-FOLLOWUPS entry.
+--
+-- Forward-only-friendly: `ALTER FUNCTION ... SET` is metadata-only —
+-- no rewrite, no lock beyond a brief AccessExclusive on the pg_proc
+-- row, trigger behavior unchanged.
+--
+-- Privacy (D7, D228): no data touched.
+
+ALTER FUNCTION public.set_updated_at() SET search_path = pg_catalog, public;
+--> statement-breakpoint
+ALTER FUNCTION public.outbox_notify_inserted() SET search_path = pg_catalog, public;
