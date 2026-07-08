@@ -32,6 +32,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import {
@@ -40,6 +41,7 @@ import {
   type AutopilotRuleMode,
   type AutopilotRuleScope,
   automationRules,
+  mailMessages,
   ruleMatchLog,
   senders,
 } from '@declutrmail/db';
@@ -61,6 +63,7 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   AutopilotMatch,
   AutopilotMatchDismissResult,
+  AutopilotObserveDigest,
   AutopilotPauseAllResult,
   AutopilotRule,
   AutopilotRulePatch,
@@ -102,7 +105,8 @@ export class AutopilotReadService {
       .from(automationRules)
       .where(eq(automationRules.mailboxAccountId, mailboxAccountId))
       .orderBy(automationRules.createdAt, automationRules.id);
-    return rows.map((r) => projectRule(r));
+    const digests = await this.observeDigests(mailboxAccountId);
+    return rows.map((r) => projectRule(r, digests.get(r.id) ?? null));
   }
 
   /** Get one rule by id within a mailbox. Returns `null` on miss (controller maps to 404). */
@@ -114,7 +118,63 @@ export class AutopilotReadService {
         and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, id)),
       )
       .limit(1);
-    return row ? projectRule(row) : null;
+    if (!row) return null;
+    const digests = await this.observeDigests(mailboxAccountId, id);
+    return projectRule(row, digests.get(row.id) ?? null);
+  }
+
+  /**
+   * D10/D101 — per-rule Observe-mode digest, one grouped query for the
+   * mailbox. For every rule with pending Observe-mode matches:
+   *
+   *   - `pendingTotal` — all pending Observe rows (uncapped; the
+   *     honest gate for the day-7 prompt, unlike the 50-row page).
+   *   - `senders7d`    — distinct senders matched in the last 7 days.
+   *   - `messages7d`   — INBOX messages from those senders (LEFT JOIN
+   *     mail_messages, same resolution the action sweep uses) — the
+   *     "would have archived N emails" number.
+   *
+   * The pending-dedup unique index guarantees one pending row per
+   * (rule, sender), so the message join cannot double-count a sender.
+   * Metadata only (D7): counts of ids, never content.
+   */
+  private async observeDigests(
+    mailboxAccountId: string,
+    ruleId?: string,
+  ): Promise<Map<string, AutopilotObserveDigest>> {
+    const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
+    const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
+    const rows = await this.db
+      .select({
+        ruleId: ruleMatchLog.ruleId,
+        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id})::int`,
+        senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
+        messages7d: sql<number>`count(${mailMessages.id}) filter (where ${recent})::int`,
+      })
+      .from(ruleMatchLog)
+      .leftJoin(
+        mailMessages,
+        and(
+          eq(mailMessages.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+          eq(mailMessages.senderKey, ruleMatchLog.senderKey),
+          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+        ),
+      )
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.modeAtMatch, 'observe'),
+          eq(ruleMatchLog.resolution, 'pending'),
+          ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
+        ),
+      )
+      .groupBy(ruleMatchLog.ruleId);
+    return new Map(
+      rows.map((r) => [
+        r.ruleId,
+        { pendingTotal: r.pendingTotal, senders7d: r.senders7d, messages7d: r.messages7d },
+      ]),
+    );
   }
 
   /**
@@ -141,7 +201,8 @@ export class AutopilotReadService {
       patch.enabled === undefined &&
       patch.mode === undefined &&
       patch.confidenceThreshold === undefined &&
-      patch.scope === undefined
+      patch.scope === undefined &&
+      patch.observePromptDismissed === undefined
     ) {
       // Nothing to update — surface as a client error so the FE
       // catches the empty-patch bug at the boundary.
@@ -163,14 +224,20 @@ export class AutopilotReadService {
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
     if (patch.mode !== undefined) {
       set.mode = patch.mode;
-      // Reset the Observe-window timer on any mode transition.
+      // Reset the Observe-window timer on any mode transition — and
+      // re-arm the day-7 prompt (D10): a fresh window earns a fresh
+      // prompt. An explicit `observePromptDismissed` below overrides.
       set.modeChangedAt = sql`now()`;
+      set.observePromptDismissedAt = null;
     }
     if (patch.confidenceThreshold !== undefined) {
       set.confidenceThreshold =
         patch.confidenceThreshold === null ? null : patch.confidenceThreshold.toFixed(2);
     }
     if (patch.scope !== undefined) set.scope = patch.scope;
+    if (patch.observePromptDismissed !== undefined) {
+      set.observePromptDismissedAt = patch.observePromptDismissed ? sql`now()` : null;
+    }
 
     const [updated] = await this.db
       .update(automationRules)
@@ -183,7 +250,9 @@ export class AutopilotReadService {
         ),
       )
       .returning();
-    return updated ? projectRule(updated) : null;
+    if (!updated) return null;
+    const digests = await this.observeDigests(mailboxAccountId, id);
+    return projectRule(updated, digests.get(updated.id) ?? null);
   }
 
   /**
@@ -590,7 +659,10 @@ function asPresetKey(k: string | null): AutopilotPresetKey | null {
   return k !== null && PRESET_KEY_SET.has(k) ? (k as AutopilotPresetKey) : null;
 }
 
-function projectRule(row: typeof automationRules.$inferSelect): AutopilotRule {
+function projectRule(
+  row: typeof automationRules.$inferSelect,
+  observeDigest: AutopilotObserveDigest | null,
+): AutopilotRule {
   // U14 — Observe-window projection (D10/D104). The window runs 7 days
   // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
   // No auto-promotion happens at elapse (locked safe variant) — the FE
@@ -607,6 +679,16 @@ function projectRule(row: typeof automationRules.$inferSelect): AutopilotRule {
     modeChangedAt: row.modeChangedAt.toISOString(),
     observeWindowEndsAt: inObserve ? new Date(observeWindowEndsAtMs).toISOString() : null,
     observeWindowElapsed: inObserve && Date.now() >= observeWindowEndsAtMs,
+    observePromptDismissedAt: row.observePromptDismissedAt?.toISOString() ?? null,
+    // Digest is an Observe-mode surface — Active/Paused rules keep the
+    // wire field null even when stale pending rows exist for them
+    // ("suggestions stay pending after activation" is the D104 rule,
+    // but the "would have" framing only makes sense while observing).
+    // Zero-fill when in Observe with no pending rows so the FE can
+    // gate on numbers, not presence.
+    observeDigest: inObserve
+      ? (observeDigest ?? { pendingTotal: 0, senders7d: 0, messages7d: 0 })
+      : null,
     confidenceThreshold:
       row.confidenceThreshold !== null ? Number.parseFloat(row.confidenceThreshold) : null,
     scope: row.scope as AutopilotRuleScope,

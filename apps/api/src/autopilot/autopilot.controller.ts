@@ -299,6 +299,12 @@ function parseRulePatch(body: unknown): AutopilotRulePatch {
       throw new BadRequestException('`confidenceThreshold` must be a number in [0, 1] or null.');
     }
   }
+  if ('observePromptDismissed' in obj) {
+    if (typeof obj.observePromptDismissed !== 'boolean') {
+      throw new BadRequestException('`observePromptDismissed` must be a boolean.');
+    }
+    out.observePromptDismissed = obj.observePromptDismissed;
+  }
 
   return out;
 }
