@@ -29,6 +29,7 @@ import { JwtGuard } from '../auth/jwt.guard.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { resolveBriefTodayLocal } from './brief-dates.js';
 import { BriefReadService } from './brief.read-service.js';
 import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
 
@@ -39,18 +40,24 @@ export class BriefController {
   constructor(private readonly reads: BriefReadService) {}
 
   /**
-   * GET /api/briefs/today — today's Brief for the caller's mailbox.
-   * Returns 404 if the snapshot worker hasn't fired yet (FE refetches
-   * after the cron tick).
+   * GET /api/briefs/today?tz=<IANA> — today's Brief for the caller's
+   * mailbox. Returns 404 if the snapshot worker hasn't fired yet (FE
+   * refetches after the cron tick).
    *
-   * V2 simplification: today = UTC date. When `users.timezone` lands
-   * the controller derives the local-date from the user record.
+   * `tz` (optional) is the caller's IANA timezone — the server resolves
+   * "today" in that zone so the Brief day boundary is the USER's
+   * midnight, not UTC's (D64 read-path half). Absent `tz` → UTC date,
+   * the original contract (backward compatible). Invalid `tz` → 400
+   * INVALID_TIMEZONE.
    */
   @Get('today')
   @RateLimit('triage-load')
-  async today(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<Brief>> {
+  async today(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('tz') tz: string | undefined,
+  ): Promise<Envelope<Brief>> {
     const accountId = mailbox.id;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = resolveBriefTodayLocal(new Date(), tz);
     const brief = await this.reads.getForDate(accountId, today);
     if (!brief) {
       throw notFound('Brief not found for today.');

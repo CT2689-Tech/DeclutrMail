@@ -34,6 +34,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     expect(result.data).toEqual({
       emailPrefs: { reminders: true },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
+      briefPrefs: { weekends: false },
     });
   });
 
@@ -41,11 +42,13 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     const { controller } = makeController({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
+      briefPrefs: { weekends: true },
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
+      briefPrefs: { weekends: true },
     });
   });
 
@@ -58,6 +61,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     expect(result.data).toEqual({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
+      briefPrefs: { weekends: false },
     });
   });
 });
@@ -105,5 +109,31 @@ describe('MeSettingsController — PATCH /api/me/action-sheet-prefs', () => {
   it('400 on an empty patch', async () => {
     const { controller } = makeController();
     await expect(controller.patchActionSheetPrefs(USER, {})).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('MeSettingsController — PATCH /api/me/brief-prefs (D66)', () => {
+  it('opts in to weekend Briefs and persists the merged bag', async () => {
+    const { controller, users } = makeController({});
+    const result = await controller.patchBriefPrefs(USER, { weekends: true });
+    expect(result.data).toEqual({ briefPrefs: { weekends: true } });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u1', {
+      briefPrefs: { weekends: true },
+    });
+  });
+
+  it('flips the opt-in back off', async () => {
+    const { controller } = makeController({ briefPrefs: { weekends: true } });
+    const result = await controller.patchBriefPrefs(USER, { weekends: false });
+    expect(result.data).toEqual({ briefPrefs: { weekends: false } });
+  });
+
+  it('400 on unknown keys and empty patches', async () => {
+    const { controller, users } = makeController();
+    await expect(controller.patchBriefPrefs(USER, { saturdays: true })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(controller.patchBriefPrefs(USER, {})).rejects.toThrow(BadRequestException);
+    expect(users.patchPreferences).not.toHaveBeenCalled();
   });
 });
