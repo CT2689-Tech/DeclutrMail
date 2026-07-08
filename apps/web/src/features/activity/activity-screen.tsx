@@ -1859,10 +1859,15 @@ function Chip({
 const ACTION_LABEL: Record<ActivityActionWire, string> = {
   keep: 'Kept',
   archive: 'Archived',
-  unsubscribe: 'Unsubscribed',
-  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). Past
-  // tense mirrors the other rows; "confirmed" marks it as the outcome,
-  // not a re-click.
+  // D9 — the intent row records the ATTEMPT, never success: "UI copy is
+  // deliberately uncertain — never promise." A one-click POST may still
+  // fail and a mailto is manual (D230), so at click time the outcome is
+  // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
+  // honest; the separate `unsubscribe_confirmed` row is the only place
+  // that promises success, and it is written only on a 2xx accept.
+  unsubscribe: 'Unsubscribe requested',
+  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
+  // the one row that states the unsubscribe actually went through.
   unsubscribe_confirmed: 'Unsubscribe confirmed',
   later: 'Later',
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses

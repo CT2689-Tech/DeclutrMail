@@ -307,6 +307,9 @@ describe('UnsubExecutionWorker', () => {
     // policy status record it, and a 'confirmed' row would be a lie
     // (D226 no fake success). The outbox event still fires for observability.
     expect(state.activities).toHaveLength(0);
+    expect(state.events).toHaveLength(1);
+    expect(state.events[0]!.topic).toBe('actions.unsubscribe_executed');
+    expect(state.events[0]!.payload).toMatchObject({ outcome: 'failed', httpStatus: 404 });
   });
 
   it('5xx → failed terminally on the FIRST response', async () => {

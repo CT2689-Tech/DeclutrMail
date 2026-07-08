@@ -297,9 +297,37 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     // The outcome row renders its own label, distinct from the intent's
-    // "Unsubscribed" — and the confirmed row shows no count (0 affected).
+    // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
     await waitFor(() => expect(screen.getByText(/^Unsubscribe confirmed$/)).toBeInTheDocument());
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
+  });
+
+  it('D9 — the intent row records the ATTEMPT, never success ("Unsubscribe requested")', async () => {
+    // A one-click POST can still fail and a mailto is manual (D230), so the
+    // intent row must not claim completion — otherwise a FAILED unsubscribe
+    // reads as done. The intent renders "Unsubscribe requested"; only the
+    // separate `unsubscribe_confirmed` row promises success. (The stats
+    // tile + verb chip legitimately keep the aggregate "Unsubscribed"
+    // label, so we assert the ROW label positively rather than the absence
+    // of "Unsubscribed" anywhere on the page.)
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ id: 'a-intent', action: 'unsubscribe', affectedCount: 0 })],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              window: '30d',
+              source: 'all',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {
