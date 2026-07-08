@@ -37,6 +37,12 @@ export type ActivityActionWire =
   | 'keep'
   | 'archive'
   | 'unsubscribe'
+  // D56 — the unsubscribe OUTCOME row, written by UnsubExecutionWorker on
+  // a 2xx RFC 8058 accept. Distinct from the intent 'unsubscribe' (the
+  // click) so the timeline shows the confirmation separately. Not a
+  // K/A/U/L/D canonical verb (D227) and not offered as a filter chip —
+  // it renders as a feed row only.
+  | 'unsubscribe_confirmed'
   | 'later'
   | 'delete'
   | 'followup-dismiss'

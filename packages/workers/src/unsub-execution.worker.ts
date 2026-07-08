@@ -455,10 +455,18 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
    *      1 SENDER on success — unsub affects the sender, not messages).
    *   2. `sender_policies.unsub_status` → the outcome (the senders
    *      list/detail chips read this).
-   *   3. `activity_log` outcome row — append-only audit of the ATTEMPT
-   *      (D9: record attempt, not assumed success). 0-affected (no
-   *      mail moved) and NO undo token (D58 — one-way).
-   *   4. `actions.unsubscribe_executed` outbox event (observability).
+   *   3. `activity_log` CONFIRMED row (D56) — written ONLY on a 2xx
+   *      accept, as `action='unsubscribe_confirmed'`: the outcome,
+   *      distinct from the intent `unsubscribe` row the enqueuer
+   *      already wrote. A failed/ambiguous attempt writes NO row here —
+   *      the intent row + `sender_policies.unsub_status` +
+   *      `action_jobs.status` record it. (The prior unconditional
+   *      `unsubscribe` write both double-counted the intent in the
+   *      Activity stats buckets AND read as success in the timeline for
+   *      a FAILED POST — D226 "no fake success".) 0-affected (no mail
+   *      moved) and NO undo token (D58 — one-way).
+   *   4. `actions.unsubscribe_executed` outbox event (observability) —
+   *      still fires for EVERY outcome, so failure is fully observable.
    */
   private async recordOutcome(
     actionId: string,
@@ -488,17 +496,24 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           ),
         );
 
-      await tx.insert(activityLog).values({
-        mailboxAccountId,
-        senderKey,
-        source: 'manual',
-        action: 'unsubscribe',
-        // 0 — an unsubscribe moves no messages; the sender-level effect
-        // lives on action_jobs.affected_count + the policy status.
-        affectedCount: 0,
-        // D58: no undo token, ever — the POST cannot be recalled.
-        undoToken: null,
-      });
+      // D56 — the CONFIRMED outcome row, written only when the brand's
+      // RFC 8058 endpoint accepted the unsubscribe. Distinct from the
+      // intent 'unsubscribe' row (the click) so the Activity timeline
+      // renders the confirmation separately and the K/A/U/L/D stats
+      // buckets count the DECISION once, not twice.
+      if (record.outcome === 'done') {
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey,
+          source: 'manual',
+          action: 'unsubscribe_confirmed',
+          // 0 — an unsubscribe moves no messages; the sender-level
+          // effect lives on action_jobs.affected_count + policy status.
+          affectedCount: 0,
+          // D58: no undo token, ever — the POST cannot be recalled.
+          undoToken: null,
+        });
+      }
 
       await this.deps.outbox.publish(tx, {
         topic: TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,

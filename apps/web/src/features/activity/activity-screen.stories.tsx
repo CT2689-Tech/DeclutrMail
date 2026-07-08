@@ -87,6 +87,24 @@ const ROWS: ActivityRowWire[] = [
     undoState: { kind: 'unavailable' },
   },
   {
+    // D56 — the confirmed OUTCOME for the r-2 click: the brand's RFC 8058
+    // endpoint accepted the unsubscribe ~1h later. Renders as its own row
+    // ("Unsubscribe confirmed"), distinct from the intent above.
+    id: 'r-2b',
+    occurredAt: isoHoursAgo(7),
+    source: 'manual',
+    action: 'unsubscribe_confirmed',
+    affectedCount: 0,
+    sender: {
+      senderKey: 'sk-shop',
+      displayName: 'Old Navy',
+      email: 'mail@oldnavy.example',
+      domain: 'oldnavy.example',
+    },
+    rule: null,
+    undoState: { kind: 'unavailable' },
+  },
+  {
     id: 'r-3',
     occurredAt: isoHoursAgo(36),
     source: 'triage',

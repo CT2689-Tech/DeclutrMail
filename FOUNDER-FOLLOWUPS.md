@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-08 — OPTIONAL: exact confirmed-unsubscribe count (aggregate now honest via relabel)
+**Source:** PR #301 (unsubscribe_confirmed outcome row) — a 2nd Codex stop-review flagged the aggregate as still overclaiming success. FIXED in-PR by relabel (option (a) below); this entry now tracks only the optional exact-count enhancement.
+**Why:** The Activity stats tile + verb chip AND the Triage session burn-down counted `activity_log.action='unsubscribe'` (intent) rows but labeled them "Unsubscribed" (verified success) — an overclaim, since one-click attempts can fail and mailto (D230) is never confirmed. **Resolved:** all three surfaces relabeled "Unsubscribed" → **"Unsubscribes"** (a count of actions taken, no completion claim); the confirmed outcome renders per-row as "Unsubscribe confirmed". The count itself is unchanged (still counts actions), so mailto is not undercounted.
+**How (remaining, optional):** if you later want an EXACT "successfully unsubscribed" number: count `unsubscribe_confirmed` for one-click + `unsubscribe` intent for mailto — needs the unsubscribe method on the activity row (or a `sender_policies` join in the read-service). Deferred because it needs schema/read-service work and the relabel already removes the false promise. (Option (c) "leave as-is" is now moot — the label no longer promises success.)
+**Verifies by:** no aggregate labels an unsubscribe as a verified success; an exact confirmed count, if built, matches `COUNT(unsubscribe_confirmed) + mailto intents`.
+**Status:** Open (optional enhancement only — the overclaim itself is fixed)
+
 ### 2026-07-08 — Quiet "Release now" + Screener bulk-decide: finish the deferred halves (D75/D96)
 **Source:** PR #298 (screener/quiet suite) — the read slice (held-count + ends-at) shipped complete; two scaffolded-but-unfinished features were reverted rather than shipped half-built (§10 no-stub).
 **Why:** The original agent scaffolded a quiet "Release now" endpoint (contract `QuietReleaseResult` + workers `persistQuietRelease`/`isQuietWindowReleased`) and a Screener bulk-decide, but neither was finished — release-now needs the `autopilot-action` BullMQ queue injected into `MailboxesModule` (module wiring), and bulk-decide was never started. Shipping the dead plumbing would have been fake completion.

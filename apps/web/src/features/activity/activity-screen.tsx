@@ -461,7 +461,15 @@ function MetricsHeader({
   const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
     { key: 'archived', label: 'Archived', accent: color.fg },
     { key: 'deleted', label: 'Deleted', accent: color.amber },
-    { key: 'unsubscribed', label: 'Unsubscribed', accent: color.primary },
+    // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
+    // intent rows), which for one-click include attempts that may fail
+    // and mailto that we never confirm. "Unsubscribes" (a count of the
+    // actions taken) makes no completion claim; "Unsubscribed" would
+    // overclaim success. Confirmed outcomes render per-row as
+    // "Unsubscribe confirmed" (never aggregated as verified success —
+    // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
+    // metric-definition options if an exact confirmed count is wanted.
+    { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
     { key: 'kept', label: 'Kept', accent: color.emerald },
     { key: 'later', label: 'Later', accent: color.fgSoft },
   ];
@@ -607,7 +615,9 @@ const VERB_CHIPS: ReadonlyArray<{
 }> = [
   { value: 'archive', label: 'Archived', dot: color.fgSoft },
   { value: 'delete', label: 'Deleted', dot: color.amber },
-  { value: 'unsubscribe', label: 'Unsubscribed', dot: color.primary },
+  // D9 — filters the `unsubscribe` intent rows; label matches the tile
+  // ("Unsubscribes", not the success-claiming "Unsubscribed").
+  { value: 'unsubscribe', label: 'Unsubscribes', dot: color.primary },
   { value: 'later', label: 'Later', dot: color.dashboard.accent },
   { value: 'keep', label: 'Kept', dot: color.emerald },
   { value: 'followup-dismiss', label: 'Followups', dot: color.fgMuted },
@@ -1336,6 +1346,9 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   archive: color.fgSoft,
   delete: color.amber,
   unsubscribe: color.primary,
+  // D56 — the confirmed outcome reads as a completion; emerald (the
+  // "done/kept" accent) sets it apart from the primary-accent intent row.
+  unsubscribe_confirmed: color.emerald,
   later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
@@ -1856,7 +1869,16 @@ function Chip({
 const ACTION_LABEL: Record<ActivityActionWire, string> = {
   keep: 'Kept',
   archive: 'Archived',
-  unsubscribe: 'Unsubscribed',
+  // D9 — the intent row records the ATTEMPT, never success: "UI copy is
+  // deliberately uncertain — never promise." A one-click POST may still
+  // fail and a mailto is manual (D230), so at click time the outcome is
+  // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
+  // honest; the separate `unsubscribe_confirmed` row is the only place
+  // that promises success, and it is written only on a 2xx accept.
+  unsubscribe: 'Unsubscribe requested',
+  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
+  // the one row that states the unsubscribe actually went through.
+  unsubscribe_confirmed: 'Unsubscribe confirmed',
   later: 'Later',
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with
