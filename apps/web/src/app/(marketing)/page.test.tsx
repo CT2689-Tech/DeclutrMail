@@ -66,7 +66,7 @@ describe('landing page — D134', () => {
     expect(ctas.filter((href) => href?.endsWith('/api/auth/google/start')).length).toBeGreaterThan(
       0,
     );
-    for (const route of ['/pricing', '/privacy', '/terms', '/refunds']) {
+    for (const route of ['/pricing', '/privacy', '/terms', '/refunds', '/cookies']) {
       expect(ctas).toContain(route);
     }
   });

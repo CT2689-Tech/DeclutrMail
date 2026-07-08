@@ -21,6 +21,7 @@ export const MARKETING_PATHS = [
   '/privacy',
   '/terms',
   '/refunds',
+  '/cookies',
 ] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {

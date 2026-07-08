@@ -24,6 +24,7 @@ describe('sitemap — D134', () => {
     expect(urls).toContain('https://declutrmail.com/privacy');
     expect(urls).toContain('https://declutrmail.com/terms');
     expect(urls).toContain('https://declutrmail.com/refunds');
+    expect(urls).toContain('https://declutrmail.com/cookies');
   });
 
   it('never lists a robots-disallowed authed path', () => {

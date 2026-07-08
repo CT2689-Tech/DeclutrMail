@@ -49,6 +49,7 @@ export function Footer() {
             <a href="/privacy">Privacy</a>
             <a href="/terms">Terms</a>
             <a href="/refunds">Refunds</a>
+            <a href="/cookies">Cookie preferences</a>
           </nav>
           <span style={{ background: '#fafaf7', borderRadius: 8, display: 'inline-flex' }}>
             <PrivacyBadge variant="inline" />

@@ -213,6 +213,8 @@ export interface EventPayloads {
       | 'terms'
       | 'refunds'
       | 'beta'
+      // D147 consent change/withdrawal surface (GDPR Art. 7(3)).
+      | 'cookies'
       // 2026-07-07 launch marketing bundle (D219, D137) — support surfaces.
       | 'help'
       | 'contact'

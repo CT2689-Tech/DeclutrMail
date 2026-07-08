@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { storeConsent } from './cookie-consent';
-import { __resetForTests, identifyUser, track } from './posthog';
+import { readStoredConsent, storeConsent } from './cookie-consent';
+import { __resetForTests, identifyUser, track, withdrawAnalyticsConsent } from './posthog';
 
 /**
  * D147 consent gate — the contract under test: PostHog must not
@@ -30,6 +30,7 @@ beforeEach(() => {
   posthogMock.init.mockClear();
   posthogMock.capture.mockClear();
   posthogMock.identify.mockClear();
+  posthogMock.reset.mockClear();
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_test');
 });
 
@@ -105,5 +106,47 @@ describe('identifyUser() consent gate (D147)', () => {
     storeConsent('all');
     await identifyUser('11111111-1111-4111-8111-111111111111');
     expect(posthogMock.identify).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
+  });
+});
+
+describe('withdrawAnalyticsConsent() — GDPR Art. 7(3) (D147)', () => {
+  it('flips the stored choice to "essential" in both stores and resets the loaded SDK', async () => {
+    storeConsent('all');
+    await track('page_viewed', { page: 'senders', mailbox_id: null }); // SDK loads
+
+    await withdrawAnalyticsConsent();
+
+    expect(readStoredConsent()).toBe('essential');
+    expect(window.localStorage.getItem('dm-cookie-consent')).toBe('essential');
+    expect(document.cookie).toContain('dm_cookie_consent=essential');
+    expect(posthogMock.reset).toHaveBeenCalledTimes(1);
+  });
+
+  it('track() no-ops immediately after withdrawal — the per-call gate, no reload needed', async () => {
+    storeConsent('all');
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+    expect(posthogMock.capture).toHaveBeenCalledTimes(1);
+
+    await withdrawAnalyticsConsent();
+    await track('page_viewed', { page: 'triage', mailbox_id: null });
+
+    expect(posthogMock.capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('still stores the withdrawal when the SDK never loaded (keyless) — no reset to call', async () => {
+    vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
+    storeConsent('all');
+
+    await withdrawAnalyticsConsent();
+
+    expect(readStoredConsent()).toBe('essential');
+    expect(posthogMock.reset).not.toHaveBeenCalled();
+  });
+
+  it('works with no prior choice at all — stores an explicit decline', async () => {
+    await withdrawAnalyticsConsent();
+    expect(readStoredConsent()).toBe('essential');
+    expect(posthogMock.init).not.toHaveBeenCalled();
+    expect(posthogMock.reset).not.toHaveBeenCalled();
   });
 });

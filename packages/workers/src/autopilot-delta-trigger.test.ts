@@ -432,6 +432,74 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     expect(afterThird).toHaveLength(2);
   });
 
+  it('quiet-deferral pile-up — an unapplied approved row is never duplicated; the chain still re-fires', async () => {
+    const db = await freshDb();
+    const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');
+
+    // Sweep 1 — writes the approved row and chains one action sweep.
+    const { applyAdd } = await runSyncDelta(db, mailboxId, knownSenderDelta());
+    const [, jobData] = applyAdd.mock.calls[0] as [
+      string,
+      { mailboxAccountId: string; triggeredAtMs: number },
+    ];
+    const { chain, actionAdd } = buildChain(db);
+    const first = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(first.activeMatches).toBe(1);
+    expect(actionAdd).toHaveBeenCalledTimes(1);
+
+    // Quiet hours: the action worker DEFERS, so nothing executes —
+    // INBOX stays populated and the row stays intent_applied=false.
+    // More mail arrives (the overnight case), the next delta window
+    // sweeps again. Pre-fix this stacked a duplicate approved row
+    // every window (approved rows bypass the pending-only dedup index
+    // and the actionability gate keeps passing on a full inbox).
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'm-quiet-2',
+      providerThreadId: 'thread-quiet-2',
+      senderKey,
+      subject: 'Overnight deals',
+      snippet: 'more deals',
+      labelIds: ['INBOX', 'UNREAD', 'CATEGORY_PROMOTIONS'],
+      isUnread: true,
+      internalDate: NOW,
+    });
+    const second = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(second.activeMatches).toBe(0);
+    expect(second.activeSkippedAlreadyQueued).toBe(1);
+    const afterSecond = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(
+        and(eq(ruleMatchLog.mailboxAccountId, mailboxId), eq(ruleMatchLog.senderKey, senderKey)),
+      );
+    expect(afterSecond).toHaveLength(1); // still just sweep 1's row
+
+    // The chain re-fires on skip — without this, rows stranded by an
+    // indefinite manual quiet would never execute (pre-fix, the
+    // duplicate insert was accidentally the recovery path). The
+    // quiet-end execution then covers the overnight mail too: the
+    // action worker resolves the sender's INBOX ids at act time.
+    expect(actionAdd).toHaveBeenCalledTimes(2);
+
+    // Quiet ends, the deferred sweep executes: intent applied, inbox
+    // cleared. The next delta sweep skips on actionability (not the
+    // dedup) and does NOT re-chain.
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['CATEGORY_PROMOTIONS'] })
+      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+    await db
+      .update(ruleMatchLog)
+      .set({ intentApplied: true, resolvedAt: NOW })
+      .where(eq(ruleMatchLog.mailboxAccountId, mailboxId));
+    const third = await chain.applyWorker.processJob(jobData, FAKE_CTX);
+    expect(third.activeMatches).toBe(0);
+    expect(third.activeSkippedAlreadyQueued).toBe(0);
+    expect(third.activeSkippedNotActionable).toBeGreaterThan(0);
+    expect(actionAdd).toHaveBeenCalledTimes(2);
+  });
+
   it('unsubscribe rules skip senders already carrying the one-way unsubscribe policy', async () => {
     const db = await freshDb();
     const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');
