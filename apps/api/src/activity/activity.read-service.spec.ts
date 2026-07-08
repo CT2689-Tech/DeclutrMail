@@ -123,7 +123,14 @@ async function seedActivity(
     mailboxAccountId: string;
     occurredAt: Date;
     source: 'triage' | 'manual' | 'autopilot' | 'screener';
-    action: 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete' | 'followup-dismiss';
+    action:
+      | 'keep'
+      | 'archive'
+      | 'unsubscribe'
+      | 'unsubscribe_confirmed'
+      | 'later'
+      | 'delete'
+      | 'followup-dismiss';
     affectedCount?: number;
     senderKey?: string;
     undoToken?: string;
@@ -501,6 +508,44 @@ describe('ActivityReadService', () => {
         followupsDismissed: 1,
         needsAttention: 0,
       });
+    });
+
+    it('D56 — unsubscribe_confirmed is a distinct feed row that does NOT double-count the intent', async () => {
+      // A one-click unsubscribe writes TWO rows: the intent (the click)
+      // and the worker's confirmed OUTCOME. Both must appear in the feed,
+      // but the K/A/U/L/D stats must count the DECISION once — the
+      // confirmed row is an outcome annotation, not a second unsubscribe.
+      const senderKey = 'a'.repeat(64);
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_confirmed',
+        affectedCount: 0,
+        senderKey,
+      });
+
+      const { stats, rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      // Both rows surface in the timeline, newest first.
+      expect(rows.map((r) => r.action)).toEqual(['unsubscribe_confirmed', 'unsubscribe']);
+      // Stats count the decision ONCE — the confirmed row is excluded
+      // from the `unsubscribed` bucket (it is not the `unsubscribe` verb).
+      expect(stats.unsubscribed).toBe(1);
     });
 
     it('stats also respect the window boundary', async () => {

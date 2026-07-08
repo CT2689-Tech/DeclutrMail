@@ -278,6 +278,30 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
+  it('D56 — renders a distinct "Unsubscribe confirmed" row for the outcome action', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ id: 'a-confirmed', action: 'unsubscribe_confirmed', affectedCount: 0 })],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              window: '30d',
+              source: 'all',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    // The outcome row renders its own label, distinct from the intent's
+    // "Unsubscribed" — and the confirmed row shows no count (0 affected).
+    await waitFor(() => expect(screen.getByText(/^Unsubscribe confirmed$/)).toBeInTheDocument());
+    expect(screen.queryByText(/email/)).not.toBeInTheDocument();
+  });
+
   it('renders UNDO EXPIRED for `expired`', async () => {
     installFetchStub([
       {

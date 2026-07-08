@@ -235,7 +235,7 @@ describe('UnsubExecutionWorker', () => {
     return { job: job!, policy: policy!, activities, events };
   }
 
-  it('2xx → done: action row, policy status, 0-affected activity row with NO undo token (D58), outbox event', async () => {
+  it('2xx → done: action row, policy status, 0-affected unsubscribe_confirmed row with NO undo token (D56/D58), outbox event', async () => {
     await seedSender(db, mailboxId);
     await seedPendingPolicy(db, mailboxId);
     const actionId = await seedExecutionJob(db, mailboxId);
@@ -267,7 +267,9 @@ describe('UnsubExecutionWorker', () => {
     expect(state.job.undoToken).toBeNull(); // D58 — one-way
     expect(state.policy.unsubStatus).toBe('done');
     expect(state.activities).toHaveLength(1);
-    expect(state.activities[0]!.action).toBe('unsubscribe');
+    // D56 — the worker writes the CONFIRMED outcome row, distinct from
+    // the intent 'unsubscribe' row the enqueuer wrote (not seeded here).
+    expect(state.activities[0]!.action).toBe('unsubscribe_confirmed');
     expect(state.activities[0]!.affectedCount).toBe(0); // no mail moved
     expect(state.activities[0]!.undoToken).toBeNull(); // D58
     expect(state.events).toHaveLength(1);
@@ -301,6 +303,10 @@ describe('UnsubExecutionWorker', () => {
     expect(state.job.errorCode).toBe('UNSUB_TARGET_REJECTED');
     expect(state.job.affectedCount).toBe(0);
     expect(state.policy.unsubStatus).toBe('failed');
+    // D56 — a FAILED attempt writes NO activity row: the intent row +
+    // policy status record it, and a 'confirmed' row would be a lie
+    // (D226 no fake success). The outbox event still fires for observability.
+    expect(state.activities).toHaveLength(0);
   });
 
   it('5xx → failed terminally on the FIRST response', async () => {

@@ -1336,6 +1336,9 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   archive: color.fgSoft,
   delete: color.amber,
   unsubscribe: color.primary,
+  // D56 — the confirmed outcome reads as a completion; emerald (the
+  // "done/kept" accent) sets it apart from the primary-accent intent row.
+  unsubscribe_confirmed: color.emerald,
   later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
@@ -1857,6 +1860,10 @@ const ACTION_LABEL: Record<ActivityActionWire, string> = {
   keep: 'Kept',
   archive: 'Archived',
   unsubscribe: 'Unsubscribed',
+  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). Past
+  // tense mirrors the other rows; "confirmed" marks it as the outcome,
+  // not a re-click.
+  unsubscribe_confirmed: 'Unsubscribe confirmed',
   later: 'Later',
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with
