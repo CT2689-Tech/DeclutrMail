@@ -87,16 +87,22 @@ describe('PrivacyDataView', () => {
     renderView({ onExport });
 
     await userEvent.click(screen.getByRole('button', { name: /download json/i }));
-    await userEvent.click(screen.getByRole('button', { name: /download csv/i }));
+    await userEvent.click(screen.getByRole('button', { name: /messages csv/i }));
+    await userEvent.click(screen.getByRole('button', { name: /senders csv/i }));
+    await userEvent.click(screen.getByRole('button', { name: /decisions csv/i }));
 
     expect(onExport).toHaveBeenNthCalledWith(1, 'json');
     expect(onExport).toHaveBeenNthCalledWith(2, 'csv');
+    expect(onExport).toHaveBeenNthCalledWith(3, 'senders-csv');
+    expect(onExport).toHaveBeenNthCalledWith(4, 'decisions-csv');
   });
 
-  it('disables both buttons while an export is in flight', () => {
+  it('disables every button while an export is in flight', () => {
     renderView({ exportPendingFormat: 'json' });
     expect(screen.getByRole('button', { name: /preparing json/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /download csv/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /messages csv/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /senders csv/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /decisions csv/i })).toBeDisabled();
   });
 
   it('renders the export-failed alert', () => {

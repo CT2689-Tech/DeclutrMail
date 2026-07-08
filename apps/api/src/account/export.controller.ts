@@ -50,20 +50,38 @@ export class DataExportController {
     if (!parsed.success) {
       throw new AppException({
         code: 'BAD_REQUEST',
-        message: "Invalid export format — use 'json' or 'csv'.",
+        message: "Invalid export format — use 'json', 'csv', 'senders-csv', or 'decisions-csv'.",
       });
     }
     const format = parsed.data;
     const date = new Date().toISOString().slice(0, 10);
-    const source =
-      format === 'csv'
-        ? this.exporter.streamCsv(principal.workspaceId)
-        : this.exporter.streamJson(principal.workspaceId);
+    // Format → dataset stream + download filename. Every CSV variant
+    // shares the text/csv content type; the filename names the dataset.
+    let source: AsyncGenerator<string>;
+    let filename: string;
+    switch (format) {
+      case 'json':
+        source = this.exporter.streamJson(principal.workspaceId);
+        filename = `declutrmail-export-${date}.json`;
+        break;
+      case 'csv':
+        source = this.exporter.streamCsv(principal.workspaceId);
+        filename = `declutrmail-export-${date}.csv`;
+        break;
+      case 'senders-csv':
+        source = this.exporter.streamSendersCsv(principal.workspaceId);
+        filename = `declutrmail-senders-${date}.csv`;
+        break;
+      case 'decisions-csv':
+        source = this.exporter.streamDecisionsCsv(principal.workspaceId);
+        filename = `declutrmail-decisions-${date}.csv`;
+        break;
+    }
     return new StreamableFile(
       Readable.from(this.guardStream(source, format, principal.workspaceId)),
       {
-        type: format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
-        disposition: `attachment; filename="declutrmail-export-${date}.${format}"`,
+        type: format === 'json' ? 'application/json; charset=utf-8' : 'text/csv; charset=utf-8',
+        disposition: `attachment; filename="${filename}"`,
       },
     );
   }

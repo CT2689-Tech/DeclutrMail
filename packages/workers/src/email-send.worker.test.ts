@@ -156,9 +156,55 @@ describe('EmailSendWorker', () => {
     expect(reminder.outcome).toBe('skipped_opted_out');
     expect(delivery.deliver).not.toHaveBeenCalled();
 
-    // System email ignores the toggle (non-opt-out per D165).
-    const system = await worker.processJob(jobData(userId), CTX);
+    // The reminders toggle is per-category — sync-complete ignores it.
+    const other = await worker.processJob(jobData(userId), CTX);
+    expect(other.outcome).toBe('sent');
+  });
+
+  it('honors the D165 syncComplete opt-out for sync-complete only', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db);
+    await db
+      .update(users)
+      .set({ preferences: { emailPrefs: { reminders: true, syncComplete: false } } })
+      .where(eq(users.id, userId));
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_sc' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    const completion = await worker.processJob(jobData(userId), CTX);
+    expect(completion.outcome).toBe('skipped_opted_out');
+    expect(delivery.deliver).not.toHaveBeenCalled();
+
+    // Reminders keep their own key…
+    const reminder = await worker.processJob(
+      jobData(userId, { kind: 'sync-reminder-24h', idempotencyKey: 'k-sc-1' }),
+      CTX,
+    );
+    expect(reminder.outcome).toBe('sent');
+
+    // …and SYSTEM kinds (deletion notices) have no key at all — they
+    // always send (CAN-SPAM/GDPR carve-out per D165).
+    const system = await worker.processJob(
+      jobData(userId, { kind: 'deletion-scheduled', idempotencyKey: 'k-sc-2' }),
+      CTX,
+    );
     expect(system.outcome).toBe('sent');
+  });
+
+  it('a legacy pre-syncComplete prefs bag still sends sync-complete (default true)', async () => {
+    const db = await freshDb();
+    const userId = await seedUser(db);
+    // Written before the syncComplete key existed — the partial parse
+    // must fill it from defaults, not reset the bag.
+    await db
+      .update(users)
+      .set({ preferences: { emailPrefs: { reminders: false } } })
+      .where(eq(users.id, userId));
+    const delivery = deliveryReturning({ ok: true, providerId: 'rsnd_legacy' });
+    const worker = new EmailSendWorker({ db: db as never, delivery });
+
+    const completion = await worker.processJob(jobData(userId), CTX);
+    expect(completion.outcome).toBe('sent');
   });
 
   it('skips the reminder when the user returned after the sync finished', async () => {

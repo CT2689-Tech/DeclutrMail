@@ -23,7 +23,7 @@ async function downloadExport(format: DataExportFormat): Promise<void> {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
   const res = await fetch(`${apiBase}/api/account/export?format=${format}`, {
     credentials: 'include',
-    headers: { Accept: format === 'csv' ? 'text/csv' : 'application/json' },
+    headers: { Accept: format === 'json' ? 'application/json' : 'text/csv' },
   });
   if (!res.ok) {
     throw new ApiError(res.status, null, `GET /api/account/export failed: ${res.status}`);
@@ -33,8 +33,9 @@ async function downloadExport(format: DataExportFormat): Promise<void> {
   // Filename from Content-Disposition when present; date-stamped fallback.
   const disposition = res.headers.get('Content-Disposition') ?? '';
   const match = /filename="([^"]+)"/.exec(disposition);
+  const ext = format === 'json' ? 'json' : 'csv';
   const filename =
-    match?.[1] ?? `declutrmail-export-${new Date().toISOString().slice(0, 10)}.${format}`;
+    match?.[1] ?? `declutrmail-export-${new Date().toISOString().slice(0, 10)}.${ext}`;
 
   const url = URL.createObjectURL(blob);
   try {

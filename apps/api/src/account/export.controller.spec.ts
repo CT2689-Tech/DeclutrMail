@@ -19,6 +19,44 @@ function collect(stream: NodeJS.ReadableStream): Promise<{ body: string; error: 
   });
 }
 
+describe('DataExportController format routing', () => {
+  function makeController() {
+    async function* dataset(name: string): AsyncGenerator<string> {
+      yield `${name}\n`;
+    }
+    const exporter = {
+      streamJson: vi.fn(() => dataset('json')),
+      streamCsv: vi.fn(() => dataset('messages')),
+      streamSendersCsv: vi.fn(() => dataset('senders')),
+      streamDecisionsCsv: vi.fn(() => dataset('decisions')),
+    };
+    return {
+      exporter,
+      controller: new DataExportController(exporter as unknown as DataExportService),
+    };
+  }
+
+  it.each([
+    ['senders-csv', 'streamSendersCsv', 'declutrmail-senders-', 'senders\n'],
+    ['decisions-csv', 'streamDecisionsCsv', 'declutrmail-decisions-', 'decisions\n'],
+  ] as const)(
+    'format=%s pipes the matching dataset with a text/csv attachment',
+    async (format, method, filenamePrefix, expectedBody) => {
+      const { exporter, controller } = makeController();
+      const file = controller.export({ userId: 'u1', workspaceId: 'w1' }, format);
+      const { body, error } = await collect(file.getStream());
+
+      expect(error).toBeNull();
+      expect(body).toBe(expectedBody);
+      expect(exporter[method]).toHaveBeenCalledWith('w1');
+      const headers = file.getHeaders();
+      expect(headers.type).toBe('text/csv; charset=utf-8');
+      expect(headers.disposition).toContain(`attachment; filename="${filenamePrefix}`);
+      expect(headers.disposition).toContain('.csv"');
+    },
+  );
+});
+
 describe('DataExportController mid-stream failure', () => {
   it('aborts the stream and logs when the export throws after the headers flush', async () => {
     async function* boom(): AsyncGenerator<string> {

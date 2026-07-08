@@ -23,8 +23,9 @@ const { color, font } = tokens;
  *      live ONLY in packages/shared/src/copy/privacy.ts.
  *   2. Indexed mailboxes — which accounts the storage list applies to.
  *   3. Undo retention — how long reversible actions stay reversible.
- *   4. Data export — JSON (everything) / CSV (message index) via
- *      GET /api/account/export. D228-allowlisted columns only.
+ *   4. Data export — JSON (everything) plus per-dataset CSVs (message
+ *      index / senders / decisions) via GET /api/account/export.
+ *      D228-allowlisted columns only.
  *   5. Leave cleanly — pointers to disconnect + account deletion.
  *   6. Legal & evidence — CASA Tier 2 row (static copy, link lands
  *      when the letter publishes) + policy notes.
@@ -157,8 +158,9 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             Download everything DeclutrMail stores for your account. JSON contains the full export —
             mailboxes, senders with your decisions, the message metadata index, and your activity
-            log. CSV contains the message metadata index. Exports never contain message bodies or
-            OAuth tokens — we don't store them.
+            log. The CSVs cover one dataset each: the message metadata index, your senders with
+            their standing policies, and your decision history. Exports never contain message bodies
+            or OAuth tokens — we don't store them.
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
@@ -173,7 +175,21 @@ export function PrivacyDataView({
               disabled={exportPendingFormat !== null}
               onClick={() => onExport('csv')}
             >
-              {exportPendingFormat === 'csv' ? 'Preparing CSV…' : 'Download CSV'}
+              {exportPendingFormat === 'csv' ? 'Preparing CSV…' : 'Messages CSV'}
+            </Button>
+            <Button
+              tone="default"
+              disabled={exportPendingFormat !== null}
+              onClick={() => onExport('senders-csv')}
+            >
+              {exportPendingFormat === 'senders-csv' ? 'Preparing CSV…' : 'Senders CSV'}
+            </Button>
+            <Button
+              tone="default"
+              disabled={exportPendingFormat !== null}
+              onClick={() => onExport('decisions-csv')}
+            >
+              {exportPendingFormat === 'decisions-csv' ? 'Preparing CSV…' : 'Decisions CSV'}
             </Button>
           </div>
           {exportFailed && (
