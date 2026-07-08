@@ -12,7 +12,9 @@ import {
   senderPolicies,
   senders,
   triageDecisions,
+  users,
 } from '@declutrmail/db';
+import { parseBriefPrefs } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import {
@@ -72,6 +74,11 @@ export interface BriefSnapshotResult {
   briefsGenerated: number;
   /** Subset of `briefsGenerated` that landed an empty-section brief (D70). */
   emptyBriefs: number;
+  /**
+   * D66 — mailboxes skipped because the run date is a Saturday/Sunday
+   * and the owning user has not opted in to weekend Briefs.
+   */
+  weekendSkips: number;
   /** Wall-clock ms. */
   durationMs: number;
 }
@@ -124,7 +131,11 @@ const FYI_MAX = BRIEF_FYI_MAX;
  * against lagging sync can self-heal on a later tick.
  *
  * What the worker DOES:
- *   - Iterates every mailbox in `mailbox_accounts`.
+ *   - Iterates every mailbox in `mailbox_accounts` (joined to the
+ *     owning user's `preferences` for the D66 schedule gate).
+ *   - D66 schedule: on Saturday/Sunday run dates, skips mailboxes
+ *     whose user has not opted in (`preferences.briefPrefs.weekends`)
+ *     — Mon–Fri is the default schedule; weekends are opt-in.
  *   - For each mailbox, checks whether today's Brief already exists
  *     (D69 frozen-once invariant) and skips if so.
  *   - Queries yesterday's INBOUND `mail_messages` metadata.
@@ -226,13 +237,26 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     const startedAt = Date.now();
     const now = (this.deps.now ?? (() => new Date()))();
 
+    // D66 — the run date's weekday gates generation, so resolve it once
+    // per pass. V2 simplification: the run date is the UTC date (same
+    // boundary `snapshotForMailbox` uses).
+    const runDateIsWeekend = isWeekendUtc(now);
+
     const mailboxes = await this.deps.db
-      .select({ id: mailboxAccounts.id, workspaceId: mailboxAccounts.workspaceId })
-      .from(mailboxAccounts);
+      .select({
+        id: mailboxAccounts.id,
+        workspaceId: mailboxAccounts.workspaceId,
+        // D66 — the owning user's preference bag; `parseBriefPrefs`
+        // extracts the weekend opt-in with a safe default (false).
+        preferences: users.preferences,
+      })
+      .from(mailboxAccounts)
+      .innerJoin(users, eq(users.id, mailboxAccounts.userId));
 
     let briefsGenerated = 0;
     let emptyBriefs = 0;
     let mailboxesFailed = 0;
+    let weekendSkips = 0;
 
     // Bounded-concurrency fan-out — serial `await` per mailbox would
     // take O(N × ms) → many minutes at 10K mailboxes. The limiter
@@ -251,6 +275,14 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     await Promise.all(
       mailboxes.map((mb) =>
         limiter(async () => {
+          // D66 weekend gate — Mon–Fri default; Sat/Sun generate only
+          // for opted-in users. Skipping writes NO row, so an opt-in
+          // flipped later the same day self-heals on the next hourly
+          // tick (the D69 existence check finds nothing to freeze).
+          if (runDateIsWeekend && !parseBriefPrefs(mb.preferences).weekends) {
+            weekendSkips += 1;
+            return;
+          }
           try {
             const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
             if (generated) {
@@ -278,6 +310,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       briefsGenerated,
       emptyBriefs,
+      weekendSkips,
       durationMs: Date.now() - startedAt,
     };
   }
@@ -720,4 +753,10 @@ function sortVipFirst<T extends { isVip: boolean }>(items: T[]): T[] {
 /** Render `YYYY-MM-DD` from a Date treating it as UTC. */
 function utcDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/** D66 — true when the (UTC) run date is a Saturday or Sunday. */
+function isWeekendUtc(d: Date): boolean {
+  const day = d.getUTCDay();
+  return day === 0 || day === 6;
 }

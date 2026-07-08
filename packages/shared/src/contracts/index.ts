@@ -140,6 +140,17 @@ export {
 } from './email-prefs';
 export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
 
+// D66 Daily Brief schedule preferences — shared between the
+// PATCH /api/me/brief-prefs route and the BriefSnapshotWorker's
+// generation-time weekend gate (Mon–Fri default; weekends opt-in).
+export {
+  BriefPrefsPatchSchema,
+  BriefPrefsSchema,
+  DEFAULT_BRIEF_PREFS,
+  parseBriefPrefs,
+} from './brief-prefs';
+export type { BriefPrefs, BriefPrefsPatch } from './brief-prefs';
+
 // D34 + D226 action-sheet skip preferences — shared between the
 // PATCH /api/me/action-sheet-prefs route and the FE triage store
 // hydration (the sheet is skippable per verb; the preview never is).

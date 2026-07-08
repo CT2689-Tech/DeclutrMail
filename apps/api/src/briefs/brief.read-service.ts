@@ -32,8 +32,9 @@ export class BriefReadService {
    * messages and the empty-day branch hasn't run). Controller maps the
    * null to 404 — the FE re-fetches once the snapshot lands.
    *
-   * `todayLocal` is the user's local-date YYYY-MM-DD. V2 simplification:
-   * the controller passes the UTC date until `users.timezone` lands.
+   * `todayLocal` is the user's local-date YYYY-MM-DD — resolved by the
+   * controller from the FE-supplied `?tz=` IANA zone (UTC when absent;
+   * see `resolveBriefTodayLocal`).
    */
   async getForDate(mailboxAccountId: string, dateLocal: string): Promise<Brief | null> {
     if (!DATE_RE.test(dateLocal)) {
