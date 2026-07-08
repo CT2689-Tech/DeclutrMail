@@ -7,6 +7,7 @@ import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbo
 import { RateLimit } from '../common/rate-limit/index.js';
 import {
   TriageReadService,
+  type TodaySummary,
   type TriageQueueRow,
   type TriageSessionStats,
 } from './triage.read-service.js';
@@ -19,6 +20,7 @@ import { TriageService } from './triage.service.js';
  *   GET  /api/triage/queue-size                    → adaptive D30 size
  *   GET  /api/triage/queue?limit=…                 → TriageQueueRow[]
  *   GET  /api/triage/stats                         → TriageSessionStats
+ *   GET  /api/triage/today-summary                 → TodaySummary (D214)
  *
  * Per D204 thin — only input validation + delegation. Auth (D155 +
  * D205): `JwtGuard` + `CurrentMailboxGuard` + `CsrfGuard`.
@@ -96,5 +98,13 @@ export class TriageController {
   async stats(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<TriageSessionStats>> {
     const stats = await this.reads.getSessionStats({ mailboxAccountId: mailbox.id });
     return ok(stats);
+  }
+
+  /** D214 — the "Today" strip atop Triage (counts over metadata only). */
+  @Get('today-summary')
+  @RateLimit('triage-load')
+  async todaySummary(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<TodaySummary>> {
+    const summary = await this.reads.getTodaySummary({ mailboxAccountId: mailbox.id });
+    return ok(summary);
   }
 }
