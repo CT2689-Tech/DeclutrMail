@@ -9,7 +9,7 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 ## Pages
 
 - [How it works](https://declutrmail.com/#how-it-works): the per-sender cleanup ritual — connect Gmail, review senders by volume, decide once per sender
-- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a money-back guarantee — see the refund policy for terms
+- [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
 - [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
 
 ## Legal

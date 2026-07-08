@@ -85,26 +85,6 @@ export function LegalSection({
   );
 }
 
-/**
- * Callout for clauses the founder explicitly owns (refund window,
- * governing law). Visually calm — an aside, not a warning.
- */
-export function LegalNote({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: 8,
-        padding: '12px 16px',
-        marginBottom: 14,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function LegalPageLayout({
   title,
   lastUpdated,
