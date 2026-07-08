@@ -331,16 +331,6 @@ D1→#12(39) · D2→#12(39) · D23→#32(37) · D28→#32(37) · D29→#44(36) 
 **Verifies by:** privacy-auditor agent reads CLAUDE.md §2.1 + the schema comment in mail-messages.ts + does not flag new PRs touching `size_bytes`. The agent's reference list is now coherent.
 **Status:** Open
 
-### 2026-06-06 — Triage engine over-recommends Unsubscribe on receipt / financial / gov senders
-**Source:** session 2026-06-06 (full-branch smoke, Triage row inspection)
-**Why:** The triage queue for the founder's mailbox surfaced 5+ rows in a row tagged "Unsubscribe · 95% RECOMMENDED" against senders that should clearly be auto-protected: `donotreply@dmv.ca.gov` (government), `orders.apple.com` (Apple Store receipts), `cs-reply@amazon.com` (Amazon CS / receipts), `binanceussupport.zendesk.com` (financial), `airindia.com` (travel). All carry "Quiet 90d · N lifetime" — quiet senders with thin lifetime data getting maximum-confidence destructive verdicts. Clicking Unsubscribe on these would permanently stop legitimate receipts. The Phase A auto-protect cascade (receipts / financial) appears not to be firing OR not to be respected by the verdict cascade.
-**How:**
-1. Audit `apps/api/src/triage/triage.read-service.ts` + the score-worker — confirm `is_auto_protected_*` flows into the verdict logic
-2. Add a 0.85+-confidence Unsub guardrail: never recommend Unsub at ≥0.85 on a sender whose category is `updates|forums` AND no recent volume AND domain matches known transactional/financial patterns (e.g. `.gov`, `*.apple.com`, `*amazon*`, `binance*`, airline patterns)
-3. Add a triage.read-service.spec test seeding `binanceussupport.zendesk.com` + assert verdict is NOT `unsubscribe` at ≥0.85
-**Verifies by:** the founder's mailbox no longer shows transactional senders in the Unsub-recommended bucket; new spec passes.
-**Status:** Open
-
 ### 2026-06-06 — Sender Detail action toolbar still a tracer (D226 + D232 compliance)
 **Source:** architecture-guardian 2026-06-06 [WARNING]
 **Why:** `apps/web/src/features/senders/detail/sender-detail-page.tsx:performAction` for Archive / Unsubscribe / Later / Delete writes a local toast + a synthetic receipt (`timeLeft: '6d 23h'` hardcoded). It never calls `useEnqueueAction` / `useEnqueueComposite` / `useRecordUnsubscribeIntent`; the action never reaches `actions.service.ts`, never writes `action_jobs`, never issues an `undo_token`. The in-file comment ("Tracer path — fake receipt until this surface's verb BE lands") concedes the issue. senders-screen already wires the real mutations; sender-detail is the straggler.
@@ -1491,6 +1481,17 @@ cloud sessions auto-discover them on startup.
 
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
+
+### 2026-06-06 — Triage engine over-recommends Unsubscribe on receipt / financial / gov senders
+**Source:** session 2026-06-06 (full-branch smoke, Triage row inspection)
+**Why:** The triage queue for the founder's mailbox surfaced 5+ rows in a row tagged "Unsubscribe · 95% RECOMMENDED" against senders that should clearly be auto-protected: `donotreply@dmv.ca.gov` (government), `orders.apple.com` (Apple Store receipts), `cs-reply@amazon.com` (Amazon CS / receipts), `binanceussupport.zendesk.com` (financial), `airindia.com` (travel). All carry "Quiet 90d · N lifetime" — quiet senders with thin lifetime data getting maximum-confidence destructive verdicts. Clicking Unsubscribe on these would permanently stop legitimate receipts. The Phase A auto-protect cascade (receipts / financial) appears not to be firing OR not to be respected by the verdict cascade.
+**How:**
+1. Audit `apps/api/src/triage/triage.read-service.ts` + the score-worker — confirm `is_auto_protected_*` flows into the verdict logic
+2. Add a 0.85+-confidence Unsub guardrail: never recommend Unsub at ≥0.85 on a sender whose category is `updates|forums` AND no recent volume AND domain matches known transactional/financial patterns (e.g. `.gov`, `*.apple.com`, `*amazon*`, `binance*`, airline patterns)
+3. Add a triage.read-service.spec test seeding `binanceussupport.zendesk.com` + assert verdict is NOT `unsubscribe` at ≥0.85
+**Verifies by:** the founder's mailbox no longer shows transactional senders in the Unsub-recommended bucket; new spec passes.
+**Done:** PR #248 (merged 2026-07-02, `fix(triage): require positive unsub signals, damp gov/transactional (D29)`) shipped this in `packages/workers/src/score-cascade.ts` — a stricter form than step 2 proposed, with NO brand patterns (brand lists rot + false-positive; `milkbar.com`/`gove.co` are tested non-matches): (a) hard gate — `unsubscribe_score = 0` unless the sender declares a `List-Unsubscribe` channel AND averages ≥ 2 msgs/mo over 90d (`MIN_UNSUB_STREAM_VOLUME`); gated quiet/no-channel senders (DMV, Apple/Amazon receipts, Binance support) land at Later · 0.60 with honest per-leg audit copy (`score_no_unsub_channel` / `score_quiet_stream`); (b) `.gov`/`.mil` (± country code) senders never exceed 0.75 Unsubscribe confidence (`GOV_UNSUB_CONFIDENCE_CAP`) — below the D31 > 0.85 highlight band; (c) the `winner/(winner+loser)` degeneracy that pinned every quiet sender at 95% replaced by strength+margin (Phase C can no longer reach 0.95). Step 1 audit confirmed: `sender_policies.is_protected` (incl. `engagement_based`) flows in as cascade rule 1. Tests live at the cascade layer (pure function) instead of the read-service: `score-cascade.test.ts` seeds the literal `donotreply@dmv.ca.gov` shape (8 lifetime msgs, no List-Unsubscribe) → Later, never Unsubscribe. Existing `triage_decisions` rows re-score via D25 expiry sweep + trigger events — no backfill.
+**Status:** Done 2026-07-07 (shipped in PR #248; verified this session — 61/61 worker cascade+score tests green)
 
 ### 2026-06-09 — Bump Anthropic org to Tier 2 (50 → 1000 RPM, ~$40)
 **Source:** session 2026-06-09 — first real-prod score sweep hit Tier 1 cap mid-run
