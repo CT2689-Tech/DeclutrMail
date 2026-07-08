@@ -1,10 +1,15 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 
-import { mailboxAccounts } from '@declutrmail/db';
+import { mailboxAccounts, ruleMatchLog } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import type { QuietHoursConfig, QuietHoursState } from '@declutrmail/shared/contracts';
-import { isQuietActive, persistQuietHoursState, readQuietHoursState } from '@declutrmail/workers';
+import {
+  isQuietActive,
+  msUntilQuietEnds,
+  persistQuietHoursState,
+  readQuietHoursState,
+} from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
@@ -163,9 +168,50 @@ export class MailboxAccountsService {
     if (!row) {
       throw new NotFoundException('Mailbox not found in this workspace.');
     }
+    return this.toQuietHoursState(row.quietState, mailboxAccountId);
+  }
+
+  /**
+   * Held-work count for the quiet surface (D96): approved autopilot
+   * actions the sweep has not applied yet (`resolution = 'approved' AND
+   * intent_applied = false`). An ACTION count (one per sender × rule) —
+   * the only held-work figure queryable today. Computed whether or not
+   * quiet is active (outside quiet it is the transient approve→sweep
+   * in-flight figure).
+   */
+  private async quietHeldCount(mailboxAccountId: string): Promise<number> {
+    const [held] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.resolution, 'approved'),
+          eq(ruleMatchLog.intentApplied, false),
+        ),
+      );
+    return held?.count ?? 0;
+  }
+
+  /**
+   * Assemble the `QuietHoursState` wire shape shared by the GET + PUT
+   * paths: persisted config, the combined `activeNow` predicate the
+   * AutopilotActionWorker defers on, the held-action count, and the ISO
+   * end of the CURRENT quiet spell (`null` when quiet is inactive or
+   * indefinite).
+   */
+  private async toQuietHoursState(
+    quietState: unknown,
+    mailboxAccountId: string,
+  ): Promise<QuietHoursState> {
+    const now = new Date();
+    const activeNow = isQuietActive(quietState, now);
+    const ms = msUntilQuietEnds(quietState, now);
     return {
-      config: readQuietHoursState(row.quietState),
-      activeNow: isQuietActive(row.quietState, new Date()),
+      config: readQuietHoursState(quietState),
+      activeNow,
+      heldCount: await this.quietHeldCount(mailboxAccountId),
+      endsAt: activeNow && ms != null ? new Date(now.getTime() + ms).toISOString() : null,
     };
   }
 
@@ -192,10 +238,7 @@ export class MailboxAccountsService {
     }
     await persistQuietHoursState(this.db, mailboxAccountId, config);
     const fresh = await this.findOwned(workspaceId, mailboxAccountId);
-    return {
-      config: readQuietHoursState(fresh?.quietState),
-      activeNow: isQuietActive(fresh?.quietState, new Date()),
-    };
+    return this.toQuietHoursState(fresh?.quietState, mailboxAccountId);
   }
 
   /**
