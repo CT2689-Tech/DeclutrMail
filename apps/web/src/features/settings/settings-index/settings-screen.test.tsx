@@ -2,12 +2,16 @@
  * Tests for `SettingsScreen` (U23 — D34/D114/D116/D216) — the live
  * wiring of the settings index:
  *
- *   - every section renders (Mailboxes / Actions / Email / Senders /
- *     Privacy / Cookies / Plan / Account) with #218's deletion section
- *     mounted
+ *   - every section renders (Mailboxes / Actions / Notifications /
+ *     Autopilot / Quiet hours / Senders / Privacy / Cookies / Plan /
+ *     Account) with #218's deletion section mounted, plus the D114
+ *     left-nav anchor rail
  *   - D34 toggle → PATCH /api/me/action-sheet-prefs with the single
  *     changed key, and the triage Zustand store mirrors the result
- *   - email reminders toggle → PATCH /api/me/email-prefs round trip
+ *   - D165 per-category email toggles → PATCH /api/me/email-prefs
+ *     round trips (reminders + syncComplete)
+ *   - mailbox health: last-synced stamp renders; an InvalidGrantError
+ *     sync status renders "Needs reconnect" + the Reconnect affordance
  *   - billing 503 renders the honest "not enabled" copy (never a fake
  *     "Free" — CLAUDE.md §10 no-fake-billing-state)
  *   - settings read failure renders per-card retry, not a blank page
@@ -17,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
@@ -70,7 +74,7 @@ const DELETION_STATUS = {
 };
 
 const SETTINGS_PAYLOAD = {
-  emailPrefs: { reminders: true },
+  emailPrefs: { reminders: true, syncComplete: true },
   actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
 };
 
@@ -80,6 +84,20 @@ const SUBSCRIPTION_PAYLOAD = {
   subscription: null,
 };
 
+/** Healthy per-mailbox sync status (the useMailboxesHealth read). */
+function readySyncStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    readiness_status: 'ready',
+    current_stage: 'ready',
+    progress_pct: 100,
+    is_ready_for_triage: true,
+    last_synced_at: '2026-01-01T00:00:00.000Z',
+    last_sync_error_at: null,
+    last_sync_error_code: null,
+    ...overrides,
+  };
+}
+
 /** Default happy-path handlers; tests override per scenario. */
 function happyHandlers() {
   return [
@@ -87,6 +105,11 @@ function happyHandlers() {
       method: 'GET' as const,
       path: '/api/me/settings',
       respond: () => jsonOk({ data: SETTINGS_PAYLOAD }),
+    },
+    {
+      method: 'GET' as const,
+      path: '/api/v1/sync/status',
+      respond: () => jsonOk({ data: readySyncStatus() }),
     },
     {
       method: 'GET' as const,
@@ -128,6 +151,8 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Mailboxes' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Action preferences' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Email notifications' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Autopilot rules' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Quiet hours' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Standing policies' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
     // D147 cookie change/withdrawal card, with the effective default
@@ -139,8 +164,72 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Delete account and data' })).toBeInTheDocument();
     // Both mailboxes listed.
     expect(screen.getByText('chintan.a.thakkar.crypt@gmail.com')).toBeInTheDocument();
+    // The D114 left-nav anchor rail.
+    const nav = screen.getByRole('navigation', { name: /settings sections/i });
+    expect(nav).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'Notifications' })).toHaveAttribute(
+      'href',
+      '#notifications',
+    );
+    expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '#account');
     // Plan summary resolves from the billing read.
     await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
+    // Humanized last-synced stamps resolve from the per-mailbox
+    // sync-status reads (one per active mailbox).
+    await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+  });
+
+  it('renders "Needs reconnect" + the Reconnect affordance on an invalid grant', async () => {
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/v1/sync/status'),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: (req) =>
+          // Mailbox B's token is revoked; A stays healthy. The health
+          // hook stamps X-Active-Mailbox-Id per mailbox.
+          jsonOk({
+            data:
+              req.headers.get('X-Active-Mailbox-Id') === MAILBOX_B
+                ? readySyncStatus({
+                    last_sync_error_at: '2026-07-08T10:00:00.000Z',
+                    last_sync_error_code: 'InvalidGrantError',
+                  })
+                : readySyncStatus(),
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Needs reconnect')).toBeInTheDocument());
+    // Reconnect routes to the same OAuth flow as connect-another; at
+    // the pro limit (2 of 2 active) the BE start route would 402, so
+    // the affordance is disabled with the upgrade title (mirrors the
+    // account menu's disconnected-row gate).
+    const reconnect = screen.getByRole('button', {
+      name: 'Reconnect chintan.a.thakkar.crypt@gmail.com',
+    });
+    expect(reconnect).toBeDisabled();
+
+    // A healthy mailbox never shows the affordance.
+    expect(
+      screen.queryByRole('button', { name: 'Reconnect chintan.a.thakkar@gmail.com' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers an enabled Reconnect for a disconnected mailbox under the limit', async () => {
+    me = makeMe([
+      mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
+      { ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'), status: 'disconnected' },
+    ]);
+    renderScreen();
+
+    const reconnect = await screen.findByRole('button', {
+      name: 'Reconnect chintan.a.thakkar.crypt@gmail.com',
+    });
+    // One active of two allowed — reconnecting is allowed.
+    expect(reconnect).toBeEnabled();
+    expect(screen.getByText('Disconnected')).toBeInTheDocument();
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {
@@ -189,7 +278,14 @@ describe('SettingsScreen', () => {
         respond: async (req) => {
           const body = (await req.json()) as Record<string, boolean>;
           patches.push(body);
-          return jsonOk({ data: { emailPrefs: { reminders: body.reminders ?? true } } });
+          return jsonOk({
+            data: {
+              emailPrefs: {
+                reminders: body.reminders ?? true,
+                syncComplete: body.syncComplete ?? true,
+              },
+            },
+          });
         },
       },
     ]);
@@ -203,6 +299,45 @@ describe('SettingsScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('switch', { name: /enable reminder emails/i })).toBeInTheDocument(),
     );
+  });
+
+  it('sync-completion toggle PATCHes only the syncComplete key (D165)', async () => {
+    const patches: unknown[] = [];
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/email-prefs',
+        respond: async (req) => {
+          const body = (await req.json()) as Record<string, boolean>;
+          patches.push(body);
+          return jsonOk({
+            data: {
+              emailPrefs: {
+                reminders: body.reminders ?? true,
+                syncComplete: body.syncComplete ?? true,
+              },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const toggle = await screen.findByRole('switch', {
+      name: /disable sync completion alerts/i,
+    });
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(patches).toEqual([{ syncComplete: false }]));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('switch', { name: /enable sync completion alerts/i }),
+      ).toBeInTheDocument(),
+    );
+    // The system row never grows a toggle — non-opt-out per D165.
+    expect(screen.getByText('Always on')).toBeInTheDocument();
+    expect(screen.getByText('Account notices')).toBeInTheDocument();
   });
 
   it('renders the honest billing-unavailable copy on 503 (no fake Free)', async () => {

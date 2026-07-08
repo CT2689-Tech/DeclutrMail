@@ -124,7 +124,7 @@ export function useUpdateActionSheetPrefs(source: 'settings' | 'action_sheet') {
   });
 }
 
-/** PATCH /api/me/email-prefs (D165) — the reminders toggle. */
+/** PATCH /api/me/email-prefs (D165) — the per-category email toggles. */
 export function useUpdateEmailPrefs() {
   const qc = useQueryClient();
   return useMutation({
@@ -141,6 +141,14 @@ export function useUpdateEmailPrefs() {
           pref: 'email_reminders',
           verb: null,
           enabled: patch.reminders,
+          source: 'settings',
+        });
+      }
+      if (patch.syncComplete !== undefined) {
+        void track('settings_pref_changed', {
+          pref: 'email_sync_complete',
+          verb: null,
+          enabled: patch.syncComplete,
           source: 'settings',
         });
       }

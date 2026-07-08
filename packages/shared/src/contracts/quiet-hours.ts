@@ -72,6 +72,23 @@ export interface QuietHoursState {
   config: QuietHoursConfig | null;
   /** True when quiet is active RIGHT NOW (recurring window or manual quiet state). */
   activeNow: boolean;
+  /**
+   * Autopilot actions currently HELD by quiet — approved matches the
+   * action sweep has not applied yet (`rule_match_log.resolution =
+   * 'approved' AND intent_applied = false`). This is an ACTION count
+   * (one per sender × rule), not a message count — the only held-work
+   * figure that is queryable today. Always the real number, computed
+   * whether or not quiet is active (outside quiet it is a transient
+   * approve→sweep in-flight figure).
+   */
+  heldCount: number;
+  /**
+   * When the CURRENT quiet spell ends (ISO-8601), from the same
+   * `msUntilQuietEnds` hint the deferred sweep re-schedules on. `null`
+   * when quiet is not active, is indefinite (manual quiet without
+   * `until_at`), or is unevaluable.
+   */
+  endsAt: string | null;
 }
 
 /** Parse "HH:MM" → minutes-of-day. Assumes the schema regex already matched. */

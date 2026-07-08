@@ -407,10 +407,10 @@ export interface EventPayloads {
   // — Settings surface (U23 — D34/D116/D216) —
   settings_pref_changed: {
     /** Which preference flipped. */
-    pref: 'action_sheet_skip' | 'email_reminders';
+    pref: 'action_sheet_skip' | 'email_reminders' | 'email_sync_complete';
     /**
      * The KAULD verb for `action_sheet_skip` flips; null for
-     * non-verb-scoped prefs (`email_reminders`).
+     * non-verb-scoped prefs (`email_reminders`, `email_sync_complete`).
      */
     verb: Verb | null;
     /** State AFTER the change — for skip prefs, true = sheet skipped. */
@@ -420,7 +420,7 @@ export interface EventPayloads {
   };
   data_export_requested: {
     /** Which export artifact was downloaded. */
-    format: 'json' | 'csv';
+    format: 'json' | 'csv' | 'senders-csv' | 'decisions-csv';
     /** Terminal client-side outcome of the download attempt. */
     outcome: 'success' | 'failed';
   };

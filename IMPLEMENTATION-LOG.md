@@ -126,7 +126,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | 🔵 | #220 |  |  |
 | D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | 🔵 | #220 |  |  |
 | D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | 🔵 | #244 |  |  |
-| D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | ⬜ |  |  |  |
+| D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | 🔵 | #298 |  |  |
 | D76 | Empty state: **Calm single-line message | 🔵 | #220 |  |  |
 | D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206 |  |  |
 | D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
@@ -165,7 +165,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D111 | devPreference layer (new concept) | ⬜ |  |  |  |
 | D112 | Step 5: First Triage with real senders | 🔵 | #212 |  |  |
 | D113 | Onboarding completion side effects | 🔵 | #194 |  |  |
-| D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | ⬜ |  |  |  |
+| D114 | Settings structure: **9 sections, left-nav (Linear/Notion-style) | 🔵 | #297 |  |  |
 | D115 | Inboxes management: **Settings → Inboxes section + top-bar Account Switcher | 🔵 | #126 |  |  |
 | D116 | Privacy & Data section: **Rich with 3 deletion actions + data export + CASA evidence | 🔵 | #224 |  |  |
 | D117 | Billing providers: **Paddle (international) + Razorpay (India) | 🔵 | #194 |  |  |

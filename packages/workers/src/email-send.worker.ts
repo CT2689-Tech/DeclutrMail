@@ -3,7 +3,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { activeSessions, users } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
-import { parseEmailPrefs } from '@declutrmail/shared/contracts';
+import { parseEmailPrefs, type EmailPrefs } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { PermanentError, TransientError, ValidationError } from './worker-errors.js';
@@ -24,7 +24,8 @@ import type { WorkerContext } from './worker-context.js';
  *
  *   - recipient resolution (users.email by userId — never stored in
  *     Redis, so a deleted user simply skips),
- *   - the D165 reminder opt-out (`users.preferences.emailPrefs`),
+ *   - the D165 per-category opt-out (`users.preferences.emailPrefs` —
+ *     see `OPT_OUT_PREF_BY_KIND`),
  *   - the "user returned" check for the 24h reminder (any session
  *     activity after `skipIfUserActiveSince` — see
  *     `hasUserActivitySince`),
@@ -51,8 +52,15 @@ import type { WorkerContext } from './worker-context.js';
 export type EmailKind =
   'sync-complete' | 'sync-reminder-24h' | 'deletion-scheduled' | 'deletion-receipt';
 
-/** Kinds that honor the D165 `emailPrefs.reminders` opt-out. */
-const OPT_OUT_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>(['sync-reminder-24h']);
+/**
+ * Per-kind D165 opt-out key in `emailPrefs`. Kinds absent here are
+ * SYSTEM emails (deletion-scheduled, deletion-receipt) — required
+ * account notices with no preference key (CAN-SPAM/GDPR carve-out).
+ */
+const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
+  'sync-reminder-24h': 'reminders',
+  'sync-complete': 'syncComplete',
+};
 
 /** One transactional email send. */
 export interface EmailSendJobData {
@@ -172,7 +180,8 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
         return { outcome: 'skipped_no_recipient', kind: payload.kind, providerId: null };
       }
 
-      if (OPT_OUT_KINDS.has(payload.kind) && !parseEmailPrefs(user.preferences).reminders) {
+      const optOutKey = OPT_OUT_PREF_BY_KIND[payload.kind];
+      if (optOutKey && !parseEmailPrefs(user.preferences)[optOutKey]) {
         return { outcome: 'skipped_opted_out', kind: payload.kind, providerId: null };
       }
 

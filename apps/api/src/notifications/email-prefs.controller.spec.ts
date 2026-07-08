@@ -30,22 +30,31 @@ describe('EmailPrefsController', () => {
   it('sets reminders=false and persists the merged bag', async () => {
     const { controller, users } = makeController({});
     const result = await controller.patch(USER, { reminders: false });
-    expect(result.data).toEqual({ emailPrefs: { reminders: false } });
+    expect(result.data).toEqual({ emailPrefs: { reminders: false, syncComplete: true } });
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', {
-      emailPrefs: { reminders: false },
+      emailPrefs: { reminders: false, syncComplete: true },
+    });
+  });
+
+  it('sets syncComplete=false without touching reminders', async () => {
+    const { controller, users } = makeController({ emailPrefs: { reminders: false } });
+    const result = await controller.patch(USER, { syncComplete: false });
+    expect(result.data).toEqual({ emailPrefs: { reminders: false, syncComplete: false } });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u1', {
+      emailPrefs: { reminders: false, syncComplete: false },
     });
   });
 
   it('re-enables reminders over an existing opt-out', async () => {
     const { controller } = makeController({ emailPrefs: { reminders: false } });
     const result = await controller.patch(USER, { reminders: true });
-    expect(result.data).toEqual({ emailPrefs: { reminders: true } });
+    expect(result.data).toEqual({ emailPrefs: { reminders: true, syncComplete: true } });
   });
 
   it('falls back to defaults when the stored bag is malformed', async () => {
     const { controller } = makeController({ emailPrefs: 'garbage' });
     const result = await controller.patch(USER, { reminders: false });
-    expect(result.data).toEqual({ emailPrefs: { reminders: false } });
+    expect(result.data).toEqual({ emailPrefs: { reminders: false, syncComplete: true } });
   });
 
   it('400 on unknown keys (strict patch)', async () => {

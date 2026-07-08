@@ -3,45 +3,57 @@
 import Link from 'next/link';
 import { Button, Card, tokens } from '@declutrmail/shared';
 import type { MeMailbox } from '@/features/auth/api/use-me';
+import type { MailboxHealth } from '../api/use-mailbox-health';
 
 const { color, font } = tokens;
 
 /**
- * Settings → Mailboxes (D114 "Inboxes" section, scoped to what exists).
+ * Settings → Mailboxes (D114 "Inboxes" section + D115 health, scoped).
  *
- * Read-only list of connected Gmail accounts (status + initial-sync
- * readiness + active marker) plus the connect-another affordance. The
- * switch / disconnect / reconnect flows stay in the header account
- * menu — this card POINTS there instead of rebuilding them (U23
- * constraint: reuse, don't rebuild).
+ * Per-mailbox connection health: status (Active / Needs reconnect /
+ * Disconnected), initial-sync readiness, and a humanized last-synced
+ * stamp from the sync-status facade (`useMailboxesHealth` in the
+ * container). Reconnect routes to the SAME OAuth flow as "connect
+ * another" (`/api/auth/google/connect-mailbox/start`) — Google's
+ * account chooser reactivates the account via `addMailbox` (D116),
+ * exactly like the header account menu's Reconnect. Switch and
+ * disconnect stay in the account menu (reuse, don't rebuild).
  *
- * Inbox limit (D19 tiers): `connect` disables at the tier's
- * `inboxLimit` with an upgrade pointer to /billing. Disconnected
- * accounts don't count against the limit (the BE reactivates them via
- * the same OAuth flow).
+ * Inbox limit (D19 tiers): `connect` AND `reconnect` disable at the
+ * tier's `inboxLimit` with an upgrade pointer (the BE start route
+ * would 402 anyway). Disconnected accounts don't count against the
+ * limit.
  */
 export function MailboxesCard({
   mailboxes,
   activeMailboxId,
   inboxLimit,
+  healthById,
   onConnect,
 }: {
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
   /** The tier's connected-inbox allowance, or null while tier unknown. */
   inboxLimit: number | null;
+  /** Per-mailbox sync health; entries absent while their query loads. */
+  healthById: Record<string, MailboxHealth | undefined>;
+  /** OAuth start — shared by connect-another AND reconnect (same flow). */
   onConnect: () => void;
 }) {
   const activeCount = mailboxes.filter((m) => m.status === 'active').length;
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
+  const limitTitle =
+    atLimit && inboxLimit !== null
+      ? `Your plan includes ${inboxLimit} connected ${inboxLimit === 1 ? 'inbox' : 'inboxes'} — upgrade to reconnect this one.`
+      : undefined;
 
   return (
     <Card padding={0}>
       <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>Mailboxes</h3>
         <p style={mutedTextStyle}>
-          Connected Gmail accounts. Switch, disconnect, or reconnect from the account menu in the
-          top bar.
+          Connected Gmail accounts and their connection health. Switch or disconnect from the
+          account menu in the top bar.
         </p>
 
         {mailboxes.length === 0 ? (
@@ -50,6 +62,9 @@ export function MailboxesCard({
           <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }}>
             {mailboxes.map((m, i) => {
               const isActive = m.id === activeMailboxId && m.status === 'active';
+              const health = healthById[m.id];
+              const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
+              const showReconnect = m.status === 'disconnected' || needsReconnect;
               return (
                 <li
                   key={m.id}
@@ -68,31 +83,59 @@ export function MailboxesCard({
                       height: 8,
                       borderRadius: 999,
                       flexShrink: 0,
-                      background: m.status === 'disconnected' ? color.fgMuted : color.primary,
+                      background:
+                        m.status === 'disconnected'
+                          ? color.fgMuted
+                          : needsReconnect
+                            ? color.danger
+                            : color.primary,
                     }}
                   />
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      fontSize: 13.5,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      color: m.status === 'disconnected' ? color.fgMuted : color.fg,
-                    }}
-                  >
-                    {m.email}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: 13.5,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        color: m.status === 'disconnected' ? color.fgMuted : color.fg,
+                      }}
+                    >
+                      {m.email}
+                    </span>
+                    {m.status === 'active' && health?.lastSyncedAt && (
+                      <span
+                        style={{ display: 'block', fontSize: 11, color: color.fgMuted }}
+                        title={new Date(health.lastSyncedAt).toLocaleString()}
+                      >
+                        Synced {relAge(health.lastSyncedAt)}
+                      </span>
+                    )}
                   </span>
                   {isActive && <StatusTag tone="primary">Active</StatusTag>}
                   {m.status === 'disconnected' ? (
                     <StatusTag tone="muted">Disconnected</StatusTag>
+                  ) : needsReconnect ? (
+                    <StatusTag tone="danger">Needs reconnect</StatusTag>
                   ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
                     <StatusTag tone="muted">Syncing…</StatusTag>
                   ) : m.readiness === 'failed' ? (
                     <StatusTag tone="danger">Sync failed</StatusTag>
                   ) : (
                     <StatusTag tone="muted">Ready</StatusTag>
+                  )}
+                  {showReconnect && (
+                    <Button
+                      tone="default"
+                      size="sm"
+                      disabled={atLimit}
+                      {...(limitTitle ? { title: limitTitle } : {})}
+                      ariaLabel={`Reconnect ${m.email}`}
+                      onClick={onConnect}
+                    >
+                      Reconnect
+                    </Button>
                   )}
                 </li>
               );
@@ -117,6 +160,16 @@ export function MailboxesCard({
       </div>
     </Card>
   );
+}
+
+/** ISO → compact relative age (same shape as SyncNowButton's label). */
+function relAge(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function StatusTag({ tone, children }: { tone: 'primary' | 'muted' | 'danger'; children: string }) {

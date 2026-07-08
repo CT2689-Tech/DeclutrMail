@@ -32,7 +32,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     const { controller } = makeController({});
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: true },
+      emailPrefs: { reminders: true, syncComplete: true },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { weekends: false },
       senderViews: [],
@@ -48,7 +48,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false },
+      emailPrefs: { reminders: false, syncComplete: true },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
       briefPrefs: { weekends: true },
       senderViews: [VIEW],
@@ -63,7 +63,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
-      emailPrefs: { reminders: false },
+      emailPrefs: { reminders: false, syncComplete: true },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
       briefPrefs: { weekends: false },
       senderViews: [],
