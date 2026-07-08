@@ -87,11 +87,15 @@ export function LegalSection({
 
 export function LegalPageLayout({
   title,
+  label = 'Legal',
   lastUpdated,
   toc,
   children,
 }: {
   title: string;
+  /** Mono pill above the title — 'Legal' for the legal documents; the
+   * support pages (/help, /contact, /security) pass their own. */
+  label?: string;
   /** ISO date (YYYY-MM-DD) the document was last materially changed. */
   lastUpdated: string;
   toc: readonly LegalTocItem[];
@@ -163,7 +167,7 @@ export function LegalPageLayout({
           padding: '4px 10px',
         }}
       >
-        Legal
+        {label}
       </span>
 
       <h1

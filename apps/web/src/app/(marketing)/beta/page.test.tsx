@@ -1,9 +1,10 @@
 /**
- * /beta — private-beta waitlist page (buildout F7).
+ * /beta — beta status page (buildout F7; open-beta copy 2026-07-07).
  *
  * Two render variants share one page:
- *   - organic visit (no `reason` param) → generic invite-only copy,
- *     NO `beta_gate_denied` event
+ *   - organic visit (no `reason` param) → open-beta copy with a real
+ *     "Sign in with Google" CTA (signup is open: BETA_GATE_ENABLED is
+ *     off in prod), NO `beta_gate_denied` event, NO waitlist CTA
  *   - OAuth-callback denial (`?reason=not_invited`) → denial copy +
  *     exactly one `beta_gate_denied` emit with the closed-enum payload
  *     (never the denied email — D7/D159)
@@ -36,24 +37,38 @@ function callsFor(event: string) {
   return trackSpy.mock.calls.filter(([name]) => name === event);
 }
 
-describe('/beta page — F7 private-beta waitlist', () => {
-  it('renders the invite-only copy with waitlist + founder-contact CTAs and no fetch', async () => {
+describe('/beta page — F7 beta status page', () => {
+  it('renders the open-beta copy with sign-in + founder-contact CTAs and no fetch', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     await renderPage();
 
     expect(
-      screen.getByRole('heading', { name: /declutrmail is invite-only right now/i }),
+      screen.getByRole('heading', { name: /declutrmail is in open beta/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /join the waitlist/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /sign in with google/i })).toHaveAttribute(
       'href',
-      '/pricing',
+      expect.stringMatching(/\/api\/auth\/google\/start$/),
     );
     expect(screen.getByRole('link', { name: /email the founder/i })).toHaveAttribute(
       'href',
       expect.stringMatching(/^mailto:/),
     );
+    // The Team-tier waitlist CTA is gone — signup is open (2026-07-07).
+    expect(screen.queryByRole('link', { name: /waitlist/i })).not.toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders the denial copy with a founder-contact CTA when redirected by the gate', async () => {
+    await renderPage({ reason: 'not_invited' });
+
+    expect(
+      screen.getByRole('heading', { name: /this email needs an invite right now/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /email the founder/i })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^mailto:/),
+    );
   });
 
   it('does NOT emit beta_gate_denied on an organic visit', async () => {
