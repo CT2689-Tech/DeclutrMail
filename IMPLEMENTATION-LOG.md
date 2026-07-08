@@ -126,7 +126,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D72 | Quarantine mode: **Soft (DB-flag only; Gmail untouched until user decides) | 🔵 | #220 |  |  |
 | D73 | Review UX: **Accordion list (matching Triage D36 / Senders D50) | 🔵 | #220 |  |  |
 | D74 | Notification: **Sidebar badge with count + subtle pulse on first arrival | 🔵 | #244 |  |  |
-| D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | ⬜ |  |  |  |
+| D75 | Onboarding handling: **Compute at sync; surface count if > 0 after Step 5 | 🔵 | #298 |  |  |
 | D76 | Empty state: **Calm single-line message | 🔵 | #220 |  |  |
 | D77 | Pro gating: **Screener is Pro-only; Free/Plus get basic deferred-decision queue | 🔵 | #206 |  |  |
 | D78 | Snooze scope: **Sender-level only at launch; message-level deferred | 🔵 | #194 |  |  |
