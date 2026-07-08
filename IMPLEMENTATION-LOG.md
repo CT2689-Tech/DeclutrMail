@@ -88,7 +88,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
-| D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
+| D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #261 |  | Drift fix 2026-06-11: no tour/coachmark code exists; prior "(D38)" tags on PRs #12 and #158–#178 were umbrella mis-tags — that evidence is invalid for D38 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
