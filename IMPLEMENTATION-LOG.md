@@ -61,7 +61,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D7 | Snippet policy: **Keep, frame as "Gmail Preview" | 🟢 | #26 | ADR 0004 + shared/copy/privacy.ts frame=Gmail Preview |  |
 | D8 | Inbound Pub/Sub idempotency (no user input needed) | 🟢 | #31 | apps/api/src/webhooks/__tests__/gmail-webhook.service.spec.ts |  |
 | D9 | Unsubscribe behavior: **Auto-try with RFC 8058 → mailto → fallback | 🟢 | #23 | initial-sync.worker.test.ts (5 unsub cases) + ADR 0006 |  |
-| D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | ⬜ |  |  |  |
+| D10 | Autopilot default mode: **Observe-first, prompt to activate after 7 days | 🔵 | #295 |  |  |
 | D11 | Backend ORM: **Drizzle | 🟢 | #5 | manual |  |
 | D12 | sender_key formula: **sha256("v1|" + normalized_email) | 🟢 | #48 | packages/workers/src/sender-key.test.ts (all green) |  |
 | D13 | Outbox dispatcher: **FOR UPDATE SKIP LOCKED poller + LISTEN/NOTIFY wake-up | 🟢 | #53 | packages/workers/src/outbox-dispatcher.worker.test.ts |  |
@@ -88,7 +88,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33, #180, #182 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
 | D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
-| D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | ⬜ |  |  |  |
+| D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #261 |  | Drift fix 2026-06-11: no tour/coachmark code exists; prior "(D38)" tags on PRs #12 and #158–#178 were umbrella mis-tags — that evidence is invalid for D38 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
 | D40 | Action toolbar: **4 verbs (K/A/U/S), no Always-Keep button | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts |  |
@@ -102,12 +102,12 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D48 | Weekly Hero slices: **3 — High-confidence cleanups / Volume spikes / Long-quiet senders | 🟢 | #115 | apps/api/src/senders/senders.controller.spec.ts |  |
 | D49 | Senders default view: **Always grid; table is per-session toggle | 🔵 | #115 |  |  |
 | D50 | Per-row interaction: **Collapse/expand pattern matching Triage D36 | ⬜ |  |  |  |
-| D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  |  |
+| D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | 🔵 | #294 |  |  |
 | D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
 | D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
-| D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | ⬜ |  |  |  |
+| D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | 🔵 | #292 |  |  |
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | 🔵 | #214 |  |  |
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
@@ -199,7 +199,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D145 | `/compare` index page | ⬜ |  |  |  |
 | D146 | Privacy + Terms generation: **Claude-drafted from CASA/methodology + lawyer review at user-threshold | 🔵 | #199 |  |  |
 | D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282 |  |  |
-| D148 | Localization: **English only + DPDP Act compliance clause | ⬜ |  |  |  |
+| D148 | Localization: **English only + DPDP Act compliance clause | 🔵 | #291 |  |  |
 | D149 | Launch strategy: **Strategy A (full V2 as designed) at 25-35 hrs/week + heavy Phase 4 Claude OS investment | ⬜ |  |  |  |
 | D150 | Indexing strategy: **12 indexes at launch (9 composite + 1 trigram + 2 partial) | 🟢 | #13 | packages/db/tests/migration-roundtrip.test.ts (3/3) |  |
 | D151 | Partitioning: **Hybrid (hash mail_messages, range activity_log) | ⬜ |  |  |  |

@@ -14,7 +14,10 @@ import {
 const { color, font } = tokens;
 
 /** The bulk verbs the bar offers (D52 + ADR-0019 K/A/U/L/D order). */
-export type SelectionBarVerb = Extract<ActionVerb, 'Archive' | 'Later' | 'Unsubscribe' | 'Delete'>;
+export type SelectionBarVerb = Extract<
+  ActionVerb,
+  'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Delete'
+>;
 
 /** Sticky bulk-action bar — appears while one or more senders are checked. */
 export function SelectionBar({
@@ -36,6 +39,9 @@ export function SelectionBar({
   if (senders.length === 0) return null;
 
   const eligible = {
+    // Keep is a standing-policy write (D40) — non-destructive, so every
+    // selected sender is eligible (protected senders included).
+    Keep: senders.length,
     Archive: senders.filter(canArchive).length,
     Later: senders.filter(canLater).length,
     Unsubscribe: senders.filter(canUnsubscribe).length,
@@ -92,7 +98,7 @@ export function SelectionBar({
 
       <span style={{ flex: 1 }} />
 
-      {(['Archive', 'Later', 'Unsubscribe', 'Delete'] as const).map((verb) => {
+      {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) => {
         const n = eligible[verb];
         const disabled = n === 0 || busy;
         const primary = verb === 'Unsubscribe';

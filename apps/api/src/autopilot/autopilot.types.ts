@@ -17,6 +17,21 @@ import type {
  * the DB rows and these types.
  */
 
+/**
+ * D10/D101 — Observe-mode digest for one rule: what the rule WOULD have
+ * done, computed from the pending Observe-mode `rule_match_log` buffer
+ * joined to current INBOX message counts (the same resolution the
+ * action sweep uses). Metadata only (D7): counts, never content.
+ */
+export interface AutopilotObserveDigest {
+  /** Total pending Observe-mode matches for this rule (uncapped — not the 50-row page). */
+  pendingTotal: number;
+  /** Distinct senders matched in the last 7 days (pending rows only). */
+  senders7d: number;
+  /** INBOX messages from those senders — what a sweep right now would act on. */
+  messages7d: number;
+}
+
 /** One Autopilot rule, as the read service returns it. */
 export interface AutopilotRule {
   id: string;
@@ -44,6 +59,18 @@ export interface AutopilotRule {
    * happens server-side (locked safe variant).
    */
   observeWindowElapsed: boolean;
+  /**
+   * D10 — ISO-8601 when the user dismissed the day-7 activation
+   * prompt; null when never dismissed. Cleared server-side on every
+   * mode transition so a fresh Observe window re-arms the prompt.
+   */
+  observePromptDismissedAt: string | null;
+  /**
+   * D10/D101 — Observe-mode digest ("would have archived N emails from
+   * M senders in the last 7 days"). Non-null only while the rule is in
+   * Observe mode.
+   */
+  observeDigest: AutopilotObserveDigest | null;
   /** Null when the preset does not gate on confidence. */
   confidenceThreshold: number | null;
   scope: AutopilotRuleScope;
@@ -71,6 +98,13 @@ export interface AutopilotRulePatch {
   confidenceThreshold?: number | null;
   /** D102 — per-inbox vs all-inboxes. */
   scope?: AutopilotRuleScope;
+  /**
+   * D10 — day-7 activation prompt dismissal. `true` stamps
+   * `observe_prompt_dismissed_at = now()`; `false` clears it. A mode
+   * change in the same PATCH also clears it (fresh window re-arms the
+   * prompt) unless this field explicitly sets it.
+   */
+  observePromptDismissed?: boolean;
 }
 
 /** One match row, as the pending-suggestions endpoint returns it. */

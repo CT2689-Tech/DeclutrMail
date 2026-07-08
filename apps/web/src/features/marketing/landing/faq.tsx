@@ -43,8 +43,8 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'Is there a refund policy?',
-    a: 'Yes — 30-day money-back guarantee on every paid plan, no questions asked.',
-    link: { href: '/refunds', label: 'Refund policy →' },
+    a: 'Yes — every paid plan comes with a 30-day money-back guarantee: tell us within 30 days of a charge and we refund it in full.',
+    link: { href: '/refunds', label: 'See the refund policy for full terms →' },
   },
 ];
 

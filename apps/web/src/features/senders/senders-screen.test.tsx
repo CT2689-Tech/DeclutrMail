@@ -154,9 +154,6 @@ function oneSenderHandler() {
 describe('SendersScreen — edge states', () => {
   beforeEach(() => {
     installFetchStub([]);
-    // Reset the per-session view to grid (D49 — default) so a prior
-    // test that flipped the toggle doesn't leak into the next.
-    useSendersStore.setState({ view: 'grid' });
   });
   afterEach(() => resetFetchStub());
 
@@ -861,7 +858,7 @@ describe('SendersScreen — edge states', () => {
  */
 describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   beforeEach(() => {
-    useSendersStore.setState({ view: 'grid', sort: 'total', direction: 'desc' });
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
   afterEach(() => resetFetchStub());
 
@@ -1234,12 +1231,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
 /**
  * Grid/table toggle (D49) + cursor pagination (D202). These tests
- * exercise the per-session view toggle and "Load more".
+ * exercise "Load more" pagination + the infinite-scroll sentinel.
  */
-describe('SendersScreen — view toggle (D49)', () => {
-  beforeEach(() => {
-    useSendersStore.setState({ view: 'grid' });
-  });
+describe('SendersScreen — pagination & load more (D202)', () => {
   afterEach(() => resetFetchStub());
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
@@ -1385,37 +1379,6 @@ describe('SendersScreen — view toggle (D49)', () => {
       globalThis.IntersectionObserver = prevIO;
     }
   });
-
-  it('defaults to grid view and flips to table when the toggle is clicked (D49)', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <SendersScreen />
-      </QueryWrapper>,
-    );
-    // Default — grid is visible.
-    await waitFor(() => expect(screen.getByTestId('sender-grid')).toBeInTheDocument());
-    // Flip to table — find the segmented control's Table button.
-    const tableBtn = screen.getByRole('button', { name: 'Table' });
-    fireEvent.click(tableBtn);
-    await waitFor(() => expect(useSendersStore.getState().view).toBe('table'));
-    // After flipping, the grid is gone.
-    expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
-  });
 });
 
 /**
@@ -1427,7 +1390,6 @@ describe('SendersScreen — view toggle (D49)', () => {
 describe('SendersScreen — summary-driven aggregates (#145)', () => {
   beforeEach(() => {
     installFetchStub([]);
-    useSendersStore.setState({ view: 'grid' });
   });
   afterEach(() => resetFetchStub());
 

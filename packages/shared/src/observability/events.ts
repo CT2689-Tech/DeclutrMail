@@ -259,7 +259,9 @@ export interface EventPayloads {
     selected_count: number;
     /** Sender count vs message count breakdown — KAULD-aware. */
     affected_messages: number;
-    source: 'senders_bulk_bar' | 'activity_bulk_bar' | 'confirm_modal';
+    // `triage_domain_batch` — the D32-scoped domain-batch card on
+    // Triage (one composite decision over a same-domain run).
+    source: 'senders_bulk_bar' | 'activity_bulk_bar' | 'confirm_modal' | 'triage_domain_batch';
   };
   confirm_action_modal_opened: {
     verb: Verb;

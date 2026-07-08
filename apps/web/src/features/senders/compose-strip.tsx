@@ -44,6 +44,12 @@ export interface ComposeState {
   protectedFlag: TriStateFilter;
   windowDays: number | null;
   domain: string | null;
+  /**
+   * D51 — "unsub'd, still emailing": standing unsubscribe policy but
+   * mail kept arriving after it was recorded. On/off (no negated form —
+   * the complement isn't a scope anyone composes).
+   */
+  unsubIgnored: boolean;
 }
 
 export const EMPTY_COMPOSE: ComposeState = {
@@ -54,6 +60,7 @@ export const EMPTY_COMPOSE: ComposeState = {
   protectedFlag: null,
   windowDays: null,
   domain: null,
+  unsubIgnored: false,
 };
 
 export interface ComposeCounts {
@@ -64,6 +71,9 @@ export interface ComposeCounts {
   unsubReady: number;
   repliedTo: number;
   protected: number;
+  /** D51 — "unsub'd, still emailing" axis count. May be undefined on
+   *  older wire payloads; the chip then renders without a count. */
+  unsubIgnored?: number | undefined;
 }
 
 export function ComposeStrip({
@@ -75,6 +85,7 @@ export function ComposeStrip({
   sort,
   direction,
   onSortChange,
+  views,
 }: {
   state: ComposeState;
   /** Mailbox-wide absolute counts per axis. May be undefined while loading. */
@@ -87,6 +98,12 @@ export function ComposeStrip({
   onSortChange: (next: { sort: SenderListSort; direction: SenderListDirection }) => void;
   /** Up to ~6 top domains for the popover quick-pick. */
   domainSuggestions: string[];
+  /**
+   * D51 saved filter views — host-supplied wiring for the Views menu.
+   * Omitted = menu hidden (bare renders / stories that don't exercise
+   * persistence). Names only; the host owns the full view objects.
+   */
+  views?: ViewsMenuProps | undefined;
 }) {
   return (
     <div
@@ -126,6 +143,12 @@ export function ComposeStrip({
         value={state.protectedFlag}
         onChange={(protectedFlag) => onChange({ ...state, protectedFlag })}
       />
+      <OnOffChip
+        label="unsub'd, still emailing"
+        count={counts?.unsubIgnored}
+        active={state.unsubIgnored}
+        onToggle={() => onChange({ ...state, unsubIgnored: !state.unsubIgnored })}
+      />
 
       <Divider />
 
@@ -142,6 +165,13 @@ export function ComposeStrip({
       <Divider />
 
       <SortChip sort={sort} direction={direction} onChange={onSortChange} />
+
+      {views && (
+        <>
+          <Divider />
+          <ViewsMenu {...views} />
+        </>
+      )}
 
       <span style={{ flex: 1 }} />
 
@@ -174,7 +204,8 @@ export function hasAnyFilter(s: ComposeState): boolean {
     s.replied !== null ||
     s.protectedFlag !== null ||
     s.windowDays !== null ||
-    s.domain !== null
+    s.domain !== null ||
+    s.unsubIgnored
   );
 }
 
@@ -322,6 +353,65 @@ function ToggleChip({
             fontSize: 11,
             color: 'inherit',
             opacity: active || negated ? 0.85 : 0.6,
+          }}
+        >
+          {count.toLocaleString()}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Plain on/off chip (D51 "unsub'd, still emailing"). Unlike `ToggleChip`
+ * there is no negated third state — the complement of "asked to stop but
+ * mail kept coming" isn't a scope anyone composes.
+ */
+function OnOffChip({
+  label,
+  count,
+  active,
+  onToggle,
+}: {
+  label: string;
+  count: number | undefined;
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onToggle}
+      style={chipStyle({ active, negated: false, withCheckbox: true })}
+    >
+      <span
+        style={{
+          width: 13,
+          height: 13,
+          borderRadius: 3,
+          border: '1.5px solid currentColor',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          background: active ? 'currentColor' : 'transparent',
+          color: 'inherit',
+          fontSize: 9,
+          fontWeight: 700,
+        }}
+        aria-hidden
+      >
+        {active && <span style={{ color: color.card, lineHeight: 1, fontSize: 9 }}>✓</span>}
+      </span>
+      <span>{label}</span>
+      {count !== undefined && (
+        <span
+          style={{
+            fontFamily: font.mono,
+            fontSize: 11,
+            color: 'inherit',
+            opacity: active ? 0.85 : 0.6,
           }}
         >
           {count.toLocaleString()}
@@ -755,6 +845,194 @@ function SortChip({
               })}
             </span>
           ))}
+        </Popover>
+      )}
+    </span>
+  );
+}
+
+/* ─── saved views menu (D51) ────────────────────────────────────── */
+
+/**
+ * Host wiring for the Views menu. The strip renders NAMES only — the
+ * host (senders-screen) owns the full saved-view objects, the
+ * `users.preferences` persistence round-trip, and the compose/sort
+ * application on pick. Cap enforcement (10 views) is server-side; the
+ * `capReached` flag mirrors it so the save affordance explains itself
+ * instead of failing.
+ */
+export interface ViewsMenuProps {
+  /** Saved view names, in stored order. */
+  names: string[];
+  /** Apply the named view's compose + sort. */
+  onApply: (name: string) => void;
+  /** Persist the CURRENT compose + sort under `name`. */
+  onSave: (name: string) => void;
+  /** Remove the named view. */
+  onDelete: (name: string) => void;
+  /** True when the current compose has at least one active axis. */
+  canSaveCurrent: boolean;
+  /** True at the 10-view cap — save affordance disabled with copy. */
+  capReached: boolean;
+}
+
+/** Server-mirrored cap (senderViews contract) — 10 named views. */
+export const SAVED_VIEWS_CAP = 10;
+
+/**
+ * `ViewsMenu` — persist named ComposeStrip filter combinations (D51;
+ * spec v1.2 Decision 4's "Saved filters" resurrection). Same popover
+ * affordance shape as Window / Domain / Sort so the strip reads as one
+ * compose row.
+ */
+function ViewsMenu({
+  names,
+  onApply,
+  onSave,
+  onDelete,
+  canSaveCurrent,
+  capReached,
+}: ViewsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    setDraft('');
+    const onDoc = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const saveDraft = () => {
+    const name = draft.trim();
+    if (name.length === 0 || capReached) return;
+    onSave(name);
+    setDraft('');
+  };
+
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{ ...chipStyle({ active: false, negated: false }), gap: 4 }}
+      >
+        <AxisLabel>views</AxisLabel>
+        <span>{names.length > 0 ? String(names.length) : 'none'}</span>
+        <span style={{ fontSize: 9, color: color.fgMuted, marginLeft: 2 }}>▾</span>
+      </button>
+      {open && (
+        <Popover>
+          {names.length === 0 && (
+            <span
+              style={{
+                display: 'block',
+                padding: '7px 10px',
+                fontFamily: font.sans,
+                fontSize: 12.5,
+                color: color.fgMuted,
+              }}
+            >
+              No saved views yet.
+            </span>
+          )}
+          {names.map((name) => (
+            <span key={name} style={{ display: 'flex', alignItems: 'center' }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <PopoverItem
+                  active={false}
+                  onClick={() => {
+                    onApply(name);
+                    setOpen(false);
+                  }}
+                >
+                  {name}
+                </PopoverItem>
+              </span>
+              <button
+                type="button"
+                aria-label={`Delete view ${name}`}
+                onClick={() => onDelete(name)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: color.fgMuted,
+                  fontSize: 12,
+                  padding: '0 8px',
+                  flex: '0 0 auto',
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {/* Save-current row — only when the compose has something to save. */}
+          {canSaveCurrent && (
+            <span
+              style={{
+                display: 'flex',
+                gap: 6,
+                alignItems: 'center',
+                borderTop: `1px solid ${color.line}`,
+                marginTop: 6,
+                paddingTop: 6,
+              }}
+            >
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveDraft();
+                }}
+                placeholder={capReached ? `Cap of ${SAVED_VIEWS_CAP} reached` : 'Name this view…'}
+                disabled={capReached}
+                aria-label="New view name"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: '6px 8px',
+                  fontFamily: font.mono,
+                  fontSize: 12,
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 6,
+                  background: color.paper,
+                  color: color.fg,
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="button"
+                onClick={saveDraft}
+                disabled={capReached || draft.trim().length === 0}
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 11,
+                  letterSpacing: '0.04em',
+                  color:
+                    capReached || draft.trim().length === 0 ? color.fgMuted : 'var(--color-amber)',
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '0 4px',
+                  cursor: capReached || draft.trim().length === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                save
+              </button>
+            </span>
+          )}
         </Popover>
       )}
     </span>

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { ActionSheetPrefsSchema } from './action-sheet-prefs';
 import { EmailPrefsSchema } from './email-prefs';
+import { SenderViewsSchema } from './sender-views';
 
 /**
  * GET /api/me/settings response `data` (D34 + D116 + D165).
@@ -15,6 +16,8 @@ import { EmailPrefsSchema } from './email-prefs';
 export const MeSettingsSchema = z.object({
   emailPrefs: EmailPrefsSchema,
   actionSheetPrefs: ActionSheetPrefsSchema,
+  /** D51 saved sender filter views — see ./sender-views.ts. */
+  senderViews: SenderViewsSchema,
 });
 
 export type MeSettings = z.infer<typeof MeSettingsSchema>;

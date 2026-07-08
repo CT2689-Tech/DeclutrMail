@@ -10,8 +10,9 @@
  *      `@declutrmail/shared` verbatim ("Full bodies fetched: 0" plus
  *      the storage allowlist). The banned pre-D228 phrase
  *      "Bodies read: 0" must not appear.
- *   3. Refund terms are an open founder decision — /help must LINK
- *      /refunds and never state a refund window or guarantee number.
+ *   3. D121 (founder-confirmed 2026-07-08) — /help states the 30-day
+ *      money-back guarantee on every paid plan and links /refunds for
+ *      the full terms. No page carries a "Pending confirmation" marker.
  *   4. /security claims match the repo: single gmail.modify scope,
  *      envelope-encrypted tokens, CASA Tier 2, no ML category
  *      prediction (D222), vulnerability reporting via privacy@.
@@ -69,6 +70,11 @@ describe.each(PAGES)('$name — D219 support surface', ({ Page, heading, page })
     const { container } = render(<Page />);
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
   });
+
+  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', () => {
+    const { container } = render(<Page />);
+    expect(container.textContent).not.toContain('Pending confirmation');
+  });
 });
 
 describe('/help content — D219 + D137', () => {
@@ -80,12 +86,18 @@ describe('/help content — D219 + D137', () => {
     }
   });
 
-  it('links /refunds without stating refund terms (open founder decision)', () => {
+  it('states the canonical 30-day guarantee and links /refunds for the full terms (D121)', () => {
     const { container } = render(<HelpPage />);
-    expect(container.querySelector('a[href="/refunds"]')).toBeInTheDocument();
-    // No number: neither the drifted 30-day guarantee nor the 14-day window.
-    expect(container.textContent).not.toMatch(/\d+[- ]day money[- ]back/i);
-    expect(container.textContent).not.toMatch(/money[- ]back guarantee/i);
+    expect(container.textContent).toContain('30-day money-back guarantee');
+    expect(container.textContent).toMatch(/every paid plan/i);
+    // The interim 14-day pro-rata default must not resurface.
+    expect(container.textContent).not.toMatch(/14[- ]days?/);
+    // querySelectorAll: the footer chrome also links /refunds ("Refund
+    // Policy"); the full-terms label lives on the FAQ answer's link.
+    const refundLinks = Array.from(container.querySelectorAll('a[href="/refunds"]'));
+    expect(
+      refundLinks.some((a) => a.textContent?.includes('See the refund policy for full terms')),
+    ).toBe(true);
   });
 
   it('covers unsubscribe honestly: one-click where available, manual mailto (D230)', () => {

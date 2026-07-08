@@ -1,0 +1,8 @@
+-- Rollback for 0034_automation_rules_observe_prompt.sql
+--
+-- Drops the D10 prompt-dismissal column. Data loss is limited to
+-- prompt-dismissal timestamps — after rollback the day-7 prompt simply
+-- re-appears for rules whose Observe window elapsed, which is the
+-- pre-migration behavior.
+
+ALTER TABLE "automation_rules" DROP COLUMN "observe_prompt_dismissed_at";

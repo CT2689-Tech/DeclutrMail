@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
+import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
@@ -61,6 +62,9 @@ export function RuleCard({
   onRetryPreview: () => void;
 }) {
   const name = presetDisplayName(rule.presetKey, rule.name);
+  // D10/D101 — Observe-mode digest, only meaningful while the rule is
+  // actually watching (enabled + Observe). Disabled rules stay quiet.
+  const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
 
   return (
     <li
@@ -123,6 +127,11 @@ export function RuleCard({
           </>
         )}
       </div>
+
+      {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
+      {digestSummary != null && (
+        <div style={{ fontSize: 11.5, color: color.fgSoft }}>{digestSummary}</div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {rule.confidenceThreshold != null && (

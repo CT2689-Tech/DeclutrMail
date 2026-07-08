@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   activityLog,
+  mailMessages,
   mailboxAccounts,
   schema,
   senders,
@@ -232,5 +233,146 @@ describe('TriageReadService.listQueue — decided-sender exclusion (D30/D226)', 
     });
     const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
     expect(rows.map((r) => r.senderKey).sort()).toEqual([SENDER_A, SENDER_B]);
+  });
+});
+
+/** Seed one inbound message for the sender at the given age (days). */
+async function seedMessage(
+  db: Db,
+  mailboxAccountId: string,
+  senderKey: string,
+  ageDays: number,
+  overrides: { isOutbound?: boolean } = {},
+): Promise<void> {
+  await db.insert(mailMessages).values({
+    mailboxAccountId,
+    providerMessageId: `msg-${senderKey.slice(0, 6)}-${ageDays}-${Math.random().toString(36).slice(2, 8)}`,
+    providerThreadId: `thr-${senderKey.slice(0, 6)}`,
+    senderKey,
+    internalDate: daysAgo(ageDays),
+    isUnread: true,
+    isOutbound: overrides.isOutbound ?? false,
+  });
+}
+
+describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'today');
+    svc = new TriageReadService(db as never);
+  });
+
+  it('returns all-zero on a fresh mailbox (queue empty → pct null)', async () => {
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary).toEqual({
+      receivedToday: 0,
+      sendersToday: 0,
+      handledAutomatically: 0,
+      queuedDecisions: 0,
+      noiseReductionPct: null,
+    });
+  });
+
+  it('counts today-received inbound mail + distinct senders, excluding outbound and older mail', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
+    // Three inbound today across two senders + one outbound today +
+    // one inbound yesterday — only the three count.
+    await seedMessage(db, mailboxId, SENDER_A, 0);
+    await seedMessage(db, mailboxId, SENDER_A, 0);
+    await seedMessage(db, mailboxId, SENDER_B, 0);
+    await seedMessage(db, mailboxId, SENDER_A, 0, { isOutbound: true });
+    await seedMessage(db, mailboxId, SENDER_B, 2);
+
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.receivedToday).toBe(3);
+    expect(summary.sendersToday).toBe(2);
+  });
+
+  it("sums Autopilot's affected_count today; manual rows and older autopilot rows don't count", async () => {
+    await db.insert(activityLog).values([
+      // Autopilot today — two rule fires moving 5 + 3 messages.
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_A,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 5,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_B,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 3,
+      },
+      // Manual archive today — not "handled automatically".
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_A,
+        source: 'manual' as const,
+        action: 'archive' as const,
+        affectedCount: 7,
+      },
+      // Autopilot, but days ago.
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_B,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 9,
+        occurredAt: daysAgo(3),
+      },
+    ]);
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.handledAutomatically).toBe(8);
+  });
+
+  it('queuedDecisions matches the D30-clamped queue and pct is the queued non-Keep share of 90d volume', async () => {
+    // Two queued archive decisions (seedSenderWithDecision verdicts
+    // are 'archive'), 6 of the mailbox's 8 inbound 90d messages come
+    // from them → 75%.
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
+    const quietKey = 'c'.repeat(64);
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: quietKey,
+      email: 'c@quiet.example',
+      domain: 'quiet.example',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date('2026-01-01'),
+      lastSeenAt: new Date('2026-06-01'),
+    });
+    for (let i = 0; i < 4; i++) await seedMessage(db, mailboxId, SENDER_A, 5);
+    for (let i = 0; i < 2; i++) await seedMessage(db, mailboxId, SENDER_B, 10);
+    for (let i = 0; i < 2; i++) await seedMessage(db, mailboxId, quietKey, 20);
+
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.queuedDecisions).toBe(2);
+    expect(summary.noiseReductionPct).toBe(75);
+  });
+
+  it('a decided sender leaves both the decision count and the noise share (D30 exclusion parity)', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
+    for (let i = 0; i < 4; i++) await seedMessage(db, mailboxId, SENDER_A, 5);
+    for (let i = 0; i < 4; i++) await seedMessage(db, mailboxId, SENDER_B, 5);
+    // The user decided SENDER_A within the window.
+    await db.insert(activityLog).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_A,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 4,
+    });
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.queuedDecisions).toBe(1);
+    // SENDER_B's 4 of 8 messages → 50%.
+    expect(summary.noiseReductionPct).toBe(50);
   });
 });

@@ -59,6 +59,8 @@ export const sendersKeys = {
       replied?: TriStateFilter | undefined;
       windowDays?: number | undefined;
       domain?: string | undefined;
+      /** D51 — "unsub'd, still emailing" axis. */
+      unsubIgnored?: boolean | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /** Weekly Hero slices (D47, D48) — singleton per mailbox. */

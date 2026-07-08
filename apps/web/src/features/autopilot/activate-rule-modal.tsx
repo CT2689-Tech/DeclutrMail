@@ -4,14 +4,22 @@ import { tokens } from '@declutrmail/shared';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
+import { RulePreviewPanel } from './rule-preview-panel';
+import type { RulePreviewState } from './types';
 
-const { color } = tokens;
+const { color, font } = tokens;
 
 /**
  * D226 mandatory preview for switching a rule Observe → Active — the
  * one mutation on this screen that STARTS automated mail actions, so
  * the preview spells out exactly what changes:
  *
+ *   - **First-sweep dry-run** — the SAME `POST /rules/:id/preview`
+ *     endpoint the rule card uses (it materializes the identical
+ *     signals the apply worker reads), rendered inside the sheet:
+ *     would-match count + top senders. Confirm is GATED on the
+ *     preview resolving — the user never activates blind, and a
+ *     failed preview offers retry instead of unlocking the button.
  *   - Going forward, new matches are approved and executed
  *     automatically (verb-specific copy below, honest per verb: only
  *     one-click unsubscribes auto-send; mailto stays manual per D230).
@@ -25,6 +33,8 @@ export function ActivateRuleModal({
   rule,
   pendingCount,
   pendingApproximate,
+  preview,
+  onRetryPreview,
   isActivating,
   error,
   onCancel,
@@ -34,6 +44,9 @@ export function ActivateRuleModal({
   pendingCount: number;
   /** True when the pending buffer hit the BE's 50-row cap (count is a floor). */
   pendingApproximate: boolean;
+  /** First-sweep dry-run state — fired by the opener when the modal opens. */
+  preview: RulePreviewState;
+  onRetryPreview: () => void;
   isActivating: boolean;
   error: string | null;
   onCancel: () => void;
@@ -51,7 +64,7 @@ export function ActivateRuleModal({
       footnote="Pause any time — the rule card's toggle or Pause all."
       confirmLabel="Switch to Active"
       confirmBusyLabel="Switching…"
-      canConfirm
+      canConfirm={preview.status === 'ready'}
       isBusy={isActivating}
       error={error}
       onCancel={onCancel}
@@ -81,6 +94,25 @@ export function ActivateRuleModal({
         </li>
         <li>Senders you mark Protected or VIP are always skipped.</li>
       </ul>
+
+      {/* D226 — what the FIRST active sweep would do right now (same
+          signal materializer as the apply worker). Confirm stays
+          disabled until this resolves. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+            color: color.fgMuted,
+            fontFamily: font.sans,
+          }}
+        >
+          First sweep, right now
+        </span>
+        <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
+      </div>
     </ConfirmModalFrame>
   );
 }
