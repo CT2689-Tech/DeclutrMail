@@ -45,6 +45,21 @@ describe('landing page — D134', () => {
     expect(text.toLowerCase()).not.toContain('body read');
     // "Screener" (the feature name) is allowed; bare "Screen" is not.
     expect(/Screen(?!er)/.test(text)).toBe(false);
+    // Legal terms are founder-confirmed (2026-07-08); no page may still
+    // carry the interim "Pending confirmation" marker.
+    expect(text).not.toContain('Pending confirmation');
+  });
+
+  it('states the canonical refund terms in the FAQ: 30-day guarantee + full-terms link (D121)', () => {
+    const { container } = renderLanding();
+    const faqAnswers = Array.from(container.querySelectorAll('.dm-mkt-faq-a'));
+    const refundAnswer = faqAnswers.find((el) =>
+      el.textContent?.includes('30-day money-back guarantee'),
+    );
+    expect(refundAnswer).toBeDefined();
+    expect(refundAnswer?.textContent).toContain('every paid plan');
+    const link = refundAnswer?.querySelector('a[href="/refunds"]');
+    expect(link?.textContent).toContain('See the refund policy for full terms');
   });
 
   it('explains the ritual with all five canonical verbs (D227 + ADR-0019)', () => {

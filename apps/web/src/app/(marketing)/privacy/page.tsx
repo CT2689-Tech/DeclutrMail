@@ -29,7 +29,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-06-11';
+const LAST_UPDATED = '2026-07-08';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -233,9 +233,9 @@ export default function PrivacyPolicyPage() {
           your mind. If you have recent actions still inside an undo window longer than 7 days
           (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires — so
           &ldquo;undo always works for its full window&rdquo; stays true. If you want deletion
-          sooner than that, you can explicitly waive your remaining undo windows with a typed
-          confirmation during the deletion flow. Once deletion is scheduled, syncing stops
-          immediately.
+          sooner, you can explicitly waive the grace period and any remaining undo windows with a
+          typed confirmation during the deletion flow — deletion then takes effect immediately. Once
+          deletion is scheduled, syncing stops immediately.
         </p>
         <p>
           You can export your data (activity log, sender profiles, preferences) as JSON at any time

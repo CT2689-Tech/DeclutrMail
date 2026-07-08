@@ -17,6 +17,10 @@
  *   5. D159 (D132 batch) — each page emits page_viewed exactly once
  *      via the PageViewTracker island; the posthog module is mocked so
  *      the no-fetch proof stays intact.
+ *   6. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
+ *      the canonical 30-day money-back guarantee with its fair-use
+ *      terms, /terms carries the India/Mumbai governing-law clause,
+ *      and NO page still shows a "Pending confirmation" marker.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,6 +86,50 @@ describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
     render(<Page />);
     expect(screen.getByText(/Last updated: \d{4}-\d{2}-\d{2}/)).toBeInTheDocument();
   });
+
+  it('carries no "Pending confirmation" marker (D121/D148 confirmed 2026-07-08)', () => {
+    const { container } = render(<Page />);
+    expect(container.textContent).not.toContain('Pending confirmation');
+  });
+});
+
+describe('/refunds content — D121 canonical refund terms', () => {
+  it('states the 30-day money-back guarantee on every paid plan, refunded in full', () => {
+    const { container } = render(<RefundPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('30-day money-back guarantee');
+    expect(text).toContain('within 30 days');
+    expect(text).toMatch(/every paid plan/i);
+    // The interim 14-day pro-rata default must be fully gone.
+    expect(text).not.toMatch(/14[- ]days?/);
+    expect(text).not.toMatch(/pro[- ]rata/i);
+  });
+
+  it('carries the fair-use terms: once per customer, bulk-consume decline, statutory rights intact', () => {
+    const { container } = render(<RefundPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('once per customer');
+    expect(text).toMatch(/consumed in bulk/);
+    expect(text).toMatch(/Statutory refund rights/);
+  });
+
+  it('routes refunds through the original payment provider (Paddle / Razorpay)', () => {
+    const { container } = render(<RefundPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Paddle');
+    expect(text).toContain('Razorpay');
+    expect(text).toMatch(/original payment method/);
+  });
+});
+
+describe('/terms content — D121 governing law confirmed', () => {
+  it('states India governing law with exclusive jurisdiction of the Mumbai courts', () => {
+    const { container } = render(<TermsOfServicePage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('governed by the laws of India');
+    expect(text).toContain('Mumbai');
+    expect(text).toMatch(/exclusive jurisdiction/);
+  });
 });
 
 describe('/privacy content — D7 + D228 posture', () => {
@@ -117,6 +165,26 @@ describe('/privacy content — D7 + D228 posture', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Limited Use requirements/)).toBeInTheDocument();
+  });
+
+  it('carries the DPDP Act 2023 (India) clause with the grievance contact (D148)', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toContain('Digital Personal Data Protection Act, 2023');
+    expect(text).toContain('Data Fiduciary');
+    expect(text).toMatch(/grievance/i);
+    expect(
+      document.querySelectorAll('a[href="mailto:privacy@declutrmail.com"]').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('§7 deletion wording matches the shipped flow: 7-day grace + immediate delete via typed waiver (D232)', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toContain('7-day grace period');
+    expect(text).toContain('waive the grace period and any remaining undo windows');
+    expect(text).toContain('typed confirmation');
+    expect(text).toContain('deletion then takes effect immediately');
   });
 
   it('enumerates all nine subprocessors', () => {
