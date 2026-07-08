@@ -18,6 +18,9 @@ describe('sitemap — D134', () => {
     const urls = entries.map((e) => e.url);
     expect(urls).toContain('https://declutrmail.com');
     expect(urls).toContain('https://declutrmail.com/pricing');
+    expect(urls).toContain('https://declutrmail.com/help');
+    expect(urls).toContain('https://declutrmail.com/contact');
+    expect(urls).toContain('https://declutrmail.com/security');
     expect(urls).toContain('https://declutrmail.com/privacy');
     expect(urls).toContain('https://declutrmail.com/terms');
     expect(urls).toContain('https://declutrmail.com/refunds');

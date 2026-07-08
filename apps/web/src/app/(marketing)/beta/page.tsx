@@ -1,4 +1,4 @@
-// /beta — private-beta waitlist page (buildout F7).
+// /beta — beta status page (buildout F7; open-beta copy 2026-07-07).
 //
 // Public marketing route: renders WITHOUT AuthProvider (the
 // `(marketing)` group), so a denied signup landing here never blocks
@@ -8,35 +8,40 @@
 //      when the beta gate denies a brand-new signup (the redirect
 //      contract lives in `@declutrmail/shared/contracts` beta-gate.ts).
 //      That variant mounts `BetaDeniedTracker` → `beta_gate_denied`.
+//      It can only fire while BETA_GATE_ENABLED=true — the gate is OFF
+//      in production (open signup), so the organic variant is the one
+//      visitors see and its copy says so honestly.
 //   2. Organic navigation — same page, no event.
 //
 // Copy is calm and never apologetic (D209) and uses no banned verbs
 // (D227). Visual language mirrors `not-found.tsx`: token-only styling,
 // soft-teal label disc, the same CTA-link shape.
 
-import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { oauthStartUrl } from '@/features/marketing/landing/urls';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
 const { color, font, text } = tokens;
 
 export const metadata = {
-  title: 'Private beta — DeclutrMail',
-  description: 'DeclutrMail is in private beta. Join the waitlist to get your invite.',
+  title: 'Open beta — DeclutrMail',
+  description:
+    'DeclutrMail is in open beta. Sign in with Google and start cleaning up your inbox — no invite needed.',
 };
 
 // support@ is the address the legal pages already publish (D146);
 // the mailbox itself is a tracked FOUNDER-FOLLOWUPS launch item. Was
 // the founder's personal Gmail — a leak on a public marketing page
 // (2026-07-04 launch audit).
-const FOUNDER_MAILTO =
-  'mailto:support@declutrmail.com?subject=DeclutrMail%20beta%20invite%20request';
+const FOUNDER_MAILTO = 'mailto:support@declutrmail.com?subject=DeclutrMail%20beta';
 
-// Same anchor-shaped CTA as not-found.tsx — Next's <Link> must own the
-// element, so the Button primitive can't be reused directly.
+// Plain <a>, same shape as not-found.tsx's CTA. Not next/link on
+// purpose: the primary href is the API's OAuth start endpoint (a
+// cross-origin hop Link would try to prefetch) and the secondary is a
+// mailto — neither benefits from client-side routing.
 function CtaLink({
   href,
   tone,
@@ -48,7 +53,7 @@ function CtaLink({
 }) {
   const isPrimary = tone === 'primary';
   return (
-    <Link
+    <a
       href={href}
       style={{
         display: 'inline-flex',
@@ -68,7 +73,7 @@ function CtaLink({
       }}
     >
       {children}
-    </Link>
+    </a>
   );
 }
 
@@ -116,7 +121,7 @@ export default async function BetaPage({
             padding: '4px 10px',
           }}
         >
-          Private beta
+          {denied ? 'Private beta' : 'Open beta'}
         </span>
         <h1
           style={{
@@ -127,7 +132,7 @@ export default async function BetaPage({
             margin: 0,
           }}
         >
-          DeclutrMail is invite-only right now.
+          {denied ? 'This email needs an invite right now.' : 'DeclutrMail is in open beta.'}
         </h1>
         <p
           style={{
@@ -138,10 +143,8 @@ export default async function BetaPage({
           }}
         >
           {denied
-            ? 'Your Google sign-in worked, but this email isn’t on the invite list yet. No account was created.'
-            : 'We’re inviting people in gradually while we tune the experience.'}{' '}
-          Join the waitlist and we&rsquo;ll email you when your spot opens — or write to the founder
-          directly.
+            ? 'Your Google sign-in worked, but this email isn’t on the invite list yet. No account was created. Write to us and we’ll sort out your invite.'
+            : 'Anyone can sign in with Google and start cleaning up — no invite or waitlist. It’s still a beta: expect the occasional rough edge, and every action stays previewed and reversible.'}
         </p>
 
         <div
@@ -153,12 +156,20 @@ export default async function BetaPage({
             justifyContent: 'center',
           }}
         >
-          <CtaLink href="/pricing" tone="primary">
-            Join the waitlist
-          </CtaLink>
-          <CtaLink href={FOUNDER_MAILTO} tone="default">
-            Email the founder
-          </CtaLink>
+          {denied ? (
+            <CtaLink href={FOUNDER_MAILTO} tone="primary">
+              Email the founder
+            </CtaLink>
+          ) : (
+            <>
+              <CtaLink href={oauthStartUrl()} tone="primary">
+                Sign in with Google
+              </CtaLink>
+              <CtaLink href={FOUNDER_MAILTO} tone="default">
+                Email the founder
+              </CtaLink>
+            </>
+          )}
         </div>
       </div>
     </div>

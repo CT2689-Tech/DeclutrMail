@@ -212,7 +212,11 @@ export interface EventPayloads {
       | 'privacy'
       | 'terms'
       | 'refunds'
-      | 'beta';
+      | 'beta'
+      // 2026-07-07 launch marketing bundle (D219, D137) — support surfaces.
+      | 'help'
+      | 'contact'
+      | 'security';
     mailbox_id: string | null;
   };
 

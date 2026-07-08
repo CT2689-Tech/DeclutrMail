@@ -12,7 +12,16 @@ import type { MetadataRoute } from 'next';
 import { siteUrl } from '@/features/marketing/landing/urls';
 
 /** Public marketing paths, in crawl-priority order. */
-export const MARKETING_PATHS = ['/', '/pricing', '/privacy', '/terms', '/refunds'] as const;
+export const MARKETING_PATHS = [
+  '/',
+  '/pricing',
+  '/help',
+  '/contact',
+  '/security',
+  '/privacy',
+  '/terms',
+  '/refunds',
+] as const;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = siteUrl();
