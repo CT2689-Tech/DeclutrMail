@@ -155,6 +155,17 @@ export type { ActionSheetPrefs, ActionSheetPrefsPatch } from './action-sheet-pre
 export { MeSettingsSchema } from './me-settings';
 export type { MeSettings } from './me-settings';
 
+// D51 saved sender filter views — shared between the PATCH
+// /api/me/sender-views route and the FE ComposeStrip Views menu.
+export {
+  parseSenderViews,
+  SavedSenderViewSchema,
+  SENDER_VIEWS_CAP,
+  SenderViewsPutSchema,
+  SenderViewsSchema,
+} from './sender-views';
+export type { SavedSenderView, SenderViewsPut } from './sender-views';
+
 // D116 + D228 data export — GET /api/account/export format contract.
 export { DataExportFormatSchema } from './data-export';
 export type { DataExportFormat } from './data-export';

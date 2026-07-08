@@ -295,6 +295,20 @@ export class SendersReadService {
      */
     repliedTo?: TriStateFilter;
     /**
+     * "Unsub'd, still emailing" fact filter (D51). `true` requires
+     * `sender_policies.policy_type = 'unsubscribe'` AND `last_seen_at`
+     * after the policy row's `updated_at` — i.e. mail arrived after the
+     * unsubscribe was recorded. No negated form (not a surface).
+     *
+     * PRECISION NOTE: `updated_at` is the closest recorded timestamp to
+     * "when the unsubscribe was requested" without a schema change. It
+     * also moves when the execution worker flips `unsub_status` (minutes
+     * later) or another policy patch lands — a sender can briefly drop
+     * out of this filter after such a write until its next message.
+     * Acceptable for a "still emailing weeks later" surface.
+     */
+    unsubIgnored?: boolean | null;
+    /**
      * Anchor for "current month" used by the volume-trend bucket.
      * Injectable for tests; defaults to `new Date()` in production so
      * controllers don't have to thread the clock through.
@@ -491,6 +505,14 @@ export class SendersReadService {
       conditions.push(sql`${senders.repliedCount} > 0`);
     } else if (args.repliedTo === false) {
       conditions.push(sql`${senders.repliedCount} = 0`);
+    }
+    if (args.unsubIgnored === true) {
+      // "Unsub'd, still emailing" (D51) — rides the existing
+      // sender_policies left join. Senders without a policy row have a
+      // NULL policy_type and fall out of the equality, which is correct.
+      conditions.push(
+        sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
+      );
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       conditions.push(
@@ -715,6 +737,8 @@ export class SendersReadService {
     domain?: string | null;
     /** D38 + spec v1.3 — `you replied N` filter (tri-state). */
     repliedTo?: TriStateFilter;
+    /** D51 — "unsub'd, still emailing" (see `listSenders` doc). */
+    unsubIgnored?: boolean | null;
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
@@ -748,6 +772,11 @@ export class SendersReadService {
       totalMatchingConditions.push(sql`${senders.repliedCount} > 0`);
     } else if (args.repliedTo === false) {
       totalMatchingConditions.push(sql`${senders.repliedCount} = 0`);
+    }
+    if (args.unsubIgnored === true) {
+      totalMatchingConditions.push(
+        sql`${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt}`,
+      );
     }
     if (typeof args.quietForDays === 'number' && args.quietForDays > 0) {
       totalMatchingConditions.push(
@@ -818,6 +847,11 @@ export class SendersReadService {
         protectedCount: sql<
           string | number
         >`COUNT(*) FILTER (WHERE ${senderPolicies.isProtected} = true)::bigint`,
+        // D51 — "unsub'd, still emailing": policy says unsubscribe but
+        // mail arrived after the policy row was last written.
+        unsubIgnoredCount: sql<
+          string | number
+        >`COUNT(*) FILTER (WHERE ${senderPolicies.policyType} = 'unsubscribe' AND ${senders.lastSeenAt} > ${senderPolicies.updatedAt})::bigint`,
       })
       .from(senders)
       .leftJoin(
@@ -848,6 +882,10 @@ export class SendersReadService {
           // buildSenderIndex/IncrementalSyncWorker write paths).
           repliedTo: ensureSafeIntegerNumber(counts.repliedToCount ?? 0, 'filterCounts.repliedTo'),
           protected: ensureSafeIntegerNumber(counts.protectedCount ?? 0, 'filterCounts.protected'),
+          unsubIgnored: ensureSafeIntegerNumber(
+            counts.unsubIgnoredCount ?? 0,
+            'filterCounts.unsubIgnored',
+          ),
         }
       : undefined;
 

@@ -3,22 +3,26 @@
 /**
  * `SenderGrid` — grid layout of sender cards (D49 default view).
  *
- * Renders `Sender[]` as a responsive `auto-fit` grid of cards. Used
- * when `view === 'grid'` in `useSendersStore` (D49 — grid is
- * default, table is per-session toggle).
+ * Renders rollup entries (D51 brand rollup) as a responsive `auto-fit`
+ * grid: plain senders as `SenderCard`s; a domain with ≥3 senders as one
+ * expandable `DomainGroupCard` at its first member's position, whose
+ * members render as ordinary `SenderCard`s (full per-sender actions +
+ * selection — D226 semantics stay per-sender) while expanded.
  *
- * No intent grouping here — the intent chips (`activeIntent` filter)
- * still apply at the parent level, and the parent decides which
- * subset of senders to feed in. The grid renders a flat list so the
- * `auto-fit` layout can fill the row evenly regardless of intent
- * cardinality.
+ * Expansion state is ephemeral presentation state and lives here; the
+ * loaded entries ARE the visible set (search / compose narrow
+ * server-side per #145 / D38), so no client re-filtering happens.
  */
 
+import { useState } from 'react';
 import type { ActionRequest, Sender } from '../data';
+import type { RollupEntry } from '../domain-rollup';
+import { DomainGroupCard } from './domain-group-card';
 import { SenderCard } from './sender-card';
 
 export interface SenderGridProps {
-  senders: Sender[];
+  /** Rolled-up visible set (see `rollupByDomain`). */
+  entries: RollupEntry[];
   /** Selected ids — controlled by parent (shift-click range + bulk bar). */
   selectedIds: Set<string>;
   /**
@@ -40,12 +44,32 @@ export interface SenderGridProps {
 }
 
 export function SenderGrid({
-  senders,
+  entries,
   selectedIds,
   onToggleSelect,
   onAction,
   globalMaxTotal,
 }: SenderGridProps) {
+  const [expandedDomains, setExpandedDomains] = useState<Set<string>>(() => new Set());
+  const toggleDomain = (domain: string) =>
+    setExpandedDomains((prev) => {
+      const next = new Set(prev);
+      if (next.has(domain)) next.delete(domain);
+      else next.add(domain);
+      return next;
+    });
+
+  const card = (sender: Sender) => (
+    <SenderCard
+      key={sender.id}
+      sender={sender}
+      selected={selectedIds.has(sender.id)}
+      onToggleSelect={onToggleSelect}
+      onAction={onAction}
+      globalMaxTotal={globalMaxTotal}
+    />
+  );
+
   return (
     <div
       data-testid="sender-grid"
@@ -55,16 +79,22 @@ export function SenderGrid({
         gap: 12,
       }}
     >
-      {senders.map((sender) => (
-        <SenderCard
-          key={sender.id}
-          sender={sender}
-          selected={selectedIds.has(sender.id)}
-          onToggleSelect={onToggleSelect}
-          onAction={onAction}
-          globalMaxTotal={globalMaxTotal}
-        />
-      ))}
+      {entries.map((entry) => {
+        if (entry.kind === 'sender') return card(entry.sender);
+        const expanded = expandedDomains.has(entry.domain);
+        return [
+          <DomainGroupCard
+            key={`group-${entry.domain}`}
+            domain={entry.domain}
+            senderCount={entry.senderCount}
+            volume30d={entry.volume30d}
+            totalReceived={entry.totalReceived}
+            expanded={expanded}
+            onToggleExpand={() => toggleDomain(entry.domain)}
+          />,
+          ...(expanded ? entry.senders.map(card) : []),
+        ];
+      })}
     </div>
   );
 }

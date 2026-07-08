@@ -150,6 +150,7 @@ export class SendersController {
     @Query('replied') rawReplied: string | undefined,
     @Query('window') rawWindow: string | undefined,
     @Query('domain') rawDomain: string | undefined,
+    @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -165,6 +166,9 @@ export class SendersController {
     const repliedTo = parseTriState(rawReplied);
     const quietForDays = parseWindow(rawWindow);
     const domain = parseSearch(rawDomain); // share the search trimmer
+    // D51 — "unsub'd, still emailing". `true`-only (no negated surface),
+    // mirroring `parseVipFlag`'s stance.
+    const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -195,6 +199,7 @@ export class SendersController {
         repliedTo,
         quietForDays,
         domain,
+        unsubIgnored,
       }),
       this.reads.getSenderListQueryMeta({
         mailboxAccountId: accountId,
@@ -207,6 +212,7 @@ export class SendersController {
         repliedTo,
         quietForDays,
         domain,
+        unsubIgnored,
       }),
     ]);
 

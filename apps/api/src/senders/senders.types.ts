@@ -400,6 +400,14 @@ export interface SenderListQueryMeta {
     unsubReady: number;
     repliedTo: number;
     protected: number;
+    /**
+     * "Unsub'd, still emailing" (D51 fact filter) — senders with
+     * `sender_policies.policy_type = 'unsubscribe'` whose
+     * `last_seen_at` is AFTER the policy row was last written
+     * (`sender_policies.updated_at`). The honest read of "I asked to
+     * stop and mail kept coming".
+     */
+    unsubIgnored: number;
   };
 }
 
@@ -606,9 +614,8 @@ export interface DecisionHistoryRow {
  */
 import type { GmailCategory as SharedGmailCategory } from '@declutrmail/shared/contracts';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _GMAIL_CATEGORY_API_EXTENDS_SHARED: GmailCategory extends SharedGmailCategory ? true : false =
   true;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+
 const _GMAIL_CATEGORY_SHARED_EXTENDS_API: SharedGmailCategory extends GmailCategory ? true : false =
   true;

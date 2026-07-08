@@ -69,6 +69,8 @@ export interface UseSendersOptions {
   windowDays?: number | undefined;
   /** D38 compose strip — domain substring. */
   domain?: string | undefined;
+  /** D51 compose strip — "unsub'd, still emailing" (true / omit). */
+  unsubIgnored?: boolean | undefined;
   /**
    * Gate the query. Pass `false` when there's no active mailbox so the
    * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders
@@ -96,6 +98,7 @@ export function useSenders(options: UseSendersOptions = {}) {
       replied: options.replied,
       windowDays: options.windowDays,
       domain: options.domain,
+      unsubIgnored: options.unsubIgnored,
     }),
     queryFn: ({ pageParam, signal }) =>
       fetchSenders(
@@ -113,6 +116,7 @@ export function useSenders(options: UseSendersOptions = {}) {
           replied: options.replied,
           windowDays: options.windowDays,
           domain: options.domain,
+          unsubIgnored: options.unsubIgnored,
           cursor: pageParam ?? undefined,
         },
         signal,

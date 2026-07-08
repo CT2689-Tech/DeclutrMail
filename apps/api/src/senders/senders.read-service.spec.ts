@@ -1332,6 +1332,105 @@ describe('SendersReadService', () => {
         });
       });
     });
+
+    describe('unsub-ignored filter (D51 — "unsub\'d, still emailing")', () => {
+      /** Seed one sender + one sender_policies row with a pinned updated_at. */
+      async function seedUnsubPolicy(args: {
+        email: string;
+        lastSeenAt: Date;
+        policyType: 'keep' | 'unsubscribe';
+        policyUpdatedAt: Date;
+      }): Promise<{ id: string; senderKey: string }> {
+        const s = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: args.email,
+          lastSeenAt: args.lastSeenAt,
+        });
+        await db.insert(senderPolicies).values({
+          mailboxAccountId: mailboxId,
+          senderKey: s.senderKey,
+          policyType: args.policyType,
+          createdAt: args.policyUpdatedAt,
+          updatedAt: args.policyUpdatedAt,
+        });
+        return s;
+      }
+
+      it('returns only unsubscribe-policy senders whose mail kept arriving after the policy', async () => {
+        // (a) MATCH — unsubscribed 2026-04-01, last mail 2026-05-01.
+        const ignored = await seedUnsubPolicy({
+          email: 'still-mailing@spammy.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+          policyType: 'unsubscribe',
+          policyUpdatedAt: new Date('2026-04-01T00:00:00Z'),
+        });
+        // (b) NO MATCH — unsubscribed AFTER the last message (it worked).
+        await seedUnsubPolicy({
+          email: 'honored@ok.com',
+          lastSeenAt: new Date('2026-03-01T00:00:00Z'),
+          policyType: 'unsubscribe',
+          policyUpdatedAt: new Date('2026-04-01T00:00:00Z'),
+        });
+        // (c) NO MATCH — keep policy, even with later mail.
+        await seedUnsubPolicy({
+          email: 'kept@ok.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+          policyType: 'keep',
+          policyUpdatedAt: new Date('2026-04-01T00:00:00Z'),
+        });
+        // (d) NO MATCH — no policy row at all.
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'no-policy@ok.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+
+        const rows = await svc.listSenders({
+          mailboxAccountId: mailboxId,
+          category: null,
+          cursor: null,
+          limit: 10,
+          unsubIgnored: true,
+        });
+        expect(rows.map((r) => r.id)).toEqual([ignored.id]);
+      });
+
+      it('meta: totalMatching honors the filter; filterCounts.unsubIgnored counts the axis', async () => {
+        await seedUnsubPolicy({
+          email: 'still-mailing@spammy.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+          policyType: 'unsubscribe',
+          policyUpdatedAt: new Date('2026-04-01T00:00:00Z'),
+        });
+        await seedUnsubPolicy({
+          email: 'honored@ok.com',
+          lastSeenAt: new Date('2026-03-01T00:00:00Z'),
+          policyType: 'unsubscribe',
+          policyUpdatedAt: new Date('2026-04-01T00:00:00Z'),
+        });
+        await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'no-policy@ok.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+
+        const meta = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: null,
+          unsubIgnored: true,
+        });
+        expect(meta.totalMatching).toBe(1);
+        expect(meta.filterCounts?.unsubIgnored).toBe(1);
+        // The axis count is mailbox-wide-absolute — same value with the
+        // filter off (counts ignore the active compose).
+        const metaOff = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: null,
+        });
+        expect(metaOff.totalMatching).toBe(3);
+        expect(metaOff.filterCounts?.unsubIgnored).toBe(1);
+      });
+    });
   });
 
   describe('getSenderDetail', () => {
