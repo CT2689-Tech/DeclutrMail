@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  check,
   index,
   integer,
   pgEnum,
@@ -172,6 +173,22 @@ export const senders = pgTable(
       table.mailboxAccountId,
       table.totalReceived.desc(),
       table.id.desc(),
+    ),
+    /**
+     * `deriveUnsubscribe` invariant (initial-sync.worker.ts, migration
+     * 0032): `unsubscribe_method` + `unsubscribe_url` always agree on
+     * scheme — one_click ⇒ https://, mailto ⇒ mailto:, none/NULL ⇒ NULL.
+     *
+     * A simple `CASE` (not an OR chain) because `unsubscribe_method` is
+     * nullable: an OR of `method = 'one_click'` clauses evaluates to
+     * NULL when `method IS NULL`, and Postgres passes a CHECK whose body
+     * is NULL — so a `(NULL method, non-NULL url)` row would slip
+     * through. `CASE` is total (every branch returns a real boolean);
+     * NULL and 'none' both fall to the ELSE, which demands a NULL url.
+     */
+    unsubMethodUrlAligned: check(
+      'senders_unsub_method_url_aligned_chk',
+      sql`CASE ${table.unsubscribeMethod} WHEN 'one_click' THEN ${table.unsubscribeUrl} LIKE 'https://%' WHEN 'mailto' THEN ${table.unsubscribeUrl} LIKE 'mailto:%' ELSE ${table.unsubscribeUrl} IS NULL END`,
     ),
   }),
 );
