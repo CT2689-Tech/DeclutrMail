@@ -41,7 +41,11 @@ export function formatBillingDate(iso: string | null): string | null {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/** D121 — the money-back guarantee line, shown on Pro surfaces. */
+/**
+ * D121 — the money-back guarantee line. Applies to EVERY paid plan
+ * (founder-confirmed 2026-07-08; the published /refunds policy and the
+ * cancel flow both surface it for Plus and Pro alike).
+ */
 export const MONEY_BACK_NOTE = '30-day money-back guarantee';
 
 /**

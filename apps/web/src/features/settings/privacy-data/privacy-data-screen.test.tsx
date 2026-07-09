@@ -109,4 +109,15 @@ describe('PrivacyDataView', () => {
     renderView({ exportFailed: true });
     expect(screen.getByRole('alert')).toHaveTextContent(/export could not be prepared/i);
   });
+
+  it('links the live Privacy Policy and Terms pages (both are published)', () => {
+    renderView();
+    expect(screen.getByRole('link', { name: /privacy policy/i })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
+    expect(screen.getByRole('link', { name: /^terms$/i })).toHaveAttribute('href', '/terms');
+    // The stale placeholder must be gone.
+    expect(screen.queryByText(/publishing with launch/i)).not.toBeInTheDocument();
+  });
 });

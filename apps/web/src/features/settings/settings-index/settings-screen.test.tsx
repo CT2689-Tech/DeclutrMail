@@ -410,4 +410,45 @@ describe('SettingsScreen', () => {
       '/billing',
     );
   });
+
+  it('stays reachable with NO active mailbox and fires no session-scoped sync poll (D216 reachability)', async () => {
+    // A user who disconnected their last Gmail: the layout now renders
+    // /settings through the no-active-mailbox gate, so the real screen
+    // must render its account/deletion + billing exits without any
+    // mailbox-scoped 409 (useMailboxesHealth queries only active
+    // mailboxes → none here).
+    me = makeMe([]); // zero mailboxes → activeMailboxId null
+    const syncSpy = vi.fn(() => jsonOk({ data: readySyncStatus() }));
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () => jsonOk({ data: SETTINGS_PAYLOAD }),
+      },
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: SUBSCRIPTION_PAYLOAD }),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => jsonOk({ data: DELETION_STATUS }),
+      },
+      { method: 'GET', path: '/api/v1/sync/status', respond: syncSpy },
+    ]);
+
+    renderScreen();
+
+    // The exits that must survive zero mailboxes.
+    expect(
+      await screen.findByRole('heading', { name: 'Delete account and data' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
+    // The "no mailboxes connected" empty state, not a broken list.
+    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
+    expect(syncSpy).not.toHaveBeenCalled();
+  });
 });
