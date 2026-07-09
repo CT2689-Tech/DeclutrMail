@@ -53,6 +53,12 @@ const FAQS: ReadonlyArray<{
     a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. Unsubscribe stops future mail; nothing already in your inbox moves.',
   },
   {
+    id: 'bulk-unsubscribe',
+    q: 'Can I unsubscribe from all my newsletters at once?',
+    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first, deciding once per sender. Paid plans add bulk cleanup: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. For each sender, where it supports one-click unsubscribe we send the request for you; where it only offers a mailto: address we prepare the email for you to send from Gmail — nothing is ever auto-sent on your behalf.',
+    link: { href: '/pricing', label: 'Compare plans →' },
+  },
+  {
     id: 'verbs-in-gmail-terms',
     q: 'What do Archive, Later, and Delete actually do in Gmail?',
     a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, where Gmail keeps them recoverable for about 30 days before deleting permanently. Keep leaves everything where it is.',

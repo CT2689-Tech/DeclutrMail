@@ -9,8 +9,9 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 ## Pages
 
 - [How it works](https://declutrmail.com/#how-it-works): the per-sender cleanup ritual — connect Gmail, review senders by volume, decide once per sender
+- [Open beta](https://declutrmail.com/beta): DeclutrMail is in open beta — sign in with Google and start cleaning up, no invite or waitlist needed
 - [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
-- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works, what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
+- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
 - [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
@@ -19,3 +20,4 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 
 - [Terms of service](https://declutrmail.com/terms)
 - [Refund policy](https://declutrmail.com/refunds)
+- [Cookie preferences](https://declutrmail.com/cookies): review or withdraw analytics cookie consent

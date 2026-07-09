@@ -15,6 +15,7 @@ import { siteUrl } from '@/features/marketing/landing/urls';
 export const MARKETING_PATHS = [
   '/',
   '/pricing',
+  '/beta',
   '/help',
   '/contact',
   '/security',

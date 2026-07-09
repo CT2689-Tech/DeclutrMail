@@ -17,20 +17,27 @@
 // (D227). Visual language mirrors `not-found.tsx`: token-only styling,
 // soft-teal label disc, the same CTA-link shape.
 
+import type { Metadata } from 'next';
 import { tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { oauthStartUrl } from '@/features/marketing/landing/urls';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
 const { color, font, text } = tokens;
 
-export const metadata = {
+// Open beta is the live signup funnel, so /beta is indexable — routed
+// through marketingPageMetadata for the same canonical + OG/Twitter block
+// every marketing page carries. The `?reason=not_invited` variant is the
+// same URL, so the canonical `/beta` collapses it (no duplicate).
+export const metadata: Metadata = marketingPageMetadata({
   title: 'Open beta — DeclutrMail',
   description:
     'DeclutrMail is in open beta. Sign in with Google and start cleaning up your inbox — no invite needed.',
-};
+  path: '/beta',
+});
 
 // support@ is the address the legal pages already publish (D146);
 // the mailbox itself is a tracked FOUNDER-FOLLOWUPS launch item. Was
