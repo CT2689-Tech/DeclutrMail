@@ -109,7 +109,14 @@ describe('/help content — D219 + D137', () => {
 
   it('deep-links each question with a stable slug (D219)', () => {
     render(<HelpPage />);
-    for (const id of ['what-we-store', 'unsubscribe-flow', 'undo-windows', 'autopilot-modes']) {
+    for (const id of [
+      'getting-started',
+      'what-we-store',
+      'unsubscribe-flow',
+      'undo-windows',
+      'autopilot-modes',
+      'beta-limits',
+    ]) {
       expect(document.getElementById(id)).toBeInTheDocument();
     }
   });
@@ -139,7 +146,7 @@ describe('/help content — D219 + D137', () => {
       mainEntity: Array<{ name: string }>;
     };
     expect(data['@type']).toBe('FAQPage');
-    expect(data.mainEntity.length).toBe(11);
+    expect(data.mainEntity.length).toBe(13);
     for (const { name } of data.mainEntity) {
       // Each marked-up question appears on the page (Google requires
       // it) — twice, in fact: the TOC row and the section heading.

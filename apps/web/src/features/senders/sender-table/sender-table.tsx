@@ -56,7 +56,7 @@
  * toggle.
  */
 
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { SenderActionRow } from '../action-row';
@@ -863,10 +863,15 @@ function ErrorRow({
   );
 }
 
-const EMPTY_COPY: Record<SenderTableEmptyKind, { headline: string; sub: string }> = {
+const EMPTY_COPY: Record<SenderTableEmptyKind, { headline: string; sub: ReactNode }> = {
   'no-senders': {
     headline: 'No senders yet',
-    sub: 'Your mailbox is syncing — senders appear here once the index builds.',
+    sub: (
+      <>
+        Your mailbox is syncing — senders appear here once the index builds.{' '}
+        <a href="/help#getting-started">How to get started →</a>
+      </>
+    ),
   },
   'no-filter-match': {
     headline: 'No senders match this filter',

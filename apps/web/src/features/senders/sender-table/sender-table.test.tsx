@@ -355,8 +355,13 @@ describe('SenderTable', () => {
   it('renders distinct empty copy per emptyKind', () => {
     const { rerender } = render(<Harness rows={[]} emptyKind="no-senders" />);
     expect(screen.getByText(/no senders yet/i)).toBeTruthy();
+    expect(screen.getByRole('link', { name: /how to get started/i })).toHaveAttribute(
+      'href',
+      '/help#getting-started',
+    );
     rerender(<Harness rows={[]} emptyKind="no-filter-match" />);
     expect(screen.getByText(/no senders match this filter/i)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /how to get started/i })).toBeNull();
     rerender(<Harness rows={[]} emptyKind="no-search-match" />);
     expect(screen.getByText(/no matches/i)).toBeTruthy();
   });

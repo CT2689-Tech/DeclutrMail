@@ -136,6 +136,10 @@ describe('ActivityScreen — edge states', () => {
         screen.getByRole('heading', { name: /no activity in this window/i }),
       ).toBeInTheDocument(),
     );
+    expect(screen.getByRole('link', { name: /how unsubscribe works/i })).toHaveAttribute(
+      'href',
+      '/help#unsubscribe-flow',
+    );
   });
 });
 

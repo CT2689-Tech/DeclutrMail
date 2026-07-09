@@ -28,7 +28,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-09';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -41,6 +41,12 @@ const FAQS: ReadonlyArray<{
   a: string;
   link?: { href: string; label: string };
 }> = [
+  {
+    id: 'getting-started',
+    q: 'How do I get started after connecting Gmail?',
+    a: 'Wait for the first sync to finish, then open Senders (People & lists). Pick a noisy sender, preview Archive, Unsubscribe, or Delete, and confirm — undo is there if you change your mind. Keep leaves mail alone; Later parks it for later. Autopilot presets start in Observe, so they watch without acting until you switch a rule to Active.',
+    link: { href: '/security', label: 'What we can access →' },
+  },
   {
     id: 'what-we-store',
     q: 'What does DeclutrMail store from my Gmail?',
@@ -61,7 +67,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'verbs-in-gmail-terms',
     q: 'What do Archive, Later, and Delete actually do in Gmail?',
-    a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, where Gmail keeps them recoverable for about 30 days before deleting permanently. Keep leaves everything where it is.',
+    a: 'Keep leaves mail alone — nothing moves. Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, where Gmail keeps them recoverable for about 30 days before deleting permanently. Unsubscribe stops future mail from that sender; it does not move or delete mail already in your inbox.',
   },
   {
     id: 'undo-windows',
@@ -95,6 +101,12 @@ const FAQS: ReadonlyArray<{
     q: 'Is there a refund policy?',
     a: 'Yes — every paid plan comes with a 30-day money-back guarantee: tell us within 30 days of a charge and we refund it in full. You can also cancel anytime and keep access until the end of the period you paid for.',
     link: { href: '/refunds', label: 'See the refund policy for full terms →' },
+  },
+  {
+    id: 'beta-limits',
+    q: 'What should I expect during the open beta?',
+    a: 'DeclutrMail is in open beta — no invite needed. The core ritual is live: preview, act, undo. Some Pro surfaces and growth pages are still landing, and billing checkout may not be live yet. If you hit a rough edge, email support@declutrmail.com — we reply within 2 business days.',
+    link: { href: '/beta', label: 'Open beta →' },
   },
   {
     id: 'contact-support',

@@ -56,6 +56,10 @@ describe('/beta page — F7 beta status page', () => {
     );
     // The Team-tier waitlist CTA is gone — signup is open (2026-07-07).
     expect(screen.queryByRole('link', { name: /waitlist/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /what to expect during beta/i })).toHaveAttribute(
+      'href',
+      '/help#beta-limits',
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

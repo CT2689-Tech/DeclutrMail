@@ -81,11 +81,20 @@ describe('AutopilotScreen — edge states', () => {
   it('renders the empty-mailbox state when no rules exist', () => {
     renderScreen({ kind: 'empty', rules: [] });
     expect(screen.getByRole('heading', { name: /no autopilot rules yet/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /observe vs active/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: /observe vs active/i })[0]).toHaveAttribute(
+      'href',
+      '/help#autopilot-modes',
+    );
   });
 
   it('renders the empty-pending state when rules exist but nothing matched', () => {
     renderScreen({ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions: [] });
     expect(screen.getByRole('heading', { name: /no pending suggestions/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /observe vs active/i })).toHaveAttribute(
+      'href',
+      '/help#autopilot-modes',
+    );
   });
 
   it('groups pending suggestions under their rule (D104)', () => {

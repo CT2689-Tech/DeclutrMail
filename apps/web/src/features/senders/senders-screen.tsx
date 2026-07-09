@@ -1680,7 +1680,12 @@ function SendersScreenContent({
       ) : senders.length === 0 ? (
         <EmptyState
           title="No senders yet"
-          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
+          body={
+            <>
+              Once your mailbox finishes syncing, the senders who mail you will appear here.{' '}
+              <a href="/help#getting-started">How to get started →</a>
+            </>
+          }
         />
       ) : view === 'grid' ? (
         // D49 default — grid of cards. `senders` arrives already

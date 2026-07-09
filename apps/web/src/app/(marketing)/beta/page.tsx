@@ -154,6 +154,24 @@ export default async function BetaPage({
             : 'Anyone can sign in with Google and start cleaning up — no invite or waitlist. It’s still a beta: expect the occasional rough edge, and every action stays previewed and reversible.'}
         </p>
 
+        {!denied ? (
+          <p
+            style={{
+              fontSize: text.sm,
+              color: color.fgMuted,
+              lineHeight: 1.5,
+              margin: 0,
+            }}
+          >
+            <a
+              href="/help#beta-limits"
+              style={{ color: color.fgMuted, textDecoration: 'underline', textUnderlineOffset: 3 }}
+            >
+              What to expect during beta →
+            </a>
+          </p>
+        ) : null}
+
         <div
           style={{
             display: 'flex',

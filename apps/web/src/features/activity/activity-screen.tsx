@@ -318,7 +318,8 @@ export function ActivityScreen() {
             description={
               <>
                 Try widening the time range, clearing the verb / sender filter, or switching the
-                source — the activity log is append-only, so nothing has been removed.
+                source — the activity log is append-only, so nothing has been removed.{' '}
+                <a href="/help#unsubscribe-flow">How Unsubscribe works →</a>
               </>
             }
           />

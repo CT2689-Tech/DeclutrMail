@@ -212,6 +212,10 @@ describe('SendersScreen — edge states', () => {
 
     renderScreen();
     await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /how to get started/i })).toHaveAttribute(
+      'href',
+      '/help#getting-started',
+    );
   });
 
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {

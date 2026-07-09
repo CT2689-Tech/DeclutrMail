@@ -167,6 +167,8 @@ describe('TriageScreen — empty / loading branches', () => {
     // Next-step framing (D212): a real link to Senders.
     expect(html).toContain('href="/senders"');
     expect(html).toContain('Browse senders');
+    // Retention pointer — verb semantics deep-link.
+    expect(html).toContain('href="/help#verbs-in-gmail-terms"');
     // Never the false celebration, never its zero tiles.
     expect(html).not.toContain('cleared today');
     expect(html).not.toContain('Come back tomorrow');

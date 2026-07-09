@@ -574,7 +574,13 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules are seeded when your mailbox finishes its first sync. Once they land, they observe quietly and their suggestions appear here."
+                description={
+                  <>
+                    The five preset rules are seeded when your mailbox finishes its first sync. Once
+                    they land, they observe quietly and their suggestions appear here.{' '}
+                    <a href="/help#autopilot-modes">Observe vs Active →</a>
+                  </>
+                }
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (
@@ -806,14 +812,24 @@ function SuggestionsEmptyState({ hasAnyRules }: { hasAnyRules: boolean }) {
     return (
       <EmptyState
         title="No pending suggestions"
-        description="Suggestions appear here once your preset rules are seeded and start observing your inbox."
+        description={
+          <>
+            Suggestions appear here once your preset rules are seeded and start observing your
+            inbox. <a href="/help#autopilot-modes">Observe vs Active →</a>
+          </>
+        }
       />
     );
   }
   return (
     <EmptyState
       title="No pending suggestions"
-      description="Every rule is watching but nothing has matched recently. Suggestions will appear here as Autopilot observes your inbox."
+      description={
+        <>
+          Every rule is watching but nothing has matched recently. Suggestions will appear here as
+          Autopilot observes your inbox. <a href="/help#autopilot-modes">Observe vs Active →</a>
+        </>
+      }
     />
   );
 }

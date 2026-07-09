@@ -63,7 +63,12 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="Nothing needs a decision."
-        description="New senders queue here as mail arrives — Autopilot keeps watch in the meantime."
+        description={
+          <>
+            New senders queue here as mail arrives — Autopilot keeps watch in the meantime.{' '}
+            <a href="/help#verbs-in-gmail-terms">What Keep, Archive, Later, and Delete do →</a>
+          </>
+        }
         action={
           <a
             href="/senders"
