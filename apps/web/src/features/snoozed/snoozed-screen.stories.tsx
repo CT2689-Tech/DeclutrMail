@@ -145,6 +145,16 @@ export const Empty: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient([])),
 };
 
+/**
+ * Mobile (≤sm, D60) — the 4-track row grid restacks to a single column
+ * so identity · count · wake-status · actions each take a full-width row
+ * without clipping on a phone.
+ */
+export const Mobile: Story<typeof SnoozedScreen> = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient(FIXTURES)),
+};
+
 /** Mirror degraded — counts unresolved (label mapping not published). */
 export const CountSyncing: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) =>
