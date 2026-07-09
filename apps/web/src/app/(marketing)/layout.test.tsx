@@ -13,9 +13,9 @@
  *      no anything. Public pages must not block on the API.
  *
  * The D132 SEO batch adds a third contract: the layout emits the
- * site-wide JSON-LD graph (Organization + SoftwareApplication), with
- * offers derived from the D19 tier manifest — the assertions below are
- * computed FROM `TIER_MANIFEST`, so a re-price flows through with no
+ * site-wide JSON-LD graph (Organization + WebSite + SoftwareApplication),
+ * with offers derived from the D19 tier manifest — the assertions below
+ * are computed FROM `TIER_MANIFEST`, so a re-price flows through with no
  * test edit.
  */
 
@@ -58,17 +58,25 @@ describe('(marketing) layout — D134', () => {
 });
 
 describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
-  it('emits one Organization + one SoftwareApplication in a schema.org graph', () => {
+  it('emits Organization + WebSite + SoftwareApplication in a schema.org graph', () => {
     const { container } = renderLayout();
     const graph = readJsonLd(container)['@graph'];
 
     const org = graph.find((node) => node['@type'] === 'Organization');
+    const website = graph.find((node) => node['@type'] === 'WebSite');
     const app = graph.find((node) => node['@type'] === 'SoftwareApplication');
     expect(org).toMatchObject({
       name: 'DeclutrMail',
       url: 'https://declutrmail.com',
       logo: 'https://declutrmail.com/icons/icon-512.png',
     });
+    expect(website).toMatchObject({
+      name: 'DeclutrMail',
+      url: 'https://declutrmail.com',
+      publisher: { '@id': org?.['@id'] },
+    });
+    // No SearchAction — there is no /search route to point one at.
+    expect(website).not.toHaveProperty('potentialAction');
     expect(app).toMatchObject({
       name: 'DeclutrMail',
       applicationCategory: 'UtilitiesApplication',

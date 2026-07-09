@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import type { Metadata } from 'next';
 
 import { metadata as landing } from './page';
+import { metadata as beta } from './beta/page';
 import { metadata as pricing } from './pricing/page';
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
@@ -24,6 +25,7 @@ import { metadata as security } from './security/page';
 
 const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> = [
   { name: 'landing', metadata: landing, path: '/' },
+  { name: 'beta', metadata: beta, path: '/beta' },
   { name: 'pricing', metadata: pricing, path: '/pricing' },
   { name: 'privacy', metadata: privacy, path: '/privacy' },
   { name: 'terms', metadata: terms, path: '/terms' },

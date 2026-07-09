@@ -6,10 +6,11 @@
 // so marketing pages share the design language of the app.
 //
 // This shell also emits the site-wide structured data (D132 SEO
-// batch): one JSON-LD graph with the Organization and the
-// SoftwareApplication (offers derived from the D19 tier manifest —
-// re-pricing there flows through here with no edit). Page-specific
-// structured data (the landing FAQPage) lives with the page content.
+// batch): one JSON-LD graph with the Organization, the WebSite entity
+// anchor, and the SoftwareApplication (offers derived from the D19 tier
+// manifest — re-pricing there flows through here with no edit).
+// Page-specific structured data (the landing FAQPage) lives with the
+// page content.
 //
 // Server component on purpose: no client JS is needed for a static
 // public shell, and keeping it server-side guarantees no client hook
@@ -62,6 +63,16 @@ const SITE_JSON_LD = {
       url: siteUrl(),
       logo: `${siteUrl()}/icons/icon-512.png`,
       email: 'support@declutrmail.com',
+    },
+    {
+      // Entity anchor for the site itself. No SearchAction — there is no
+      // /search route, and fabricating one is a structured-data lie.
+      '@type': 'WebSite',
+      '@id': `${siteUrl()}/#website`,
+      name: 'DeclutrMail',
+      url: siteUrl(),
+      inLanguage: 'en-US',
+      publisher: { '@id': ORGANIZATION_ID },
     },
     {
       '@type': 'SoftwareApplication',

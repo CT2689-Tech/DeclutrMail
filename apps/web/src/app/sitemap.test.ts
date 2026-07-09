@@ -4,27 +4,61 @@
  * The sitemap must cover exactly the public marketing surface and
  * never leak an authed app route (those are robots-disallowed — a
  * sitemap/robots contradiction is a crawl-budget bug).
+ *
+ * Coverage is checked against the `(marketing)` FILESYSTEM, not against
+ * the sitemap's own source array — an assertion of the form
+ * `toHaveLength(MARKETING_PATHS.length)` is tautological and is exactly
+ * how `/beta` shipped as a crawlable page absent from the sitemap. A new
+ * marketing route that never gets added to the sitemap now fails here.
  */
+
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import sitemap, { MARKETING_PATHS } from './sitemap';
+import sitemap from './sitemap';
 import robots, { AUTHED_APP_PATHS } from './robots';
 
+const MARKETING_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '(marketing)');
+
+/**
+ * Every route the `(marketing)` route group serves, derived from disk:
+ * the group's own `page.tsx` is `/`, and each immediate subdirectory
+ * holding a `page.tsx` is `/<dir>`. (Route groups like `(marketing)`
+ * don't appear in the URL, so the folder name maps straight to the path.)
+ */
+function marketingRoutesFromFs(): string[] {
+  const entries = readdirSync(MARKETING_DIR, { withFileTypes: true });
+  const routes = entries.some((e) => e.isFile() && e.name === 'page.tsx') ? ['/'] : [];
+  for (const entry of entries) {
+    if (
+      entry.isDirectory() &&
+      readdirSync(path.join(MARKETING_DIR, entry.name)).includes('page.tsx')
+    ) {
+      routes.push(`/${entry.name}`);
+    }
+  }
+  return routes.sort();
+}
+
+/** Sitemap output paths (root URL is the bare origin, i.e. pathname `/`). */
+function sitemapPaths(): string[] {
+  return sitemap()
+    .map((e) => new URL(e.url).pathname)
+    .sort();
+}
+
 describe('sitemap — D134', () => {
-  it('lists every marketing route against the canonical origin', () => {
-    const entries = sitemap();
-    expect(entries).toHaveLength(MARKETING_PATHS.length);
-    const urls = entries.map((e) => e.url);
+  it('covers exactly the (marketing) filesystem routes — no page silently omitted', () => {
+    expect(sitemapPaths()).toEqual(marketingRoutesFromFs());
+  });
+
+  it('lists the root against the canonical origin with no trailing slash', () => {
+    const urls = sitemap().map((e) => e.url);
     expect(urls).toContain('https://declutrmail.com');
-    expect(urls).toContain('https://declutrmail.com/pricing');
-    expect(urls).toContain('https://declutrmail.com/help');
-    expect(urls).toContain('https://declutrmail.com/contact');
-    expect(urls).toContain('https://declutrmail.com/security');
-    expect(urls).toContain('https://declutrmail.com/privacy');
-    expect(urls).toContain('https://declutrmail.com/terms');
-    expect(urls).toContain('https://declutrmail.com/refunds');
-    expect(urls).toContain('https://declutrmail.com/cookies');
+    expect(urls).not.toContain('https://declutrmail.com/');
   });
 
   it('never lists a robots-disallowed authed path', () => {
