@@ -41,6 +41,22 @@ describe('NoActiveMailboxView', () => {
     expect(screen.getByRole('button', { name: /connect a gmail account/i })).toBeInTheDocument();
   });
 
+  it('always offers account + billing escape hatches (reachable with no mailbox — D216/D121)', () => {
+    render(
+      <NoActiveMailboxView
+        disconnectedEmails={[]}
+        signingOut={false}
+        onConnect={vi.fn()}
+        onSignOut={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('link', { name: /manage account/i })).toHaveAttribute(
+      'href',
+      '/settings#account',
+    );
+    expect(screen.getByRole('link', { name: 'Billing' })).toHaveAttribute('href', '/billing');
+  });
+
   it('calls onSignOut and disables the button while signing out', () => {
     const onSignOut = vi.fn();
     const { rerender } = render(

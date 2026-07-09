@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -103,6 +104,33 @@ export function NoActiveMailboxView({
         </p>
       )}
 
+      {/* Escape hatches that don't need a mailbox: account (data export +
+          deletion, D216) and billing/refunds (D121) are workspace-level,
+          so they stay reachable even with nothing connected. */}
+      <p
+        style={{
+          marginTop: 20,
+          fontSize: 13,
+          color: color.fgMuted,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+        }}
+      >
+        <span>Not reconnecting?</span>
+        <Link href="/settings#account" style={gateLinkStyle}>
+          Manage account
+        </Link>
+        <span aria-hidden style={{ color: color.line }}>
+          ·
+        </span>
+        <Link href="/billing" style={gateLinkStyle}>
+          Billing
+        </Link>
+      </p>
+
       <button
         type="button"
         disabled={signingOut}
@@ -123,3 +151,9 @@ export function NoActiveMailboxView({
     </main>
   );
 }
+
+const gateLinkStyle = {
+  color: color.primary,
+  textDecoration: 'none',
+  fontWeight: 500,
+} as const;

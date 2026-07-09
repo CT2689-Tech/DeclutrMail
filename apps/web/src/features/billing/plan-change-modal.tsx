@@ -37,8 +37,9 @@ type PaidTier = 'plus' | 'pro';
  *     claim when Pro-annual (D126), impact summary, continue → the
  *     provider surface via `launchCheckout`.
  *   - Free target while subscribed → D120 downgrade copy (features stay
- *     until period end, no refund) routing to the cancel flow — cancel
- *     IS the downgrade-to-free mechanism (the BE has no separate path).
+ *     until period end; the 30-day money-back guarantee lives one step
+ *     on) routing to the cancel flow — cancel IS the downgrade-to-free
+ *     mechanism (the BE has no separate path).
  *   - Paid target while already subscribed → the honest designed state:
  *     paid-to-paid switching is not self-serve at beta (no BE endpoint;
  *     checkout would 409 SUBSCRIPTION_EXISTS).
@@ -574,7 +575,8 @@ function DowngradePanel({
         {end
           ? `Your ${tierLabel} features will remain active until ${end}. Then you'll switch to Free.`
           : `Your ${tierLabel} features will remain active until the end of the current period. Then you'll switch to Free.`}{' '}
-        No refund for unused time. Downgrading to Free means canceling your subscription.
+        Downgrading to Free means canceling your subscription — the next step covers cancellation,
+        including the 30-day money-back guarantee if you were charged recently.
       </p>
       <div>
         <Button tone="default" onClick={onRequestCancel}>

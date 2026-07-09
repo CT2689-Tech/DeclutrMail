@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-09 — Live authed smoke of the no-active-mailbox reachability fix (needs DB + OAuth)
+**Source:** session 2026-07-09 (branch `claude/vigilant-thompson-wb4lz4`) — account/billing reachability + refund-copy fixes. Every changed surface is behind auth; this ephemeral env has no Postgres/Redis/docker and no OAuth-connected mailboxes, so the live browser walk the audit asked for (force `activeMailboxId=null` via SQL, restore after) could not run here. Unit tests (894 green, incl. the exact fallback branches) + a full Next prod build stand in, but not the real §8 smoke.
+**Why:** Confirms the fix on the real stack: a user who disconnects their LAST Gmail can still reach `/settings` (→ Account → delete account + data export) and `/billing` (→ cancel + the 30-day refund), with NO 409-storm on `/api/v1/sync/status`.
+**How:** `./scripts/dev-up.sh` (or dev-auth) with the two-mailbox founder workspace, dev-login as `chintan.a.thakkar@gmail.com`, then in a copy/scratch DB force the no-active-mailbox state (disconnect the last active mailbox via the account menu, or `UPDATE mailbox_accounts SET status='disconnected'` for all rows in the workspace). Walk: (1) on `/senders` you get the reconnect gate WITH new "Manage account · Billing" links; (2) click each — `/settings#account` and `/billing` render fully; delete-account section + data export are reachable; (3) open the cancel modal on a **Plus** sub → the 30-day money-back guarantee + "Request a refund" mailto show; (4) DevTools Network shows NO repeating `/api/v1/sync/status` poll. RESTORE the DB afterward.
+**Verifies by:** all four steps pass in a real browser with a clean console; the sync-status poll is absent on the settings/billing render.
+**Status:** Open
+
 ### 2026-07-08 — Reconciler misses stale `syncing` sync rows (narrow §9 hardening)
 **Source:** session 2026-07-08 wave-2 platform-reliability investigation. Verified the sync subsystem is mature + Codex-hardened (6 iters): monotonic historyId guard (D229 step 8), 60s continuous reconciler for stuck `queued`, cursor-too-old recovery, `onTerminalFailure`→`failed`, BullMQ stalled-job recovery, 5-min incremental reconciliation.
 **Why:** ONE narrow residual gap — the continuous reconciler (`apps/api/src/worker.ts:942` `reconcileQueuedInitialSyncs`) sweeps `provider_sync_state.readiness_status='queued'` ONLY. A row stuck at `'syncing'` whose BullMQ job was Redis-EVICTED mid-active (no live job, DB never flipped) is not recovered — the onboarding progress bar wedges forever. Reachable only under Redis active-hash eviction mid-initial-sync (rare), but it's the stuck-sync class CLAUDE.md §8 warns about.

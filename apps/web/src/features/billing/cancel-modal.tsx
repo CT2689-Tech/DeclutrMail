@@ -24,12 +24,21 @@ const REASON_OPTIONS: ReadonlyArray<{ value: CancelReason; label: string }> = [
  * Cancel-subscription confirm (D118/D120).
  *
  * Preview-then-confirm: the modal states exactly what happens —
- * features stay until period end, then Free; no refund for unused time
- * (D120 downgrade copy) — before the mutation runs. Not the D226
+ * features stay until period end, then Free; canceling isn't itself a
+ * refund (D120 downgrade copy) — before the mutation runs. Not the D226
  * destructive-preview class (no mail is touched), but the same honest
- * shape. Pro subscriptions also carry the D121 money-back route, which
- * is a refund-and-cancel-now alternative handled by support.
+ * shape. EVERY paid plan carries the D121 30-day money-back guarantee
+ * (founder-confirmed 2026-07-08 — all paid tiers, not Pro-only), a
+ * refund-and-cancel-now alternative surfaced here with a prefilled
+ * support request.
  */
+
+/** Prefilled refund request — matches /refunds §7 ("refund" in subject). */
+const REFUND_REQUEST_MAILTO = `mailto:support@declutrmail.com?subject=${encodeURIComponent(
+  'Refund request',
+)}&body=${encodeURIComponent(
+  "I'd like to request a refund under the 30-day money-back guarantee.",
+)}`;
 export function CancelModal({
   open,
   subscription,
@@ -128,26 +137,37 @@ export function CancelModal({
                 : `Your ${tierLabel} features stay active until the end of the current billing period.`}
             </li>
             <li>Then your workspace switches to Free — nothing you&rsquo;ve cleaned is undone.</li>
-            <li>No refund for unused time (cancellation takes effect at period end).</li>
+            <li>
+              Canceling stops your renewal and takes effect at period end — on its own it
+              isn&rsquo;t a refund. If you want your money back, use the guarantee below.
+            </li>
           </ul>
 
-          {subscription.tier === 'pro' ? (
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12.5,
-                color: color.fgMuted,
-                lineHeight: 1.5,
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: radius.md,
-                padding: '8px 10px',
-              }}
+          {/* Every paid plan carries the 30-day money-back guarantee
+              (D121, founder-confirmed 2026-07-08). `subscription` is
+              non-null here and Free has no subscription, so this always
+              applies — no tier gate. */}
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12.5,
+              color: color.fgMuted,
+              lineHeight: 1.5,
+              background: color.paper,
+              border: `1px solid ${color.line}`,
+              borderRadius: radius.md,
+              padding: '8px 10px',
+            }}
+          >
+            Every paid plan includes a {MONEY_BACK_NOTE}. If you were charged in the last 30 days,
+            you can get a full refund instead — we&rsquo;ll cancel right away and refund the charge.{' '}
+            <a
+              href={REFUND_REQUEST_MAILTO}
+              style={{ color: color.primary, fontWeight: 600, textDecoration: 'none' }}
             >
-              Pro has a {MONEY_BACK_NOTE} — if you subscribed within the last 30 days and want a
-              full refund instead, reply to your receipt email and we&rsquo;ll process it.
-            </p>
-          ) : null}
+              Request a refund →
+            </a>
+          </p>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
             <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
