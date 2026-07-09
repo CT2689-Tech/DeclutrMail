@@ -134,6 +134,16 @@ export const Populated: Story<typeof BriefScreen> = {
   render: (_args: ComponentProps<typeof BriefScreen>) => frame(makeClient(BASE)),
 };
 
+/**
+ * Mobile (≤sm, D60) — the Reply/FYI and Noise rows restack to
+ * single-column cards: avatar + sender on row 1, subject/count and the
+ * Gmail link stack full-width below so nothing overflows a phone.
+ */
+export const Mobile: Story<typeof BriefScreen> = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  render: (_args: ComponentProps<typeof BriefScreen>) => frame(makeClient(BASE)),
+};
+
 /** D70 — quiet-inbox empty state when all sections are empty. */
 export const QuietInbox: Story<typeof BriefScreen> = {
   render: (_args: ComponentProps<typeof BriefScreen>) =>

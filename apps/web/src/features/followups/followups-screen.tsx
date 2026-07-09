@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 
-import { Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
@@ -56,6 +56,11 @@ export function FollowupsScreen() {
   const overAWeek = grouped.high.length;
   const totalAwaiting = (query.data ?? []).length;
 
+  // Below `sm` (D60 mobile treatment) the 5-track row grid overflows a
+  // phone viewport — resolve the breakpoint once and thread it to the
+  // rows so each restacks to a single-column card with wrapped actions.
+  const isMobile = useIsAtMost('sm');
+
   if (query.isLoading) {
     return <LoadingState />;
   }
@@ -102,6 +107,7 @@ export function FollowupsScreen() {
               tone="danger"
               rows={grouped.high}
               onDismiss={dismiss.mutate}
+              isMobile={isMobile}
             />
           )}
           {grouped.medium.length > 0 && (
@@ -110,6 +116,7 @@ export function FollowupsScreen() {
               tone="warn"
               rows={grouped.medium}
               onDismiss={dismiss.mutate}
+              isMobile={isMobile}
             />
           )}
           {grouped.low.length > 0 && (
@@ -118,6 +125,7 @@ export function FollowupsScreen() {
               tone="muted"
               rows={grouped.low}
               onDismiss={dismiss.mutate}
+              isMobile={isMobile}
             />
           )}
           {grouped.fresh.length > 0 && (
@@ -126,6 +134,7 @@ export function FollowupsScreen() {
               tone="muted"
               rows={grouped.fresh}
               onDismiss={dismiss.mutate}
+              isMobile={isMobile}
             />
           )}
         </>
@@ -182,11 +191,13 @@ function PriorityGroup({
   tone,
   rows,
   onDismiss,
+  isMobile,
 }: {
   label: string;
   tone: GroupTone;
   rows: FollowupRow[];
   onDismiss?: (row: FollowupRow) => void;
+  isMobile: boolean;
 }) {
   return (
     <section
@@ -205,7 +216,7 @@ function PriorityGroup({
         }}
       >
         {rows.map((row) => (
-          <FollowupListItem key={row.id} row={row} onDismiss={onDismiss} />
+          <FollowupListItem key={row.id} row={row} onDismiss={onDismiss} isMobile={isMobile} />
         ))}
       </ul>
     </section>
@@ -253,9 +264,12 @@ function GroupHeading({ label, tone, count }: { label: string; tone: GroupTone; 
 export function FollowupListItem({
   row,
   onDismiss,
+  isMobile = false,
 }: {
   row: FollowupRow;
   onDismiss?: ((row: FollowupRow) => void) | undefined;
+  /** Below `sm` the row restacks to a single-column card (D60). */
+  isMobile?: boolean;
 }) {
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
@@ -266,11 +280,17 @@ export function FollowupListItem({
     <li
       style={{
         display: 'grid',
-        gridTemplateColumns: onDismiss
-          ? 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto'
-          : 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
+        // Mobile (D60): recipient + subject stack full-width; the meta
+        // actions (time · Gmail · resolve) wrap onto one row below.
+        gridTemplateColumns: isMobile
+          ? onDismiss
+            ? '1fr auto auto'
+            : '1fr auto'
+          : onDismiss
+            ? 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto'
+            : 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
         alignItems: 'center',
-        gap: 14,
+        gap: isMobile ? '8px 12px' : 14,
         padding: '12px 14px',
         background: color.card,
         border: `1px solid ${color.lineSoft}`,
@@ -278,7 +298,7 @@ export function FollowupListItem({
         fontFamily: font.sans,
       }}
     >
-      <div style={{ minWidth: 0 }}>
+      <div style={{ minWidth: 0, ...(isMobile ? { gridColumn: '1 / -1' } : null) }}>
         <div
           style={{
             fontSize: 13.5,
@@ -303,6 +323,7 @@ export function FollowupListItem({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
         {subject}

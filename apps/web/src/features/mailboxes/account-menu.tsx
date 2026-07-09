@@ -73,8 +73,19 @@ export function AccountMenu() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
+      {/* Trigger max-width is class-driven so it can narrow below the
+          shell's 900px sm breakpoint — on a phone the topbar row would
+          otherwise push this switcher's right edge off-screen (untappable).
+          CSS-driven (not a JS hook) so there is no post-hydration flash. */}
+      <style>{`
+        .dm-account-trigger { max-width: 220px; }
+        @media (max-width: 900px) {
+          .dm-account-trigger { max-width: 44vw; }
+        }
+      `}</style>
       <button
         type="button"
+        className="dm-account-trigger"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -92,7 +103,6 @@ export function AccountMenu() {
           cursor: 'pointer',
           fontFamily: font.sans,
           fontSize: 12,
-          maxWidth: 220,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

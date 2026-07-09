@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 
-import { Avatar, Button, EmptyState, Eyebrow, ScreenIntro, tokens } from '@declutrmail/shared';
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  Eyebrow,
+  ScreenIntro,
+  tokens,
+  useIsAtMost,
+} from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { BriefItemWire, BriefSenderGroupWire, BriefWire } from '@/lib/api/brief';
@@ -117,6 +125,11 @@ function BriefBody({ brief }: { brief: BriefWire }) {
   const { reply, fyi, noise, narrative } = brief.briefPayload;
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
+  // Below `sm` (D60 mobile treatment) the multi-column reply/FYI/noise
+  // rows overflow a phone viewport — resolve the breakpoint once here
+  // and thread it down so each row restacks to a single-column card.
+  const isMobile = useIsAtMost('sm');
+
   // Fire mark-opened exactly once per Brief-id when openedAt is null.
   // Ref guard avoids StrictMode double-mount duplicate calls and
   // covers the post-mutation re-render (the cache patch flips
@@ -158,9 +171,11 @@ function BriefBody({ brief }: { brief: BriefWire }) {
       ) : (
         <>
           {narrative.trim().length > 0 && <Narrative text={narrative} />}
-          {reply.length > 0 && <ReplyFyiSection label="Reply" rows={reply} max={6} />}
-          {fyi.length > 0 && <ReplyFyiSection label="FYI" rows={fyi} max={4} />}
-          {noise.length > 0 && <NoiseSection groups={noise} />}
+          {reply.length > 0 && (
+            <ReplyFyiSection label="Reply" rows={reply} max={6} isMobile={isMobile} />
+          )}
+          {fyi.length > 0 && <ReplyFyiSection label="FYI" rows={fyi} max={4} isMobile={isMobile} />}
+          {noise.length > 0 && <NoiseSection groups={noise} isMobile={isMobile} />}
         </>
       )}
     </div>
@@ -234,10 +249,12 @@ function ReplyFyiSection({
   label,
   rows,
   max,
+  isMobile,
 }: {
   label: 'Reply' | 'FYI';
   rows: BriefItemWire[];
   max: number;
+  isMobile: boolean;
 }) {
   const tone = label === 'Reply' ? 'accent' : 'muted';
   return (
@@ -257,14 +274,18 @@ function ReplyFyiSection({
         }}
       >
         {rows.map((row) => (
-          <ReplyFyiRow key={`${row.senderKey}-${row.messageIds[0] ?? row.subject}`} row={row} />
+          <ReplyFyiRow
+            key={`${row.senderKey}-${row.messageIds[0] ?? row.subject}`}
+            row={row}
+            isMobile={isMobile}
+          />
         ))}
       </ul>
     </section>
   );
 }
 
-function NoiseSection({ groups }: { groups: BriefSenderGroupWire[] }) {
+function NoiseSection({ groups, isMobile }: { groups: BriefSenderGroupWire[]; isMobile: boolean }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
   return (
     <section
@@ -288,7 +309,7 @@ function NoiseSection({ groups }: { groups: BriefSenderGroupWire[] }) {
         }}
       >
         {groups.map((group) => (
-          <NoiseRow key={group.senderKey} group={group} />
+          <NoiseRow key={group.senderKey} group={group} isMobile={isMobile} />
         ))}
       </ul>
     </section>
@@ -354,7 +375,7 @@ function SectionHeading({
  * Gmail's `#all/<id>` permalink. The BE collapses multi-message rows
  * into one BriefItem so this is the most-actionable message.
  */
-function ReplyFyiRow({ row }: { row: BriefItemWire }) {
+function ReplyFyiRow({ row, isMobile }: { row: BriefItemWire; isMobile: boolean }) {
   const displayName = row.senderName || row.senderEmail;
   const domain = domainOf(row.senderEmail);
   const subject = truncate(row.subject, 70);
@@ -363,9 +384,13 @@ function ReplyFyiRow({ row }: { row: BriefItemWire }) {
     <li
       style={{
         display: 'grid',
-        gridTemplateColumns: 'auto minmax(180px, 1.1fr) minmax(220px, 2fr) auto',
+        // Mobile (D60): avatar + identity on row 1, subject + Gmail link
+        // restack full-width below so the row never overflows a phone.
+        gridTemplateColumns: isMobile
+          ? 'auto 1fr'
+          : 'auto minmax(180px, 1.1fr) minmax(220px, 2fr) auto',
         alignItems: 'center',
-        gap: 14,
+        gap: isMobile ? '8px 12px' : 14,
         padding: '12px 14px',
         background: color.card,
         border: `1px solid ${color.lineSoft}`,
@@ -416,6 +441,7 @@ function ReplyFyiRow({ row }: { row: BriefItemWire }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
         {subject}
@@ -445,6 +471,7 @@ function ReplyFyiRow({ row }: { row: BriefItemWire }) {
             color: color.primary,
             textDecoration: 'none',
             whiteSpace: 'nowrap',
+            ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
           }}
         >
           Open in Gmail →
@@ -462,7 +489,7 @@ function ReplyFyiRow({ row }: { row: BriefItemWire }) {
  * now the row is read-only and surfaces the Gmail click-through so
  * the user can act manually.
  */
-function NoiseRow({ group }: { group: BriefSenderGroupWire }) {
+function NoiseRow({ group, isMobile }: { group: BriefSenderGroupWire; isMobile: boolean }) {
   const count = group.messageCount;
   const countLabel = `${count} message${count === 1 ? '' : 's'}`;
   const href = gmailHref(group.messageIds[0]);
@@ -470,9 +497,11 @@ function NoiseRow({ group }: { group: BriefSenderGroupWire }) {
     <li
       style={{
         display: 'grid',
-        gridTemplateColumns: 'auto minmax(180px, 2fr) auto auto',
+        // Mobile (D60): avatar + sender on row 1, count + Gmail link
+        // restack full-width below.
+        gridTemplateColumns: isMobile ? 'auto 1fr' : 'auto minmax(180px, 2fr) auto auto',
         alignItems: 'center',
-        gap: 14,
+        gap: isMobile ? '8px 12px' : 14,
         padding: '12px 14px',
         background: color.card,
         border: `1px solid ${color.lineSoft}`,
@@ -498,6 +527,7 @@ function NoiseRow({ group }: { group: BriefSenderGroupWire }) {
           color: color.fgMuted,
           fontFamily: font.mono,
           whiteSpace: 'nowrap',
+          ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
         {countLabel}
@@ -528,6 +558,7 @@ function NoiseRow({ group }: { group: BriefSenderGroupWire }) {
             color: color.primary,
             textDecoration: 'none',
             whiteSpace: 'nowrap',
+            ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
           }}
         >
           Open in Gmail →
