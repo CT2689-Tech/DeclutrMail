@@ -268,7 +268,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
 | D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218 |  |  |
-| D217 | Privacy & Data settings sub-page at launch | ⬜ |  |  |  |
+| D217 | Privacy & Data settings sub-page at launch | 🔵 | #308 |  |  |
 | D218 | Public `/changelog` at launch | ⬜ |  |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | 🔵 | #290 |  |  |
 | D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
