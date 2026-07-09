@@ -231,6 +231,14 @@ export function ActivityScreen() {
   const stats = meta?.stats;
   const allTimeStats = meta?.allTimeStats;
 
+  // `keepPreviousData` keeps the PRIOR filter's rows on screen while the
+  // next filter loads. Those rows don't match the active URL filter, so
+  // the results list is dimmed + made non-interactive during the
+  // transition — a user must not undo / select a stale row that belongs
+  // to a filter they've already navigated away from. Restores the
+  // interaction guard the full-screen <LoadingState/> used to provide.
+  const showingStaleRows = query.isPlaceholderData;
+
   return (
     <div
       style={{
@@ -296,47 +304,56 @@ export function ActivityScreen() {
         }}
       />
 
-      {rows.length === 0 ? (
-        <EmptyState
-          title="No activity in this window."
-          description={
-            <>
-              Try widening the time range, clearing the verb / sender filter, or switching the
-              source — the activity log is append-only, so nothing has been removed.
-            </>
-          }
-        />
-      ) : groupMode === 'sender' ? (
-        <GroupedList
-          rows={rows}
-          selectedIds={selectedIds}
-          onToggle={toggleRow}
-          failedTokens={failedTokens}
-          isMobile={isMobile}
-        />
-      ) : (
-        <ul
-          style={{
-            listStyle: 'none',
-            margin: 0,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
-          {rows.map((row) => (
-            <ActivityRow
-              key={row.id}
-              row={row}
-              isSelected={selectedIds.has(row.id)}
-              onToggleSelect={() => toggleRow(row.id)}
-              failedTokens={failedTokens}
-              isMobile={isMobile}
-            />
-          ))}
-        </ul>
-      )}
+      <div
+        aria-busy={showingStaleRows}
+        style={{
+          opacity: showingStaleRows ? 0.55 : 1,
+          pointerEvents: showingStaleRows ? 'none' : undefined,
+          transition: 'opacity 120ms ease',
+        }}
+      >
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No activity in this window."
+            description={
+              <>
+                Try widening the time range, clearing the verb / sender filter, or switching the
+                source — the activity log is append-only, so nothing has been removed.
+              </>
+            }
+          />
+        ) : groupMode === 'sender' ? (
+          <GroupedList
+            rows={rows}
+            selectedIds={selectedIds}
+            onToggle={toggleRow}
+            failedTokens={failedTokens}
+            isMobile={isMobile}
+          />
+        ) : (
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            {rows.map((row) => (
+              <ActivityRow
+                key={row.id}
+                row={row}
+                isSelected={selectedIds.has(row.id)}
+                onToggleSelect={() => toggleRow(row.id)}
+                failedTokens={failedTokens}
+                isMobile={isMobile}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       {rows.length > 0 && (
         <LoadMoreRegion
@@ -1539,9 +1556,14 @@ function GroupedList({
               aria-expanded={isOpen}
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'auto minmax(180px, 1.2fr) auto auto',
+                // Mobile drops the dedicated count column (it overflowed
+                // 375px against the 180px name min); the count moves under
+                // the name instead. Desktop keeps the 4-column layout.
+                gridTemplateColumns: isMobile
+                  ? 'auto minmax(0, 1fr) auto'
+                  : 'auto minmax(180px, 1.2fr) auto auto',
                 alignItems: 'center',
-                gap: 14,
+                gap: isMobile ? 10 : 14,
                 padding: '12px 14px',
                 width: '100%',
                 background: 'transparent',
@@ -1566,22 +1588,47 @@ function GroupedList({
                   {group.displayName}
                 </div>
                 {group.domain && (
-                  <div style={{ fontSize: 12, color: color.fgMuted, fontFamily: font.mono }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: color.fgMuted,
+                      fontFamily: font.mono,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {group.domain}
                   </div>
                 )}
+                {isMobile && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: color.fgMuted,
+                      fontFamily: font.mono,
+                      marginTop: 2,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
+                    email{totalAffected === 1 ? '' : 's'}
+                  </div>
+                )}
               </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: color.fgMuted,
-                  fontFamily: font.mono,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
-                email{totalAffected === 1 ? '' : 's'}
-              </span>
+              {!isMobile && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: color.fgMuted,
+                    fontFamily: font.mono,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
+                  email{totalAffected === 1 ? '' : 's'}
+                </span>
+              )}
               <span aria-hidden="true" style={{ color: color.fgMuted }}>
                 {isOpen ? '▾' : '▸'}
               </span>
