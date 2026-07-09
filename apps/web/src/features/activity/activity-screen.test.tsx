@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -809,5 +809,68 @@ describe('ActivityScreen — B12 Open in Gmail', () => {
     );
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
+  });
+});
+
+describe('ActivityScreen — D60 mobile filter drawer', () => {
+  // useIsAtMost('sm') reads window.matchMedia('(max-width: 900px)'). Force
+  // it to match so the mobile card + bottom-sheet layout renders.
+  beforeEach(() => {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({
+          matches: /max-width:\s*900px/.test(query),
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          onchange: null,
+          dispatchEvent: () => false,
+        }) as unknown as MediaQueryList,
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('collapses the inline filter bands into a Filters trigger + opens the drawer', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ action: 'archive' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+
+    // Trigger present; the inline source chips are NOT rendered directly
+    // (they live inside the closed drawer).
+    const trigger = await screen.findByRole('button', { name: /^filters/i });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
+
+    // Drawer is a modal dialog holding the bands + a Done button.
+    const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
+    expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /^done$/i })).toBeInTheDocument();
+  });
+
+  it('a source chip inside the drawer drives the filter URL', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: /^filters/i }));
+    const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
+    await waitFor(() =>
+      expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('source=autopilot')),
+    );
   });
 });

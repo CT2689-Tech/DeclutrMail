@@ -14,7 +14,12 @@
  * new data sooner than the writers commit.
  */
 
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
 
 import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/api/activity';
 
@@ -40,6 +45,13 @@ export function useActivity(filters: ActivityFilters, options?: { hasInFlightAct
     // are 25 rows each; bounded for the poll window.)
     refetchInterval: options?.hasInFlightAction ? 1500 : false,
     refetchOnWindowFocus: true,
+    // Keep the prior filter's rows on screen while the next filter loads,
+    // instead of flashing the full-screen <LoadingState/>. On mobile (D60)
+    // that flash unmounted the open filter drawer on every chip tap; on
+    // desktop it blanked the list on each tweak. `isError`/`isLoading`
+    // gates in the screen still fire on a genuine cold error (no prior
+    // data), so the 400 "invalid query" ErrorState is preserved.
+    placeholderData: keepPreviousData,
   });
 }
 
