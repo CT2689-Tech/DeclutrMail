@@ -48,13 +48,13 @@ and `llms.txt` must stay identical on duration + scope.
 
 | Doc / surface                          | Why it retains users                                                          | Suggested home                                                                                  |
 | -------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Getting started (5 steps)**          | Cuts time-to-first-Archive; reduces “what now?” after sync                    | `/help#getting-started` first; promote later                                                    |
-| **Verb semantics deep-link**           | Archive ≠ Delete ≠ Later — #1 support class for cleanup tools                 | Expand `/help#verbs-in-gmail-terms` + in-app first-use tip                                      |
-| **Unsubscribe honesty card**           | One-click vs mailto-manual; “requested” vs “confirmed”                        | `/help#unsubscribe-flow` + Activity empty/help copy                                             |
+| **Getting started (5 steps)** ✅       | Cuts time-to-first-Archive; reduces “what now?” after sync                    | `/help#getting-started` + Senders empty-state link (shipped 2026-07-09)                         |
+| **Verb semantics deep-link** ✅        | Archive ≠ Delete ≠ Later — #1 support class for cleanup tools                 | `/help#verbs-in-gmail-terms` + Triage resting empty link (shipped)                              |
+| **Unsubscribe honesty card** ✅        | One-click vs mailto-manual; “requested” vs “confirmed”                        | `/help#unsubscribe-flow` + Activity empty link (shipped)                                        |
 | **Working support mailboxes**          | Dead `support@` / `privacy@` destroys trust on day 1                          | Founder: create aliases (open follow-up)                                                        |
 | **Cookie consent (D147) live in prod** | Banner code exists (`features/consent/`); policy promises gate-before-PostHog | Keep `NEXT_PUBLIC_POSTHOG_KEY` unset in prod until banner is verified on the live apex/app host |
 | **Billing honesty when dark**          | If `BILLING_ENABLED=false`, never imply live checkout                         | Already partially handled — verify copy on `/billing` + `/pricing` CTAs                         |
-| **Status / beta limitations**          | Sets expectations; reduces churn from “broken” that is “deferred”             | Short section on `/beta` or `/help#beta-limits`                                                 |
+| **Status / beta limitations** ✅       | Sets expectations; reduces churn from “broken” that is “deferred”             | `/help#beta-limits` + `/beta` pointer (shipped)                                                 |
 
 ### P1 — first 30 days (activation + retention)
 
