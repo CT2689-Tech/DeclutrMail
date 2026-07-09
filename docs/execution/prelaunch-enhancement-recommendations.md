@@ -58,14 +58,14 @@ and `llms.txt` must stay identical on duration + scope.
 
 ### P1 — first 30 days (activation + retention)
 
-| Doc                          | Job                                             | URL                                                                 |
-| ---------------------------- | ----------------------------------------------- | ------------------------------------------------------------------- |
-| Methodology                  | Prove “impact” math; cite-able trust page       | `/methodology` (D132 Tier 1)                                        |
-| Disconnect / delete / export | Reduce fear of lock-in; GDPR/DPDP path          | `/help#disconnect-mailbox`, `#delete-account` + Settings deep links |
-| Autopilot explained          | Observe vs Active is easy to fear               | `/help#autopilot-modes` + first Observe empty-state                 |
-| Billing FAQ                  | Cancel, refund, plan change, Founding Pro       | `/help#pricing-tiers` + `/refunds` cross-links                      |
-| Changelog                    | Build-in-public credibility; “product is alive” | `/changelog` (thin OK)                                              |
-| In-app pointers              | Empty states + “Why this recommendation?”       | Feature empty-states → `/help#…`                                    |
+| Doc                          | Job                                             | URL                                                                                       |
+| ---------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Methodology ✅               | Prove “impact” math; cite-able trust page       | `/methodology` pragmatic D139 slice (shipped; full whitepaper deferred)                   |
+| Disconnect / delete / export | Reduce fear of lock-in; GDPR/DPDP path          | `/help#disconnect-mailbox`, `#delete-account` (help exists; Settings deep links optional) |
+| Autopilot explained ✅       | Observe vs Active is easy to fear               | `/help#autopilot-modes` + Autopilot empty-states (shipped)                                |
+| Billing FAQ                  | Cancel, refund, plan change, Founding Pro       | `/help#pricing-tiers` + `/refunds` cross-links                                            |
+| Changelog ✅                 | Build-in-public credibility; “product is alive” | `/changelog` thin shell (shipped)                                                         |
+| In-app pointers ✅           | Empty states + “Why this recommendation?”       | Senders/Triage/Activity/Autopilot → `/help#…` (shipped)                                   |
 
 ### P2 — growth / SEO / AEO / GEO (D132)
 
