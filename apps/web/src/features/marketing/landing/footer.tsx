@@ -44,6 +44,8 @@ export function Footer() {
           <nav className="dm-mkt-footer-links" aria-label="Legal">
             <a href="/pricing">Pricing</a>
             <a href="/help">Help</a>
+            <a href="/methodology">Methodology</a>
+            <a href="/changelog">Changelog</a>
             <a href="/contact">Contact</a>
             <a href="/security">Security</a>
             <a href="/privacy">Privacy</a>

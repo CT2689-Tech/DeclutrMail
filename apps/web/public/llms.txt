@@ -12,6 +12,8 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 - [Open beta](https://declutrmail.com/beta): DeclutrMail is in open beta — sign in with Google and start cleaning up, no invite or waitlist needed
 - [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
+- [Methodology](https://declutrmail.com/methodology): how DeclutrMail works — sender-level cleanup, locked storage allowlist (Full bodies fetched: 0), volume/engagement recommendations without category ML, Keep/Archive/Unsubscribe/Later/Delete with preview then undo
+- [Changelog](https://declutrmail.com/changelog): reverse-chronological public record of what has shipped (open beta, marketing/legal pages, sender-level cleanup, privacy badge)
 - [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion

@@ -17,6 +17,8 @@ export const MARKETING_PATHS = [
   '/pricing',
   '/beta',
   '/help',
+  '/methodology',
+  '/changelog',
   '/contact',
   '/security',
   '/privacy',

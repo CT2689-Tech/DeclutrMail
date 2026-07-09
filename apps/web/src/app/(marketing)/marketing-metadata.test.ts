@@ -20,6 +20,8 @@ import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
 import { metadata as cookies } from './cookies/page';
 import { metadata as help } from './help/page';
+import { metadata as methodology } from './methodology/page';
+import { metadata as changelog } from './changelog/page';
 import { metadata as contact } from './contact/page';
 import { metadata as security } from './security/page';
 
@@ -32,6 +34,8 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'refunds', metadata: refunds, path: '/refunds' },
   { name: 'cookies', metadata: cookies, path: '/cookies' },
   { name: 'help', metadata: help, path: '/help' },
+  { name: 'methodology', metadata: methodology, path: '/methodology' },
+  { name: 'changelog', metadata: changelog, path: '/changelog' },
   { name: 'contact', metadata: contact, path: '/contact' },
   { name: 'security', metadata: security, path: '/security' },
 ];

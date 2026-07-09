@@ -219,10 +219,10 @@ them).
 
 **Payload.**
 
-| Field        | Type                                                                                                                                                                   | Notes                                              |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `page`       | `'landing' \| 'senders' \| 'sender_detail' \| 'activity' \| 'brief' \| 'autopilot' \| 'triage' \| 'onboarding' \| 'settings' \| 'mailboxes' \| 'pricing' \| 'billing'` | Closed union                                       |
-| `mailbox_id` | `string \| null`                                                                                                                                                       | UUID; `null` on public pages (landing has no auth) |
+| Field        | Type                                                                                                                                                                                                                                                                          | Notes                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `page`       | Closed union in `packages/shared/src/observability/events.ts` (`page_viewed.page`) — includes app surfaces plus public marketing pages (`landing`, `pricing`, `privacy`, `terms`, `refunds`, `cookies`, `beta`, `help`, `contact`, `security`, `methodology`, `changelog`, …) | Keep in sync with `events.ts`                      |
+| `mailbox_id` | `string \| null`                                                                                                                                                                                                                                                              | UUID; `null` on public pages (landing has no auth) |
 
 **Retention / aggregation.** PostHog default. Top of the
 landing → OAuth → onboarding funnel insight.

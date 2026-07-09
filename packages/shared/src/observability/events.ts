@@ -218,7 +218,10 @@ export interface EventPayloads {
       // 2026-07-07 launch marketing bundle (D219, D137) — support surfaces.
       | 'help'
       | 'contact'
-      | 'security';
+      | 'security'
+      // 2026-07-09 P1 marketing pages (D139, D218).
+      | 'methodology'
+      | 'changelog';
     mailbox_id: string | null;
   };
 
