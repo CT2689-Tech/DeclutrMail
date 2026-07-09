@@ -115,6 +115,7 @@ describe('/help content — D219 + D137', () => {
       'unsubscribe-flow',
       'undo-windows',
       'autopilot-modes',
+      'billing-faq',
       'beta-limits',
     ]) {
       expect(document.getElementById(id)).toBeInTheDocument();
@@ -146,7 +147,7 @@ describe('/help content — D219 + D137', () => {
       mainEntity: Array<{ name: string }>;
     };
     expect(data['@type']).toBe('FAQPage');
-    expect(data.mainEntity.length).toBe(13);
+    expect(data.mainEntity.length).toBe(14);
     for (const { name } of data.mainEntity) {
       // Each marked-up question appears on the page (Google requires
       // it) — twice, in fact: the TOC row and the section heading.

@@ -41,12 +41,12 @@ export function Hero() {
               </span>
             </TrackedCta>
             <TrackedCta
-              href="/pricing"
-              cta="see_pricing"
+              href="/inbox-simulator"
+              cta="try_demo"
               placement="hero"
               className="dm-mkt-cta dm-mkt-cta-ghost"
             >
-              See pricing
+              Try the demo first
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">

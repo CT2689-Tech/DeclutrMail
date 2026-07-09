@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { track } from '@/lib/posthog';
 
-type LandingCta = 'connect_gmail' | 'open_app' | 'see_pricing';
+type LandingCta = 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
 type LandingPlacement = 'nav' | 'hero' | 'pricing_teaser' | 'final';
 
 /**

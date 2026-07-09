@@ -46,38 +46,38 @@ and `llms.txt` must stay identical on duration + scope.
 
 ### P0 — before paid / public traffic (gaps)
 
-| Doc / surface                          | Why it retains users                                                          | Suggested home                                                                                  |
-| -------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Getting started (5 steps)** ✅       | Cuts time-to-first-Archive; reduces “what now?” after sync                    | `/help#getting-started` + Senders empty-state link (shipped 2026-07-09)                         |
-| **Verb semantics deep-link** ✅        | Archive ≠ Delete ≠ Later — #1 support class for cleanup tools                 | `/help#verbs-in-gmail-terms` + Triage resting empty link (shipped)                              |
-| **Unsubscribe honesty card** ✅        | One-click vs mailto-manual; “requested” vs “confirmed”                        | `/help#unsubscribe-flow` + Activity empty link (shipped)                                        |
-| **Working support mailboxes**          | Dead `support@` / `privacy@` destroys trust on day 1                          | Founder: create aliases (open follow-up)                                                        |
-| **Cookie consent (D147) live in prod** | Banner code exists (`features/consent/`); policy promises gate-before-PostHog | Keep `NEXT_PUBLIC_POSTHOG_KEY` unset in prod until banner is verified on the live apex/app host |
-| **Billing honesty when dark**          | If `BILLING_ENABLED=false`, never imply live checkout                         | Already partially handled — verify copy on `/billing` + `/pricing` CTAs                         |
-| **Status / beta limitations** ✅       | Sets expectations; reduces churn from “broken” that is “deferred”             | `/help#beta-limits` + `/beta` pointer (shipped)                                                 |
+| Doc / surface                          | Why it retains users                                                          | Suggested home                                                            |
+| -------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Getting started (5 steps)** ✅       | Cuts time-to-first-Archive; reduces “what now?” after sync                    | `/help#getting-started` + Senders empty-state link (shipped 2026-07-09)   |
+| **Verb semantics deep-link** ✅        | Archive ≠ Delete ≠ Later — #1 support class for cleanup tools                 | `/help#verbs-in-gmail-terms` + Triage resting empty link (shipped)        |
+| **Unsubscribe honesty card** ✅        | One-click vs mailto-manual; “requested” vs “confirmed”                        | `/help#unsubscribe-flow` + Activity empty link (shipped)                  |
+| **Working support mailboxes**          | Dead `support@` / `privacy@` destroys trust on day 1                          | **FOUNDER** — create aliases (open follow-up)                             |
+| **Cookie consent (D147) live in prod** | Banner code exists (`features/consent/`); policy promises gate-before-PostHog | **FOUNDER** — keep PostHog key unset until live verify                    |
+| **Billing honesty when dark** ✅       | If `BILLING_ENABLED=false`, never imply live checkout                         | Billing screen + `/help#billing-faq` honest about dark checkout (shipped) |
+| **Status / beta limitations** ✅       | Sets expectations; reduces churn from “broken” that is “deferred”             | `/help#beta-limits` + `/beta` pointer (shipped)                           |
 
 ### P1 — first 30 days (activation + retention)
 
-| Doc                          | Job                                             | URL                                                                                       |
-| ---------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Methodology ✅               | Prove “impact” math; cite-able trust page       | `/methodology` pragmatic D139 slice (shipped; full whitepaper deferred)                   |
-| Disconnect / delete / export | Reduce fear of lock-in; GDPR/DPDP path          | `/help#disconnect-mailbox`, `#delete-account` (help exists; Settings deep links optional) |
-| Autopilot explained ✅       | Observe vs Active is easy to fear               | `/help#autopilot-modes` + Autopilot empty-states (shipped)                                |
-| Billing FAQ                  | Cancel, refund, plan change, Founding Pro       | `/help#pricing-tiers` + `/refunds` cross-links                                            |
-| Changelog ✅                 | Build-in-public credibility; “product is alive” | `/changelog` thin shell (shipped)                                                         |
-| In-app pointers ✅           | Empty states + “Why this recommendation?”       | Senders/Triage/Activity/Autopilot → `/help#…` (shipped)                                   |
+| Doc                             | Job                                             | URL                                                                       |
+| ------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| Methodology ✅                  | Prove “impact” math; cite-able trust page       | `/methodology` pragmatic D139 slice (shipped; full whitepaper deferred)   |
+| Disconnect / delete / export ✅ | Reduce fear of lock-in; GDPR/DPDP path          | Help + Settings Privacy deep links to `#mailboxes` / `#account` (shipped) |
+| Autopilot explained ✅          | Observe vs Active is easy to fear               | `/help#autopilot-modes` + Autopilot empty-states (shipped)                |
+| Billing FAQ ✅                  | Cancel, refund, plan change, Founding Pro       | `/help#billing-faq` + `/refunds` (shipped)                                |
+| Changelog ✅                    | Build-in-public credibility; “product is alive” | `/changelog` thin shell (shipped)                                         |
+| In-app pointers ✅              | Empty states + “Why this recommendation?”       | Senders/Triage/Activity/Autopilot → `/help#…` (shipped)                   |
 
 ### P2 — growth / SEO / AEO / GEO (D132)
 
 Ship in waves; do not block private beta.
 
-| Cluster     | Routes                                                                                                 | Notes                                                                 |
-| ----------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| Comparisons | `/vs/clean-email`, `/vs/sanebox`, `/vs/leave-me-alone`, `/vs/trimbox`, `/vs/gmail-filters`, `/compare` | Honest “choose them if…” callouts (D142–145)                          |
-| How-to SEO  | `/how-to/clean-gmail-by-sender`, bulk-delete, auto-archive, stop-promos, unsubscribe                   | Intent pages; link back to product ritual                             |
-| AEO answers | `/answers/is-it-safe-to-connect-gmail-app`, metadata-only, undo, best-way-2026, sender-vs-message      | Question H1 + answer in first 2 sentences + JSON-LD                   |
-| Demo        | `/inbox-simulator` (D133)                                                                              | No-signup trial of K/A/U/L/D — highest activation lever after privacy |
-| Blog shell  | `/blog`                                                                                                | Empty index OK at launch                                              |
+| Cluster        | Routes               | Notes                                    |
+| -------------- | -------------------- | ---------------------------------------- |
+| Comparisons ✅ | `/vs/*` + `/compare` | Shipped D142–D145                        |
+| How-to SEO ✅  | 5× `/how-to/*`       | Shipped + HowTo JSON-LD                  |
+| AEO answers ✅ | 5× `/answers/*`      | Shipped + FAQPage JSON-LD                |
+| Demo ✅        | `/inbox-simulator`   | Pragmatic D133 (localStorage, K/A/U/L/D) |
+| Blog shell ✅  | `/blog`              | Empty index pointing at Help/Methodology |
 
 ### In-product “docs” that matter more than a Help Center
 

@@ -221,14 +221,21 @@ export interface EventPayloads {
       | 'security'
       // 2026-07-09 P1 marketing pages (D139, D218).
       | 'methodology'
-      | 'changelog';
+      | 'changelog'
+      // 2026-07-09 D132 growth IA (compare / vs / how-to / answers / demo / blog).
+      | 'compare'
+      | 'vs'
+      | 'how_to'
+      | 'answers'
+      | 'inbox_simulator'
+      | 'blog';
     mailbox_id: string | null;
   };
 
   // — Marketing landing funnel (D134) —
   landing_cta_clicked: {
     /** Which CTA — `connect_gmail` starts OAuth; `open_app` is the authed shortcut. */
-    cta: 'connect_gmail' | 'open_app' | 'see_pricing';
+    cta: 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
     /** Where on the landing page the click happened. */
     placement: 'nav' | 'hero' | 'pricing_teaser' | 'final';
   };

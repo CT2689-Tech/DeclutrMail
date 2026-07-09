@@ -45,7 +45,10 @@ export function Footer() {
             <a href="/pricing">Pricing</a>
             <a href="/help">Help</a>
             <a href="/methodology">Methodology</a>
+            <a href="/compare">Compare</a>
+            <a href="/inbox-simulator">Demo</a>
             <a href="/changelog">Changelog</a>
+            <a href="/blog">Blog</a>
             <a href="/contact">Contact</a>
             <a href="/security">Security</a>
             <a href="/privacy">Privacy</a>

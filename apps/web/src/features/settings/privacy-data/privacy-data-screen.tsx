@@ -207,13 +207,18 @@ export function PrivacyDataView({
           <h3 style={cardTitleStyle}>Leave cleanly</h3>
           <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
             <li style={{ ...exitRowStyle, borderTop: 'none' }}>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={exitTitleStyle}>Disconnect a mailbox</div>
                 <div style={exitDetailStyle}>
-                  Revokes DeclutrMail's Gmail access and stops sync for that account. Use the
-                  account menu in the top bar.
+                  Revokes DeclutrMail&rsquo;s Gmail access and stops sync for that account. Use
+                  Settings → Mailboxes or the account menu in the top bar.
                 </div>
               </div>
+              <Link href="/settings#mailboxes" style={{ textDecoration: 'none' }}>
+                <Button tone="default" size="sm">
+                  Open Mailboxes
+                </Button>
+              </Link>
             </li>
             <li style={exitRowStyle}>
               <div style={{ flex: 1, minWidth: 0 }}>

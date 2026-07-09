@@ -77,13 +77,14 @@ const FAQS: ReadonlyArray<{
   {
     id: 'disconnect-mailbox',
     q: 'How do I disconnect a mailbox?',
-    a: 'Settings → Mailboxes → Disconnect. That revokes DeclutrMail’s Google access and stops all syncing and actions for that mailbox immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page.',
+    a: 'Open Settings (mailboxes section) or use the account menu in the top bar → Disconnect. That revokes DeclutrMail’s Google access and stops all syncing and actions for that mailbox immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page. Deep link when signed in: Settings → Mailboxes.',
+    link: { href: '/settings#mailboxes', label: 'Open Settings → Mailboxes' },
   },
   {
     id: 'delete-account',
     q: 'How do I delete my account?',
-    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window.',
-    link: { href: '/privacy', label: 'Data retention and deletion →' },
+    a: 'Settings → Privacy & Data → Delete account (or Settings → Account). Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window. You can also export your data from Privacy & Data before deleting.',
+    link: { href: '/settings#account', label: 'Open Settings → Account' },
   },
   {
     id: 'autopilot-modes',
@@ -95,6 +96,12 @@ const FAQS: ReadonlyArray<{
     q: 'What do the plans include?',
     a: 'Free shows you what’s noisy and lets you clean up sender by sender. Paid plans add bulk cleanup across senders and, on Pro, the 30-day undo window. The pricing page has the current comparison.',
     link: { href: '/pricing', label: 'Pricing →' },
+  },
+  {
+    id: 'billing-faq',
+    q: 'How do billing, cancel, and plan changes work?',
+    a: 'Paid plans are billed through Paddle (outside India) or Razorpay (India). Cancel anytime from Settings → Billing — you keep access until the end of the period you paid for, then the account moves to Free. Plan changes and checkout open on the Billing screen when billing is live; during open beta, checkout may still be dark and the screen will say so honestly. Every paid plan includes a 30-day money-back guarantee.',
+    link: { href: '/refunds', label: 'Refund policy →' },
   },
   {
     id: 'refunds',

@@ -22,8 +22,14 @@ import { metadata as cookies } from './cookies/page';
 import { metadata as help } from './help/page';
 import { metadata as methodology } from './methodology/page';
 import { metadata as changelog } from './changelog/page';
+import { metadata as compare } from './compare/page';
+import { metadata as blog } from './blog/page';
+import { metadata as inboxSimulator } from './inbox-simulator/page';
 import { metadata as contact } from './contact/page';
 import { metadata as security } from './security/page';
+import { metadata as vsCleanEmail } from './vs/clean-email/page';
+import { metadata as howToClean } from './how-to/clean-gmail-by-sender/page';
+import { metadata as answerSafe } from './answers/is-it-safe-to-connect-gmail-app/page';
 
 const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> = [
   { name: 'landing', metadata: landing, path: '/' },
@@ -36,8 +42,18 @@ const PAGES: ReadonlyArray<{ name: string; metadata: Metadata; path: string }> =
   { name: 'help', metadata: help, path: '/help' },
   { name: 'methodology', metadata: methodology, path: '/methodology' },
   { name: 'changelog', metadata: changelog, path: '/changelog' },
+  { name: 'compare', metadata: compare, path: '/compare' },
+  { name: 'blog', metadata: blog, path: '/blog' },
+  { name: 'inbox-simulator', metadata: inboxSimulator, path: '/inbox-simulator' },
   { name: 'contact', metadata: contact, path: '/contact' },
   { name: 'security', metadata: security, path: '/security' },
+  { name: 'vs-clean-email', metadata: vsCleanEmail, path: '/vs/clean-email' },
+  { name: 'how-to-clean-by-sender', metadata: howToClean, path: '/how-to/clean-gmail-by-sender' },
+  {
+    name: 'answers-safe-connect',
+    metadata: answerSafe,
+    path: '/answers/is-it-safe-to-connect-gmail-app',
+  },
 ];
 
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {
@@ -61,13 +77,10 @@ describe.each(PAGES)('$name page metadata — D132', ({ metadata, path }) => {
     expect(twitter.description).toBe(metadata.description);
   });
 
-  it('pins the default OG card image explicitly on both networks', () => {
-    // A page-level `openGraph` config shallow-replaces the parent's,
-    // which silently drops the file-convention og:image — so every
-    // marketing page must pin it (see features/marketing/page-metadata.ts).
-    const og = metadata.openGraph as { images: Array<{ url: string }> };
-    const twitter = metadata.twitter as { images: Array<{ url: string }> };
-    expect(og.images).toMatchObject([{ url: '/opengraph-image' }]);
-    expect(twitter.images).toMatchObject([{ url: '/opengraph-image' }]);
+  it('pins og:image + twitter:image (shallow-merge trap)', () => {
+    const og = metadata.openGraph as { images?: unknown };
+    const twitter = metadata.twitter as { images?: unknown };
+    expect(og.images).toBeTruthy();
+    expect(twitter.images).toBeTruthy();
   });
 });

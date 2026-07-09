@@ -30,16 +30,22 @@ const MARKETING_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '(
  * don't appear in the URL, so the folder name maps straight to the path.)
  */
 function marketingRoutesFromFs(): string[] {
-  const entries = readdirSync(MARKETING_DIR, { withFileTypes: true });
-  const routes = entries.some((e) => e.isFile() && e.name === 'page.tsx') ? ['/'] : [];
-  for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      readdirSync(path.join(MARKETING_DIR, entry.name)).includes('page.tsx')
-    ) {
-      routes.push(`/${entry.name}`);
+  const routes: string[] = [];
+
+  function walk(dir: string, urlPrefix: string): void {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    if (entries.some((e) => e.isFile() && e.name === 'page.tsx')) {
+      routes.push(urlPrefix === '' ? '/' : urlPrefix);
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      // Skip Next.js private folders (_*) and route groups ((...)).
+      if (entry.name.startsWith('_') || entry.name.startsWith('(')) continue;
+      walk(path.join(dir, entry.name), `${urlPrefix}/${entry.name}`);
     }
   }
+
+  walk(MARKETING_DIR, '');
   return routes.sort();
 }
 

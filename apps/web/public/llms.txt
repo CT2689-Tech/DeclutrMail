@@ -14,9 +14,36 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
 - [Methodology](https://declutrmail.com/methodology): how DeclutrMail works — sender-level cleanup, locked storage allowlist (Full bodies fetched: 0), volume/engagement recommendations without category ML, Keep/Archive/Unsubscribe/Later/Delete with preview then undo
 - [Changelog](https://declutrmail.com/changelog): reverse-chronological public record of what has shipped (open beta, marketing/legal pages, sender-level cleanup, privacy badge)
+- [Compare](https://declutrmail.com/compare): honest buyer’s guides vs Clean Email, Trimbox, SaneBox, Leave Me Alone, and Gmail Filters
+- [Inbox simulator](https://declutrmail.com/inbox-simulator): try Keep/Archive/Unsubscribe/Later/Delete on a mock inbox — no signup, nothing leaves the browser
+- [Blog](https://declutrmail.com/blog): index for future posts; until then see Help, Methodology, and Changelog
 - [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
+
+## Comparisons
+
+- [vs Clean Email](https://declutrmail.com/vs/clean-email)
+- [vs Trimbox](https://declutrmail.com/vs/trimbox)
+- [vs SaneBox](https://declutrmail.com/vs/sanebox)
+- [vs Leave Me Alone](https://declutrmail.com/vs/leave-me-alone)
+- [vs Gmail Filters](https://declutrmail.com/vs/gmail-filters)
+
+## How-to
+
+- [Clean Gmail by sender](https://declutrmail.com/how-to/clean-gmail-by-sender)
+- [Bulk delete emails from one sender](https://declutrmail.com/how-to/bulk-delete-emails-from-one-sender)
+- [Auto-archive future emails in Gmail](https://declutrmail.com/how-to/auto-archive-future-emails-in-gmail)
+- [Stop promotional emails in Gmail](https://declutrmail.com/how-to/stop-promotional-emails-gmail)
+- [Unsubscribe from emails in Gmail](https://declutrmail.com/how-to/unsubscribe-from-emails-gmail)
+
+## Answers
+
+- [Is it safe to connect Gmail?](https://declutrmail.com/answers/is-it-safe-to-connect-gmail-app)
+- [What is metadata-only email analysis?](https://declutrmail.com/answers/what-is-metadata-only-email-analysis)
+- [How undo works for Gmail cleanup](https://declutrmail.com/answers/how-undo-works-for-gmail-cleanup)
+- [Best way to clean Gmail in 2026](https://declutrmail.com/answers/best-way-to-clean-gmail-2026)
+- [Sender-level vs message-level cleanup](https://declutrmail.com/answers/sender-level-vs-message-level-cleanup)
 
 ## Legal
 
