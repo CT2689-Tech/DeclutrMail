@@ -26,10 +26,22 @@ PGDATA=/tmp/dmpg
 PSQL="$PGBIN/psql -h 127.0.0.1 -p 5432 -U postgres"
 LOG=/tmp/dmlogs; mkdir -p "$LOG"
 
+# Run a command as the postgres OS user. Prefer `runuser` (util-linux),
+# fall back to `sudo -u` — some cloud sandboxes allow sudo but not runuser
+# for non-root callers.
+as_postgres() {
+  if command -v runuser >/dev/null 2>&1 && runuser -u postgres -- true >/dev/null 2>&1; then
+    runuser -u postgres -- "$@"
+  else
+    sudo -u postgres -- "$@"
+  fi
+}
+
 up() {
+  mkdir -p "$LOG"
   # Postgres (as the `postgres` user — the root-restriction workaround).
   if ! $PSQL -tAc 'select 1' >/dev/null 2>&1; then
-    runuser -u postgres -- bash -c "rm -rf $PGDATA && mkdir -p $PGDATA && \
+    as_postgres bash -c "rm -rf $PGDATA && mkdir -p $PGDATA && \
       $PGBIN/initdb -D $PGDATA -U postgres --auth=trust >$LOG/initdb.log 2>&1 && \
       $PGBIN/pg_ctl -D $PGDATA -o '-p 5432 -k /tmp -c listen_addresses=127.0.0.1' -l $LOG/pg.log start"
     sleep 2
@@ -71,11 +83,16 @@ EOF
   # would otherwise carry it forever; exact match leaves any deliberate
   # future value alone). Runs before the API (re)start below picks it up.
   sed -i '/^COOKIE_DOMAIN=localhost$/d' .env.local
+  # Cookie jar + logs must be writable by the invoking user (PG init may
+  # have created $LOG as postgres when as_postgres wrote initdb.log).
+  chmod -R u+rwX "$LOG" 2>/dev/null || true
   # API (restart so a branch checkout's code is picked up).
+  # Prefer IPv4 — curl to localhost can hit ::1 while the Nest listen is IPv4-only
+  # in some sandboxes, which breaks the readiness probe + cookie jar host.
   lsof -ti:4000 2>/dev/null | xargs -r kill -9 2>/dev/null
   nohup pnpm --filter @declutrmail/api start >"$LOG/api.log" 2>&1 &
   for i in $(seq 1 60); do
-    curl -s -o /dev/null --max-time 2 http://localhost:4000/api/auth/me 2>/dev/null && { echo "API up on :4000"; return; }
+    curl -s -o /dev/null --max-time 2 http://127.0.0.1:4000/api/auth/me 2>/dev/null && { echo "API up on :4000"; return; }
     sleep 1
   done
   echo "API did not come up; see $LOG/api.log"; tail -20 "$LOG/api.log"
@@ -86,8 +103,10 @@ seed() {
 }
 
 login() {
+  # 127.0.0.1 (not localhost) so the cookie jar host matches IPv4 API binds
+  # and subsequent `curl -b` calls on 127.0.0.1 send the session cookies.
   curl -s -c "$LOG/cookies.txt" -o /dev/null -w "dev-login http=%{http_code}\n" \
-    "http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com"
+    "http://127.0.0.1:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com"
   echo "cookies → $LOG/cookies.txt (use: curl -b $LOG/cookies.txt ...)"
 }
 
