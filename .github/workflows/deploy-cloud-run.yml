@@ -210,15 +210,16 @@ jobs:
           # that split is a convention, not an IAM boundary — see
           # FOUNDER-FOLLOWUPS.md.
           #
-          # --min-instances=1 per D193: the API serves OAuth callbacks
-          # + Pub/Sub webhooks; a cold start on the OAuth redirect is a
-          # first-impression failure, so one warm instance from launch.
+          # --min-instances=0 is a DEV-PHASE override of D193 (which
+          # says 1 warm instance so the OAuth redirect never cold-starts).
+          # Zero users → a held-warm instance is ~$6/mo of idle burn.
+          # REVERT to --min-instances=1 at launch (D193).
           gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
-            --min-instances=1 \
+            --min-instances=0 \
             --max-instances=3 \
             --memory=512Mi \
             --cpu=1 \
@@ -250,8 +251,14 @@ jobs:
           # marked failed. `--no-cpu-throttling` keeps connections
           # warm at ~2x the request-only cost (~$30-50/mo). The API
           # service stays request-only because it IS HTTP-driven.
-          # Memory bumped to 2Gi + CPU 2 for the larger Drizzle/BullMQ
-          # working set during initial-sync's listMessageIds pages.
+          #
+          # DEV-PHASE sizing (2026-07-10, founder cost review): 1 CPU +
+          # 1Gi + max 1 instance. The June invoice's $72/mo was this
+          # service at 2 CPU / 2Gi always-allocated — sized for the
+          # launch-scale initial-sync working set with zero users to
+          # serve. Initial sync is resumable, so an OOM under 1Gi
+          # degrades to a retry, not data loss. REVERT to 2 CPU / 2Gi /
+          # max 3 when real users arrive.
           #
           # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
           # tuning (2026-06-10 Upstash command-volume audit): user-facing
@@ -263,9 +270,9 @@ jobs:
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
             --min-instances=1 \
-            --max-instances=3 \
-            --memory=2Gi \
-            --cpu=2 \
+            --max-instances=1 \
+            --memory=1Gi \
+            --cpu=1 \
             --cpu-boost \
             --no-cpu-throttling \
             --port=8080 \
