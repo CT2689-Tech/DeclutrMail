@@ -121,15 +121,31 @@ export class GmailWebhookController {
     let payload: GmailPubSubPayload;
     try {
       const decoded = Buffer.from(data, 'base64').toString('utf8');
-      const parsed = JSON.parse(decoded) as Partial<GmailPubSubPayload>;
+      const parsed = JSON.parse(decoded) as { emailAddress?: unknown; historyId?: unknown };
+      // Live Gmail pushes send historyId as a JSON number (uint64),
+      // not the quoted string the docs example shows. Accept both.
+      // A uint64 above 2^53 loses digits in JSON.parse, so for that
+      // range recover the exact decimal text from the raw JSON.
+      let historyId: string | undefined;
+      if (typeof parsed.historyId === 'string') {
+        historyId = parsed.historyId;
+      } else if (typeof parsed.historyId === 'number' && Number.isFinite(parsed.historyId)) {
+        historyId = Number.isSafeInteger(parsed.historyId)
+          ? String(parsed.historyId)
+          : /"historyId"\s*:\s*(\d+)\s*[,}]/.exec(decoded)?.[1];
+      }
       if (
         typeof parsed.emailAddress !== 'string' ||
-        typeof parsed.historyId !== 'string' ||
-        !/^\d+$/.test(parsed.historyId)
+        historyId === undefined ||
+        !/^\d+$/.test(historyId) ||
+        // `provider_sync_state.last_history_id` is a signed Postgres
+        // bigint — a cursor beyond 2^63-1 could never persist or
+        // compare, so treat it as malformed rather than 500 downstream.
+        BigInt(historyId) > 9223372036854775807n
       ) {
         throw new Error('Pub/Sub payload missing emailAddress or historyId.');
       }
-      payload = { emailAddress: parsed.emailAddress, historyId: parsed.historyId };
+      payload = { emailAddress: parsed.emailAddress, historyId };
     } catch {
       throw new HttpException(
         { error: { code: 'BAD_REQUEST', message: 'Malformed Pub/Sub data.' } },
