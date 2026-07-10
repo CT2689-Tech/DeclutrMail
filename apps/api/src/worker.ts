@@ -68,6 +68,7 @@ import {
   unsubExecutionJobOptions,
   ValidationError,
   enqueueWatchRenewalTick,
+  resolveExplainTimeoutMs,
   WATCH_RENEWAL_INTERVAL_MS,
   WATCH_RENEWAL_QUEUE,
   WatchRenewalWorker,
@@ -790,9 +791,18 @@ async function bootstrap(): Promise<void> {
    * cross-mailbox throughput — distinct mailboxes still run in
    * parallel under the outer cap.
    */
+  // Client timeout matches the scoreOne race budget so a timed-out
+  // call is ABORTED at the socket instead of orphaned to complete
+  // (and bill) in the background. maxRetries=1 keeps the SDK's silent
+  // retry backoff inside that budget — the default 2 retries could
+  // eat the whole window and register as a reasoning.timeout.
   const reasoningLlm = process.env.ANTHROPIC_API_KEY
     ? new AnthropicHaikuAdapter({
-        client: new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+        client: new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+          timeout: resolveExplainTimeoutMs(process.env.REASONING_TIMEOUT_MS),
+          maxRetries: 1,
+        }),
       })
     : undefined;
   // U14/U-WIRE: `outbox` publishes `triage.score_run_completed` after
