@@ -26,6 +26,58 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-10 — Give `declutrmail-worker` its own service account
+**Source:** session 2026-07-10 (Codex stop-gate review of `scripts/bootstrap-resend-secrets.sh`)
+**Why:** `declutrmail-api` and `declutrmail-worker` both run as
+`declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com`. The deploy workflow
+binds `RESEND_API_KEY` to the worker only and `RESEND_WEBHOOK_SECRET` to the API
+only — but that split is a convention, not a boundary: one shared identity can
+read both secrets, so the public, internet-facing API can read the mail-sending
+credential it never uses. The same exposure will apply to `PADDLE_*` /
+`RAZORPAY_*` the moment billing goes live.
+**Second, larger half:** `declutrmail-api@` also holds **project-level**
+`roles/secretmanager.secretAccessor`, so it can read *every* secret in the
+project. Splitting the service accounts alone therefore closes nothing — the
+API's SA would still inherit read on the worker's secrets. Both must be fixed,
+and the project-level grant is the load-bearing one.
+
+**Roles the shared SA holds today (project level):**
+`cloudkms.cryptoKeyEncrypterDecrypter`, `pubsub.publisher`, `pubsub.subscriber`,
+`secretmanager.secretAccessor`. KMS is *also* bound at the key level on
+`oauth-token-kek`, so the project-level KMS role is already redundant.
+
+**Roles a new `declutrmail-worker@` SA needs — verified from code:**
+- `roles/cloudkms.cryptoKeyEncrypterDecrypter` **on `oauth-token-kek` (key level, not project)** —
+  the worker decrypts Gmail OAuth tokens: `apps/api/src/worker.ts`,
+  `packages/workers/src/gmail-mutation-client.ts`. **Omitting this breaks every
+  mutation and sync job.**
+- `roles/secretmanager.secretAccessor` **per secret** (resource level) on the 7
+  secrets its deploy step binds, plus `resend-api-key-prod`.
+- Pub/Sub: `packages/workers/src/watch-renewal.worker.ts` re-registers
+  `users.watch`. Audit whether that path needs `pubsub.publisher` on the topic
+  or whether the grant is only for Gmail's own push SA — do **not** copy
+  `pubsub.subscriber` blindly; push delivery does not need it.
+
+**How (order matters — revoking first takes prod down):**
+1. `gcloud iam service-accounts create declutrmail-worker --project=declutrmail-ai-prod`
+2. Grant the worker SA: KMS decrypt on `oauth-token-kek` (key level), then
+   `gcloud secrets add-iam-policy-binding` for each secret it reads.
+3. Grant the api SA, at the RESOURCE level, each secret *it* reads (8 today +
+   `resend-webhook-secret-prod`). It currently relies entirely on the inherited
+   project role.
+4. Add `--service-account=declutrmail-worker@…` to the worker's `gcloud run deploy`
+   step in `.github/workflows/deploy-cloud-run.yml`. Deploy. Verify both services boot.
+5. Only now revoke the inherited grants:
+   `gcloud projects remove-iam-policy-binding declutrmail-ai-prod --member='serviceAccount:declutrmail-api@…' --role=roles/secretmanager.secretAccessor`
+   and the redundant project-level `cloudkms.cryptoKeyEncrypterDecrypter`.
+6. Remove surplus resource bindings (`gcloud secrets remove-iam-policy-binding`).
+**Verifies by:** `./scripts/launch-preflight.sh secrets` shows
+`project IAM: no service account has project-wide secret read`,
+`declutrmail-api and declutrmail-worker run as distinct service accounts`, and
+`resend-api-key-prod: readable only by the worker (sender)`. Then smoke a real
+sync + an Archive mutation — those are the paths KMS decrypt gates.
+**Status:** Open
+
 ### 2026-07-08 — Reconciler misses stale `syncing` sync rows (narrow §9 hardening)
 **Source:** session 2026-07-08 wave-2 platform-reliability investigation. Verified the sync subsystem is mature + Codex-hardened (6 iters): monotonic historyId guard (D229 step 8), 60s continuous reconciler for stuck `queued`, cursor-too-old recovery, `onTerminalFailure`→`failed`, BullMQ stalled-job recovery, 5-min incremental reconciliation.
 **Why:** ONE narrow residual gap — the continuous reconciler (`apps/api/src/worker.ts:942` `reconcileQueuedInitialSyncs`) sweeps `provider_sync_state.readiness_status='queued'` ONLY. A row stuck at `'syncing'` whose BullMQ job was Redis-EVICTED mid-active (no live job, DB never flipped) is not recovered — the onboarding progress bar wedges forever. Reachable only under Redis active-hash eviction mid-initial-sync (rare), but it's the stuck-sync class CLAUDE.md §8 warns about.
