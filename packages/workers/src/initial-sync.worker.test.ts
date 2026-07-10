@@ -58,6 +58,19 @@ async function freshDb(): Promise<InitialSyncDeps['db']> {
   return drizzle(pg, { schema }) as unknown as InitialSyncDeps['db'];
 }
 
+/**
+ * Mirror `SyncService.markQueued` — every INTENDED re-sync resets the
+ * gate off `ready` before re-scheduling. The 2026-07-10 duplicate
+ * guard no-ops any job whose row is still `ready`, so tests that
+ * deliberately run the pipeline twice must reset like prod does.
+ */
+async function resetToQueued(db: InitialSyncDeps['db'], mailboxAccountId: string): Promise<void> {
+  await db
+    .update(providerSyncState)
+    .set({ readinessStatus: 'queued', currentStage: 'queued', progressPct: 0 })
+    .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+}
+
 /** Seed a workspace + user + mailbox account; return the mailbox id. */
 async function seedMailbox(db: InitialSyncDeps['db']): Promise<string> {
   const [ws] = await db.insert(workspaces).values({ name: 'Test WS' }).returning({
@@ -284,6 +297,7 @@ describe('InitialSyncWorker', () => {
       CTX,
     );
 
+    await resetToQueued(db, mailboxAccountId);
     const second = new FakeGmailClient(makeMessages(45, 6));
     const result = await new InitialSyncWorker({
       db,
@@ -385,6 +399,7 @@ describe('InitialSyncWorker', () => {
     // fetch loop is a no-op; `buildSenderIndex` still re-aggregates
     // from the persisted `mail_messages` and the rebuild txn rewrites
     // every senders row.
+    await resetToQueued(db, mailboxAccountId);
     await worker.processJob({ mailboxAccountId }, CTX);
 
     const after = await db.select().from(senders);
@@ -625,6 +640,7 @@ describe('InitialSyncWorker', () => {
     expect((await db.select().from(mailMessages)).length).toBe(10);
 
     // Second sync sees only 7 of the 10 (3 deleted from Gmail).
+    await resetToQueued(db, mailboxAccountId);
     const second = new FakeGmailClient(makeMessages(10, 5).slice(0, 7));
     await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
       { mailboxAccountId },
@@ -711,6 +727,7 @@ describe('InitialSyncWorker', () => {
     // Second sync: only Jan survives. The sender survives but loses Feb.
     // The Feb row must be deleted; otherwise the sender's lifetime volume
     // would forever count messages Gmail no longer has.
+    await resetToQueued(db, mailboxAccountId);
     const second = new FakeGmailClient([month1('jan-1', 5), month1('jan-2', 10)]);
     await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
       { mailboxAccountId },
@@ -734,6 +751,7 @@ describe('InitialSyncWorker', () => {
     // Second sync: only the first 4 messages survive in Gmail → senders
     // 4 and 5 lose their only message → their senders + sender_timeseries
     // rows must be pruned.
+    await resetToQueued(db, mailboxAccountId);
     const second = new FakeGmailClient(makeMessages(6, 6).slice(0, 4));
     await new InitialSyncWorker({ db, gmailAccess: accessFor(second) }).processJob(
       { mailboxAccountId },
@@ -1016,6 +1034,58 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, mailboxAccountId));
     expect(payload.workspaceId).toBe(mb!.workspaceId);
+  });
+
+  it('duplicate job after ready is a no-op: no re-publish, no second email event, gate stays ready (2026-07-10 incident)', async () => {
+    // Prod 2026-07-10: a second OAuth callback force-rescheduled the
+    // completed job 90s after ready; the re-run re-published
+    // MAILBOX_SYNC_READY and the user got two "inbox ready" emails.
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      outbox: new OutboxPublisher(),
+    });
+    await worker.processJob({ mailboxAccountId }, CTX); // run A → ready
+
+    const result = await worker.processJob({ mailboxAccountId }, CTX); // run B (duplicate)
+
+    expect(result.alreadyReady).toBe(true);
+    expect(result.messagesSynced).toBe(0);
+    expect(result.gmailApiCalls).toBe(0); // guard fires before any Gmail call
+    const readyEvents = (await db.select().from(outboxEvents)).filter(
+      (e) => e.topic === TOPICS.MAILBOX_SYNC_READY,
+    );
+    expect(readyEvents).toHaveLength(1); // run A's only
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('ready');
+    expect(state?.currentStage).toBe('ready');
+    expect(state?.progressPct).toBe(100); // no visible regression to 5%/syncing
+  });
+
+  it('reconnect re-sync still runs: markQueued-style reset off ready re-enables the pipeline', async () => {
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      outbox: new OutboxPublisher(),
+    });
+    await worker.processJob({ mailboxAccountId }, CTX); // → ready
+
+    // What SyncService.markQueued does before any intended re-sync.
+    await resetToQueued(db, mailboxAccountId);
+
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+      outbox: new OutboxPublisher(),
+    }).processJob({ mailboxAccountId }, CTX);
+
+    expect(result.alreadyReady).toBeUndefined();
+    const readyEvents = (await db.select().from(outboxEvents)).filter(
+      (e) => e.topic === TOPICS.MAILBOX_SYNC_READY,
+    );
+    expect(readyEvents).toHaveLength(2); // legit re-sync re-publishes
+    const [state] = await db.select().from(providerSyncState);
+    expect(state?.readinessStatus).toBe('ready');
   });
 
   it('without an outbox dep the sync still reaches ready and publishes nothing', async () => {

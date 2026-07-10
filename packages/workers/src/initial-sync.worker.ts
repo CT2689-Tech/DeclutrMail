@@ -120,6 +120,16 @@ export interface InitialSyncResult {
    * after a cancel). See `deletion-pause.ts`.
    */
   deletionPaused?: boolean;
+  /**
+   * `true` when the mailbox was already `readiness_status='ready'` and
+   * the job was a designed no-op — a duplicate enqueue (double OAuth
+   * callback, force re-schedule of a completed job) must not regress
+   * the D224 gate to `syncing` nor re-publish MAILBOX_SYNC_READY
+   * (which re-sends the sync-complete email). A genuine reconnect
+   * re-sync writes `queued` via `markQueued` BEFORE scheduling, so it
+   * passes this guard.
+   */
+  alreadyReady?: boolean;
 }
 
 /** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
@@ -264,6 +274,31 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         durationMs: Date.now() - startedAt,
         stageTimings,
         deletionPaused: true,
+      };
+    }
+
+    // Duplicate-enqueue guard (2026-07-10 prod incident): a second
+    // OAuth callback force-rescheduled this mailbox's COMPLETED job
+    // 90s after ready, re-running the whole pipeline and re-publishing
+    // MAILBOX_SYNC_READY — which sent a second "inbox ready" email
+    // (per-event dedup). jobId=mailboxAccountId cannot dedup a force
+    // re-add of a completed job, so the guard lives here at the single
+    // choke point. `markQueued` resets the row off `ready` before any
+    // intended re-sync, so those still run.
+    const [syncRow] = await this.deps.db
+      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .limit(1);
+    if (syncRow?.readinessStatus === 'ready') {
+      initialSyncLog('skipped_already_ready', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+        alreadyReady: true,
       };
     }
 
