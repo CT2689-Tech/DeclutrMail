@@ -229,6 +229,41 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
     consoleWarn.mockRestore();
   });
 
+  it('preserves exact digits for a numeric historyId above 2^53 (uint64 range)', async () => {
+    const { controller, record, service } = makeController({
+      verify: {
+        ok: true,
+        claims: {
+          iss: 'https://accounts.google.com',
+          aud: 'aud',
+          email: 'sa@x',
+          email_verified: true,
+          exp: 9_999_999_999,
+          iat: 1,
+          sub: 's',
+        },
+      },
+    });
+    service.processVerifiedPush.mockResolvedValueOnce({
+      kind: 'duplicate_message_id',
+      messageId: 'pubsub-3',
+    });
+
+    // Raw JSON, not JSON.stringify — a JS number can't hold these
+    // digits, which is exactly the hazard being tested.
+    const raw = '{"emailAddress":"x@y.example","historyId":18446744073709551615}';
+    await controller.push('Bearer good', {
+      message: { messageId: 'pubsub-3', data: Buffer.from(raw).toString('base64') },
+    });
+
+    expect(service.processVerifiedPush).toHaveBeenCalledWith({
+      messageId: 'pubsub-3',
+      payload: { emailAddress: 'x@y.example', historyId: '18446744073709551615' },
+    });
+    expect(record).not.toHaveBeenCalled();
+    consoleWarn.mockRestore();
+  });
+
   it('still throws 401 when SecurityEventsService.record rejects (fire-and-forget)', async () => {
     const { controller, record } = makeController({
       verify: { ok: false, step: 2, reason: 'signature_invalid' },

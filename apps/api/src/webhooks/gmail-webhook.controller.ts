@@ -123,16 +123,20 @@ export class GmailWebhookController {
       const decoded = Buffer.from(data, 'base64').toString('utf8');
       const parsed = JSON.parse(decoded) as { emailAddress?: unknown; historyId?: unknown };
       // Live Gmail pushes send historyId as a JSON number (uint64),
-      // not the quoted string the docs example shows. Accept both;
-      // reject unsafe-integer numbers (precision already lost in
-      // JSON.parse, so the digits can't be trusted).
-      const historyId =
-        typeof parsed.historyId === 'number' && Number.isSafeInteger(parsed.historyId)
+      // not the quoted string the docs example shows. Accept both.
+      // A uint64 above 2^53 loses digits in JSON.parse, so for that
+      // range recover the exact decimal text from the raw JSON.
+      let historyId: string | undefined;
+      if (typeof parsed.historyId === 'string') {
+        historyId = parsed.historyId;
+      } else if (typeof parsed.historyId === 'number' && Number.isFinite(parsed.historyId)) {
+        historyId = Number.isSafeInteger(parsed.historyId)
           ? String(parsed.historyId)
-          : parsed.historyId;
+          : /"historyId"\s*:\s*(\d+)\s*[,}]/.exec(decoded)?.[1];
+      }
       if (
         typeof parsed.emailAddress !== 'string' ||
-        typeof historyId !== 'string' ||
+        historyId === undefined ||
         !/^\d+$/.test(historyId)
       ) {
         throw new Error('Pub/Sub payload missing emailAddress or historyId.');
