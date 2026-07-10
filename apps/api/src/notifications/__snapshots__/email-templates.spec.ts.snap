@@ -45,7 +45,8 @@ exports[`email templates > sync-complete renders counts-only plain text 1`] = `
 triage. The first pass usually takes a few minutes and clears
 the bulk of the noise.
 
-Start here: https://app.declutrmail.com/triage
+Jump back in: https://app.declutrmail.com/triage
+(Still in setup? That link drops you right back where you left off.)
 
 — DeclutrMail
 
