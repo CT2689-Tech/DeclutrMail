@@ -2848,6 +2848,18 @@ segments) and `users.preferences` (which are user-toggleable settings).
 sync. Falls back to the 3 lowest-read-rate non-Keep senders if engine
 confidence is uniformly low (small mailbox edge case).
 
+**[FOUNDER PATCH 2026-07-10 → contrast lineup]** First prod dogfood
+surfaced that "3 highest-confidence non-Keep" yields three near-identical
+rows (3× "Unsubscribe · 95%") — teaching one verb and zero judgment.
+Amended: the 3 slots are picked for CONTRAST — (1) highest-confidence
+`unsubscribe` (payoff), (2) an obvious KEEP — `keep` verdict or
+engagement/vip-protected, highest read-rate — (trust: the engine can
+tell senders apart), (3) highest-confidence `archive`/`later` (judgment).
+Empty slots backfill from the eligible pool by confidence; the
+uniformly-low-confidence fallback above is unchanged. The "non-Keep"
+clause no longer applies to slot 2. Implemented in
+`pickFirstTriageCandidates` (`apps/api/src/onboarding/onboarding.service.ts`).
+
 **UI:** uses the same row component as production Triage (D36 collapse/
 expand pattern), with K/A/U/S keyboard shortcuts.
 
