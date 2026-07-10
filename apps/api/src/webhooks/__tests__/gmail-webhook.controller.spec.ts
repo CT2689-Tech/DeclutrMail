@@ -229,7 +229,7 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
     consoleWarn.mockRestore();
   });
 
-  it('preserves exact digits for a numeric historyId above 2^53 (uint64 range)', async () => {
+  it('preserves exact digits for a numeric historyId above 2^53 (within bigint range)', async () => {
     const { controller, record, service } = makeController({
       verify: {
         ok: true,
@@ -250,17 +250,45 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
     });
 
     // Raw JSON, not JSON.stringify — a JS number can't hold these
-    // digits, which is exactly the hazard being tested.
-    const raw = '{"emailAddress":"x@y.example","historyId":18446744073709551615}';
+    // digits exactly, which is the hazard being tested (2^53 < n < 2^63).
+    const raw = '{"emailAddress":"x@y.example","historyId":9007199254740993}';
     await controller.push('Bearer good', {
       message: { messageId: 'pubsub-3', data: Buffer.from(raw).toString('base64') },
     });
 
     expect(service.processVerifiedPush).toHaveBeenCalledWith({
       messageId: 'pubsub-3',
-      payload: { emailAddress: 'x@y.example', historyId: '18446744073709551615' },
+      payload: { emailAddress: 'x@y.example', historyId: '9007199254740993' },
     });
     expect(record).not.toHaveBeenCalled();
+    consoleWarn.mockRestore();
+  });
+
+  it('rejects a historyId beyond signed-bigint range (could never persist)', async () => {
+    const { controller, service } = makeController({
+      verify: {
+        ok: true,
+        claims: {
+          iss: 'https://accounts.google.com',
+          aud: 'aud',
+          email: 'sa@x',
+          email_verified: true,
+          exp: 9_999_999_999,
+          iat: 1,
+          sub: 's',
+        },
+      },
+    });
+
+    // uint64 max — above Postgres signed bigint (2^63-1); the cursor
+    // column could not store it, so the controller must 400, not 500.
+    const raw = '{"emailAddress":"x@y.example","historyId":18446744073709551615}';
+    await expect(
+      controller.push('Bearer good', {
+        message: { messageId: 'pubsub-4', data: Buffer.from(raw).toString('base64') },
+      }),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(service.processVerifiedPush).not.toHaveBeenCalled();
     consoleWarn.mockRestore();
   });
 

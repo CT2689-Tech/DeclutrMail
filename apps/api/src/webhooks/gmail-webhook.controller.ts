@@ -137,7 +137,11 @@ export class GmailWebhookController {
       if (
         typeof parsed.emailAddress !== 'string' ||
         historyId === undefined ||
-        !/^\d+$/.test(historyId)
+        !/^\d+$/.test(historyId) ||
+        // `provider_sync_state.last_history_id` is a signed Postgres
+        // bigint — a cursor beyond 2^63-1 could never persist or
+        // compare, so treat it as malformed rather than 500 downstream.
+        BigInt(historyId) > 9223372036854775807n
       ) {
         throw new Error('Pub/Sub payload missing emailAddress or historyId.');
       }
