@@ -566,6 +566,13 @@ function MetricsHeader({
             {stats.needsAttention} need attention
           </span>
         )}
+        {(stats.noisePreventedPerMonth ?? 0) > 0 && (
+          /* D33 payoff — real projection from the window's decisions,
+             computed server-side (activity.read-service). */
+          <span style={{ color: color.primary, fontWeight: 600 }}>
+            ~{stats.noisePreventedPerMonth!.toLocaleString()}/mo of noise prevented
+          </span>
+        )}
       </header>
       <div
         style={{

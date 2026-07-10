@@ -18,7 +18,20 @@ const { color, font } = tokens;
  * bar on arrival is noise, and the queue legend already carries the
  * count of waiting decisions.
  */
-export function SessionProgress({ decided, remaining }: { decided: number; remaining: number }) {
+export function SessionProgress({
+  decided,
+  remaining,
+  noisePreventedPerMonth = 0,
+}: {
+  decided: number;
+  remaining: number;
+  /**
+   * Summed monthly volume of this session's confirmed Archive/Later/
+   * Unsubscribe decisions (D33 — real numbers, no gamification). 0
+   * hides the line: a session of Keeps prevented nothing, say nothing.
+   */
+  noisePreventedPerMonth?: number;
+}) {
   if (decided === 0) return null;
   const total = decided + remaining;
   const pct = total === 0 ? 100 : Math.round((decided / total) * 100);
@@ -45,6 +58,9 @@ export function SessionProgress({ decided, remaining }: { decided: number; remai
         }}
       >
         {decided} decided · {remaining === 0 ? 'all done' : `${remaining} to go`}
+        {noisePreventedPerMonth > 0 && (
+          <> · ~{noisePreventedPerMonth.toLocaleString()}/mo prevented</>
+        )}
       </span>
       <div
         role="progressbar"

@@ -98,6 +98,12 @@ export interface ActivityStatsWire {
   followupsDismissed: number;
   /** D59 — failed-action surface; 0 until the action_jobs join lands. */
   needsAttention: number;
+  /**
+   * D33 payoff — estimated emails/month of future noise prevented by
+   * the window's archive/unsubscribe/later decisions. `null` when the
+   * window has no deflecting decisions.
+   */
+  noisePreventedPerMonth: number | null;
 }
 
 export interface ActivityListMetaWire {

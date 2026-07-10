@@ -41,6 +41,7 @@ const STATS_BASE: ActivityStatsWire = {
   deleted: 0,
   followupsDismissed: 0,
   needsAttention: 0,
+  noisePreventedPerMonth: null,
 };
 
 function row(partial: Partial<ActivityRowWire>): ActivityRowWire {

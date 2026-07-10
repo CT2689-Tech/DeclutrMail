@@ -6,6 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   activityLog,
   automationRules,
+  mailMessages,
   mailboxAccounts,
   schema,
   senders,
@@ -507,7 +508,59 @@ describe('ActivityReadService', () => {
         later: 1,
         followupsDismissed: 1,
         needsAttention: 0,
+        // The seeded deflecting rows carry no sender_key → zero
+        // deflected senders → null (nothing to project).
+        noisePreventedPerMonth: null,
       });
+    });
+
+    it('noisePreventedPerMonth — deflected senders project last-90d volume to per-month; null with no deflections (D33)', async () => {
+      const { mailboxAccountId } = await seedMailbox(db, 'noise@x.test');
+      const senderKey = 'n'.repeat(64);
+      await seedSender(db, mailboxAccountId, senderKey, 'noisy@brand.test', 'Noisy Brand');
+      // 9 inbound messages in the last 90d → round(9/3) = 3/mo.
+      const now = Date.now();
+      await db.insert(mailMessages).values(
+        Array.from({ length: 9 }, (_, i) => ({
+          mailboxAccountId,
+          providerMessageId: `noise-${i}`,
+          providerThreadId: `t-noise-${i}`,
+          senderKey,
+          subject: '',
+          snippet: '',
+          internalDate: new Date(now - (i + 1) * 86_400_000),
+          labelIds: ['INBOX'],
+          isUnread: true,
+        })),
+      );
+
+      // No deflecting decisions yet → null (nothing to project).
+      const before = await svc.listActivity({
+        mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: Date.now(),
+      });
+      expect(before.stats.noisePreventedPerMonth).toBeNull();
+
+      await seedActivity(db, {
+        mailboxAccountId,
+        occurredAt: new Date(),
+        source: 'triage',
+        action: 'unsubscribe',
+        senderKey,
+      });
+      const after = await svc.listActivity({
+        mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: Date.now(),
+      });
+      expect(after.stats.noisePreventedPerMonth).toBe(3);
     });
 
     it('D56 — unsubscribe_confirmed is a distinct feed row that does NOT double-count the intent', async () => {
