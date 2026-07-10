@@ -506,6 +506,99 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.generatedBy).toBe('llm_haiku');
   });
 
+  it('reuses unexpired same-verdict LLM reasoning without calling explain() (2026-07-10 re-bill fix)', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'reuse@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    let calls = 0;
+    const countingLlm: ReasoningLlmPort = {
+      explain: async () => {
+        calls += 1;
+        return `LLM prose #${calls}`;
+      },
+    };
+    // Realistic clock: expires_at = produced_at + 7d TTL, and the reuse
+    // check compares it against the injected `now` — so producedAtMs
+    // must sit near `now`, not at the 1970 epoch.
+    const T0 = Date.parse('2026-05-22T00:00:00Z');
+    const worker = new ScoreWorker({
+      db,
+      llm: countingLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+
+    // Run 1 — fresh call.
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(1);
+
+    // Run 2 (re-score, same signals → same verdict, row unexpired) —
+    // the reasoning is reused, no second bill; the row still refreshes
+    // (produced_at advances via the monotonic upsert).
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(1);
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).toBe('LLM prose #1');
+    expect(row?.generatedBy).toBe('llm_haiku');
+    expect(Number(row?.producedAt)).toBe(T0 + 60_000);
+  });
+
+  it('does NOT reuse a template row — the next sweep retries the LLM', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'retry@test.test', {
+      displayName: 'Retry Sender',
+      gmailCategory: 'primary',
+    });
+
+    // Run 1: LLM fails → template row persisted.
+    let fail = true;
+    let calls = 0;
+    const flakyLlm: ReasoningLlmPort = {
+      explain: async () => {
+        calls += 1;
+        return fail ? null : 'LLM prose, second attempt.';
+      },
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm: flakyLlm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    // Run 2: template rows are never reused — the timed-out/failed tail
+    // gets its real reasoning on the next trigger.
+    fail = false;
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(2);
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).toBe('LLM prose, second attempt.');
+    expect(row?.generatedBy).toBe('llm_haiku');
+  });
+
   it('falls back to template when LLM port returns null', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
