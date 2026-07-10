@@ -121,15 +121,23 @@ export class GmailWebhookController {
     let payload: GmailPubSubPayload;
     try {
       const decoded = Buffer.from(data, 'base64').toString('utf8');
-      const parsed = JSON.parse(decoded) as Partial<GmailPubSubPayload>;
+      const parsed = JSON.parse(decoded) as { emailAddress?: unknown; historyId?: unknown };
+      // Live Gmail pushes send historyId as a JSON number (uint64),
+      // not the quoted string the docs example shows. Accept both;
+      // reject unsafe-integer numbers (precision already lost in
+      // JSON.parse, so the digits can't be trusted).
+      const historyId =
+        typeof parsed.historyId === 'number' && Number.isSafeInteger(parsed.historyId)
+          ? String(parsed.historyId)
+          : parsed.historyId;
       if (
         typeof parsed.emailAddress !== 'string' ||
-        typeof parsed.historyId !== 'string' ||
-        !/^\d+$/.test(parsed.historyId)
+        typeof historyId !== 'string' ||
+        !/^\d+$/.test(historyId)
       ) {
         throw new Error('Pub/Sub payload missing emailAddress or historyId.');
       }
-      payload = { emailAddress: parsed.emailAddress, historyId: parsed.historyId };
+      payload = { emailAddress: parsed.emailAddress, historyId };
     } catch {
       throw new HttpException(
         { error: { code: 'BAD_REQUEST', message: 'Malformed Pub/Sub data.' } },
