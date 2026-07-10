@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 import { ApiError } from '@/lib/api/client';
@@ -83,6 +83,11 @@ export function SnoozedScreen() {
 
   const grouped = useMemo(() => groupByWakeTime(rows, new Date()), [rows]);
 
+  // Below `sm` (D60 mobile treatment) the 4-track row grid overflows a
+  // phone viewport — resolve the breakpoint once and thread it to the
+  // rows so each restacks to a single column.
+  const isMobile = useIsAtMost('sm');
+
   if (query.isLoading) {
     return <LoadingState />;
   }
@@ -127,6 +132,7 @@ export function SnoozedScreen() {
               rows={grouped[bucket]}
               wakingIds={wakingIds}
               onWakeStarted={(senderId) => setWakingIds((prev) => new Set([...prev, senderId]))}
+              isMobile={isMobile}
             />
           ) : null,
         )
@@ -142,11 +148,13 @@ function BucketGroup({
   rows,
   wakingIds,
   onWakeStarted,
+  isMobile,
 }: {
   bucket: WakeBucket;
   rows: SnoozedSenderRow[];
   wakingIds: ReadonlySet<string>;
   onWakeStarted: (senderId: string) => void;
+  isMobile: boolean;
 }) {
   const label = WAKE_BUCKET_LABELS[bucket];
   return (
@@ -196,6 +204,7 @@ function BucketGroup({
             row={row}
             waking={wakingIds.has(row.senderId)}
             onWakeStarted={onWakeStarted}
+            isMobile={isMobile}
           />
         ))}
       </ul>
@@ -211,10 +220,13 @@ export function SnoozedRow({
   row,
   waking,
   onWakeStarted,
+  isMobile = false,
 }: {
   row: SnoozedSenderRow;
   waking: boolean;
   onWakeStarted: (senderId: string) => void;
+  /** Below `sm` the row restacks to a single column (D60). */
+  isMobile?: boolean;
 }) {
   const [panel, setPanel] = useState<RowPanel>('closed');
   const wake = useWakeNow();
@@ -253,9 +265,13 @@ export function SnoozedRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(180px, 1.4fr) auto minmax(140px, 1fr) auto',
-          alignItems: 'center',
-          gap: 14,
+          // Mobile (D60): identity · count · wake-status · actions each
+          // take a full-width row so nothing clips on a phone.
+          gridTemplateColumns: isMobile
+            ? '1fr'
+            : 'minmax(180px, 1.4fr) auto minmax(140px, 1fr) auto',
+          alignItems: isMobile ? 'start' : 'center',
+          gap: isMobile ? 10 : 14,
           padding: '12px 14px',
         }}
       >

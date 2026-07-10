@@ -1,10 +1,26 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useIsFetching } from '@tanstack/react-query';
 
-import { Avatar, Button, EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  ScreenIntro,
+  tokens,
+  useFocusTrap,
+  useIsAtMost,
+} from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type {
@@ -59,6 +75,12 @@ export function ActivityScreen() {
 
   const filters = readFiltersFromUrl(params);
   const groupMode = readGroupMode(params.get('group'));
+
+  // Layout breakpoint resolved ONCE at the screen root and threaded down
+  // — the flat list mounts one row per activity entry (100s under
+  // infinite scroll), so a per-row `useIsAtMost` would attach 100s of
+  // matchMedia listeners. Below `sm` the grid rows restack into cards.
+  const isMobile = useIsAtMost('sm');
 
   // Cross-feature signal: any action-status poll currently in flight
   // (Senders or Triage). When true, /activity refetches every 1.5s so
@@ -180,14 +202,23 @@ export function ActivityScreen() {
   }, []);
 
   if (query.isLoading) return <LoadingState />;
-  if (query.isError && !query.data) {
-    // Full-screen error only when NOTHING loaded. A failed
-    // fetchNextPage keeps the loaded pages on screen and renders an
-    // inline retry in <LoadMoreRegion> instead (D211 partial-error —
-    // some rows loaded, some did not). A failed background refetch
-    // (1.5s in-flight poll / window focus) also retains the rows but
-    // must NOT trip the inline retry — that amber state is gated on
-    // `isFetchNextPageError` below, not the query-wide `isError`.
+  // A 4xx means the CURRENT filters are invalid (e.g. dateFrom > dateTo).
+  // With `keepPreviousData` the previous filter's rows are retained as
+  // placeholder, so `!query.data` no longer catches this — showing stale
+  // rows under an invalid query would be misleading. Gate the full-screen
+  // error on a cold failure (no data) OR any client 4xx on the active
+  // filters. Transient 5xx (a failed 1.5s poll / focus refetch) keeps the
+  // rows and never trips this — it's not a 4xx and data is present.
+  const clientError =
+    query.error instanceof ApiError && query.error.status >= 400 && query.error.status < 500;
+  // Exclude a next-page 4xx — that keeps its loaded rows + the inline
+  // amber retry (D211), it must not escalate to a full-screen error.
+  const invalidActiveFilters = clientError && !query.isFetchNextPageError;
+  if (query.isError && (!query.data || invalidActiveFilters)) {
+    // Full-screen error only when NOTHING loaded (cold) or the active
+    // filters are invalid (4xx). A failed fetchNextPage keeps the loaded
+    // pages on screen and renders an inline retry in <LoadMoreRegion>
+    // instead (D211 partial-error — some rows loaded, some did not).
     return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
@@ -199,6 +230,14 @@ export function ActivityScreen() {
   const meta = pages[0]?.meta;
   const stats = meta?.stats;
   const allTimeStats = meta?.allTimeStats;
+
+  // `keepPreviousData` keeps the PRIOR filter's rows on screen while the
+  // next filter loads. Those rows don't match the active URL filter, so
+  // the results list is dimmed + made non-interactive during the
+  // transition — a user must not undo / select a stale row that belongs
+  // to a filter they've already navigated away from. Restores the
+  // interaction guard the full-screen <LoadingState/> used to provide.
+  const showingStaleRows = query.isPlaceholderData;
 
   return (
     <div
@@ -229,6 +268,7 @@ export function ActivityScreen() {
         isWindowAllTime={
           (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
         }
+        isMobile={isMobile}
       />
 
       <FilterToolbar
@@ -247,6 +287,7 @@ export function ActivityScreen() {
         onGroupMode={setGroupMode}
         rows={rows}
         filters={filters}
+        isMobile={isMobile}
       />
 
       <BulkActionBar
@@ -263,45 +304,56 @@ export function ActivityScreen() {
         }}
       />
 
-      {rows.length === 0 ? (
-        <EmptyState
-          title="No activity in this window."
-          description={
-            <>
-              Try widening the time range, clearing the verb / sender filter, or switching the
-              source — the activity log is append-only, so nothing has been removed.
-            </>
-          }
-        />
-      ) : groupMode === 'sender' ? (
-        <GroupedList
-          rows={rows}
-          selectedIds={selectedIds}
-          onToggle={toggleRow}
-          failedTokens={failedTokens}
-        />
-      ) : (
-        <ul
-          style={{
-            listStyle: 'none',
-            margin: 0,
-            padding: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
-          {rows.map((row) => (
-            <ActivityRow
-              key={row.id}
-              row={row}
-              isSelected={selectedIds.has(row.id)}
-              onToggleSelect={() => toggleRow(row.id)}
-              failedTokens={failedTokens}
-            />
-          ))}
-        </ul>
-      )}
+      <div
+        aria-busy={showingStaleRows}
+        style={{
+          opacity: showingStaleRows ? 0.55 : 1,
+          pointerEvents: showingStaleRows ? 'none' : undefined,
+          transition: 'opacity 120ms ease',
+        }}
+      >
+        {rows.length === 0 ? (
+          <EmptyState
+            title="No activity in this window."
+            description={
+              <>
+                Try widening the time range, clearing the verb / sender filter, or switching the
+                source — the activity log is append-only, so nothing has been removed.
+              </>
+            }
+          />
+        ) : groupMode === 'sender' ? (
+          <GroupedList
+            rows={rows}
+            selectedIds={selectedIds}
+            onToggle={toggleRow}
+            failedTokens={failedTokens}
+            isMobile={isMobile}
+          />
+        ) : (
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            {rows.map((row) => (
+              <ActivityRow
+                key={row.id}
+                row={row}
+                isSelected={selectedIds.has(row.id)}
+                onToggleSelect={() => toggleRow(row.id)}
+                failedTokens={failedTokens}
+                isMobile={isMobile}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
 
       {rows.length > 0 && (
         <LoadMoreRegion
@@ -451,11 +503,13 @@ function MetricsHeader({
   stats,
   allTimeStats,
   isWindowAllTime,
+  isMobile,
 }: {
   windowLabel: string;
   stats: ActivityStatsWire | null;
   allTimeStats: ActivityStatsWire | null;
   isWindowAllTime: boolean;
+  isMobile: boolean;
 }) {
   if (!stats) return null;
   const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
@@ -516,8 +570,12 @@ function MetricsHeader({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-          gap: 0,
+          // Mobile: 3 tiles per row (Archived·Deleted·Unsub / Kept·Later)
+          // — 5 across is unreadable under ~375px. The per-tile hairline
+          // separators are desktop-only (they'd render mid-row on a
+          // wrapped grid); mobile leans on grid gap instead.
+          gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))',
+          gap: isMobile ? '12px 8px' : 0,
           borderTop: `1px solid ${color.lineSoft}`,
           paddingTop: 12,
         }}
@@ -534,9 +592,10 @@ function MetricsHeader({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 2,
-                paddingLeft: idx === 0 ? 0 : 16,
-                paddingRight: idx === tiles.length - 1 ? 0 : 16,
-                borderRight: idx === tiles.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
+                paddingLeft: isMobile || idx === 0 ? 0 : 16,
+                paddingRight: isMobile || idx === tiles.length - 1 ? 0 : 16,
+                borderRight:
+                  isMobile || idx === tiles.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
                 minWidth: 0,
               }}
             >
@@ -554,7 +613,7 @@ function MetricsHeader({
               <span
                 style={{
                   fontFamily: font.display,
-                  fontSize: 30,
+                  fontSize: isMobile ? 24 : 30,
                   lineHeight: 1.05,
                   fontWeight: 600,
                   letterSpacing: '-0.02em',
@@ -630,33 +689,7 @@ const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
   { value: 'all', label: 'All' },
 ];
 
-/**
- * Single composed filter toolbar — replaces 4 stacked chip rows.
- *
- *   Band 1 (filter):  SOURCE  │  VERB
- *   Band 2 (tools):   RANGE   │  SEARCH                  GROUP   EXPORT
- *
- * Vertical `Divider` carries the "these chips belong to one filter
- * group" signal — replaces the small-caps eyebrow labels that
- * previously cluttered the layout.
- */
-function FilterToolbar({
-  source,
-  onSource,
-  verbs,
-  onVerbs,
-  window,
-  dateFrom,
-  dateTo,
-  onWindow,
-  onRange,
-  senderQuery,
-  onSenderQuery,
-  groupMode,
-  onGroupMode,
-  rows,
-  filters,
-}: {
+interface FilterToolbarProps {
   source: ActivitySourceFilterWire;
   onSource: (next: ActivitySourceFilterWire) => void;
   verbs: readonly ActivityVerbFilterWire[];
@@ -672,15 +705,121 @@ function FilterToolbar({
   onGroupMode: (next: GroupMode) => void;
   rows: readonly ActivityRowWire[];
   filters: ActivityFilters;
-}) {
-  const verbSet = useMemo(() => new Set(verbs), [verbs]);
-  const toggleVerb = (verb: ActivityVerbFilterWire) => {
-    const next = new Set(verbSet);
-    if (next.has(verb)) next.delete(verb);
-    else next.add(verb);
-    onVerbs([...next]);
-  };
-  const isCustomRange = dateFrom !== null || dateTo !== null;
+  isMobile: boolean;
+}
+
+/** Count of filters set away from their defaults — surfaced on the
+ *  mobile "Filters" trigger so a collapsed drawer still signals that a
+ *  slice is active (source + each verb + non-default window + custom
+ *  range + sender search). */
+function activeFilterCount(p: FilterToolbarProps): number {
+  let n = 0;
+  if (p.source !== 'all') n += 1;
+  n += p.verbs.length;
+  const isCustomRange = p.dateFrom !== null || p.dateTo !== null;
+  if (isCustomRange) n += 1;
+  else if (p.window !== '30d') n += 1;
+  if (p.senderQuery.trim().length > 0) n += 1;
+  return n;
+}
+
+/**
+ * Filter surface — composes SOURCE·VERB and RANGE·SEARCH bands.
+ *
+ * Desktop (≥ sm): the two bands render inline inside a bordered card
+ * (D56 + B8-B14), Group + Export in the band-2 right cluster.
+ *
+ * Mobile (< sm, D60): the bands can't fit the inline layout, so the card
+ * collapses to a compact trigger row — a "Filters (n)" button that opens
+ * a bottom-sheet drawer holding the same bands, plus Group + Export kept
+ * on the bar for one-tap access.
+ */
+function FilterToolbar(props: FilterToolbarProps) {
+  const { groupMode, onGroupMode, rows, filters, isMobile } = props;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Close the drawer whenever we cross back to the desktop breakpoint so
+  // it can't linger as an orphaned modal after a rotate / resize.
+  useEffect(() => {
+    if (!isMobile) setDrawerOpen(false);
+  }, [isMobile]);
+
+  const groupChip = (
+    <Chip
+      label={groupMode === 'sender' ? 'Grouped' : 'Group'}
+      isActive={groupMode === 'sender'}
+      onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
+      tone="muted"
+      compact
+    />
+  );
+
+  if (isMobile) {
+    const count = activeFilterCount(props);
+    return (
+      <>
+        <div
+          role="region"
+          aria-label="Filters"
+          style={{
+            border: `1px solid ${color.line}`,
+            borderRadius: 12,
+            background: color.card,
+            padding: '8px 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={drawerOpen}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 14px',
+              fontSize: 12.5,
+              fontFamily: font.sans,
+              fontWeight: 600,
+              border: `1px solid ${count > 0 ? color.primary : color.lineSoft}`,
+              background: count > 0 ? color.primarySoft : 'transparent',
+              color: count > 0 ? color.primary : color.fg,
+              borderRadius: 999,
+              cursor: 'pointer',
+            }}
+          >
+            Filters
+            {count > 0 && (
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 11,
+                  fontWeight: 600,
+                  minWidth: 18,
+                  textAlign: 'center',
+                  padding: '0 5px',
+                  borderRadius: 999,
+                  background: color.primary,
+                  color: color.fgInverse,
+                }}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            {groupChip}
+            <ExportCsvButton rows={rows} filters={filters} />
+          </div>
+        </div>
+        <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} {...props} />
+      </>
+    );
+  }
+
   return (
     <div
       role="region"
@@ -695,6 +834,49 @@ function FilterToolbar({
         gap: 10,
       }}
     >
+      <FilterBands
+        {...props}
+        trailing={
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            {groupChip}
+            <ExportCsvButton rows={rows} filters={filters} />
+          </div>
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * The two filter bands (SOURCE·VERB, then RANGE·SEARCH), shared verbatim
+ * between the desktop inline card and the mobile drawer. `trailing`
+ * injects the Group + Export cluster into band 2 on desktop; the mobile
+ * drawer omits it (those live on the trigger bar).
+ */
+function FilterBands({
+  source,
+  onSource,
+  verbs,
+  onVerbs,
+  window,
+  dateFrom,
+  dateTo,
+  onWindow,
+  onRange,
+  senderQuery,
+  onSenderQuery,
+  trailing,
+}: FilterToolbarProps & { trailing?: ReactNode }) {
+  const verbSet = useMemo(() => new Set(verbs), [verbs]);
+  const toggleVerb = (verb: ActivityVerbFilterWire) => {
+    const next = new Set(verbSet);
+    if (next.has(verb)) next.delete(verb);
+    else next.add(verb);
+    onVerbs([...next]);
+  };
+  const isCustomRange = dateFrom !== null || dateTo !== null;
+  return (
+    <>
       {/* Band 1 — SOURCE │ VERB */}
       <div
         role="group"
@@ -790,18 +972,129 @@ function FilterToolbar({
         )}
         <Divider />
         <SenderSearchInput value={senderQuery} onChange={onSenderQuery} />
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-          <Chip
-            label={groupMode === 'sender' ? 'Grouped' : 'Group'}
-            isActive={groupMode === 'sender'}
-            onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
-            tone="muted"
-            compact
-          />
-          <ExportCsvButton rows={rows} filters={filters} />
-        </div>
+        {trailing}
       </div>
-    </div>
+    </>
+  );
+}
+
+/**
+ * D60 bottom-sheet filter drawer (mobile only). Slides up from the
+ * bottom edge, holds the full FilterBands, and dismisses on backdrop
+ * tap, Escape, or the Done button. Focus is trapped while open —
+ * mirrors the triage action-sheet modal contract.
+ */
+function FilterDrawer({
+  open,
+  onClose,
+  ...bands
+}: FilterToolbarProps & { open: boolean; onClose: () => void }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(14,20,19,0.45)',
+          backdropFilter: 'blur(3px)',
+          zIndex: 150,
+        }}
+      />
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Activity filters"
+        style={{
+          position: 'fixed',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          maxHeight: '82vh',
+          overflow: 'auto',
+          background: color.card,
+          borderTopLeftRadius: 18,
+          borderTopRightRadius: 18,
+          borderTop: `1px solid ${color.border}`,
+          boxShadow: '0 -18px 50px rgba(14,20,19,0.30)',
+          zIndex: 151,
+          fontFamily: font.sans,
+          padding: '10px 16px 20px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+        }}
+      >
+        {/* Grab handle */}
+        <div
+          aria-hidden="true"
+          style={{
+            width: 36,
+            height: 4,
+            borderRadius: 999,
+            background: color.line,
+            margin: '2px auto 4px',
+          }}
+        />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10.5,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+            }}
+          >
+            Filters
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 12,
+              cursor: 'pointer',
+              padding: 4,
+            }}
+            aria-label="Close filters"
+          >
+            ✕
+          </button>
+        </div>
+        <FilterBands {...bands} />
+        <Button tone="primary" onClick={onClose}>
+          Done
+        </Button>
+      </div>
+    </>
   );
 }
 
@@ -1215,11 +1508,13 @@ function GroupedList({
   selectedIds,
   onToggle,
   failedTokens,
+  isMobile,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   failedTokens?: Set<string> | undefined;
+  isMobile: boolean;
 }) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1261,9 +1556,14 @@ function GroupedList({
               aria-expanded={isOpen}
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'auto minmax(180px, 1.2fr) auto auto',
+                // Mobile drops the dedicated count column (it overflowed
+                // 375px against the 180px name min); the count moves under
+                // the name instead. Desktop keeps the 4-column layout.
+                gridTemplateColumns: isMobile
+                  ? 'auto minmax(0, 1fr) auto'
+                  : 'auto minmax(180px, 1.2fr) auto auto',
                 alignItems: 'center',
-                gap: 14,
+                gap: isMobile ? 10 : 14,
                 padding: '12px 14px',
                 width: '100%',
                 background: 'transparent',
@@ -1288,22 +1588,47 @@ function GroupedList({
                   {group.displayName}
                 </div>
                 {group.domain && (
-                  <div style={{ fontSize: 12, color: color.fgMuted, fontFamily: font.mono }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: color.fgMuted,
+                      fontFamily: font.mono,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {group.domain}
                   </div>
                 )}
+                {isMobile && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: color.fgMuted,
+                      fontFamily: font.mono,
+                      marginTop: 2,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
+                    email{totalAffected === 1 ? '' : 's'}
+                  </div>
+                )}
               </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: color.fgMuted,
-                  fontFamily: font.mono,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
-                email{totalAffected === 1 ? '' : 's'}
-              </span>
+              {!isMobile && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: color.fgMuted,
+                    fontFamily: font.mono,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
+                  email{totalAffected === 1 ? '' : 's'}
+                </span>
+              )}
               <span aria-hidden="true" style={{ color: color.fgMuted }}>
                 {isOpen ? '▾' : '▸'}
               </span>
@@ -1327,6 +1652,7 @@ function GroupedList({
                     onToggleSelect={() => onToggle(row.id)}
                     variant="grouped"
                     failedTokens={failedTokens}
+                    isMobile={isMobile}
                   />
                 ))}
               </ul>
@@ -1367,6 +1693,7 @@ function ActivityRow({
   onToggleSelect,
   variant = 'flat',
   failedTokens,
+  isMobile = false,
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
@@ -1376,6 +1703,9 @@ function ActivityRow({
    *  matching row renders the per-row "Try again" pill in amber so
    *  the bar's instruction ("act on the row") has a visible affordance. */
   failedTokens?: Set<string> | undefined;
+  /** Below `sm` the row restacks into a card so its 7 grid columns stop
+   *  clipping under ~375px. Resolved once at the screen root. */
+  isMobile?: boolean;
 }) {
   const senderName = row.sender?.displayName ?? 'Account-scoped action';
   const senderEmail = row.sender?.email ?? '';
@@ -1385,6 +1715,144 @@ function ActivityRow({
   const relative = relativeTime(row.occurredAt);
   const dotColor = VERB_DOT[row.action];
   const [hovered, setHovered] = useState(false);
+
+  const sourceAttribution =
+    row.source === 'autopilot'
+      ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
+      : `via ${sourceLabel}`;
+
+  // ── Mobile card (< sm) ──────────────────────────────────────────────
+  // The desktop 7-column grid clips hard on a phone. Below `sm` the same
+  // data restacks: a top line (select · sender · time), a verb/meta line,
+  // and the action cluster — with the verb-accent rail as an absolute
+  // left strip. Grouped rows drop the sender identity (it lives in the
+  // group header) exactly as the desktop grouped variant does.
+  if (isMobile) {
+    return (
+      <li
+        style={{
+          position: 'relative',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: '12px 14px 12px 18px',
+          background: variant === 'grouped' ? 'transparent' : color.card,
+          // Flat rows are standalone cards (full border + radius); grouped
+          // rows sit inside a group card, so only a bottom hairline divides
+          // them.
+          border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderBottom: variant === 'grouped' ? `1px solid ${color.lineSoft}` : undefined,
+          borderRadius: variant === 'grouped' ? 0 : 10,
+          fontFamily: font.sans,
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            background: dotColor,
+          }}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            aria-label={`Select activity row from ${senderName}`}
+            style={{ cursor: 'pointer', accentColor: color.fg, flexShrink: 0 }}
+          />
+          {variant === 'flat' && <Avatar size={30} name={senderName} domain={senderEmail} />}
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {variant === 'flat' && (
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: color.fg,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {senderName}
+              </div>
+            )}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 600, color: dotColor }}>{verbLabel}</span>
+              {row.affectedCount > 0 && (
+                <span
+                  style={{
+                    fontFamily: font.mono,
+                    fontSize: 12,
+                    color: color.fgMuted,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          </div>
+          <div
+            style={{
+              fontSize: 11.5,
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+              flexShrink: 0,
+              alignSelf: 'flex-start',
+            }}
+          >
+            {relative}
+          </div>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+          }}
+        >
+          <span
+            title={
+              row.source === 'autopilot' && row.rule
+                ? `By Autopilot rule “${row.rule.name}”`
+                : undefined
+            }
+            style={{
+              fontSize: 10,
+              fontFamily: font.mono,
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+            }}
+          >
+            {sourceAttribution}
+          </span>
+          <RowActions row={row} failedTokens={failedTokens} />
+        </div>
+      </li>
+    );
+  }
+
   return (
     <li
       onMouseEnter={() => setHovered(true)}

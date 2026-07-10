@@ -33,14 +33,18 @@ import { render, screen } from '@testing-library/react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 
-const { pushSpy, replaceSpy } = vi.hoisted(() => ({
+const { pushSpy, replaceSpy, pathnameRef } = vi.hoisted(() => ({
   pushSpy: vi.fn(),
   replaceSpy: vi.fn(),
+  // Mutable so tests can drive the pathname-dependent branch (the
+  // user-scoped-route fallback under no active mailbox). Defaults to a
+  // mailbox-scoped route so every pre-existing test is unaffected.
+  pathnameRef: { current: '/senders' },
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushSpy, replace: replaceSpy }),
-  usePathname: () => '/senders',
+  usePathname: () => pathnameRef.current,
 }));
 
 import AppLayout from './layout';
@@ -49,6 +53,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   pushSpy.mockClear();
   replaceSpy.mockClear();
+  pathnameRef.current = '/senders';
 });
 
 function renderLayout() {
@@ -411,5 +416,100 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
     // until onboarding state settles (the flash fix).
     expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+  });
+});
+
+describe('(app) layout — user-scoped routes stay reachable with no active mailbox (D116/D216/D121)', () => {
+  /** Authed `me` with ZERO connected mailboxes (active = null). */
+  function noMailboxMe(): FetchStubHandler {
+    return {
+      method: 'GET',
+      path: '/api/auth/me',
+      respond: () =>
+        ok({
+          data: {
+            user: { id: 'u-1', email: 'founder@example.test', workspaceId: 'ws-1' },
+            mailboxes: [],
+            activeMailboxId: null,
+          },
+        }),
+    };
+  }
+
+  function onboardedNoMailbox(): FetchStubHandler[] {
+    return [
+      noMailboxMe(),
+      {
+        method: 'GET',
+        path: '/api/onboarding/state',
+        respond: () => ok({ data: { onboardedAt: '2026-01-02T00:00:00.000Z' } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => ok({ data: { request: null, projection: null } }),
+      },
+    ];
+  }
+
+  it('renders /settings children through the gate — not the reconnect gate — and never polls sync status', async () => {
+    pathnameRef.current = '/settings';
+    // A read guard's poll would 409-storm here; assert it is never fired.
+    const syncSpy = vi.fn(() => ok({ data: { readiness_status: 'ready' } }));
+    installFetchStub([
+      ...onboardedNoMailbox(),
+      { method: 'GET', path: '/api/v1/sync/status', respond: syncSpy },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+    // SyncErrorBanner + SyncNowButton are gated off with no active mailbox.
+    expect(syncSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders /billing children through the gate', async () => {
+    pathnameRef.current = '/billing';
+    installFetchStub(onboardedNoMailbox());
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
+  });
+
+  it('still shows the reconnect gate on a mailbox-scoped route (/senders)', async () => {
+    pathnameRef.current = '/senders';
+    installFetchStub(onboardedNoMailbox());
+
+    renderLayout();
+
+    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+  });
+
+  it('keeps the mailbox-scoped /settings/senders subroute behind the reconnect gate (standing policies need a mailbox)', async () => {
+    // /settings/senders reads session-scoped `useSenders` — it must NOT
+    // fall through the allowlist (that would render a dead-end 409), even
+    // though it lives under /settings.
+    pathnameRef.current = '/settings/senders';
+    installFetchStub(onboardedNoMailbox());
+
+    renderLayout();
+
+    expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+    expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+  });
+
+  it('renders /settings/privacy (data export + legal, user-scoped) through the gate', async () => {
+    pathnameRef.current = '/settings/privacy';
+    installFetchStub(onboardedNoMailbox());
+
+    renderLayout();
+
+    expect(await screen.findByText('authed app body')).toBeInTheDocument();
+    expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
   });
 });

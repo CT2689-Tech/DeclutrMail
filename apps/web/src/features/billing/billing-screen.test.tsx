@@ -62,6 +62,12 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
 
 const PRO_SUB: BillingSubscription = { tier: 'pro', foundingMember: false, subscription: SUB };
 
+const PLUS_SUB: BillingSubscription = {
+  tier: 'plus',
+  foundingMember: false,
+  subscription: { ...SUB, tier: 'plus' },
+};
+
 function billingDisabled503(): Response {
   return new Response(
     JSON.stringify({
@@ -327,16 +333,17 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
     const modal = screen.getByTestId('cancel-modal');
-    // D120 downgrade terms + D121 money-back route, verbatim-pinned.
+    // D120 downgrade terms + D121 money-back route (all paid tiers).
     expect(
       within(modal).getByText('Your Pro features stay active until Jul 1, 2026.'),
     ).toBeInTheDocument();
-    expect(
-      within(modal).getByText(
-        'No refund for unused time (cancellation takes effect at period end).',
-      ),
-    ).toBeInTheDocument();
+    // Canceling is framed honestly as "not a refund" instead of the old
+    // misleading "No refund for unused time" absolute.
+    expect(within(modal).getByText(/on its own it isn.t\s+a refund/i)).toBeInTheDocument();
+    expect(within(modal).getByText(/Every paid plan includes a/)).toBeInTheDocument();
     expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
+    const refundLink = within(modal).getByRole('link', { name: /Request a refund/ });
+    expect(refundLink.getAttribute('href')).toContain('mailto:support@declutrmail.com');
 
     fireEvent.change(within(modal).getByRole('combobox'), { target: { value: 'too_expensive' } });
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
@@ -349,6 +356,32 @@ describe('BillingScreen — paid subscriber', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
+  });
+
+  it('cancel modal surfaces the money-back guarantee + refund request for a PLUS subscriber (D121, all paid tiers)', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    const modal = screen.getByTestId('cancel-modal');
+    expect(
+      within(modal).getByText('Your Plus features stay active until Jul 1, 2026.'),
+    ).toBeInTheDocument();
+    // The refund right is shown to Plus too — the honesty bug this fixes
+    // (previously gated behind `tier === 'pro'`, so Plus never saw it).
+    expect(within(modal).getByText(/Every paid plan includes a/)).toBeInTheDocument();
+    expect(within(modal).getByText(/30-day money-back guarantee/)).toBeInTheDocument();
+    const refundLink = within(modal).getByRole('link', { name: /Request a refund/ });
+    const href = refundLink.getAttribute('href') ?? '';
+    expect(href).toContain('mailto:support@declutrmail.com');
+    expect(href).toMatch(/subject=/);
   });
 
   it('cancel error does not persist after closing and reopening the modal', async () => {
@@ -391,7 +424,11 @@ describe('BillingScreen — paid subscriber', () => {
     expect(
       within(panel).getByText(/Your Pro features will remain active until Jul 1, 2026\./),
     ).toBeInTheDocument();
-    expect(within(panel).getByText(/No refund for unused time\./)).toBeInTheDocument();
+    // Downgrade copy points at the cancel step's money-back guarantee
+    // rather than the old misleading "No refund for unused time" line.
+    expect(
+      within(panel).getByText(/the next step covers cancellation, including the 30-day money-back/),
+    ).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to cancellation →' }));
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();

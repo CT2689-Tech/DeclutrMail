@@ -44,6 +44,13 @@ import { isFeatureEnabled } from '@/lib/flags';
  *                           read never gates — falls through here.
  *   5. no active mailbox  — last mailbox disconnected → full-screen
  *                           reconnect gate instead of a data-less shell.
+ *                           EXCEPTION: workspace-scoped routes
+ *                           (`/settings`, `/settings/privacy`, `/billing`)
+ *                           render through the gate — account deletion
+ *                           (D216), data export, and billing/refunds (D121)
+ *                           must stay reachable with zero mailboxes.
+ *                           Mailbox-scoped subroutes (`/settings/senders`)
+ *                           stay gated (see `isUserScopedRoute`).
  *   6. deletion pending   — GracePeriodBanner (D216), mounted ONCE,
  *                           additive: renders above branches 5 + 7 only
  *                           while a deletion request is pending (it is
@@ -81,12 +88,32 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Workspace-level routes that stay reachable with NO active mailbox.
+ * Account management (deletion + data export, D216) and billing/refunds
+ * (D121) are user-scoped, not mailbox-scoped — a user who disconnected
+ * their last Gmail must still reach them instead of being trapped on the
+ * reconnect gate. `usePathname()` excludes hash/query, so `/settings#account`
+ * resolves to `/settings` here.
+ *
+ * EXACT matches only, never a `/settings/` prefix: mailbox-scoped
+ * settings subroutes (`/settings/senders` — standing policies read via
+ * the session-scoped `useSenders`) must KEEP the reconnect gate, or they
+ * render a dead-end 409 `NO_ACTIVE_MAILBOX` error with no recovery. New
+ * user-scoped subroutes are added here explicitly; anything else fails
+ * safe to the gate.
+ */
+function isUserScopedRoute(pathname: string): boolean {
+  return pathname === '/settings' || pathname === '/settings/privacy' || pathname === '/billing';
+}
+
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { me } = useAuth();
   const active = pathname.split('/')[1] || 'senders';
   const hasActiveMailbox = me.activeMailboxId != null;
+  const userScopedRoute = isUserScopedRoute(pathname);
 
   // In-app "B is ready" toast when a background sync finishes (D116).
   useMailboxSyncToasts();
@@ -139,7 +166,13 @@ function AppChrome({ children }: { children: ReactNode }) {
   // reconnect gate instead of rendering a broken, data-less shell. The
   // grace banner still mounts: deletion status is user-scoped and this
   // is its only chrome surface when no mailbox is connected.
-  if (!hasActiveMailbox) {
+  //
+  // EXCEPTION: user-scoped routes (settings / billing) fall through to
+  // the shell below so account deletion + data export (D216) and
+  // billing/refunds (D121) stay reachable with zero mailboxes. The
+  // mailbox-scoped chrome (SyncErrorBanner, SyncNowButton) is gated off
+  // in that render so no session-scoped read 409-storms (§8).
+  if (!hasActiveMailbox && !userScopedRoute) {
     return (
       <>
         <GracePeriodBanner />
@@ -154,10 +187,11 @@ function AppChrome({ children }: { children: ReactNode }) {
       <SyncNowAnimationStyle />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <GracePeriodBanner />
-        {/* Passive incremental-sync failure surface (D224). Main shell
-            branch ONLY — the no-active-mailbox branch above has no
-            mailbox to sync, and its status poll would just 409. */}
-        <SyncErrorBanner />
+        {/* Passive incremental-sync failure surface (D224). Active-mailbox
+            ONLY — its session-scoped status poll 409-storms without one, so
+            it stays off on the user-scoped-route fallback (settings/billing
+            rendered with no active mailbox). */}
+        {hasActiveMailbox && <SyncErrorBanner />}
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
@@ -173,7 +207,10 @@ function AppChrome({ children }: { children: ReactNode }) {
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 {isFeatureEnabled('darkMode') && <ThemeToggle />}
-                <SyncNowButton />
+                {/* Same 409-storm guard as SyncErrorBanner — the button
+                    polls session-scoped sync status, meaningless (and
+                    unresolvable) with no active mailbox. */}
+                {hasActiveMailbox && <SyncNowButton />}
                 <AccountMenu />
               </div>
             }

@@ -106,7 +106,7 @@ export function BillingScreen() {
         id="billing"
         title="Plan & billing"
         body="Your plan, what it includes, and how it renews. Upgrades start today; cancellations take effect at the end of the period you've paid for."
-        tip="Pro comes with a 30-day money-back guarantee — no questions asked."
+        tip="Every paid plan comes with a 30-day money-back guarantee — no questions asked."
       />
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
@@ -405,7 +405,9 @@ function TierStrip({ currentTier }: { currentTier: TierId }) {
         >
           See the full comparison →
         </Link>
-        <span style={{ fontSize: 11.5, color: color.fgMuted }}>Pro: {MONEY_BACK_NOTE}</span>
+        <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          All paid plans: {MONEY_BACK_NOTE}
+        </span>
       </div>
     </section>
   );

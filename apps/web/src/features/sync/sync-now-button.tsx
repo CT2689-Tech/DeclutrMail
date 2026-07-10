@@ -196,6 +196,9 @@ export function SyncNowButton() {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
       {lastSyncedAt !== null && (
         <span
+          // Collapsed below `sm` so the topbar keeps the account switcher
+          // fully on-screen on a phone (the sync button stays as icon-only).
+          className="dm-topbar-collapse"
           title={`Last synced ${new Date(lastSyncedAt).toLocaleString()}`}
           style={{
             fontFamily: font.mono,
@@ -233,7 +236,10 @@ export function SyncNowButton() {
         }}
       >
         <SyncIcon spinning={busy} />
-        {busy ? 'Syncing…' : 'Sync now'}
+        {/* Label collapses below `sm` — the button stays icon-only on a
+            phone so the topbar row fits without clipping the switcher.
+            The `aria-label` above keeps it accessible when text is hidden. */}
+        <span className="dm-topbar-collapse">{busy ? 'Syncing…' : 'Sync now'}</span>
       </button>
     </span>
   );
@@ -286,6 +292,13 @@ export function SyncNowAnimationStyle() {
       }
       @media (prefers-reduced-motion: reduce) {
         [style*="dm-sync-spin"] { animation: none !important; }
+      }
+      /* Topbar mobile collapse (matches the shell's 900px sm breakpoint).
+         The freshness label + Sync-now text hide so the account switcher
+         stays fully on-screen on a phone. CSS-driven (not a JS hook) so
+         there is no post-hydration flash — same rationale as tokens.css. */
+      @media (max-width: 900px) {
+        .dm-topbar-collapse { display: none; }
       }
     `}</style>
   );

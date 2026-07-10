@@ -145,3 +145,14 @@ export const AllOverdue: Story<typeof FollowupsScreen> = {
   render: (_args: ComponentProps<typeof FollowupsScreen>) =>
     frame(makeClient(FIXTURES.filter((r) => r.priority === 'high'))),
 };
+
+/**
+ * Mobile (≤sm, D60) — the 5-track row grid restacks to a single-column
+ * card: recipient + subject stack full-width and the meta actions
+ * (time · Gmail · resolve) wrap onto one row below, so nothing clips on
+ * a phone.
+ */
+export const Mobile: Story<typeof FollowupsScreen> = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  render: (_args: ComponentProps<typeof FollowupsScreen>) => frame(makeClient(FIXTURES)),
+};

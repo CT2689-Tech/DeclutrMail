@@ -247,9 +247,23 @@ export function PrivacyDataView({
               </div>
             </li>
             <li style={exitRowStyle}>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={exitTitleStyle}>Privacy Policy &amp; Terms of Service</div>
-                <div style={exitDetailStyle}>Publishing with launch — linked here when live.</div>
+                <div style={exitDetailStyle}>
+                  Exactly what we store and the terms you agree to — both are published and current.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Link href="/privacy" style={{ textDecoration: 'none' }}>
+                  <Button tone="default" size="sm">
+                    Privacy Policy
+                  </Button>
+                </Link>
+                <Link href="/terms" style={{ textDecoration: 'none' }}>
+                  <Button tone="default" size="sm">
+                    Terms
+                  </Button>
+                </Link>
               </div>
             </li>
           </ul>

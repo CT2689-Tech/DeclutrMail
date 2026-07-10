@@ -236,6 +236,16 @@ export const Empty: Story<typeof ActivityScreen> = {
   render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient([], '7d', 'all')),
 };
 
+/**
+ * Mobile (< sm) — the 7-column desktop row grid restacks into cards and
+ * the 5-tile metrics strip collapses to 3-per-row. Driven by
+ * `useIsAtMost('sm')` reading the resized story viewport's matchMedia.
+ */
+export const Mobile: Story<typeof ActivityScreen> = {
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient(ROWS, '30d', 'all')),
+};
+
 /** Source-filtered (Autopilot only). */
 export const AutopilotOnly: Story<typeof ActivityScreen> = {
   render: (_args: ComponentProps<typeof ActivityScreen>) =>

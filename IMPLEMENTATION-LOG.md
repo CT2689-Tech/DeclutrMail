@@ -111,7 +111,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | 🔵 | #214 |  |  |
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
-| D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | ⬜ |  |  |  |
+| D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | 🔵 | #303 |  |  |
 | D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |  |
 | D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
@@ -268,7 +268,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D214 | Home strip atop Triage (not a separate Home screen) | ⬜ |  |  |  |
 | D215 | Senders list owns Search and Protected filter (no separate screens) | ⬜ |  |  |  |
 | D216 | Account deletion UI flow at launch (Settings → Account) | 🔵 | #218 |  |  |
-| D217 | Privacy & Data settings sub-page at launch | ⬜ |  |  |  |
+| D217 | Privacy & Data settings sub-page at launch | 🔵 | #308 |  |  |
 | D218 | Public `/changelog` at launch | ⬜ |  |  |  |
 | D219 | Single-page FAQ `/help` at launch; full Help Center deferred to V2.1 | 🔵 | #290 |  |  |
 | D220 | Component naming inventory (locks Codex §6) | 🔵 | #12 |  |  |
