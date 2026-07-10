@@ -200,6 +200,7 @@ export class TriageReadService {
         lastSeenAt: senders.lastSeenAt,
         protectionReason: senderPolicies.protectionReason,
         isVip: senderPolicies.isVip,
+        isProtected: senderPolicies.isProtected,
       })
       .from(triageDecisions)
       .innerJoin(
@@ -274,6 +275,17 @@ export class TriageReadService {
           ? Math.max(0, Math.floor((now - lastInternal.getTime()) / 86_400_000))
           : 0;
 
+      // Protection overrides the recommendation (2026-07-10 founder
+      // dogfood): a row reading "PROTECTED" and "Unsubscribe · 95% ·
+      // RECOMMENDED" at once is a contradiction — the user asked us
+      // (or the engine's protect rules did) to keep this sender, so
+      // the RECOMMENDATION must be Keep. Display-layer only: the
+      // engine's verdict stays in `triage_decisions` untouched, every
+      // K/A/U/L action remains available on the row, and the override
+      // is annotated in the reasoning so the user sees why.
+      const protectionReason = mapProtectionReason(r.isVip, r.isProtected, r.protectionReason);
+      const isProtected = protectionReason !== null;
+
       return {
         id: r.decisionId,
         senderId: r.senderId,
@@ -283,15 +295,18 @@ export class TriageReadService {
         senderDomain: r.senderDomain,
         gmailCategory: r.gmailCategory,
         unsubscribeMethod: r.unsubscribeMethod ?? 'none',
-        verdict: r.verdict,
+        verdict: isProtected ? 'keep' : r.verdict,
         confidence: Number(r.confidence),
-        reasoning: r.reasoning,
+        reasoning:
+          isProtected && r.verdict !== 'keep'
+            ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${r.reasoning ?? ''}`.trimEnd()
+            : r.reasoning,
         signals: buildSignals({
           readRate,
           monthlyVolume,
           unsubscribeMethod: r.unsubscribeMethod ?? 'none',
         }),
-        protectionReason: mapProtectionReason(r.isVip, r.protectionReason),
+        protectionReason,
         monthlyVolume,
         /**
          * Raw last-90-day count — the underlying signal `monthlyVolume`
@@ -588,12 +603,24 @@ function buildSignals(input: {
   return signals;
 }
 
-/** Map the DB protection-reason enum to the FE's superset. */
+/**
+ * Map the DB protection-reason enum to the FE's superset.
+ *
+ * GATED on `is_protected` (2026-07-10): `protection_reason` MAY be
+ * non-NULL while `is_protected = false` — the user-agency-wins memory
+ * pin (a manually-demoted sender keeps its reason so the next sync
+ * skips re-protect; see sender-policies.ts). Reading the raw reason
+ * without the flag showed demoted senders as still protected — and
+ * would have forced a Keep recommendation onto a sender the user
+ * explicitly demoted.
+ */
 function mapProtectionReason(
   isVip: boolean | null | undefined,
+  isProtected: boolean | null | undefined,
   reason: 'user_defined' | 'engagement_based' | 'vip' | null | undefined,
 ): TriageQueueRow['protectionReason'] {
   if (isVip) return 'vip';
+  if (!isProtected) return null;
   if (reason === 'vip') return 'vip';
   if (reason === 'engagement_based') return 'engagement';
   return null;
