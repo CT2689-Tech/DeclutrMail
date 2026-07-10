@@ -216,19 +216,61 @@ export class OnboardingService {
 }
 
 /**
- * D112 candidate selection, pure for testability:
- * non-Keep verdict + unprotected, ranked by confidence DESC — unless
- * confidence is uniformly low, then read-rate ASC.
+ * D112 candidate selection (contrast lineup — 2026-07-10 founder
+ * amendment), pure for testability.
+ *
+ * The original "3 highest-confidence non-Keep" rule produced three
+ * near-identical rows in practice (prod dogfood: 3× "Unsubscribe ·
+ * 95% · quiet 90d") — teaching one verb and zero judgment. The
+ * amended lineup picks one row per teaching slot:
+ *
+ *   1. payoff   — highest-confidence `unsubscribe` (the win)
+ *   2. trust    — the obvious KEEP: `keep` verdict or an engagement/
+ *                 vip-protected sender, highest read-rate (shows the
+ *                 engine can tell what matters — the reason to trust
+ *                 slot 1)
+ *   3. judgment — highest-confidence `archive`/`later` (the middle
+ *                 verbs exist)
+ *
+ * Empty slots backfill from the remaining eligible pool by confidence
+ * so small mailboxes still get up to 3. The uniformly-low-confidence
+ * fallback (3 lowest read-rate non-Keep) is unchanged from D112.
  */
 export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueRow[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
   if (eligible.length === 0) return [];
 
   const uniformlyLow = eligible.every((r) => r.confidence < FIRST_TRIAGE_LOW_CONFIDENCE_BAR);
-  const ranked = [...eligible].sort((a, b) =>
-    uniformlyLow ? a.readRate - b.readRate : b.confidence - a.confidence,
+  if (uniformlyLow) {
+    return [...eligible]
+      .sort((a, b) => a.readRate - b.readRate)
+      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  }
+
+  const byConfidence = (rows: TriageQueueRow[]): TriageQueueRow[] =>
+    [...rows].sort((a, b) => b.confidence - a.confidence);
+  const picked: TriageQueueRow[] = [];
+  const taken = new Set<string>();
+  const take = (row: TriageQueueRow | undefined): void => {
+    if (row && !taken.has(row.senderKey)) {
+      taken.add(row.senderKey);
+      picked.push(row);
+    }
+  };
+
+  take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
+  const keeps = queue.filter(
+    (r) =>
+      r.verdict === 'keep' || r.protectionReason === 'engagement' || r.protectionReason === 'vip',
   );
-  return ranked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  take([...keeps].sort((a, b) => b.readRate - a.readRate)[0]);
+  take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
+
+  for (const row of byConfidence(eligible)) {
+    if (picked.length >= FIRST_TRIAGE_PINNED_COUNT) break;
+    take(row);
+  }
+  return picked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
 }
 
 /**

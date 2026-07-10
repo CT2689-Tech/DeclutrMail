@@ -276,7 +276,7 @@ describe('OnboardingService', () => {
   });
 
   describe('getFirstTriage', () => {
-    it('pins the top-3 non-Keep unprotected senders by confidence', async () => {
+    it('pins a contrast lineup: one unsubscribe, one keep, one judgment call (2026-07-10 D112 amendment)', async () => {
       await seedDecision(db, mailboxId, { senderKey: 'k1', verdict: 'keep', confidence: 0.99 });
       await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.9 });
       await seedDecision(db, mailboxId, { senderKey: 'a2', verdict: 'archive', confidence: 0.8 });
@@ -289,7 +289,10 @@ describe('OnboardingService', () => {
 
       const read = await service.getFirstTriage(userId, mailboxId);
       expect(read.meta).toEqual({ pinned: 3, decided: 0 });
-      expect(read.rows.map((r) => r.senderKey).sort()).toEqual(['a1', 'a2', 'u1']);
+      // Slot 1: the unsubscribe payoff; slot 2: the keep (trust); slot 3:
+      // the highest-confidence judgment call — NOT three near-identical
+      // top-confidence rows.
+      expect(read.rows.map((r) => r.senderKey).sort()).toEqual(['a1', 'k1', 'u1']);
     });
 
     it('the pinned set survives a new higher-confidence decision appearing', async () => {
@@ -354,13 +357,44 @@ describe('pickFirstTriageCandidates', () => {
     ...over,
   });
 
-  it('excludes Keep verdicts and protected senders', () => {
+  it('fills the trust slot with a keep/protected sender instead of excluding them', () => {
     const picked = pickFirstTriageCandidates([
-      row({ senderKey: 'keep', verdict: 'keep', confidence: 0.99 }),
-      row({ senderKey: 'prot', protectionReason: 'vip', confidence: 0.98 }),
+      row({ senderKey: 'keep', verdict: 'keep', confidence: 0.99, readRate: 0.9 }),
+      row({ senderKey: 'prot', protectionReason: 'vip', confidence: 0.98, readRate: 0.4 }),
       row({ senderKey: 'ok', confidence: 0.6 }),
     ]);
-    expect(picked.map((r) => r.senderKey)).toEqual(['ok']);
+    // Highest read-rate keep wins the trust slot; keeps/protected never
+    // fill the other slots (eligible pool still excludes them).
+    expect(picked.map((r) => r.senderKey)).toEqual(['keep', 'ok']);
+  });
+
+  it('picks one row per teaching slot: unsubscribe payoff, keep trust, judgment call', () => {
+    const picked = pickFirstTriageCandidates([
+      row({ senderKey: 'u-low', verdict: 'unsubscribe', confidence: 0.7 }),
+      row({ senderKey: 'u-high', verdict: 'unsubscribe', confidence: 0.95 }),
+      row({ senderKey: 'k1', verdict: 'keep', confidence: 0.9, readRate: 0.9 }),
+      row({
+        senderKey: 'prot',
+        protectionReason: 'engagement',
+        confidence: 0.8,
+        readRate: 0.95,
+      }),
+      row({ senderKey: 'a1', verdict: 'archive', confidence: 0.9 }),
+      row({ senderKey: 'l1', verdict: 'later', confidence: 0.85 }),
+    ]);
+    // NOT [u-high, a1, l1] (the old top-3-by-confidence). One per slot:
+    // best unsubscribe, highest-read-rate keep, best archive/later.
+    expect(picked.map((r) => r.senderKey)).toEqual(['u-high', 'prot', 'a1']);
+  });
+
+  it('backfills empty slots from the eligible pool by confidence', () => {
+    const picked = pickFirstTriageCandidates([
+      row({ senderKey: 'u1', verdict: 'unsubscribe', confidence: 0.9 }),
+      row({ senderKey: 'u2', verdict: 'unsubscribe', confidence: 0.8 }),
+      row({ senderKey: 'u3', verdict: 'unsubscribe', confidence: 0.7 }),
+    ]);
+    // No keep, no archive/later — still returns 3, not 1.
+    expect(picked.map((r) => r.senderKey)).toEqual(['u1', 'u2', 'u3']);
   });
 
   it('ranks by confidence DESC normally', () => {
