@@ -334,46 +334,81 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let timedOut = false;
     if (this.deps.llm) {
       const port = this.deps.llm;
-      // Pace BEFORE the timeout race starts. If pacing were inside the
-      // raced task, the wall-clock budget would include rate-limiter
-      // wait time and a short timeout (e.g. 5_000ms) could surface as a
-      // `reasoning.timeout` even though the port itself never started.
-      // Pacing OUTSIDE the race makes the timeout measure only the
-      // port's own latency, which is what the budget is meant to bound.
-      if (this.rateLimiter) {
-        await this.rateLimiter.acquire(1);
-      }
-      const raced = await runWithTimeout(
-        () =>
-          port.explain({
-            displayName: signals.displayName,
-            domain: signals.domain,
-            verdict: result.verdict,
-            confidence: result.confidence,
-            ruleLabel: result.ruleId,
-            facts: result.facts,
-            gmailCategory: signals.signals.gmailCategory,
-          }),
-        this.explainTimeoutMs,
-      );
-      if (raced.kind === 'ok') {
-        reasoning = raced.value;
+      // Reuse before re-billing (2026-07-10): a re-score sweep calls
+      // explain() for EVERY sender, including ones whose verdict did
+      // not move — re-buying prose we already own. When the existing
+      // decision row is unexpired, LLM-generated, and reaches the SAME
+      // verdict, its reasoning is still the right explanation: reuse
+      // it and skip the call. Any verdict change (or template row, or
+      // expiry) still gets a fresh call — reasoning must never explain
+      // a verdict it wasn't written for.
+      const [existing] = await this.deps.db
+        .select({
+          verdict: triageDecisions.verdict,
+          generatedBy: triageDecisions.generatedBy,
+          reasoning: triageDecisions.reasoning,
+          expiresAt: triageDecisions.expiresAt,
+        })
+        .from(triageDecisions)
+        .where(
+          and(
+            eq(triageDecisions.mailboxAccountId, mailboxAccountId),
+            eq(triageDecisions.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
+      const reusable =
+        existing &&
+        existing.generatedBy === 'llm_haiku' &&
+        existing.verdict === result.verdict &&
+        existing.reasoning &&
+        existing.expiresAt > (this.deps.now ?? (() => new Date()))();
+      if (reusable) {
+        // Falls through to the monotonic upsert below so produced_at /
+        // expires_at still advance — only the LLM call is skipped.
+        reasoning = existing.reasoning;
       } else {
-        timedOut = true;
-        // Structured log; matches the rest of the worker logging shape
-        // (JSON line on stdout, picked up by the same collector). Keep
-        // mailbox + sender keys here so the timeout can be correlated
-        // with a slow tenant without re-querying.
-        console.warn(
-          JSON.stringify({
-            level: 'warn',
-            kind: 'reasoning.timeout',
-            worker: this.workerName,
-            mailboxAccountId,
-            senderKey,
-            timeoutMs: this.explainTimeoutMs,
-          }),
+        // Pace BEFORE the timeout race starts. If pacing were inside the
+        // raced task, the wall-clock budget would include rate-limiter
+        // wait time and a short timeout (e.g. 5_000ms) could surface as a
+        // `reasoning.timeout` even though the port itself never started.
+        // Pacing OUTSIDE the race makes the timeout measure only the
+        // port's own latency, which is what the budget is meant to bound.
+        if (this.rateLimiter) {
+          await this.rateLimiter.acquire(1);
+        }
+        const raced = await runWithTimeout(
+          () =>
+            port.explain({
+              displayName: signals.displayName,
+              domain: signals.domain,
+              verdict: result.verdict,
+              confidence: result.confidence,
+              ruleLabel: result.ruleId,
+              facts: result.facts,
+              gmailCategory: signals.signals.gmailCategory,
+            }),
+          this.explainTimeoutMs,
         );
+        if (raced.kind === 'ok') {
+          reasoning = raced.value;
+        } else {
+          timedOut = true;
+          // Structured log; matches the rest of the worker logging shape
+          // (JSON line on stdout, picked up by the same collector). Keep
+          // mailbox + sender keys here so the timeout can be correlated
+          // with a slow tenant without re-querying.
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'reasoning.timeout',
+              worker: this.workerName,
+              mailboxAccountId,
+              senderKey,
+              timeoutMs: this.explainTimeoutMs,
+            }),
+          );
+        }
       }
     }
     const generatedBy: 'llm_haiku' | 'template' = reasoning ? 'llm_haiku' : 'template';
