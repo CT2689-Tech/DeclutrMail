@@ -42,7 +42,8 @@ import {
   type TriageDecisionRow,
   type TriageScreenState,
 } from './data';
-import type { DomainBatch } from './domain-batch';
+import { findVerdictBatch, type DomainBatch } from './domain-batch';
+import { VerdictBatchBanner } from './verdict-batch-banner';
 import type { BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
 import { TriageKeyboardHelp } from './keyboard-help';
@@ -124,6 +125,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
   const sessionDecidedCount = useTriageStore((s) => s.sessionDecidedCount);
   const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
+  const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
+  const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
   const sessionNoisePrevented = useTriageStore((s) => s.sessionNoisePrevented);
   const addSessionNoisePrevented = useTriageStore((s) => s.addSessionNoisePrevented);
 
@@ -855,6 +858,32 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       {state.kind === 'ready' && state.rows.length === 0 && (
         <TriageEmptyState stats={state.stats} onOpenUpgrade={openPricing} />
       )}
+      {state.kind === 'ready' &&
+        state.rows.length > 0 &&
+        (() => {
+          // Same-verdict batch banner (2026-07-10) — mounts when ≥3
+          // unprotected rows share an Archive/Later recommendation.
+          // Routes through the SAME pendingBatch → BatchActionSheet →
+          // composite pipeline as the domain card (D226 preview + one
+          // cascade undo). Dismiss is session-scoped via the shared
+          // dismissal list (the label is the key).
+          const verdictBatch = findVerdictBatch(state.rows, dismissedBatchDomains);
+          if (!verdictBatch) return null;
+          return (
+            <VerdictBatchBanner
+              batch={verdictBatch.batch}
+              verdict={verdictBatch.verdict}
+              busy={batchAction?.domain === verdictBatch.batch.domain}
+              onApply={() =>
+                onBatchVerb(
+                  verdictBatch.verdict === 'archive' ? 'Archive' : 'Later',
+                  verdictBatch.batch,
+                )
+              }
+              onDismiss={() => dismissBatchDomain(verdictBatch.batch.domain)}
+            />
+          );
+        })()}
       {state.kind === 'ready' && state.rows.length > 0 && (
         <TriageQueue
           rows={state.rows}

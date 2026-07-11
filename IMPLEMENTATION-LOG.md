@@ -77,7 +77,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
 | D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
 | D25 | Re-score cadence: **Trigger-based (sync + signal change) | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
-| D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | ⬜ |  |  |  |
+| D26 | Reasoning UX: **Mixed (inline on Triage hero, popover elsewhere) | 🔵 | #319 |  |  |
 | D27 | Triage cadence: **Daily ritual | ⬜ |  |  |  |
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |

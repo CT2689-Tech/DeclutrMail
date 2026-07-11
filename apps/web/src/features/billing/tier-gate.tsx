@@ -31,6 +31,7 @@ export function TierGate({
   title,
   pitch,
   bullets,
+  footnote,
   children,
 }: {
   capability: Capability;
@@ -40,6 +41,12 @@ export function TierGate({
   pitch: ReactNode;
   /** Optional short feature lines (D68's REPLY/FYI/NOISE-style rows). */
   bullets?: readonly string[];
+  /**
+   * Optional trust line under the CTA — what the CURRENT plan still
+   * lets the user do (e.g. Snoozed: where their Later mail lives).
+   * Never hide where a user's mail went behind a paywall.
+   */
+  footnote?: ReactNode;
   children: ReactNode;
 }) {
   const { tier } = useTier();
@@ -156,6 +163,21 @@ export function TierGate({
         </div>
 
         <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+
+        {footnote ? (
+          <p
+            style={{
+              margin: 0,
+              paddingTop: 10,
+              borderTop: `1px solid ${color.lineSoft}`,
+              fontSize: 12.5,
+              lineHeight: 1.55,
+              color: color.fgSoft,
+            }}
+          >
+            {footnote}
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -18,10 +18,13 @@ const { color, font, shadow } = tokens;
  * Copy is D147's, verbatim. Exactly two choices, styled with EQUAL
  * visual weight on purpose (no highlighted "accept", no buried
  * decline — the trust-wedge product doesn't dark-pattern its own
- * consent). There is no dismiss-X: ignoring the banner is equivalent
- * to declining, because nothing tracks until "Accept all" is stored
- * (`lib/cookie-consent.ts` — decline-by-default), and the ask stays
- * visible until the visitor actually decides.
+ * consent). The dismiss-X (2026-07-10) STORES the decline: ignoring
+ * the banner was always equivalent to declining (nothing tracks until
+ * "Accept all" is stored — `lib/cookie-consent.ts`, decline-by-
+ * default), but the un-dismissable card floated over interactive UI
+ * forever. Closing now persists 'essential' — the same
+ * privacy-preserving outcome, without the permanent occlusion. The
+ * choice remains changeable any time at /cookies and in Settings.
  *
  * Mounted once per surface group: the (marketing) layout, the (app)
  * layout, and the onboarding layout. Renders nothing server-side and
@@ -72,7 +75,31 @@ export function CookieConsentBanner() {
         fontFamily: font.sans,
       }}
     >
-      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fg }}>
+      <button
+        type="button"
+        aria-label="Close and continue with essential cookies only"
+        onClick={() => choose('essential')}
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          width: 24,
+          height: 24,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: 'none',
+          background: 'transparent',
+          color: color.fgMuted,
+          fontSize: 14,
+          lineHeight: 1,
+          cursor: 'pointer',
+          borderRadius: 6,
+        }}
+      >
+        ×
+      </button>
+      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fg, paddingRight: 20 }}>
         We use essential cookies for sign-in and billing.
       </p>
       <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgSoft }}>

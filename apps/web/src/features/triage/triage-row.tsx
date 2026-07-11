@@ -285,11 +285,22 @@ export function TriageRow({
           style={isNarrow ? { gridColumn: 2, gridRow: 2, justifySelf: 'start' } : {}}
         >
           {verdictToVerb(row.verdict)}
-          {recommendedVerb !== null && (
+          {/* A protected row's recommendation is Keep BECAUSE of the
+              protection, not because of engine confidence — the raw
+              confidence belongs to the suppressed verdict, so showing
+              it here would mislead (2026-07-10: "Keep · 95%" where 95%
+              was the unsubscribe confidence). */}
+          {row.protectionReason !== null ? (
             <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
-              {' · '}
-              {Math.round(row.confidence * 100)}%
+              {' · '}protected
             </span>
+          ) : (
+            recommendedVerb !== null && (
+              <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
+                {' · '}
+                {Math.round(row.confidence * 100)}%
+              </span>
+            )
           )}
         </Pill>
 
