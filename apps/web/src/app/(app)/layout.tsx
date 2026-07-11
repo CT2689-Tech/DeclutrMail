@@ -8,6 +8,7 @@ import { GracePeriodBanner } from '@/features/account-deletion/grace-period-bann
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
+import { ProChip } from '@/features/billing/pro-chip';
 import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
@@ -145,6 +146,17 @@ function AppChrome({ children }: { children: ReactNode }) {
   const screenerCount = useScreenerCount({ enabled: screenerUnlocked && hasActiveMailbox });
   const screenerPending = screenerUnlocked ? screenerCount.data?.pending : undefined;
 
+  // "Pro" chips on locked nav items (2026-07-10 dogfood): six nav
+  // surfaces are tier-gated but nothing marked them, so users
+  // discovered paywalls by clicking into them. Chip only when LOCKED —
+  // an unlocked feature's slot stays free for real badges (screener
+  // pending count below).
+  const proChips = Object.fromEntries(
+    (['brief', 'followups', 'snoozed', 'screener', 'quiet', 'autopilot'] as const)
+      .filter((cap) => !hasCapability(tier, cap))
+      .map((cap) => [cap, <ProChip key={cap} />]),
+  );
+
   // Onboarding incomplete — `useOnboardingGate` has already issued
   // `router.replace('/onboarding')`; render nothing while it lands so
   // no half-authed screen flashes behind the redirect.
@@ -197,6 +209,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             active={active}
             onNavigate={(id) => router.push(`/${id}`)}
             counts={{
+              ...proChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),
               // Element badge — the sidebar renders it as-is, so the
               // D74 pulse + aria-label + hide-at-zero all apply.
