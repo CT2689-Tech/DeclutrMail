@@ -8,12 +8,14 @@ import {
   mailMessages,
   mailboxAccounts,
   schema,
+  senderPolicies,
   senders,
   triageDecisions,
   undoJournal,
   users,
   workspaces,
 } from '@declutrmail/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -129,6 +131,57 @@ describe('TriageReadService.listQueue — decided-sender exclusion (D30/D226)', 
     await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
     await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
     svc = new TriageReadService(db as never);
+  });
+
+  it('a protected sender recommends Keep, never the raw engine verdict (2026-07-10 contradiction fix)', async () => {
+    // SENDER_A has an archive/0.90 decision from the seed. Protect it:
+    // the row must now recommend Keep, keep the protection reason, and
+    // explain the override in the reasoning — while the underlying
+    // triage_decisions row stays untouched (display-layer only).
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_A,
+      isProtected: true,
+      protectionReason: 'engagement_based',
+      protectionSetAt: new Date(),
+    });
+
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    const protectedRow = rows.find((r) => r.senderKey === SENDER_A)!;
+    expect(protectedRow.verdict).toBe('keep');
+    expect(protectedRow.protectionReason).toBe('engagement');
+    expect(protectedRow.reasoning).toContain('protected (engagement)');
+    expect(protectedRow.reasoning).toContain('the engine would suggest: archive');
+
+    // The stored engine verdict is NOT rewritten.
+    const [stored] = await db
+      .select({ verdict: triageDecisions.verdict })
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+    expect(stored!.verdict).toBe('archive');
+
+    // Unprotected sibling keeps its raw verdict.
+    expect(rows.find((r) => r.senderKey === SENDER_B)!.verdict).toBe('archive');
+  });
+
+  it('a DEMOTED sender (memory pin: is_protected=false, reason retained) is NOT shown protected and keeps its raw verdict', async () => {
+    // The user-agency-wins state from sender-policies.ts: manual demote
+    // clears is_protected but keeps protection_reason so sync skips
+    // re-protect. Reading the raw reason without the flag showed these
+    // as protected — and would force Keep onto a sender the user
+    // explicitly demoted.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_A,
+      isProtected: false,
+      protectionReason: 'engagement_based',
+    });
+
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    const demoted = rows.find((r) => r.senderKey === SENDER_A)!;
+    expect(demoted.protectionReason).toBeNull();
+    expect(demoted.verdict).toBe('archive');
+    expect(demoted.reasoning).toBe('High volume, never read.');
   });
 
   it('returns every engine decision (with senderId) when nothing is decided', async () => {
