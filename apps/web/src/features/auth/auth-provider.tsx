@@ -64,20 +64,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={{ me: me.data }}>{children}</AuthContext.Provider>;
 }
 
+/**
+ * Shell-shaped loading skeleton (2026-07-10): the previous skeleton was
+ * an empty full-viewport div — a cold load showed a blank page for the
+ * whole `/api/auth/me` round trip and read as "broken", not "loading".
+ * This one sketches the real chrome (sidebar rail + topbar + content
+ * ghosts) with a subtle pulse so the first paint is recognizably the
+ * app. Layout mirrors AppShell's proportions; token-driven colors keep
+ * it correct in dark mode.
+ */
 function AuthSkeleton() {
+  const ghost = (height: number, width: string | number = '100%'): React.CSSProperties => ({
+    height,
+    width,
+    borderRadius: 8,
+    background: 'var(--color-line-soft, rgba(20,30,50,0.07))',
+  });
   return (
     <div
       role="status"
       aria-live="polite"
+      data-testid="auth-skeleton"
       style={{
         position: 'fixed',
         inset: 0,
-        display: 'grid',
-        placeItems: 'center',
+        display: 'flex',
         background: 'var(--color-bg, #fff)',
       }}
     >
+      <style>{`@keyframes dm-skeleton-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }`}</style>
       <span style={{ position: 'absolute', left: -9999 }}>Loading session…</span>
+      {/* Sidebar rail — hidden on narrow viewports like the real shell. */}
+      <div
+        aria-hidden
+        style={{
+          width: 228,
+          flexShrink: 0,
+          borderRight: '1px solid var(--color-line, rgba(20,30,50,0.08))',
+          padding: '20px 14px',
+          display: 'none',
+          flexDirection: 'column',
+          gap: 14,
+          animation: 'dm-skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+        className="dm-skeleton-sidebar"
+      />
+      <style>{`@media (min-width: 768px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
+      <div
+        aria-hidden
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          animation: 'dm-skeleton-pulse 1.6s ease-in-out infinite',
+        }}
+      >
+        {/* Topbar strip. */}
+        <div
+          style={{
+            height: 48,
+            borderBottom: '1px solid var(--color-line, rgba(20,30,50,0.08))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            padding: '0 20px',
+          }}
+        >
+          <div style={ghost(20, 180)} />
+        </div>
+        {/* Content ghosts — heading + three card rows. */}
+        <div
+          style={{
+            padding: '28px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+            maxWidth: 920,
+          }}
+        >
+          <div style={ghost(28, 260)} />
+          <div style={ghost(64)} />
+          <div style={ghost(88)} />
+          <div style={ghost(88)} />
+          <div style={ghost(88)} />
+        </div>
+      </div>
     </div>
   );
 }
