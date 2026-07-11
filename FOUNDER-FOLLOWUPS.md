@@ -26,6 +26,43 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
+**Source:** session 2026-07-10 UX wave (PR #321 investigation)
+**Why:** The same-verdict batch banner (#321) covers Archive/Later only.
+Unsubscribe clusters — the founder's actual dogfood queue was 12×
+Unsubscribe — still decide one-at-a-time, because unsubscribe execution
+is per-sender-channel: RFC 8058 one-click can be executed server-side,
+mailto is user-sent by the D230 hard rule, and a mixed batch cannot
+honestly claim "unsubscribed all N". A ONE-CLICK-ONLY subset batch
+("Unsubscribe all 8 one-click senders; 4 mailto senders stay
+per-sender") is implementable without touching D230.
+**How:** Needs a D-decision first (extends D9/D32/D230 surface), then:
+a `senders` selector variant for `POST /api/actions/unsubscribe-intent`
+(schema is single-`senderId` today), fan-out execution via the existing
+UnsubExecutionWorker, and a channel-split preview sheet. Not
+smallest-diff — scope as its own PR after ratifying.
+**Verifies by:** D-decision recorded in the plan mirror; batch banner
+offers the one-click subset; mailto senders remain per-row.
+**Status:** Open
+
+### 2026-07-10 — Observation: status polls pause in background tabs
+**Source:** session 2026-07-10 wave smoke (two archive confirms looked
+"stuck busy" in an unfocused automation tab; worker had finished in
+2.6s both times)
+**Why:** Every FE status poll (`useActionStatus`, `useBatchStatus`,
+sync status) uses `refetchInterval` without
+`refetchIntervalInBackground`, so TanStack pauses polling while the tab
+is unfocused. Invisible to a real user mid-click (their tab IS
+focused), and it self-heals on refocus — but a user who switches tabs
+during a long batch returns to a stale busy row for one refetch beat.
+Cosmetic; NOT a launch blocker. Decide deliberately rather than flip
+the flag reflexively (background polling costs battery/requests).
+**How:** If desired: `refetchIntervalInBackground: true` on the two
+action-status hooks only (`apps/web/src/lib/api/use-action.ts:90,228`).
+**Verifies by:** archive in tab A, switch to tab B, return — row
+already gone without a refetch beat.
+**Status:** Open
+
 ### 2026-07-10 — Give `declutrmail-worker` its own service account
 **Source:** session 2026-07-10 (Codex stop-gate review of `scripts/bootstrap-resend-secrets.sh`)
 **Why:** `declutrmail-api` and `declutrmail-worker` both run as
