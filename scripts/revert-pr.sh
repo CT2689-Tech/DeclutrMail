@@ -23,9 +23,24 @@ fi
 
 git fetch origin main --quiet
 
-SHA=$(git log origin/main --grep "(#${PR})" --format=%H -1)
+# Primary: ask GitHub for the exact merge commit (immune to substring
+# collisions like #32 vs #324 and to "#N" mentions in commit bodies).
+SHA=$(gh pr view "$PR" --json mergeCommit --jq '.mergeCommit.oid // empty' 2>/dev/null || true)
+
+# Fallback (offline / no gh): subject must END with "(#N)" — exact match,
+# never a substring or a body mention.
 if [[ -z "$SHA" ]]; then
-  echo "error: no commit on origin/main references (#${PR})" >&2
+  SHA=$(git log origin/main --format='%H %s' |
+    awk -v tail="(#${PR})" '{ if (substr($0, length($0) - length(tail) + 1) == tail) { print $1; exit } }')
+fi
+
+if [[ -z "$SHA" ]]; then
+  echo "error: could not resolve the merge commit for PR #${PR}" >&2
+  exit 1
+fi
+
+if ! git merge-base --is-ancestor "$SHA" origin/main; then
+  echo "error: resolved commit $SHA is not on origin/main (PR #${PR} not merged?)" >&2
   exit 1
 fi
 
