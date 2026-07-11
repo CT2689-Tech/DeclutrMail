@@ -110,6 +110,15 @@ export interface ActivityStats {
    * that lands with the action_jobs join (deferred). Zero for now.
    */
   needsAttention: number;
+  /**
+   * D33 payoff — estimated emails/month of future noise prevented by
+   * the window's archive/unsubscribe/later decisions: the decided
+   * senders' summed last-90d inbound volume ÷ 3 (the same rolling
+   * window every other volume signal uses). `null` when the window has
+   * no deflecting decisions. A rough projection against CURRENT
+   * mail_messages, same imprecision `projectImpact` accepts.
+   */
+  noisePreventedPerMonth: number | null;
 }
 
 /**

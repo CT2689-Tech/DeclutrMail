@@ -48,6 +48,7 @@ const STATS: ActivityStatsWire = {
   deleted: 0,
   followupsDismissed: 2,
   needsAttention: 0,
+  noisePreventedPerMonth: null,
 };
 
 const ROWS: ActivityRowWire[] = [

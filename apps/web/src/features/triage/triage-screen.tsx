@@ -127,6 +127,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
+  const sessionNoisePrevented = useTriageStore((s) => s.sessionNoisePrevented);
+  const addSessionNoisePrevented = useTriageStore((s) => s.addSessionNoisePrevented);
 
   const keepIntent = useKeepIntent();
   const unsubIntent = useRecordUnsubscribeIntent();
@@ -150,6 +152,12 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     rowId: string;
     senderName: string;
     verb: 'Archive' | 'Later';
+    /**
+     * The row's monthly volume at dispatch time — feeds the session
+     * "noise prevented" payoff on confirmation (D33). 0 for follow-ons
+     * (the unsubscribe already counted this sender's volume).
+     */
+    monthlyVolume: number;
     /**
      * True when this job is the optional backlog-archive that rides an
      * Unsubscribe decision (D9). The unsub already counted toward the
@@ -190,6 +198,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     domain: string;
     senderCount: number;
     verb: BatchVerb;
+    /** Summed monthly volume of the eligible members (D33 payoff). */
+    monthlyVolume: number;
   } | null>(null);
   const enqueueBulk = useEnqueueBulkAction();
   const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
@@ -237,6 +247,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
+      // Payoff scales to the confirmed share when the fan-out had
+      // partial failures — never claim volume for senders that stayed.
+      addSessionNoisePrevented(
+        data.total > 0 ? Math.round((batchAction.monthlyVolume * data.done) / data.total) : 0,
+      );
       setExpandedRow(null);
     } else {
       toast(
@@ -338,7 +353,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       invalidateAfterDecision(qc);
       // Session burn-down: count on server confirmation only (D226).
       // A backlog-archive riding an Unsubscribe already counted.
-      if (!activeAction.followOn) incrementSessionDecided();
+      if (!activeAction.followOn) {
+        incrementSessionDecided();
+        addSessionNoisePrevented(activeAction.monthlyVolume);
+      }
       setExpandedRow(null);
     } else {
       toast(
@@ -355,6 +373,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     qc,
     setExpandedRow,
     incrementSessionDecided,
+    addSessionNoisePrevented,
   ]);
 
   /**
@@ -448,6 +467,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               });
               invalidateAfterDecision(qc);
               incrementSessionDecided();
+              // Future mail from this sender stops — its monthly volume
+              // is exactly the noise prevented (D33 formula).
+              addSessionNoisePrevented(row.monthlyVolume);
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
                 setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
@@ -464,7 +486,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                         rowId: row.id,
                         senderName: row.senderName,
                         verb: 'Archive',
-                        // The unsub decision already counted (above).
+                        // The unsub decision already counted (above) —
+                        // burn-down AND noise payoff.
+                        monthlyVolume: 0,
                         followOn: true,
                       }),
                     onError: (err) => {
@@ -517,6 +541,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               rowId: row.id,
               senderName: row.senderName,
               verb,
+              monthlyVolume: row.monthlyVolume,
             });
           },
           onError: (err) => {
@@ -704,6 +729,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
             domain: batch.domain,
             senderCount: res.senderCount,
             verb,
+            monthlyVolume: eligible.reduce((sum, r) => sum + r.monthlyVolume, 0),
           });
         },
         onError: (err) => {
@@ -791,6 +817,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         </div>
         {(state.kind === 'ready' || state.kind === 'empty') && (
           <SessionProgress
+            noisePreventedPerMonth={sessionNoisePrevented}
             decided={sessionDecidedCount}
             remaining={state.kind === 'ready' ? state.rows.length : 0}
           />

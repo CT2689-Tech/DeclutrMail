@@ -77,6 +77,14 @@ export interface TriageState {
    */
   sessionDecidedCount: number;
   /**
+   * Session payoff (D33 — real, not gamified): the summed monthly
+   * volume of senders whose Archive/Later/Unsubscribe decisions the
+   * server confirmed this session — "~N emails/mo of noise prevented".
+   * Client-session ephemeral like the burn-down; the durable window
+   * figure lives in the Activity header.
+   */
+  sessionNoisePrevented: number;
+  /**
    * Domain-batch cards dismissed this session ("decide one by one").
    * Keyed by registrable domain — a session-scoped view preference,
    * so it lives here (D200), never on the server.
@@ -97,6 +105,8 @@ export interface TriageActions {
   clearPending: () => void;
   /** Bump the session burn-down by `by` confirmed decisions (default 1). */
   incrementSessionDecided: (by?: number) => void;
+  /** Add a confirmed decision's monthly volume to the session payoff. */
+  addSessionNoisePrevented: (by: number) => void;
   /** Collapse a domain-batch card back to per-sender rows for this session. */
   dismissBatchDomain: (domain: string) => void;
 }
@@ -113,6 +123,7 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   expandedRowId: null,
   pendingAction: null,
   sessionDecidedCount: 0,
+  sessionNoisePrevented: 0,
   dismissedBatchDomains: [],
 
   setRememberPreference: (verb, value) =>
@@ -130,6 +141,9 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   incrementSessionDecided: (by = 1) =>
     set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),
+
+  addSessionNoisePrevented: (by) =>
+    set((s) => ({ sessionNoisePrevented: s.sessionNoisePrevented + Math.max(0, by) })),
 
   dismissBatchDomain: (domain) =>
     set((s) =>
@@ -150,6 +164,7 @@ export function resetTriageStore(): void {
     expandedRowId: null,
     pendingAction: null,
     sessionDecidedCount: 0,
+    sessionNoisePrevented: 0,
     dismissedBatchDomains: [],
   });
 }

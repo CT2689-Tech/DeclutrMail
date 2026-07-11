@@ -376,6 +376,8 @@ function SendersScreenContent({
     // a verb-correct receipt + toast (Delete must NOT say "Archived",
     // Later must NOT say "Archived" — composite path mistake 2026-06-05).
     verb: 'Archive' | 'Delete' | 'Later';
+    /** Sender's monthly volume at dispatch — the "~N/mo prevented" payoff (D33). */
+    monthly: number;
   } | null>(null);
   // D52 — the in-flight bulk batch the status effect polls to terminal.
   const [activeBatch, setActiveBatch] = useState<{
@@ -624,7 +626,12 @@ function SendersScreenContent({
         const mutationArgs: { senderId: string; override?: boolean } = { senderId: sender.id };
         enqueue.mutate(mutationArgs, {
           onSuccess: (res) =>
-            setActiveAction({ actionId: res.actionId, senderName: sender.name, verb: 'Archive' }),
+            setActiveAction({
+              actionId: res.actionId,
+              senderName: sender.name,
+              verb: 'Archive',
+              monthly: sender.monthly,
+            }),
           onError: (err) => {
             // 402 FREE_CAP_REACHED is a designed state — the
             // UpgradeModal (global MutationCache handler,
@@ -692,6 +699,7 @@ function SendersScreenContent({
               setActiveAction({
                 actionId: res.actionId,
                 senderName: sender.name,
+                monthly: sender.monthly,
                 verb:
                   primaryType === 'delete'
                     ? 'Delete'
@@ -789,6 +797,9 @@ function SendersScreenContent({
                           actionId: cres.actionId,
                           senderName: sref.name,
                           verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                          // Follow-on of an unsubscribe that already
+                          // carried the payoff — don't double-claim.
+                          monthly: 0,
                         }),
                       onError: (err) => {
                         // 402 FREE_CAP_REACHED — the upgrade prompt
@@ -1079,7 +1090,10 @@ function SendersScreenContent({
           undoToken: data.undoToken,
         });
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}` +
+            (activeAction.monthly > 0
+              ? ` — ~${activeAction.monthly.toLocaleString()}/mo of noise prevented`
+              : ''),
           'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the

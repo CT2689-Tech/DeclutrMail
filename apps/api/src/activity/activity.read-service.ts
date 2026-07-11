@@ -35,12 +35,13 @@ import {
   lt,
   min,
   or,
+  sql,
   sum,
 } from 'drizzle-orm';
 
 import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/contracts';
 
-import { activityLog, automationRules, senders, undoJournal } from '@declutrmail/db';
+import { activityLog, automationRules, mailMessages, senders, undoJournal } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -329,6 +330,35 @@ export class ActivityReadService {
       .where(and(...whereParts))
       .groupBy(activityLog.action);
 
+    // D33 payoff — summed last-90d volume of the window's deflected
+    // senders, projected to per-month. Same join + formula as
+    // TriageReadService.projectImpact, windowed to THIS stats range.
+    const ninetyDaysAgoIso = new Date(Date.now() - 90 * 86_400_000).toISOString();
+    const deflectWhere = [
+      eq(activityLog.mailboxAccountId, args.mailboxAccountId),
+      sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
+    ];
+    if (args.lowerBound) deflectWhere.push(gte(activityLog.occurredAt, args.lowerBound));
+    if (args.upperBound) deflectWhere.push(lt(activityLog.occurredAt, args.upperBound));
+    const [impact] = await this.db
+      .select({
+        deflectedSenders: sql<number>`COUNT(DISTINCT ${activityLog.senderKey})`,
+        last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END), 0)`,
+      })
+      .from(activityLog)
+      .leftJoin(
+        mailMessages,
+        and(
+          eq(mailMessages.mailboxAccountId, activityLog.mailboxAccountId),
+          eq(mailMessages.senderKey, activityLog.senderKey),
+        ),
+      )
+      .where(and(...deflectWhere));
+    const noisePreventedPerMonth =
+      Number(impact?.deflectedSenders ?? 0) > 0
+        ? Math.round(Number(impact?.last90Total ?? 0) / 3)
+        : null;
+
     const byVerb = new Map<ActivityLogEntry['action'], number>(
       rows.map((r) => [r.action, Number(r.n)]),
     );
@@ -341,6 +371,7 @@ export class ActivityReadService {
       later: byVerb.get('later') ?? 0,
       followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
       needsAttention: 0,
+      noisePreventedPerMonth,
     };
   }
 
