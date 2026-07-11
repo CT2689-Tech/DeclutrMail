@@ -96,6 +96,47 @@ export function findDomainBatches(
 }
 
 /**
+ * Same-verdict batch (2026-07-10 founder dogfood — the "12× Unsubscribe
+ * · 95%" wall): when ≥{@link MIN_BATCH_RUN} unprotected queue rows
+ * share an Archive or Later recommendation, offer ONE composite
+ * decision for all of them — through the same D226 preview → mutation
+ * → undo pipeline as the domain batch (D32's ratified exception,
+ * extended from "same domain, consecutive" to "same recommendation,
+ * whole queue").
+ *
+ * Deliberately Archive/Later only: Unsubscribe stays per-sender — its
+ * execution depends on each sender's channel (RFC 8058 one-click vs
+ * mailto, and mailto is user-sent by D230). Keep is a per-sender
+ * policy intent. Archive is checked first (higher impact); one banner
+ * at a time keeps the ritual calm.
+ *
+ * Reuses the `DomainBatch` shape so the whole pendingBatch →
+ * BatchActionSheet → composite-enqueue → poll path runs unchanged —
+ * the label doubles as the dismissal key exactly like a real domain
+ * (it can never collide: real registrable domains are lowercased).
+ */
+export const VERDICT_BATCH_LABELS: Record<'archive' | 'later', string> = {
+  archive: 'Archive-recommended',
+  later: 'Later-recommended',
+};
+
+export function findVerdictBatch(
+  rows: readonly TriageDecisionRow[],
+  dismissedDomains: readonly string[] = [],
+): { batch: DomainBatch; verdict: 'archive' | 'later' } | null {
+  const dismissed = new Set(dismissedDomains);
+  for (const verdict of ['archive', 'later'] as const) {
+    const label = VERDICT_BATCH_LABELS[verdict];
+    if (dismissed.has(label)) continue;
+    const members = rows.filter((r) => r.verdict === verdict && r.protectionReason === null);
+    if (members.length >= MIN_BATCH_RUN) {
+      return { batch: { domain: label, startIndex: 0, rows: members }, verdict };
+    }
+  }
+  return null;
+}
+
+/**
  * Queue display plan: the ordered mix of single rows and batch cards
  * the queue renders. Keeps `TriageQueue`'s render loop a flat map
  * instead of index bookkeeping inside JSX.

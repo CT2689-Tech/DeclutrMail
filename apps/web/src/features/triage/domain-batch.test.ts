@@ -17,6 +17,8 @@ import type { TriageDecisionRow } from './data';
 import { TRIAGE_QUEUE } from './data';
 import {
   findDomainBatches,
+  findVerdictBatch,
+  VERDICT_BATCH_LABELS,
   MIN_BATCH_RUN,
   planQueueItems,
   registrableDomain,
@@ -124,5 +126,70 @@ describe('planQueueItems — interleaved render plan', () => {
     const items = planQueueItems(rows, ['amazon.com']);
     expect(items.every((i) => i.kind === 'row')).toBe(true);
     expect(items).toHaveLength(3);
+  });
+});
+
+describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
+  function vrow(
+    id: string,
+    verdict: TriageDecisionRow['verdict'],
+    protectionReason: TriageDecisionRow['protectionReason'] = null,
+  ): TriageDecisionRow {
+    return {
+      ...TRIAGE_QUEUE[0]!,
+      id,
+      senderId: `sid-${id}`,
+      senderKey: `sk_${id}`,
+      senderDomain: `${id}.example`,
+      verdict,
+      protectionReason,
+    };
+  }
+
+  it('offers a batch when ≥3 unprotected rows share the archive verdict', () => {
+    const rows = [
+      vrow('a', 'archive'),
+      vrow('b', 'unsubscribe'),
+      vrow('c', 'archive'),
+      vrow('d', 'archive'),
+    ];
+    const found = findVerdictBatch(rows);
+    expect(found?.verdict).toBe('archive');
+    expect(found?.batch.domain).toBe(VERDICT_BATCH_LABELS.archive);
+    expect(found?.batch.rows.map((r) => r.id)).toEqual(['a', 'c', 'd']);
+  });
+
+  it('excludes protected rows from the batch and the threshold', () => {
+    const rows = [vrow('a', 'archive'), vrow('b', 'archive', 'engagement'), vrow('c', 'archive')];
+    expect(findVerdictBatch(rows)).toBeNull();
+  });
+
+  it('never batches unsubscribe or keep verdicts (per-sender channels / policy intents)', () => {
+    const rows = [
+      vrow('a', 'unsubscribe'),
+      vrow('b', 'unsubscribe'),
+      vrow('c', 'unsubscribe'),
+      vrow('d', 'keep'),
+      vrow('e', 'keep'),
+      vrow('f', 'keep'),
+    ];
+    expect(findVerdictBatch(rows)).toBeNull();
+  });
+
+  it('prefers archive over later when both qualify; falls back to later when archive is dismissed', () => {
+    const rows = [
+      vrow('a', 'archive'),
+      vrow('b', 'archive'),
+      vrow('c', 'archive'),
+      vrow('d', 'later'),
+      vrow('e', 'later'),
+      vrow('f', 'later'),
+    ];
+    expect(findVerdictBatch(rows)?.verdict).toBe('archive');
+    const afterDismiss = findVerdictBatch(rows, [VERDICT_BATCH_LABELS.archive]);
+    expect(afterDismiss?.verdict).toBe('later');
+    expect(
+      findVerdictBatch(rows, [VERDICT_BATCH_LABELS.archive, VERDICT_BATCH_LABELS.later]),
+    ).toBeNull();
   });
 });
