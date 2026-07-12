@@ -108,6 +108,13 @@ export function TriageRow({
 }) {
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
+  const inlineConfirmBlocked =
+    inlinePreview != null &&
+    (inlinePreview.verb === 'Archive' ||
+      inlinePreview.verb === 'Later' ||
+      (inlinePreview.verb === 'Unsubscribe' && inlinePreview.archiveHistoric)) &&
+    typeof inlinePreview.inboxCount !== 'number';
+  const actionsDisabled = busy || inlineConfirmBlocked;
 
   // W1 (2026-07-02 audit) — below the xs ceiling the single-row grid's
   // auto columns (verdict pill + Recommended hint) consume the full
@@ -123,7 +130,7 @@ export function TriageRow({
   // the D226 sheet/preview — a swipe never mutates directly), gated by
   // the row's capability rules. Touch pointers only.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
-    enabled: isNarrow && !busy,
+    enabled: isNarrow && !actionsDisabled,
     onVerb: (verb: SwipeVerb) => {
       if (verb === 'Archive' && !canArchive(row)) return;
       if (verb === 'Later' && !canLater(row)) return;
@@ -351,7 +358,12 @@ export function TriageRow({
           way, so the K/A/U/L key listener never doubles up. */}
       {isNarrow && (
         <div style={{ padding: expanded ? '12px 14px 0' : '0 14px 12px' }}>
-          <ActionToolbar row={row} onAction={onAction} keyboardEnabled={!busy} disabled={busy} />
+          <ActionToolbar
+            row={row}
+            onAction={onAction}
+            keyboardEnabled={!actionsDisabled}
+            disabled={actionsDisabled}
+          />
           {/* D37 hint layer — gestures are invisible without it. */}
           <div
             aria-hidden="true"
@@ -378,8 +390,8 @@ export function TriageRow({
               <ActionToolbar
                 row={row}
                 onAction={onAction}
-                keyboardEnabled={!busy}
-                disabled={busy}
+                keyboardEnabled={!actionsDisabled}
+                disabled={actionsDisabled}
               />
             </div>
           )}

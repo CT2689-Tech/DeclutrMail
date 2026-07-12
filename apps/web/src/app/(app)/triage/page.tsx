@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
 import { useAuth } from '@/features/auth/auth-provider';
+import { TierGate } from '@/features/billing/tier-gate';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
@@ -27,6 +28,23 @@ import { track } from '@/lib/posthog';
 export default function TriagePage() {
   useConnectResultToast();
 
+  return (
+    <TierGate
+      capability="triage"
+      title="Triage"
+      pitch="Work through a focused sender queue with recommendations, previews, and a durable Activity receipt."
+      bullets={[
+        'Review one sender at a time',
+        'Preview every manual mail-moving action',
+        'Keep Gmail as the place you read and reply',
+      ]}
+    >
+      <TriageExperience />
+    </TierGate>
+  );
+}
+
+function TriageExperience() {
   const { me } = useAuth();
   const queue = useTriageQueue();
   const stats = useTriageStats();

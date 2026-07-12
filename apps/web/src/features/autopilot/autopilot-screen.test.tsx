@@ -145,9 +145,11 @@ describe('AutopilotScreen — rules management (D101)', () => {
         /would have archived 212 emails from 34 senders in the last 7 days/i,
       ),
     ).toBeInTheDocument();
-    // Unsubscribe preset — sender count only (intent acts per sender).
+    // Unsubscribe preset — sender count only (request acts per sender).
     expect(
-      within(rulesList).getByText(/would have unsubscribed from 2 senders in the last 7 days/i),
+      within(rulesList).getByText(
+        /would have requested unsubscribe from 2 senders in the last 7 days/i,
+      ),
     ).toBeInTheDocument();
     // Disabled rule (long-dormant) shows NO digest line even in observe mode.
     expect(within(rulesList).queryAllByText(/would have/i)).toHaveLength(4);

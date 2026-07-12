@@ -13,7 +13,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'DeclutrMail',
     short_name: 'DeclutrMail',
-    description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
+    description: 'A Gmail sender-control companion with live previews and Activity undo.',
     start_url: '/',
     display: 'browser',
     background_color: '#FAFAF7',

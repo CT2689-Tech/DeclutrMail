@@ -80,6 +80,27 @@ describe('PrivacyDataView', () => {
     renderView({ undoDays: null });
     // Generic free/pro copy straight off the entitlements manifest.
     expect(screen.getByText(/7 days \(\s*30 days on Pro\)/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Delete has an Activity undo token for up to 30 days/i),
+    ).toBeInTheDocument();
+  });
+
+  it('states that encrypted OAuth credentials are excluded from exports', () => {
+    renderView();
+    expect(screen.getByText(/encrypted OAuth credentials are not included/i)).toBeInTheDocument();
+    expect(screen.queryByText(/we don't store them/i)).not.toBeInTheDocument();
+  });
+
+  it('describes the actual mailbox datasets without promising a full account export', () => {
+    const { container } = renderView();
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain('mailbox email, connection status and date');
+    expect(text).toContain('sender records with standing policies');
+    expect(text).toContain('decision/activity history');
+    expect(text).toContain('app preferences, billing records');
+    expect(text).not.toMatch(/download everything/i);
+    expect(text).not.toMatch(/full export/i);
   });
 
   it('export buttons hand the format to onExport', async () => {

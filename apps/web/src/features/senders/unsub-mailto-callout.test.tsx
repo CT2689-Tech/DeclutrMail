@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
-import { UnsubMailtoCallout } from './unsub-mailto-callout';
+import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 
 /**
  * D230 manual-path affordance: the callout must open a PREFILLED Gmail
@@ -46,5 +46,36 @@ describe('UnsubMailtoCallout', () => {
       <UnsubMailtoCallout senderName="X" mailtoUrl="https://not-a-mailto.example" />,
     );
     expect(container.firstChild).toBeNull();
+  });
+});
+
+describe('UnsubMailtoChecklist', () => {
+  it('keeps every bulk email request visible until the user opens its Gmail draft', () => {
+    render(
+      <UnsubMailtoChecklist
+        items={[
+          { senderName: 'List A', mailtoUrl: 'mailto:leave@a.example' },
+          { senderName: 'List B', mailtoUrl: 'mailto:leave@b.example?subject=Remove%20me' },
+        ]}
+        onDismiss={() => {}}
+      />,
+    );
+
+    const region = screen.getByRole('region', { name: 'Email unsubscribe drafts' });
+    expect(region).toHaveTextContent('2 email unsubscribe drafts still need you');
+    expect(region).toHaveTextContent('did not send the email requests');
+    expect(screen.getAllByRole('link', { name: 'Open draft' })).toHaveLength(2);
+  });
+
+  it('dismisses the checklist explicitly', () => {
+    const onDismiss = vi.fn();
+    render(
+      <UnsubMailtoChecklist
+        items={[{ senderName: 'List A', mailtoUrl: 'mailto:leave@a.example' }]}
+        onDismiss={onDismiss}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss email unsubscribe drafts' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });

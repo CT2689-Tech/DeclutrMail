@@ -22,6 +22,7 @@ import { captureFeatureException } from '@/lib/sentry';
 // packages/shared promotion, so triage imports across the boundary
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 // D34 — the settings feature owns the persisted skip-sheet preference
 // (users.preferences.actionSheetPrefs); triage hydrates from it and
 // writes through when the sheet's "remember this" toggle confirms.
@@ -117,6 +118,8 @@ function openPricing(): void {
 
 export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageScreenState }) {
   const qc = useQueryClient();
+  const auth = useOptionalAuth();
+  const activeEmail = auth ? getActiveMailboxEmail(auth.me) : undefined;
   const pendingAction = useTriageStore((s) => s.pendingAction);
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
@@ -127,8 +130,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
-  const sessionNoisePrevented = useTriageStore((s) => s.sessionNoisePrevented);
-  const addSessionNoisePrevented = useTriageStore((s) => s.addSessionNoisePrevented);
+  const sessionMessagesMoved = useTriageStore((s) => s.sessionMessagesMoved);
+  const addSessionMessagesMoved = useTriageStore((s) => s.addSessionMessagesMoved);
 
   const keepIntent = useKeepIntent();
   const unsubIntent = useRecordUnsubscribeIntent();
@@ -152,12 +155,6 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     rowId: string;
     senderName: string;
     verb: 'Archive' | 'Later';
-    /**
-     * The row's monthly volume at dispatch time — feeds the session
-     * "noise prevented" payoff on confirmation (D33). 0 for follow-ons
-     * (the unsubscribe already counted this sender's volume).
-     */
-    monthlyVolume: number;
     /**
      * True when this job is the optional backlog-archive that rides an
      * Unsubscribe decision (D9). The unsub already counted toward the
@@ -196,10 +193,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const [batchAction, setBatchAction] = useState<{
     batchId: string;
     domain: string;
-    senderCount: number;
     verb: BatchVerb;
-    /** Summed monthly volume of the eligible members (D33 payoff). */
-    monthlyVolume: number;
   } | null>(null);
   const enqueueBulk = useEnqueueBulkAction();
   const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
@@ -247,11 +241,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
-      // Payoff scales to the confirmed share when the fan-out had
-      // partial failures — never claim volume for senders that stayed.
-      addSessionNoisePrevented(
-        data.total > 0 ? Math.round((batchAction.monthlyVolume * data.done) / data.total) : 0,
-      );
+      addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
       toast(
@@ -268,6 +258,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     qc,
     setExpandedRow,
     incrementSessionDecided,
+    addSessionMessagesMoved,
   ]);
 
   useEffect(() => {
@@ -329,6 +320,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     : compositePreview.data != null
       ? compositePreview.data.counts.all
       : 'loading';
+  const inlinePreviewBlocked =
+    pendingAction?.surface === 'inline' &&
+    (pendingAction.verb === 'Archive' || pendingAction.verb === 'Later') &&
+    typeof previewInboxCount !== 'number';
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —
@@ -355,8 +350,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       // A backlog-archive riding an Unsubscribe already counted.
       if (!activeAction.followOn) {
         incrementSessionDecided();
-        addSessionNoisePrevented(activeAction.monthlyVolume);
       }
+      addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
       toast(
@@ -373,7 +368,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     qc,
     setExpandedRow,
     incrementSessionDecided,
-    addSessionNoisePrevented,
+    addSessionMessagesMoved,
   ]);
 
   /**
@@ -382,8 +377,8 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
    * sheet-confirm path and the inline-preview path call it.
    *
    * `source` is the surface that confirmed the decision — it feeds the
-   * D159 `triage_action_taken` event, which fires ONLY on mutation
-   * success (never on preview open, never optimistically).
+   * D159 `triage_action_taken` event, which fires only after the server
+   * accepts the decision (never on preview open, never optimistically).
    */
   const dispatchAction = useCallback(
     (
@@ -423,7 +418,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 verb: 'keep',
                 sender_id: row.senderId,
                 matched_recommendation: row.verdict === 'keep',
-                affected_messages: 0,
+                requested_messages: 0,
                 source,
               });
               invalidateAfterDecision(qc);
@@ -451,7 +446,10 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       if (verb === 'Unsubscribe') {
         setIntentRowId(row.id);
         unsubIntent.mutate(
-          { senderId: row.senderId },
+          {
+            senderId: row.senderId,
+            includesBacklogAction: Boolean(details?.archiveHistoric),
+          },
           {
             onSuccess: (res) => {
               // One decision → one event: the optional backlog archive
@@ -462,14 +460,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                 verb: 'unsubscribe',
                 sender_id: row.senderId,
                 matched_recommendation: row.verdict === 'unsubscribe',
-                affected_messages: 0,
+                requested_messages: 0,
                 source,
               });
               invalidateAfterDecision(qc);
               incrementSessionDecided();
-              // Future mail from this sender stops — its monthly volume
-              // is exactly the noise prevented (D33 formula).
-              addSessionNoisePrevented(row.monthlyVolume);
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
                 setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
@@ -488,7 +483,6 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
                         verb: 'Archive',
                         // The unsub decision already counted (above) —
                         // burn-down AND noise payoff.
-                        monthlyVolume: 0,
                         followOn: true,
                       }),
                     onError: (err) => {
@@ -533,7 +527,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               verb: primaryType,
               sender_id: row.senderId,
               matched_recommendation: row.verdict === primaryType,
-              affected_messages: res.primaryCount,
+              requested_messages: res.primaryCount,
               source,
             });
             setActiveAction({
@@ -541,7 +535,6 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               rowId: row.id,
               senderName: row.senderName,
               verb,
-              monthlyVolume: row.monthlyVolume,
             });
           },
           onError: (err) => {
@@ -649,18 +642,14 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         pendingAction.rowId === row.id &&
         pendingAction.verb === verb
       ) {
+        if (inlinePreviewBlocked) return;
         // Second click on the same verb confirms.
-        dispatchAction(
-          verb,
-          row,
-          { archiveHistoric: verb === 'Unsubscribe', rememberPreference: true },
-          'inline',
-        );
+        dispatchAction(verb, row, { archiveHistoric: false, rememberPreference: true }, 'inline');
         return;
       }
       onRowAction(verb, row);
     },
-    [pendingAction, dispatchAction, onRowAction],
+    [pendingAction, inlinePreviewBlocked, dispatchAction, onRowAction],
   );
 
   /**
@@ -721,15 +710,13 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           void track('bulk_action_taken', {
             verb: verb === 'Archive' ? 'archive' : 'later',
             selected_count: res.senderCount,
-            affected_messages: bulkPreview.data?.totals.all ?? -1,
+            requested_messages: res.requestedTotal,
             source: 'triage_domain_batch',
           });
           setBatchAction({
             batchId: res.batchId,
             domain: batch.domain,
-            senderCount: res.senderCount,
             verb,
-            monthlyVolume: eligible.reduce((sum, r) => sum + r.monthlyVolume, 0),
           });
         },
         onError: (err) => {
@@ -796,7 +783,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         }}
       >
         <div>
-          <Eyebrow>Triage · default mailbox</Eyebrow>
+          <Eyebrow>Triage · {activeEmail ?? 'active Gmail account'}</Eyebrow>
           <h1
             style={{
               fontFamily: font.display,
@@ -817,7 +804,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         </div>
         {(state.kind === 'ready' || state.kind === 'empty') && (
           <SessionProgress
-            noisePreventedPerMonth={sessionNoisePrevented}
+            messagesMoved={sessionMessagesMoved}
             decided={sessionDecidedCount}
             remaining={state.kind === 'ready' ? state.rows.length : 0}
           />
@@ -901,6 +888,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={(pendingAction?.verb ?? 'Archive') as SheetableVerb}
         row={pendingRow}
         inboxCount={previewInboxCount}
+        mailboxEmail={activeEmail}
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
       />
@@ -911,6 +899,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
         preview={bulkPreview.isError ? 'unavailable' : (bulkPreview.data ?? 'loading')}
+        mailboxEmail={activeEmail}
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}
       />

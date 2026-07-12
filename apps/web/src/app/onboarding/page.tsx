@@ -18,7 +18,9 @@ import { StepFirstTriage } from '@/features/onboarding/step-first-triage';
 import { StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
+import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { useMe } from '@/features/auth/api/use-me';
+import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
 import { ApiError } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
@@ -69,6 +71,8 @@ export default function OnboardingPage() {
 function OnboardingFlow() {
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
+  const billingIntent = parseBillingIntentPath(params.get('returnTo'));
+  const returnTo = billingIntent ? billingIntentPath(billingIntent) : null;
 
   if (secondaryMailboxId) {
     // Secondary-connect gate is an authed surface — an unauthed hit
@@ -79,12 +83,12 @@ function OnboardingFlow() {
       </AuthProvider>
     );
   }
-  return <FreshFlow />;
+  return <FreshFlow returnTo={returnTo} />;
 }
 
 /* ── Fresh-flow: pre-auth boundary ─────────────────────────────────── */
 
-function FreshFlow() {
+function FreshFlow({ returnTo }: { returnTo: string | null }) {
   // Soft session probe — same query key AuthProvider uses, so when a
   // session exists the provider below resolves from cache instantly.
   const me = useMe();
@@ -116,16 +120,17 @@ function FreshFlow() {
 
   return (
     <AuthProvider>
-      <AuthedFlow />
+      <AuthedFlow returnTo={returnTo} />
     </AuthProvider>
   );
 }
 
 /* ── Fresh-flow: authed steps 3-5 ──────────────────────────────────── */
 
-function AuthedFlow() {
+function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   const router = useRouter();
   const { me } = useAuth();
+  useAnalyticsIdentity(me.user.id);
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
 
@@ -160,9 +165,9 @@ function AuthedFlow() {
   const isDone = step.kind === 'done';
   useEffect(() => {
     if (isDone) {
-      router.replace('/senders');
+      router.replace(returnTo ?? '/senders');
     }
-  }, [isDone, router]);
+  }, [isDone, returnTo, router]);
 
   /** D113 completion (finish or D106 skip) → funnel `finished` → exit. */
   const finish = useCallback(
@@ -173,7 +178,7 @@ function AuthedFlow() {
         {
           onSuccess: () => {
             void track('onboarding_step_completed', { step: 'finished', duration_ms: 0 });
-            router.replace('/senders');
+            router.replace(returnTo ?? '/senders');
           },
           onError: (err) => {
             captureFeatureException(err, { surface: 'onboarding', reason: 'complete' });
@@ -182,7 +187,7 @@ function AuthedFlow() {
         },
       );
     },
-    [complete, router],
+    [complete, returnTo, router],
   );
 
   const skipCorner = (
@@ -259,6 +264,7 @@ function AuthedFlow() {
 function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
   const router = useRouter();
   const { me } = useAuth();
+  useAnalyticsIdentity(me.user.id);
   const setActive = useSetActiveMailbox();
 
   // Gate THAT mailbox explicitly so it survives the user switching

@@ -3,12 +3,14 @@
 /**
  * Entitlement-402 surfacing (D19/D77/D81 — U13 billing FE).
  *
- * The BE's entitlement gates return 402 with one of two codes:
+ * The BE's entitlement gates return 402 with one of three codes:
  *
  *   - `FREE_CAP_REACHED`   — a Free workspace spent its 5 lifetime
  *     cleanup actions (action enqueue paths).
  *   - `INBOX_LIMIT_REACHED` — connecting another Gmail account would
  *     exceed the tier's inbox limit (connect path).
+ *   - `ACTION_TIER_REQUIRED` — the requested Action Registry selector
+ *     starts above the workspace tier (for example Free → multi-sender).
  *
  * A global TanStack `MutationCache.onError` (see `lib/query-client.ts`)
  * reports either hit into this tiny zustand store; the `<UpgradeModal>`
@@ -38,10 +40,19 @@ export interface InboxLimitDetails {
   connected: number;
 }
 
+/** Scalar Action Registry context attached to ACTION_TIER_REQUIRED. */
+export interface ActionTierDetails {
+  tier: 'free' | 'plus' | 'pro' | 'team' | 'enterprise';
+  requiredTier: 'plus' | 'pro';
+  selector: 'sender' | 'multi-sender' | 'sender-filter';
+  verb: string;
+}
+
 /** Discriminated hit — which gate fired, with its BE-provided context. */
 export type UpgradeGateHit =
   | { reason: 'free_cap'; details: FreeCapDetails }
-  | { reason: 'inbox_limit'; details: InboxLimitDetails };
+  | { reason: 'inbox_limit'; details: InboxLimitDetails }
+  | { reason: 'action_tier'; details: ActionTierDetails };
 
 interface UpgradeGateState {
   /** The latest entitlement-gate hit, or null when none / dismissed. */
@@ -59,6 +70,12 @@ export const useUpgradeGateStore = create<UpgradeGateState>((set) => ({
 /** D19 defaults — used when a malformed envelope omits `details`. */
 const FREE_CAP_FALLBACK: FreeCapDetails = { remaining: 0, limit: 5, used: 5, requiredUnits: 1 };
 const INBOX_LIMIT_FALLBACK: InboxLimitDetails = { limit: 1, connected: 1 };
+const ACTION_TIER_FALLBACK: ActionTierDetails = {
+  tier: 'free',
+  requiredTier: 'plus',
+  selector: 'multi-sender',
+  verb: 'archive',
+};
 
 /**
  * Narrow an arbitrary mutation error to an entitlement 402 and extract
@@ -90,6 +107,17 @@ export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
       },
     };
   }
+  if (code === 'ACTION_TIER_REQUIRED') {
+    return {
+      reason: 'action_tier',
+      details: {
+        tier: asWorkspaceTier(d['tier']),
+        requiredTier: asRequiredTier(d['requiredTier']),
+        selector: asSelector(d['selector']),
+        verb: typeof d['verb'] === 'string' && d['verb'].length > 0 ? d['verb'] : 'archive',
+      },
+    };
+  }
   return null;
 }
 
@@ -107,4 +135,24 @@ export function reportUpgradeGateHit(error: unknown): boolean {
 
 function asCount(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function asWorkspaceTier(value: unknown): ActionTierDetails['tier'] {
+  return value === 'free' ||
+    value === 'plus' ||
+    value === 'pro' ||
+    value === 'team' ||
+    value === 'enterprise'
+    ? value
+    : ACTION_TIER_FALLBACK.tier;
+}
+
+function asRequiredTier(value: unknown): ActionTierDetails['requiredTier'] {
+  return value === 'pro' ? 'pro' : ACTION_TIER_FALLBACK.requiredTier;
+}
+
+function asSelector(value: unknown): ActionTierDetails['selector'] {
+  return value === 'sender' || value === 'multi-sender' || value === 'sender-filter'
+    ? value
+    : ACTION_TIER_FALLBACK.selector;
 }

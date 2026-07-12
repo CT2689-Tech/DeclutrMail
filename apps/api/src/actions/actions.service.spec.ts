@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
+import { ConflictException } from '@nestjs/common';
 import {
   actionJobs,
   activityLog,
@@ -18,8 +19,9 @@ import {
 } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { ActionsService } from './actions.service.js';
 
 /**
@@ -263,6 +265,7 @@ describe('ActionsService', () => {
   });
 
   it('messages selector drops forged ids AND owned-but-not-in-INBOX ids', async () => {
+    await db.update(workspaces).set({ tier: 'plus' });
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
     await seedMessage(db, mailboxId, 'm2', ['INBOX']);
     await seedMessage(db, mailboxId, 'm3', ['CATEGORY_PROMOTIONS']); // owned, NOT in inbox
@@ -278,6 +281,29 @@ describe('ActionsService', () => {
     expect(res.requestedCount).toBe(2);
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect([...row!.resolvedMessageIds].sort()).toEqual(['m1', 'm2']);
+  });
+
+  it('legacy messages selector requires Plus before resolving or writing any ids', async () => {
+    await seedMessage(db, mailboxId, 'm-free', ['INBOX']);
+
+    await expect(
+      svc.enqueueArchive({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'messages', messageIds: ['m-free'] },
+        idempotencyKey: 'free-messages-denied',
+        override: false,
+      }),
+    ).rejects.toMatchObject({
+      code: 'ACTION_TIER_REQUIRED',
+      details: {
+        tier: 'free',
+        requiredTier: 'plus',
+        selector: 'multi-sender',
+        verb: 'archive',
+      },
+    });
+    expect(queue.count).toBe(0);
+    expect(await db.select().from(actionJobs)).toHaveLength(0);
   });
 
   it('is idempotent on a repeated Idempotency-Key', async () => {
@@ -482,6 +508,72 @@ describe('ActionsService', () => {
   });
 
   describe('enqueueComposite (ADR-0020)', () => {
+    it('messages selector requires Plus before a primary or secondary can write', async () => {
+      await seedMessage(db, mailboxId, 'm-free-composite', ['INBOX']);
+
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'messages', messageIds: ['m-free-composite'] },
+          primary: { type: 'later' },
+          secondary: { type: 'delete' },
+          idempotencyKey: 'free-composite-messages-denied',
+          override: false,
+        }),
+      ).rejects.toMatchObject({
+        code: 'ACTION_TIER_REQUIRED',
+        details: { selector: 'multi-sender', verb: 'later' },
+      });
+      expect(queue.count).toBe(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+    });
+
+    it('Plus messages selector preserves owned-id filtering for primary + secondary', async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+      await seedMessage(db, mailboxId, 'm-owned', ['INBOX']);
+      await seedMessage(db, mailboxId, 'm-not-inbox', ['CATEGORY_PROMOTIONS']);
+
+      const assertActionSelectorTier = vi.fn().mockResolvedValue(undefined);
+      const checkedSvc = new ActionsService(db as never, queue as never, undefined, null, {
+        assertActionSelectorTier,
+        assertCleanupCapacity: vi.fn().mockResolvedValue(undefined),
+      } as never);
+
+      const res = await checkedSvc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: {
+          type: 'messages',
+          messageIds: ['m-owned', 'm-not-inbox', 'm-forged'],
+        },
+        primary: { type: 'later' },
+        secondary: { type: 'delete' },
+        idempotencyKey: 'plus-composite-messages',
+        override: false,
+      });
+
+      expect(res.primaryCount).toBe(1);
+      expect(res.secondaryCount).toBe(1);
+      const rows = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      expect(rows).toHaveLength(2);
+      expect(rows.every((row) => row.selector.type === 'messages')).toBe(true);
+      expect(rows.every((row) => row.resolvedMessageIds.join(',') === 'm-owned')).toBe(true);
+      expect(assertActionSelectorTier).toHaveBeenNthCalledWith(
+        1,
+        mailboxId,
+        'later',
+        'multi-sender',
+      );
+      expect(assertActionSelectorTier).toHaveBeenNthCalledWith(
+        2,
+        mailboxId,
+        'delete',
+        'multi-sender',
+      );
+    });
+
     it('single-verb Archive: ONE row, composite_id null, namespaced idempotency key', async () => {
       await seedMessage(db, mailboxId, 'm1', ['INBOX'], daysAgo(5));
       const res = await svc.enqueueComposite({
@@ -733,6 +825,25 @@ describe('ActionsService', () => {
   });
 
   describe('previewBulkComposite (D52 aggregated preview)', () => {
+    beforeEach(async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+    });
+
+    it('rejects a Free workspace before resolving any multi-sender preview data', async () => {
+      await db.update(workspaces).set({ tier: 'free' });
+      const sender2Id = await seedSecondSender(db, mailboxId);
+
+      await expect(
+        svc.previewBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+        }),
+      ).rejects.toMatchObject({
+        code: 'ACTION_TIER_REQUIRED',
+        details: { tier: 'free', requiredTier: 'plus', selector: 'multi-sender' },
+      });
+    });
+
     it('aggregates bucket counts across the selection with a per-sender breakdown', async () => {
       const sender2Id = await seedSecondSender(db, mailboxId);
       // Sender 1: two INBOX messages (5d + 100d) and one archived (excluded).
@@ -799,6 +910,39 @@ describe('ActionsService', () => {
   });
 
   describe('enqueueBulkComposite (D52 multi-sender fan-out)', () => {
+    beforeEach(async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+    });
+
+    it('rejects a Free multi-sender enqueue before writing or queueing, while single-sender stays available', async () => {
+      await db.update(workspaces).set({ tier: 'free' });
+      const sender2Id = await seedSecondSender(db, mailboxId);
+
+      await expect(
+        svc.enqueueBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          primary: { type: 'archive' },
+          idempotencyKey: 'bulk-free-denied',
+        }),
+      ).rejects.toMatchObject({
+        code: 'ACTION_TIER_REQUIRED',
+        details: { tier: 'free', requiredTier: 'plus', selector: 'multi-sender' },
+      });
+      expect(queue.count).toBe(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          idempotencyKey: 'single-free-allowed',
+          override: false,
+        }),
+      ).resolves.toMatchObject({ status: 'queued' });
+    });
+
     it('fans out one row per sender linked to the anchor, with per-sender counts + keys', async () => {
       const sender2Id = await seedSecondSender(db, mailboxId);
       await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
@@ -970,6 +1114,13 @@ describe('ActionsService', () => {
   });
 
   describe('getBatchStatus (D52 aggregate poll)', () => {
+    beforeEach(async () => {
+      // Batch handles can only be produced by the Plus multi-sender
+      // selector. Seed the real entitlement instead of weakening the
+      // production gate in these status-only fixtures.
+      await db.update(workspaces).set({ tier: 'plus' });
+    });
+
     /** Build a 2-sender archive batch and return its handle + row ids. */
     async function seedBatch(): Promise<{
       batchId: string;
@@ -1124,6 +1275,16 @@ describe('ActionsService', () => {
   });
 
   describe('recordUnsubscribeIntent (D38 + 2026-06-05 brainstorm)', () => {
+    beforeEach(async () => {
+      await db
+        .update(senders)
+        .set({
+          unsubscribeMethod: 'mailto',
+          unsubscribeUrl: 'mailto:unsubscribe@shop.example?subject=unsubscribe',
+        })
+        .where(eq(senders.id, senderId));
+    });
+
     it('upserts sender_policies + writes 0-affected activity_log row + returns the id', async () => {
       const result = await svc.recordUnsubscribeIntent({
         mailboxAccountId: mailboxId,
@@ -1249,6 +1410,33 @@ describe('ActionsService', () => {
         }),
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });
+
+    it('records a no-channel preference without consuming a Free cleanup unit', async () => {
+      await db
+        .update(senders)
+        .set({ unsubscribeMethod: 'none', unsubscribeUrl: null })
+        .where(eq(senders.id, senderId));
+
+      const result = await svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'unsub-no-channel',
+      });
+
+      expect(result.method).toBe('none');
+      const [intent] = await db
+        .select({ status: actionJobs.status })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'unsub:unsub-no-channel'));
+      expect(intent?.status).toBe('failed');
+      const [mailbox] = await db
+        .select({ workspaceId: mailboxAccounts.workspaceId })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxId));
+      await expect(
+        new EntitlementsService(db as never).cleanupSummary(mailbox!.workspaceId),
+      ).resolves.toMatchObject({ used: 0, remaining: 5 });
+    });
   });
 
   describe('recordUnsubscribeIntent — execution wiring (D9 Wave 2)', () => {
@@ -1335,6 +1523,137 @@ describe('ActionsService', () => {
         .from(actionJobs)
         .where(eq(actionJobs.idempotencyKey, 'unsubexec-replay-unsub-key'));
       expect(execRows).toHaveLength(1);
+    });
+
+    it('rejects a cross-mailbox key reuse without leaking cached handles or self-healing the foreign queue job', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=local');
+      const [owner] = await db
+        .select({
+          workspaceId: mailboxAccounts.workspaceId,
+          userId: mailboxAccounts.userId,
+        })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxId));
+      const [foreignMailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: owner!.workspaceId,
+          userId: owner!.userId,
+          provider: 'gmail',
+          providerAccountId: 'foreign@x',
+        })
+        .returning({ id: mailboxAccounts.id });
+      const foreignSenderId = await seedSender(db, foreignMailbox!.id);
+      await db
+        .update(senders)
+        .set({
+          unsubscribeMethod: 'one_click',
+          unsubscribeUrl: 'https://unsub.shop.example/oc?u=foreign',
+        })
+        .where(eq(senders.id, foreignSenderId));
+      const service = svcWithUnsubQueue();
+
+      const foreignResult = await service.recordUnsubscribeIntent({
+        mailboxAccountId: foreignMailbox!.id,
+        senderId: foreignSenderId,
+        idempotencyKey: 'cross-mailbox-unsub-key',
+      });
+      const before = {
+        policies: await db.select().from(senderPolicies),
+        activity: await db.select().from(activityLog),
+        jobs: await db.select().from(actionJobs),
+        outbox: await db.select().from(outboxEvents),
+      };
+
+      // Model the crash window the old global cache lookup would
+      // incorrectly self-heal using the LOCAL mailbox/sender context.
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+      const caught: unknown = await service
+        .recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'cross-mailbox-unsub-key',
+        })
+        .catch((error: unknown) => error);
+
+      expect(caught).toBeInstanceOf(ConflictException);
+      const conflict = caught as ConflictException;
+      expect(conflict.getStatus()).toBe(409);
+      expect(conflict.getResponse()).toEqual({
+        code: 'IDEMPOTENCY_KEY_CONFLICT',
+        message: 'Idempotency-Key already used by a different request.',
+      });
+      const publicError = JSON.stringify(conflict.getResponse());
+      expect(publicError).not.toContain(foreignResult.activityLogId);
+      expect(publicError).not.toContain(foreignResult.recordedAt);
+      expect(publicError).not.toContain(foreignResult.executionActionId!);
+      expect(unsubQueue.count).toBe(0);
+      expect(unsubQueue.jobIds).toEqual([]);
+      expect({
+        policies: await db.select().from(senderPolicies),
+        activity: await db.select().from(activityLog),
+        jobs: await db.select().from(actionJobs),
+        outbox: await db.select().from(outboxEvents),
+      }).toEqual(before);
+    });
+
+    it('rejects same-mailbox key reuse for a different sender without echoing the first sender action', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=first');
+      const secondSenderId = await seedSecondSender(db, mailboxId);
+      await db
+        .update(senders)
+        .set({
+          unsubscribeMethod: 'one_click',
+          unsubscribeUrl: 'https://unsub.brand.example/oc?u=second',
+        })
+        .where(eq(senders.id, secondSenderId));
+      const service = svcWithUnsubQueue();
+
+      const firstResult = await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'same-mailbox-other-sender-key',
+      });
+      const before = {
+        policies: await db.select().from(senderPolicies),
+        activity: await db.select().from(activityLog),
+        jobs: await db.select().from(actionJobs),
+        outbox: await db.select().from(outboxEvents),
+      };
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+
+      const caught: unknown = await service
+        .recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId: secondSenderId,
+          idempotencyKey: 'same-mailbox-other-sender-key',
+          // Replays ignore this hint, but a different sender is not a
+          // replay and must conflict before the two-unit preflight.
+          includesBacklogAction: true,
+        })
+        .catch((error: unknown) => error);
+
+      expect(caught).toBeInstanceOf(ConflictException);
+      const conflict = caught as ConflictException;
+      expect(conflict.getStatus()).toBe(409);
+      expect(conflict.getResponse()).toEqual({
+        code: 'IDEMPOTENCY_KEY_CONFLICT',
+        message: 'Idempotency-Key already used by a different request.',
+      });
+      const publicError = JSON.stringify(conflict.getResponse());
+      expect(publicError).not.toContain(firstResult.activityLogId);
+      expect(publicError).not.toContain(firstResult.recordedAt);
+      expect(publicError).not.toContain(firstResult.executionActionId!);
+      expect(unsubQueue.count).toBe(0);
+      expect(unsubQueue.jobIds).toEqual([]);
+      expect({
+        policies: await db.select().from(senderPolicies),
+        activity: await db.select().from(activityLog),
+        jobs: await db.select().from(actionJobs),
+        outbox: await db.select().from(outboxEvents),
+      }).toEqual(before);
     });
 
     it('one_click replay re-enqueues an orphaned queued execution row (crash between commit and enqueue)', async () => {

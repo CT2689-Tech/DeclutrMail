@@ -112,3 +112,12 @@ describe('useTriageStore — pending action lifecycle (D226)', () => {
     expect(useTriageStore.getState().pendingAction).toBeNull();
   });
 });
+
+describe('useTriageStore — honest session payoff', () => {
+  it('sums worker-confirmed affected messages without a future-mail estimate', () => {
+    useTriageStore.getState().addSessionMessagesMoved(12);
+    useTriageStore.getState().addSessionMessagesMoved(8);
+    useTriageStore.getState().addSessionMessagesMoved(-4);
+    expect(useTriageStore.getState().sessionMessagesMoved).toBe(20);
+  });
+});

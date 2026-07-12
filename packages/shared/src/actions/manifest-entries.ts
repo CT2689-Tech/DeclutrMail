@@ -245,7 +245,8 @@ export const ACTION_REGISTRY: ActionRegistry = {
     verb: 'unsubscribe',
     copy: {
       primary: 'Unsubscribe',
-      description: 'Stop future mail from this sender. Nothing already in your inbox moves.',
+      description:
+        'Ask this sender to stop future mail. Existing mail stays put; the sender controls whether and when delivery stops.',
     },
     shortcut: CANONICAL_SHORTCUTS.unsubscribe,
     preview: 'modal',
@@ -268,7 +269,7 @@ export const ACTION_REGISTRY: ActionRegistry = {
     copy: {
       primary: 'Delete',
       description:
-        "Move this sender's mail to Gmail Trash. Recoverable for 30 days, after which Gmail permanently deletes it.",
+        "Move this sender's mail to Gmail Trash. Gmail normally keeps it there for up to 30 days unless Trash is emptied sooner.",
     },
     shortcut: CANONICAL_SHORTCUTS.delete,
     // Delete is destructive in a way that survives undo — Trash recovery

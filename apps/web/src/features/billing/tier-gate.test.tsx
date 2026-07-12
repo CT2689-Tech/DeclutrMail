@@ -86,4 +86,29 @@ describe('TierGate', () => {
     renderGate();
     expect(screen.getByTestId('gated-child')).toBeInTheDocument();
   });
+
+  it('derives the Plus plan and price for the Triage capability', () => {
+    mockTier = 'free';
+    const { unmount } = render(
+      <TierGate capability="triage" title="Triage" pitch="Review a focused sender queue.">
+        <div data-testid="triage-content">Triage content</div>
+      </TierGate>,
+    );
+
+    expect(screen.getByText('Plus feature')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
+    expect(screen.queryByTestId('triage-content')).not.toBeInTheDocument();
+
+    unmount();
+    mockTier = 'plus';
+    render(
+      <TierGate capability="triage" title="Triage" pitch="Review a focused sender queue.">
+        <div data-testid="triage-content">Triage content</div>
+      </TierGate>,
+    );
+    expect(screen.getByTestId('triage-content')).toBeInTheDocument();
+  });
 });

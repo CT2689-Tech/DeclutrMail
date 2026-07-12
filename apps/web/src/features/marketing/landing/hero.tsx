@@ -1,4 +1,4 @@
-import { PrivacyBadge } from '@declutrmail/shared';
+import { ACTION_PREVIEW_CLAIM, PrivacyBadge } from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
 import { oauthStartUrl } from './urls';
@@ -26,7 +26,7 @@ export function Hero() {
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
             DeclutrMail turns thousands of emails into a handful of sender decisions — with
-            automation, privacy-first indexing, and 7-day undo.
+            automation, privacy-first indexing, and 7-day Archive/Later Activity undo on Free.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta
@@ -41,21 +41,23 @@ export function Hero() {
               </span>
             </TrackedCta>
             <TrackedCta
-              href="/pricing"
-              cta="see_pricing"
+              href="/inbox-simulator"
+              cta="try_demo"
               placement="hero"
               className="dm-mkt-cta dm-mkt-cta-ghost"
             >
-              See pricing
+              Try the demo first
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free tier · no card · every action reversible
+            Free tier · no card · preview before mail moves
           </p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerCard />
-          <p className="dm-mkt-ledger-caption">one decision · 412 emails handled · reversible</p>
+          <p className="dm-mkt-ledger-caption">
+            one Archive decision · 412 emails handled · reversible
+          </p>
         </div>
       </section>
 
@@ -75,7 +77,7 @@ function LedgerCard() {
       <div className="dm-mkt-ledger-head">
         <span>
           <span className="dm-mkt-ledger-dot" aria-hidden="true" />
-          Triage — decision 1 of 14
+          Sender review — decision 1 of 14
         </span>
         <span>this week</span>
       </div>
@@ -103,13 +105,18 @@ function LedgerCard() {
               </span>
             ))}
           </div>
+          <div className="dm-mkt-ledger-preview">
+            <b>Preview</b>
+            <span>412 messages → All Mail</span>
+            <span>Existing mail only · Undo in Activity</span>
+          </div>
         </div>
       </div>
       <div className="dm-mkt-ledger-toast">
         <span>
           <b>Archived — LinkedIn Notifications</b> · 412 messages
         </span>
-        <span className="dm-mkt-undo">Undo · 7 days</span>
+        <span className="dm-mkt-undo">Undo in Activity</span>
       </div>
     </div>
   );
@@ -128,7 +135,9 @@ function TrustStrip() {
         <PrivacyBadge variant="inline" />
       </span>
       <span className="dm-mkt-trust-item">30-day money-back guarantee</span>
-      <span className="dm-mkt-trust-item">Undo on every action</span>
+      <span className="dm-mkt-trust-item" title={ACTION_PREVIEW_CLAIM}>
+        Live current-scope preview before manual mail moves
+      </span>
     </div>
   );
 }

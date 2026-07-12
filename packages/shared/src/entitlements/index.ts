@@ -10,6 +10,7 @@ export {
   cleanupActionsLifetimeFor,
   hasCapability,
   inboxLimitFor,
+  minimumTierForCapability,
   satisfiesActionTier,
   tierById,
   undoWindowDaysFor,

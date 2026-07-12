@@ -6,7 +6,7 @@
 import type { ActionTier } from '../contracts/verb-constants';
 import { ACTION_TIER_RANK } from '../contracts/verb-constants';
 import { TIER_MANIFEST } from './manifest';
-import type { Capability, TierDefinition, TierId } from './types';
+import { TIER_IDS, type Capability, type TierDefinition, type TierId } from './types';
 
 /** The full manifest entry for a tier. */
 export function tierById<T extends TierId>(id: T): TierDefinition<T> {
@@ -16,6 +16,15 @@ export function tierById<T extends TierId>(id: T): TierDefinition<T> {
 /** Whether a tier grants a feature surface (D19 capability buckets). */
 export function hasCapability(id: TierId, capability: Capability): boolean {
   return TIER_MANIFEST[id].capabilities.includes(capability);
+}
+
+/** The first tier in the manifest ladder that grants a feature surface. */
+export function minimumTierForCapability(capability: Capability): TierId {
+  const tier = TIER_IDS.find((id) => hasCapability(id, capability));
+  if (!tier) {
+    throw new Error(`No tier grants capability: ${capability}`);
+  }
+  return tier;
 }
 
 /** Connected-Gmail-account limit (D19: Free 1 / Plus 1 / Pro 2). */

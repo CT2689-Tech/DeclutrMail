@@ -48,6 +48,13 @@ export type ArchiveRequest = z.infer<typeof archiveRequestSchema>;
 export const unsubscribeIntentRequestSchema = z
   .object({
     senderId: z.string().uuid(),
+    /**
+     * True when this same confirmation will enqueue a separate Archive /
+     * Delete backlog action. Optional for backwards-compatible clients;
+     * parsed output is always boolean so the controller cannot forget the
+     * one-vs-two-unit Free quota preflight.
+     */
+    includesBacklogAction: z.boolean().default(false),
   })
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
@@ -447,11 +454,9 @@ export interface CompositeActionPreviewResult {
  */
 import type { ActionJobStatus as SharedActionJobStatus } from '@declutrmail/shared/contracts';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _ACTION_JOB_STATUS_API_EXTENDS_SHARED: ActionJobStatus extends SharedActionJobStatus
   ? true
   : false = true;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _ACTION_JOB_STATUS_SHARED_EXTENDS_API: SharedActionJobStatus extends ActionJobStatus
   ? true
   : false = true;

@@ -89,6 +89,11 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
+/** Wait until the required current-match preview has unlocked confirm. */
+async function waitForLivePreview() {
+  await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+}
+
 describe('TriageScreen — D226 mutation wiring', () => {
   beforeEach(() => {
     resetTriageStore();
@@ -229,6 +234,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The row renders busy until the server confirms; the queue is NOT
@@ -274,12 +280,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
   it('Unsubscribe records the intent AND archives the backlog via the real pipeline', async () => {
     const calls: string[] = [];
+    let unsubscribeBody: unknown = null;
     addFetchHandlers([
       {
         method: 'POST',
         path: '/api/actions/unsubscribe-intent',
-        respond: () => {
+        respond: async (req) => {
           calls.push('unsub-intent');
+          unsubscribeBody = await req.json();
           return jsonOk({
             data: {
               senderId: LINKEDIN.senderId,
@@ -329,12 +337,18 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    // The backlog toggle defaults ON for Unsubscribe; ⌘⏎ confirms.
+    // Backlog is a separate Gmail mutation, so opt in explicitly.
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // Intent first, then the archive enqueue (the toggle's promise is
     // kept via the real pipeline, not a tracer).
     await waitFor(() => expect(calls).toEqual(['unsub-intent', 'composite-archive']));
+    expect(unsubscribeBody).toEqual({
+      senderId: LINKEDIN.senderId,
+      includesBacklogAction: true,
+    });
   });
 
   it('surfaces a designed 409 (protected sender) without crashing or invalidating', async () => {
@@ -359,6 +373,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The failure leaves the queue untouched: no busy latch, no
@@ -412,6 +427,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The failure is toasted (warn) — there is no other failure surface.
@@ -463,6 +479,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() =>
@@ -534,6 +551,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
@@ -608,6 +627,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
 
@@ -649,14 +669,11 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     resetFetchStub();
   });
 
-  /** Open the U sheet on LINKEDIN, untoggle the backlog archive, confirm. */
+  /** Open the U sheet on LINKEDIN with the safe no-backlog default, then confirm. */
   async function confirmUnsubWithoutBacklog() {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    // Untoggle "also archive the backlog" so ONLY the unsub fires —
-    // these tests isolate the execution states.
-    fireEvent.click(screen.getByText(/Also archive the/));
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
   }
 
@@ -702,9 +719,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
-      screen.getByText(
-        "The unsubscribe itself can't be undone — an archived backlog is reversible for 7 days from Activity.",
-      ),
+      screen.getByText("The unsubscribe request can't be undone. Existing inbox mail stays put."),
     ).toBeDefined();
   });
 
@@ -884,5 +899,71 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(useTriageStore.getState().pendingAction).not.toBeNull();
     expect(screen.getByText('Preview · before anything changes')).toBeDefined();
     input.remove();
+  });
+
+  it('blocks second-click and shortcut confirmation when the inline preview is unavailable', async () => {
+    const enqueues: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonServerError('preview_down'),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await screen.findByText(/Close and retry/i);
+    const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
+    expect(archive).toBeDisabled();
+    fireEvent.click(archive);
+    fireEvent.keyDown(window, { key: 'a' });
+    await Promise.resolve();
+
+    expect(enqueues).toHaveLength(0);
+    expect(useTriageStore.getState().pendingAction).not.toBeNull();
+  });
+
+  it('allows the second shortcut to confirm after the inline current-match preview resolves', async () => {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await screen.findByText(/emails currently match in Inbox/i);
+    expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await waitFor(() => expect(enqueues).toHaveLength(1));
   });
 });

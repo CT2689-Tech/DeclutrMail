@@ -164,6 +164,36 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
   });
+
+  it('preserves a validated pricing choice through first-run onboarding', async () => {
+    searchParams = new URLSearchParams({
+      returnTo: '/billing?cycle=annual&promo=foundingPro&plan=pro',
+    });
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ onboardedAt: '2026-06-11T00:00:00.000Z' }),
+      syncStatus(true),
+    ]);
+    renderPage();
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual&promo=foundingPro'),
+    );
+  });
+
+  it('drops an untrusted onboarding destination', async () => {
+    searchParams = new URLSearchParams({
+      returnTo: 'https://evil.example/billing?plan=pro&cycle=annual',
+    });
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ onboardedAt: '2026-06-11T00:00:00.000Z' }),
+      syncStatus(true),
+    ]);
+    renderPage();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+  });
 });
 
 describe('onboarding page — secondary connect entry (D116, unchanged)', () => {

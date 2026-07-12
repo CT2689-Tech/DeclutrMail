@@ -12,12 +12,10 @@
  *      headline plus the complete store / never-store lists. The
  *      banned pre-D228 phrase "Bodies read: 0" must not appear.
  *   3. Google Limited Use disclosure links the official policy URL.
- *   4. Footer cross-links — every legal page links to all three
- *      legal routes (the unit's navigation contract).
- *   5. D159 (D132 batch) — each page emits page_viewed exactly once
+ *   4. D159 (D132 batch) — each page emits page_viewed exactly once
  *      via the PageViewTracker island; the posthog module is mocked so
  *      the no-fetch proof stays intact.
- *   6. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
+ *   5. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
  *      the canonical 30-day money-back guarantee with its fair-use
  *      terms, /terms carries the India/Mumbai governing-law clause,
  *      and NO page still shows a "Pending confirmation" marker.
@@ -30,6 +28,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
 import TermsOfServicePage from './terms/page';
@@ -55,9 +54,14 @@ const PAGES = [
 
 beforeEach(() => {
   trackSpy.mockClear();
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
+  storeConsent('all');
 });
 
 afterEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   vi.restoreAllMocks();
 });
 
@@ -72,14 +76,6 @@ describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
   it('emits page_viewed exactly once on mount (D159)', () => {
     render(<Page />);
     expect(trackSpy.mock.calls).toEqual([['page_viewed', { page, mailbox_id: null }]]);
-  });
-
-  it('cross-links all three legal routes in the chrome', () => {
-    render(<Page />);
-    for (const href of ['/privacy', '/terms', '/refunds']) {
-      const links = document.querySelectorAll(`a[href="${href}"]`);
-      expect(links.length, `expected a link to ${href}`).toBeGreaterThan(0);
-    }
   });
 
   it('stamps a last-updated date', () => {
@@ -123,6 +119,13 @@ describe('/refunds content — D121 canonical refund terms', () => {
 });
 
 describe('/terms content — D121 governing law confirmed', () => {
+  it('keeps anchored section headings below the sticky public header', () => {
+    render(<TermsOfServicePage />);
+    expect(
+      screen.getByRole('heading', { level: 2, name: '1. The service' }).closest('section'),
+    ).toHaveStyle({ scrollMarginTop: '88px' });
+  });
+
   it('states India governing law with exclusive jurisdiction of the Mumbai courts', () => {
     const { container } = render(<TermsOfServicePage />);
     const text = container.textContent ?? '';
@@ -187,7 +190,18 @@ describe('/privacy content — D7 + D228 posture', () => {
     expect(text).toContain('deletion then takes effect immediately');
   });
 
-  it('enumerates all nine subprocessors', () => {
+  it('describes the actual export datasets without claiming preferences are exported', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain('mailbox email/status/connection metadata');
+    expect(text).toContain('sender records and standing policies');
+    expect(text).toContain('decision/activity history');
+    expect(text).toContain('does not include app preferences');
+    expect(text).not.toMatch(/export your data \([^)]*preferences/i);
+  });
+
+  it('enumerates all disclosed subprocessors, including Anthropic', () => {
     render(<PrivacyPolicyPage />);
     for (const provider of [
       'Google Cloud',
@@ -196,6 +210,7 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Upstash',
       'Sentry',
       'PostHog',
+      'Anthropic',
       'Resend',
       'Paddle',
       'Razorpay',

@@ -22,6 +22,7 @@ import { captureFeatureException } from '@/lib/sentry';
 import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY, useScreenerDecide } from './api/use-screener';
 import {
   SCREENER_QUEUE,
+  canScreenerUnsubscribe,
   type ScreenerDecideVerb,
   type ScreenerQueueRow,
   type ScreenerScreenState,
@@ -60,7 +61,7 @@ function invalidateAfterDecision(qc: QueryClient): void {
  * DB flag awaiting the user's decision.
  *
  * Action lifecycle (D226): verb click → inline preview (mandatory,
- * with the REAL inbox count for the label-modify verbs) → confirm →
+ * with the current inbox match count for label-modify verbs) → confirm →
  * `POST /api/screener/decide` → the BE delegates to the existing
  * action pipeline and resolves the quarantine row. Label-modify verbs
  * (Archive / Later / Delete) are then polled at `GET /api/actions/:id`
@@ -122,7 +123,7 @@ export function ScreenerScreen({
     }
   }, [state]);
 
-  // D226 real-count preview — only the label-modify verbs move mail.
+  // D226 current-match preview — only the label-modify verbs move mail.
   const pendingRow: ScreenerQueueRow | null =
     pending != null && state.kind === 'ready'
       ? (state.rows.find((r) => r.id === pending.rowId) ?? null)
@@ -146,6 +147,9 @@ export function ScreenerScreen({
     : compositePreview.data != null
       ? compositePreview.data.counts.all
       : ('loading' as const);
+  const pendingMovesMail =
+    pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
+  const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';
 
   // Drive the enqueued-action lifecycle off the polled status.
   useEffect(() => {
@@ -207,6 +211,7 @@ export function ScreenerScreen({
   const onVerbClick = useCallback(
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
       if (row.id === busyRowId) return;
+      if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({ rowId: row.id, verb });
       setExpandedRowId(row.id);
     },
@@ -217,6 +222,7 @@ export function ScreenerScreen({
   const onConfirm = useCallback(
     (row: ScreenerQueueRow) => {
       if (pending == null || pending.rowId !== row.id) return;
+      if (pendingPreviewBlocked) return;
       if (busyRowId != null || decide.isPending) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
@@ -274,7 +280,7 @@ export function ScreenerScreen({
         },
       );
     },
-    [pending, busyRowId, decide, qc],
+    [pending, pendingPreviewBlocked, busyRowId, decide, qc],
   );
 
   // Keyboard shortcuts (Triage parity, D29/D227). Act on the EXPANDED
@@ -296,7 +302,7 @@ export function ScreenerScreen({
       if (pending != null && pendingRow != null) {
         if (e.key === 'Enter') {
           e.preventDefault();
-          onConfirm(pendingRow);
+          if (!pendingPreviewBlocked) onConfirm(pendingRow);
         } else if (e.key === 'Escape') {
           e.preventDefault();
           setPending(null);
@@ -321,6 +327,7 @@ export function ScreenerScreen({
     expandedRowId,
     busyRowId,
     decide.isPending,
+    pendingPreviewBlocked,
     onConfirm,
     onVerbClick,
   ]);

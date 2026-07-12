@@ -11,8 +11,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   enqueueArchiveSender,
   getActionStatus,
+  getBulkActionPreview,
   isTerminalStatus,
   newIdempotencyKey,
+  recordUnsubscribeIntent,
   revertUndo,
 } from './actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -98,6 +100,83 @@ describe('getActionStatus', () => {
     expect(observedPath).toBe('/api/actions/a-1');
     expect(res.status).toBe('done');
     expect(res.undoToken).toBe('tok-1');
+  });
+});
+
+describe('recordUnsubscribeIntent', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it.each([
+    [{}, { senderId: 'sender-1' }],
+    [{ includesBacklogAction: false }, { senderId: 'sender-1', includesBacklogAction: false }],
+    [{ includesBacklogAction: true }, { senderId: 'sender-1', includesBacklogAction: true }],
+  ] as const)(
+    'forwards the optional backlog preflight flag (%s)',
+    async (options, expectedBody) => {
+      let observedBody: unknown = null;
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-intent',
+          respond: async (req) => {
+            observedBody = await req.json();
+            return jsonOk({
+              data: {
+                senderId: 'sender-1',
+                recordedAt: '2026-07-12T00:00:00.000Z',
+                activityLogId: 'activity-1',
+                method: 'none',
+                executionActionId: null,
+                mailtoUrl: null,
+              },
+            });
+          },
+        },
+      ]);
+
+      await recordUnsubscribeIntent('sender-1', {
+        idempotencyKey: 'unsubscribe-key-123',
+        ...options,
+      });
+
+      expect(observedBody).toEqual(expectedBody);
+    },
+  );
+});
+
+describe('getBulkActionPreview', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('preserves the strict senderIds-only preview body', async () => {
+    let observedBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: async (req) => {
+          observedBody = await req.json();
+          return jsonOk({
+            data: {
+              senders: [],
+              totals: {
+                all: 0,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              protectedCount: 0,
+            },
+          });
+        },
+      },
+    ]);
+
+    await getBulkActionPreview(['sender-1', 'sender-2']);
+
+    expect(observedBody).toEqual({ senderIds: ['sender-1', 'sender-2'] });
   });
 });
 

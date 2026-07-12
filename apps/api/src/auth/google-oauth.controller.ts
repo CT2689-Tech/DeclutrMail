@@ -49,6 +49,8 @@ interface OAuthState {
   mode: 'login' | 'connect';
   userId?: string;
   workspaceId?: string;
+  /** Canonical local billing destination; login mode only. */
+  returnTo?: string;
 }
 
 /**
@@ -80,8 +82,13 @@ export class GoogleOAuthController {
 
   @Get('start')
   @RateLimit('auth')
-  start(@Res() res: Response): void {
-    this.beginConsent(res, { nonce: randomBytes(32).toString('base64url'), mode: 'login' });
+  start(@Res() res: Response, @Query('returnTo') returnTo?: string): void {
+    const safeReturnTo = parseBillingReturnTo(returnTo);
+    this.beginConsent(res, {
+      nonce: randomBytes(32).toString('base64url'),
+      mode: 'login',
+      ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
+    });
   }
 
   /**
@@ -334,7 +341,17 @@ export class GoogleOAuthController {
     // home: it has real data immediately, whereas Triage is empty
     // until the scoring pipeline (D20/D25) runs. The gate route lives
     // at apps/web/src/app/onboarding/page.tsx.
-    const target = result.isNewSignup ? `${webBase}/onboarding` : `${webBase}/senders`;
+    // Re-validate the cookie value at the trust boundary even though
+    // `/start` canonicalized it. This keeps a forged/dev cookie from
+    // becoming an open redirect after a successful Google login.
+    const returnTo = parseBillingReturnTo(cookieState.returnTo);
+    const target = result.isNewSignup
+      ? returnTo
+        ? `${webBase}/onboarding?${new URLSearchParams({ returnTo }).toString()}`
+        : `${webBase}/onboarding`
+      : returnTo
+        ? `${webBase}${returnTo}`
+        : `${webBase}/senders`;
     res.redirect(302, target);
   }
 
@@ -352,6 +369,42 @@ export class GoogleOAuthController {
     });
     res.redirect(302, this.oauth.getConsentUrl(state.nonce));
   }
+}
+
+/**
+ * Accept the single public-to-product destination supported at launch.
+ * The returned path is canonical so OAuth state never carries arbitrary
+ * hosts, fragments, duplicate parameters, or future unreviewed routes.
+ */
+export function parseBillingReturnTo(value: string | null | undefined): string | undefined {
+  if (!value?.startsWith('/') || value.startsWith('//') || value.includes('#')) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(value, 'https://declutrmail.invalid');
+  } catch {
+    return undefined;
+  }
+  if (url.origin !== 'https://declutrmail.invalid' || url.pathname !== '/billing') {
+    return undefined;
+  }
+
+  const keys = [...url.searchParams.keys()];
+  if (keys.some((key) => !['plan', 'cycle', 'promo'].includes(key))) return undefined;
+  if (new Set(keys).size !== keys.length) return undefined;
+
+  const plan = url.searchParams.get('plan');
+  const cycle = url.searchParams.get('cycle');
+  const promo = url.searchParams.get('promo');
+  if ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual')) {
+    return undefined;
+  }
+  if (promo !== null && promo !== 'foundingPro') return undefined;
+  if (promo === 'foundingPro' && (plan !== 'pro' || cycle !== 'annual')) return undefined;
+
+  const query = new URLSearchParams({ plan, cycle });
+  if (promo === 'foundingPro') query.set('promo', promo);
+  return `/billing?${query.toString()}`;
 }
 
 /** Constant-time state comparison — same shape as the original. */

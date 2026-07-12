@@ -134,7 +134,9 @@ export function TriageQueue({
             pendingAction.surface === 'inline'
               ? {
                   verb: pendingAction.verb,
-                  archiveHistoric: pendingAction.verb === 'Unsubscribe',
+                  // The remembered-inline path has no backlog toggle, so
+                  // it must retain the safe no-secondary default.
+                  archiveHistoric: false,
                   inboxCount: previewInboxCount,
                 }
               : null;

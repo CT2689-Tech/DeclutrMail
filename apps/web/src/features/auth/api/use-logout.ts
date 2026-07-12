@@ -6,6 +6,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPost } from '@/lib/api/client';
+import { resetIdentity } from '@/lib/posthog';
 
 export function useLogout() {
   const qc = useQueryClient();
@@ -14,6 +15,11 @@ export function useLogout() {
       await apiPost<{ ok: true }>('/api/auth/logout');
     },
     onSuccess: () => {
+      // Prevent the next person using a shared browser from inheriting the
+      // previous internal analytics identity. Analytics is best-effort:
+      // an optional SDK load failure must never block cache clearing or
+      // navigation after the server session has already ended.
+      void resetIdentity().catch(() => undefined);
       qc.clear();
       if (typeof window !== 'undefined') {
         // Bounce to the root — AuthProvider on the landing surface

@@ -37,6 +37,7 @@ import type { WorkerContext } from './worker-context.js';
  *     are excluded BEFORE matching runs.
  *   - Observe vs Active mode resolution + intent_applied wiring.
  *   - Paused rules + disabled rules do not fire.
+ *   - Free/Plus workspaces do not evaluate enabled rules or write matches.
  *   - last_run_at / last_run_actions / last_run_senders updated per rule.
  *   - Idempotency-key shape (`${mailbox}:${triggeredAtMs}`).
  *   - Custom rules (is_preset=false) are skipped at runtime per D197.
@@ -61,8 +62,14 @@ async function freshDb() {
   return drizzle(pg, { schema });
 }
 
-async function seedMailbox(db: Awaited<ReturnType<typeof freshDb>>): Promise<string> {
-  const [ws] = await db.insert(workspaces).values({ name: 'WS' }).returning({ id: workspaces.id });
+async function seedMailbox(
+  db: Awaited<ReturnType<typeof freshDb>>,
+  tier: 'free' | 'plus' | 'pro' = 'pro',
+): Promise<string> {
+  const [ws] = await db
+    .insert(workspaces)
+    .values({ name: 'WS', tier })
+    .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
     .values({ workspaceId: ws!.id, email: 'a@b.com' })
@@ -257,7 +264,7 @@ describe('AutopilotApplyWorker', () => {
     expect(matches.find((m) => m.senderKey === below)).toBeUndefined();
   });
 
-  it('Active mode writes (mode_at_match=active, resolution=approved, intent_applied=false)', async () => {
+  it('Pro Active mode writes (mode_at_match=active, resolution=approved, intent_applied=false)', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
     await seedAutopilotPresets(db as never, mbId);
@@ -294,6 +301,48 @@ describe('AutopilotApplyWorker', () => {
     expect(match!.intentApplied).toBe(false);
     expect(match!.intentToken).toBeNull();
   });
+
+  it.each(['free', 'plus'] as const)(
+    '%s workspaces do not evaluate enabled Active rules or enqueue actions',
+    async (tier) => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db, tier);
+      await seedAutopilotPresets(db as never, mbId);
+      const ruleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+        enabled: true,
+        mode: 'active',
+      });
+      await seedSender(db, mbId, {
+        email: `${tier}@example.com`,
+        decision: { verdict: 'archive', confidence: 0.99 },
+        totalMessages: 1,
+      });
+      let actionSweepsEnqueued = 0;
+      const worker = new AutopilotApplyWorker({
+        db: db as never,
+        now: () => NOW,
+        onActiveMatchesPending: async () => {
+          actionSweepsEnqueued += 1;
+        },
+      });
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+
+      expect(result.rulesEvaluated).toBe(0);
+      expect(result.matchesWritten).toBe(0);
+      expect(result.activeMatches).toBe(0);
+      expect(actionSweepsEnqueued).toBe(0);
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+      const [rule] = await db
+        .select({ lastRunAt: automationRules.lastRunAt })
+        .from(automationRules)
+        .where(eq(automationRules.id, ruleId));
+      expect(rule!.lastRunAt).toBeNull();
+    },
+  );
 
   it('protected senders are filtered out BEFORE matching', async () => {
     const db = await freshDb();

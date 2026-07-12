@@ -238,8 +238,15 @@ export function useBatchStatus(batchId: string | null) {
  * in a single transaction on the BE.
  */
 export function useRecordUnsubscribeIntent() {
-  return useMutation<UnsubscribeIntentResult, Error, { senderId: string }>({
-    mutationFn: ({ senderId }) => recordUnsubscribeIntent(senderId),
+  return useMutation<
+    UnsubscribeIntentResult,
+    Error,
+    { senderId: string; includesBacklogAction?: boolean }
+  >({
+    mutationFn: ({ senderId, includesBacklogAction }) =>
+      recordUnsubscribeIntent(senderId, {
+        ...(includesBacklogAction !== undefined ? { includesBacklogAction } : {}),
+      }),
   });
 }
 

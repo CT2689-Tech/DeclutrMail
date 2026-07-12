@@ -11,7 +11,7 @@ import type { SecurityEventsService } from '../security-events/security-events.s
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import type { GoogleOAuthService } from './google-oauth.service.js';
-import { GoogleOAuthController } from './google-oauth.controller.js';
+import { GoogleOAuthController, parseBillingReturnTo } from './google-oauth.controller.js';
 
 /** A SecurityEventsService stand-in with `record` as a spy. */
 function makeSecurityEvents(): {
@@ -54,6 +54,59 @@ describe('GoogleOAuthController — @RateLimit metadata (D156)', () => {
       GoogleOAuthController.prototype.callback,
     );
     expect(opts).toEqual({ bucket: 'auth' });
+  });
+});
+
+describe('GoogleOAuthController.start — validated post-login billing intent', () => {
+  it('stores only the canonical local billing destination in OAuth state', () => {
+    const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+    );
+
+    controller.start(
+      res as unknown as Response,
+      '/billing?cycle=annual&promo=foundingPro&plan=pro',
+    );
+
+    const state = JSON.parse(res.cookie.mock.calls[0]?.[1] as string) as Record<string, unknown>;
+    expect(state).toMatchObject({
+      mode: 'login',
+      returnTo: '/billing?plan=pro&cycle=annual&promo=foundingPro',
+    });
+    expect(state.nonce).toEqual(expect.any(String));
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
+  it.each([
+    'https://evil.example/billing?plan=pro&cycle=annual',
+    '//evil.example/billing?plan=pro&cycle=annual',
+    '/billing?plan=plus&cycle=annual&promo=foundingPro',
+    '/billing?plan=pro&cycle=annual&next=/senders',
+    '/billing?plan=pro&plan=plus&cycle=annual',
+  ])('drops an unsafe or impossible returnTo: %s', (returnTo) => {
+    const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+    const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+    );
+
+    controller.start(res as unknown as Response, returnTo);
+
+    const state = JSON.parse(res.cookie.mock.calls[0]?.[1] as string) as Record<string, unknown>;
+    expect(state).not.toHaveProperty('returnTo');
+  });
+
+  it('shares the strict validator with the callback trust boundary', () => {
+    expect(parseBillingReturnTo('/billing?plan=plus&cycle=monthly')).toBe(
+      '/billing?plan=plus&cycle=monthly',
+    );
+    expect(parseBillingReturnTo('/senders')).toBeUndefined();
   });
 });
 
@@ -176,8 +229,14 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     } as unknown as Request;
   }
 
-  function loginCookie(nonce: string = NONCE): Record<string, string> {
-    return { oauth_state: JSON.stringify({ nonce, mode: 'login' }) };
+  function loginCookie(nonce: string = NONCE, returnTo?: string): Record<string, string> {
+    return {
+      oauth_state: JSON.stringify({
+        nonce,
+        mode: 'login',
+        ...(returnTo ? { returnTo } : {}),
+      }),
+    };
   }
 
   function connectCookie(
@@ -397,6 +456,59 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         payload: { provider: 'google', mode: 'login', isNewSignup: true },
       }),
     );
+  });
+
+  it('returns an existing user to the exact validated billing choice', async () => {
+    await controller.callback(
+      req({
+        cookies: loginCookie(NONCE, '/billing?plan=plus&cycle=monthly'),
+      }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/billing?plan=plus&cycle=monthly`);
+  });
+
+  it('finishes onboarding before returning a new signup to billing', async () => {
+    orchestrator.connect.mockResolvedValueOnce({
+      tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
+      csrfToken: 'csrf',
+      user: { id: 'u-99', workspaceId: 'w-99', email: 'new@example.com' },
+      mailbox: { id: 'mailbox-99' },
+      isNewSignup: true,
+    });
+
+    await controller.callback(
+      req({
+        cookies: loginCookie(NONCE, '/billing?plan=pro&cycle=annual&promo=foundingPro'),
+      }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/onboarding?returnTo=%2Fbilling%3Fplan%3Dpro%26cycle%3Dannual%26promo%3DfoundingPro`,
+    );
+  });
+
+  it('ignores a forged callback returnTo instead of leaving the site', async () => {
+    await controller.callback(
+      req({
+        cookies: loginCookie(NONCE, 'https://evil.example/billing?plan=pro&cycle=annual'),
+      }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/senders`);
   });
 
   it('turns a BetaGateDeniedError into a /beta redirect — signup.denied audit, no session, no throw', async () => {

@@ -31,11 +31,11 @@ describe('landing page — D134', () => {
     expect(h1.textContent).toBe('Control Gmail by sender, not by email.');
   });
 
-  it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section + footer)', () => {
+  it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section)', () => {
     const { container } = renderLanding();
     // Headline appears once per badge mount; the storage list rides along.
-    expect(screen.getAllByText('Full bodies fetched: 0').length).toBeGreaterThanOrEqual(3);
-    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('Full bodies fetched: 0').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(2);
   });
 
   it('never renders banned privacy phrasing (D228) or a user-facing "Screen" verb (D227)', () => {
@@ -75,13 +75,13 @@ describe('landing page — D134', () => {
     expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
   });
 
-  it('points the primary CTA at the OAuth start endpoint and links the legal + pricing routes', () => {
+  it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', () => {
     const { container } = renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
     expect(ctas.filter((href) => href?.endsWith('/api/auth/google/start')).length).toBeGreaterThan(
       0,
     );
-    for (const route of ['/pricing', '/privacy', '/terms', '/refunds', '/cookies']) {
+    for (const route of ['/inbox-simulator', '/pricing', '/privacy']) {
       expect(ctas).toContain(route);
     }
   });

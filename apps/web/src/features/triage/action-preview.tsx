@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
@@ -10,8 +11,8 @@ const { color, font } = tokens;
  * The live "what moves" figure for the preview — the sender's
  * current-inbox count from `GET /api/actions/preview` (ADR-0020).
  * `loading` while the preview query is in flight; `unavailable` when
- * it failed (the preview still renders — the count is best-effort,
- * the verb copy is not).
+ * it failed. The owning confirm surface fails closed for mail-moving
+ * verbs until this value is numeric.
  */
 export type PreviewCount = number | 'loading' | 'unavailable';
 
@@ -35,9 +36,9 @@ export type PreviewCount = number | 'loading' | 'unavailable';
  * surface either way. That same-surface guarantee is the load-bearing
  * piece of D226 — preview never silently downgrades.
  *
- * The impact figure is the REAL inbox count fetched server-side
- * (`inboxCount`), never a client estimate — same D226 rule the
- * senders confirm modal follows.
+ * The impact figure is the current inbox match count fetched server-side
+ * (`inboxCount`), never a client estimate. The worker re-checks Gmail at
+ * execution, so this preview is not a promise of the final affected count.
  */
 export function ActionPreview({
   verb,
@@ -45,19 +46,22 @@ export function ActionPreview({
   archiveHistoric,
   inboxCount,
   mode,
+  mailboxEmail,
 }: {
   verb: ActionVerb;
   row: TriageDecisionRow;
   /**
    * Whether the historic backlog will also be archived (Unsubscribe
-   * only — set by the sheet's toggle; the inline path defaults `true`
-   * for Unsubscribe, matching the sheet's default).
+   * only — set by the sheet's toggle; the inline path defaults `false`
+   * so a separate backlog mutation is never assumed).
    */
   archiveHistoric: boolean;
   /** Live inbox count for the sender — see {@link PreviewCount}. */
   inboxCount: PreviewCount;
   /** Chrome variant — modal (inside sheet) vs inline (no chrome). */
   mode: 'modal' | 'inline';
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
 }) {
   const subject = row.senderName;
 
@@ -77,16 +81,18 @@ export function ActionPreview({
 
   const lead =
     verb === 'Archive'
-      ? `Every message from ${subject} now in the inbox moves into Gmail's archive. Nothing is deleted, and you can undo for 7 days.`
+      ? `Matching inbox mail from ${subject} moves into Gmail's archive when the action runs. Nothing is deleted; Activity shows your plan's undo window.`
       : verb === 'Later'
-        ? `Mail from ${subject} now in the inbox moves into the DeclutrMail/Later label — out of your way, one click away. Nothing is unsubscribed or deleted, and you can undo for 7 days.`
+        ? `Matching inbox mail from ${subject} moves into the DeclutrMail/Later label when the action runs. Nothing is unsubscribed or deleted; Activity shows your plan's undo window.`
         : verb === 'Unsubscribe'
           ? row.unsubscribeMethod === 'one_click'
             ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058
               // one-click" jargon → "one-click unsubscribe." D58: the
               // request can't be recalled once their list takes it.
-              `DeclutrMail sends ${subject}'s one-click unsubscribe and confirms the result. The request itself can't be undone. Nothing already in your inbox moves unless you ask below.`
-            : `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
+              `DeclutrMail sends ${subject}'s one-click request and records whether the endpoint accepted it. The sender controls whether and when mail stops. The request itself can't be undone. Nothing already in your inbox moves unless you ask below.`
+            : row.unsubscribeMethod === 'mailto'
+              ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
+              : `${subject} publishes no unsubscribe channel. No request can be sent; use Archive to move existing mail instead.`
           : `${subject} stays in the inbox. No mail is moved.`;
 
   // What actually moves: Archive + Later act on the sender's current
@@ -137,6 +143,8 @@ export function ActionPreview({
         </div>
       )}
 
+      <MailboxActionContext mailboxEmail={mailboxEmail} />
+
       <div>
         <h3
           style={{
@@ -160,7 +168,7 @@ export function ActionPreview({
         </p>
       </div>
 
-      {/* Impact figure — the REAL count, fetched server-side. */}
+      {/* Current match count, fetched server-side. */}
       <div
         style={{
           display: 'flex',
@@ -236,7 +244,7 @@ function ImpactFigure({
   if (inboxCount === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn't load the live count — nothing changes until you confirm.
+        Couldn't load a live preview. Close and retry — no inbox mail can move without one.
       </span>
     );
   }
@@ -244,8 +252,8 @@ function ImpactFigure({
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} now in the inbox
-        {inboxCount === 0 ? ' — nothing to move.' : ' will move out of the inbox.'}
+        email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
+        execution, so the final moved count can change.
       </span>
     </>
   );

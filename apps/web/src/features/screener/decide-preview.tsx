@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 import type { ScreenerDecideVerb, ScreenerQueueRow } from './data';
 import { VERB_LABEL } from './verbs';
@@ -34,6 +35,7 @@ export function DecidePreview({
   row,
   inboxCount,
   confirming,
+  mailboxEmail,
   onConfirm,
   onCancel,
 }: {
@@ -42,6 +44,8 @@ export function DecidePreview({
   inboxCount: DecidePreviewCount;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -62,19 +66,21 @@ export function DecidePreview({
     verb === 'keep'
       ? `${name} stays exactly where it is — nothing in Gmail changes. We just remember your decision and stop asking about this sender.`
       : verb === 'archive'
-        ? `Every message from ${name} now in the inbox moves into Gmail's archive. Nothing is deleted, and you can undo for 7 days.`
+        ? `Matching inbox mail from ${name} moves into Gmail's archive when the action runs. Nothing is deleted; Activity shows your plan's undo window.`
         : verb === 'later'
-          ? `Mail from ${name} now in the inbox moves into the DeclutrMail/Later label — out of your way, one click away. You can undo for 7 days.`
+          ? `Matching inbox mail from ${name} moves into DeclutrMail/Later when the action runs. Activity shows your plan's undo window.`
           : verb === 'unsubscribe'
             ? row.unsubscribeMethod === 'one_click'
-              ? `DeclutrMail sends ${name}'s one-click unsubscribe and confirms the result. The request itself can't be undone. Nothing already in your inbox moves.`
+              ? `DeclutrMail sends ${name}'s one-click request and records whether the endpoint accepted it. The sender controls whether and when mail stops. The request itself can't be undone. Nothing already in your inbox moves.`
               : row.unsubscribeMethod === 'mailto'
                 ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
                 : `${name} advertises no unsubscribe channel. We record your decision; Archive is the reliable fallback if mail keeps coming.`
-            : `Every message from ${name} now in the inbox moves to Gmail's Trash. Gmail keeps trashed mail recoverable for 30 days, and you can undo from Activity.`;
+            : `Matching inbox mail from ${name} moves to Gmail Trash when the action runs. Activity can undo while Gmail retains the message, up to 30 days; emptying Trash can end recovery sooner.`;
 
   // What actually moves — only the label-modify verbs touch the inbox.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
+  const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
+  const confirmDisabled = confirming || previewBlocked;
 
   return (
     <div
@@ -104,6 +110,8 @@ export function DecidePreview({
         Preview · before anything changes
       </span>
 
+      <MailboxActionContext mailboxEmail={mailboxEmail} />
+
       <div>
         <h3 style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
           {title}
@@ -113,7 +121,7 @@ export function DecidePreview({
         </p>
       </div>
 
-      {/* Impact figure — the REAL count, fetched server-side (D226). */}
+      {/* Current match count, fetched server-side (D226). */}
       <div
         style={{
           display: 'flex',
@@ -144,7 +152,7 @@ export function DecidePreview({
           size="sm"
           tone={verb === 'delete' ? 'danger' : 'primary'}
           onClick={onConfirm}
-          disabled={confirming}
+          disabled={confirmDisabled}
           ariaLabel={`Confirm ${VERB_LABEL[verb]} for ${name}`}
         >
           {confirming ? 'Confirming…' : `Confirm ${VERB_LABEL[verb]}`}
@@ -180,7 +188,7 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
   if (inboxCount === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn&apos;t load the live count — nothing changes until you confirm.
+        Couldn&apos;t load a live preview. Cancel and retry — no inbox mail can move without one.
       </span>
     );
   }
@@ -188,8 +196,8 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} now in the inbox
-        {inboxCount === 0 ? ' — nothing to move.' : ' will move out of the inbox.'}
+        email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
+        execution, so the final moved count can change.
       </span>
     </>
   );

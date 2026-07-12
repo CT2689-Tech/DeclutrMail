@@ -503,7 +503,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         // with exactly what the user confirmed.
         const secondary = opts?.secondary ?? null;
         recordUnsubIntent.mutate(
-          { senderId: sender.id },
+          { senderId: sender.id, includesBacklogAction: secondary != null },
           {
             onSuccess: (res) => {
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -680,7 +680,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+      toast(
+        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request — watch for new mail`,
+        'success',
+      );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
         `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,

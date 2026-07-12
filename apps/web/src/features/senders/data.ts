@@ -9,7 +9,9 @@
 import {
   getActionDescriptor,
   type ActionVerb as RegistryActionVerb,
+  type SelectorType,
 } from '@declutrmail/shared/actions';
+import { satisfiesActionTier, type TierId } from '@declutrmail/shared/entitlements';
 
 export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
@@ -101,7 +103,7 @@ export interface Sender {
   unsubPending?: boolean;
   /**
    * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
-   * `pending` "confirming…" / `done` "Unsubscribed" / `failed`
+   * `pending` "confirming…" / `done` "Request accepted" / `failed`
    * "Unsub failed" / `ambiguous` "Unsub unconfirmed". `null`/absent =
    * no tracked execution (mailto-manual per D230, or method none).
    */
@@ -692,7 +694,11 @@ export function isStandingProtected(s: Pick<Sender, 'protected' | 'isVip'>): boo
 }
 
 export function canUnsubscribe(s: Sender): boolean {
-  return !isStandingProtected(s) && s.group !== 'primary';
+  return (
+    !isStandingProtected(s) &&
+    s.group !== 'primary' &&
+    (s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto')
+  );
 }
 
 export function canArchive(s: Sender): boolean {
@@ -759,7 +765,7 @@ export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect
 export const VERB_PAST: Record<ActionVerb, string> = {
   Keep: 'Kept',
   Archive: 'Archived',
-  Unsubscribe: 'Unsubscribed from',
+  Unsubscribe: 'Requested unsubscribe from',
   Later: 'Moved to Later',
   Protect: 'Protected',
   // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
@@ -793,6 +799,23 @@ export function verbDisplay(verb: ActionVerb): { label: string; shortcut: string
   if (registryVerb === undefined) return { label: verb, shortcut: null };
   const descriptor = getActionDescriptor(registryVerb);
   return { label: descriptor.copy.primary, shortcut: descriptor.shortcut };
+}
+
+/**
+ * Whether the workspace tier may invoke this verb through the requested
+ * selector. Reads the same Action Registry capability the API enforces,
+ * so Free's five single-sender actions cannot accidentally unlock the
+ * Plus multi-select workflow in the Senders UI.
+ */
+export function canUseActionSelector(
+  tier: TierId,
+  verb: Exclude<ActionVerb, 'Protect'>,
+  selector: SelectorType,
+): boolean {
+  const registryVerb = VERB_TO_REGISTRY[verb];
+  if (registryVerb === undefined) return false;
+  const capability = getActionDescriptor(registryVerb).capabilities[selector];
+  return capability !== null && satisfiesActionTier(tier, capability.tier);
 }
 
 export interface ActionRequest {

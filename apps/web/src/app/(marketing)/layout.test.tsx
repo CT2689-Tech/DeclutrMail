@@ -53,6 +53,9 @@ describe('(marketing) layout — D134', () => {
     renderLayout();
 
     expect(screen.getByText('public page body')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(screen.getByText(/Full bodies fetched: 0/)).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

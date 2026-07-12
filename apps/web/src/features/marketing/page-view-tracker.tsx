@@ -7,14 +7,11 @@
 // ships no other JS. Calls go through `@/lib/posthog` — the single seam
 // where D147's consent banner will gate the SDK when it lands.
 
-import { useEffect } from 'react';
 import type { EventProps } from '@declutrmail/shared/observability';
 
-import { track } from '@/lib/posthog';
+import { useConsentedPageView } from './use-consented-page-view';
 
 export function PageViewTracker({ page }: { page: EventProps<'page_viewed'>['page'] }) {
-  useEffect(() => {
-    void track('page_viewed', { page, mailbox_id: null });
-  }, [page]);
+  useConsentedPageView(page);
   return null;
 }

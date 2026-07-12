@@ -281,7 +281,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
-  it('D56 — renders a distinct "Unsubscribe confirmed" row for the outcome action', async () => {
+  it('D56 — renders a distinct "Request accepted" row for the endpoint outcome', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -300,8 +300,8 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     // The outcome row renders its own label, distinct from the intent's
-    // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
-    await waitFor(() => expect(screen.getByText(/^Unsubscribe confirmed$/)).toBeInTheDocument());
+    // "Unsubscribe requested" — and the accepted row shows no count (0 affected).
+    await waitFor(() => expect(screen.getByText(/^Request accepted$/)).toBeInTheDocument());
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
   });
 
@@ -309,7 +309,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     // A one-click POST can still fail and a mailto is manual (D230), so the
     // intent row must not claim completion — otherwise a FAILED unsubscribe
     // reads as done. The intent renders "Unsubscribe requested"; only the
-    // separate `unsubscribe_confirmed` row promises success. (The stats
+    // separate `unsubscribe_confirmed` row records endpoint acceptance. (The stats
     // tile + verb chip legitimately keep the aggregate "Unsubscribed"
     // label, so we assert the ROW label positively rather than the absence
     // of "Unsubscribed" anywhere on the page.)

@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readStoredConsent, storeConsent } from './cookie-consent';
-import { __resetForTests, identifyUser, track, withdrawAnalyticsConsent } from './posthog';
+import { hasAnalyticsConsent, readStoredConsent, storeConsent } from './cookie-consent';
+import {
+  __resetForTests,
+  __setSdkPromiseForTests,
+  identifyUser,
+  track,
+  withdrawAnalyticsConsent,
+} from './posthog';
 
 /**
  * D147 consent gate — the contract under test: PostHog must not
@@ -148,5 +154,32 @@ describe('withdrawAnalyticsConsent() — GDPR Art. 7(3) (D147)', () => {
     expect(readStoredConsent()).toBe('essential');
     expect(posthogMock.init).not.toHaveBeenCalled();
     expect(posthogMock.reset).not.toHaveBeenCalled();
+  });
+
+  it('revokes synchronously even while an existing SDK load is still pending', async () => {
+    let resolveSdk!: (sdk: null) => void;
+    __setSdkPromiseForTests(
+      new Promise<null>((resolve) => {
+        resolveSdk = resolve;
+      }),
+    );
+    storeConsent('all');
+
+    const withdrawal = withdrawAnalyticsConsent();
+    expect(hasAnalyticsConsent()).toBe(false);
+    expect(readStoredConsent()).toBe('essential');
+
+    resolveSdk(null);
+    await withdrawal;
+    expect(posthogMock.reset).not.toHaveBeenCalled();
+  });
+
+  it('keeps consent revoked when the existing SDK load rejects', async () => {
+    __setSdkPromiseForTests(Promise.reject(new Error('chunk failed')));
+    storeConsent('all');
+
+    await expect(withdrawAnalyticsConsent()).resolves.toBeUndefined();
+    expect(hasAnalyticsConsent()).toBe(false);
+    expect(readStoredConsent()).toBe('essential');
   });
 });

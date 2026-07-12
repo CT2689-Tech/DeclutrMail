@@ -253,7 +253,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Undo windows: Archive/Later 7 days, Delete 30 days (Gmail Trash)."
+        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Each reversible row shows its exact Activity window; Delete can be undone for up to 30 days while Gmail still retains Trash."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
@@ -520,7 +520,7 @@ function MetricsHeader({
     // and mailto that we never confirm. "Unsubscribes" (a count of the
     // actions taken) makes no completion claim; "Unsubscribed" would
     // overclaim success. Confirmed outcomes render per-row as
-    // "Unsubscribe confirmed" (never aggregated as verified success —
+    // "Request accepted" (never aggregated as verified compliance —
     // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
     // metric-definition options if an exact confirmed count is wanted.
     { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
@@ -2348,12 +2348,12 @@ const ACTION_LABEL: Record<ActivityActionWire, string> = {
   // deliberately uncertain — never promise." A one-click POST may still
   // fail and a mailto is manual (D230), so at click time the outcome is
   // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
-  // honest; the separate `unsubscribe_confirmed` row is the only place
-  // that promises success, and it is written only on a 2xx accept.
+  // honest; the separate `unsubscribe_confirmed` row records only that
+  // the sender endpoint accepted the request with a 2xx response.
   unsubscribe: 'Unsubscribe requested',
-  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
-  // the one row that states the unsubscribe actually went through.
-  unsubscribe_confirmed: 'Unsubscribe confirmed',
+  // D56 — the endpoint accepted the request. The sender still controls
+  // whether and when future delivery stops.
+  unsubscribe_confirmed: 'Request accepted',
   later: 'Later',
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with

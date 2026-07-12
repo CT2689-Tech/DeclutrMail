@@ -6,11 +6,17 @@
 // they can be exercised by tests and Storybook without the router.
 
 import { BillingScreen } from '@/features/billing/billing-screen';
+import { parseBillingIntentParams } from '@/features/billing/billing-intent';
 
 export const metadata = {
   title: 'Billing — DeclutrMail',
 };
 
-export default function BillingPage() {
-  return <BillingScreen />;
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const initialIntent = parseBillingIntentParams(await searchParams);
+  return <BillingScreen initialIntent={initialIntent} />;
 }

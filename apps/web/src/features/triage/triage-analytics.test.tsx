@@ -4,10 +4,10 @@
  * Pins the analytics contract for the daily ritual:
  *
  *   - `page_viewed { page: 'triage' }` fires ONCE on the route mount.
- *   - `triage_action_taken` fires ONCE per decision, ONLY on mutation
- *     success (never on preview open, never on failure), with the
+ *   - `triage_action_taken` fires ONCE per decision, ONLY on server
+ *     acceptance (never on preview open, never on rejection), with the
  *     confirm surface (`sheet` / `inline`), the engine-match flag, and
- *     the server coverage count.
+ *     the server-requested message count.
  *   - `undo_clicked` fires ONCE per undo attempt (row button or Z)
  *     with the entry's kind + age — never the capability token.
  *
@@ -47,10 +47,35 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
-// The route reads only `me.activeMailboxId` — the provider itself is
-// exercised in the auth feature's own tests.
+// The route reads `activeMailboxId`; its TierGate also reads tier +
+// connected mailboxes. The provider itself is exercised in auth tests.
 vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({ me: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }),
+  getActiveMailboxEmail: () => 'me@example.com',
+  useAuth: () => ({
+    me: {
+      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      tier: 'plus',
+      mailboxes: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          email: 'me@example.com',
+          status: 'active',
+        },
+      ],
+    },
+  }),
+  useOptionalAuth: () => ({
+    me: {
+      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      user: { email: 'me@example.com' },
+      mailboxes: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          email: 'me@example.com',
+        },
+      ],
+    },
+  }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // verdict: archive
@@ -129,6 +154,10 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
+async function waitForLivePreview() {
+  await screen.findByText(/emails currently match in Inbox/i);
+}
+
 beforeEach(() => {
   resetTriageStore();
   h.track.mockClear();
@@ -155,6 +184,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
@@ -168,7 +198,7 @@ describe('triage_action_taken (D159)', () => {
       // GROUPON's engine verdict IS archive.
       matched_recommendation: true,
       // The server's real coverage count from the enqueue accept.
-      affected_messages: 47,
+      requested_messages: 47,
       source: 'sheet',
     });
 
@@ -185,6 +215,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await screen.findByText('Preview · before anything changes');
+    await waitForLivePreview();
     expect(actionTakenCalls()).toHaveLength(0);
 
     // Second press of the same verb confirms the inline preview.
@@ -223,7 +254,7 @@ describe('triage_action_taken (D159)', () => {
       sender_id: GROUPON.senderId,
       // The engine said archive; the user kept — no match.
       matched_recommendation: false,
-      affected_messages: 0,
+      requested_messages: 0,
       source: 'inline',
     });
   });
@@ -253,8 +284,9 @@ describe('triage_action_taken (D159)', () => {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    // Backlog toggle defaults ON for Unsubscribe — the confirm rides
-    // BOTH the intent POST and the composite archive enqueue.
+    // Backlog is a separate Gmail mutation, so opt in explicitly.
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
@@ -262,7 +294,7 @@ describe('triage_action_taken (D159)', () => {
       verb: 'unsubscribe',
       sender_id: LINKEDIN.senderId,
       matched_recommendation: true,
-      affected_messages: 0,
+      requested_messages: 0,
       source: 'sheet',
     });
     // Let the backlog enqueue + poll settle — still one event.
@@ -279,6 +311,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await waitForLivePreview();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() =>

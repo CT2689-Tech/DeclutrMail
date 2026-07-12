@@ -124,6 +124,12 @@ export const ERROR_CODES = {
     message:
       "You've used all 5 free cleanup actions. Upgrade to keep cleaning — everything you've already done stays done.",
   },
+  ACTION_TIER_REQUIRED: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This action needs a higher plan. Upgrade to continue.',
+  },
   INBOX_LIMIT_REACHED: {
     status: 402,
     severityTier: 'inline_recoverable',

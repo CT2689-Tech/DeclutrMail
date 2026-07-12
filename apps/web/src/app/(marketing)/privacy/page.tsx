@@ -12,6 +12,9 @@
 
 import type { Metadata } from 'next';
 import {
+  ACTION_SAFETY_SUMMARY,
+  AI_PROCESSING_DISCLOSURE,
+  ANALYTICS_PRIVACY_CLAIM,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -25,11 +28,11 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Privacy Policy — DeclutrMail',
   description:
-    'What DeclutrMail stores (sender, subject, Gmail preview, dates, labels, read state), what it never stores (bodies, attachments, images), and your rights.',
+    'DeclutrMail’s Gmail message-field disclosure, operational records, processors, full-body boundary, retention, deletion, and your privacy rights.',
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-12';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -55,7 +58,8 @@ export default function PrivacyPolicyPage() {
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
           cleanup service: it helps you decide, once per sender, what should happen to the email you
           no longer want — keep it, archive it, unsubscribe from it, deal with it later, or delete
-          it — and keeps every action reversible for a defined undo window.
+          it. Reversible mail-moving actions have a defined undo window; a delivered unsubscribe
+          request cannot be recalled.
         </p>
         <p>
           For the purposes of the EU General Data Protection Regulation (GDPR), DeclutrMail is the
@@ -68,8 +72,9 @@ export default function PrivacyPolicyPage() {
       <LegalSection id="what-we-store" title="2. What we store — and what we never store">
         <p>
           Our entire product is built around one boundary: <strong>{PRIVACY_BADGE_HEADLINE}</strong>
-          . We never fetch or store the body of your messages. Here is the exact list of what we do
-          store, and what we do not.
+          . We never fetch or store the full body of your messages. The published Gmail
+          message-field disclosure is below; the operational records stored beyond message metadata
+          are listed after it.
         </p>
         <p>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
@@ -90,7 +95,7 @@ export default function PrivacyPolicyPage() {
         <p>
           The &ldquo;Gmail Preview&rdquo; above is the short snippet Gmail itself computes and shows
           in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
-          metadata form — we never download or parse the message body to produce it.
+          metadata form — we never download or parse the full message body to produce it.
         </p>
         <p>
           Beyond message metadata, we also store: your Google account email address and display name
@@ -114,19 +119,15 @@ export default function PrivacyPolicyPage() {
             Gmail&rsquo;s snippet, dates, labels, and read/unread state. We do not request message
             bodies or attachments from the API.
           </li>
-          <li>
-            Every destructive action shows you a preview of exactly what will change before it runs,
-            and every action is recorded in your Activity log and reversible during your
-            plan&rsquo;s undo window.
-          </li>
+          <li>{ACTION_SAFETY_SUMMARY}</li>
           <li>
             OAuth tokens are encrypted at rest and are never included in data exports or sent to
             your browser.
           </li>
           <li>
-            As an app using a restricted Gmail scope, DeclutrMail undergoes Google&rsquo;s
-            independent CASA (Cloud Application Security Assessment) Tier 2 security verification,
-            renewed annually.
+            Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
+            Application Security Assessment) process. DeclutrMail&rsquo;s current Tier 2 assessment
+            cycle is in progress; current evidence will be published after it is issued.
           </li>
         </ul>
         <p>
@@ -187,7 +188,8 @@ export default function PrivacyPolicyPage() {
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
           </li>
           <li>
-            Keep an activity log so every action is auditable and reversible during its undo window.
+            Keep an activity log so mail-moving actions are auditable and reversible during their
+            undo window, and unsubscribe outcomes remain visible even though the request is one-way.
           </li>
           <li>Operate your subscription and billing.</li>
           <li>
@@ -206,26 +208,24 @@ export default function PrivacyPolicyPage() {
           We use essential cookies for sign-in and billing — these are required for the service to
           function and do not need consent. Optional analytics (PostHog) is initialized only after
           you accept it in the cookie banner; it is off by default. We never use advertising cookies
-          or cross-site trackers, and our analytics never sees your inbox content. You can change or
-          withdraw your choice at any time on the <a href="/cookies">Cookie preferences</a> page
-          (also in the app under Settings); withdrawal takes effect immediately.
+          or cross-site trackers. {ANALYTICS_PRIVACY_CLAIM} You can change or withdraw your choice
+          at any time on the <a href="/cookies">Cookie preferences</a> page (also in the app under
+          Settings); withdrawal takes effect immediately.
         </p>
       </LegalSection>
 
       <LegalSection id="retention-deletion" title="7. Data retention and deletion">
-        <p>You can leave cleanly, in three tiers, all from Settings:</p>
+        <p>You can leave cleanly through two self-serve controls in Settings:</p>
         <ul>
           <li>
             <strong>Disconnect an inbox</strong> — revokes our Google access and stops all syncing
             for that inbox. Your historical activity log is kept so you can reconnect later.
           </li>
           <li>
-            <strong>Delete an inbox&rsquo;s data</strong> — wipes everything DeclutrMail stored
-            about that inbox (messages metadata, sender profiles, decisions, activity).
-          </li>
-          <li>
             <strong>Delete your DeclutrMail account</strong> — removes all inboxes, all activity,
-            all preferences, and your account itself, with no recovery.
+            all preferences, and your account itself. Deletion becomes permanent after the scheduled
+            grace/undo window, or immediately when you explicitly waive those windows; there is no
+            recovery after the purge runs.
           </li>
         </ul>
         <p>
@@ -238,8 +238,11 @@ export default function PrivacyPolicyPage() {
           deletion is scheduled, syncing stops immediately.
         </p>
         <p>
-          You can export your data (activity log, sender profiles, preferences) as JSON at any time
-          from Settings → Privacy &amp; Data. Exports never include OAuth tokens.
+          From Settings → Privacy &amp; Data, you can export mailbox email/status/connection
+          metadata, sender records and standing policies, the message metadata index, and your
+          decision/activity history as JSON. Dataset-specific CSVs are available for messages,
+          senders, and decisions. The export does not include app preferences, billing records,
+          message bodies, attachments, or OAuth tokens.
         </p>
       </LegalSection>
 
@@ -278,7 +281,14 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>PostHog</td>
-              <td>Product analytics — only with your cookie consent</td>
+              <td>Product analytics — only with your cookie consent; no Gmail message data</td>
+            </tr>
+            <tr>
+              <td>Anthropic</td>
+              <td>
+                Recommendation explanations and Pro Brief narration — bounded metadata; Pro Brief
+                can include subject and Gmail preview snippet; never a full message body
+              </td>
             </tr>
             <tr>
               <td>Resend</td>
@@ -294,6 +304,7 @@ export default function PrivacyPolicyPage() {
             </tr>
           </tbody>
         </table>
+        <p>{AI_PROCESSING_DISCLOSURE}</p>
         <p>We will update this list before adding a new subprocessor that handles personal data.</p>
       </LegalSection>
 
@@ -325,7 +336,7 @@ export default function PrivacyPolicyPage() {
         <p>
           All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
           envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. And because we never store message bodies or attachments, the most sensitive
+          logged. And because we never store full message bodies or attachments, the most sensitive
           content in your mailbox is simply not in our systems to begin with — that is the point of
           the design.
         </p>

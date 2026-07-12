@@ -46,15 +46,9 @@
 //     only if the overlay actually breaks.
 //   Google avatars   — sender/account avatars come from
 //     `https://*.googleusercontent.com` (lh3…lh6) per D175 (img-src).
-//   Sender logos     — `packages/shared/src/components/avatar.tsx` has a
-//     3-tier logo chain that POST-DATES D175's allowlist: Clearbit
-//     (`logo.clearbit.com`) → DuckDuckGo (`icons.duckduckgo.com`) →
-//     Google S2 (`www.google.com/s2/favicons`). Without these img-src
-//     origins every sender avatar on the Senders surface silently
-//     degrades to the letter fallback (verified in the §8 smoke: all
-//     three tiers blocked). Image-only origins — no script/connect
-//     grant. Flagged in the PR for the F6 founder review.
-//   Fonts            — next/font self-hosts Inter / JetBrains Mono /
+//   Sender identity  — avatars are monogram-only per ADR-0024; sender
+//     domains are never sent to third-party logo services.
+//   Fonts            — next/font self-hosts Geist / Geist Mono /
 //     Fraunces under `/_next/static/media` at build time, so font-src
 //     stays `'self'` with no external font origin (verified: no
 //     fonts.gstatic.com requests in the network tab).
