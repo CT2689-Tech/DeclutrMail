@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
 // — only the keys cross the boundary, never behavior (same precedent
@@ -418,17 +418,7 @@ function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () =>
     error instanceof ApiError
       ? `We couldn't load the Screener queue (${error.status}). Try again in a moment.`
       : "We couldn't load the Screener queue right now. Try again in a moment.";
-  return (
-    <EmptyState
-      title="The queue didn't load"
-      description={message}
-      action={
-        <Button tone="primary" onClick={onRetry}>
-          Try again
-        </Button>
-      }
-    />
-  );
+  return <ErrorState title="The queue didn't load" description={message} onRetry={onRetry} />;
 }
 
 /** Skeleton stack — matches the row's vertical rhythm. */

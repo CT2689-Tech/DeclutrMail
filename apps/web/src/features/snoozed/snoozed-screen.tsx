@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  ScreenIntro,
+  tokens,
+  useIsAtMost,
+} from '@declutrmail/shared';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
@@ -93,7 +100,7 @@ export function SnoozedScreen() {
     return <LoadingState />;
   }
   if (query.isError) {
-    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+    return <SnoozedErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
   return (
@@ -585,22 +592,14 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
       ? `We couldn't load your snoozed senders (${error.status}). Try again in a moment.`
       : "We couldn't load your snoozed senders right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
-        title="We couldn't load Snoozed"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
-      />
+      <ErrorState title="We couldn't load Snoozed" description={message} onRetry={onRetry} />
     </div>
   );
 }
