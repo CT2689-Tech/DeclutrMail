@@ -17,12 +17,16 @@
  *   - settings read failure renders per-card retry, not a blank page
  *   - ?cancelDeletion=1 deep link scrolls to + highlights the Account
  *     section
+ *   - reconnect OAuth results use controlled privacy-safe copy, focus
+ *     the exact UUID-bound row when present, then scrub transient URL
+ *     context without dropping unrelated query parameters
  *   - the at-limit connect gate disables the connect button
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from '@declutrmail/shared';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -35,6 +39,12 @@ const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
 const MAILBOX_C = '33333333-3333-4333-8333-333333333333';
 
 const startMailboxConnectSpy = vi.fn();
+const scrollIntoViewSpy = vi.fn();
+
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: vi.fn() };
+});
 
 vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
   startMailboxConnect: (mailboxId?: string) => startMailboxConnectSpy(mailboxId),
@@ -131,12 +141,18 @@ function happyHandlers() {
   ];
 }
 
-function renderScreen() {
+function renderScreen(client = createTestQueryClient()) {
   return render(
-    <QueryWrapper client={createTestQueryClient()}>
+    <QueryWrapper client={client}>
       <SettingsScreen />
     </QueryWrapper>,
   );
+}
+
+function setSettingsLocation(nextSearch = '', hash = '') {
+  search = nextSearch;
+  const query = nextSearch ? `?${nextSearch}` : '';
+  window.history.replaceState(null, '', `/settings${query}${hash}`);
 }
 
 describe('SettingsScreen', () => {
@@ -145,13 +161,18 @@ describe('SettingsScreen', () => {
       mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
       mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
     ]);
-    search = '';
+    setSettingsLocation();
     startMailboxConnectSpy.mockClear();
+    vi.mocked(toast).mockClear();
+    scrollIntoViewSpy.mockClear();
     resetTriageStore();
     installFetchStub(happyHandlers());
-    Element.prototype.scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewSpy;
   });
-  afterEach(() => resetFetchStub());
+  afterEach(() => {
+    resetFetchStub();
+    window.history.replaceState(null, '', '/settings');
+  });
 
   it('renders every section, including the mounted deletion section', async () => {
     renderScreen();
@@ -431,12 +452,218 @@ describe('SettingsScreen', () => {
   });
 
   it('?cancelDeletion=1 scrolls to and highlights the Account section', async () => {
-    search = 'cancelDeletion=1';
+    setSettingsLocation('cancelDeletion=1');
     renderScreen();
 
     await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
     const section = screen.getByTestId('settings-account-section');
     expect(section.style.outline).not.toBe('none');
+  });
+
+  it.each([
+    {
+      result: 'success',
+      message: 'Gmail reconnected. Sync status is shown below.',
+      tone: 'success',
+      liveRole: 'status',
+    },
+    {
+      result: 'account_mismatch',
+      message:
+        'That was a different Google account. Retry Reconnect next to the Gmail address you intended to restore.',
+      tone: 'danger',
+      liveRole: 'alert',
+    },
+    {
+      result: 'target_invalid',
+      message: 'Could not match that reconnect request to an active mailbox. Try again below.',
+      tone: 'danger',
+      liveRole: 'alert',
+    },
+    {
+      result: 'cancelled',
+      message: 'Gmail reconnect was cancelled. Nothing changed.',
+      tone: 'info',
+      liveRole: 'status',
+    },
+    {
+      result: 'failed',
+      message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+      tone: 'danger',
+      liveRole: 'alert',
+    },
+  ] as const)(
+    'shows the controlled $result reconnect result exactly once',
+    async ({ result, message, tone, liveRole }) => {
+      setSettingsLocation(`reconnect_result=${result}`, `#mailbox-${MAILBOX_A}`);
+      renderScreen();
+
+      await waitFor(() => expect(toast).toHaveBeenCalledWith(message, tone));
+      const announcement = screen.getByTestId(`reconnect-result-${liveRole}`);
+      const otherRegion = screen.getByTestId(
+        `reconnect-result-${liveRole === 'status' ? 'alert' : 'status'}`,
+      );
+      expect(announcement).toHaveAttribute('aria-atomic', 'true');
+      expect(announcement).toHaveTextContent(message);
+      expect(otherRegion).toBeEmptyDOMElement();
+      await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+      expect(toast).toHaveBeenCalledTimes(1);
+
+      const serializedCalls = JSON.stringify(vi.mocked(toast).mock.calls);
+      expect(serializedCalls).not.toContain(MAILBOX_A);
+      expect(serializedCalls).not.toContain('chintan.a.thakkar@gmail.com');
+    },
+  );
+
+  it('pre-mounts empty polite and assertive regions, then populates only the result region', async () => {
+    const client = createTestQueryClient();
+    const view = renderScreen(client);
+
+    const statusRegion = screen.getByTestId('reconnect-result-status');
+    const alertRegion = screen.getByTestId('reconnect-result-alert');
+    expect(statusRegion).toHaveAttribute('role', 'status');
+    expect(statusRegion).toHaveAttribute('aria-live', 'polite');
+    expect(alertRegion).toHaveAttribute('role', 'alert');
+    expect(alertRegion).toHaveAttribute('aria-live', 'assertive');
+    expect(statusRegion).toBeEmptyDOMElement();
+    expect(alertRegion).toBeEmptyDOMElement();
+
+    setSettingsLocation('reconnect_result=failed', `#mailbox-${MAILBOX_A}`);
+    view.rerender(
+      <QueryWrapper client={client}>
+        <SettingsScreen />
+      </QueryWrapper>,
+    );
+
+    await waitFor(() =>
+      expect(alertRegion).toHaveTextContent(
+        'Could not reconnect Gmail. Try again from this mailbox list.',
+      ),
+    );
+    expect(statusRegion).toBeEmptyDOMElement();
+  });
+
+  it('announces and scrubs the reconnect return without waiting for settings or billing reads', async () => {
+    const pendingResponse = new Promise<Response>(() => undefined);
+    installFetchStub([
+      ...happyHandlers().filter(
+        (handler) =>
+          handler.path !== '/api/me/settings' && handler.path !== '/api/billing/subscription',
+      ),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () => pendingResponse,
+      },
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => pendingResponse,
+      },
+    ]);
+    setSettingsLocation('source=oauth&reconnect_result=success', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    expect(screen.getByText('Loading plan…')).toBeInTheDocument();
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent(
+      'Gmail reconnected. Sync status is shown below.',
+    );
+    expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
+    expect(document.activeElement).toBe(document.getElementById(`mailbox-${MAILBOX_A}`));
+    expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
+    expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
+    expect(window.location.hash).toBe('#mailboxes');
+    // Both unrelated reads are still unresolved when the return has
+    // already been acknowledged and removed from the address bar.
+    expect(screen.getByText('Loading plan…')).toBeInTheDocument();
+  });
+
+  it('scrolls and highlights the exact reconnect row, then scrubs only transient URL context', async () => {
+    setSettingsLocation(
+      'source=account&reconnect_result=success&return=%2Fsettings%2Fprivacy',
+      `#mailbox-${MAILBOX_B}`,
+    );
+    renderScreen();
+
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    const row = document.getElementById(`mailbox-${MAILBOX_B}`);
+    expect(row).not.toBeNull();
+    await waitFor(() => expect(row).toHaveAttribute('data-reconnect-highlighted', 'true'));
+    expect(row).toHaveAttribute('tabindex', '-1');
+    expect(document.activeElement).toBe(row);
+    expect(row?.style.outline).not.toBe('none');
+    expect(scrollIntoViewSpy.mock.contexts).toContain(row);
+    expect(scrollIntoViewSpy.mock.contexts).not.toContain(document.getElementById('mailboxes'));
+
+    const remainingParams = new URLSearchParams(window.location.search);
+    expect([...remainingParams.entries()]).toEqual([
+      ['source', 'account'],
+      ['return', '/settings/privacy'],
+    ]);
+    expect(window.location.hash).toBe('#mailboxes');
+    expect(toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to the Mailboxes section when the reconnect fragment is missing', async () => {
+    setSettingsLocation('reconnect_result=cancelled');
+    renderScreen();
+
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    const section = document.getElementById('mailboxes');
+    expect(section).toHaveAttribute('tabindex', '-1');
+    expect(document.activeElement).toBe(section);
+    expect(scrollIntoViewSpy.mock.contexts).toContain(section);
+    expect(document.querySelector('[data-reconnect-highlighted="true"]')).toBeNull();
+    expect(window.location.hash).toBe('#mailboxes');
+  });
+
+  it('falls back when a valid reconnect UUID has no matching mailbox row', async () => {
+    setSettingsLocation('reconnect_result=failed', `#mailbox-${MAILBOX_C}`);
+    renderScreen();
+
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    expect(document.getElementById(`mailbox-${MAILBOX_C}`)).toBeNull();
+    const section = document.getElementById('mailboxes');
+    expect(document.activeElement).toBe(section);
+    expect(scrollIntoViewSpy.mock.contexts).toContain(section);
+    expect(window.location.hash).toBe('#mailboxes');
+  });
+
+  it('rejects a malformed reconnect fragment without passing it into a DOM selector or id lookup', async () => {
+    const getElementByIdSpy = vi.spyOn(document, 'getElementById');
+    const querySelectorSpy = vi.spyOn(Document.prototype, 'querySelector');
+    setSettingsLocation('reconnect_result=failed', '#mailbox-%5Bdata-danger%3Dtrue%5D');
+    renderScreen();
+
+    await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
+    expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('mailbox-'))).toBe(false);
+    expect(querySelectorSpy.mock.calls.some(([selector]) => selector.includes('mailbox-'))).toBe(
+      false,
+    );
+    const section = document.getElementById('mailboxes');
+    expect(document.activeElement).toBe(section);
+    expect(scrollIntoViewSpy.mock.contexts).toContain(section);
+    expect(window.location.hash).toBe('#mailboxes');
+
+    getElementByIdSpy.mockRestore();
+    querySelectorSpy.mockRestore();
+  });
+
+  it('silently cleans an unknown reconnect result and uses the safe section fallback', async () => {
+    setSettingsLocation('source=account&reconnect_result=unexpected', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    await waitFor(() => expect(window.location.hash).toBe('#mailboxes'));
+    expect(toast).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).get('source')).toBe('account');
+    expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
+    expect(screen.getByTestId('reconnect-result-status')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
+    const section = document.getElementById('mailboxes');
+    expect(document.activeElement).toBe(section);
+    expect(scrollIntoViewSpy.mock.contexts).toContain(section);
+    expect(document.querySelector('[data-reconnect-highlighted="true"]')).toBeNull();
   });
 
   it('disables connect-another at the tier inboxLimit with an upgrade pointer', async () => {

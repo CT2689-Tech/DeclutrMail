@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -358,7 +358,14 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     } as unknown as Request;
   }
 
-  it('redirects to /onboarding?mailbox=<id> after adding the mailbox', async () => {
+  function settingsResultUrl(
+    result: 'account_mismatch' | 'cancelled' | 'failed' | 'target_invalid',
+  ): string {
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    return `${webBase}/settings?reconnect_result=${result}#mailbox-${RECONNECT_MAILBOX_ID}`;
+  }
+
+  it('keeps a normal add-mailbox success on its existing onboarding URL', async () => {
     await controller.callback(reqWithState(), res as unknown as Response, 'auth-code', NONCE);
 
     expect(orchestrator.addMailbox).toHaveBeenCalledWith(
@@ -371,7 +378,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/onboarding?mailbox=mailbox-new`);
   });
 
-  it('revalidates and completes a targeted reconnect using the stored canonical email', async () => {
+  it('marks a targeted reconnect success while using the stored canonical email', async () => {
     mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
     oauth.exchangeCode.mockResolvedValueOnce({
       email: ' SECOND@example.com ',
@@ -392,7 +399,29 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
       refreshToken: 'fresh-rt',
     });
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/onboarding?mailbox=mailbox-new`);
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/onboarding?mailbox=mailbox-new&reconnect=1`,
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it('URL-encodes the returned mailbox id without allowing query injection', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+    orchestrator.addMailbox.mockResolvedValueOnce({ mailboxId: 'mailbox/new &next=unsafe' });
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/onboarding?mailbox=mailbox%2Fnew+%26next%3Dunsafe&reconnect=1`,
+    );
   });
 
   it('does not mutate when Google returns a different account than the bound target', async () => {
@@ -422,11 +451,9 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     expect(JSON.stringify(securityEvents.record.mock.calls.at(-1)?.[0])).not.toContain(
       'other@example.com',
     );
-    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(
-      302,
-      `${webBase}/triage?connect_error=reconnect_account_mismatch`,
-    );
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('account_mismatch'));
+    expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('other@example.com');
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
   });
 
   it('does not mutate when the bound target is no longer valid at callback time', async () => {
@@ -449,11 +476,164 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
         },
       }),
     );
-    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(
-      302,
-      `${webBase}/triage?connect_error=reconnect_target_invalid`,
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('target_invalid'));
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it('returns a signed Google access denial as a controlled cancellation', async () => {
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      undefined,
+      NONCE,
+      'access_denied',
     );
+
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_cancelled' },
+      }),
+    );
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('cancelled'));
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it('returns a signed targeted callback with no code as a controlled failure', async () => {
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      undefined,
+      NONCE,
+    );
+
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_failed' },
+      }),
+    );
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('failed'));
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it.each([
+    ['non-scalar', ['access_denied']],
+    ['unknown', 'server_error?email=leaked@example.com'],
+  ])('collapses a %s OAuth error into the closed failed result', async (_label, oauthError) => {
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      undefined,
+      NONCE,
+      oauthError,
+    );
+
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('failed'));
+    const externalOutput = JSON.stringify({
+      redirects: res.redirect.mock.calls,
+      audits: securityEvents.record.mock.calls,
+    });
+    expect(externalOutput).not.toContain('server_error');
+    expect(externalOutput).not.toContain('leaked@example.com');
+    expect(externalOutput).not.toContain('access_denied');
+  });
+
+  it('turns a raw token-exchange rejection into a privacy-safe failed result', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    oauth.exchangeCode.mockRejectedValueOnce(
+      new Error('invalid_grant for leaked@example.com: raw-google-response'),
+    );
+
+    await expect(
+      controller.callback(
+        reqWithState(RECONNECT_MAILBOX_ID),
+        res as unknown as Response,
+        'auth-code',
+        NONCE,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('failed'));
+    const externalOutput = JSON.stringify({
+      redirects: res.redirect.mock.calls,
+      audits: securityEvents.record.mock.calls,
+      logs: warn.mock.calls,
+    });
+    expect(externalOutput).not.toContain('invalid_grant');
+    expect(externalOutput).not.toContain('leaked@example.com');
+    expect(externalOutput).not.toContain('raw-google-response');
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_failed' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    warn.mockRestore();
+  });
+
+  it.each([
+    [
+      'structured',
+      {
+        response: { code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' },
+        message: 'structured leaked@example.com detail',
+      },
+    ],
+    ['generic', new Error('generic leaked@example.com detail')],
+  ])('turns a %s addMailbox rejection into the same closed result', async (_label, error) => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+    orchestrator.addMailbox.mockRejectedValueOnce(error);
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('failed'));
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_failed' },
+      }),
+    );
+    const externalOutput = JSON.stringify({
+      redirects: res.redirect.mock.calls,
+      audits: securityEvents.record.mock.calls,
+      logs: warn.mock.calls,
+    });
+    expect(externalOutput).not.toContain('MAILBOX_OWNED_BY_OTHER_WORKSPACE');
+    expect(externalOutput).not.toContain('leaked@example.com');
+    expect(externalOutput).not.toContain('detail');
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    warn.mockRestore();
+  });
+
+  it('keeps an invalid originating session as a hard failure even when Google cancels', async () => {
+    sessions.lookupActiveById.mockResolvedValueOnce(null);
+
+    await expect(
+      controller.callback(
+        reqWithState(RECONNECT_MAILBOX_ID),
+        res as unknown as Response,
+        undefined,
+        NONCE,
+        'access_denied',
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(res.redirect).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
   });
 });
 

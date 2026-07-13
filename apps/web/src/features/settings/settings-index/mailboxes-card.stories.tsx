@@ -10,6 +10,7 @@
 //                        (danger tag + Reconnect affordance)
 //   • NeedsReconnectAtLimit — active revoked account can reauthorize
 //                        without consuming another inbox slot
+//   • ReconnectResultHighlighted — returned OAuth target is acknowledged
 //   • Disconnected     — one account disconnected (Reconnect)
 //   • DisconnectedAtLimit — reactivation remains limit-gated
 //   • AtLimit          — connect-another disabled at the tier's inboxLimit
@@ -134,6 +135,15 @@ export const NeedsReconnectAtLimit: Story<typeof MailboxesCard> = {
         needsReconnect: true,
       },
     },
+  },
+};
+
+export const ReconnectResultHighlighted: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    activeMailboxId: MAILBOX_B.id,
+    highlightMailboxId: MAILBOX_B.id,
   },
 };
 

@@ -123,7 +123,7 @@ export class AuthSignupOrchestrator {
         dekEncrypted: encrypted.wrappedDek,
         keyVersion: encrypted.keyVersion,
       });
-      await this.sync.markQueued(tx, row.id);
+      await this.sync.markQueued(tx, row.id, { freshCredentials: true });
       return row;
     });
 
@@ -242,7 +242,7 @@ export class AuthSignupOrchestrator {
         dekEncrypted: encrypted.wrappedDek,
         keyVersion: encrypted.keyVersion,
       });
-      await this.sync.markQueued(tx, row.id);
+      await this.sync.markQueued(tx, row.id, { freshCredentials: true });
       return row;
     });
 

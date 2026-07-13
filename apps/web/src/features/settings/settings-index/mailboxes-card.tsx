@@ -28,6 +28,7 @@ export function MailboxesCard({
   activeMailboxId,
   inboxLimit,
   healthById,
+  highlightMailboxId = null,
   onConnect,
 }: {
   mailboxes: MeMailbox[];
@@ -36,6 +37,8 @@ export function MailboxesCard({
   inboxLimit: number | null;
   /** Per-mailbox sync health; entries absent while their query loads. */
   healthById: Record<string, MailboxHealth | undefined>;
+  /** Brief visual acknowledgement after a target-bound reconnect return. */
+  highlightMailboxId?: string | null;
   /** OAuth start; an id binds reauthorization to that active mailbox. */
   onConnect: (reconnectMailboxId?: string) => void;
 }) {
@@ -61,9 +64,13 @@ export function MailboxesCard({
               const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
               const showReconnect = m.status === 'disconnected' || needsReconnect;
               const reconnectBlocked = atLimit && !needsReconnect;
+              const reconnectHighlighted = m.id === highlightMailboxId;
               return (
                 <li
                   key={m.id}
+                  id={`mailbox-${m.id}`}
+                  tabIndex={-1}
+                  data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -71,6 +78,12 @@ export function MailboxesCard({
                     gap: 10,
                     padding: '9px 0',
                     borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+                    borderRadius: 8,
+                    scrollMarginTop: 24,
+                    background: reconnectHighlighted ? color.primarySoft : 'transparent',
+                    outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
+                    outlineOffset: 2,
+                    transition: 'background-color 300ms, outline-color 300ms',
                   }}
                 >
                   <span

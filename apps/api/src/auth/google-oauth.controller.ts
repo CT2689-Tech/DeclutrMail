@@ -78,6 +78,7 @@ interface ConnectOAuthState extends OAuthStateBase {
 }
 
 type OAuthState = LoginOAuthState | ConnectOAuthState;
+type ReconnectResult = 'account_mismatch' | 'cancelled' | 'failed' | 'target_invalid';
 type PendingOAuthState =
   | Omit<LoginOAuthState, 'issuedAt' | 'expiresAt'>
   | Omit<ConnectOAuthState, 'issuedAt' | 'expiresAt'>;
@@ -205,6 +206,7 @@ export class GoogleOAuthController {
     @Res() res: Response,
     @Query('code') code?: unknown,
     @Query('state') state?: unknown,
+    @Query('error') oauthError?: unknown,
   ): Promise<void> {
     // Request metadata shared by every D181 emit in this handler. Captured
     // up-front because the failure emits below run before any per-flow
@@ -250,7 +252,51 @@ export class GoogleOAuthController {
       this.clearStateCookie(res);
       throw new BadRequestException('Invalid OAuth state.');
     }
+    const reconnectState = isTargetedReconnectState(cookieState) ? cookieState : null;
+    const reconnectMailboxId = reconnectState?.reconnectMailboxId;
+
+    if (reconnectState) {
+      // Rebind the signed authority to the stable originating session before
+      // accepting either a Google success or cancellation. Refresh rotation
+      // may change jti, but logout or an administrator revoke makes this
+      // lookup fail immediately.
+      await this.assertConnectSessionActive(reconnectState, res, ipAddress, userAgent);
+    }
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    if (reconnectState && oauthError !== undefined) {
+      // Google documents `access_denied` for user cancellation. Treat every
+      // other shape/value as one closed failure result: arrays and future or
+      // attacker-controlled strings never reach a URL, audit payload, or log.
+      const cancelled = typeof oauthError === 'string' && oauthError === 'access_denied';
+      this.recordReconnectFailure({
+        reason: cancelled ? 'reconnect_cancelled' : 'reconnect_failed',
+        userId: reconnectState.userId,
+        workspaceId: reconnectState.workspaceId,
+        sourceIp: ipAddress,
+        userAgent,
+      });
+      this.redirectReconnectResult(
+        res,
+        webBase,
+        reconnectState.reconnectMailboxId,
+        cancelled ? 'cancelled' : 'failed',
+      );
+      return;
+    }
+
     if (typeof code !== 'string' || code.length === 0) {
+      if (reconnectState) {
+        this.recordReconnectFailure({
+          reason: 'reconnect_failed',
+          userId: reconnectState.userId,
+          workspaceId: reconnectState.workspaceId,
+          sourceIp: ipAddress,
+          userAgent,
+        });
+        this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+        return;
+      }
       void this.securityEvents.record({
         eventType: 'login.failure',
         severity: 'warning',
@@ -262,10 +308,10 @@ export class GoogleOAuthController {
       throw new BadRequestException('Missing OAuth `code` query parameter.');
     }
 
-    if (cookieState.mode === 'connect') {
-      // Rebind the signed authority to the stable originating session before
-      // consuming Google's code. Refresh rotation may change jti, but logout
-      // or an administrator revoke makes this lookup fail immediately.
+    if (cookieState.mode === 'connect' && !reconnectState) {
+      // Keep the original add-mailbox validation order: malformed callbacks
+      // fail before the originating-session read, while valid callbacks bind
+      // the signed authority before consuming Google's code.
       await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
     }
 
@@ -278,6 +324,17 @@ export class GoogleOAuthController {
       // OAuth client, or no refresh_token (already-consented account).
       // Reason is a closed enum; the underlying error message is never
       // copied into the payload (it can carry Google response detail).
+      if (reconnectState) {
+        this.recordReconnectFailure({
+          reason: 'reconnect_failed',
+          userId: reconnectState.userId,
+          workspaceId: reconnectState.workspaceId,
+          sourceIp: ipAddress,
+          userAgent,
+        });
+        this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+        return;
+      }
       void this.securityEvents.record({
         eventType: 'login.failure',
         severity: 'warning',
@@ -287,19 +344,32 @@ export class GoogleOAuthController {
       });
       throw err;
     }
-    // State consumed — clear the cookie so it cannot be replayed.
-    res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
-
-    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    if (!reconnectState) {
+      // Preserve login and normal add-mailbox state-consumption timing.
+      this.clearStateCookie(res);
+    }
 
     if (cookieState.mode === 'connect') {
       let connectEmail = email;
-      if (cookieState.reconnectMailboxId !== undefined) {
-        const reconnectTarget = await this.findReconnectTarget(
-          cookieState.userId,
-          cookieState.workspaceId,
-          cookieState.reconnectMailboxId,
-        );
+      if (reconnectMailboxId !== undefined) {
+        let reconnectTarget: { id: string; email: string } | null;
+        try {
+          reconnectTarget = await this.findReconnectTarget(
+            cookieState.userId,
+            cookieState.workspaceId,
+            reconnectMailboxId,
+          );
+        } catch {
+          this.recordReconnectFailure({
+            reason: 'reconnect_failed',
+            userId: cookieState.userId,
+            workspaceId: cookieState.workspaceId,
+            sourceIp: ipAddress,
+            userAgent,
+          });
+          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'failed');
+          return;
+        }
         if (!reconnectTarget) {
           this.recordReconnectFailure({
             reason: 'reconnect_target_invalid',
@@ -308,7 +378,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          res.redirect(302, `${webBase}/triage?connect_error=reconnect_target_invalid`);
+          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'target_invalid');
           return;
         }
         if (normalizeEmail(email) !== normalizeEmail(reconnectTarget.email)) {
@@ -319,7 +389,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          res.redirect(302, `${webBase}/triage?connect_error=reconnect_account_mismatch`);
+          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'account_mismatch');
           return;
         }
         // Use the already-persisted canonical identity so a harmless case or
@@ -332,6 +402,9 @@ export class GoogleOAuthController {
       // cannot span an external OAuth call; this second live read makes the
       // remaining TOCTOU only the immediate service-call boundary.
       await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
+      // State consumed — clear before the mutation so neither a successful
+      // reconnect nor an orchestrator failure can replay the Google code.
+      if (reconnectState) this.clearStateCookie(res);
 
       try {
         const { mailboxId } = await this.orchestrator.addMailbox({
@@ -357,10 +430,27 @@ export class GoogleOAuthController {
         // resolves it via CurrentMailboxGuard; the `mailbox` param lets
         // the gate poll THIS mailbox explicitly even if the user later
         // switches back to their primary (D116 escape hatch).
-        res.redirect(302, `${webBase}/onboarding?mailbox=${encodeURIComponent(mailboxId)}`);
+        const query = new URLSearchParams({
+          mailbox: mailboxId,
+          ...(reconnectState ? { reconnect: '1' } : {}),
+        });
+        res.redirect(302, `${webBase}/onboarding?${query.toString()}`);
       } catch (err) {
         // Cross-workspace ownership refusal — bounce back with a flag
         // the FE can read into a toast.
+        if (reconnectState) {
+          // Do not leak the Google identity or an upstream/DB error message.
+          this.logger.warn('Targeted Gmail reconnect failed.');
+          this.recordReconnectFailure({
+            reason: 'reconnect_failed',
+            userId: cookieState.userId,
+            workspaceId: cookieState.workspaceId,
+            sourceIp: ipAddress,
+            userAgent,
+          });
+          this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+          return;
+        }
         const message =
           err instanceof Error ? err.message : 'Failed to connect the additional mailbox.';
         this.logger.warn(`connect-mailbox failed for ${email}: ${message}`);
@@ -550,6 +640,21 @@ export class GoogleOAuthController {
     res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
   }
 
+  /** Fixed, local Settings destination for a signed targeted reconnect. */
+  private redirectReconnectResult(
+    res: Response,
+    webBase: string,
+    mailboxId: string,
+    result: ReconnectResult,
+  ): void {
+    this.clearStateCookie(res);
+    const query = new URLSearchParams({ reconnect_result: result });
+    res.redirect(
+      302,
+      `${webBase}/settings?${query.toString()}#mailbox-${encodeURIComponent(mailboxId)}`,
+    );
+  }
+
   /** Resolve an active mailbox owned by both the state user and workspace. */
   private async findReconnectTarget(
     userId: string,
@@ -564,7 +669,11 @@ export class GoogleOAuthController {
 
   /** Privacy-safe audit: controlled reason only; no mailbox id or email. */
   private recordReconnectFailure(input: {
-    reason: 'reconnect_target_invalid' | 'reconnect_account_mismatch';
+    reason:
+      | 'reconnect_account_mismatch'
+      | 'reconnect_cancelled'
+      | 'reconnect_failed'
+      | 'reconnect_target_invalid';
     userId: string;
     workspaceId: string;
     sourceIp: string | null;
@@ -585,6 +694,13 @@ export class GoogleOAuthController {
 /** UUID shape accepted by Postgres' uuid type; reject malformed hints pre-DB. */
 function isUuid(value: string): boolean {
   return uuidSchema.safeParse(value).success;
+}
+
+/** Preserve the schema-proven reconnect id while narrowing the state union. */
+function isTargetedReconnectState(
+  state: OAuthState,
+): state is ConnectOAuthState & { reconnectMailboxId: string } {
+  return state.mode === 'connect' && state.reconnectMailboxId !== undefined;
 }
 
 /** Google identity comparison only; stored canonical email wins on mutation. */

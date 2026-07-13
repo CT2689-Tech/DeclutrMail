@@ -56,6 +56,10 @@ const { color, font } = tokens;
  *   - Secondary connect → `/onboarding?mailbox=<id>` (D116): gates
  *     THAT mailbox with the escape hatch, then exits to /senders —
  *     it is NOT part of the 5-step flow (the user already onboarded).
+ *   - Target-bound reconnect → `/onboarding?mailbox=<id>&reconnect=1`:
+ *     uses that same strict gate, then returns to the fixed Settings
+ *     repair surface with a controlled one-shot result. No arbitrary
+ *     post-OAuth destination crosses this boundary.
  *
  * D159 funnel: `onboarding_step_viewed` on step entry,
  * `onboarding_step_completed` (with duration) on step exit; `finished`
@@ -73,6 +77,10 @@ export default function OnboardingPage() {
 function OnboardingFlow() {
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
+  // Exact closed flag, honored only alongside the secondary-mailbox
+  // target. Values such as `true`, `01`, or an attacker-supplied path
+  // remain ordinary secondary connects and retain the /senders exit.
+  const isTargetedReconnect = secondaryMailboxId !== null && params.get('reconnect') === '1';
   const billingIntent = parseBillingIntentPath(params.get('returnTo'));
   const returnTo = billingIntent ? billingIntentPath(billingIntent) : null;
 
@@ -81,7 +89,10 @@ function OnboardingFlow() {
     // bounces to OAuth start via the provider, exactly as before.
     return (
       <AuthProvider>
-        <SecondaryConnectGate mailboxId={secondaryMailboxId} />
+        <SecondaryConnectGate
+          mailboxId={secondaryMailboxId}
+          isTargetedReconnect={isTargetedReconnect}
+        />
       </AuthProvider>
     );
   }
@@ -265,11 +276,18 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
 
 /* ── Secondary-connect gate (D116) — behavior unchanged ────────────── */
 
-function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
+function SecondaryConnectGate({
+  mailboxId,
+  isTargetedReconnect,
+}: {
+  mailboxId: string;
+  isTargetedReconnect: boolean;
+}) {
   const router = useRouter();
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id);
   const setActive = useSetActiveMailbox();
+  const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/senders';
 
   // Gate THAT mailbox explicitly so it survives the user switching
   // their active mailbox back to the primary mid-sync.
@@ -280,9 +298,9 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
 
   useEffect(() => {
     if (ready) {
-      router.replace('/senders');
+      router.replace(exitPath);
     }
-  }, [ready, router]);
+  }, [exitPath, ready, router]);
 
   // Escape hatch only when ANOTHER active mailbox exists to return to.
   const other = me.mailboxes.find((m) => m.status === 'active' && m.id !== mailboxId);
@@ -291,7 +309,7 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
         returnToEmail: other.email,
         returning: setActive.isPending,
         onReturn: () => {
-          setActive.mutate(other.id, { onSuccess: () => router.replace('/senders') });
+          setActive.mutate(other.id, { onSuccess: () => router.replace(exitPath) });
         },
       }
     : undefined;
@@ -305,6 +323,17 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
 
   // Not part of the 5-step flow — no step counter in the eyebrow.
   return <SyncGate status={status} escape={escape} eyebrow="One-time scan" />;
+}
+
+/**
+ * Fixed, PII-free reconnect result destination.
+ *
+ * The mailbox id is the server-bound opaque target. It lives in the
+ * fragment so it is not sent to the web server or in Referer headers;
+ * Settings uses it only to scroll/highlight the matching owned row.
+ */
+function reconnectSettingsResultPath(mailboxId: string): string {
+  return `/settings?reconnect_result=success#mailbox-${encodeURIComponent(mailboxId)}`;
 }
 
 /* ── Funnel + small states ─────────────────────────────────────────── */

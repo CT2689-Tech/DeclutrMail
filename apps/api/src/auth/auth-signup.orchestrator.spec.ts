@@ -114,6 +114,9 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w1', userId: 'u1' }),
     );
+    expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+      freshCredentials: true,
+    });
     // Active mailbox set to the just-connected mailbox.
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
     // `users.watch` fires on connect/reconnect (D8/D225/D229).
@@ -256,7 +259,9 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
         expect.anything(),
         expect.objectContaining({ workspaceId: 'w-home', userId: 'u-owner' }),
       );
-      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new');
+      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        freshCredentials: true,
+      });
       // force-replace any stale pre-reconnect job (fresh token just stored).
       expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
       // The keystone fix: the new mailbox becomes the active preference,
