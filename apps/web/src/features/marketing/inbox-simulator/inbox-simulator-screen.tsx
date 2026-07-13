@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { ACTION_SAFETY_SUMMARY, Button, Eyebrow, useFocusTrap } from '@declutrmail/shared';
+import {
+  ACTION_SAFETY_SUMMARY,
+  Button,
+  Eyebrow,
+  TIER_MANIFEST,
+  useFocusTrap,
+} from '@declutrmail/shared';
 import { ACTION_REGISTRY } from '@declutrmail/shared/actions';
 
 import { ActionPreview } from '@/features/triage/action-preview';
@@ -206,7 +212,7 @@ export function InboxSimulatorScreen() {
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <Eyebrow tone="primary">Interactive demo · synthetic inbox</Eyebrow>
+        <Eyebrow tone="primary">Interactive demo · Plus/Pro Triage</Eyebrow>
         <h1>Try the sender review before you connect Gmail.</h1>
         <p>
           This walkthrough uses the production Triage row, recommendation, action, and preview
@@ -218,6 +224,14 @@ export function InboxSimulatorScreen() {
           <span>Local to this browser</span>
           <span>Full bodies fetched: 0</span>
         </div>
+        <aside className="dm-simulator-tier-note" aria-label="Plan availability">
+          <strong>This demo shows Plus and Pro Triage.</strong>
+          <span>
+            Free uses the same cleanup verbs in Senders and includes{' '}
+            {TIER_MANIFEST.free.cleanupActionsLifetime} lifetime cleanup actions.
+          </span>
+          <a href="/pricing">Compare plans</a>
+        </aside>
       </section>
 
       <section className="dm-simulator-workspace" aria-label="Inbox simulator">

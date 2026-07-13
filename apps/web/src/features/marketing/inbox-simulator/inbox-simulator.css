@@ -51,6 +51,41 @@
   text-transform: uppercase;
 }
 
+.dm-simulator-tier-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--dm-primary-border);
+  border-left-width: 3px;
+  border-radius: 9px;
+  background: var(--dm-primary-soft);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.dm-simulator-tier-note strong {
+  color: var(--dm-fg);
+}
+
+.dm-simulator-tier-note span {
+  color: var(--dm-fg-soft);
+}
+
+.dm-simulator-tier-note a {
+  color: var(--dm-primary);
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dm-simulator-tier-note a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .dm-simulator-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(290px, 0.75fr);
@@ -301,6 +336,14 @@
 
   .dm-simulator-hero h1 {
     font-size: 42px;
+  }
+
+  .dm-simulator-tier-note {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-simulator-tier-note a {
+    justify-self: start;
   }
 
   .dm-simulator-next {

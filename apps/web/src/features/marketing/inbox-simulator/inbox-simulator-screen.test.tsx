@@ -38,6 +38,17 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.getByText('Local to this browser')).toBeInTheDocument();
   });
 
+  it('sets the Triage demo in explicit plan context', () => {
+    render(<InboxSimulatorScreen />);
+
+    const availability = screen.getByRole('complementary', { name: 'Plan availability' });
+    expect(availability).toHaveTextContent('This demo shows Plus and Pro Triage.');
+    expect(availability).toHaveTextContent(
+      'Free uses the same cleanup verbs in Senders and includes 5 lifetime cleanup actions.',
+    );
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
+  });
+
   it('requires a preview and explicit confirmation before recording activity', () => {
     render(<InboxSimulatorScreen />);
 
