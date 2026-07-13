@@ -10,12 +10,11 @@
 // bootstrap) so tests can mock it cleanly: error-boundary tests stub
 // this module's export, leaving the bootstrap module alone.
 //
-// Privacy posture (D7): the boundary passes the raw `Error` object, which can
-// contain user data in its message or stack. The lazy browser runtime's
-// `beforeSend` hook structurally removes banned keyed fields, but it does NOT
-// redact Error.message, Sentry exception values, or stack frames. Callers must
-// not embed mailbox content in thrown messages; exception-text hardening is a
-// separate change from this behavior-preserving lazy-load boundary.
+// Privacy posture (D7): the boundary passes the raw `Error` object, but the
+// lazy browser runtime rebuilds the outgoing event from a closed allowlist.
+// Exception messages/values, request and user context, frame locals, and source
+// context lines are removed; only validated exception types, mechanisms, and
+// structural stack coordinates remain for grouping and source-map lookup.
 
 import { captureSentryBoundaryException } from './sentry';
 

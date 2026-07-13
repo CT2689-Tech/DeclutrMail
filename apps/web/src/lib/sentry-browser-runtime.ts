@@ -1,7 +1,7 @@
 'use client';
 
 import * as Sentry from '@sentry/nextjs';
-import { scrubTelemetryPayload } from '@declutrmail/shared/observability';
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@declutrmail/shared/observability';
 import type { BrowserSentryRuntime } from './sentry';
 
 /**
@@ -9,22 +9,33 @@ import type { BrowserSentryRuntime } from './sentry';
  * the DSN-gated dynamic import in `sentry.ts`; do not statically import it from
  * application or instrumentation code.
  *
- * The init options intentionally preserve the prior configuration. In
- * particular, `integrations: []` adds no custom integrations but does not turn
- * off Sentry's defaults; changing default integrations is a separate privacy
- * and behavior decision.
+ * Browser SDK inputs are fail-closed. Only explicitly approved integrations
+ * run and both events and manual breadcrumbs are rebuilt by the shared Sentry
+ * scrubbers before transport.
  */
 
 let initialized = false;
 
+const SAFE_BROWSER_INTEGRATIONS = new Set([
+  'InboundFilters',
+  'FunctionToString',
+  'GlobalHandlers',
+  'LinkedErrors',
+  'Dedupe',
+  'NextjsClientStackFrameNormalization',
+]);
+
 const browserRuntime: BrowserSentryRuntime = {
   addBreadcrumb(crumb): void {
-    Sentry.addBreadcrumb({
-      category: crumb.category,
+    const breadcrumb = scrubSentryBreadcrumb({
+      category: `declutrmail.${crumb.category}`,
       message: crumb.message,
       level: crumb.level === 'warning' ? 'warning' : crumb.level,
       ...(crumb.data === undefined ? {} : { data: crumb.data }),
     });
+    if (breadcrumb) {
+      Sentry.addBreadcrumb(breadcrumb as Parameters<typeof Sentry.addBreadcrumb>[0]);
+    }
   },
 
   captureFeatureException(error, context): void {
@@ -70,16 +81,37 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
       environment: process.env.NEXT_PUBLIC_VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
       release: process.env.NEXT_PUBLIC_SENTRY_RELEASE,
       tracesSampleRate: 0,
+      traceLifecycle: 'static',
+      streamGenAiSpans: false,
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
+      profilesSampleRate: 0,
+      profileSessionSampleRate: 0,
+      enableLogs: false,
+      enableMetrics: false,
+      sendClientReports: false,
       sendDefaultPii: false,
-      integrations: [],
+      dataCollection: {
+        userInfo: false,
+        cookies: false,
+        httpHeaders: { request: false, response: false },
+        httpBodies: [],
+        queryParams: false,
+        genAI: { inputs: false, outputs: false },
+        stackFrameVariables: false,
+        frameContextLines: 0,
+      },
+      integrations: (defaultIntegrations) =>
+        defaultIntegrations.filter((integration) =>
+          SAFE_BROWSER_INTEGRATIONS.has(integration.name),
+        ),
       beforeSend: (event) =>
-        scrubTelemetryPayload(
-          event as unknown as Record<string, unknown>,
-        ) as unknown as typeof event,
+        scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event,
+      beforeSendTransaction: () => null,
+      beforeSendLog: () => null,
+      beforeSendMetric: () => null,
       beforeBreadcrumb: (breadcrumb) =>
-        scrubTelemetryPayload(
+        scrubSentryBreadcrumb(
           breadcrumb as unknown as Record<string, unknown>,
         ) as unknown as typeof breadcrumb,
     });
