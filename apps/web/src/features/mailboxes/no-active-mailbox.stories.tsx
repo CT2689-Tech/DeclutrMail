@@ -6,11 +6,12 @@
 // the real imports when the seed lands; the story shapes don't change.
 //
 // The presentational `NoActiveMailboxView` is storied (props only) so
-// both branches render without mounting AuthProvider.
+// every recovery branch renders without mounting AuthProvider.
 //
 // Variants (D211 edge-state coverage):
-//   • Reconnect    — last active mailbox disconnected (history preserved)
-//   • FirstConnect — no mailboxes at all (fresh account)
+//   • Reconnect         — one exact disconnected target
+//   • ChooseReconnect   — multiple exact disconnected targets
+//   • FirstConnect      — no mailboxes at all (fresh account)
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -38,7 +39,7 @@ const meta: StoryMeta<typeof NoActiveMailboxView> = {
     docs: {
       description: {
         component:
-          'Full-screen gate (D116) shown when the user has no active mailbox — they disconnected their last (or only) account. Offers the one action that resolves it: reconnect / connect a Gmail account. Without this the dashboard 409s and renders broken.',
+          'Full-screen gate (D116) shown when the user has no active mailbox. Disconnected accounts use exact mailbox-bound reactivation, while connecting a different Gmail account remains a separate action.',
       },
     },
   },
@@ -58,9 +59,27 @@ const noop = () => {};
 /** Reconnect — the user disconnected their last active mailbox. */
 export const Reconnect: Story<typeof NoActiveMailboxView> = {
   args: {
-    disconnectedEmails: ['you@example.com'],
+    disconnectedMailboxes: [
+      { id: '11111111-1111-4111-8111-111111111111', email: 'you@example.com' },
+    ],
     signingOut: false,
     onConnect: noop,
+    onReactivate: noop,
+    onSignOut: noop,
+  },
+  render: (args: Args) => frame(<NoActiveMailboxView {...args} />),
+};
+
+/** Choose reconnect — more than one disconnected Gmail account is recoverable. */
+export const ChooseReconnect: Story<typeof NoActiveMailboxView> = {
+  args: {
+    disconnectedMailboxes: [
+      { id: '11111111-1111-4111-8111-111111111111', email: 'personal@example.com' },
+      { id: '22222222-2222-4222-8222-222222222222', email: 'work@example.com' },
+    ],
+    signingOut: false,
+    onConnect: noop,
+    onReactivate: noop,
     onSignOut: noop,
   },
   render: (args: Args) => frame(<NoActiveMailboxView {...args} />),
@@ -69,9 +88,10 @@ export const Reconnect: Story<typeof NoActiveMailboxView> = {
 /** First connect — no mailboxes connected at all. */
 export const FirstConnect: Story<typeof NoActiveMailboxView> = {
   args: {
-    disconnectedEmails: [],
+    disconnectedMailboxes: [],
     signingOut: false,
     onConnect: noop,
+    onReactivate: noop,
     onSignOut: noop,
   },
   render: (args: Args) => frame(<NoActiveMailboxView {...args} />),
