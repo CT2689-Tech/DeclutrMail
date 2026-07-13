@@ -20,6 +20,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({
+    me: {
+      user: { email: 'default@example.com' },
+      activeMailboxId: 'mailbox-work',
+      mailboxes: [{ id: 'mailbox-work', email: 'work+declutr@example.com', status: 'active' }],
+    },
+  }),
+  getActiveMailboxEmail: (me: {
+    activeMailboxId: string;
+    mailboxes: Array<{ id: string; email: string }>;
+    user: { email: string };
+  }) => me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ?? me.user.email,
+}));
+
 import { installFetchStub, jsonNotFound, jsonOk } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { Sender } from '../data';
@@ -165,6 +180,19 @@ describe('SenderRowDetail recent subjects', () => {
     expect(screen.getByText(/couldn't load recent subjects/i)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SenderRowDetail Gmail round trip', () => {
+  it('binds the domain search to the active Gmail account without /u/0', () => {
+    renderDetail({ status: 'ready', points: TIMESERIES });
+    const link = screen.getByRole('link', { name: 'View in Gmail ↗' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/?authuser=work%2Bdeclutr%40example.com#search/' +
+        'from%3A%22%40acme.com%22',
+    );
+    expect(link.getAttribute('href')).not.toContain('/u/0');
   });
 });
 

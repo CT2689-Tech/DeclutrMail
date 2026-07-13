@@ -750,11 +750,6 @@ export function relTimeLabel(days: number): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-/** Gmail #search deep-link — verifies any claim with zero API calls. */
-export function gmailSearchUrl(domain: string): string {
-  return `https://mail.google.com/mail/u/0/#search/from%3A%40${encodeURIComponent(domain)}`;
-}
-
 // ─── Actions ───────────────────────────────────────────────────
 // Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
 // Protect — a distinct VIP/lock operation, not a triage verb.

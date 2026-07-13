@@ -39,7 +39,8 @@ import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
 import { UNSUB_PILL } from '../grid/sender-card';
-import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
@@ -216,6 +217,8 @@ export function SenderDetailRoute({ id }: { id: string }) {
 }
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   // VIP/Protect/Keep are real mutations (D40, D42, D43): the chip flips
   // optimistically (standard non-destructive mutation UX, not the D226
   // lifecycle), `useSetSenderPolicy` persists the set-state patch +
@@ -284,6 +287,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
+  const openAllInGmailHref = activeMailboxEmail
+    ? GmailOpenLinkService.buildFromSearchLink({
+        mailboxEmail: activeMailboxEmail,
+        from: detail.email,
+      })
+    : null;
 
   // Fact-based Volume signal (spec v1.2 Decision 6 — ban editorial
   // inference; founder 2026-06-06): the "X/mo" cadence shown both in
@@ -985,42 +994,44 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 to deep-link the user into Gmail's own search UI.
                 PostHog tag identifies which surface drove the click;
                 Sentry breadcrumb is the trace handle. */}
-            <a
-              href={gmailAllFromSenderDeepLink(detail.email)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => {
-                void track('gmail_deep_link_opened', {
-                  source: 'sender_detail_open_all',
-                  deep_link_kind: 'all_from_sender',
-                });
-                addBreadcrumb({
-                  category: 'navigation',
-                  message: `gmail-deep-link: all-from-sender ${sender.id}`,
-                  level: 'info',
-                });
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                height: 30,
-                padding: '0 12px',
-                borderRadius: radius.pill,
-                background: color.card,
-                border: `1px solid ${color.line}`,
-                color: color.fg,
-                fontFamily: font.sans,
-                fontSize: 12.5,
-                fontWeight: 500,
-                textDecoration: 'none',
-              }}
-              aria-label="Open all messages from this sender in Gmail"
-              title="Search every email from this sender in Gmail"
-            >
-              Open all in Gmail
-              <ExternalLinkIcon />
-            </a>
+            {openAllInGmailHref && (
+              <a
+                href={openAllInGmailHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  void track('gmail_deep_link_opened', {
+                    source: 'sender_detail_open_all',
+                    deep_link_kind: 'all_from_sender',
+                  });
+                  addBreadcrumb({
+                    category: 'navigation',
+                    message: `gmail-deep-link: all-from-sender ${sender.id}`,
+                    level: 'info',
+                  });
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  height: 30,
+                  padding: '0 12px',
+                  borderRadius: radius.pill,
+                  background: color.card,
+                  border: `1px solid ${color.line}`,
+                  color: color.fg,
+                  fontFamily: font.sans,
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  textDecoration: 'none',
+                }}
+                aria-label="Open all messages from this sender in Gmail"
+                title="Search every email from this sender in Gmail"
+              >
+                Open all in Gmail
+                <ExternalLinkIcon />
+              </a>
+            )}
             <Button
               tone={detail.isVip ? 'primary' : 'default'}
               size="sm"
@@ -1162,7 +1173,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       />
 
       {/* 3. Recent messages (unchanged) */}
-      <RecentMessages messages={recentMessages} />
+      <RecentMessages
+        messages={recentMessages}
+        mailboxEmail={activeMailboxEmail}
+        senderEmail={detail.email}
+      />
 
       {/* 4. Decision timeline — replaces D46 table-style history */}
       <DecisionTimeline

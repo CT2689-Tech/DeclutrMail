@@ -29,6 +29,35 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(currentSearch),
 }));
 
+const authState = vi.hoisted(() => {
+  const me = {
+    user: { id: 'user-1', email: 'owner@example.com', workspaceId: 'workspace-1' },
+    mailboxes: [
+      {
+        id: 'mailbox-active',
+        email: 'active+work@gmail.com',
+        status: 'active' as const,
+        connectedAt: '2026-01-01T00:00:00.000Z',
+        readiness: 'ready' as const,
+      },
+    ],
+    activeMailboxId: 'mailbox-active',
+    tier: 'pro' as const,
+    cleanupRemaining: null,
+  };
+
+  return {
+    fixture: { me },
+    current: { me } as { me: typeof me } | null,
+  };
+});
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  getActiveMailboxEmail: (me: (typeof authState.fixture)['me']) =>
+    me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ?? me.user.email,
+  useOptionalAuth: () => authState.current,
+}));
+
 const trackMock = vi.fn();
 vi.mock('@/lib/posthog', () => ({
   track: (...args: unknown[]) => trackMock(...args),
@@ -85,7 +114,7 @@ const HISTORY_ROW = {
   generatedBy: 'template' as const,
 };
 
-function installHappyPath() {
+function installHappyPath(message = MESSAGE) {
   installFetchStub([
     {
       method: 'GET',
@@ -97,7 +126,7 @@ function installHappyPath() {
       path: /^\/api\/senders\/[^/]+\/messages$/,
       respond: () =>
         jsonOk({
-          data: [MESSAGE],
+          data: [message],
           meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
         }),
     },
@@ -131,6 +160,7 @@ describe('SenderDetailRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
     currentSearch = '';
+    authState.current = authState.fixture;
     trackMock.mockClear();
     addBreadcrumbMock.mockClear();
   });
@@ -220,6 +250,60 @@ describe('SenderDetailRoute', () => {
       source: 'recent_messages_row',
       deep_link_kind: 'thread',
     });
+  });
+
+  it('binds sender search and message links to the active mailbox without /u/0', async () => {
+    installHappyPath();
+    renderDetail();
+
+    const openAll = await waitFor(() =>
+      screen.getByRole('link', { name: /open all messages from this sender in gmail/i }),
+    );
+    const message = screen.getByRole('link', { name: /top notifications this week/i });
+
+    expect(openAll.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#search/' +
+        'from%3A%22noreply%40linkedin.com%22',
+    );
+    expect(message.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#all/p-1',
+    );
+    expect(openAll.getAttribute('href')).not.toContain('/u/0');
+    expect(message.getAttribute('href')).not.toContain('/u/0');
+
+    fireEvent.click(openAll);
+    expect(trackMock).toHaveBeenCalledWith('gmail_deep_link_opened', {
+      source: 'sender_detail_open_all',
+      deep_link_kind: 'all_from_sender',
+    });
+  });
+
+  it('uses the sender, subject, and received-at fallback when no provider message id exists', async () => {
+    installHappyPath({ ...MESSAGE, providerMessageId: '' });
+    renderDetail();
+
+    const message = await waitFor(() =>
+      screen.getByRole('link', { name: /top notifications this week/i }),
+    );
+    expect(message.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#search/' +
+        'from%3A%22noreply%40linkedin.com%22%20' +
+        'subject%3A%22Top%20notifications%20this%20week%22%20' +
+        'after%3A2026%2F05%2F21%20before%3A2026%2F05%2F23',
+    );
+    expect(message.getAttribute('href')).not.toContain('/u/0');
+  });
+
+  it('hides Gmail links when rendered without authenticated mailbox context', async () => {
+    authState.current = null;
+    installHappyPath();
+    renderDetail();
+
+    const subject = await waitFor(() => screen.getByText(/top notifications this week/i));
+    expect(subject.closest('a')).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: /open all messages from this sender in gmail/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders the error UI when the detail endpoint returns 500', async () => {
