@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   ConflictException,
   Inject,
@@ -82,6 +84,16 @@ export const OUTBOX_PUBLISHER_TOKEN = 'OUTBOX_PUBLISHER';
  * not Gmail, and runs a tighter retry budget.
  */
 export const UNSUB_QUEUE_TOKEN = 'UNSUB_QUEUE';
+
+/**
+ * Stable BullMQ identity for an undo capability. The UUID remains in
+ * the DB rows that execute the revert, but never appears in Redis job
+ * metadata or operational logs. UUID entropy makes this SHA-256
+ * projection non-reversible while preserving cross-restart dedup.
+ */
+export function reverseQueueJobId(token: string): string {
+  return `revert-${createHash('sha256').update(`declutrmail:undo:v1:${token}`).digest('hex')}`;
+}
 
 @Injectable()
 export class ActionsService {
@@ -1911,7 +1923,11 @@ export class ActionsService {
         message: 'Action queue unavailable — REDIS_URL is not set.',
       });
     }
+    // Keep the historical DB key for idempotent compatibility with rows
+    // created before this privacy hardening. Redis gets only the stable,
+    // non-reversible projection below.
     const idempotencyKey = `revert-${input.token}`;
+    const queueJobId = reverseQueueJobId(input.token);
     const inserted = await this.insertJob({
       mailboxAccountId: input.mailboxAccountId,
       direction: 'reverse',
@@ -1972,32 +1988,40 @@ export class ActionsService {
             message: 'Action queue is unavailable.',
           });
         }
-        try {
-          const stale = await this.queue.getJob(idempotencyKey);
-          if (stale) {
-            await stale.remove();
+        // Reap both the safe current id and a possible legacy raw-token
+        // id. Each lookup/removal is isolated so a locked/broken current
+        // entry cannot prevent cleanup of its legacy sibling (or vice
+        // versa). The raw legacy id is lookup-only and never emitted.
+        for (const [staleId, legacy] of [
+          [queueJobId, false],
+          [idempotencyKey, true],
+        ] as const) {
+          try {
+            const stale = await this.queue.getJob(staleId);
+            if (stale) {
+              await stale.remove();
+            }
+          } catch (err) {
+            // Don't block retry on a stale-hash cleanup failure; if
+            // the prior job is active (locked), the next call recovers
+            // after the worker finishes / dead-letters.
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                kind: 'action.stale_cleanup_failed',
+                queueJobId,
+                legacy,
+                error: safeQueueErrorKind(err),
+              }),
+            );
           }
-        } catch (err) {
-          // Don't block retry on a stale-hash cleanup failure; if
-          // the prior job is active (locked), the next call recovers
-          // after the worker finishes / dead-letters. Surface the
-          // reason so a persistent Redis fault is observable rather
-          // than a pure empty catch (CLAUDE.md §10).
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: 'action.stale_cleanup_failed',
-              idempotencyKey,
-              reason: err instanceof Error ? err.message : String(err),
-            }),
-          );
         }
-        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
         return { actionId: inserted.row.id, status: 'queued' };
       }
       return { actionId: inserted.row.id, status: inserted.row.status };
     }
-    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
     return { actionId: inserted.row.id, status: 'queued' };
   }
 
@@ -2115,6 +2139,7 @@ export class ActionsService {
     actionId: string,
     mailboxAccountId: string,
     idempotencyKey: string,
+    queueJobId: string = idempotencyKey,
   ): Promise<void> {
     if (!this.queue) {
       // Re-coupled to the fail-open `Queue | null` contract — every
@@ -2130,8 +2155,11 @@ export class ActionsService {
     try {
       await this.queue.add(
         LABEL_ACTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey },
-        labelActionJobOptions(idempotencyKey),
+        // The worker loads execution state by actionId; carrying the
+        // queue-safe id here preserves its lifecycle correlation without
+        // placing a capability token in BullMQ job data.
+        { actionId, mailboxAccountId, idempotencyKey: queueJobId },
+        labelActionJobOptions(queueJobId),
       );
     } catch (err) {
       // Defense in depth: scope the failure UPDATE by mailbox even
@@ -2156,4 +2184,25 @@ export class ActionsService {
 function toCount(raw: number | string | undefined): number {
   if (raw === undefined) return 0;
   return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+}
+
+/** Closed operational projection for Redis/BullMQ cleanup failures. */
+function safeQueueErrorKind(error: unknown): string {
+  if (!(error instanceof Error)) return 'QueueError';
+  try {
+    switch (error.name) {
+      case 'AbortError':
+        return 'QueueAbortError';
+      case 'ConnectionTimeoutError':
+        return 'QueueConnectionTimeoutError';
+      case 'MaxRetriesPerRequestError':
+        return 'QueueMaxRetriesError';
+      case 'ReplyError':
+        return 'QueueReplyError';
+      default:
+        return 'QueueError';
+    }
+  } catch {
+    return 'QueueError';
+  }
 }

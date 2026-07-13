@@ -22,7 +22,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
-import { ActionsService } from './actions.service.js';
+import { ActionsService, reverseQueueJobId } from './actions.service.js';
 
 /**
  * ActionsService integration tests (D226).
@@ -173,20 +173,35 @@ function fakeQueue() {
   const q = {
     count: 0,
     jobIds: [] as string[],
-    add: async (_job: unknown, _data: unknown, opts: { jobId?: string }) => {
+    jobData: [] as unknown[],
+    getJobCalls: [] as string[],
+    removedJobIds: [] as string[],
+    staleJobIds: new Set<string>(),
+    getJobErrors: new Map<string, unknown>(),
+    add: async (_job: unknown, data: unknown, opts: { jobId?: string }) => {
       if (opts?.jobId && opts.jobId.includes(':')) {
         throw new Error('Custom Id cannot contain :');
       }
       if (opts?.jobId && q.jobIds.includes(opts.jobId)) return;
       q.count += 1;
       if (opts?.jobId) q.jobIds.push(opts.jobId);
+      q.jobData.push(data);
     },
     // Stub for the failed-revert retry path: enqueueRevert calls
     // getJob to drop a stale failed BullMQ hash before re-enqueueing.
-    // The fake always returns null (no stale job) so the retry path
-    // proceeds straight to `add`. Tests that need to assert the
-    // remove() invocation extend this locally.
-    getJob: async (_jobId: string) => null,
+    getJob: async (jobId: string) => {
+      q.getJobCalls.push(jobId);
+      if (q.getJobErrors.has(jobId)) {
+        throw q.getJobErrors.get(jobId);
+      }
+      if (!q.staleJobIds.has(jobId)) return null;
+      return {
+        remove: async () => {
+          q.removedJobIds.push(jobId);
+          q.staleJobIds.delete(jobId);
+        },
+      };
+    },
   };
   return q;
 }
@@ -204,6 +219,16 @@ describe('ActionsService', () => {
     senderId = await seedSender(db, mailboxId);
     queue = fakeQueue();
     svc = new ActionsService(db as never, queue as never);
+  });
+
+  it('derives the stable reverse queue id from a fixed SHA-256 vector', () => {
+    const token = '00000000-0000-4000-8000-000000000000';
+    const expected = 'revert-e653b27601bd42c8c61984414503bc70f9ca9725f01054a342ff10a9f8d3921d';
+
+    expect(reverseQueueJobId(token)).toBe(expected);
+    expect(expected).toMatch(/^revert-[0-9a-f]{64}$/);
+    expect(expected).not.toContain(':');
+    expect(expected).not.toContain(token);
   });
 
   it('sender selector: resolves count, persists queued row, enqueues', async () => {
@@ -454,7 +479,8 @@ describe('ActionsService', () => {
       messageIds: ['m1', 'm2'],
     });
     expect(res.status).toBe('queued');
-    expect(queue.jobIds).toEqual([`revert-${token}`]);
+    expect(queue.jobIds).toEqual([reverseQueueJobId(token)]);
+    expect(JSON.stringify({ ids: queue.jobIds, data: queue.jobData })).not.toContain(token);
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect(row!.direction).toBe('reverse');
     expect(row!.undoToken).toBe(token);
@@ -502,17 +528,37 @@ describe('ActionsService', () => {
       .where(eq(actionJobs.id, first.actionId));
     queue.count = 0;
     queue.jobIds = [];
+    queue.jobData = [];
+    queue.getJobCalls = [];
+    queue.removedJobIds = [];
+    const hashedQueueId = reverseQueueJobId(token);
+    const legacyQueueId = `revert-${token}`;
+    queue.staleJobIds.add(hashedQueueId);
+    queue.staleJobIds.add(legacyQueueId);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let warningLogs: unknown[][] = [];
 
     // Second attempt — MUST retry the same row, not return cached failure.
-    const second = await svc.enqueueRevert({
-      mailboxAccountId: mailboxId,
-      token,
-      verb: 'delete',
-      messageIds: ['m-stuck-1', 'm-stuck-2'],
-    });
+    let second: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
+    try {
+      second = await svc.enqueueRevert({
+        mailboxAccountId: mailboxId,
+        token,
+        verb: 'delete',
+        messageIds: ['m-stuck-1', 'm-stuck-2'],
+      });
+    } finally {
+      warningLogs = [...warnSpy.mock.calls];
+      warnSpy.mockRestore();
+    }
     expect(second.actionId).toBe(first.actionId); // same row
     expect(second.status).toBe('queued'); // reset, not 'failed'
-    expect(queue.jobIds).toEqual([`revert-${token}`]); // re-enqueued
+    expect(queue.jobIds).toEqual([hashedQueueId]); // re-enqueued
+    expect(queue.getJobCalls).toEqual([hashedQueueId, legacyQueueId]);
+    expect(queue.removedJobIds).toEqual([hashedQueueId, legacyQueueId]);
+    expect(
+      JSON.stringify({ jobIds: queue.jobIds, jobData: queue.jobData, logs: warningLogs }),
+    ).not.toContain(token);
 
     // The row's failure metadata is cleared so the next worker run
     // starts fresh.
@@ -520,6 +566,61 @@ describe('ActionsService', () => {
     expect(retried!.status).toBe('queued');
     expect(retried!.errorCode).toBeNull();
     expect(retried!.affectedCount).toBe(0);
+
+    // A hostile Redis error must not escape the telemetry projection and
+    // abort the retry. The second (legacy) cleanup still runs and the safe
+    // current id is still re-enqueued.
+    await db
+      .update(actionJobs)
+      .set({ status: 'failed', errorCode: 'ValidationError' })
+      .where(eq(actionJobs.id, first.actionId));
+    queue.count = 0;
+    queue.jobIds = [];
+    queue.jobData = [];
+    queue.getJobCalls = [];
+    queue.removedJobIds = [];
+    queue.staleJobIds.clear();
+    queue.staleJobIds.add(hashedQueueId);
+    queue.staleJobIds.add(legacyQueueId);
+    queue.getJobErrors.clear();
+    const errorLeakMarker = 'secretqueueerror746ea5cf';
+    const hostileQueueError = new Error('redis cleanup failed');
+    let nameGetterCalls = 0;
+    Object.defineProperty(hostileQueueError, 'name', {
+      get() {
+        nameGetterCalls += 1;
+        throw new Error(errorLeakMarker);
+      },
+    });
+    queue.getJobErrors.set(hashedQueueId, hostileQueueError);
+    const hostileWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let hostileWarningLogs: unknown[][] = [];
+    let third: Awaited<ReturnType<ActionsService['enqueueRevert']>>;
+    try {
+      third = await svc.enqueueRevert({
+        mailboxAccountId: mailboxId,
+        token,
+        verb: 'delete',
+        messageIds: ['m-stuck-1', 'm-stuck-2'],
+      });
+    } finally {
+      hostileWarningLogs = [...hostileWarnSpy.mock.calls];
+      hostileWarnSpy.mockRestore();
+    }
+
+    expect(third).toMatchObject({ actionId: first.actionId, status: 'queued' });
+    expect(queue.getJobCalls).toEqual([hashedQueueId, legacyQueueId]);
+    expect(queue.removedJobIds).toEqual([legacyQueueId]);
+    expect(queue.jobIds).toEqual([hashedQueueId]);
+    expect(nameGetterCalls).toBeGreaterThan(0);
+    const hostileSerialized = JSON.stringify({
+      jobIds: queue.jobIds,
+      jobData: queue.jobData,
+      logs: hostileWarningLogs,
+    });
+    expect(hostileSerialized).toContain('QueueError');
+    expect(hostileSerialized).not.toContain(errorLeakMarker);
+    expect(hostileSerialized).not.toContain(token);
   });
 
   it('getStatus is mailbox-scoped (404 for a foreign mailbox)', async () => {
@@ -1014,8 +1115,10 @@ describe('ActionsService', () => {
       // progress signal).
       expect(res[0]!.token).toBe(uP!.token);
       expect(res[1]!.token).toBe(uS!.token);
-      // Two reverse rows inserted, namespaced by `revert-<token>`.
-      expect(queue.jobIds.sort()).toEqual([`revert-${uP!.token}`, `revert-${uS!.token}`].sort());
+      // Two opaque, deterministic reverse queue ids (no capability tokens).
+      expect(queue.jobIds.sort()).toEqual(
+        [reverseQueueJobId(uP!.token), reverseQueueJobId(uS!.token)].sort(),
+      );
     });
 
     it('skips siblings with no undo token (the empty-resolve case)', async () => {
@@ -1060,7 +1163,7 @@ describe('ActionsService', () => {
       // Only the primary is revertable; the no-op secondary is silently
       // skipped (no reverse row, no enqueue).
       expect(res).toHaveLength(1);
-      expect(queue.jobIds).toEqual([`revert-${uP!.token}`]);
+      expect(queue.jobIds).toEqual([reverseQueueJobId(uP!.token)]);
     });
 
     it('404s a token that has no forward action row', async () => {
@@ -1508,6 +1611,7 @@ describe('ActionsService', () => {
         .where(eq(actionJobs.id, otherId));
       queue.count = 0;
       queue.jobIds = [];
+      queue.jobData = [];
 
       // The FE undoes with the batch token (= anchor's). The cascade must
       // reach EVERY sender's forward row, not just the anchor's.
@@ -1518,7 +1622,7 @@ describe('ActionsService', () => {
       });
       expect(reverts).toHaveLength(2);
       expect([...queue.jobIds].sort()).toEqual(
-        [`revert-${u1!.token}`, `revert-${u2!.token}`].sort(),
+        [reverseQueueJobId(u1!.token), reverseQueueJobId(u2!.token)].sort(),
       );
     });
   });
