@@ -318,5 +318,39 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(entitlements.assertCanConnectMailbox).not.toHaveBeenCalled();
       expect(mailboxes.upsertConnect).toHaveBeenCalled();
     });
+
+    it('enforces the activation-boundary limit for an existing disconnected row', async () => {
+      db.select.mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: () =>
+              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'disconnected' }]),
+          }),
+        }),
+      });
+
+      await orchestrator.addMailbox(ADD_INPUT);
+
+      expect(entitlements.assertCanConnectMailbox).toHaveBeenCalledWith('w-home');
+      expect(mailboxes.upsertConnect).toHaveBeenCalled();
+    });
+
+    it('does not reactivate a disconnected row after the activation-boundary limit fails', async () => {
+      db.select.mockReturnValueOnce({
+        from: () => ({
+          where: () => ({
+            limit: () =>
+              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'disconnected' }]),
+          }),
+        }),
+      });
+      entitlements.assertCanConnectMailbox.mockRejectedValueOnce(new Error('INBOX_LIMIT_REACHED'));
+
+      await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow('INBOX_LIMIT_REACHED');
+
+      expect(tokenCrypto.encrypt).not.toHaveBeenCalled();
+      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
+      expect(users.patchPreferences).not.toHaveBeenCalled();
+    });
   });
 });

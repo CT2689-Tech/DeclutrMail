@@ -17,6 +17,7 @@ import { JwtService } from './jwt.service.js';
 import type { SessionPrincipal, SessionsService } from './sessions.service.js';
 
 const RECONNECT_MAILBOX_ID = '11111111-1111-4111-8111-111111111111';
+const REACTIVATE_MAILBOX_ID = '12121212-1212-4121-8121-121212121212';
 const RECONNECT_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const RECONNECT_WORKSPACE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CONNECT_SESSION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -102,6 +103,22 @@ function activeReconnectTarget(
     providerAccountId: 'second@example.com',
     ...overrides,
   };
+}
+
+function disconnectedReactivateTarget(
+  overrides: Partial<{
+    id: string;
+    userId: string;
+    workspaceId: string;
+    status: 'active' | 'disconnected';
+    providerAccountId: string;
+  }> = {},
+) {
+  return activeReconnectTarget({
+    id: REACTIVATE_MAILBOX_ID,
+    status: 'disconnected',
+    ...overrides,
+  });
 }
 
 /** A SecurityEventsService stand-in with `record` as a spy. */
@@ -219,7 +236,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   });
 });
 
-describe('GoogleOAuthController.connectMailboxStart — targeted reconnect', () => {
+describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recovery', () => {
   const principal: SessionPrincipal = {
     userId: RECONNECT_USER_ID,
     workspaceId: RECONNECT_WORKSPACE_ID,
@@ -268,6 +285,29 @@ describe('GoogleOAuthController.connectMailboxStart — targeted reconnect', () 
     expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
   });
 
+  it('binds a valid owned disconnected reactivation without using reconnect authority', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(disconnectedReactivateTarget());
+
+    await controller.connectMailboxStart(
+      principal,
+      res as unknown as Response,
+      undefined,
+      REACTIVATE_MAILBOX_ID,
+    );
+
+    expect(mailboxes.findOwned).toHaveBeenCalledWith(RECONNECT_WORKSPACE_ID, REACTIVATE_MAILBOX_ID);
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
+    expect(state).toMatchObject({
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reactivateMailboxId: REACTIVATE_MAILBOX_ID,
+    });
+    expect(state).not.toHaveProperty('reconnectMailboxId');
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
   it('rejects a malformed target before any database read or consent redirect', async () => {
     await expect(
       controller.connectMailboxStart(principal, res as unknown as Response, 'not-a-uuid'),
@@ -282,6 +322,7 @@ describe('GoogleOAuthController.connectMailboxStart — targeted reconnect', () 
     ['missing', null],
     ['disconnected', activeReconnectTarget({ status: 'disconnected' })],
     ['owned by another user', activeReconnectTarget({ userId: OTHER_USER_ID })],
+    ['owned by another workspace', activeReconnectTarget({ workspaceId: OTHER_WORKSPACE_ID })],
   ])('rejects a %s target without starting consent', async (_label, target) => {
     mailboxes.findOwned.mockResolvedValueOnce(target);
 
@@ -293,12 +334,61 @@ describe('GoogleOAuthController.connectMailboxStart — targeted reconnect', () 
     expect(res.redirect).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['missing', null],
+    ['active', disconnectedReactivateTarget({ status: 'active' })],
+    ['owned by another user', disconnectedReactivateTarget({ userId: OTHER_USER_ID })],
+    [
+      'owned by another workspace',
+      disconnectedReactivateTarget({ workspaceId: OTHER_WORKSPACE_ID }),
+    ],
+  ])('rejects a %s reactivation target without starting consent', async (_label, target) => {
+    mailboxes.findOwned.mockResolvedValueOnce(target);
+
+    await expect(
+      controller.connectMailboxStart(
+        principal,
+        res as unknown as Response,
+        undefined,
+        REACTIVATE_MAILBOX_ID,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed reactivation target before any database read', async () => {
+    await expect(
+      controller.connectMailboxStart(principal, res as unknown as Response, undefined, 'bad-id'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('rejects dual recovery authorities before any database read or consent redirect', async () => {
+    await expect(
+      controller.connectMailboxStart(
+        principal,
+        res as unknown as Response,
+        RECONNECT_MAILBOX_ID,
+        REACTIVATE_MAILBOX_ID,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+
   it('keeps normal connect state unchanged when no reconnect target is supplied', async () => {
     await controller.connectMailboxStart(principal, res as unknown as Response);
 
     expect(mailboxes.findOwned).not.toHaveBeenCalled();
     const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).not.toHaveProperty('reconnectMailboxId');
+    expect(state).not.toHaveProperty('reactivateMailboxId');
   });
 });
 
@@ -342,7 +432,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     );
   });
 
-  function reqWithState(reconnectMailboxId?: string): Request {
+  function reqWithState(reconnectMailboxId?: string, reactivateMailboxId?: string): Request {
     return {
       cookies: {
         oauth_state: signedState(jwt, {
@@ -352,6 +442,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
           workspaceId: RECONNECT_WORKSPACE_ID,
           sessionId: CONNECT_SESSION_ID,
           ...(reconnectMailboxId ? { reconnectMailboxId } : {}),
+          ...(reactivateMailboxId ? { reactivateMailboxId } : {}),
         }),
       },
       headers: {},
@@ -360,9 +451,10 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
 
   function settingsResultUrl(
     result: 'account_mismatch' | 'cancelled' | 'failed' | 'target_invalid',
+    mailboxId: string = RECONNECT_MAILBOX_ID,
   ): string {
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    return `${webBase}/settings?reconnect_result=${result}#mailbox-${RECONNECT_MAILBOX_ID}`;
+    return `${webBase}/settings?reconnect_result=${result}#mailbox-${mailboxId}`;
   }
 
   it('keeps a normal add-mailbox success on its existing onboarding URL', async () => {
@@ -404,6 +496,108 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
       `${webBase}/onboarding?mailbox=mailbox-new&reconnect=1`,
     );
     expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it('reactivates only the bound disconnected row with its stored canonical email', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(
+      disconnectedReactivateTarget({ providerAccountId: 'stored@example.com' }),
+    );
+    oauth.exchangeCode.mockResolvedValueOnce({
+      email: ' STORED@example.com ',
+      refreshToken: 'fresh-reactivation-rt',
+    });
+
+    await controller.callback(
+      reqWithState(undefined, REACTIVATE_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(mailboxes.findOwned).toHaveBeenCalledWith(RECONNECT_WORKSPACE_ID, REACTIVATE_MAILBOX_ID);
+    expect(orchestrator.addMailbox).toHaveBeenCalledWith({
+      currentUserId: RECONNECT_USER_ID,
+      currentWorkspaceId: RECONNECT_WORKSPACE_ID,
+      email: 'stored@example.com',
+      refreshToken: 'fresh-reactivation-rt',
+    });
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/onboarding?mailbox=mailbox-new&reconnect=1`,
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it.each([
+    ['missing', null],
+    ['now active', disconnectedReactivateTarget({ status: 'active' })],
+    ['now cross-user', disconnectedReactivateTarget({ userId: OTHER_USER_ID })],
+    ['now cross-workspace', disconnectedReactivateTarget({ workspaceId: OTHER_WORKSPACE_ID })],
+  ])(
+    'does not reactivate when the signed target is %s at callback time',
+    async (_label, target) => {
+      mailboxes.findOwned.mockResolvedValueOnce(target);
+
+      await controller.callback(
+        reqWithState(undefined, REACTIVATE_MAILBOX_ID),
+        res as unknown as Response,
+        'auth-code',
+        NONCE,
+      );
+
+      expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+      expect(securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: {
+            provider: 'google',
+            mode: 'connect',
+            reason: 'reconnect_target_invalid',
+          },
+        }),
+      );
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        settingsResultUrl('target_invalid', REACTIVATE_MAILBOX_ID),
+      );
+    },
+  );
+
+  it('does not reactivate when Google returns a different account', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(disconnectedReactivateTarget());
+    oauth.exchangeCode.mockResolvedValueOnce({ email: 'other@example.com', refreshToken: 'rt' });
+
+    await controller.callback(
+      reqWithState(undefined, REACTIVATE_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      settingsResultUrl('account_mismatch', REACTIVATE_MAILBOX_ID),
+    );
+    expect(JSON.stringify(securityEvents.record.mock.calls)).not.toContain('other@example.com');
+  });
+
+  it('returns a reactivation cancellation through the same closed Settings flow', async () => {
+    await controller.callback(
+      reqWithState(undefined, REACTIVATE_MAILBOX_ID),
+      res as unknown as Response,
+      undefined,
+      NONCE,
+      'access_denied',
+    );
+
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      settingsResultUrl('cancelled', REACTIVATE_MAILBOX_ID),
+    );
   });
 
   it('URL-encodes the returned mailbox id without allowing query injection', async () => {
@@ -806,6 +1000,42 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     expect(orchestrator.connect).not.toHaveBeenCalled();
   });
 
+  it('rejects HMAC tampering of a reactivation target before any authority is used', async () => {
+    const authentic = signedState(jwt, {
+      nonce: NONCE,
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reactivateMailboxId: REACTIVATE_MAILBOX_ID,
+    });
+    const tampered = tamperSignedState(
+      authentic,
+      'reactivateMailboxId',
+      '22222222-2222-4222-8222-222222222222',
+    );
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: tampered } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+
   it.each(['userId', 'workspaceId', 'sessionId', 'reconnectMailboxId'])(
     'rejects a correctly signed connect state with malformed UUID authority in %s',
     async (field) => {
@@ -841,6 +1071,69 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       expect(orchestrator.connect).not.toHaveBeenCalled();
     },
   );
+
+  it('rejects a correctly signed state with a malformed reactivation authority', async () => {
+    const malformed = signedState(jwt, {
+      nonce: NONCE,
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reactivateMailboxId: 'not-a-uuid',
+    });
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: malformed } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects correctly signed dual recovery authorities before using either target', async () => {
+    const ambiguous = signedState(jwt, {
+      nonce: NONCE,
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reconnectMailboxId: RECONNECT_MAILBOX_ID,
+      reactivateMailboxId: REACTIVATE_MAILBOX_ID,
+    });
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: ambiguous } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
 
   it('rejects an authentically signed but expired state before session or exchange', async () => {
     const issuedAt = Date.now() - 10 * 60 * 1000;

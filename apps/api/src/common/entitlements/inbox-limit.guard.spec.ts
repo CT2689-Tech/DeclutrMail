@@ -60,6 +60,22 @@ describe('InboxLimitGuard — connect versus targeted reconnect', () => {
     expect(assertCanConnectMailbox).toHaveBeenCalledWith(PRINCIPAL.workspaceId);
   });
 
+  it('keeps a disconnected-row reactivation behind the normal limit check', async () => {
+    const atLimit = new AppException({ code: 'INBOX_LIMIT_REACHED' });
+    assertCanConnectMailbox.mockRejectedValueOnce(atLimit);
+
+    await expect(
+      guard.canActivate(
+        contextFor({
+          user: PRINCIPAL,
+          query: { reactivateMailboxId: '22222222-2222-4222-8222-222222222222' },
+        }),
+      ),
+    ).rejects.toBe(atLimit);
+
+    expect(assertCanConnectMailbox).toHaveBeenCalledWith(PRINCIPAL.workspaceId);
+  });
+
   it('still requires JwtGuard to have populated the principal first', async () => {
     await expect(guard.canActivate(contextFor({}))).rejects.toBeInstanceOf(UnauthorizedException);
     expect(assertCanConnectMailbox).not.toHaveBeenCalled();

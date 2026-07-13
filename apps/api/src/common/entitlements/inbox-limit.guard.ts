@@ -18,8 +18,10 @@ import { EntitlementsService } from './entitlements.service.js';
  * defense-in-depth layer for direct hits. A non-empty
  * `reconnectMailboxId` is a hint, not authority: it only defers this UX
  * fast-fail so Google can re-authorize an already-counted active mailbox.
- * The controller validates + binds that target before consent and the
- * callback's activation-boundary check remains authoritative.
+ * A `reactivateMailboxId` receives no bypass: a disconnected row is not
+ * counted and activating it consumes a slot. The controller validates +
+ * binds either target before consent and the callback's activation-boundary
+ * check remains authoritative.
  */
 @Injectable()
 export class InboxLimitGuard implements CanActivate {

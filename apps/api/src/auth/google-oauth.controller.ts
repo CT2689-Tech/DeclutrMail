@@ -75,6 +75,12 @@ interface ConnectOAuthState extends OAuthStateBase {
    * refresh a different mailbox.
    */
   reconnectMailboxId?: string | undefined;
+  /**
+   * Owned disconnected mailbox explicitly being activated again. Kept
+   * separate from `reconnectMailboxId` because this transition consumes an
+   * inbox slot and must never receive the active-reconnect limit bypass.
+   */
+  reactivateMailboxId?: string | undefined;
 }
 
 type OAuthState = LoginOAuthState | ConnectOAuthState;
@@ -85,29 +91,38 @@ type PendingOAuthState =
 
 const boundedString = z.string().min(1).max(256);
 const uuidSchema = z.string().uuid();
-const oauthStateSchema = z.discriminatedUnion('mode', [
-  z
-    .object({
-      nonce: boundedString,
-      issuedAt: z.number().int().positive(),
-      expiresAt: z.number().int().positive(),
-      mode: z.literal('login'),
-      returnTo: z.string().max(512).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      nonce: boundedString,
-      issuedAt: z.number().int().positive(),
-      expiresAt: z.number().int().positive(),
-      mode: z.literal('connect'),
-      userId: uuidSchema,
-      workspaceId: uuidSchema,
-      sessionId: uuidSchema,
-      reconnectMailboxId: uuidSchema.optional(),
-    })
-    .strict(),
-]);
+const oauthStateSchema = z
+  .discriminatedUnion('mode', [
+    z
+      .object({
+        nonce: boundedString,
+        issuedAt: z.number().int().positive(),
+        expiresAt: z.number().int().positive(),
+        mode: z.literal('login'),
+        returnTo: z.string().max(512).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        nonce: boundedString,
+        issuedAt: z.number().int().positive(),
+        expiresAt: z.number().int().positive(),
+        mode: z.literal('connect'),
+        userId: uuidSchema,
+        workspaceId: uuidSchema,
+        sessionId: uuidSchema,
+        reconnectMailboxId: uuidSchema.optional(),
+        reactivateMailboxId: uuidSchema.optional(),
+      })
+      .strict(),
+  ])
+  .refine(
+    (state) =>
+      state.mode !== 'connect' ||
+      state.reconnectMailboxId === undefined ||
+      state.reactivateMailboxId === undefined,
+    { message: 'Mailbox recovery targets are mutually exclusive.' },
+  );
 
 /**
  * Gmail OAuth connect routes (D4, D205).
@@ -156,12 +171,13 @@ export class GoogleOAuthController {
    * the callback can verify the same browser still owns the session
    * AND knows which workspace to add the new mailbox to.
    *
-   * `InboxLimitGuard` (D19/D81) gates a normal add BEFORE the Google
-   * consent screen. A non-empty `reconnectMailboxId` only defers that
-   * fast-fail to this handler: the target must be a syntactically valid,
-   * owned active mailbox before consent begins. The callback binds Google’s
-   * returned identity to the same target, while `addMailbox` remains the
-   * canonical activation-boundary limit check.
+   * `InboxLimitGuard` (D19/D81) gates a normal add or disconnected-row
+   * reactivation BEFORE the Google consent screen. Only a non-empty
+   * `reconnectMailboxId` defers that fast-fail because an active mailbox is
+   * already counted. Both recovery modes bind a syntactically valid, owned
+   * target into signed state; the callback revalidates its expected status
+   * and Google identity, while `addMailbox` remains the canonical
+   * activation-boundary limit check.
    */
   @Get('connect-mailbox/start')
   @RateLimit('auth')
@@ -170,16 +186,22 @@ export class GoogleOAuthController {
     @CurrentUser() user: SessionPrincipal,
     @Res() res: Response,
     @Query('reconnectMailboxId') reconnectMailboxId?: unknown,
+    @Query('reactivateMailboxId') reactivateMailboxId?: unknown,
   ): Promise<void> {
+    if (reconnectMailboxId !== undefined && reactivateMailboxId !== undefined) {
+      throw new BadRequestException('Mailbox recovery targets are mutually exclusive.');
+    }
+
     let validatedReconnectId: string | undefined;
     if (reconnectMailboxId !== undefined) {
       if (typeof reconnectMailboxId !== 'string' || !isUuid(reconnectMailboxId)) {
         throw new BadRequestException('Reconnect target must be a valid mailbox id.');
       }
-      const target = await this.findReconnectTarget(
+      const target = await this.findRecoveryTarget(
         user.userId,
         user.workspaceId,
         reconnectMailboxId,
+        'active',
       );
       if (!target) {
         // One response for missing, cross-user, and disconnected targets:
@@ -189,6 +211,25 @@ export class GoogleOAuthController {
       validatedReconnectId = target.id;
     }
 
+    let validatedReactivateId: string | undefined;
+    if (reactivateMailboxId !== undefined) {
+      if (typeof reactivateMailboxId !== 'string' || !isUuid(reactivateMailboxId)) {
+        throw new BadRequestException('Reactivation target must be a valid mailbox id.');
+      }
+      const target = await this.findRecoveryTarget(
+        user.userId,
+        user.workspaceId,
+        reactivateMailboxId,
+        'disconnected',
+      );
+      if (!target) {
+        // One response for missing, cross-user, and active targets: do not
+        // leak whether a caller-supplied mailbox id exists.
+        throw new BadRequestException('Reactivation target is unavailable.');
+      }
+      validatedReactivateId = target.id;
+    }
+
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),
       mode: 'connect',
@@ -196,6 +237,7 @@ export class GoogleOAuthController {
       workspaceId: user.workspaceId,
       sessionId: user.sessionId,
       ...(validatedReconnectId ? { reconnectMailboxId: validatedReconnectId } : {}),
+      ...(validatedReactivateId ? { reactivateMailboxId: validatedReactivateId } : {}),
     });
   }
 
@@ -252,49 +294,49 @@ export class GoogleOAuthController {
       this.clearStateCookie(res);
       throw new BadRequestException('Invalid OAuth state.');
     }
-    const reconnectState = isTargetedReconnectState(cookieState) ? cookieState : null;
-    const reconnectMailboxId = reconnectState?.reconnectMailboxId;
+    const recoveryState = isTargetedRecoveryState(cookieState) ? cookieState : null;
+    const recoveryMailboxId = recoveryState ? getRecoveryMailboxId(recoveryState) : undefined;
 
-    if (reconnectState) {
+    if (recoveryState) {
       // Rebind the signed authority to the stable originating session before
       // accepting either a Google success or cancellation. Refresh rotation
       // may change jti, but logout or an administrator revoke makes this
       // lookup fail immediately.
-      await this.assertConnectSessionActive(reconnectState, res, ipAddress, userAgent);
+      await this.assertConnectSessionActive(recoveryState, res, ipAddress, userAgent);
     }
 
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    if (reconnectState && oauthError !== undefined) {
+    if (recoveryState && oauthError !== undefined) {
       // Google documents `access_denied` for user cancellation. Treat every
       // other shape/value as one closed failure result: arrays and future or
       // attacker-controlled strings never reach a URL, audit payload, or log.
       const cancelled = typeof oauthError === 'string' && oauthError === 'access_denied';
       this.recordReconnectFailure({
         reason: cancelled ? 'reconnect_cancelled' : 'reconnect_failed',
-        userId: reconnectState.userId,
-        workspaceId: reconnectState.workspaceId,
+        userId: recoveryState.userId,
+        workspaceId: recoveryState.workspaceId,
         sourceIp: ipAddress,
         userAgent,
       });
       this.redirectReconnectResult(
         res,
         webBase,
-        reconnectState.reconnectMailboxId,
+        getRecoveryMailboxId(recoveryState),
         cancelled ? 'cancelled' : 'failed',
       );
       return;
     }
 
     if (typeof code !== 'string' || code.length === 0) {
-      if (reconnectState) {
+      if (recoveryState) {
         this.recordReconnectFailure({
           reason: 'reconnect_failed',
-          userId: reconnectState.userId,
-          workspaceId: reconnectState.workspaceId,
+          userId: recoveryState.userId,
+          workspaceId: recoveryState.workspaceId,
           sourceIp: ipAddress,
           userAgent,
         });
-        this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+        this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
         return;
       }
       void this.securityEvents.record({
@@ -308,7 +350,7 @@ export class GoogleOAuthController {
       throw new BadRequestException('Missing OAuth `code` query parameter.');
     }
 
-    if (cookieState.mode === 'connect' && !reconnectState) {
+    if (cookieState.mode === 'connect' && !recoveryState) {
       // Keep the original add-mailbox validation order: malformed callbacks
       // fail before the originating-session read, while valid callbacks bind
       // the signed authority before consuming Google's code.
@@ -324,15 +366,15 @@ export class GoogleOAuthController {
       // OAuth client, or no refresh_token (already-consented account).
       // Reason is a closed enum; the underlying error message is never
       // copied into the payload (it can carry Google response detail).
-      if (reconnectState) {
+      if (recoveryState) {
         this.recordReconnectFailure({
           reason: 'reconnect_failed',
-          userId: reconnectState.userId,
-          workspaceId: reconnectState.workspaceId,
+          userId: recoveryState.userId,
+          workspaceId: recoveryState.workspaceId,
           sourceIp: ipAddress,
           userAgent,
         });
-        this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+        this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
         return;
       }
       void this.securityEvents.record({
@@ -344,20 +386,21 @@ export class GoogleOAuthController {
       });
       throw err;
     }
-    if (!reconnectState) {
+    if (!recoveryState) {
       // Preserve login and normal add-mailbox state-consumption timing.
       this.clearStateCookie(res);
     }
 
     if (cookieState.mode === 'connect') {
       let connectEmail = email;
-      if (reconnectMailboxId !== undefined) {
+      if (recoveryState && recoveryMailboxId !== undefined) {
         let reconnectTarget: { id: string; email: string } | null;
         try {
-          reconnectTarget = await this.findReconnectTarget(
+          reconnectTarget = await this.findRecoveryTarget(
             cookieState.userId,
             cookieState.workspaceId,
-            reconnectMailboxId,
+            recoveryMailboxId,
+            getRecoveryRequiredStatus(recoveryState),
           );
         } catch {
           this.recordReconnectFailure({
@@ -367,7 +410,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'failed');
+          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'failed');
           return;
         }
         if (!reconnectTarget) {
@@ -378,7 +421,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'target_invalid');
+          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'target_invalid');
           return;
         }
         if (normalizeEmail(email) !== normalizeEmail(reconnectTarget.email)) {
@@ -389,7 +432,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, reconnectMailboxId, 'account_mismatch');
+          this.redirectReconnectResult(res, webBase, recoveryMailboxId, 'account_mismatch');
           return;
         }
         // Use the already-persisted canonical identity so a harmless case or
@@ -404,7 +447,7 @@ export class GoogleOAuthController {
       await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
       // State consumed — clear before the mutation so neither a successful
       // reconnect nor an orchestrator failure can replay the Google code.
-      if (reconnectState) this.clearStateCookie(res);
+      if (recoveryState) this.clearStateCookie(res);
 
       try {
         const { mailboxId } = await this.orchestrator.addMailbox({
@@ -432,13 +475,13 @@ export class GoogleOAuthController {
         // switches back to their primary (D116 escape hatch).
         const query = new URLSearchParams({
           mailbox: mailboxId,
-          ...(reconnectState ? { reconnect: '1' } : {}),
+          ...(recoveryState ? { reconnect: '1' } : {}),
         });
         res.redirect(302, `${webBase}/onboarding?${query.toString()}`);
       } catch (err) {
         // Cross-workspace ownership refusal — bounce back with a flag
         // the FE can read into a toast.
-        if (reconnectState) {
+        if (recoveryState) {
           // Do not leak the Google identity or an upstream/DB error message.
           this.logger.warn('Targeted Gmail reconnect failed.');
           this.recordReconnectFailure({
@@ -448,7 +491,7 @@ export class GoogleOAuthController {
             sourceIp: ipAddress,
             userAgent,
           });
-          this.redirectReconnectResult(res, webBase, reconnectState.reconnectMailboxId, 'failed');
+          this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
           return;
         }
         const message =
@@ -655,15 +698,23 @@ export class GoogleOAuthController {
     );
   }
 
-  /** Resolve an active mailbox owned by both the state user and workspace. */
-  private async findReconnectTarget(
+  /** Resolve a mailbox in the expected state, owned by both signed authorities. */
+  private async findRecoveryTarget(
     userId: string,
     workspaceId: string,
     mailboxId: unknown,
+    requiredStatus: 'active' | 'disconnected',
   ): Promise<{ id: string; email: string } | null> {
     if (typeof mailboxId !== 'string' || !isUuid(mailboxId)) return null;
     const row = await this.mailboxes.findOwned(workspaceId, mailboxId);
-    if (!row || row.userId !== userId || row.status !== 'active') return null;
+    if (
+      !row ||
+      row.workspaceId !== workspaceId ||
+      row.userId !== userId ||
+      row.status !== requiredStatus
+    ) {
+      return null;
+    }
     return { id: row.id, email: row.providerAccountId };
   }
 
@@ -696,11 +747,25 @@ function isUuid(value: string): boolean {
   return uuidSchema.safeParse(value).success;
 }
 
-/** Preserve the schema-proven reconnect id while narrowing the state union. */
-function isTargetedReconnectState(
-  state: OAuthState,
-): state is ConnectOAuthState & { reconnectMailboxId: string } {
-  return state.mode === 'connect' && state.reconnectMailboxId !== undefined;
+type TargetedRecoveryState =
+  | (ConnectOAuthState & { reconnectMailboxId: string; reactivateMailboxId?: undefined })
+  | (ConnectOAuthState & { reconnectMailboxId?: undefined; reactivateMailboxId: string });
+
+/** Preserve the schema-proven recovery id while narrowing the state union. */
+function isTargetedRecoveryState(state: OAuthState): state is TargetedRecoveryState {
+  return (
+    state.mode === 'connect' &&
+    ((state.reconnectMailboxId !== undefined && state.reactivateMailboxId === undefined) ||
+      (state.reconnectMailboxId === undefined && state.reactivateMailboxId !== undefined))
+  );
+}
+
+function getRecoveryMailboxId(state: TargetedRecoveryState): string {
+  return state.reconnectMailboxId ?? state.reactivateMailboxId;
+}
+
+function getRecoveryRequiredStatus(state: TargetedRecoveryState): 'active' | 'disconnected' {
+  return state.reconnectMailboxId !== undefined ? 'active' : 'disconnected';
 }
 
 /** Google identity comparison only; stored canonical email wins on mutation. */
