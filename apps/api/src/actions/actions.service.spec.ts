@@ -17,7 +17,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -322,6 +322,96 @@ describe('ActionsService', () => {
     });
     expect(second.actionId).toBe(first.actionId);
     expect(queue.count).toBe(1); // no second enqueue
+  });
+
+  it('replays a legacy archive at the Free cap and rejects only a fresh sixth key', async () => {
+    await seedMessage(db, mailboxId, 'm-cap', ['INBOX']);
+    for (let i = 0; i < 4; i += 1) {
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        requestedCount: 1,
+        affectedCount: 1,
+        status: 'done',
+        idempotencyKey: `archive-cap-fill-${i}`,
+      });
+    }
+
+    const fifth = await svc.enqueueArchive({
+      mailboxAccountId: mailboxId,
+      selector: { type: 'sender', senderId },
+      idempotencyKey: 'cap-fifth',
+      override: false,
+    });
+    const replay = await svc.enqueueArchive({
+      mailboxAccountId: mailboxId,
+      selector: { type: 'sender', senderId },
+      idempotencyKey: 'cap-fifth',
+      override: false,
+    });
+    expect(replay.actionId).toBe(fifth.actionId);
+    expect(queue.count).toBe(1);
+
+    await expect(
+      svc.enqueueArchive({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        idempotencyKey: 'cap-sixth',
+        override: false,
+      }),
+    ).rejects.toMatchObject({ code: 'FREE_CAP_REACHED' });
+    expect(
+      await db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'archive-cap-sixth')),
+    ).toHaveLength(0);
+    expect(queue.count).toBe(1);
+  });
+
+  it('admits only one concurrent legacy archive when one Free unit remains', async () => {
+    await seedMessage(db, mailboxId, 'm-cap-race', ['INBOX']);
+    for (let i = 0; i < 4; i += 1) {
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        requestedCount: 1,
+        affectedCount: 1,
+        status: 'done',
+        idempotencyKey: `archive-race-fill-${i}`,
+      });
+    }
+
+    // PGlite exercises the application ordering but cannot prove PostgreSQL
+    // lock contention across physical connections. The SQL-shape test pins
+    // FOR UPDATE; a real-Postgres concurrency job is tracked separately.
+    const results = await Promise.allSettled(
+      ['race-a', 'race-b'].map((idempotencyKey) =>
+        svc.enqueueArchive({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          idempotencyKey,
+          override: false,
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected).toMatchObject({
+      status: 'rejected',
+      reason: { code: 'FREE_CAP_REACHED' },
+    });
+    expect(queue.count).toBe(1);
+    expect(
+      await db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(inArray(actionJobs.idempotencyKey, ['archive-race-a', 'archive-race-b'])),
+    ).toHaveLength(1);
   });
 
   it('enqueueRevert creates a reverse row keyed revert:<token>', async () => {

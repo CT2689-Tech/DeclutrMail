@@ -28,7 +28,10 @@ import {
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
 
-import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import {
+  EntitlementsService,
+  type EntitlementsExecutor,
+} from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
@@ -147,14 +150,9 @@ export class ActionsService {
     }
 
     // D19/D77 free-cleanup cap — ONE unit (one sender / one frozen
-    // message set, one click). Checked only for a FRESH enqueue: a
-    // network-retried click whose key row already exists replays the
-    // prior action (its unit was already consumed) and must not 402.
-    // The counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    // message set, one click). The storage key is resolved before the
+    // target set, then replay/capacity/insert are serialized below.
     const archiveStorageKey = `archive-${idempotencyKey.replace(/:/g, '-')}`;
-    if (!(await this.hasJobWithKey(archiveStorageKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
-    }
 
     let storedSelector: LabelActionSelector;
     let resolvedMessageIds: string[];
@@ -216,13 +214,26 @@ export class ActionsService {
     // client-supplied key is normalized out. (Computed above for the
     // free-cap replay check.)
     const storageKey = archiveStorageKey;
-    const inserted = await this.insertJob({
-      mailboxAccountId,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds,
-      requestedCount,
-      idempotencyKey: storageKey,
+    const inserted = await this.db.transaction(async (tx) => {
+      // Serialize every finite-tier cleanup request on the WORKSPACE row,
+      // then recheck the globally-unique key after waiting for the lock.
+      // A same-key retry projects the existing action before quota; a
+      // foreign-mailbox reuse still reaches insertJob's structured 409.
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(storageKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+      }
+      return this.insertJob(
+        {
+          mailboxAccountId,
+          direction: 'forward',
+          selector: storedSelector,
+          resolvedMessageIds,
+          requestedCount,
+          idempotencyKey: storageKey,
+        },
+        tx,
+      );
     });
     // Idempotent repeat — the row already existed; return it as-is.
     if (inserted.existing) {
@@ -1938,8 +1949,11 @@ export class ActionsService {
    * `action_jobs_idempotency_key_uniq`. Cross-mailbox key reuse is
    * still rejected downstream by `insertJob`.
    */
-  private async hasJobWithKey(idempotencyKey: string): Promise<boolean> {
-    const [row] = await this.db
+  private async hasJobWithKey(
+    idempotencyKey: string,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<boolean> {
+    const [row] = await executor
       .select({ id: actionJobs.id })
       .from(actionJobs)
       .where(eq(actionJobs.idempotencyKey, idempotencyKey))
@@ -1948,30 +1962,33 @@ export class ActionsService {
   }
 
   /** Insert (or find existing on idempotency-key conflict) an action_jobs row. */
-  private async insertJob(input: {
-    mailboxAccountId: string;
-    direction: 'forward' | 'reverse';
-    selector: LabelActionSelector;
-    resolvedMessageIds: string[];
-    requestedCount: number;
-    idempotencyKey: string;
-    /**
-     * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
-     * keep `enqueueArchive` source-compatible; composite + delete paths
-     * pass the verb explicitly.
-     */
-    verb?: 'archive' | 'later' | 'delete';
-    undoToken?: string;
-    /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
-    olderThanDays?: number | null;
-    /**
-     * ADR-0020 composite linkage — set on a secondary row to the
-     * primary's `id`. NULL for single-verb actions + primary of a
-     * composite (per the schema's "primary is self-implicit" convention).
-     */
-    compositeId?: string | null;
-  }): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
-    const [inserted] = await this.db
+  private async insertJob(
+    input: {
+      mailboxAccountId: string;
+      direction: 'forward' | 'reverse';
+      selector: LabelActionSelector;
+      resolvedMessageIds: string[];
+      requestedCount: number;
+      idempotencyKey: string;
+      /**
+       * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
+       * keep `enqueueArchive` source-compatible; composite + delete paths
+       * pass the verb explicitly.
+       */
+      verb?: 'archive' | 'later' | 'delete';
+      undoToken?: string;
+      /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
+      olderThanDays?: number | null;
+      /**
+       * ADR-0020 composite linkage — set on a secondary row to the
+       * primary's `id`. NULL for single-verb actions + primary of a
+       * composite (per the schema's "primary is self-implicit" convention).
+       */
+      compositeId?: string | null;
+    },
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
+    const [inserted] = await executor
       .insert(actionJobs)
       .values({
         mailboxAccountId: input.mailboxAccountId,
@@ -1994,7 +2011,7 @@ export class ActionsService {
     }
     // Conflict — the key already exists. Return it ONLY if it belongs to
     // this mailbox (a cross-mailbox key reuse is rejected).
-    const [existing] = await this.db
+    const [existing] = await executor
       .select()
       .from(actionJobs)
       .where(
