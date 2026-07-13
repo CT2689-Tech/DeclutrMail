@@ -15,7 +15,7 @@ import {
 } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
@@ -45,7 +45,7 @@ const MIGRATIONS_DIR = join(
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-async function freshDb(): Promise<Db> {
+async function freshDb(queryLog?: string[]): Promise<Db> {
   const pg = new PGlite({ extensions: { citext } });
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
@@ -57,7 +57,18 @@ async function freshDb(): Promise<Db> {
       if (trimmed) await pg.query(trimmed);
     }
   }
-  return drizzle(pg, { schema });
+  return drizzle(pg, {
+    schema,
+    ...(queryLog
+      ? {
+          logger: {
+            logQuery(query: string): void {
+              queryLog.push(query);
+            },
+          },
+        }
+      : {}),
+  });
 }
 
 async function seedWorkspace(
@@ -175,9 +186,11 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
   let workspaceId: string;
   let mailboxId: string;
   let svc: EntitlementsService;
+  let queryLog: string[];
 
   beforeEach(async () => {
-    db = await freshDb();
+    queryLog = [];
+    db = await freshDb(queryLog);
     ({ workspaceId, mailboxId } = await seedWorkspace(db, 'free'));
     svc = new EntitlementsService(db as never);
   });
@@ -377,6 +390,83 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
   it('assertCleanupCapacity: unlimited tiers never throw', async () => {
     const plus = await seedWorkspace(db, 'plus');
     await expect(svc.assertCleanupCapacity(plus.mailboxId, 1000)).resolves.toBeUndefined();
+  });
+
+  it('lockCleanupWorkspace: paid tiers use the lookup fast path without FOR UPDATE', async () => {
+    const plus = await seedWorkspace(db, 'plus');
+    queryLog.length = 0;
+
+    await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
+      workspaceId: plus.workspaceId,
+      tier: 'plus',
+    });
+    expect(queryLog.join('\n')).not.toMatch(/for update/i);
+  });
+
+  it('lockCleanupWorkspace: a finite-tier observation locks the row and returns its re-read tier', async () => {
+    const plus = await seedWorkspace(db, 'plus');
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox').mockResolvedValueOnce({
+      workspaceId: plus.workspaceId,
+      // Simulate the tier observed before waiting for the row lock. The
+      // locking query must return the current persisted tier instead.
+      tier: 'free',
+    });
+    queryLog.length = 0;
+
+    await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
+      workspaceId: plus.workspaceId,
+      tier: 'plus',
+    });
+    expect(queryLog.join('\n')).toMatch(/for update/i);
+    lookup.mockRestore();
+  });
+
+  it('assertCleanupCapacity threads a supplied transaction through lookup and count', async () => {
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-executor-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox');
+    const countUsed = vi.spyOn(svc, 'cleanupUnitsUsed');
+
+    await db.transaction(async (tx) => {
+      await expect(svc.assertCleanupCapacity(mailboxId, 1, tx as never)).resolves.toBeUndefined();
+      expect(lookup).toHaveBeenCalledWith(mailboxId, tx);
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+    });
+    lookup.mockRestore();
+    countUsed.mockRestore();
+  });
+
+  it('assertCleanupCapacityForWorkspace reuses a locked workspace without another lock query', async () => {
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-locked-executor-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox');
+    const countUsed = vi.spyOn(svc, 'cleanupUnitsUsed');
+    queryLog.length = 0;
+
+    await db.transaction(async (tx) => {
+      await expect(
+        svc.assertCleanupCapacityForWorkspace({ workspaceId, tier: 'free' }, 1, tx as never),
+      ).resolves.toBeUndefined();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+    });
+    expect(queryLog.join('\n')).not.toMatch(/for update/i);
+    lookup.mockRestore();
+    countUsed.mockRestore();
   });
 
   it('enforces the Action Registry tier per selector without taking away Free single-sender actions', async () => {

@@ -23,6 +23,21 @@ import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import { AppException } from '../app-exception.js';
 
 /**
+ * Either the root Drizzle client or a caller-owned transaction.
+ *
+ * Cleanup writers pass their transaction so the workspace row lock,
+ * quota count, and consuming action-job insert share one atomic unit.
+ */
+export type EntitlementsExecutor =
+  DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+
+/** Workspace identity + tier observed by an entitlement lookup or lock. */
+export interface CleanupWorkspace {
+  workspaceId: string;
+  tier: TierId;
+}
+
+/**
  * Verbs that draw down the Free lifetime cleanup quota (D19/D77).
  * Derived from the Action Registry — the manifest's `countsAsCleanup`
  * flag on the single-sender selector is the source of truth, so adding
@@ -82,8 +97,9 @@ export class EntitlementsService {
   /** Resolve a mailbox's workspace + tier in one indexed join. */
   async workspaceForMailbox(
     mailboxAccountId: string,
-  ): Promise<{ workspaceId: string; tier: TierId } | null> {
-    const [row] = await this.db
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<CleanupWorkspace | null> {
+    const [row] = await executor
       .select({ workspaceId: workspaces.id, tier: workspaces.tier })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
@@ -132,8 +148,11 @@ export class EntitlementsService {
    * workspace's mailboxes via `action_jobs_account_status_created_idx`
    * (leading column `mailbox_account_id`).
    */
-  async cleanupUnitsUsed(workspaceId: string): Promise<number> {
-    const [row] = await this.db
+  async cleanupUnitsUsed(
+    workspaceId: string,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<number> {
+    const [row] = await executor
       .select({
         used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', ${actionJobs.id}::text)))::int`,
       })
@@ -158,6 +177,37 @@ export class EntitlementsService {
   }
 
   /**
+   * Resolve a mailbox's workspace and serialize finite cleanup quotas.
+   *
+   * Unlimited tiers return directly after the indexed mailbox lookup;
+   * they never take a workspace row lock. A finite tier takes
+   * `FOR UPDATE` on its workspace row and returns the tier read by that
+   * locking query, rather than trusting the tier observed before the
+   * lock was acquired. This matters when billing changes the tier while
+   * a cleanup request is waiting for the row.
+   *
+   * The lock only protects the consuming write when `executor` is a
+   * caller-owned transaction that remains open through that write.
+   */
+  async lockCleanupWorkspace(
+    mailboxAccountId: string,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<CleanupWorkspace | null> {
+    const workspace = await this.workspaceForMailbox(mailboxAccountId, executor);
+    if (!workspace || cleanupActionsLifetimeFor(workspace.tier) === null) {
+      return workspace;
+    }
+
+    const [locked] = await executor
+      .select({ workspaceId: workspaces.id, tier: workspaces.tier })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspace.workspaceId))
+      .for('update')
+      .limit(1);
+    return locked ?? null;
+  }
+
+  /**
    * The workspace's quota position. `used` is only computed when the
    * tier actually has a quota (Free) — paid tiers skip the count scan.
    */
@@ -178,21 +228,37 @@ export class EntitlementsService {
    * Callers MUST skip this check for an idempotent REPLAY (a request
    * whose `Idempotency-Key` row already exists) — a network-retried
    * click of an action that already consumed its unit must replay, not
-   * 402. Known race (accepted for this draft): DISTINCT concurrent requests
-   * can all observe the same pre-insert count and exceed the cap by the
-   * in-flight burst, not merely by one. The action rate limit bounds the
-   * burst but does not serialize it. A pre-launch follow-up must hold a
-   * workspace row lock across count + consuming action-job insert (or use
-   * an equivalent reservation ledger); see the product-experience audit.
+   * 402. Fresh cleanup writers must pass their transaction as `executor`
+   * and keep it open through the consuming action-job insert. That holds
+   * the finite-tier workspace lock across count + write. The default root
+   * executor preserves the existing read/check API for non-writing callers,
+   * but its statement-scoped lock cannot serialize a later separate write.
    */
-  async assertCleanupCapacity(mailboxAccountId: string, unitsNeeded: number): Promise<void> {
-    const ws = await this.workspaceForMailbox(mailboxAccountId);
+  async assertCleanupCapacity(
+    mailboxAccountId: string,
+    unitsNeeded: number,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<void> {
+    const workspace = await this.lockCleanupWorkspace(mailboxAccountId, executor);
+    await this.assertCleanupCapacityForWorkspace(workspace, unitsNeeded, executor);
+  }
+
+  /**
+   * Assert capacity against an already-resolved (normally already-locked)
+   * workspace. Cleanup writers use this after acquiring the lock and then
+   * rechecking idempotency, avoiding a second workspace lookup/lock query.
+   */
+  async assertCleanupCapacityForWorkspace(
+    workspace: CleanupWorkspace | null,
+    unitsNeeded: number,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<void> {
     // No workspace row ⇒ the mailbox is orphaned; ownership guards
     // upstream will reject the request — nothing to gate here.
-    if (!ws) return;
-    const limit = cleanupActionsLifetimeFor(ws.tier);
+    if (!workspace) return;
+    const limit = cleanupActionsLifetimeFor(workspace.tier);
     if (limit === null) return; // unlimited tier
-    const used = await this.cleanupUnitsUsed(ws.workspaceId);
+    const used = await this.cleanupUnitsUsed(workspace.workspaceId, executor);
     if (used + unitsNeeded > limit) {
       const remaining = Math.max(0, limit - used);
       throw new AppException({
