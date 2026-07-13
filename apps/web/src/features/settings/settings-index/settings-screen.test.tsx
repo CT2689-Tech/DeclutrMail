@@ -481,7 +481,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'target_invalid',
-      message: 'Could not match that reconnect request to an active mailbox. Try again below.',
+      message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
       tone: 'danger',
       liveRole: 'alert',
     },
