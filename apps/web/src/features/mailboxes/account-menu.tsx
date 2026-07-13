@@ -9,7 +9,7 @@ import { useLogout } from '@/features/auth/api/use-logout';
 import { useTier } from '@/features/auth/api/use-tier';
 import { useMailboxesHealth } from '@/features/settings/api/use-mailbox-health';
 import { track } from '@/lib/posthog';
-import { startMailboxConnect } from './connect-mailbox-url';
+import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox-url';
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
 
@@ -26,10 +26,10 @@ const { color, font } = tokens;
  * server-side (`MailboxAccountsService.disconnect`) so by the time the
  * toast fires the upstream refresh token is invalid.
  *
- * "Connect another" and disconnected-account reactivation use the
- * normal OAuth start. An active mailbox whose grant expired uses a
- * target-bound reconnect that remains available at the inbox limit —
- * it is already counted and consumes no additional slot.
+ * "Connect another" uses the normal OAuth start. Disconnected-account
+ * reactivation and active grant recovery each bind OAuth to the exact
+ * mailbox, but remain separate flows because only reactivation can
+ * consume an inbox slot.
  */
 export function AccountMenu() {
   const { me } = useAuth();
@@ -332,7 +332,8 @@ export function AccountMenu() {
                       </button>
                     ) : (
                       // Disconnected reactivation can consume a slot, so it
-                      // keeps the normal OAuth path and the plan-limit gate.
+                      // keeps the plan-limit gate while binding OAuth to the
+                      // exact disconnected mailbox the user selected.
                       <button
                         type="button"
                         disabled={atInboxLimit}
@@ -340,7 +341,7 @@ export function AccountMenu() {
                         aria-describedby={
                           atInboxLimit ? 'account-menu-inbox-limit-gate' : undefined
                         }
-                        onClick={() => startMailboxConnect()}
+                        onClick={() => startMailboxReactivation(m.id)}
                         style={mailboxActionStyle(atInboxLimit ? 'disabled' : 'primary')}
                       >
                         Reconnect

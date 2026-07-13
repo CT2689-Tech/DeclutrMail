@@ -11,7 +11,10 @@ import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
-import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import {
+  startMailboxConnect,
+  startMailboxReactivation,
+} from '@/features/mailboxes/connect-mailbox-url';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import {
@@ -225,6 +228,10 @@ export function SettingsScreen() {
     startMailboxConnect(reconnectMailboxId);
   }
 
+  function reactivateMailbox(mailboxId: string) {
+    startMailboxReactivation(mailboxId);
+  }
+
   return (
     <div
       style={{
@@ -323,6 +330,7 @@ export function SettingsScreen() {
           healthById={healthById}
           highlightMailboxId={highlightMailboxId}
           onConnect={connectMailbox}
+          onReactivate={reactivateMailbox}
         />
 
         <SectionLabel id="actions">Actions</SectionLabel>

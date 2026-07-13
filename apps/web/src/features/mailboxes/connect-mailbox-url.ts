@@ -20,3 +20,21 @@ export function connectMailboxStartUrl(reconnectMailboxId?: string): string {
 export function startMailboxConnect(reconnectMailboxId?: string): void {
   window.location.assign(connectMailboxStartUrl(reconnectMailboxId));
 }
+
+/**
+ * Build the OAuth URL for restoring one disconnected mailbox.
+ *
+ * Reactivation is deliberately distinct from active-mailbox reconnect:
+ * it can consume an inbox slot, while the API must still bind Google's
+ * returned identity to the exact disconnected mailbox the user chose.
+ */
+export function reactivateMailboxStartUrl(mailboxId: string): string {
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+  const start = `${apiBase}${CONNECT_MAILBOX_START_PATH}`;
+  return `${start}?reactivateMailboxId=${encodeURIComponent(mailboxId)}`;
+}
+
+/** OAuth reactivation is a full-page navigation to a mailbox-bound start. */
+export function startMailboxReactivation(mailboxId: string): void {
+  window.location.assign(reactivateMailboxStartUrl(mailboxId));
+}

@@ -15,8 +15,9 @@ const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
  * Disconnected), initial-sync readiness, and a humanized last-synced
  * stamp from the sync-status facade (`useMailboxesHealth` in the
  * container). An active mailbox whose Gmail grant expired uses a
- * target-bound reconnect; a disconnected mailbox still uses the normal
- * connect flow because reactivation changes the connected-inbox count.
+ * target-bound reconnect; a disconnected mailbox uses a distinct,
+ * target-bound reactivation flow because it can change the connected-inbox
+ * count without allowing Google account selection to change the target.
  * Switch and disconnect stay in the account menu (reuse, don't rebuild).
  *
  * Inbox limit (D19 tiers): adding or reactivating disables at the tier's
@@ -30,6 +31,7 @@ export function MailboxesCard({
   healthById,
   highlightMailboxId = null,
   onConnect,
+  onReactivate,
 }: {
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
@@ -41,6 +43,8 @@ export function MailboxesCard({
   highlightMailboxId?: string | null;
   /** OAuth start; an id binds reauthorization to that active mailbox. */
   onConnect: (reconnectMailboxId?: string) => void;
+  /** OAuth start bound to the disconnected mailbox being reactivated. */
+  onReactivate: (mailboxId: string) => void;
 }) {
   const activeCount = mailboxes.filter((m) => m.status === 'active').length;
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
@@ -153,7 +157,7 @@ export function MailboxesCard({
                         disabled={reconnectBlocked}
                         describedBy={reconnectBlocked ? MAILBOX_LIMIT_EXPLANATION_ID : undefined}
                         email={m.email}
-                        onClick={() => onConnect(needsReconnect ? m.id : undefined)}
+                        onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
                       />
                     )}
                   </span>

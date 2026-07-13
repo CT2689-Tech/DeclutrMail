@@ -40,7 +40,7 @@ const meta: StoryMeta<typeof MailboxesCard> = {
     docs: {
       description: {
         component:
-          'Settings → Mailboxes (D114 "Inboxes" + D115 health, scoped). Connected Gmail accounts with status / readiness / last-synced stamp / active marker. Invalid-grant accounts use target-bound reconnect and remain enabled at the plan limit because they are already counted; disconnected reactivation and connect-another remain limit-gated.',
+          'Settings → Mailboxes (D114 "Inboxes" + D115 health, scoped). Connected Gmail accounts with status / readiness / last-synced stamp / active marker. Invalid-grant accounts use target-bound reconnect and remain enabled at the plan limit because they are already counted; disconnected accounts use target-bound reactivation, while reactivation and connect-another remain limit-gated.',
       },
     },
   },
@@ -87,6 +87,7 @@ const baseArgs: CardArgs = {
   inboxLimit: 2,
   healthById: HEALTHY,
   onConnect: noop,
+  onReactivate: noop,
 };
 
 export const TwoConnected: Story<typeof MailboxesCard> = {

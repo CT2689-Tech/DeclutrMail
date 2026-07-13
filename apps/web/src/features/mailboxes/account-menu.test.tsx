@@ -34,6 +34,7 @@ let healthById: Record<string, MailboxHealth | undefined>;
 let entitlements: TierEntitlements;
 
 const startMailboxConnectSpy = vi.fn();
+const startMailboxReactivationSpy = vi.fn();
 const setActiveMutateSpy = vi.fn();
 const disconnectMutateSpy = vi.fn();
 const logoutMutateSpy = vi.fn();
@@ -53,6 +54,7 @@ vi.mock('@/features/settings/api/use-mailbox-health', () => ({
 }));
 vi.mock('./connect-mailbox-url', () => ({
   startMailboxConnect: (mailboxId?: string) => startMailboxConnectSpy(mailboxId),
+  startMailboxReactivation: (mailboxId: string) => startMailboxReactivationSpy(mailboxId),
 }));
 vi.mock('./api/use-set-active-mailbox', () => ({
   useSetActiveMailbox: () => ({ isPending: false, mutate: setActiveMutateSpy }),
@@ -95,6 +97,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       atInboxLimit: true,
     };
     startMailboxConnectSpy.mockClear();
+    startMailboxReactivationSpy.mockClear();
     setActiveMutateSpy.mockClear();
     disconnectMutateSpy.mockClear();
     logoutMutateSpy.mockClear();
@@ -169,9 +172,10 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(reconnect).toHaveAttribute('aria-describedby', 'account-menu-inbox-limit-gate');
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
+    expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps healthy state and normal connect/reactivation behavior unchanged under the limit', async () => {
+  it('keeps healthy state, targeted reactivation, and normal connect distinct under the limit', async () => {
     me = makeMe([MAILBOX_A, MAILBOX_C]);
     entitlements = {
       ...entitlements,
@@ -191,11 +195,13 @@ describe('AccountMenu Gmail reconnect health', () => {
     await user.click(
       within(disconnectedRow).getByRole('button', { name: `Reconnect ${MAILBOX_C.email}` }),
     );
-    expect(startMailboxConnectSpy).toHaveBeenLastCalledWith(undefined);
+    expect(startMailboxReactivationSpy).toHaveBeenCalledWith(MAILBOX_C.id);
+    expect(startMailboxConnectSpy).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: '+ Connect another Gmail account' }));
     expect(startMailboxConnectSpy).toHaveBeenLastCalledWith(undefined);
-    expect(startMailboxConnectSpy).toHaveBeenCalledTimes(2);
+    expect(startMailboxConnectSpy).toHaveBeenCalledTimes(1);
+    expect(startMailboxReactivationSpy).toHaveBeenCalledTimes(1);
   });
 
   it('opens as a focus-managed dialog, enables health reads, tabs normally, and Escape restores focus', async () => {

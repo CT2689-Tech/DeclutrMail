@@ -39,6 +39,7 @@ const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
 const MAILBOX_C = '33333333-3333-4333-8333-333333333333';
 
 const startMailboxConnectSpy = vi.fn();
+const startMailboxReactivationSpy = vi.fn();
 const scrollIntoViewSpy = vi.fn();
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
@@ -48,6 +49,7 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 
 vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
   startMailboxConnect: (mailboxId?: string) => startMailboxConnectSpy(mailboxId),
+  startMailboxReactivation: (mailboxId: string) => startMailboxReactivationSpy(mailboxId),
 }));
 
 let me: Me;
@@ -163,6 +165,7 @@ describe('SettingsScreen', () => {
     ]);
     setSettingsLocation();
     startMailboxConnectSpy.mockClear();
+    startMailboxReactivationSpy.mockClear();
     vi.mocked(toast).mockClear();
     scrollIntoViewSpy.mockClear();
     resetTriageStore();
@@ -267,7 +270,8 @@ describe('SettingsScreen', () => {
     expect(reconnect).toBeEnabled();
     expect(screen.getByText('Disconnected')).toBeInTheDocument();
     await userEvent.click(reconnect);
-    expect(startMailboxConnectSpy).toHaveBeenCalledWith(undefined);
+    expect(startMailboxReactivationSpy).toHaveBeenCalledWith(MAILBOX_B);
+    expect(startMailboxConnectSpy).not.toHaveBeenCalled();
   });
 
   it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {
@@ -291,6 +295,7 @@ describe('SettingsScreen', () => {
       /your plan includes 2 connected inboxes/i,
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
+    expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {
