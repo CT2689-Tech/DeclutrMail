@@ -23,11 +23,11 @@
  * deterministically without mocking the queries.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { AutopilotScreen } from './autopilot-screen';
+import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
   PENDING_SUGGESTIONS,
@@ -61,6 +61,15 @@ function renderScreen(state: AutopilotScreenState) {
   );
 }
 
+function renderRoute() {
+  const client = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={client}>
+      <AutopilotRoute />
+    </QueryClientProvider>,
+  );
+}
+
 describe('AutopilotScreen — edge states', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
@@ -70,17 +79,56 @@ describe('AutopilotScreen — edge states', () => {
     expect(screen.getAllByRole('status').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('renders ONE error state for the whole surface with the carried message', () => {
-    renderScreen({ kind: 'error', message: 'API down for maintenance.' });
+  it('renders one retryable error state for the whole surface with the carried message', async () => {
+    const retry = vi.fn();
+    const user = userEvent.setup();
+    renderScreen({ kind: 'error', message: 'API down for maintenance.', retry });
     expect(screen.getAllByRole('heading', { name: /couldn't load your autopilot/i })).toHaveLength(
       1,
     );
     expect(screen.getByText(/api down for maintenance/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries both failed Autopilot reads from the shared error state', async () => {
+    let ruleReads = 0;
+    let suggestionReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => {
+          ruleReads += 1;
+          return jsonServerError();
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => {
+          suggestionReads += 1;
+          return jsonServerError();
+        },
+      },
+    ]);
+    const user = userEvent.setup();
+    renderRoute();
+
+    await user.click(await screen.findByRole('button', { name: /try again/i }));
+
+    await waitFor(() => {
+      expect(ruleReads).toBe(2);
+      expect(suggestionReads).toBe(2);
+    });
   });
 
   it('renders the empty-mailbox state when no rules exist', () => {
     renderScreen({ kind: 'empty', rules: [] });
     expect(screen.getByRole('heading', { name: /no autopilot rules yet/i })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('renders the empty-pending state when rules exist but nothing matched', () => {

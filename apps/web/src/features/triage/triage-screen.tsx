@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 
 import {
   useActionStatus,
@@ -921,17 +921,7 @@ function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
     error instanceof ApiError
       ? `We couldn't load your triage queue (${error.status}). Try again in a moment.`
       : "We couldn't load your triage queue right now. Try again in a moment.";
-  return (
-    <EmptyState
-      title="Your queue didn't load"
-      description={message}
-      action={
-        <Button tone="primary" onClick={onRetry}>
-          Try again
-        </Button>
-      }
-    />
-  );
+  return <ErrorState title="Your queue didn't load" description={message} onRetry={onRetry} />;
 }
 
 /** Skeleton stack — matches the row's vertical rhythm. */

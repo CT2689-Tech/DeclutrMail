@@ -204,8 +204,18 @@ describe('TriageScreen — empty / loading branches', () => {
     });
     expect(html).toContain('Your queue didn');
     expect(html).toContain('Try again');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('border:1px solid var(--dm-amber)');
+    expect(html).not.toContain('border:1px dashed');
     // Never the skeleton alongside the error.
     expect(html).not.toContain('Loading triage queue');
+  });
+
+  it('keeps the successful resting state visually distinct from a failed fetch', () => {
+    const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
+    expect(html).toContain('border:1px dashed');
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain('Needs attention');
   });
 });
 

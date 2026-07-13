@@ -55,6 +55,8 @@ export type {
   EmptyStateTier,
   EmptyStateTierNudge,
 } from './components/empty-state';
+export { ErrorState } from './components/error-state';
+export type { ErrorStateProps } from './components/error-state';
 export { ScreenIntro } from './components/screen-intro';
 
 // ADR-0016 — shared numeric primitive for Senders + Sender-Detail
