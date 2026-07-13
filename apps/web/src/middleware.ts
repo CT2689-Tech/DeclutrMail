@@ -72,7 +72,11 @@
 // Rollback escape hatch: set `CSP_REPORT_ONLY=true` (Vercel env) to flip
 // the SAME policy to `Content-Security-Policy-Report-Only` — violations
 // log to the browser console but nothing is blocked. Prod rollback is an
-// env flip + redeploy, not a revert. Documented in .env.example.
+// env flip + redeploy, not a revert. Reports are deliberately not posted
+// straight to a third party: native CSP payloads bypass the SDK privacy
+// scrubber and can include full document/blocked URLs. A future first-party
+// collector must normalize those fields before forwarding anything.
+// Documented in .env.example.
 
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -93,29 +97,6 @@ function sources(...entries: Array<string | null | false>): string {
   return [...new Set(entries.filter((e): e is string => Boolean(e)))].join(' ');
 }
 
-/**
- * Sentry's CSP report collector URL, derived from the Sentry DSN, so a
- * `report-uri` directive makes violations server-visible (the rollback
- * escape hatch — `CSP_REPORT_ONLY=true` — is otherwise blind, logging
- * only to each user's browser console). DSN `https://KEY@HOST/PROJECT`
- * → `https://HOST/api/PROJECT/security/?sentry_key=KEY` (Sentry's
- * documented security endpoint). Returns null on a missing/malformed
- * DSN so the directive is simply omitted rather than emitting a broken
- * one. report-uri endpoints are exempt from connect-src, so no source
- * grant is needed.
- */
-export function sentryCspReportUri(dsn: string | undefined): string | null {
-  if (!dsn) return null;
-  try {
-    const url = new URL(dsn);
-    const projectId = url.pathname.replace(/^\//, '');
-    if (!url.username || !projectId) return null;
-    return `${url.protocol}//${url.host}/api/${projectId}/security/?sentry_key=${url.username}`;
-  } catch {
-    return null;
-  }
-}
-
 export interface CspEnv {
   isDev: boolean;
   apiUrl: string | undefined;
@@ -131,7 +112,6 @@ export function buildContentSecurityPolicy(nonce: string, env: CspEnv): string {
   const apiOrigin = originOf(env.apiUrl);
   const posthogOrigin = originOf(env.posthogHost) ?? 'https://us.i.posthog.com';
   const sentryOrigin = originOf(env.sentryDsn);
-  const reportUri = sentryCspReportUri(env.sentryDsn);
 
   const directives = [
     `default-src 'self'`,
@@ -187,10 +167,6 @@ export function buildContentSecurityPolicy(nonce: string, env: CspEnv): string {
     // Prod-only: on http://localhost this would upgrade the API fetch
     // to https://localhost:4000 and break local dev.
     !env.isDev && `upgrade-insecure-requests`,
-    // Violation reporting — makes the CSP_REPORT_ONLY rollback hatch
-    // server-visible (reports land in Sentry, which the team monitors)
-    // instead of only each user's console. Omitted when no DSN is set.
-    reportUri && `report-uri ${reportUri}`,
   ];
 
   return directives.filter((d): d is string => Boolean(d)).join('; ');
