@@ -46,6 +46,9 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushSpy, replace: replaceSpy }),
   usePathname: () => pathnameRef.current,
 }));
+vi.mock('@/features/triage/triage-undo-tray', () => ({
+  TriageUndoTray: () => <div data-testid="triage-undo-tray" />,
+}));
 
 import AppLayout from './layout';
 
@@ -226,6 +229,9 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // Kept surfaces are present (spot-check both nav groups).
     expect(screen.getByText('Triage')).toBeInTheDocument();
     expect(screen.getByText('Autopilot')).toBeInTheDocument();
+    // Recovery follows the active mailbox across the whole app shell,
+    // not only the Triage route.
+    expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
   });
@@ -467,6 +473,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
     // SyncErrorBanner + SyncNowButton are gated off with no active mailbox.
     expect(syncSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('triage-undo-tray')).not.toBeInTheDocument();
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 

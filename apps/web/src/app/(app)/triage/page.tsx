@@ -7,7 +7,6 @@ import { TierGate } from '@/features/billing/tier-gate';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
-import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import { track } from '@/lib/posthog';
 
 /**
@@ -68,15 +67,7 @@ function TriageExperience() {
       void stats.refetch();
     },
   });
-  return (
-    <>
-      <TriageScreen state={state} />
-      {/* D35 — the persistent undo tray lives on the triage surface
-          across EVERY state (it must survive the queue emptying). The
-          (app) layout guarantees an active mailbox on this route. */}
-      {me.activeMailboxId != null && <TriageUndoTray />}
-    </>
-  );
+  return <TriageScreen state={state} />;
 }
 
 /** Human copy for each `connect_error` code the BE can redirect with. */

@@ -25,6 +25,7 @@ import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
+import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
 
 /**
@@ -242,6 +243,11 @@ function AppChrome({ children }: { children: ReactNode }) {
           </AppShell>
         </div>
       </div>
+      {/* D35 — recent reversible actions follow the user across every
+          mailbox-scoped app route. Mount once in the shell so leaving
+          Triage never hides recovery; keep it off user-scoped routes
+          rendered without an active mailbox to avoid a guarded 409. */}
+      {hasActiveMailbox && <TriageUndoTray />}
       {/* D19/D77/D81 — entitlement-402 upgrade flow. Mounted ONCE in
           the authed chrome; fed by the global MutationCache handler
           (lib/query-client) so every mutation surface is covered. */}

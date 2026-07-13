@@ -66,7 +66,7 @@ function useUndoEntries() {
 }
 
 /**
- * The persistent undo tray on the Triage surface (D35).
+ * The persistent undo tray across authenticated mailbox surfaces (D35).
  *
  *   - Lists active undo tokens via `GET /api/undo`, newest first.
  *   - Per-row Undo reverses by token: `POST /api/undo/:token` enqueues

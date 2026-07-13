@@ -431,6 +431,7 @@ describe('undo_clicked (D159)', () => {
 
 describe('page_viewed (D159)', () => {
   it('the triage route mount fires page_viewed { page: triage } exactly once', async () => {
+    const undoTraySpy = vi.fn(() => jsonOk({ data: [], meta: { nextCursor: null, limit: 50 } }));
     addFetchHandlers([
       { method: 'GET', path: '/api/triage/queue', respond: () => jsonOk({ data: [] }) },
       {
@@ -441,7 +442,7 @@ describe('page_viewed (D159)', () => {
       {
         method: 'GET',
         path: '/api/undo',
-        respond: () => jsonOk({ data: [], meta: { nextCursor: null, limit: 50 } }),
+        respond: undoTraySpy,
       },
     ]);
     const client = createTestQueryClient();
@@ -458,5 +459,8 @@ describe('page_viewed (D159)', () => {
       }),
     );
     expect(h.track.mock.calls.filter(([name]) => name === 'page_viewed')).toHaveLength(1);
+    // The route no longer owns the persistent tray; AppChrome mounts it
+    // once so rendering Triage inside the shell cannot double-fetch.
+    expect(undoTraySpy).not.toHaveBeenCalled();
   });
 });
