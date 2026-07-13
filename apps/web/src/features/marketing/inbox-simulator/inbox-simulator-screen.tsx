@@ -11,7 +11,7 @@ import {
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY } from '@declutrmail/shared/actions';
 
-import { ActionPreview } from '@/features/triage/action-preview';
+import { ActionPreviewPresentation } from '@/features/triage/action-preview-presentation';
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { TriageRow } from '@/features/triage/triage-row';
@@ -404,7 +404,7 @@ function DemoPreviewDialog({
           </Eyebrow>
           <h2 id="dm-simulator-dialog-title">Approve the sample action</h2>
         </div>
-        <ActionPreview
+        <ActionPreviewPresentation
           verb={pending.verb}
           row={pending.row}
           archiveHistoric={false}

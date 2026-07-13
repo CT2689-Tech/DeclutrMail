@@ -2,7 +2,9 @@
 
 import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
-import { ActionPreview, type PreviewCount } from './action-preview';
+import type { ReactNode } from 'react';
+
+import { ActionPreviewPresentation, type PreviewCount } from './action-preview-presentation';
 import { ActionToolbar } from './action-toolbar';
 import { canArchive, canLater, type TriageDecisionRow } from './data';
 import { verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
@@ -58,7 +60,7 @@ function whyLine(row: TriageDecisionRow): string {
  * Expanded: the toolbar (K/A/U/L per D29 / D227) becomes visible,
  * the row body extends with the stats grid + reasoning + signals
  * (via `<TriageRowExpanded>`), and if a pending action is open in
- * inline-preview mode the `<ActionPreview>` strip mounts beneath
+ * inline-preview mode the pure preview strip mounts beneath
  * the toolbar.
  *
  * Per D198 / D36 only one row is expanded at a time — the
@@ -80,6 +82,7 @@ export function TriageRow({
   onToggleExpand,
   onAction,
   inlinePreview,
+  inlinePreviewAccountContext,
 }: {
   row: TriageDecisionRow;
   expanded: boolean;
@@ -105,6 +108,8 @@ export function TriageRow({
    * sheet is suppressed but D226's preview is still mandatory.
    */
   inlinePreview?: { verb: ActionVerb; archiveHistoric: boolean; inboxCount: PreviewCount } | null;
+  /** Authenticated queues inject the active Gmail account note; public demos omit it. */
+  inlinePreviewAccountContext?: ReactNode;
 }) {
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
@@ -398,12 +403,13 @@ export function TriageRow({
           <TriageRowExpanded row={row} />
           {inlinePreview != null && (
             <div style={{ padding: '0 18px 18px' }}>
-              <ActionPreview
+              <ActionPreviewPresentation
                 verb={inlinePreview.verb}
                 row={row}
                 archiveHistoric={inlinePreview.archiveHistoric}
                 inboxCount={inlinePreview.inboxCount}
                 mode="inline"
+                accountContext={inlinePreviewAccountContext}
               />
             </div>
           )}

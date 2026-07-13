@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import { planQueueItems, type DomainBatch } from './domain-batch';
@@ -150,6 +151,9 @@ export function TriageQueue({
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}
+                inlinePreviewAccountContext={
+                  inlinePreview == null ? undefined : <MailboxActionContext />
+                }
               />
             </div>
           );

@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
+// Bundle-boundary guard: the public simulator must not import the auth-aware
+// preview wrapper, directly or through TriageRow. Throwing from this factory
+// turns any accidental MailboxActionContext edge into a focused test failure.
+vi.mock('@/features/auth/mailbox-action-context', () => {
+  throw new Error('The public inbox simulator imported authenticated mailbox context.');
+});
 
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { InboxSimulatorScreen } from './inbox-simulator-screen';

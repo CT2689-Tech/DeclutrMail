@@ -169,3 +169,31 @@ describe('TriageRow expanded — quiet-90d rows never read "LAST SEEN today" (W3
     expect(screen.getByText('today')).toBeInTheDocument();
   });
 });
+
+describe('TriageRow — inline preview composition', () => {
+  it('renders the app-owned account context inside the pure preview surface', () => {
+    const row = rowById('t-groupon');
+
+    render(
+      <TriageRow
+        row={row}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+        inlinePreviewAccountContext={
+          <div role="note" aria-label="Gmail account: active@gmail.com">
+            active@gmail.com
+          </div>
+        }
+      />,
+    );
+
+    const preview = screen.getByRole('region', {
+      name: `Preview · Archive ${row.senderName}`,
+    });
+    expect(
+      within(preview).getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
+  });
+});
