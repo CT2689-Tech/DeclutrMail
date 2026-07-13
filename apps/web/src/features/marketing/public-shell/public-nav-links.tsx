@@ -12,7 +12,10 @@ export function PublicNavLinks({
   links: ReadonlyArray<PublicNavLink>;
   onNavigate?: () => void;
 }) {
-  const pathname = usePathname();
+  // Next can temporarily return null in compatibility/fallback renders,
+  // including the marketing error shell. Treat that as "no active tab"
+  // instead of letting navigation hide the original route error.
+  const pathname = usePathname() ?? '';
 
   return links.map((link) => (
     <Link
