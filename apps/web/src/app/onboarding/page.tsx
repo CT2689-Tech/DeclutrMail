@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ToastHost, toast, tokens } from '@declutrmail/shared';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
 import { SyncGate, type SyncGateEscape } from '@/features/onboarding/sync-gate';
@@ -15,7 +16,7 @@ import {
 import { deriveAuthedStep, type AuthedOnboardingStep } from '@/features/onboarding/derive-step';
 import { StepConnect } from '@/features/onboarding/step-connect';
 import { StepFirstTriage } from '@/features/onboarding/step-first-triage';
-import { StepPresetPick } from '@/features/onboarding/step-preset-pick';
+import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
@@ -32,7 +33,8 @@ const { color, font } = tokens;
  * Onboarding route — the D106 five-step machine.
  *
  *   1 Promise (D107)  → 2 Connect (D108) → 3 Sync gate (D109/D224)
- *   → 4 Starting rules (D110) → 5 First triage (D112) → done (D113:
+ *   → 4 First-review handoff (Free/Plus) or Starting rules (Pro+, D110)
+ *   → 5 First triage (D112) → done (D113:
  *   `onboarded_at` write + redirect to /senders — first-triage IS the
  *   "land somewhere with real data" moment, and post-sync Senders has
  *   real data immediately, which is why /senders stays the exit).
@@ -241,12 +243,14 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       return <SyncGate status={status} />;
     }
     case 'preset-pick':
-      return (
+      return hasCapability(me.tier, 'autopilot') ? (
         <StepPresetPick
           presets={state.data?.presets ?? []}
           onSubmitted={() => void state.refetch()}
           corner={skipCorner}
         />
+      ) : (
+        <StepFirstSenderReview onSubmitted={() => void state.refetch()} corner={skipCorner} />
       );
     case 'first-triage':
       return (

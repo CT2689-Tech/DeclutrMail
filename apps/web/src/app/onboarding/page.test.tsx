@@ -20,6 +20,7 @@ import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
+import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
 let searchParams = new URLSearchParams();
@@ -49,7 +50,7 @@ const me401: FetchStubHandler = {
   respond: () => json({ message: 'unauthenticated' }, 401),
 };
 
-const meAuthed = (readiness: 'ready' | 'syncing'): FetchStubHandler => ({
+const meAuthed = (readiness: 'ready' | 'syncing', tier: TierId = 'pro'): FetchStubHandler => ({
   method: 'GET',
   path: '/api/auth/me',
   respond: () =>
@@ -60,6 +61,8 @@ const meAuthed = (readiness: 'ready' | 'syncing'): FetchStubHandler => ({
           { id: 'mb1', email: 'a@b.com', status: 'active', connectedAt: null, readiness },
         ],
         activeMailboxId: 'mb1',
+        tier,
+        cleanupRemaining: tier === 'free' ? 5 : null,
       },
     }),
 });
@@ -137,7 +140,7 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
 });
 
 describe('onboarding page — authed resume (D106 derivation)', () => {
-  it('ready mailbox + no picks resumes at step 4 (steps 1-3 skipped honestly)', async () => {
+  it('Pro ready mailbox + no picks resumes at the preset picker', async () => {
     installFetchStub([meAuthed('ready'), onboardingState(), syncStatus(true), emptyRules]);
     renderPage();
 
@@ -145,6 +148,45 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue without rules' })).toBeInTheDocument();
   });
+
+  it.each(['free', 'plus'] as const)(
+    '%s continues with no rules and never reads the Pro Autopilot API',
+    async (tier) => {
+      let autopilotReads = 0;
+      let submittedPicks: unknown;
+      installFetchStub([
+        meAuthed('ready', tier),
+        onboardingState(),
+        syncStatus(true),
+        {
+          method: 'GET',
+          path: '/api/autopilot/rules',
+          respond: () => {
+            autopilotReads += 1;
+            return json({ data: [] });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/onboarding/preset-picks',
+          respond: async (req) => {
+            submittedPicks = (await req.json()) as unknown;
+            return json({ data: { presetKeys: [], rulesSeeded: false } });
+          },
+        },
+      ]);
+      renderPage();
+
+      expect(await screen.findByText('Your first sender review is ready.')).toBeInTheDocument();
+      expect(screen.queryByText('Pick your starting rules.')).not.toBeInTheDocument();
+      expect(autopilotReads).toBe(0);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Review my first sender' }));
+
+      await waitFor(() => expect(submittedPicks).toEqual({ presetKeys: [] }));
+      expect(autopilotReads).toBe(0);
+    },
+  );
 
   it('syncing mailbox renders the strict gate at step 3 of 5', async () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
