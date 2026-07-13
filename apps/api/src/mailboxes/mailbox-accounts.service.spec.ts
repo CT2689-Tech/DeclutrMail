@@ -4,12 +4,16 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DrizzleDb } from '../db/db.module.js';
 import type { TokenCryptoService } from '../auth/token-crypto.service.js';
+import {
+  EntitlementsService,
+  type EntitlementsTransaction,
+} from '../common/entitlements/entitlements.service.js';
 import type { GmailWatchService } from './gmail-watch.service.js';
 import { MailboxAccountsService } from './mailbox-accounts.service.js';
 
@@ -46,6 +50,7 @@ describe('MailboxAccountsService.upsertConnect', () => {
       db as unknown as DrizzleDb,
       {} as TokenCryptoService,
       {} as GmailWatchService,
+      new EntitlementsService(db as never),
     );
   });
 
@@ -53,10 +58,13 @@ describe('MailboxAccountsService.upsertConnect', () => {
     await pg.close();
   });
 
-  async function seedOwner(label: string): Promise<{ workspaceId: string; userId: string }> {
+  async function seedOwner(
+    label: string,
+    tier: 'free' | 'plus' | 'pro' = 'free',
+  ): Promise<{ workspaceId: string; userId: string }> {
     const [workspace] = await db
       .insert(workspaces)
-      .values({ name: `${label} workspace` })
+      .values({ name: `${label} workspace`, tier })
       .returning({ id: workspaces.id });
     const [user] = await db
       .insert(users)
@@ -70,6 +78,13 @@ describe('MailboxAccountsService.upsertConnect', () => {
     const challenger = await seedOwner('upsert-challenger');
     const originalCiphertext = Buffer.from('owner-ciphertext');
     const originalDek = Buffer.from('owner-dek');
+    // The ownership refusal must win over this challenger's full Free slot.
+    await db.insert(mailboxAccounts).values({
+      workspaceId: challenger.workspaceId,
+      userId: challenger.userId,
+      provider: 'gmail',
+      providerAccountId: 'challenger-active@example.com',
+    });
     const [mailbox] = await db
       .insert(mailboxAccounts)
       .values({
@@ -86,7 +101,7 @@ describe('MailboxAccountsService.upsertConnect', () => {
 
     await expect(
       db.transaction((tx) =>
-        service.upsertConnect(tx as unknown as DrizzleDb, {
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
           workspaceId: challenger.workspaceId,
           userId: challenger.userId,
           email: '  CONTESTED@EXAMPLE.COM  ',
@@ -133,7 +148,7 @@ describe('MailboxAccountsService.upsertConnect', () => {
       const freshDek = Buffer.from('fresh-dek');
 
       const result = await db.transaction((tx) =>
-        service.upsertConnect(tx as unknown as DrizzleDb, {
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
           workspaceId: owner.workspaceId,
           userId: owner.userId,
           email: `  ${email.toUpperCase()}  `,
@@ -163,6 +178,7 @@ describe('MailboxAccountsService.upsertConnect', () => {
         mailboxId: mailbox!.id,
         workspaceId: owner.workspaceId,
         userId: owner.userId,
+        status: 'active',
       });
     },
   );
@@ -171,7 +187,7 @@ describe('MailboxAccountsService.upsertConnect', () => {
     const owner = await seedOwner('canonical-new');
 
     const result = await db.transaction((tx) =>
-      service.upsertConnect(tx as unknown as DrizzleDb, {
+      service.upsertConnect(tx as unknown as EntitlementsTransaction, {
         workspaceId: owner.workspaceId,
         userId: owner.userId,
         email: '  New.Mailbox@Example.COM  ',
@@ -186,5 +202,153 @@ describe('MailboxAccountsService.upsertConnect', () => {
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, result.id));
     expect(persisted?.providerAccountId).toBe('new.mailbox@example.com');
+  });
+
+  it('rejects a new activation when every inbox slot is already active', async () => {
+    const owner = await seedOwner('at-limit-new');
+    await db.insert(mailboxAccounts).values({
+      workspaceId: owner.workspaceId,
+      userId: owner.userId,
+      provider: 'gmail',
+      providerAccountId: 'already-active@example.com',
+    });
+
+    await expect(
+      db.transaction((tx) =>
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          email: 'new-at-limit@example.com',
+          encryptedRefreshToken: Buffer.from('ciphertext'),
+          dekEncrypted: Buffer.from('dek'),
+          keyVersion: 1,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'INBOX_LIMIT_REACHED', status: 402 });
+
+    await expect(service.findByProviderEmail('new-at-limit@example.com')).resolves.toBeNull();
+  });
+
+  it('leaves an at-limit disconnected mailbox inactive with its credentials unchanged', async () => {
+    const owner = await seedOwner('at-limit-disconnected');
+    await db.insert(mailboxAccounts).values([
+      {
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        provider: 'gmail',
+        providerAccountId: 'active-slot@example.com',
+      },
+      {
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        provider: 'gmail',
+        providerAccountId: 'disconnected-slot@example.com',
+        status: 'disconnected',
+        encryptedRefreshToken: Buffer.from('old-ciphertext'),
+        dekEncrypted: Buffer.from('old-dek'),
+        keyVersion: 1,
+      },
+    ]);
+
+    await expect(
+      db.transaction((tx) =>
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          email: 'disconnected-slot@example.com',
+          encryptedRefreshToken: Buffer.from('new-ciphertext'),
+          dekEncrypted: Buffer.from('new-dek'),
+          keyVersion: 2,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'INBOX_LIMIT_REACHED' });
+
+    await expect(service.findByProviderEmail('disconnected-slot@example.com')).resolves.toEqual(
+      expect.objectContaining({ status: 'disconnected' }),
+    );
+    const [persisted] = await db
+      .select()
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.providerAccountId, 'disconnected-slot@example.com'));
+    expect(Buffer.from(persisted!.encryptedRefreshToken!)).toEqual(Buffer.from('old-ciphertext'));
+    expect(persisted!.keyVersion).toBe(1);
+  });
+
+  it('refreshes an active mailbox even when a downgrade left the workspace over limit', async () => {
+    const owner = await seedOwner('downgraded-active', 'plus');
+    const [target] = await db
+      .insert(mailboxAccounts)
+      .values([
+        {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          provider: 'gmail' as const,
+          providerAccountId: 'downgraded-target@example.com',
+        },
+        {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          provider: 'gmail' as const,
+          providerAccountId: 'downgraded-other@example.com',
+        },
+      ])
+      .returning({ id: mailboxAccounts.id });
+
+    const result = await db.transaction((tx) =>
+      service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+        workspaceId: owner.workspaceId,
+        userId: owner.userId,
+        email: 'downgraded-target@example.com',
+        encryptedRefreshToken: Buffer.from('fresh-ciphertext'),
+        dekEncrypted: Buffer.from('fresh-dek'),
+        keyVersion: 9,
+      }),
+    );
+
+    expect(result.id).toBe(target!.id);
+    const [persisted] = await db
+      .select()
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, target!.id));
+    expect(persisted).toMatchObject({ status: 'active', keyVersion: 9 });
+  });
+
+  it('replays the callback that consumed the final slot without consuming another', async () => {
+    const owner = await seedOwner('final-slot-replay', 'pro');
+    await db.insert(mailboxAccounts).values({
+      workspaceId: owner.workspaceId,
+      userId: owner.userId,
+      provider: 'gmail',
+      providerAccountId: 'replay-primary@example.com',
+    });
+    const connect = (keyVersion: number) =>
+      db.transaction((tx) =>
+        service.upsertConnect(tx as unknown as EntitlementsTransaction, {
+          workspaceId: owner.workspaceId,
+          userId: owner.userId,
+          email: 'replay-final@example.com',
+          encryptedRefreshToken: Buffer.from(`ciphertext-${keyVersion}`),
+          dekEncrypted: Buffer.from(`dek-${keyVersion}`),
+          keyVersion,
+        }),
+      );
+
+    const first = await connect(1);
+    const replay = await connect(2);
+
+    expect(replay.id).toBe(first.id);
+    await expect(service.findByProviderEmail('replay-final@example.com')).resolves.toEqual(
+      expect.objectContaining({ mailboxId: first.id, status: 'active' }),
+    );
+    const active = await db
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .where(
+        and(
+          eq(mailboxAccounts.workspaceId, owner.workspaceId),
+          eq(mailboxAccounts.status, 'active'),
+        ),
+      );
+    expect(active).toHaveLength(2);
   });
 });

@@ -28,11 +28,17 @@ import { AppException } from '../app-exception.js';
  * Cleanup writers pass their transaction so the workspace row lock,
  * quota count, and consuming action-job insert share one atomic unit.
  */
-export type EntitlementsExecutor =
-  DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+export type EntitlementsTransaction = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+export type EntitlementsExecutor = DrizzleDb | EntitlementsTransaction;
 
 /** Workspace identity + tier observed by an entitlement lookup or lock. */
 export interface CleanupWorkspace {
+  workspaceId: string;
+  tier: TierId;
+}
+
+/** Workspace identity + locked tier used by an inbox activation. */
+export interface InboxWorkspace {
   workspaceId: string;
   tier: TierId;
 }
@@ -335,8 +341,40 @@ export class EntitlementsService {
    */
   async assertCanConnectMailbox(workspaceId: string): Promise<void> {
     const tier = await this.tierForWorkspace(workspaceId);
+    await this.assertInboxCapacityForWorkspace({ workspaceId, tier });
+  }
+
+  /**
+   * Serialize inbox activations on the tenant row and read the tier that
+   * actually won that lock. Callers must keep the transaction open through
+   * the mailbox activation that consumes the slot.
+   */
+  async lockInboxWorkspace(
+    workspaceId: string,
+    executor: EntitlementsTransaction,
+  ): Promise<InboxWorkspace | null> {
+    const [workspace] = await executor
+      .select({ workspaceId: workspaces.id, tier: workspaces.tier })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .for('update')
+      .limit(1);
+    return workspace ?? null;
+  }
+
+  /**
+   * Assert capacity using a caller-resolved workspace and executor. The
+   * authoritative activation path passes the same transaction that holds
+   * `lockInboxWorkspace`; the root executor remains useful for OAuth-start
+   * fast-fails where a later transactional recheck is still required.
+   */
+  async assertInboxCapacityForWorkspace(
+    workspace: InboxWorkspace,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<void> {
+    const { workspaceId, tier } = workspace;
     const limit = inboxLimitFor(tier);
-    const [row] = await this.db
+    const [row] = await executor
       .select({ connected: count() })
       .from(mailboxAccounts)
       .where(

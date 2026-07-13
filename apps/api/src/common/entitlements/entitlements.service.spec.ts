@@ -534,6 +534,24 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
   });
+
+  it('locks the workspace tier and checks capacity on the caller transaction', async () => {
+    const queryLog: string[] = [];
+    db = await freshDb(queryLog);
+    svc = new EntitlementsService(db as never);
+    const { workspaceId } = await seedWorkspace(db, 'pro');
+    queryLog.length = 0;
+
+    await db.transaction(async (tx) => {
+      const workspace = await svc.lockInboxWorkspace(workspaceId, tx as never);
+      expect(workspace).toEqual({ workspaceId, tier: 'pro' });
+      await expect(
+        svc.assertInboxCapacityForWorkspace(workspace!, tx as never),
+      ).resolves.toBeUndefined();
+    });
+
+    expect(queryLog.join('\n')).toMatch(/for update/i);
+  });
 });
 
 describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {

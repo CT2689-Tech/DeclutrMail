@@ -18,6 +18,11 @@ import {
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
+import {
+  EntitlementsService,
+  type EntitlementsExecutor,
+  type EntitlementsTransaction,
+} from '../common/entitlements/entitlements.service.js';
 import { GmailWatchService } from './gmail-watch.service.js';
 
 /** Wire shape returned by `list()` for the FE account menu. */
@@ -55,6 +60,7 @@ export class MailboxAccountsService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly tokenCrypto: TokenCryptoService,
     private readonly gmailWatch: GmailWatchService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   /**
@@ -107,13 +113,20 @@ export class MailboxAccountsService {
    */
   async findByProviderEmail(
     email: string,
-  ): Promise<{ mailboxId: string; workspaceId: string; userId: string } | null> {
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<{
+    mailboxId: string;
+    workspaceId: string;
+    userId: string;
+    status: 'active' | 'disconnected';
+  } | null> {
     const providerAccountId = canonicalizeGmailProviderAccountId(email);
-    const [row] = await this.db
+    const [row] = await executor
       .select({
         mailboxId: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
         userId: mailboxAccounts.userId,
+        status: mailboxAccounts.status,
       })
       .from(mailboxAccounts)
       .where(
@@ -132,7 +145,7 @@ export class MailboxAccountsService {
    * can wire up sync state in the same transaction.
    */
   async upsertConnect(
-    tx: DrizzleDb,
+    tx: EntitlementsTransaction,
     input: {
       workspaceId: string;
       userId: string;
@@ -143,6 +156,27 @@ export class MailboxAccountsService {
     },
   ): Promise<{ id: string }> {
     const providerAccountId = canonicalizeGmailProviderAccountId(input.email);
+    // Every transition to `active` linearizes on the workspace row. The
+    // provider re-read must happen after that lock: an OAuth-start lookup is
+    // only a fast-fail and may be stale by callback time.
+    const workspace = await this.entitlements.lockInboxWorkspace(input.workspaceId, tx);
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found.');
+    }
+    const existing = await this.findByProviderEmail(providerAccountId, tx);
+    if (existing && existing.workspaceId !== input.workspaceId) {
+      throw new ConflictException({
+        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
+        message: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
+      });
+    }
+    // An active row already owns its slot, including after a downgrade.
+    // Missing/disconnected rows consume a slot and must be checked while the
+    // workspace lock is held.
+    if (existing?.status !== 'active') {
+      await this.entitlements.assertInboxCapacityForWorkspace(workspace, tx);
+    }
+
     const [row] = await tx
       .insert(mailboxAccounts)
       .values({

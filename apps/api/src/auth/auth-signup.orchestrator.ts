@@ -4,12 +4,9 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
 
-import { mailboxAccounts } from '@declutrmail/db';
 import { ERROR_CODES, type ErrorCode } from '@declutrmail/shared/contracts';
 
-import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
 import {
@@ -72,7 +69,6 @@ export class AuthSignupOrchestrator {
     private readonly tokenCrypto: TokenCryptoService,
     private readonly sessions: SessionsService,
     private readonly csrf: CsrfService,
-    private readonly entitlements: EntitlementsService,
   ) {}
 
   async connect(input: {
@@ -191,40 +187,12 @@ export class AuthSignupOrchestrator {
     // UNIQUE constraint on mailbox_accounts means each Google account
     // can live on exactly one row — if that row's workspace differs
     // from the caller's, reject before encrypting + upserting.
-    const [existing] = await this.db
-      .select({
-        id: mailboxAccounts.id,
-        workspaceId: mailboxAccounts.workspaceId,
-        status: mailboxAccounts.status,
-      })
-      .from(mailboxAccounts)
-      .where(
-        and(eq(mailboxAccounts.provider, 'gmail'), eq(mailboxAccounts.providerAccountId, email)),
-      )
-      .limit(1);
+    const existing = await this.mailboxes.findByProviderEmail(email);
     if (existing && existing.workspaceId !== input.currentWorkspaceId) {
       throw new ConflictException({
         code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
         message: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
       });
-    }
-
-    // Enforce the connected-inbox limit at the ACTIVATION boundary (D19,
-    // D81). `InboxLimitGuard` on /connect-mailbox/start is only a UX
-    // fast-fail; the mutation lives here in the OAuth callback, so a user
-    // who passed /start under-limit and connected later — or who never
-    // hit /start at all — would otherwise overshoot the tier ceiling.
-    // Skip ONLY an already-active reconnect (same workspace, already
-    // counted): re-running OAuth for a live mailbox consumes no new slot.
-    // A brand-new account or the reactivation of a disconnected row DOES
-    // transition a row to active and must respect the limit.
-    // NOTE: a residual narrow race remains — two truly simultaneous
-    // callbacks can both pass this read-then-insert check; a partial
-    // unique index / advisory lock would close it (logged as a founder
-    // follow-up, needs a migration).
-    const isAlreadyActiveReconnect = existing?.status === 'active';
-    if (!isAlreadyActiveReconnect) {
-      await this.entitlements.assertCanConnectMailbox(input.currentWorkspaceId);
     }
 
     const encrypted = await this.tokenCrypto.encrypt(input.refreshToken);

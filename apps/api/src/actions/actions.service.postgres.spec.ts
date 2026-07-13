@@ -5,21 +5,27 @@ import {
   actionJobs,
   mailboxAccounts,
   mailMessages,
+  providerSyncState,
   schema,
   senders,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { AuthSignupOrchestrator } from '../auth/auth-signup.orchestrator.js';
+import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
+import { SyncService } from '../sync/sync.service.js';
+import { UsersService } from '../users/users.service.js';
 import { ActionsService } from './actions.service.js';
 
 /**
- * Runtime proof for the Free lifetime cleanup cap against real Postgres.
+ * Runtime proof for workspace-scoped quota serialization against real
+ * Postgres: the Free cleanup cap and connected-inbox tier limit.
  *
  * PGlite covers each writer's application ordering in actions.service.spec.ts,
  * but its single in-process connection cannot prove that SELECT ... FOR UPDATE
@@ -183,6 +189,84 @@ async function seedQuotaFixture(db: Db): Promise<{
   return { workspaceId: workspace!.id, mailboxId: mailbox!.id, senderId: sender!.id };
 }
 
+async function seedInboxActivationFixture(db: Db): Promise<{
+  workspaceId: string;
+  ownerUserId: string;
+  disconnectedEmail: string;
+  newEmail: string;
+}> {
+  const disconnectedEmail = 'quota-reactivate@gmail.test';
+  const newEmail = 'quota-new@gmail.test';
+  const [workspace] = await db
+    .insert(workspaces)
+    .values({ name: 'Postgres inbox activation race', tier: 'pro' })
+    .returning({ id: workspaces.id });
+  const [owner, reconnectingUser] = await db
+    .insert(users)
+    .values([
+      { workspaceId: workspace!.id, email: 'inbox-race-owner@declutrmail.test' },
+      { workspaceId: workspace!.id, email: disconnectedEmail },
+    ])
+    .returning({ id: users.id });
+  await db.insert(mailboxAccounts).values([
+    {
+      workspaceId: workspace!.id,
+      userId: owner!.id,
+      provider: 'gmail',
+      providerAccountId: 'inbox-race-primary@gmail.test',
+    },
+    {
+      workspaceId: workspace!.id,
+      userId: reconnectingUser!.id,
+      provider: 'gmail',
+      providerAccountId: disconnectedEmail,
+      status: 'disconnected',
+    },
+  ]);
+  return {
+    workspaceId: workspace!.id,
+    ownerUserId: owner!.id,
+    disconnectedEmail,
+    newEmail,
+  };
+}
+
+function authOrchestrator(db: Db, label: string): AuthSignupOrchestrator {
+  const entitlements = new EntitlementsService(db as never);
+  const tokenCrypto = {
+    encrypt: async () => ({
+      ciphertext: Buffer.from(`ciphertext-${label}`),
+      wrappedDek: Buffer.from(`dek-${label}`),
+      keyVersion: 1,
+    }),
+  };
+  const gmailWatch = { watchMailbox: async () => 'watched' };
+  const queue = fakeQueue();
+  const sync = new SyncService(queue as never, queue as never, db as never);
+  const usersService = new UsersService(db as never);
+  const mailboxes = new MailboxAccountsService(
+    db as never,
+    tokenCrypto as never,
+    gmailWatch as never,
+    entitlements,
+  );
+  return new AuthSignupOrchestrator(
+    db as never,
+    usersService,
+    mailboxes,
+    sync,
+    gmailWatch as never,
+    tokenCrypto as never,
+    {
+      issue: async () => ({
+        tokens: { accessToken: `access-${label}`, refreshToken: `refresh-${label}` },
+        sessionId: `session-${label}`,
+      }),
+    } as never,
+    { issue: () => `csrf-${label}` } as never,
+  );
+}
+
 describe('cleanup-cap Postgres URL guard', () => {
   it.each([
     'postgres://postgres@localhost:5432/quota_test',
@@ -200,7 +284,7 @@ describe('cleanup-cap Postgres URL guard', () => {
   });
 });
 
-describe.skipIf(!pgUrl)('ActionsService Free cleanup cap against real Postgres', () => {
+describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', () => {
   const clients: Client[] = [];
   const databases: Db[] = [];
   let controlClient: Client | null = null;
@@ -329,5 +413,126 @@ describe.skipIf(!pgUrl)('ActionsService Free cleanup cap against real Postgres',
     await expect(
       new EntitlementsService(databases[0]! as never).cleanupSummary(workspaceId),
     ).resolves.toEqual({ tier: 'free', limit: 5, used: 5, remaining: 0 });
+  });
+
+  it('admits only one distinct inbox activation when one Pro slot remains', async () => {
+    const contenderPids = await Promise.all(
+      clients.slice(1).map(async (client) => {
+        const [row] = await client<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
+        return row!.pid;
+      }),
+    );
+    expect(new Set(contenderPids).size).toBe(2);
+
+    const fixture = await seedInboxActivationFixture(databases[0]!);
+    const login = authOrchestrator(databases[1]!, 'login');
+    const add = authOrchestrator(databases[2]!, 'add');
+
+    // Both OAuth callbacks observed one available slot before either entered
+    // the consuming transaction. These are deliberately only fast-fails.
+    await Promise.all([
+      new EntitlementsService(databases[1]! as never).assertCanConnectMailbox(fixture.workspaceId),
+      new EntitlementsService(databases[2]! as never).assertCanConnectMailbox(fixture.workspaceId),
+    ]);
+
+    await controlClient!.unsafe('BEGIN');
+    await controlClient!`SELECT id FROM workspaces WHERE id = ${fixture.workspaceId} FOR UPDATE`;
+
+    const operations = [
+      () =>
+        login.connect({
+          email: fixture.disconnectedEmail,
+          refreshToken: 'login-refresh-token',
+          ipAddress: null,
+          userAgent: null,
+        }),
+      () =>
+        add.addMailbox({
+          currentUserId: fixture.ownerUserId,
+          currentWorkspaceId: fixture.workspaceId,
+          email: fixture.newEmail,
+          refreshToken: 'add-refresh-token',
+        }),
+    ] as const;
+    const pendingResults = Promise.allSettled(operations.map((operation) => operation()));
+
+    let contentionFailure: unknown;
+    let releaseFailure: unknown;
+    try {
+      await waitForWorkspaceLockContention(controlClient!, contenderPids);
+    } catch (error) {
+      contentionFailure = error;
+    } finally {
+      try {
+        await controlClient!.unsafe('COMMIT');
+      } catch (error) {
+        releaseFailure = error;
+        try {
+          await controlClient!.end({ timeout: 5 });
+        } catch {
+          // Preserve the original COMMIT failure.
+        }
+        controlClient = null;
+      }
+    }
+
+    const results = await pendingResults;
+    if (contentionFailure) throw contentionFailure;
+    if (releaseFailure) throw releaseFailure;
+
+    const winnerIndex = results.findIndex((result) => result.status === 'fulfilled');
+    expect(winnerIndex).toBeGreaterThanOrEqual(0);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const [loser] = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    expect(loser?.reason).toMatchObject({ code: 'INBOX_LIMIT_REACHED', status: 402 });
+
+    const activeRows = await databases[0]!
+      .select({ id: mailboxAccounts.id, providerAccountId: mailboxAccounts.providerAccountId })
+      .from(mailboxAccounts)
+      .where(
+        and(
+          eq(mailboxAccounts.workspaceId, fixture.workspaceId),
+          eq(mailboxAccounts.status, 'active'),
+        ),
+      );
+    expect(activeRows).toHaveLength(2);
+    expect(
+      activeRows.filter((row) =>
+        [fixture.disconnectedEmail, fixture.newEmail].includes(row.providerAccountId),
+      ),
+    ).toHaveLength(1);
+
+    const candidateRows = await databases[0]!
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .where(
+        inArray(mailboxAccounts.providerAccountId, [fixture.disconnectedEmail, fixture.newEmail]),
+      );
+    const syncRows = await databases[0]!
+      .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+      .from(providerSyncState)
+      .where(
+        inArray(
+          providerSyncState.mailboxAccountId,
+          candidateRows.map((row) => row.id),
+        ),
+      );
+    expect(syncRows).toHaveLength(1);
+
+    // A duplicate callback for the winner is an active reconnect, not a new
+    // slot claim, so it remains successful at capacity.
+    await expect(operations[winnerIndex]!()).resolves.toBeDefined();
+    const activeAfterReplay = await databases[0]!
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .where(
+        and(
+          eq(mailboxAccounts.workspaceId, fixture.workspaceId),
+          eq(mailboxAccounts.status, 'active'),
+        ),
+      );
+    expect(activeAfterReplay).toHaveLength(2);
   });
 });

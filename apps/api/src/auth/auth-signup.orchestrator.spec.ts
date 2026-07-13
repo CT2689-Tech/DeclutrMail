@@ -11,7 +11,6 @@ import type { SyncService } from '../sync/sync.service.js';
 import type { TokenCryptoService } from './token-crypto.service.js';
 import type { SessionsService } from './sessions.service.js';
 import type { CsrfService } from './csrf.service.js';
-import type { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { EmailRaceLostError } from '../users/users.service.js';
 
 /**
@@ -42,8 +41,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
   let tokenCrypto: { encrypt: ReturnType<typeof vi.fn> };
   let sessions: { issue: ReturnType<typeof vi.fn> };
   let csrf: { issue: ReturnType<typeof vi.fn> };
-  let entitlements: { assertCanConnectMailbox: ReturnType<typeof vi.fn> };
-  let db: { transaction: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
+  let db: { transaction: ReturnType<typeof vi.fn> };
   let orchestrator: AuthSignupOrchestrator;
 
   beforeEach(() => {
@@ -72,15 +70,11 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       issue: vi.fn().mockResolvedValue({ tokens: { accessToken: 'a' }, sessionId: 's' }),
     };
     csrf = { issue: vi.fn().mockReturnValue('csrf-token') };
-    entitlements = { assertCanConnectMailbox: vi.fn().mockResolvedValue(undefined) };
-    // `transaction(cb)` just runs the callback with a stub tx. `select`
-    // backs addMailbox's cross-workspace ownership probe — defaults to
-    // "no existing row" (no conflict); individual tests override it.
+    // `transaction(cb)` just runs the callback with a stub tx. The mailbox
+    // service mock backs both identity resolution and addMailbox's early
+    // ownership/status fast-fail.
     db = {
       transaction: vi.fn(async (cb: (tx: unknown) => unknown) => cb({})),
-      select: vi.fn(() => ({
-        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
-      })),
     };
 
     orchestrator = new AuthSignupOrchestrator(
@@ -92,7 +86,6 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       tokenCrypto as unknown as TokenCryptoService,
       sessions as unknown as SessionsService,
       csrf as unknown as CsrfService,
-      entitlements as unknown as EntitlementsService,
     );
   });
 
@@ -409,12 +402,11 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     });
 
     it('rejects a Gmail already owned by a different workspace without touching preferences', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([{ id: 'mailbox-x', workspaceId: 'w-other' }]),
-          }),
-        }),
+      mailboxes.findByProviderEmail.mockResolvedValueOnce({
+        mailboxId: 'mailbox-x',
+        workspaceId: 'w-other',
+        userId: 'u-other',
+        status: 'active',
       });
 
       await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow();
@@ -422,68 +414,22 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(users.patchPreferences).not.toHaveBeenCalled();
     });
 
-    it('enforces the inbox limit at the activation boundary for a NEW connection', async () => {
-      // Default select → no existing row → a brand-new account that
-      // transitions a row to active, so the limit MUST be checked.
-      await orchestrator.addMailbox(ADD_INPUT);
-      expect(entitlements.assertCanConnectMailbox).toHaveBeenCalledWith('w-home');
-    });
+    it.each(['active', 'disconnected'] as const)(
+      'delegates a same-workspace %s callback to the transactional activation gate',
+      async (status) => {
+        mailboxes.findByProviderEmail.mockResolvedValueOnce({
+          mailboxId: 'mailbox-b',
+          workspaceId: 'w-home',
+          userId: 'u-owner',
+          status,
+        });
 
-    it('402s at the limit — no token encryption, no upsert, no preference write', async () => {
-      entitlements.assertCanConnectMailbox.mockRejectedValueOnce(new Error('INBOX_LIMIT_REACHED'));
-      await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow('INBOX_LIMIT_REACHED');
-      expect(tokenCrypto.encrypt).not.toHaveBeenCalled();
-      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
-      expect(users.patchPreferences).not.toHaveBeenCalled();
-    });
-
-    it('skips the limit check for an already-active reconnect (no new slot consumed)', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'active' }]),
-          }),
-        }),
-      });
-      const result = await orchestrator.addMailbox(ADD_INPUT);
-      expect(result).toEqual({ mailboxId: 'mailbox-new' });
-      expect(entitlements.assertCanConnectMailbox).not.toHaveBeenCalled();
-      expect(mailboxes.upsertConnect).toHaveBeenCalled();
-    });
-
-    it('enforces the activation-boundary limit for an existing disconnected row', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'disconnected' }]),
-          }),
-        }),
-      });
-
-      await orchestrator.addMailbox(ADD_INPUT);
-
-      expect(entitlements.assertCanConnectMailbox).toHaveBeenCalledWith('w-home');
-      expect(mailboxes.upsertConnect).toHaveBeenCalled();
-    });
-
-    it('does not reactivate a disconnected row after the activation-boundary limit fails', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'disconnected' }]),
-          }),
-        }),
-      });
-      entitlements.assertCanConnectMailbox.mockRejectedValueOnce(new Error('INBOX_LIMIT_REACHED'));
-
-      await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow('INBOX_LIMIT_REACHED');
-
-      expect(tokenCrypto.encrypt).not.toHaveBeenCalled();
-      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
-      expect(users.patchPreferences).not.toHaveBeenCalled();
-    });
+        await expect(orchestrator.addMailbox(ADD_INPUT)).resolves.toEqual({
+          mailboxId: 'mailbox-new',
+        });
+        expect(tokenCrypto.encrypt).toHaveBeenCalled();
+        expect(mailboxes.upsertConnect).toHaveBeenCalled();
+      },
+    );
   });
 });
