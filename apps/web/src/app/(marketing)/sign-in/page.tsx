@@ -11,6 +11,13 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/sign-in',
 });
 
-export default function SignInPage() {
-  return <AuthEntry />;
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const authResult = params.auth_result === 'inbox_limit' ? 'inbox_limit' : undefined;
+
+  return <AuthEntry {...(authResult ? { authResult } : {})} />;
 }

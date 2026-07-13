@@ -8,7 +8,7 @@ import {
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl } from '../landing/urls';
 
-export function AuthEntry() {
+export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
   return (
     <div className="dm-auth-entry">
       <section className="dm-auth-entry-card">
@@ -19,6 +19,20 @@ export function AuthEntry() {
             Gmail remains where you read, reply, search, and compose. DeclutrMail indexes a narrow
             set of metadata so you can review and act by sender.
           </p>
+
+          {authResult === 'inbox_limit' ? (
+            <div className="dm-auth-entry-alert" role="alert">
+              <strong>This Gmail can’t reconnect yet.</strong>
+              <p>
+                This Gmail is disconnected, and its workspace’s inbox limit is already in use. Sign
+                in with another Gmail that is still connected, then free an inbox slot or review
+                your plan options before reconnecting this one.
+              </p>
+              <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
+                Compare plans →
+              </TrackedCta>
+            </div>
+          ) : null}
 
           <div className="dm-auth-entry-steps">
             <div>

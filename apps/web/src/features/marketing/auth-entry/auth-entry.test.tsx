@@ -24,4 +24,15 @@ describe('AuthEntry CTA tracking', () => {
       placement: 'final',
     });
   });
+
+  it('tracks the inbox-limit recovery pricing link', () => {
+    render(<AuthEntry authResult="inbox_limit" />);
+
+    fireEvent.click(screen.getByRole('link', { name: /Compare plans/i }));
+
+    expect(track).toHaveBeenCalledWith('landing_cta_clicked', {
+      cta: 'see_pricing',
+      placement: 'hero',
+    });
+  });
 });

@@ -19,6 +19,8 @@ import {
   BETA_DENIED_PATH,
   BETA_DENIED_REASON,
   BETA_DENIED_REASON_PARAM,
+  type ErrorCode,
+  isErrorCode,
 } from '@declutrmail/shared/contracts';
 
 import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
@@ -482,6 +484,29 @@ export class GoogleOAuthController {
         });
         res.redirect(302, `${webBase}/onboarding?${query.toString()}`);
       } catch (err) {
+        const errorCode = structuredErrorCode(err);
+        // A disconnected target or a normal add consumes an inbox slot.
+        // The UX fast-fail happened before Google consent, but the service
+        // is authoritative and can still deny a callback after a concurrent
+        // activation. Return that expected race to the same closed Settings
+        // recovery instead of stranding the browser on API JSON.
+        const isQuotaDeniedActivation =
+          errorCode === 'INBOX_LIMIT_REACHED' &&
+          (!recoveryState || recoveryState.reactivateMailboxId !== undefined);
+        if (isQuotaDeniedActivation) {
+          void this.securityEvents.record({
+            eventType: 'login.failure',
+            severity: 'warning',
+            userId: cookieState.userId,
+            workspaceId: cookieState.workspaceId,
+            sourceIp: ipAddress,
+            userAgent,
+            payload: { provider: 'google', mode: 'connect', reason: errorCode },
+          });
+          this.redirectConnectStartResult(res, webBase, 'inbox_limit');
+          return;
+        }
+
         // Cross-workspace ownership refusal — bounce back with a flag
         // the FE can read into a toast.
         if (recoveryState) {
@@ -497,13 +522,11 @@ export class GoogleOAuthController {
           this.redirectReconnectResult(res, webBase, getRecoveryMailboxId(recoveryState), 'failed');
           return;
         }
-        const message =
-          err instanceof Error ? err.message : 'Failed to connect the additional mailbox.';
-        this.logger.warn(`connect-mailbox failed for ${email}: ${message}`);
-        const code =
-          typeof (err as { response?: { code?: string } }).response?.code === 'string'
-            ? (err as { response: { code: string } }).response.code
-            : 'connect_failed';
+        // Neither the verified Gmail identity nor an exception message is
+        // safe log material. Only the registry-validated code can leave the
+        // controller through the audit payload or redirect query.
+        this.logger.warn('Gmail mailbox connection failed.');
+        const code = errorCode ?? 'connect_failed';
         // D181 emit — the only payload field we trust is the controlled
         // `code` string extracted from the orchestrator's structured
         // error response (a closed `ErrorCode` enum); never the raw
@@ -553,6 +576,22 @@ export class GoogleOAuthController {
           302,
           `${webBase}${BETA_DENIED_PATH}?${BETA_DENIED_REASON_PARAM}=${BETA_DENIED_REASON}`,
         );
+        return;
+      }
+      if (structuredErrorCode(err) === 'INBOX_LIMIT_REACHED') {
+        // `connect()` can reactivate an existing disconnected identity. A
+        // concurrent activation may fill the workspace after consent, and
+        // this flow has not issued a session yet. Keep recovery public and
+        // closed so the user never lands on a raw API exception or loops
+        // through the authenticated Settings shell.
+        void this.securityEvents.record({
+          eventType: 'login.failure',
+          severity: 'warning',
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', reason: 'INBOX_LIMIT_REACHED' },
+        });
+        res.redirect(302, `${webBase}/sign-in?auth_result=inbox_limit`);
         return;
       }
       // D181 emit — the orchestrator itself failed (DB outage during
@@ -701,6 +740,13 @@ export class GoogleOAuthController {
     );
   }
 
+  /** Existing closed Settings recovery shared with the pre-consent filter. */
+  private redirectConnectStartResult(res: Response, webBase: string, result: 'inbox_limit'): void {
+    // The callback consumes the state immediately before the mutation.
+    const query = new URLSearchParams({ connect_start_result: result });
+    res.redirect(302, `${webBase}/settings?${query.toString()}#mailboxes`);
+  }
+
   /** Resolve a mailbox in the expected state, owned by both signed authorities. */
   private async findRecoveryTarget(
     userId: string,
@@ -774,6 +820,38 @@ function getRecoveryRequiredStatus(state: TargetedRecoveryState): 'active' | 'di
 /** Google identity comparison only; stored canonical email wins on mutation. */
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/**
+ * Read only a registry-backed domain code from known exception shapes.
+ *
+ * AppException exposes `code` directly, while Nest HttpException bodies
+ * expose it through `getResponse()` (and some tests/adapters retain the
+ * structural `response` field). Every access is guarded: an arbitrary thrown
+ * value, hostile getter, or unregistered string collapses to null and never
+ * reaches logs, audits, or a redirect.
+ */
+function structuredErrorCode(error: unknown): ErrorCode | null {
+  if (typeof error !== 'object' || error === null) return null;
+
+  try {
+    const candidate = error as {
+      code?: unknown;
+      getResponse?: (() => unknown) | undefined;
+      response?: unknown;
+    };
+    if (isErrorCode(candidate.code)) return candidate.code;
+
+    const response =
+      typeof candidate.getResponse === 'function'
+        ? candidate.getResponse.call(error)
+        : candidate.response;
+    if (typeof response !== 'object' || response === null) return null;
+    const code = (response as { code?: unknown }).code;
+    return isErrorCode(code) ? code : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

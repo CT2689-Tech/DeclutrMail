@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { BadRequestException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,7 @@ import {
   RATE_LIMIT_METADATA,
   type RateLimitOptions,
 } from '../common/rate-limit/rate-limit.types.js';
+import { AppException } from '../common/app-exception.js';
 import type { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
@@ -470,6 +471,53 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/onboarding?mailbox=mailbox-new`);
   });
 
+  it.each([
+    [
+      'AppException code',
+      () =>
+        new AppException({
+          code: 'INBOX_LIMIT_REACHED',
+          message: 'private direct-code detail for leaked@example.com',
+        }),
+    ],
+    [
+      'Nest HttpException response code',
+      () =>
+        new HttpException(
+          {
+            code: 'INBOX_LIMIT_REACHED',
+            message: 'private response-code detail for leaked@example.com',
+          },
+          402,
+        ),
+    ],
+  ])('returns a normal add quota denial from %s to Settings', async (_label, errorFactory) => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    orchestrator.addMailbox.mockRejectedValueOnce(errorFactory());
+
+    await controller.callback(reqWithState(), res as unknown as Response, 'auth-code', NONCE);
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/settings?connect_start_result=inbox_limit#mailboxes`,
+    );
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'INBOX_LIMIT_REACHED' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    const externalOutput = JSON.stringify({
+      redirects: res.redirect.mock.calls,
+      audits: securityEvents.record.mock.calls,
+      logs: warn.mock.calls,
+    });
+    expect(externalOutput).not.toContain('private');
+    expect(externalOutput).not.toContain('leaked@example.com');
+    warn.mockRestore();
+  });
+
   it('marks a targeted reconnect success while using the stored canonical email', async () => {
     mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
     oauth.exchangeCode.mockResolvedValueOnce({
@@ -527,6 +575,57 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
       `${webBase}/onboarding?mailbox=mailbox-new&reconnect=1`,
     );
     expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  });
+
+  it('returns an authoritative reactivation quota denial to the shared Settings recovery', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(disconnectedReactivateTarget());
+    orchestrator.addMailbox.mockRejectedValueOnce(
+      new AppException({ code: 'INBOX_LIMIT_REACHED' }),
+    );
+
+    await controller.callback(
+      reqWithState(undefined, REACTIVATE_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/settings?connect_start_result=inbox_limit#mailboxes`,
+    );
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'INBOX_LIMIT_REACHED' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(res.redirect).not.toHaveBeenCalledWith(
+      302,
+      settingsResultUrl('failed', REACTIVATE_MAILBOX_ID),
+    );
+  });
+
+  it('keeps an impossible active-reconnect quota denial on its closed reconnect result', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+    orchestrator.addMailbox.mockRejectedValueOnce(
+      new AppException({ code: 'INBOX_LIMIT_REACHED' }),
+    );
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(302, settingsResultUrl('failed'));
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_failed' },
+      }),
+    );
   });
 
   it.each([
@@ -1406,6 +1505,87 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         payload: { provider: 'google', reason: 'orchestrator_failed' },
       }),
     );
+  });
+
+  it.each([
+    [
+      'AppException code',
+      () =>
+        new AppException({
+          code: 'INBOX_LIMIT_REACHED',
+          message: 'private disconnected mailbox detail for leaked@example.com',
+        }),
+    ],
+    [
+      'Nest HttpException response code',
+      () =>
+        new HttpException(
+          {
+            code: 'INBOX_LIMIT_REACHED',
+            message: 'private nested response detail for leaked@example.com',
+          },
+          402,
+        ),
+    ],
+  ])(
+    'returns a login-mode quota denial from %s to the public sign-in recovery',
+    async (_label, errorFactory) => {
+      orchestrator.connect.mockRejectedValueOnce(errorFactory());
+
+      await expect(
+        controller.callback(
+          req({ cookies: loginCookie() }),
+          res as unknown as Response,
+          'code',
+          NONCE,
+        ),
+      ).resolves.toBeUndefined();
+
+      const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+      expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/sign-in?auth_result=inbox_limit`);
+      expect(securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: { provider: 'google', reason: 'INBOX_LIMIT_REACHED' },
+        }),
+      );
+      expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+      expect(res.cookie).not.toHaveBeenCalled();
+      const externalOutput = JSON.stringify({
+        redirects: res.redirect.mock.calls,
+        audits: securityEvents.record.mock.calls,
+      });
+      expect(externalOutput).not.toContain('private');
+      expect(externalOutput).not.toContain('leaked@example.com');
+    },
+  );
+
+  it('does not trust an unregistered response code in a redirect or audit', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    orchestrator.addMailbox.mockRejectedValueOnce({
+      response: { code: 'PRIVATE_leaked@example.com' },
+      message: 'private exception detail',
+    });
+
+    await controller.callback(
+      req({ cookies: connectCookie() }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/triage?connect_error=connect_failed`,
+    );
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'connect_failed' },
+      }),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('private');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('leaked@example.com');
+    warn.mockRestore();
   });
 
   it('records login.success { mode: login, isNewSignup } on a successful login-mode callback', async () => {

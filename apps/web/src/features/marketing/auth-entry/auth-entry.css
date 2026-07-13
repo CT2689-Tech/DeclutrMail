@@ -44,6 +44,35 @@
   line-height: 1.7;
 }
 
+.dm-auth-entry-alert {
+  display: grid;
+  gap: 6px;
+  max-width: 580px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--dm-amber);
+  border-radius: 9px;
+  background: var(--dm-amber-bg);
+  color: var(--dm-fg);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.dm-auth-entry-alert p {
+  margin: 0;
+  color: var(--dm-fg-soft);
+}
+
+.dm-auth-entry-alert a {
+  width: fit-content;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--dm-primary);
+  font-weight: 650;
+  text-decoration: none;
+}
+
 .dm-auth-entry-steps {
   display: grid;
   gap: 15px;
