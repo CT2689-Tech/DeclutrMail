@@ -78,7 +78,8 @@ export function ActivityScreen() {
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
 
-  const filters = readFiltersFromUrl(params);
+  const dateFilters = readDateFiltersFromUrl(params);
+  const filters = readFiltersFromUrl(params, dateFilters);
   const groupMode = readGroupMode(params.get('group'));
 
   // Layout breakpoint resolved ONCE at the screen root and threaded down
@@ -92,7 +93,10 @@ export function ActivityScreen() {
   // the user sees the row appear without manual refresh on
   // mid-poll navigation (flow-completeness-auditor 2026-06-05).
   const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
-  const query = useActivity(filters, { hasInFlightAction: inFlightActionPolls > 0 });
+  const query = useActivity(filters, {
+    hasInFlightAction: inFlightActionPolls > 0,
+    enabled: !dateFilters.isInvalid,
+  });
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -177,6 +181,7 @@ export function ActivityScreen() {
         filters.senderQuery,
         filters.dateFrom,
         filters.dateTo,
+        dateFilters.isInvalid,
       ]),
     [
       filters.window,
@@ -185,6 +190,7 @@ export function ActivityScreen() {
       filters.senderQuery,
       filters.dateFrom,
       filters.dateTo,
+      dateFilters.isInvalid,
     ],
   );
   useEffect(() => {
@@ -206,7 +212,10 @@ export function ActivityScreen() {
     });
   }, []);
 
-  if (query.isLoading) return <LoadingState />;
+  const invalidActiveFilters =
+    dateFilters.isInvalid ||
+    (isActivityFilterValidationError(query.error) && !query.isFetchNextPageError);
+  if (query.isLoading && !invalidActiveFilters) return <LoadingState />;
   // A known Activity date-validation 400 means the CURRENT filters are
   // invalid (e.g. dateFrom > dateTo). Other 4xx statuses remain normal
   // recoverable failures; auth, permissions, missing resources, and rate
@@ -218,8 +227,6 @@ export function ActivityScreen() {
   // Transient failures with retained data leave the current rows in place.
   // A next-page validation failure keeps its loaded rows + the inline amber
   // retry (D211); it must not escalate to the filter-local error.
-  const invalidActiveFilters =
-    isActivityFilterValidationError(query.error) && !query.isFetchNextPageError;
   if (query.isError && !query.data && !invalidActiveFilters) {
     // A cold transient/server failure has no useful page data or filters
     // to preserve. A failed fetchNextPage keeps its loaded rows and renders
@@ -265,19 +272,21 @@ export function ActivityScreen() {
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
-      <MetricsHeader
-        windowLabel={windowToLabel(
-          filters.window ?? '30d',
-          filters.dateFrom ?? null,
-          filters.dateTo ?? null,
-        )}
-        stats={stats ?? null}
-        allTimeStats={allTimeStats ?? null}
-        isWindowAllTime={
-          (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
-        }
-        isMobile={isMobile}
-      />
+      {!invalidActiveFilters && (
+        <MetricsHeader
+          windowLabel={windowToLabel(
+            filters.window ?? '30d',
+            filters.dateFrom ?? null,
+            filters.dateTo ?? null,
+          )}
+          stats={stats ?? null}
+          allTimeStats={allTimeStats ?? null}
+          isWindowAllTime={
+            (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
+          }
+          isMobile={isMobile}
+        />
+      )}
 
       <FilterToolbar
         source={filters.source ?? 'all'}
@@ -303,6 +312,8 @@ export function ActivityScreen() {
           error={query.error}
           onRecover={() => writeUrl({ date_from: null, date_to: null })}
           recoveryLabel="Reset filters"
+          isFilterError
+          embedded
         />
       ) : (
         <>
@@ -2292,24 +2303,35 @@ function ActivityErrorState({
   error,
   onRecover,
   recoveryLabel = 'Try again',
+  isFilterError = false,
+  embedded = false,
 }: {
   error: unknown;
   onRecover: () => void;
   recoveryLabel?: string;
+  isFilterError?: boolean;
+  embedded?: boolean;
 }) {
   // Distinguish the Activity controller's known date validation from
   // transport/domain failures. A generic "Try again in a moment" on
   // `dateFrom > dateTo` would loop the user back into the same broken
   // filter forever — flow-completeness-auditor 2026-06-05.
-  const isClientInput = isActivityFilterValidationError(error);
+  const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? "The selected filters aren't valid together. Make sure From is earlier than To, or reset the date range and try again."
+    ? 'Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
     : error instanceof ApiError
       ? `We couldn't load your activity (${error.status}). Try again in a moment.`
       : "We couldn't load your activity right now. Try again in a moment.";
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
+    <div
+      style={{
+        ...(embedded ? {} : { padding: '20px 24px 28px' }),
+        width: '100%',
+        maxWidth: 720,
+        fontFamily: font.sans,
+      }}
+    >
       <RecoverableErrorState
         title={title}
         description={message}
@@ -2451,14 +2473,36 @@ const ALLOWED_VERBS: ReadonlySet<ActivityVerbFilterWire> = new Set([
   'followup-dismiss',
 ]);
 
-function readFiltersFromUrl(params: URLSearchParams): ActivityFilters {
+interface ActivityDateFilters {
+  dateFrom: string | null;
+  dateTo: string | null;
+  isInvalid: boolean;
+}
+
+function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
+  const rawDateFrom = params.get('date_from');
+  const rawDateTo = params.get('date_to');
+  const dateFrom = readIsoDate(rawDateFrom);
+  const dateTo = readIsoDate(rawDateTo);
+  const hasMalformedDate =
+    (rawDateFrom !== null && rawDateFrom !== '' && dateFrom === null) ||
+    (rawDateTo !== null && rawDateTo !== '' && dateTo === null);
+  const hasReversedRange =
+    dateFrom !== null && dateTo !== null && Date.parse(dateFrom) >= Date.parse(dateTo);
+  return { dateFrom, dateTo, isInvalid: hasMalformedDate || hasReversedRange };
+}
+
+function readFiltersFromUrl(
+  params: URLSearchParams,
+  dates: ActivityDateFilters = readDateFiltersFromUrl(params),
+): ActivityFilters {
   return {
     window: readWindow(params.get('window')),
     source: readSource(params.get('source')),
     verbs: readVerbs(params.get('verb')),
     senderQuery: (params.get('sender_q') ?? '').trim(),
-    dateFrom: readIsoDate(params.get('date_from')),
-    dateTo: readIsoDate(params.get('date_to')),
+    dateFrom: dates.dateFrom,
+    dateTo: dates.dateTo,
   };
 }
 

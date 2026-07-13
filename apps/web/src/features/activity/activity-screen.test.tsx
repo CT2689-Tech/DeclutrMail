@@ -142,8 +142,8 @@ describe('ActivityScreen — edge states', () => {
     expect(requests).toBe(2);
   });
 
-  it('keeps filter context on a 4xx and resets invalid dates without refetching them', async () => {
-    currentSearch = 'date_from=2026-05-20&date_to=2026-05-01&source=manual&group=sender';
+  it('keeps filter context on a controller validation 400 and resets its date', async () => {
+    currentSearch = 'date_from=2026-05-20&source=manual&group=sender';
     let requests = 0;
     installFetchStub([
       {
@@ -155,7 +155,7 @@ describe('ActivityScreen — edge states', () => {
             JSON.stringify({
               error: {
                 code: 'BAD_REQUEST',
-                message: 'date_from must be earlier than date_to.',
+                message: 'date_from must be a valid ISO-8601 date.',
               },
             }),
             {
@@ -184,6 +184,130 @@ describe('ActivityScreen — edge states', () => {
 
     expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
     expect(requests).toBe(1);
+  });
+
+  it('blocks a malformed deep link until reset, then fetches clean filters on rerender', async () => {
+    currentSearch = 'date_from=not-a-date&source=manual&group=sender';
+    const requestedUrls: URL[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requestedUrls.push(url);
+          return jsonOk({
+            data: [row({})],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'manual',
+            },
+          });
+        },
+      },
+    ]);
+    const view = renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requestedUrls).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
+    expect(alert.parentElement).not.toHaveStyle({ padding: '20px 24px 28px' });
+
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reset filters' }));
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
+    expect(requestedUrls).toHaveLength(0);
+
+    // next/navigation owns the real URL update. Mirror that transition in
+    // the test and rerender with the same query client so the disabled query
+    // becomes enabled without losing its cache identity.
+    currentSearch = 'source=manual&group=sender';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+
+    await waitFor(() => expect(requestedUrls).toHaveLength(1));
+    expect(requestedUrls[0]!.searchParams.get('source')).toBe('manual');
+    expect(requestedUrls[0]!.searchParams.has('date_from')).toBe(false);
+    expect(requestedUrls[0]!.searchParams.has('date_to')).toBe(false);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(await screen.findByText('Sender One')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('blocks a reversed valid date range before making an API request', async () => {
+    currentSearch = 'date_from=2026-05-20&date_to=2026-05-01';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: [], meta: {} });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requests).toBe(0);
+  });
+
+  it('hides cached rows, export data, and bulk actions when a raw date becomes malformed', async () => {
+    currentSearch = 'source=manual';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({
+            data: [row({})],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'manual',
+            },
+          });
+        },
+      },
+    ]);
+    const view = renderScreen();
+
+    expect(await screen.findByText('Sender One')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
+    expect(screen.getByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+    expect(requests).toBe(1);
+
+    currentSearch = 'date_from=still-not-a-date&source=manual';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+
+    await screen.findByRole('alert');
+    expect(requests).toBe(1);
+    expect(screen.queryByText('Sender One')).toBeNull();
+    expect(screen.queryByRole('status', { name: 'Activity metrics' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Bulk actions' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
   });
 
   it('does not mislabel a non-validation 4xx as a filter problem', async () => {
