@@ -64,4 +64,37 @@ describe('useMailboxesHealth', () => {
     unmount();
     client.clear();
   });
+
+  it('defers mailbox health reads until an optional consumer is enabled', async () => {
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: ready('2026-07-12T10:00:00.000Z') });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const { result, rerender, unmount } = renderHook(
+      ({ enabled }) => useMailboxesHealth([MAILBOX], { enabled }),
+      {
+        initialProps: { enabled: false },
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      },
+    );
+
+    expect(requests).toBe(0);
+    expect(result.current[MAILBOX.id]).toBeUndefined();
+
+    rerender({ enabled: true });
+    await waitFor(() => {
+      expect(requests).toBe(1);
+      expect(result.current[MAILBOX.id]?.lastSyncedAt).toBe('2026-07-12T10:00:00.000Z');
+    });
+    unmount();
+    client.clear();
+  });
 });

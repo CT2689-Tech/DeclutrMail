@@ -11,6 +11,12 @@
  * ones, and their health ("Disconnected") already rides on
  * `me.mailboxes[].status`.
  *
+ * `opts.enabled` lets disclosure surfaces defer these per-mailbox reads
+ * while hidden. It defaults true so Settings retains continuous health;
+ * AccountMenu enables only while its dialog is open. Existing cache data
+ * remains readable while disabled, and the selected mailbox's open-state
+ * observer dedupes with app-shell status consumers by query key.
+ *
  * `needsReconnect` derivation: the Gmail OAuth grant is gone when the
  * worker's classified error is `InvalidGrantError` (see
  * `packages/workers/src/worker-errors.ts` — "the mailbox must be
@@ -57,6 +63,7 @@ export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
  */
 export function useMailboxesHealth(
   mailboxes: MeMailbox[],
+  opts: { enabled?: boolean } = {},
 ): Record<string, MailboxHealth | undefined> {
   const active = mailboxes.filter((m) => m.status === 'active');
   const results = useQueries({
@@ -75,6 +82,10 @@ export function useMailboxesHealth(
         syncRefetchInterval(query.state.data),
       refetchOnWindowFocus: true,
       staleTime: 0,
+      // AccountMenu keeps its panel closed most of the time; callers can
+      // defer non-selected mailbox observers until the health UI is visible.
+      // Settings omits this option and remains continuously enabled.
+      enabled: opts.enabled ?? true,
     })),
   });
 
