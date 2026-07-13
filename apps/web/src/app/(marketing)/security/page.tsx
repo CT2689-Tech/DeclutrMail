@@ -33,7 +33,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = '2026-07-13';
 
 const TOC = [
   { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
@@ -72,8 +72,10 @@ export default function SecurityPage() {
           ))}
         </ul>
         <p>
-          Because bodies and attachments are never in our systems, the most sensitive content in
-          your mailbox cannot leak from us — it was never there.
+          Because full message bodies and attachments are never in our systems, that content cannot
+          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
+          information; we store those bounded fields as disclosed above and protect them
+          accordingly.
         </p>
       </LegalSection>
 

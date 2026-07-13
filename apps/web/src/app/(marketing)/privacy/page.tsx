@@ -32,7 +32,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-07-12';
+const LAST_UPDATED = '2026-07-13';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -336,9 +336,10 @@ export default function PrivacyPolicyPage() {
         <p>
           All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
           envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. And because we never store full message bodies or attachments, the most sensitive
-          content in your mailbox is simply not in our systems to begin with — that is the point of
-          the design.
+          logged. Because we never store full message bodies or attachments, that content cannot
+          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
+          information; we store those bounded fields as disclosed in Section 2 and protect them
+          accordingly.
         </p>
       </LegalSection>
 

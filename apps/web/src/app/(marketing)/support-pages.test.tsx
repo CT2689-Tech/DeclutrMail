@@ -185,6 +185,19 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/metadata/i);
   });
 
+  it('scopes the non-leak claim to content DeclutrMail never holds', () => {
+    const { container } = render(<SecurityPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain(
+      'full message bodies and attachments are never in our systems, that content cannot leak from DeclutrMail',
+    );
+    expect(text).toContain(
+      'Subjects and Gmail Preview snippets can still contain sensitive information',
+    );
+    expect(text).not.toMatch(/most sensitive content.*cannot leak/i);
+  });
+
   it('describes token envelope encryption and TLS accurately', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/envelope-encrypted/i);

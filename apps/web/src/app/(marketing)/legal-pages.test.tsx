@@ -152,6 +152,19 @@ describe('/privacy content — D7 + D228 posture', () => {
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
   });
 
+  it('scopes the non-leak claim to bodies and attachments, not sensitive metadata', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain(
+      'full message bodies or attachments, that content cannot leak from DeclutrMail',
+    );
+    expect(text).toContain(
+      'Subjects and Gmail Preview snippets can still contain sensitive information',
+    );
+    expect(text).not.toMatch(/most sensitive content.*not in our systems/i);
+  });
+
   it('§6 links the /cookies withdrawal surface (GDPR Art. 7(3), D147)', () => {
     render(<PrivacyPolicyPage />);
     expect(screen.getByRole('link', { name: 'Cookie preferences' })).toHaveAttribute(
