@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, EmptyState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  Eyebrow,
+  ErrorState as RecoverableErrorState,
+  ScreenIntro,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
 import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
@@ -81,7 +88,10 @@ export function BillingScreen({ initialIntent = null }: { initialIntent?: Billin
   }
   if (subscriptionQuery.isError && !billingDisabled) {
     return (
-      <ErrorState error={subscriptionQuery.error} onRetry={() => subscriptionQuery.refetch()} />
+      <BillingErrorState
+        error={subscriptionQuery.error}
+        onRetry={() => subscriptionQuery.refetch()}
+      />
     );
   }
 
@@ -458,21 +468,23 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your billing details (${error.status}). Try again in a moment.`
-      : "We couldn't load your billing details right now. Try again in a moment.";
+function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
         title="We couldn't load your billing details"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}No charge or plan change was made. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

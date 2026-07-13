@@ -1,7 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  EmptyState,
+  ErrorState as RecoverableErrorState,
+  Eyebrow,
+  ScreenIntro,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
 import {
   canArchive,
   canDelete,
@@ -254,7 +262,7 @@ export function SendersScreen() {
     return <LoadingState />;
   }
   if (sendersQuery.isError) {
-    return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+    return <SendersErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
   }
   return (
     <SendersScreenContent
@@ -1988,28 +1996,24 @@ function LoadingState() {
   );
 }
 
-/** D211 error branch — surfaces the error message with a retry affordance. */
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your senders (${error.status}). Try again in a moment.`
-      : "We couldn't load your senders right now. Try again in a moment.";
+/** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
+function SendersErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        width: '100%',
+        boxSizing: 'border-box',
         maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >
-      <EmptyState
+      <RecoverableErrorState
         title="We couldn't load your senders"
-        body={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}Your Gmail messages and sender settings haven't changed. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

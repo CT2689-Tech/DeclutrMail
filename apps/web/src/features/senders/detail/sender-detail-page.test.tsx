@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SenderDetailRoute } from './sender-detail-page';
 import {
   addFetchHandlers,
@@ -198,6 +198,7 @@ describe('SenderDetailRoute', () => {
 
     renderDetail('ghost');
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   // D38 session-3 — instrument coverage.
@@ -306,12 +307,16 @@ describe('SenderDetailRoute', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders the error UI when the detail endpoint returns 500', async () => {
+  it('renders an alert on 500 and recovers the sender detail when Retry succeeds', async () => {
+    let detailAttempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: /^\/api\/senders\/[^/]+$/,
-        respond: () => jsonServerError(),
+        respond: () => {
+          detailAttempts += 1;
+          return detailAttempts <= 4 ? jsonServerError() : jsonOk({ data: DETAIL });
+        },
       },
       {
         method: 'GET',
@@ -325,17 +330,22 @@ describe('SenderDetailRoute', () => {
     ]);
 
     renderDetail();
-    // Two elements ("h3" title + "p" body) carry the same copy, so we
-    // target the heading explicitly. Retry backoff on 5xx (1s + 2s + 4s)
-    // via the shared `retryUnless404` predicate (3 retries) means the
-    // error UI doesn't appear until ~7s in.
-    await waitFor(
-      () =>
-        expect(
-          screen.getByRole('heading', { name: /couldn[’']t load this sender/i }),
-        ).toBeInTheDocument(),
-      { timeout: 10000 },
-    );
+    // Production keeps the shared 1s + 2s + 4s retry backoff for a
+    // transient 5xx, so the designed state appears after four failed
+    // attempts. The user-triggered retry is the fifth and succeeds.
+    const alert = await screen.findByRole('alert', {}, { timeout: 10000 });
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load this sender/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(detailAttempts).toBe(5);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   }, 15000);
 
   // D40 / D42 / D43 — standing-policy writes (Keep + VIP/Protect chips).

@@ -6,6 +6,7 @@ import {
   Avatar,
   Button,
   EmptyState,
+  ErrorState as RecoverableErrorState,
   NumericDisplay,
   Spark,
   tokens,
@@ -83,7 +84,7 @@ const { color, font, radius, shadow, space } = tokens;
  */
 export function SenderDetailPage({ state }: { state: SenderDetailState }) {
   if (state.kind === 'loading') return <LoadingState />;
-  if (state.kind === 'error') return <ErrorState message={state.message} />;
+  if (state.kind === 'error') return <SenderDetailErrorState message={state.message} />;
   return <ReadyState initial={state.detail} />;
 }
 
@@ -178,7 +179,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
 
   if (detail.isError) {
     return (
-      <ErrorState
+      <SenderDetailErrorState
         message={
           detail.error instanceof ApiError
             ? `We couldn't load this sender (HTTP ${detail.error.status}).`
@@ -197,7 +198,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
   const anyChildError = messages.isError || timeseries.isError || history.isError;
   if (anyChildError && adapted == null) {
     return (
-      <ErrorState
+      <SenderDetailErrorState
         message={GENERIC_RETRY_MESSAGE}
         onRetry={() => {
           detail.refetch();
@@ -1346,25 +1347,29 @@ function NotFoundState() {
   );
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+function SenderDetailErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   const handleRetry = onRetry ?? (() => window.location.reload());
+  const statusMatch = /^We couldn't load this sender \(HTTP (\d{3})\)\.$/u.exec(message);
+  const context = statusMatch
+    ? `The request returned HTTP ${statusMatch[1]}. `
+    : message === GENERIC_RETRY_MESSAGE
+      ? ''
+      : `${message} `;
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        width: '100%',
+        boxSizing: 'border-box',
         maxWidth: 720,
         margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >
-      <EmptyState
+      <RecoverableErrorState
         title="We couldn't load this sender"
-        body={message}
-        action={
-          <Button tone="primary" onClick={handleRetry}>
-            Try again
-          </Button>
-        }
+        description={`${context}Your Gmail messages and sender settings haven't changed. Try again in a moment.`}
+        onRetry={handleRetry}
       />
     </div>
   );

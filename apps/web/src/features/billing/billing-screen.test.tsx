@@ -124,13 +124,29 @@ describe('BillingScreen — designed states', () => {
     );
     expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('plan-change-modal')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('renders the error branch with retry on a 500', async () => {
-    stubSubscription(() => jsonServerError());
+  it('renders an alert on 500 and recovers billing details when Retry succeeds', async () => {
+    let attempts = 0;
+    stubSubscription(() => {
+      attempts += 1;
+      return attempts === 1 ? jsonServerError() : jsonOk({ data: FREE_BODY });
+    });
     renderScreen();
-    expect(await screen.findByText("We couldn't load your billing details")).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: "We couldn't load your billing details" }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByText(/no charge or plan change was made/i)).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Free')).toBeInTheDocument();
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 

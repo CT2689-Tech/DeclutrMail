@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 
-import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
+import {
+  EmptyState,
+  ErrorState as RecoverableErrorState,
+  ScreenIntro,
+  tokens,
+  useIsAtMost,
+} from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
@@ -69,7 +75,7 @@ export function FollowupsScreen() {
     return <LoadingState />;
   }
   if (query.isError) {
-    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+    return <FollowupsErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
   const rows = query.data ?? [];
@@ -486,21 +492,23 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your followups (${error.status}). Try again in a moment.`
-      : "We couldn't load your followups right now. Try again in a moment.";
+function FollowupsErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
         title="We couldn't load your followups"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}Your tracked follow-ups are unchanged. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

@@ -227,24 +227,34 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
-  it('renders the error branch with a retry CTA on 500', async () => {
+  it('renders an alert on 500 and recovers the sender list when Retry succeeds', async () => {
+    let attempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/senders',
-        respond: () => jsonServerError(),
+        respond: () => {
+          attempts += 1;
+          return attempts === 1 ? jsonServerError() : oneSenderHandler().respond();
+        },
       },
+      sendersSummaryHandler(),
     ]);
 
     renderScreen();
-    // Both the EmptyState heading and the body copy carry this phrase;
-    // target the heading so the assertion is unambiguous.
-    await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /couldn[’']t load your senders/i }),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your senders/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(screen.getAllByText(/Sender A/).length).toBeGreaterThan(0));
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('renders the empty-mailbox state when the API returns an empty page', async () => {
