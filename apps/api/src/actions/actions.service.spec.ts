@@ -1627,6 +1627,85 @@ describe('ActionsService', () => {
       expect(jobs[0]!.resolvedMessageIds).toEqual([first.activityLogId]);
     });
 
+    it('admits only one concurrent unsubscribe when one Free unit remains', async () => {
+      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'unsubscribe-race-fill');
+
+      // PGlite protects application ordering but not cross-connection lock
+      // behavior; EntitlementsService separately pins the FOR UPDATE SQL.
+      const results = await Promise.allSettled(
+        ['unsubscribe-race-a', 'unsubscribe-race-b'].map((idempotencyKey) =>
+          svc.recordUnsubscribeIntent({
+            mailboxAccountId: mailboxId,
+            senderId,
+            idempotencyKey,
+          }),
+        ),
+      );
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'FREE_CAP_REACHED' },
+      });
+      expect(
+        await db
+          .select({ id: actionJobs.id })
+          .from(actionJobs)
+          .where(
+            inArray(actionJobs.idempotencyKey, [
+              'unsub:unsubscribe-race-a',
+              'unsub:unsubscribe-race-b',
+            ]),
+          ),
+      ).toHaveLength(1);
+      expect(
+        await db
+          .select({ id: activityLog.id })
+          .from(activityLog)
+          .where(eq(activityLog.action, 'unsubscribe')),
+      ).toHaveLength(1);
+      expect(
+        await db
+          .select({ id: outboxEvents.id })
+          .from(outboxEvents)
+          .where(eq(outboxEvents.topic, 'actions.unsubscribe_intent_recorded')),
+      ).toHaveLength(1);
+    });
+
+    it('concurrent same-key unsubscribes replay one Free unit and one audit row', async () => {
+      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'unsubscribe-replay-fill');
+      const request = {
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'unsubscribe-same-key',
+      };
+
+      const [first, second] = await Promise.all([
+        svc.recordUnsubscribeIntent(request),
+        svc.recordUnsubscribeIntent(request),
+      ]);
+
+      expect(second.activityLogId).toBe(first.activityLogId);
+      expect(
+        await db
+          .select({ id: actionJobs.id })
+          .from(actionJobs)
+          .where(eq(actionJobs.idempotencyKey, 'unsub:unsubscribe-same-key')),
+      ).toHaveLength(1);
+      expect(
+        await db
+          .select({ id: activityLog.id })
+          .from(activityLog)
+          .where(eq(activityLog.action, 'unsubscribe')),
+      ).toHaveLength(1);
+      expect(
+        await db
+          .select({ id: outboxEvents.id })
+          .from(outboxEvents)
+          .where(eq(outboxEvents.topic, 'actions.unsubscribe_intent_recorded')),
+      ).toHaveLength(1);
+    });
+
     it('namespaces the key so an unsub-intent dedup never collides with a worker job key', async () => {
       // The same raw key the FE generates for unsubscribe might collide
       // with one a worker enqueue uses (clients see one Idempotency-
@@ -1661,6 +1740,7 @@ describe('ActionsService', () => {
     });
 
     it('records a no-channel preference without consuming a Free cleanup unit', async () => {
+      await seedCountedCleanupJobs(db, mailboxId, senderId, 5, 'unsubscribe-none-fill');
       await db
         .update(senders)
         .set({ unsubscribeMethod: 'none', unsubscribeUrl: null })
@@ -1684,7 +1764,7 @@ describe('ActionsService', () => {
         .where(eq(mailboxAccounts.id, mailboxId));
       await expect(
         new EntitlementsService(db as never).cleanupSummary(mailbox!.workspaceId),
-      ).resolves.toMatchObject({ used: 0, remaining: 5 });
+      ).resolves.toMatchObject({ used: 5, remaining: 0 });
     });
   });
 

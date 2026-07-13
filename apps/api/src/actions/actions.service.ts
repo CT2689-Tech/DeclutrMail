@@ -1290,23 +1290,73 @@ export class ActionsService {
       };
     }
 
-    // D19 Free taste: an actionable Unsubscribe is one cleanup decision;
-    // a sender with no published channel records a preference/audit only
-    // and must not burn the user's Free cleanup allowance. Confirming a
-    // separate backlog Archive/Delete needs a second unit. Only a FRESH
-    // intent checks the combined capacity atomically. The cached replay
-    // above returns before this gate, so a retry neither rechecks nor
-    // reconsumes even if the caller repeats/changes the backlog hint.
-    // The derived counter includes only the `unsub:*` intent row and
-    // excludes the optional `unsubexec-*` one-click execution row.
-    if (method !== 'none') {
-      await this.entitlements.assertCleanupCapacity(
-        mailboxAccountId,
-        includesBacklogAction ? 2 : 1,
-      );
-    }
-
     const txResult = await this.db.transaction(async (tx) => {
+      // Finite cleanup quotas are serialized per workspace. Re-check
+      // both deterministic keys after acquiring the lock so a request
+      // that waited behind the original commit replays before quota is
+      // evaluated. Keep the lock through the consuming intent insert.
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      const lockedOwners = await tx
+        .select({
+          idempotencyKey: actionJobs.idempotencyKey,
+          mailboxAccountId: actionJobs.mailboxAccountId,
+          selector: actionJobs.selector,
+          verb: actionJobs.verb,
+        })
+        .from(actionJobs)
+        .where(inArray(actionJobs.idempotencyKey, [namespacedKey, executionKey]));
+      assertKeyOwners(lockedOwners);
+
+      const [lockedCachedIntent] = await tx
+        .select({
+          resolvedMessageIds: actionJobs.resolvedMessageIds,
+          createdAt: actionJobs.createdAt,
+        })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.idempotencyKey, namespacedKey),
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          ),
+        )
+        .limit(1);
+      if (lockedCachedIntent) {
+        if (lockedCachedIntent.resolvedMessageIds.length === 0) {
+          throw idempotencyConflict();
+        }
+        const [lockedCachedExecution] = await tx
+          .select({ id: actionJobs.id, status: actionJobs.status })
+          .from(actionJobs)
+          .where(
+            and(
+              eq(actionJobs.idempotencyKey, executionKey),
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            ),
+          )
+          .limit(1);
+        return {
+          kind: 'replay' as const,
+          recordedAt: lockedCachedIntent.createdAt.toISOString(),
+          activityLogId: lockedCachedIntent.resolvedMessageIds[0]!,
+          executionActionId: lockedCachedExecution?.id ?? null,
+          executionStatus: lockedCachedExecution?.status ?? null,
+        };
+      }
+
+      // D19 Free taste: an actionable Unsubscribe is one cleanup
+      // decision. No-channel preferences consume no unit. The optional
+      // backlog hint preflights two available units under this lock, but
+      // it does not reserve the second unit for the later Archive/Delete
+      // request; a durable guarantee would require a reservation ledger.
+      // Only the `unsub:*` intent row counts — not `unsubexec-*`.
+      if (method !== 'none') {
+        await this.entitlements.assertCleanupCapacityForWorkspace(
+          workspace,
+          includesBacklogAction ? 2 : 1,
+          tx,
+        );
+      }
+
       // Reserve the globally-unique intent key BEFORE any policy,
       // activity, outbox, or execution write. If another request won
       // the race after the ownership probe above, the unique-index
