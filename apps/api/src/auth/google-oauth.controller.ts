@@ -9,6 +9,7 @@ import {
   Req,
   Res,
   UnauthorizedException,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -26,6 +27,7 @@ import { RateLimit } from '../common/rate-limit/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
+import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
 import { CurrentUser, JwtGuard } from './jwt.guard.js';
@@ -182,6 +184,7 @@ export class GoogleOAuthController {
   @Get('connect-mailbox/start')
   @RateLimit('auth')
   @UseGuards(JwtGuard, InboxLimitGuard)
+  @UseFilters(ConnectMailboxStartFilter)
   async connectMailboxStart(
     @CurrentUser() user: SessionPrincipal,
     @Res() res: Response,

@@ -31,6 +31,7 @@ import { MailboxesCard } from './mailboxes-card';
 const { color, font } = tokens;
 
 type ReconnectResult = 'success' | 'account_mismatch' | 'target_invalid' | 'cancelled' | 'failed';
+type ConnectStartResult = 'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
 
 /**
  * Closed, privacy-safe copy for the OAuth return contract. Never echo
@@ -71,6 +72,31 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
   },
 };
 
+const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy> = {
+  target_invalid: {
+    message: 'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
+  inbox_limit: {
+    message:
+      'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  session_retry: {
+    message:
+      'We couldn’t verify your session for that Gmail connection attempt. Your session is active now—try again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  rate_limited: {
+    message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+};
+
 const MAILBOX_HASH = /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
 function reconnectResultOf(value: string | null): ReconnectResult | null {
@@ -80,6 +106,18 @@ function reconnectResultOf(value: string | null): ReconnectResult | null {
     case 'target_invalid':
     case 'cancelled':
     case 'failed':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function connectStartResultOf(value: string | null): ConnectStartResult | null {
+  switch (value) {
+    case 'target_invalid':
+    case 'inbox_limit':
+    case 'session_retry':
+    case 'rate_limited':
       return value;
     default:
       return null;
@@ -157,12 +195,13 @@ export function SettingsScreen() {
     return () => clearTimeout(t);
   }, [wantsCancelDeletion, layoutSettled]);
 
-  // OAuth reconnect return. The query value is a closed enum and the
-  // target is accepted only from an exact UUID fragment. Resolve rows
-  // with getElementById (never a selector built from URL input), then
-  // scrub both pieces of transient context so refresh cannot replay the
+  // OAuth reconnect/cold-start return. Query values are closed enums and
+  // a reconnect target is accepted only from an exact UUID fragment.
+  // Resolve rows with getElementById (never a selector built from URL
+  // input), then scrub transient context so refresh cannot replay the
   // toast or retain a mailbox id in browser history.
   const reconnectResultParam = searchParams.get('reconnect_result');
+  const connectStartResultParam = searchParams.get('connect_start_result');
   const reconnectSearch = searchParams.toString();
   const didHandleReconnectResult = useRef(false);
   const [highlightMailboxId, setHighlightMailboxId] = useState<string | null>(null);
@@ -170,17 +209,26 @@ export function SettingsScreen() {
     null,
   );
   useEffect(() => {
-    if (reconnectResultParam === null || didHandleReconnectResult.current) return;
+    if (
+      (reconnectResultParam === null && connectStartResultParam === null) ||
+      didHandleReconnectResult.current
+    )
+      return;
     didHandleReconnectResult.current = true;
 
-    const result = reconnectResultOf(reconnectResultParam);
-    if (result) {
-      const copy = RECONNECT_RESULT_COPY[result];
+    const reconnectResult = reconnectResultOf(reconnectResultParam);
+    const connectStartResult = connectStartResultOf(connectStartResultParam);
+    const copy = reconnectResult
+      ? RECONNECT_RESULT_COPY[reconnectResult]
+      : connectStartResult
+        ? CONNECT_START_RESULT_COPY[connectStartResult]
+        : null;
+    if (copy) {
       setReconnectAnnouncement(copy);
       toast(copy.message, copy.tone);
     }
 
-    const mailboxId = result ? reconnectMailboxIdFromHash(window.location.hash) : null;
+    const mailboxId = reconnectResult ? reconnectMailboxIdFromHash(window.location.hash) : null;
     const mailboxRow = mailboxId ? document.getElementById(`mailbox-${mailboxId}`) : null;
     const scrollTarget = mailboxRow ?? document.getElementById('mailboxes');
 
@@ -190,10 +238,11 @@ export function SettingsScreen() {
 
     const nextParams = new URLSearchParams(reconnectSearch);
     nextParams.delete('reconnect_result');
+    nextParams.delete('connect_start_result');
     const nextSearch = nextParams.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#mailboxes`;
     window.history.replaceState(window.history.state, '', nextUrl);
-  }, [reconnectResultParam, reconnectSearch]);
+  }, [connectStartResultParam, reconnectResultParam, reconnectSearch]);
 
   // Keep highlight lifetime independent from the URL effect: Next's
   // native-history integration updates useSearchParams after replaceState.

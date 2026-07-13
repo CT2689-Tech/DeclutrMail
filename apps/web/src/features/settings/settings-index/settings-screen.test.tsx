@@ -520,6 +520,50 @@ describe('SettingsScreen', () => {
     },
   );
 
+  it.each([
+    {
+      result: 'target_invalid',
+      message:
+        'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+      tone: 'danger',
+      liveRole: 'alert',
+    },
+    {
+      result: 'inbox_limit',
+      message:
+        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
+    {
+      result: 'session_retry',
+      message:
+        'We couldn’t verify your session for that Gmail connection attempt. Your session is active now—try again.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
+    {
+      result: 'rate_limited',
+      message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
+  ] as const)(
+    'shows and scrubs the controlled $result OAuth-start result',
+    async ({ result, message, tone, liveRole }) => {
+      setSettingsLocation(`source=oauth&connect_start_result=${result}`);
+      renderScreen();
+
+      await waitFor(() => expect(toast).toHaveBeenCalledWith(message, tone));
+      expect(screen.getByTestId(`reconnect-result-${liveRole}`)).toHaveTextContent(message);
+      expect(document.activeElement).toBe(document.getElementById('mailboxes'));
+      expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
+      expect(new URLSearchParams(window.location.search).has('connect_start_result')).toBe(false);
+      expect(window.location.hash).toBe('#mailboxes');
+      expect(toast).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('pre-mounts empty polite and assertive regions, then populates only the result region', async () => {
     const client = createTestQueryClient();
     const view = renderScreen(client);
