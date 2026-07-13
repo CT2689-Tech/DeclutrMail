@@ -84,7 +84,7 @@ export function ErrorState({
           {description}
         </p>
       </div>
-      <Button tone="primary" onClick={onRetry}>
+      <Button tone="primary" onClick={onRetry} style={{ minHeight: 44 }}>
         {retryLabel}
       </Button>
     </div>

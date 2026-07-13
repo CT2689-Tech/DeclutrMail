@@ -102,21 +102,115 @@ describe('ActivityScreen — edge states', () => {
     expect(screen.getAllByRole('status').length).toBeGreaterThan(0);
   });
 
-  it('renders the error branch on 500 with a retry CTA', async () => {
+  it('renders a recoverable alert on 500 and retries the request from a 44px CTA', async () => {
+    let requests = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/activity',
-        respond: () => jsonServerError(),
+        respond: () => {
+          requests += 1;
+          return requests === 1
+            ? jsonServerError()
+            : jsonOk({
+                data: [],
+                meta: {
+                  pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                  stats: STATS_BASE,
+                  window: '30d',
+                  source: 'all',
+                },
+              });
+        },
       },
     ]);
     renderScreen();
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your activity/i }),
+    ).toBeInTheDocument();
+
+    const retry = within(alert).getByRole('button', { name: 'Try again' });
+    expect(retry).toHaveStyle({ minHeight: '44px' });
+    await userEvent.click(retry);
+
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /couldn[’']t load your activity/i }),
+        screen.getByRole('heading', { name: /no activity in this window/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(requests).toBe(2);
+  });
+
+  it('keeps filter context on a 4xx and resets invalid dates without refetching them', async () => {
+    currentSearch = 'date_from=2026-05-20&date_to=2026-05-01&source=manual&group=sender';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 'BAD_REQUEST',
+                message: 'date_from must be earlier than date_to.',
+              },
+            }),
+            {
+              status: 400,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'About Activity' })).getByText('Activity'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Filters' })).toBeInTheDocument();
+
+    const reset = within(alert).getByRole('button', { name: 'Reset filters' });
+    expect(reset).toHaveStyle({ minHeight: '44px' });
+    expect(within(alert).queryByRole('button', { name: 'Try again' })).toBeNull();
+    await userEvent.click(reset);
+
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
+    expect(requests).toBe(1);
+  });
+
+  it('does not mislabel a non-validation 4xx as a filter problem', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+            }),
+            {
+              status: 429,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your activity/i }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(within(alert).queryByRole('button', { name: 'Reset filters' })).toBeNull();
   });
 
   it('renders the empty state when the page is empty', async () => {

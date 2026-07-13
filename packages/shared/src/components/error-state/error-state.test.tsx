@@ -28,6 +28,14 @@ describe('<ErrorState />', () => {
     expect(html).not.toContain('border:1px dashed');
   });
 
+  it('keeps the recovery action at least 44px tall for touch input', () => {
+    const html = renderToStaticMarkup(
+      <ErrorState title="Could not load" description="Please retry." onRetry={vi.fn()} />,
+    );
+
+    expect(html).toContain('min-height:44px');
+  });
+
   it('accepts a more specific retry label', () => {
     const html = renderToStaticMarkup(
       <ErrorState
