@@ -112,8 +112,8 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'This Google account is already connected to a different DeclutrMail workspace. ' +
-      'Sign in with that account or disconnect it from the other workspace first.',
+      'This Google account is already connected to another DeclutrMail workspace. ' +
+      "Sign in to the existing workspace to use it. Moving Gmail accounts between workspaces isn't supported yet.",
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---

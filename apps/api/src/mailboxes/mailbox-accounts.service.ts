@@ -1,9 +1,14 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { mailboxAccounts, ruleMatchLog } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
-import type { QuietHoursConfig, QuietHoursState } from '@declutrmail/shared/contracts';
+import {
+  ERROR_CODES,
+  type ErrorCode,
+  type QuietHoursConfig,
+  type QuietHoursState,
+} from '@declutrmail/shared/contracts';
 import {
   isQuietActive,
   msUntilQuietEnds,
@@ -21,6 +26,11 @@ export interface MailboxSummary {
   email: string;
   status: 'active' | 'disconnected';
   connectedAt: string | null;
+}
+
+/** Canonical persisted identity for Gmail's case-insensitive address space. */
+export function canonicalizeGmailProviderAccountId(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /**
@@ -98,6 +108,7 @@ export class MailboxAccountsService {
   async findByProviderEmail(
     email: string,
   ): Promise<{ mailboxId: string; workspaceId: string; userId: string } | null> {
+    const providerAccountId = canonicalizeGmailProviderAccountId(email);
     const [row] = await this.db
       .select({
         mailboxId: mailboxAccounts.id,
@@ -106,7 +117,10 @@ export class MailboxAccountsService {
       })
       .from(mailboxAccounts)
       .where(
-        and(eq(mailboxAccounts.provider, 'gmail'), eq(mailboxAccounts.providerAccountId, email)),
+        and(
+          eq(mailboxAccounts.provider, 'gmail'),
+          eq(mailboxAccounts.providerAccountId, providerAccountId),
+        ),
       )
       .limit(1);
     return row ?? null;
@@ -128,13 +142,14 @@ export class MailboxAccountsService {
       keyVersion: number;
     },
   ): Promise<{ id: string }> {
+    const providerAccountId = canonicalizeGmailProviderAccountId(input.email);
     const [row] = await tx
       .insert(mailboxAccounts)
       .values({
         workspaceId: input.workspaceId,
         userId: input.userId,
         provider: 'gmail',
-        providerAccountId: input.email,
+        providerAccountId,
         encryptedRefreshToken: input.encryptedRefreshToken,
         dekEncrypted: input.dekEncrypted,
         keyVersion: input.keyVersion,
@@ -149,10 +164,18 @@ export class MailboxAccountsService {
           connectedAt: new Date(),
           status: 'active',
         },
+        // The orchestrator's ownership lookup is only a UX fast-fail:
+        // another workspace can win this provider identity after that read.
+        // Keep the UNIQUE-conflict update scoped to the row's existing
+        // workspace so the database remains the canonical ownership guard.
+        setWhere: eq(mailboxAccounts.workspaceId, input.workspaceId),
       })
       .returning({ id: mailboxAccounts.id });
     if (!row) {
-      throw new Error('Failed to persist the mailbox account.');
+      throw new ConflictException({
+        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
+        message: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
+      });
     }
     return row;
   }

@@ -28,6 +28,10 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     });
     // Rate limiting is the one generic code that is retryable.
     expect(ERROR_CODES.RATE_LIMITED.retryable).toBe(true);
+    expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
+      "Moving Gmail accounts between workspaces isn't supported yet.",
+    );
+    expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toContain('disconnect');
   });
 });
 
