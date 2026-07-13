@@ -3,10 +3,10 @@
  * (D109, D224).
  *
  * Polls `GET /api/v1/sync/status` every 3s while the mailbox is still
- * syncing. The poll STOPS (refetchInterval → false) once the backend
- * reports a terminal state — `is_ready_for_triage` (success) or
- * `readiness_status === 'failed'` — so a ready mailbox doesn't keep
- * hammering the endpoint.
+ * syncing, every 10s while a failed initial sync may be recovering, and
+ * every 60s once ready. The slow ready cadence keeps the app shell's
+ * freshness timestamp + passive incremental-failure banner honest in a
+ * long-lived tab without turning the status endpoint into a hot poll.
  *
  * By default the mailbox is resolved server-side from the session
  * (D155 + CurrentMailboxGuard). Pass an explicit `mailboxId` to gate a
@@ -15,7 +15,9 @@
  * user switches their active mailbox back to the primary.
  *
  * Transport is poll-only by design (D224): there is no push channel.
- * 3s matches the controller's rate-limit headroom (120/min = 2/s).
+ * 3s matches the controller's rate-limit headroom (120/min = 2/s), and
+ * the 60s ready cadence preserves ample headroom for app-shell and
+ * per-mailbox Settings observers.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -30,8 +32,13 @@ export const SYNC_POLL_MS = 3_000;
 /** Slower cadence while `failed` — a failure may be transient (see below). */
 export const SYNC_FAILED_POLL_MS = 10_000;
 
+/** Low-frequency health refresh after initial sync has completed. */
+export const SYNC_READY_POLL_MS = 60_000;
+
 /**
- * Poll-cadence policy. Stop ONLY on success (`is_ready_for_triage`).
+ * Poll-cadence policy. Ready mailboxes keep a low-frequency health poll
+ * because sync status has no push transport: otherwise a mounted app
+ * never observes a later incremental success or terminal failure.
  *
  * A `failed` readiness is NOT treated as terminal for polling: it can be
  * transient — a stale or superseded job (e.g. a reconnect's
@@ -44,9 +51,9 @@ export const SYNC_FAILED_POLL_MS = 10_000;
  *
  * Exported so it can be unit-tested without racing real timers.
  */
-export function syncRefetchInterval(data: SyncStatus | undefined): number | false {
+export function syncRefetchInterval(data: SyncStatus | undefined): number {
   if (!data) return SYNC_POLL_MS;
-  if (data.is_ready_for_triage) return false;
+  if (data.is_ready_for_triage) return SYNC_READY_POLL_MS;
   if (data.readiness_status === 'failed') return SYNC_FAILED_POLL_MS;
   return SYNC_POLL_MS;
 }
@@ -66,6 +73,10 @@ export function useSyncStatus(mailboxId?: string, opts: { enabled?: boolean } = 
     // retry rule, CLAUDE.md §8). Existing callers pass nothing.
     enabled: opts.enabled ?? true,
     refetchInterval: (query) => syncRefetchInterval(query.state.data),
+    // Global query defaults disable focus refetches to prevent storms.
+    // Sync health is the narrow exception: a backgrounded tab may have
+    // paused its timer, so returning should immediately restore truth.
+    refetchOnWindowFocus: true,
     // The gate is the whole point of the screen — keep it fresh.
     staleTime: 0,
   });

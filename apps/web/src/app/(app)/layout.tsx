@@ -214,7 +214,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             ONLY — its session-scoped status poll 409-storms without one, so
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
-        {hasActiveMailbox && <SyncErrorBanner />}
+        {hasActiveMailbox && <SyncErrorBanner mailboxId={me.activeMailboxId ?? undefined} />}
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
@@ -234,7 +234,7 @@ function AppChrome({ children }: { children: ReactNode }) {
                 {/* Same 409-storm guard as SyncErrorBanner — the button
                     polls session-scoped sync status, meaningless (and
                     unresolvable) with no active mailbox. */}
-                {hasActiveMailbox && <SyncNowButton />}
+                {hasActiveMailbox && <SyncNowButton mailboxId={me.activeMailboxId ?? undefined} />}
                 <AccountMenu />
               </div>
             }

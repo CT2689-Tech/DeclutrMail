@@ -5,9 +5,11 @@
  * One `GET /api/v1/sync/status` query per ACTIVE mailbox (stamped with
  * `X-Active-Mailbox-Id` via the apiGet `mailboxId` option), sharing the
  * cache keys + poll policy of `useSyncStatus` so the settings card and
- * the sync gate never disagree. Disconnected mailboxes are not queried
- * — `CurrentMailboxGuard` only resolves active ones, and their health
- * ("Disconnected") already rides on `me.mailboxes[].status`.
+ * the sync gate never disagree. Ready mailboxes refresh at the shared
+ * low-frequency cadence and immediately on tab focus. Disconnected
+ * mailboxes are not queried — `CurrentMailboxGuard` only resolves active
+ * ones, and their health ("Disconnected") already rides on
+ * `me.mailboxes[].status`.
  *
  * `needsReconnect` derivation: the Gmail OAuth grant is gone when the
  * worker's classified error is `InvalidGrantError` (see
@@ -79,6 +81,7 @@ export function useMailboxesHealth(
       },
       refetchInterval: (query: { state: { data: SyncStatus | undefined } }) =>
         syncRefetchInterval(query.state.data),
+      refetchOnWindowFocus: true,
       staleTime: 0,
     })),
   });

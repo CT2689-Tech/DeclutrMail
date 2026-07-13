@@ -43,8 +43,8 @@ const { color, font } = tokens;
 /** How long a terminal incremental failure stays surfaced. */
 export const SYNC_ERROR_WINDOW_MS = 60 * 60_000;
 
-export function SyncErrorBanner() {
-  const status = useSyncStatus();
+export function SyncErrorBanner({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell');
   // Re-render tick so the banner ages OUT of the 60-minute window even
   // when no query data changes (same pattern as SyncNowButton's

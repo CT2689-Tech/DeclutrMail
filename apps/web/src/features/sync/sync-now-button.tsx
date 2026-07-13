@@ -88,8 +88,8 @@ function movedPast(current: string | null, base: string | null): boolean {
   return new Date(current).getTime() > new Date(base).getTime();
 }
 
-export function SyncNowButton() {
-  const status = useSyncStatus();
+export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell');
   const qc = useQueryClient();
 
