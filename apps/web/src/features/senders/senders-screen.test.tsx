@@ -15,10 +15,8 @@ const mockAuth = vi.hoisted(() => ({
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
-vi.mock('@/features/auth/auth-provider', () => ({
-  getActiveMailboxEmail: () => 'me@example.com',
-  useOptionalAuth: () => null,
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const useMockAuth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
       activeMailboxId: 'mb-1',
@@ -34,8 +32,14 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
     },
-  }),
-}));
+  });
+
+  return {
+    getActiveMailboxEmail: () => 'me@example.com',
+    useOptionalAuth: useMockAuth,
+    useAuth: useMockAuth,
+  };
+});
 
 import { ToastHost } from '@declutrmail/shared';
 import { SendersScreen } from './senders-screen';
