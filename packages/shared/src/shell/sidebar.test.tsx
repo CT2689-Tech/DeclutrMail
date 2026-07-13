@@ -42,6 +42,35 @@ describe('Sidebar — honest nav (D207)', () => {
     }
   });
 
+  it('groups destinations by user job in journey order', () => {
+    const html = renderSidebar();
+    const expectedOrder = [
+      'Decide',
+      'Senders',
+      'Triage',
+      'Screener',
+      'Automate',
+      'Autopilot',
+      'Quiet',
+      'Review',
+      'Brief',
+      'Follow-ups',
+      'Snoozed',
+      'Activity',
+      'Account',
+      'Billing',
+      'Settings',
+    ] as const;
+
+    let previous = -1;
+    for (const label of expectedOrder) {
+      const position = html.indexOf(`>${label}<`);
+      expect(position, `nav must contain "${label}"`).toBeGreaterThan(-1);
+      expect(position, `"${label}" must follow the previous nav item`).toBeGreaterThan(previous);
+      previous = position;
+    }
+  });
+
   it('marks the active item with aria-current', () => {
     expect(renderSidebar()).toContain('aria-current="page"');
   });
