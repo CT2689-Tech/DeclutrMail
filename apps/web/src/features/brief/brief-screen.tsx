@@ -14,6 +14,8 @@ import {
 
 import { ApiError } from '@/lib/api/client';
 import type { BriefItemWire, BriefSenderGroupWire, BriefWire } from '@/lib/api/brief';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
@@ -66,11 +68,13 @@ const { color, font } = tokens;
  * screen by construction.
  */
 export function BriefScreen() {
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useBriefToday();
 
-  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
-  // its Storybook stories mount without an auth shim; PostHog
-  // `identify` ties the event to the user regardless.
+  // `mailbox_id: null` keeps the historical event contract. The nullable
+  // auth hook above binds Gmail links in production without making isolated
+  // stories invent a mailbox; PostHog identity still attaches separately.
   useEffect(() => {
     void track('page_viewed', { page: 'brief', mailbox_id: null });
   }, []);
@@ -99,7 +103,7 @@ export function BriefScreen() {
     return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
   }
 
-  return <BriefBody brief={brief} />;
+  return <BriefBody brief={brief} mailboxEmail={activeMailboxEmail} />;
 }
 
 /**
@@ -121,7 +125,7 @@ function handleBriefRefresh(refetch: () => Promise<unknown>): void {
  * alongside a guaranteed-present `brief` payload and the effect's
  * dependency array stays narrow.
  */
-function BriefBody({ brief }: { brief: BriefWire }) {
+function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: string | null }) {
   const { reply, fyi, noise, narrative } = brief.briefPayload;
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
@@ -172,10 +176,26 @@ function BriefBody({ brief }: { brief: BriefWire }) {
         <>
           {narrative.trim().length > 0 && <Narrative text={narrative} />}
           {reply.length > 0 && (
-            <ReplyFyiSection label="Reply" rows={reply} max={6} isMobile={isMobile} />
+            <ReplyFyiSection
+              label="Reply"
+              rows={reply}
+              max={6}
+              isMobile={isMobile}
+              mailboxEmail={mailboxEmail}
+            />
           )}
-          {fyi.length > 0 && <ReplyFyiSection label="FYI" rows={fyi} max={4} isMobile={isMobile} />}
-          {noise.length > 0 && <NoiseSection groups={noise} isMobile={isMobile} />}
+          {fyi.length > 0 && (
+            <ReplyFyiSection
+              label="FYI"
+              rows={fyi}
+              max={4}
+              isMobile={isMobile}
+              mailboxEmail={mailboxEmail}
+            />
+          )}
+          {noise.length > 0 && (
+            <NoiseSection groups={noise} isMobile={isMobile} mailboxEmail={mailboxEmail} />
+          )}
         </>
       )}
     </div>
@@ -250,11 +270,13 @@ function ReplyFyiSection({
   rows,
   max,
   isMobile,
+  mailboxEmail,
 }: {
   label: 'Reply' | 'FYI';
   rows: BriefItemWire[];
   max: number;
   isMobile: boolean;
+  mailboxEmail: string | null;
 }) {
   const tone = label === 'Reply' ? 'accent' : 'muted';
   return (
@@ -278,6 +300,7 @@ function ReplyFyiSection({
             key={`${row.senderKey}-${row.messageIds[0] ?? row.subject}`}
             row={row}
             isMobile={isMobile}
+            mailboxEmail={mailboxEmail}
           />
         ))}
       </ul>
@@ -285,7 +308,15 @@ function ReplyFyiSection({
   );
 }
 
-function NoiseSection({ groups, isMobile }: { groups: BriefSenderGroupWire[]; isMobile: boolean }) {
+function NoiseSection({
+  groups,
+  isMobile,
+  mailboxEmail,
+}: {
+  groups: BriefSenderGroupWire[];
+  isMobile: boolean;
+  mailboxEmail: string | null;
+}) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
   return (
     <section
@@ -309,7 +340,12 @@ function NoiseSection({ groups, isMobile }: { groups: BriefSenderGroupWire[]; is
         }}
       >
         {groups.map((group) => (
-          <NoiseRow key={group.senderKey} group={group} isMobile={isMobile} />
+          <NoiseRow
+            key={group.senderKey}
+            group={group}
+            isMobile={isMobile}
+            mailboxEmail={mailboxEmail}
+          />
         ))}
       </ul>
     </section>
@@ -375,11 +411,19 @@ function SectionHeading({
  * Gmail's `#all/<id>` permalink. The BE collapses multi-message rows
  * into one BriefItem so this is the most-actionable message.
  */
-function ReplyFyiRow({ row, isMobile }: { row: BriefItemWire; isMobile: boolean }) {
+function ReplyFyiRow({
+  row,
+  isMobile,
+  mailboxEmail,
+}: {
+  row: BriefItemWire;
+  isMobile: boolean;
+  mailboxEmail: string | null;
+}) {
   const displayName = row.senderName || row.senderEmail;
   const domain = domainOf(row.senderEmail);
   const subject = truncate(row.subject, 70);
-  const href = gmailHref(row.messageIds[0]);
+  const href = gmailHref(mailboxEmail, row.messageIds[0]);
   return (
     <li
       style={{
@@ -489,10 +533,18 @@ function ReplyFyiRow({ row, isMobile }: { row: BriefItemWire; isMobile: boolean 
  * now the row is read-only and surfaces the Gmail click-through so
  * the user can act manually.
  */
-function NoiseRow({ group, isMobile }: { group: BriefSenderGroupWire; isMobile: boolean }) {
+function NoiseRow({
+  group,
+  isMobile,
+  mailboxEmail,
+}: {
+  group: BriefSenderGroupWire;
+  isMobile: boolean;
+  mailboxEmail: string | null;
+}) {
   const count = group.messageCount;
   const countLabel = `${count} message${count === 1 ? '' : 's'}`;
-  const href = gmailHref(group.messageIds[0]);
+  const href = gmailHref(mailboxEmail, group.messageIds[0]);
   return (
     <li
       style={{
@@ -700,8 +752,11 @@ export function domainOf(email: string): string {
   return at === -1 ? email : email.slice(at + 1);
 }
 
-/** Gmail "all-mail" deep-link to a specific message id. Empty -> null. */
-export function gmailHref(messageId: string | undefined): string | null {
-  if (!messageId) return null;
-  return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
+/** Gmail "all-mail" deep-link bound to the active account. Missing context -> null. */
+export function gmailHref(
+  mailboxEmail: string | null,
+  messageId: string | undefined,
+): string | null {
+  if (!mailboxEmail || !messageId) return null;
+  return GmailOpenLinkService.buildOpenLink({ mailboxEmail, gmailMessageId: messageId });
 }

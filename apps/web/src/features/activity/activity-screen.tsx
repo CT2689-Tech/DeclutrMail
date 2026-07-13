@@ -32,6 +32,8 @@ import type {
   ActivityVerbFilterWire,
   ActivityWindowWire,
 } from '@/lib/api/activity';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useActivity, useRevertActivity } from './api/use-activity';
 import { track } from '@/lib/posthog';
@@ -72,6 +74,8 @@ const { color, font, shadow } = tokens;
 export function ActivityScreen() {
   const router = useRouter();
   const params = useSearchParams();
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
 
   const filters = readFiltersFromUrl(params);
   const groupMode = readGroupMode(params.get('group'));
@@ -329,6 +333,7 @@ export function ActivityScreen() {
             onToggle={toggleRow}
             failedTokens={failedTokens}
             isMobile={isMobile}
+            mailboxEmail={activeMailboxEmail}
           />
         ) : (
           <ul
@@ -349,6 +354,7 @@ export function ActivityScreen() {
                 onToggleSelect={() => toggleRow(row.id)}
                 failedTokens={failedTokens}
                 isMobile={isMobile}
+                mailboxEmail={activeMailboxEmail}
               />
             ))}
           </ul>
@@ -1516,12 +1522,14 @@ function GroupedList({
   onToggle,
   failedTokens,
   isMobile,
+  mailboxEmail,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   failedTokens?: Set<string> | undefined;
   isMobile: boolean;
+  mailboxEmail: string | null;
 }) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1660,6 +1668,7 @@ function GroupedList({
                     variant="grouped"
                     failedTokens={failedTokens}
                     isMobile={isMobile}
+                    mailboxEmail={mailboxEmail}
                   />
                 ))}
               </ul>
@@ -1701,6 +1710,7 @@ function ActivityRow({
   variant = 'flat',
   failedTokens,
   isMobile = false,
+  mailboxEmail,
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
@@ -1713,6 +1723,8 @@ function ActivityRow({
   /** Below `sm` the row restacks into a card so its 7 grid columns stop
    *  clipping under ~375px. Resolved once at the screen root. */
   isMobile?: boolean;
+  /** Active Gmail account. Null in isolated stories, where links fail closed. */
+  mailboxEmail: string | null;
 }) {
   const senderName = row.sender?.displayName ?? 'Account-scoped action';
   const senderEmail = row.sender?.email ?? '';
@@ -1854,7 +1866,7 @@ function ActivityRow({
           >
             {sourceAttribution}
           </span>
-          <RowActions row={row} failedTokens={failedTokens} />
+          <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
         </div>
       </li>
     );
@@ -2002,7 +2014,7 @@ function ActivityRow({
             : `via ${sourceLabel}`}
         </span>
       </div>
-      <RowActions row={row} failedTokens={failedTokens} />
+      <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
       <div
         style={{
           fontSize: 11.5,
@@ -2026,9 +2038,11 @@ function ActivityRow({
 function RowActions({
   row,
   failedTokens,
+  mailboxEmail,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
+  mailboxEmail: string | null;
 }) {
   return (
     <div
@@ -2044,7 +2058,7 @@ function RowActions({
       }}
     >
       <UndoCell row={row} bulkFailedTokens={failedTokens} />
-      <OpenInGmailLink row={row} />
+      <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
     </div>
   );
 }
@@ -2058,9 +2072,19 @@ function RowActions({
  * Privacy (D7): the link is built FE-side from the already-rendered
  * sender email — no new data flows through the BE.
  */
-function OpenInGmailLink({ row }: { row: ActivityRowWire }) {
-  if (!row.sender) return <span aria-hidden="true" />;
-  const href = `https://mail.google.com/mail/u/0/#search/from:${encodeURIComponent(row.sender.email)}`;
+function OpenInGmailLink({
+  row,
+  mailboxEmail,
+}: {
+  row: ActivityRowWire;
+  mailboxEmail: string | null;
+}) {
+  if (!row.sender || !mailboxEmail) return <span aria-hidden="true" />;
+  const href = GmailOpenLinkService.buildFromSearchLink({
+    mailboxEmail,
+    from: row.sender.email,
+  });
+  if (!href) return <span aria-hidden="true" />;
   return (
     <>
       <span

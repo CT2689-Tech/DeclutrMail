@@ -7,13 +7,18 @@
  * only land via a deliberate test update.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { FollowupsScreen, recipientLine, relativeTime, truncate } from './followups-screen';
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: {} }),
+  getActiveMailboxEmail: () => 'active+mailbox@example.com',
+}));
 
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
 
@@ -135,7 +140,11 @@ describe('FollowupsScreen — populated list', () => {
     expect(screen.getByText('Lunch?')).toBeInTheDocument();
     const links = screen.getAllByRole('link', { name: /open in gmail/i });
     expect(links).toHaveLength(2);
-    expect(links[0]).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/thread-h1');
+    expect(links[0]).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/thread-h1',
+    );
+    expect(links[0]?.getAttribute('href')).not.toContain('/u/0');
   });
 });
 

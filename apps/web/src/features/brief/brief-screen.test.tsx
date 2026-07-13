@@ -14,7 +14,7 @@
  *   - Pure helpers (formatRunDate, truncate, domainOf, gmailHref).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -22,6 +22,11 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { BriefScreen, domainOf, formatRunDate, gmailHref, truncate } from './brief-screen';
 import type { BriefWire } from '@/lib/api/brief';
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: {} }),
+  getActiveMailboxEmail: () => 'active+mailbox@example.com',
+}));
 
 const BASE_BRIEF: BriefWire = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -249,7 +254,11 @@ describe('BriefScreen — populated', () => {
     const links = await screen.findAllByRole('link', { name: /open in gmail/i });
     // 2 reply + 1 fyi + 1 noise = 4 deep links.
     expect(links).toHaveLength(4);
-    expect(links[0]).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/m-boss-1');
+    expect(links[0]).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/m-boss-1',
+    );
+    expect(links[0]?.getAttribute('href')).not.toContain('/u/0');
   });
 });
 
@@ -341,7 +350,10 @@ describe('BriefScreen — pure helpers', () => {
   });
 
   it('gmailHref returns a permalink for a message id, null for empty', () => {
-    expect(gmailHref('m-abc')).toBe('https://mail.google.com/mail/u/0/#all/m-abc');
-    expect(gmailHref(undefined)).toBeNull();
+    expect(gmailHref('active+mailbox@example.com', 'm-abc')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/m-abc',
+    );
+    expect(gmailHref('active+mailbox@example.com', undefined)).toBeNull();
+    expect(gmailHref(null, 'm-abc')).toBeNull();
   });
 });

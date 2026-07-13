@@ -21,6 +21,11 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { ActivityScreen, relativeTime, rowsToCsv } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: {} }),
+  getActiveMailboxEmail: () => 'active+mailbox@example.com',
+}));
+
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
 
 // next/navigation shim — the screen reads useSearchParams + uses
@@ -806,8 +811,9 @@ describe('ActivityScreen — B12 Open in Gmail', () => {
     const link = await screen.findByRole('link', { name: /gmail/i });
     expect(link).toHaveAttribute(
       'href',
-      'https://mail.google.com/mail/u/0/#search/from:one%40example.com',
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#search/from%3A%22one%40example.com%22',
     );
+    expect(link.getAttribute('href')).not.toContain('/u/0');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
   });
