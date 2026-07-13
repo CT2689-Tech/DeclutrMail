@@ -214,7 +214,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             ONLY — its session-scoped status poll 409-storms without one, so
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
-        {hasActiveMailbox && <SyncErrorBanner mailboxId={me.activeMailboxId ?? undefined} />}
+        {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}

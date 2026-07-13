@@ -343,6 +343,46 @@ describe('(app) layout — passive sync-error banner (D224)', () => {
     expect(await screen.findByTestId('sync-error-banner')).toBeInTheDocument();
     // Additive — the app stays usable behind it.
     expect(screen.getByText('authed app body')).toBeInTheDocument();
+    // Retryable failures retain the manual recovery action.
+    expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeInTheDocument();
+  });
+
+  it('shows reconnect recovery without a doomed Sync-now action for an invalid grant', async () => {
+    const syncStatusSpy = vi.fn(() =>
+      ok({
+        data: {
+          readiness_status: 'ready',
+          current_stage: 'ready',
+          progress_pct: 100,
+          is_ready_for_triage: true,
+          last_synced_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+          last_sync_error_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+          last_sync_error_code: 'InvalidGrantError',
+        },
+      }),
+    );
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: syncStatusSpy,
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /check gmail for new emails/i }),
+    ).not.toBeInTheDocument();
+    // Banner + topbar consume the same mailbox-keyed React Query entry.
+    expect(syncStatusSpy).toHaveBeenCalledTimes(1);
   });
 });
 

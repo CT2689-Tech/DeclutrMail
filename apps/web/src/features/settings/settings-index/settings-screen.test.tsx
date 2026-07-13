@@ -32,6 +32,13 @@ import { SettingsScreen } from './settings-screen';
 
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
 const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
+const MAILBOX_C = '33333333-3333-4333-8333-333333333333';
+
+const startMailboxConnectSpy = vi.fn();
+
+vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
+  startMailboxConnect: (mailboxId?: string) => startMailboxConnectSpy(mailboxId),
+}));
 
 let me: Me;
 let search: string;
@@ -139,6 +146,7 @@ describe('SettingsScreen', () => {
       mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
     ]);
     search = '';
+    startMailboxConnectSpy.mockClear();
     resetTriageStore();
     installFetchStub(happyHandlers());
     Element.prototype.scrollIntoView = vi.fn();
@@ -180,6 +188,7 @@ describe('SettingsScreen', () => {
   });
 
   it('renders "Needs reconnect" + the Reconnect affordance on an invalid grant', async () => {
+    me = { ...me, activeMailboxId: MAILBOX_B };
     installFetchStub([
       ...happyHandlers().filter((h) => h.path !== '/api/v1/sync/status'),
       {
@@ -202,14 +211,20 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() => expect(screen.getByText('Needs reconnect')).toBeInTheDocument());
-    // Reconnect routes to the same OAuth flow as connect-another; at
-    // the pro limit (2 of 2 active) the BE start route would 402, so
-    // the affordance is disabled with the upgrade title (mirrors the
-    // account menu's disconnected-row gate).
+    const revokedRow = screen
+      .getByText('chintan.a.thakkar.crypt@gmail.com')
+      .closest('li') as HTMLElement;
+    expect(within(revokedRow).getByText('Selected')).toBeInTheDocument();
+    expect(within(revokedRow).queryByText('Active')).not.toBeInTheDocument();
+    // This mailbox is already one of the two active accounts, so
+    // re-authorizing it consumes no new slot and remains available at
+    // the Pro limit. Its id binds Google's returned identity to B.
     const reconnect = screen.getByRole('button', {
       name: 'Reconnect chintan.a.thakkar.crypt@gmail.com',
     });
-    expect(reconnect).toBeDisabled();
+    expect(reconnect).toBeEnabled();
+    await userEvent.click(reconnect);
+    expect(startMailboxConnectSpy).toHaveBeenCalledWith(MAILBOX_B);
 
     // A healthy mailbox never shows the affordance.
     expect(
@@ -230,6 +245,31 @@ describe('SettingsScreen', () => {
     // One active of two allowed — reconnecting is allowed.
     expect(reconnect).toBeEnabled();
     expect(screen.getByText('Disconnected')).toBeInTheDocument();
+    await userEvent.click(reconnect);
+    expect(startMailboxConnectSpy).toHaveBeenCalledWith(undefined);
+  });
+
+  it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {
+    me = makeMe([
+      mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
+      mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+      {
+        ...mailbox(MAILBOX_C, 'chintan.a.thakkar.archive@gmail.com'),
+        status: 'disconnected',
+      },
+    ]);
+    renderScreen();
+
+    const reconnect = await screen.findByRole('button', {
+      name: 'Reconnect chintan.a.thakkar.archive@gmail.com',
+    });
+    await waitFor(() => expect(reconnect).toBeDisabled());
+    const describedBy = reconnect.getAttribute('aria-describedby');
+    expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /your plan includes 2 connected inboxes/i,
+    );
+    expect(startMailboxConnectSpy).not.toHaveBeenCalled();
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {

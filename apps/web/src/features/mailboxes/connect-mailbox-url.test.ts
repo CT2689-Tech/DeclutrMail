@@ -1,0 +1,35 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { connectMailboxStartUrl, startMailboxConnect } from './connect-mailbox-url';
+
+describe('connectMailboxStartUrl', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('builds the normal connect URL without a reconnect hint', () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test/');
+
+    expect(connectMailboxStartUrl()).toBe(
+      'https://api.example.test/api/auth/google/connect-mailbox/start',
+    );
+  });
+
+  it('encodes the opaque reconnect target', () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+
+    expect(connectMailboxStartUrl('mailbox/id with ? &')).toBe(
+      'https://api.example.test/api/auth/google/connect-mailbox/start?reconnectMailboxId=mailbox%2Fid%20with%20%3F%20%26',
+    );
+  });
+
+  it('hard-navigates to the targeted OAuth URL', () => {
+    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+
+    startMailboxConnect('11111111-1111-4111-8111-111111111111');
+
+    expect(assign).toHaveBeenCalledWith(
+      'https://api.example.test/api/auth/google/connect-mailbox/start?reconnectMailboxId=11111111-1111-4111-8111-111111111111',
+    );
+    assign.mockRestore();
+  });
+});

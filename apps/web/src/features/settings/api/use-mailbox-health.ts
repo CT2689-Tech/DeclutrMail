@@ -32,9 +32,7 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { apiGet } from '@/lib/api/client';
 import { SYNC_STATUS_KEY, syncRefetchInterval } from '@/features/onboarding/api/use-sync-status';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-
-/** The classified worker error that means "reconnect required". */
-const INVALID_GRANT_CODE = 'InvalidGrantError';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 
 export interface MailboxHealth {
   /** ISO stamp of the last completed sync run; null before the first. */
@@ -46,15 +44,9 @@ export interface MailboxHealth {
 /** Project a SyncStatus payload into the card's health shape. */
 export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const syncedAt = status.last_synced_at ?? null;
-  const errorAt = status.last_sync_error_at ?? null;
-  const incrementalAuthError =
-    status.last_sync_error_code === INVALID_GRANT_CODE &&
-    errorAt !== null &&
-    (syncedAt === null || new Date(errorAt).getTime() > new Date(syncedAt).getTime());
-  const initialAuthError = status.error_code === INVALID_GRANT_CODE;
   return {
     lastSyncedAt: syncedAt,
-    needsReconnect: incrementalAuthError || initialAuthError,
+    needsReconnect: syncStatusNeedsReconnect(status),
   };
 }
 

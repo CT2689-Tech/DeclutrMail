@@ -69,12 +69,12 @@ function statusOf(overrides: Partial<SyncStatus>): SyncStatus {
 function frame(status: SyncStatus, note: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(ME_QUERY_KEY, ME);
-  client.setQueryData([...SYNC_STATUS_KEY, null], status);
+  client.setQueryData([...SYNC_STATUS_KEY, ME.activeMailboxId], status);
   return (
     <div style={{ background: color.bg, minHeight: 200 }}>
       <QueryClientProvider client={client}>
         <AuthProvider>
-          <SyncErrorBanner />
+          <SyncErrorBanner mailboxId={ME.activeMailboxId!} />
         </AuthProvider>
       </QueryClientProvider>
       <p
@@ -95,8 +95,9 @@ const meta: StoryMeta<typeof SyncErrorBanner> = {
       description: {
         component:
           'Passive incremental-sync failure banner (D224). Shows when the most recent sync ' +
-          'outcome is an error stamped within the last 60 minutes; a newer successful run ' +
-          'clears it immediately. "Try again" reuses the Sync-now mutation.',
+          'outcome is a retryable error stamped within the last 60 minutes; a newer successful ' +
+          'run clears it immediately. A revoked Gmail grant stays visible until reconnection ' +
+          'and routes to target-bound OAuth instead of retrying a doomed sync.',
       },
     },
   },
@@ -141,5 +142,18 @@ export const HiddenWhenStale: Story<typeof SyncErrorBanner> = {
         last_sync_error_code: 'GMAIL_HISTORY_GONE',
       }),
       'Error stamped 90 minutes ago — outside the 60-minute window, nothing renders.',
+    ),
+};
+
+/** Persistent — a revoked Gmail grant cannot recover through Sync now. */
+export const NeedsReconnect: Story<typeof SyncErrorBanner> = {
+  render: () =>
+    frame(
+      statusOf({
+        last_synced_at: minutesAgo(180),
+        last_sync_error_at: minutesAgo(90),
+        last_sync_error_code: 'InvalidGrantError',
+      }),
+      'Grant expired 90 minutes ago — the critical-trust banner persists until reconnect succeeds.',
     ),
 };

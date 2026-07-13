@@ -10,6 +10,7 @@ import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import {
@@ -113,9 +114,8 @@ export function SettingsScreen() {
   const tier = billing.data?.tier ?? null;
   const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
 
-  function connectAnother() {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-    window.location.assign(`${apiBase}/api/auth/google/connect-mailbox/start`);
+  function connectMailbox(reconnectMailboxId?: string) {
+    startMailboxConnect(reconnectMailboxId);
   }
 
   return (
@@ -194,7 +194,7 @@ export function SettingsScreen() {
           activeMailboxId={me.activeMailboxId}
           inboxLimit={manifestTier?.inboxLimit ?? null}
           healthById={healthById}
-          onConnect={connectAnother}
+          onConnect={connectMailbox}
         />
 
         <SectionLabel id="actions">Actions</SectionLabel>

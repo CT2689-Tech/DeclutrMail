@@ -74,6 +74,10 @@ function TriageExperience() {
 const CONNECT_ERROR_COPY: Record<string, string> = {
   MAILBOX_OWNED_BY_OTHER_WORKSPACE:
     'That Gmail account is already connected to a different DeclutrMail workspace.',
+  reconnect_account_mismatch:
+    'Google returned a different Gmail account. In Settings → Mailboxes, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
+  reconnect_target_invalid:
+    'That reconnect request is no longer valid. Try again from the reconnect banner or Settings.',
   connect_failed: 'Could not connect that Gmail account. Try again.',
 };
 
