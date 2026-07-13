@@ -11,7 +11,7 @@ import { TrackedCta } from './tracked-cta';
  * Server component: the demo loop is pure CSS (8s keyframes in
  * landing.css). Base styles are frame 0, so the global
  * `prefers-reduced-motion` override in tokens.css collapses the loop
- * to the static state D135 asks for.
+ * to its informative completed state.
  */
 export function Hero() {
   return (
@@ -73,7 +73,11 @@ export function Hero() {
  */
 function LedgerCard() {
   return (
-    <div className="dm-mkt-ledger" role="img" aria-label="Demo: archiving a sender in DeclutrMail">
+    <div
+      className="dm-mkt-ledger"
+      role="img"
+      aria-label="Demo: archiving LinkedIn Notifications. 412 messages leave Inbox, remain searchable in All Mail, affect existing mail only, and can be undone in Activity."
+    >
       <div className="dm-mkt-ledger-head">
         <span>
           <span className="dm-mkt-ledger-dot" aria-hidden="true" />
@@ -110,6 +114,11 @@ function LedgerCard() {
             <span>412 messages → All Mail</span>
             <span>Existing mail only · Undo in Activity</span>
           </div>
+        </div>
+        <div className="dm-mkt-ledger-receipt" aria-hidden="true">
+          <span className="dm-mkt-ledger-receipt-mark">✓</span>
+          <b>412 messages archived from Inbox</b>
+          <span>Still searchable in All Mail · existing mail only</span>
         </div>
       </div>
       <div className="dm-mkt-ledger-toast">

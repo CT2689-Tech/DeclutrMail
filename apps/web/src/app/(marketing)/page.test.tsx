@@ -75,6 +75,19 @@ describe('landing page — D134', () => {
     expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
   });
 
+  it('leaves the one-shot hero demo on an informative completed state', () => {
+    const { container } = renderLanding();
+    const receipt = container.querySelector('.dm-mkt-ledger-receipt');
+    expect(receipt?.textContent).toContain('412 messages archived from Inbox');
+    expect(receipt?.textContent).toContain('Still searchable in All Mail');
+    expect(receipt?.textContent).toContain('existing mail only');
+    expect(
+      screen.getByRole('img', {
+        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing mail only/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', () => {
     const { container } = renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));

@@ -321,8 +321,8 @@
 }
 
 /* ── Hero ledger card (D135 adaptation, CSS-only loop) ──────────
-   8s loop. Base styles = frame 0, so the global reduced-motion
-   override in tokens.css collapses the loop to the static state. */
+   8s loop. The global reduced-motion override in tokens.css advances
+   the one-shot timeline immediately to its informative final state. */
 
 .dm-mkt-ledger {
   background: var(--mkt-card);
@@ -363,6 +363,7 @@
 .dm-mkt-ledger-body {
   padding: 18px 16px 16px;
   flex: 1;
+  position: relative;
 }
 
 .dm-mkt-ledger-row {
@@ -460,6 +461,48 @@
 /* The Archive chip is "pressed" mid-loop. */
 .dm-mkt-ledger-verb-archive {
   animation: dm-mkt-press 8s 1 forwards;
+}
+
+/* The completed state replaces the departing sender row, keeping the
+   demo informative after its one-shot motion has finished. */
+.dm-mkt-ledger-receipt {
+  position: absolute;
+  inset: 18px 16px 68px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  padding: 18px;
+  text-align: center;
+  opacity: 0;
+  transform: scale(0.97);
+  pointer-events: none;
+  animation: dm-mkt-receipt 8s 1 forwards;
+}
+
+.dm-mkt-ledger-receipt-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--mkt-accent-soft);
+  border: 1px solid var(--mkt-accent-border);
+  color: var(--mkt-accent);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.dm-mkt-ledger-receipt b {
+  font-family: var(--dm-font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dm-mkt-ledger-receipt > span:last-child {
+  font-family: var(--dm-font-mono);
+  font-size: 10.5px;
+  color: var(--mkt-ink-muted);
 }
 
 /* Undo toast — hidden at frame 0, slides up mid-loop. */
@@ -573,6 +616,19 @@
   100% {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes dm-mkt-receipt {
+  0%,
+  45% {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  52%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
