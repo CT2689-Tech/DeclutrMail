@@ -131,6 +131,27 @@ async function seedMessage(
   });
 }
 
+async function seedCountedCleanupJobs(
+  db: Db,
+  mailboxAccountId: string,
+  senderId: string,
+  count: number,
+  keyPrefix: string,
+): Promise<void> {
+  for (let i = 0; i < count; i += 1) {
+    await db.insert(actionJobs).values({
+      mailboxAccountId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+      requestedCount: 1,
+      affectedCount: 1,
+      status: 'done',
+      idempotencyKey: `${keyPrefix}-${i}`,
+    });
+  }
+}
+
 /** Helper: a Date N days before `now`. */
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -627,6 +648,8 @@ describe('ActionsService', () => {
       const checkedSvc = new ActionsService(db as never, queue as never, undefined, null, {
         assertActionSelectorTier,
         assertCleanupCapacity: vi.fn().mockResolvedValue(undefined),
+        lockCleanupWorkspace: vi.fn().mockResolvedValue({ workspaceId: 'ws-plus', tier: 'plus' }),
+        assertCleanupCapacityForWorkspace: vi.fn().mockResolvedValue(undefined),
       } as never);
 
       const res = await checkedSvc.enqueueComposite({
@@ -732,6 +755,142 @@ describe('ActionsService', () => {
       expect(primary!.compositeId).toBeNull(); // primary is self-implicit
       expect(secondary!.verb).toBe('delete');
       expect(secondary!.compositeId).toBe(primary!.id); // secondary points up
+    });
+
+    it('admits only one concurrent composite when one Free unit remains', async () => {
+      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'composite-race-fill');
+      await seedMessage(db, mailboxId, 'm-composite-race', ['INBOX']);
+
+      // PGlite protects application ordering but not cross-connection lock
+      // behavior; EntitlementsService separately pins the FOR UPDATE SQL.
+      const results = await Promise.allSettled(
+        ['composite-race-a', 'composite-race-b'].map((idempotencyKey) =>
+          svc.enqueueComposite({
+            mailboxAccountId: mailboxId,
+            selector: { type: 'sender', senderId },
+            primary: { type: 'archive' },
+            idempotencyKey,
+            override: false,
+          }),
+        ),
+      );
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'FREE_CAP_REACHED' },
+      });
+      expect(queue.count).toBe(1);
+      expect(
+        await db
+          .select({ id: actionJobs.id })
+          .from(actionJobs)
+          .where(
+            inArray(actionJobs.idempotencyKey, [
+              'archive-composite-race-a',
+              'archive-composite-race-b',
+            ]),
+          ),
+      ).toHaveLength(1);
+    });
+
+    it('concurrent same-key composites replay one quota unit and one queue job', async () => {
+      await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'composite-replay-fill');
+      await seedMessage(db, mailboxId, 'm-composite-replay', ['INBOX']);
+      const request = {
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender' as const, senderId },
+        primary: { type: 'archive' as const },
+        idempotencyKey: 'composite-same-key',
+        override: false,
+      };
+
+      const [first, second] = await Promise.all([
+        svc.enqueueComposite(request),
+        svc.enqueueComposite(request),
+      ]);
+      expect(second.actionId).toBe(first.actionId);
+      expect(queue.count).toBe(1);
+      expect(
+        await db
+          .select({ id: actionJobs.id })
+          .from(actionJobs)
+          .where(eq(actionJobs.idempotencyKey, 'archive-composite-same-key')),
+      ).toHaveLength(1);
+    });
+
+    it('rolls back the primary when a secondary insert violates its DB constraint', async () => {
+      await seedMessage(db, mailboxId, 'm-composite-rollback', ['INBOX']);
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          secondary: { type: 'delete', olderThanDays: 4_000 },
+          idempotencyKey: 'composite-invalid-secondary',
+          override: false,
+        }),
+      ).rejects.toBeTruthy();
+
+      expect(
+        await db
+          .select({ id: actionJobs.id })
+          .from(actionJobs)
+          .where(
+            inArray(actionJobs.idempotencyKey, [
+              'archive-composite-invalid-secondary',
+              'delete-composite-invalid-secondary-sec',
+            ]),
+          ),
+      ).toHaveLength(0);
+      expect(queue.count).toBe(0);
+    });
+
+    it('attempts every committed sibling enqueue when the primary queue add fails', async () => {
+      await seedMessage(db, mailboxId, 'm-composite-queue', ['INBOX']);
+      const flakyQueue = fakeQueue();
+      const add = flakyQueue.add.bind(flakyQueue);
+      const attempted: string[] = [];
+      flakyQueue.add = async (job, data, opts) => {
+        const jobId = opts.jobId ?? '';
+        attempted.push(jobId);
+        if (jobId === 'archive-composite-queue-both') {
+          throw new Error('primary queue unavailable');
+        }
+        await add(job, data, opts);
+      };
+      const service = new ActionsService(db as never, flakyQueue as never);
+
+      await expect(
+        service.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          secondary: { type: 'delete' },
+          idempotencyKey: 'composite-queue-both',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+      expect(attempted.sort()).toEqual(
+        ['archive-composite-queue-both', 'delete-composite-queue-both-sec'].sort(),
+      );
+      const rows = await db
+        .select({ key: actionJobs.idempotencyKey, status: actionJobs.status })
+        .from(actionJobs)
+        .where(
+          inArray(actionJobs.idempotencyKey, [
+            'archive-composite-queue-both',
+            'delete-composite-queue-both-sec',
+          ]),
+        );
+      expect(new Map(rows.map((row) => [row.key, row.status]))).toEqual(
+        new Map([
+          ['archive-composite-queue-both', 'failed'],
+          ['delete-composite-queue-both-sec', 'queued'],
+        ]),
+      );
+      expect(flakyQueue.count).toBe(1);
     });
 
     it('Protected sender blocks BOTH rows before either is written (no partial-composite)', async () => {

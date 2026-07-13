@@ -497,15 +497,13 @@ export class ActionsService {
     }
 
     // D19/D77 free-cleanup cap — a composite (primary + optional
-    // secondary on ONE sender, one click) is ONE unit. Fresh enqueues
-    // only: when the primary's key row already exists this is an
-    // idempotent replay whose unit was already consumed. The counting
-    // rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    // secondary on ONE sender, one click) is ONE unit. Resolve its keys
+    // and target counts before opening the short write transaction; the
+    // transaction below serializes replay/capacity/insert on the workspace
+    // row. The counting rule lives on
+    // `EntitlementsService.cleanupUnitsUsed`.
     const safeKey = idempotencyKey.replace(/:/g, '-');
     const primaryStorageKey = `${primary.type}-${safeKey}`;
-    if (!(await this.hasJobWithKey(primaryStorageKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
-    }
 
     // Resolve target set + ownership ONCE for the sender selector — both
     // primary and secondary act on the same sender / same selector. The
@@ -559,42 +557,13 @@ export class ActionsService {
       storedSelector = { type: 'messages' };
     }
 
-    const primaryRow = await this.insertJob({
-      mailboxAccountId,
-      verb: primary.type,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds,
-      requestedCount: primaryCount,
-      idempotencyKey: primaryStorageKey,
-      olderThanDays: primary.olderThanDays ?? null,
-    });
-
-    if (!primaryRow.existing) {
-      await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryStorageKey);
-    }
-
-    if (!secondary) {
-      return {
-        actionId: primaryRow.row.id,
-        // Single-verb: per the wire contract, `compositeId` mirrors
-        // `actionId` so the FE can carry it uniformly through undo
-        // (cascade-undo on a single-row composite is a no-op join).
-        compositeId: primaryRow.row.id,
-        secondaryId: null,
-        status: primaryRow.row.status,
-        primaryCount: primaryRow.row.requestedCount,
-        secondaryCount: null,
-      };
-    }
-
     // Secondary acts on the SAME sender / messages selector but with its
     // own time-window. Re-resolve the count for the secondary's window;
     // resolved ids stay empty for sender selector (worker handles), and
     // for messages selector the secondary shares the primary's frozen set.
-    const secondaryStorageKey = `${secondary.type}-${safeKey}-sec`;
-    let secondaryCount: number;
-    if (selector.type === 'sender') {
+    const secondaryStorageKey = secondary ? `${secondary.type}-${safeKey}-sec` : null;
+    let secondaryCount: number | null = null;
+    if (secondary && selector.type === 'sender') {
       // The sender selector already resolved the senderKey above; reuse it
       // via the stored selector.
       const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
@@ -603,33 +572,94 @@ export class ActionsService {
         senderSel.senderKey,
         secondary.olderThanDays ?? null,
       );
-    } else {
+    } else if (secondary) {
       secondaryCount = resolvedMessageIds.length;
     }
 
-    const secondaryRow = await this.insertJob({
-      mailboxAccountId,
-      verb: secondary.type,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
-      requestedCount: secondaryCount,
-      idempotencyKey: secondaryStorageKey,
-      olderThanDays: secondary.olderThanDays ?? null,
-      compositeId: primaryRow.row.id,
+    // The workspace lock remains held through BOTH inserts. That makes a
+    // fresh composite one atomic quota-consuming write: no concurrent
+    // request can claim the same final Free slot, and a secondary insert
+    // failure rolls the primary back with it. Queueing is deliberately
+    // outside the transaction so workers never observe an uncommitted
+    // sibling.
+    const persisted = await this.db.transaction(async (tx) => {
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+      }
+
+      const primaryRow = await this.insertJob(
+        {
+          mailboxAccountId,
+          verb: primary.type,
+          direction: 'forward',
+          selector: storedSelector,
+          resolvedMessageIds,
+          requestedCount: primaryCount,
+          idempotencyKey: primaryStorageKey,
+          olderThanDays: primary.olderThanDays ?? null,
+        },
+        tx,
+      );
+
+      const secondaryRow =
+        secondary && secondaryStorageKey && secondaryCount !== null
+          ? await this.insertJob(
+              {
+                mailboxAccountId,
+                verb: secondary.type,
+                direction: 'forward',
+                selector: storedSelector,
+                resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+                requestedCount: secondaryCount,
+                idempotencyKey: secondaryStorageKey,
+                olderThanDays: secondary.olderThanDays ?? null,
+                compositeId: primaryRow.row.id,
+              },
+              tx,
+            )
+          : null;
+
+      return { primaryRow, secondaryRow };
     });
 
-    if (!secondaryRow.existing) {
-      await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryStorageKey);
+    // Start every fresh enqueue even if a sibling enqueue rejects. Waiting
+    // with allSettled prevents an early failure from stranding a committed
+    // fresh row without an enqueue attempt.
+    const freshRows = [
+      !persisted.primaryRow.existing
+        ? {
+            actionId: persisted.primaryRow.row.id,
+            idempotencyKey: primaryStorageKey,
+          }
+        : null,
+      persisted.secondaryRow && !persisted.secondaryRow.existing && secondaryStorageKey
+        ? {
+            actionId: persisted.secondaryRow.row.id,
+            idempotencyKey: secondaryStorageKey,
+          }
+        : null,
+    ].filter((row): row is { actionId: string; idempotencyKey: string } => row !== null);
+    const enqueueResults = await Promise.allSettled(
+      freshRows.map((row) => this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey)),
+    );
+    const enqueueFailure = enqueueResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (enqueueFailure) {
+      throw enqueueFailure.reason;
     }
 
     return {
-      actionId: primaryRow.row.id,
-      compositeId: primaryRow.row.id,
-      secondaryId: secondaryRow.row.id,
-      status: primaryRow.row.status,
-      primaryCount: primaryRow.row.requestedCount,
-      secondaryCount: secondaryRow.row.requestedCount,
+      actionId: persisted.primaryRow.row.id,
+      // Single-verb: per the wire contract, `compositeId` mirrors
+      // `actionId` so the FE can carry it uniformly through undo
+      // (cascade-undo on a single-row composite is a no-op join).
+      compositeId: persisted.primaryRow.row.id,
+      secondaryId: persisted.secondaryRow?.row.id ?? null,
+      status: persisted.primaryRow.row.status,
+      primaryCount: persisted.primaryRow.row.requestedCount,
+      secondaryCount: persisted.secondaryRow?.row.requestedCount ?? null,
     };
   }
 
