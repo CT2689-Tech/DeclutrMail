@@ -122,94 +122,108 @@ export function Sidebar({
         </span>
       </div>
 
-      {NAV.map((group, gi) => (
-        <div
-          key={group.heading ?? `g${gi}`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
-        >
-          {group.heading != null && (
-            <div
-              style={{
-                padding: '4px 10px 6px',
-                fontFamily: font.mono,
-                fontSize: 9.5,
-                fontWeight: 500,
-                color: color.fgMuted,
-                textTransform: 'uppercase',
-                letterSpacing: '0.14em',
-              }}
+      <nav
+        aria-label="Product navigation"
+        style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+      >
+        {NAV.map((group, gi) => {
+          const headingId =
+            group.heading == null
+              ? undefined
+              : `sidebar-group-${group.heading.toLowerCase()}-heading`;
+          return (
+            <section
+              key={group.heading ?? `g${gi}`}
+              aria-labelledby={headingId}
+              style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
             >
-              {group.heading}
-            </div>
-          )}
-          {group.items.map((item) => {
-            const on = active === item.id;
-            const badge = counts[item.id];
-            return (
-              <button
-                key={item.id}
-                onClick={() => onNavigate(item.id)}
-                aria-current={on ? 'page' : undefined}
-                onMouseEnter={(e) => {
-                  if (!on) e.currentTarget.style.background = 'rgba(14,20,19,0.04)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!on) e.currentTarget.style.background = 'transparent';
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  padding: '6px 10px',
-                  borderRadius: radius.sm,
-                  border: 'none',
-                  background: on ? color.primarySoft : 'transparent',
-                  color: on ? color.primary : color.fg,
-                  fontFamily: font.sans,
-                  fontSize: 13,
-                  fontWeight: on ? 600 : 500,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  transition: 'background 0.12s',
-                }}
-              >
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              {group.heading != null && (
+                <h2
+                  id={headingId}
+                  style={{
+                    margin: 0,
+                    padding: '4px 10px 6px',
+                    fontFamily: font.mono,
+                    fontSize: 9.5,
+                    fontWeight: 500,
+                    color: color.fgMuted,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.14em',
+                  }}
                 >
-                  <path d={item.icon} />
-                </svg>
-                <span style={{ flex: 1 }}>{labels[item.id]}</span>
-                {badge != null &&
-                  (isValidElement(badge) ? (
-                    badge
-                  ) : (
-                    <span
-                      style={{
-                        fontFamily: font.mono,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        padding: '1px 6px',
-                        borderRadius: radius.pill,
-                        background: on ? color.primary : color.mutedBg,
-                        color: on ? color.fgInverse : color.fgMuted,
-                      }}
+                  {group.heading}
+                </h2>
+              )}
+              {group.items.map((item) => {
+                const on = active === item.id;
+                const badge = counts[item.id];
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onNavigate(item.id)}
+                    aria-current={on ? 'page' : undefined}
+                    onMouseEnter={(e) => {
+                      if (!on) e.currentTarget.style.background = 'rgba(14,20,19,0.04)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!on) e.currentTarget.style.background = 'transparent';
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 9,
+                      padding: '6px 10px',
+                      borderRadius: radius.sm,
+                      border: 'none',
+                      background: on ? color.primarySoft : 'transparent',
+                      color: on ? color.primary : color.fg,
+                      fontFamily: font.sans,
+                      fontSize: 13,
+                      fontWeight: on ? 600 : 500,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'background 0.12s',
+                    }}
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
                     >
-                      {badge}
-                    </span>
-                  ))}
-              </button>
-            );
-          })}
-        </div>
-      ))}
+                      <path d={item.icon} />
+                    </svg>
+                    <span style={{ flex: 1 }}>{labels[item.id]}</span>
+                    {badge != null &&
+                      (isValidElement(badge) ? (
+                        badge
+                      ) : (
+                        <span
+                          style={{
+                            fontFamily: font.mono,
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '1px 6px',
+                            borderRadius: radius.pill,
+                            background: on ? color.primary : color.mutedBg,
+                            color: on ? color.fgInverse : color.fgMuted,
+                          }}
+                        >
+                          {badge}
+                        </span>
+                      ))}
+                  </button>
+                );
+              })}
+            </section>
+          );
+        })}
+      </nav>
     </aside>
   );
 }
