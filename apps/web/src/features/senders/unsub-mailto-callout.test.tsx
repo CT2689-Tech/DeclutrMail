@@ -1,6 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({
+    me: {
+      user: { email: 'default@example.com' },
+      activeMailboxId: 'mailbox-newsletters',
+      mailboxes: [
+        { id: 'mailbox-default', email: 'default@example.com', status: 'active' },
+        {
+          id: 'mailbox-newsletters',
+          email: 'newsletters+declutr@example.com',
+          status: 'active',
+        },
+      ],
+    },
+  }),
+  getActiveMailboxEmail: (me: {
+    activeMailboxId: string;
+    mailboxes: Array<{ id: string; email: string }>;
+    user: { email: string };
+  }) => me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ?? me.user.email,
+}));
+
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 
 /**
@@ -18,8 +40,9 @@ describe('UnsubMailtoCallout', () => {
     );
     const link = screen.getByRole('link', { name: 'Open Gmail compose' });
     expect(link.getAttribute('href')).toBe(
-      'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Unsubscribe+me',
+      'https://mail.google.com/mail/?authuser=newsletters%2Bdeclutr%40example.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Unsubscribe+me',
     );
+    expect(link.getAttribute('href')).not.toContain('/u/0');
     // Opens a new tab — the user finishes there.
     expect(link.getAttribute('target')).toBe('_blank');
   });
@@ -65,6 +88,10 @@ describe('UnsubMailtoChecklist', () => {
     expect(region).toHaveTextContent('2 email unsubscribe drafts still need you');
     expect(region).toHaveTextContent('did not send the email requests');
     expect(screen.getAllByRole('link', { name: 'Open draft' })).toHaveLength(2);
+    for (const link of screen.getAllByRole('link', { name: 'Open draft' })) {
+      expect(link.getAttribute('href')).toContain('authuser=newsletters%2Bdeclutr%40example.com');
+      expect(link.getAttribute('href')).not.toContain('/u/0');
+    }
   });
 
   it('dismisses the checklist explicitly', () => {

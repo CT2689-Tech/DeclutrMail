@@ -108,6 +108,15 @@ describe('GmailOpenLinkService', () => {
       'https://mail.google.com/mail/?authuser=owner%40example.com#search/from%3A%22sender%40example.com%22',
     );
     expect(
+      GmailOpenLinkService.buildFromSearchLink({
+        mailboxEmail: 'owner@example.com',
+        from: '@news.example.com OR is:starred',
+      }),
+    ).toBe(
+      'https://mail.google.com/mail/?authuser=owner%40example.com#search/' +
+        'from%3A%22%40news.example.com%20OR%20is%3Astarred%22',
+    );
+    expect(
       GmailOpenLinkService.buildComposeLink({
         mailboxEmail: 'owner@example.com',
         to: 'unsubscribe+list@example.com',

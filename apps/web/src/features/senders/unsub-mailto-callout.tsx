@@ -9,6 +9,7 @@
 // `activityKeys`.
 
 import { tokens } from '@declutrmail/shared';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { gmailComposeUrlFromMailto } from '@/lib/gmail-links';
 
 const { color, font } = tokens;
@@ -34,7 +35,9 @@ export function UnsubMailtoCallout({
   /** Present on transient (post-confirm) placements; omit for persistent ones. */
   onDismiss?: () => void;
 }) {
-  const composeUrl = gmailComposeUrlFromMailto(mailtoUrl);
+  const auth = useOptionalAuth();
+  const mailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  const composeUrl = mailboxEmail ? gmailComposeUrlFromMailto(mailboxEmail, mailtoUrl) : null;
   if (!composeUrl) return null;
 
   return (
@@ -110,8 +113,12 @@ export function UnsubMailtoChecklist({
   items: ReadonlyArray<{ senderName: string; mailtoUrl: string }>;
   onDismiss: () => void;
 }) {
+  const auth = useOptionalAuth();
+  const mailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const drafts = items.flatMap((item) => {
-    const composeUrl = gmailComposeUrlFromMailto(item.mailtoUrl);
+    const composeUrl = mailboxEmail
+      ? gmailComposeUrlFromMailto(mailboxEmail, item.mailtoUrl)
+      : null;
     return composeUrl ? [{ ...item, composeUrl }] : [];
   });
   if (drafts.length === 0) return null;

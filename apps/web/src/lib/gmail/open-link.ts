@@ -19,6 +19,11 @@ export interface GmailSearchLinkInput {
   query: string;
 }
 
+export interface GmailFromSearchLinkInput {
+  mailboxEmail: string;
+  from: string;
+}
+
 export interface GmailComposeLinkInput {
   mailboxEmail: string;
   to: string;
@@ -123,6 +128,15 @@ export const GmailOpenLinkService = {
     const query = nonEmpty(input.query);
     if (!base || !query) return null;
     return withFragment(base, 'search', query);
+  },
+
+  buildFromSearchLink(input: GmailFromSearchLinkInput): string | null {
+    const from = nonEmpty(input.from);
+    if (!from) return null;
+    return GmailOpenLinkService.buildSearchLink({
+      mailboxEmail: input.mailboxEmail,
+      query: `from:${quotedSearchValue(from)}`,
+    });
   },
 
   buildComposeLink(input: GmailComposeLinkInput): string | null {
