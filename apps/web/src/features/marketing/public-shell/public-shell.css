@@ -77,6 +77,26 @@
   text-decoration: none;
 }
 
+.dm-public-nav a {
+  position: relative;
+  padding: 9px 0;
+}
+
+.dm-public-nav a[aria-current='page'] {
+  color: var(--dm-fg);
+}
+
+.dm-public-nav a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--dm-primary);
+}
+
 .dm-public-nav a:hover,
 .dm-public-sign-in:hover {
   color: var(--dm-primary);
@@ -153,6 +173,12 @@
 .dm-public-menu nav a:hover {
   background: var(--dm-primary-soft);
   color: var(--dm-primary);
+}
+
+.dm-public-menu nav a[aria-current='page'] {
+  background: var(--dm-primary-soft);
+  color: var(--dm-primary);
+  font-weight: 650;
 }
 
 .dm-public-menu nav .dm-public-menu-start {

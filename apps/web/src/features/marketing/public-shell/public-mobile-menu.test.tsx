@@ -42,5 +42,9 @@ describe('PublicMobileMenu', () => {
     fireEvent.click(screen.getByRole('link', { name: 'How it works' }));
 
     expect(details.open).toBe(false);
+    expect(screen.getByRole('link', { name: 'How it works' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 });

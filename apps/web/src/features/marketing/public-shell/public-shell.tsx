@@ -5,6 +5,7 @@ import { PrivacyBadge } from '@declutrmail/shared';
 import { oauthStartUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
 import { PublicMobileMenu } from './public-mobile-menu';
+import { PublicNavLinks } from './public-nav-links';
 
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
@@ -68,11 +69,7 @@ export function PublicHeader() {
           </Link>
 
           <nav className="dm-public-nav" aria-label="Primary navigation">
-            {PRODUCT_LINKS.map((link) => (
-              <Link key={link.href} href={link.href}>
-                {link.label}
-              </Link>
-            ))}
+            <PublicNavLinks links={PRODUCT_LINKS} />
           </nav>
 
           <div className="dm-public-actions">

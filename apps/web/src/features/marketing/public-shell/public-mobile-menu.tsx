@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { TrackedCta } from '../landing/tracked-cta';
+import { PublicNavLinks } from './public-nav-links';
 
 export function PublicMobileMenu({
   links,
@@ -36,11 +37,7 @@ export function PublicMobileMenu({
     >
       <summary aria-label="Open navigation">Menu</summary>
       <nav aria-label="Mobile navigation">
-        {links.map((link) => (
-          <Link key={link.href} href={link.href} onClick={close}>
-            {link.label}
-          </Link>
-        ))}
+        <PublicNavLinks links={links} onNavigate={close} />
         <Link href="/sign-in" onClick={close}>
           Sign in
         </Link>
