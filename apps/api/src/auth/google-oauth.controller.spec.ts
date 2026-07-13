@@ -7,11 +7,102 @@ import {
   RATE_LIMIT_METADATA,
   type RateLimitOptions,
 } from '../common/rate-limit/rate-limit.types.js';
+import type { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import type { GoogleOAuthService } from './google-oauth.service.js';
 import { GoogleOAuthController, parseBillingReturnTo } from './google-oauth.controller.js';
+import { JwtService } from './jwt.service.js';
+import type { SessionPrincipal, SessionsService } from './sessions.service.js';
+
+const RECONNECT_MAILBOX_ID = '11111111-1111-4111-8111-111111111111';
+const RECONNECT_USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const RECONNECT_WORKSPACE_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const CONNECT_SESSION_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const OTHER_USER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const OTHER_WORKSPACE_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const OTHER_SESSION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const PRINCIPAL_JTI = '99999999-9999-4999-8999-999999999999';
+
+function makeJwtService(): JwtService {
+  const previousAccess = process.env.JWT_ACCESS_SECRET;
+  const previousRefresh = process.env.JWT_REFRESH_SECRET;
+  process.env.JWT_ACCESS_SECRET = 'oauth-state-test-access-secret-000000000001';
+  process.env.JWT_REFRESH_SECRET = 'oauth-state-test-refresh-secret-00000000002';
+  const jwt = new JwtService();
+  if (previousAccess === undefined) delete process.env.JWT_ACCESS_SECRET;
+  else process.env.JWT_ACCESS_SECRET = previousAccess;
+  if (previousRefresh === undefined) delete process.env.JWT_REFRESH_SECRET;
+  else process.env.JWT_REFRESH_SECRET = previousRefresh;
+  return jwt;
+}
+
+function makeSessions(
+  userId: string = RECONNECT_USER_ID,
+  workspaceId: string = RECONNECT_WORKSPACE_ID,
+): {
+  service: SessionsService;
+  lookupActiveById: ReturnType<typeof vi.fn>;
+} {
+  const lookupActiveById = vi
+    .fn()
+    .mockResolvedValue({ id: CONNECT_SESSION_ID, userId, workspaceId });
+  return {
+    service: { lookupActiveById } as unknown as SessionsService,
+    lookupActiveById,
+  };
+}
+
+function signedState(
+  jwt: JwtService,
+  state: Record<string, unknown>,
+  expiresAt: number = Date.now() + 9 * 60 * 1000,
+  issuedAt: number = Date.now(),
+): string {
+  return jwt.sealOAuthState(JSON.stringify({ ...state, issuedAt, expiresAt }));
+}
+
+function decodeSignedState(jwt: JwtService, cookie: string): Record<string, unknown> {
+  const payload = jwt.openOAuthState(cookie);
+  if (!payload) throw new Error('Expected an authenticated OAuth-state cookie.');
+  return JSON.parse(payload) as Record<string, unknown>;
+}
+
+/** Change authenticated bytes without recomputing the HMAC. */
+function tamperSignedState(cookie: string, field: string, value: unknown): string {
+  const [version, encodedPayload, signature] = cookie.split('.');
+  if (!version || !encodedPayload || !signature) throw new Error('Invalid test cookie.');
+  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+  payload[field] = value;
+  return `${version}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${signature}`;
+}
+
+function makeMailboxAccounts(): { findOwned: ReturnType<typeof vi.fn> } {
+  return { findOwned: vi.fn() };
+}
+
+function activeReconnectTarget(
+  overrides: Partial<{
+    id: string;
+    userId: string;
+    workspaceId: string;
+    status: 'active' | 'disconnected';
+    providerAccountId: string;
+  }> = {},
+) {
+  return {
+    id: RECONNECT_MAILBOX_ID,
+    userId: RECONNECT_USER_ID,
+    workspaceId: RECONNECT_WORKSPACE_ID,
+    status: 'active' as const,
+    providerAccountId: 'second@example.com',
+    ...overrides,
+  };
+}
 
 /** A SecurityEventsService stand-in with `record` as a spy. */
 function makeSecurityEvents(): {
@@ -61,10 +152,14 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   it('stores only the canonical local billing destination in OAuth state', () => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
     const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const jwt = makeJwtService();
     const controller = new GoogleOAuthController(
       oauth as unknown as GoogleOAuthService,
       {} as AuthSignupOrchestrator,
       makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
     );
 
     controller.start(
@@ -72,12 +167,21 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       '/billing?cycle=annual&promo=foundingPro&plan=pro',
     );
 
-    const state = JSON.parse(res.cookie.mock.calls[0]?.[1] as string) as Record<string, unknown>;
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).toMatchObject({
       mode: 'login',
       returnTo: '/billing?plan=pro&cycle=annual&promo=foundingPro',
     });
     expect(state.nonce).toEqual(expect.any(String));
+    expect((state.expiresAt as number) - (state.issuedAt as number)).toBe(10 * 60 * 1000);
+    expect(res.cookie.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/api/auth/google',
+        maxAge: 10 * 60 * 1000,
+      }),
+    );
     expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
   });
 
@@ -90,15 +194,19 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   ])('drops an unsafe or impossible returnTo: %s', (returnTo) => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
     const res = { cookie: vi.fn(), redirect: vi.fn() };
+    const jwt = makeJwtService();
     const controller = new GoogleOAuthController(
       oauth as unknown as GoogleOAuthService,
       {} as AuthSignupOrchestrator,
       makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
     );
 
     controller.start(res as unknown as Response, returnTo);
 
-    const state = JSON.parse(res.cookie.mock.calls[0]?.[1] as string) as Record<string, unknown>;
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).not.toHaveProperty('returnTo');
   });
 
@@ -107,6 +215,90 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       '/billing?plan=plus&cycle=monthly',
     );
     expect(parseBillingReturnTo('/senders')).toBeUndefined();
+    expect(parseBillingReturnTo(['/billing?plan=plus&cycle=monthly'])).toBeUndefined();
+  });
+});
+
+describe('GoogleOAuthController.connectMailboxStart — targeted reconnect', () => {
+  const principal: SessionPrincipal = {
+    userId: RECONNECT_USER_ID,
+    workspaceId: RECONNECT_WORKSPACE_ID,
+    sessionId: CONNECT_SESSION_ID,
+    jti: PRINCIPAL_JTI,
+  };
+  let oauth: { getConsentUrl: ReturnType<typeof vi.fn> };
+  let mailboxes: ReturnType<typeof makeMailboxAccounts>;
+  let jwt: JwtService;
+  let controller: GoogleOAuthController;
+  let res: { cookie: ReturnType<typeof vi.fn>; redirect: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+    mailboxes = makeMailboxAccounts();
+    jwt = makeJwtService();
+    res = { cookie: vi.fn(), redirect: vi.fn() };
+    controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+      mailboxes as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
+    );
+  });
+
+  it('binds a syntactically valid owned active target into OAuth state', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+
+    await controller.connectMailboxStart(
+      principal,
+      res as unknown as Response,
+      RECONNECT_MAILBOX_ID,
+    );
+
+    expect(mailboxes.findOwned).toHaveBeenCalledWith(RECONNECT_WORKSPACE_ID, RECONNECT_MAILBOX_ID);
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
+    expect(state).toMatchObject({
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reconnectMailboxId: RECONNECT_MAILBOX_ID,
+    });
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://accounts.google.test/consent');
+  });
+
+  it('rejects a malformed target before any database read or consent redirect', async () => {
+    await expect(
+      controller.connectMailboxStart(principal, res as unknown as Response, 'not-a-uuid'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', null],
+    ['disconnected', activeReconnectTarget({ status: 'disconnected' })],
+    ['owned by another user', activeReconnectTarget({ userId: OTHER_USER_ID })],
+  ])('rejects a %s target without starting consent', async (_label, target) => {
+    mailboxes.findOwned.mockResolvedValueOnce(target);
+
+    await expect(
+      controller.connectMailboxStart(principal, res as unknown as Response, RECONNECT_MAILBOX_ID),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it('keeps normal connect state unchanged when no reconnect target is supplied', async () => {
+    await controller.connectMailboxStart(principal, res as unknown as Response);
+
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
+    expect(state).not.toHaveProperty('reconnectMailboxId');
   });
 });
 
@@ -123,7 +315,10 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
   const NONCE = 'nonce-value';
   let orchestrator: { addMailbox: ReturnType<typeof vi.fn> };
   let oauth: { exchangeCode: ReturnType<typeof vi.fn> };
+  let mailboxes: ReturnType<typeof makeMailboxAccounts>;
   let securityEvents: ReturnType<typeof makeSecurityEvents>;
+  let jwt: JwtService;
+  let sessions: ReturnType<typeof makeSessions>;
   let controller: GoogleOAuthController;
   let res: { clearCookie: ReturnType<typeof vi.fn>; redirect: ReturnType<typeof vi.fn> };
 
@@ -133,22 +328,30 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
       exchangeCode: vi.fn().mockResolvedValue({ email: 'second@example.com', refreshToken: 'rt' }),
     };
     securityEvents = makeSecurityEvents();
+    mailboxes = makeMailboxAccounts();
+    jwt = makeJwtService();
+    sessions = makeSessions();
     res = { clearCookie: vi.fn(), redirect: vi.fn() };
     controller = new GoogleOAuthController(
       oauth as unknown as GoogleOAuthService,
       orchestrator as unknown as AuthSignupOrchestrator,
       securityEvents.service,
+      mailboxes as unknown as MailboxAccountsService,
+      jwt,
+      sessions.service,
     );
   });
 
-  function reqWithState(): Request {
+  function reqWithState(reconnectMailboxId?: string): Request {
     return {
       cookies: {
-        oauth_state: JSON.stringify({
+        oauth_state: signedState(jwt, {
           nonce: NONCE,
           mode: 'connect',
-          userId: 'u-owner',
-          workspaceId: 'w-home',
+          userId: RECONNECT_USER_ID,
+          workspaceId: RECONNECT_WORKSPACE_ID,
+          sessionId: CONNECT_SESSION_ID,
+          ...(reconnectMailboxId ? { reconnectMailboxId } : {}),
         }),
       },
       headers: {},
@@ -159,10 +362,98 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
     await controller.callback(reqWithState(), res as unknown as Response, 'auth-code', NONCE);
 
     expect(orchestrator.addMailbox).toHaveBeenCalledWith(
-      expect.objectContaining({ currentUserId: 'u-owner', currentWorkspaceId: 'w-home' }),
+      expect.objectContaining({
+        currentUserId: RECONNECT_USER_ID,
+        currentWorkspaceId: RECONNECT_WORKSPACE_ID,
+      }),
     );
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/onboarding?mailbox=mailbox-new`);
+  });
+
+  it('revalidates and completes a targeted reconnect using the stored canonical email', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+    oauth.exchangeCode.mockResolvedValueOnce({
+      email: ' SECOND@example.com ',
+      refreshToken: 'fresh-rt',
+    });
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(orchestrator.addMailbox).toHaveBeenCalledWith({
+      currentUserId: RECONNECT_USER_ID,
+      currentWorkspaceId: RECONNECT_WORKSPACE_ID,
+      email: 'second@example.com',
+      refreshToken: 'fresh-rt',
+    });
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/onboarding?mailbox=mailbox-new`);
+  });
+
+  it('does not mutate when Google returns a different account than the bound target', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(activeReconnectTarget());
+    oauth.exchangeCode.mockResolvedValueOnce({ email: 'other@example.com', refreshToken: 'rt' });
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login.failure',
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+        payload: {
+          provider: 'google',
+          mode: 'connect',
+          reason: 'reconnect_account_mismatch',
+        },
+      }),
+    );
+    expect(JSON.stringify(securityEvents.record.mock.calls.at(-1)?.[0])).not.toContain(
+      'other@example.com',
+    );
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/triage?connect_error=reconnect_account_mismatch`,
+    );
+  });
+
+  it('does not mutate when the bound target is no longer valid at callback time', async () => {
+    mailboxes.findOwned.mockResolvedValueOnce(null);
+
+    await controller.callback(
+      reqWithState(RECONNECT_MAILBOX_ID),
+      res as unknown as Response,
+      'auth-code',
+      NONCE,
+    );
+
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: {
+          provider: 'google',
+          mode: 'connect',
+          reason: 'reconnect_target_invalid',
+        },
+      }),
+    );
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/triage?connect_error=reconnect_target_invalid`,
+    );
   });
 });
 
@@ -185,6 +476,8 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
   };
   let oauth: { exchangeCode: ReturnType<typeof vi.fn> };
   let securityEvents: ReturnType<typeof makeSecurityEvents>;
+  let jwt: JwtService;
+  let sessions: ReturnType<typeof makeSessions>;
   let controller: GoogleOAuthController;
   let res: {
     clearCookie: ReturnType<typeof vi.fn>;
@@ -207,11 +500,16 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       exchangeCode: vi.fn().mockResolvedValue({ email: 'first@example.com', refreshToken: 'rt' }),
     };
     securityEvents = makeSecurityEvents();
+    jwt = makeJwtService();
+    sessions = makeSessions();
     res = { clearCookie: vi.fn(), redirect: vi.fn(), cookie: vi.fn() };
     controller = new GoogleOAuthController(
       oauth as unknown as GoogleOAuthService,
       orchestrator as unknown as AuthSignupOrchestrator,
       securityEvents.service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      sessions.service,
     );
   });
 
@@ -231,7 +529,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
   function loginCookie(nonce: string = NONCE, returnTo?: string): Record<string, string> {
     return {
-      oauth_state: JSON.stringify({
+      oauth_state: signedState(jwt, {
         nonce,
         mode: 'login',
         ...(returnTo ? { returnTo } : {}),
@@ -241,12 +539,13 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
   function connectCookie(
     nonce: string = NONCE,
-    extras: Partial<{ userId: string; workspaceId: string }> = {
-      userId: 'u-owner',
-      workspaceId: 'w-home',
+    extras: Partial<{ userId: string; workspaceId: string; sessionId: string }> = {
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
     },
   ): Record<string, string> {
-    return { oauth_state: JSON.stringify({ nonce, mode: 'connect', ...extras }) };
+    return { oauth_state: signedState(jwt, { nonce, mode: 'connect', ...extras }) };
   }
 
   it('records login.failure { reason: missing_state_cookie } and still throws BadRequest', async () => {
@@ -265,7 +564,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
   });
 
-  it('records login.failure { reason: malformed_state_cookie } on bad JSON', async () => {
+  it('records one invalid-state-cookie reason for malformed or unauthenticated input', async () => {
     await expect(
       controller.callback(
         req({ cookies: { oauth_state: 'not-json' } }),
@@ -277,9 +576,156 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
     expect(securityEvents.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        payload: { provider: 'google', reason: 'malformed_state_cookie' },
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
       }),
     );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['mode', 'login'],
+    ['userId', '22222222-2222-4222-8222-222222222222'],
+    ['workspaceId', '33333333-3333-4333-8333-333333333333'],
+    ['sessionId', OTHER_SESSION_ID],
+    ['reconnectMailboxId', '22222222-2222-4222-8222-222222222222'],
+    ['nonce', 'attacker-nonce'],
+    ['expiresAt', Date.now() + 60 * 60 * 1000],
+  ])('rejects HMAC tampering of %s before any authority is used', async (field, value) => {
+    const authentic = signedState(jwt, {
+      nonce: NONCE,
+      mode: 'connect',
+      userId: RECONNECT_USER_ID,
+      workspaceId: RECONNECT_WORKSPACE_ID,
+      sessionId: CONNECT_SESSION_ID,
+      reconnectMailboxId: RECONNECT_MAILBOX_ID,
+    });
+    const tampered = tamperSignedState(authentic, field, value);
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: tampered } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
+      }),
+    );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+
+  it.each(['userId', 'workspaceId', 'sessionId', 'reconnectMailboxId'])(
+    'rejects a correctly signed connect state with malformed UUID authority in %s',
+    async (field) => {
+      const authority: Record<string, unknown> = {
+        nonce: NONCE,
+        mode: 'connect',
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+        sessionId: CONNECT_SESSION_ID,
+        reconnectMailboxId: RECONNECT_MAILBOX_ID,
+      };
+      authority[field] = 'not-a-uuid';
+      const malformed = signedState(jwt, authority);
+
+      await expect(
+        controller.callback(
+          req({ cookies: { oauth_state: malformed } }),
+          res as unknown as Response,
+          'code',
+          NONCE,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payload: { provider: 'google', reason: 'invalid_state_cookie' },
+        }),
+      );
+      expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+      expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+      expect(oauth.exchangeCode).not.toHaveBeenCalled();
+      expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+      expect(orchestrator.connect).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an authentically signed but expired state before session or exchange', async () => {
+    const issuedAt = Date.now() - 10 * 60 * 1000;
+    const expired = signedState(
+      jwt,
+      {
+        nonce: NONCE,
+        mode: 'connect',
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+        sessionId: CONNECT_SESSION_ID,
+      },
+      issuedAt + 9 * 60 * 1000,
+      issuedAt,
+    );
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: expired } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+  });
+
+  it('rejects a signed expiry beyond the fixed ten-minute consent window', async () => {
+    const overlong = signedState(
+      jwt,
+      { nonce: NONCE, mode: 'login' },
+      Date.now() + 10 * 60 * 1000 + 30_000,
+    );
+
+    await expect(
+      controller.callback(
+        req({ cookies: { oauth_state: overlong } }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['state', 'code', [NONCE]],
+    ['code', ['code'], NONCE],
+  ])('rejects a non-scalar %s query value before exchange', async (_field, code, state) => {
+    await expect(
+      controller.callback(req({ cookies: loginCookie() }), res as unknown as Response, code, state),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.connect).not.toHaveBeenCalled();
   });
 
   it('records login.failure { reason: invalid_state } when nonces disagree', async () => {
@@ -297,6 +743,8 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         payload: { provider: 'google', reason: 'invalid_state' },
       }),
     );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
   });
 
   it('records login.failure { reason: missing_code }', async () => {
@@ -344,10 +792,41 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     expect(JSON.stringify(call?.[0])).not.toContain('invalid_grant');
   });
 
-  it('records login.failure { reason: connect_state_incomplete } when userId/workspaceId missing in connect-mode', async () => {
+  it('strictly rejects an incomplete signed connect state before session or exchange', async () => {
     await expect(
       controller.callback(
         req({ cookies: connectCookie(NONCE, {}) }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
+      }),
+    );
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['revoked or missing', null],
+    [
+      'wrong user',
+      { id: CONNECT_SESSION_ID, userId: OTHER_USER_ID, workspaceId: RECONNECT_WORKSPACE_ID },
+    ],
+    [
+      'wrong workspace',
+      { id: CONNECT_SESSION_ID, userId: RECONNECT_USER_ID, workspaceId: OTHER_WORKSPACE_ID },
+    ],
+  ])('rejects a %s originating session before Google exchange', async (_label, session) => {
+    sessions.lookupActiveById.mockResolvedValueOnce(session);
+
+    await expect(
+      controller.callback(
+        req({ cookies: connectCookie() }),
         res as unknown as Response,
         'code',
         NONCE,
@@ -356,9 +835,34 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
     expect(securityEvents.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        payload: { provider: 'google', reason: 'connect_state_incomplete' },
+        payload: { provider: 'google', mode: 'connect', reason: 'connect_session_invalid' },
       }),
     );
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the live session after exchange and before mailbox mutation', async () => {
+    sessions.lookupActiveById
+      .mockResolvedValueOnce({
+        id: CONNECT_SESSION_ID,
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+      })
+      .mockResolvedValueOnce(null);
+
+    await expect(
+      controller.callback(
+        req({ cookies: connectCookie() }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(oauth.exchangeCode).toHaveBeenCalledTimes(1);
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
   });
 
   it('records login.success { mode: connect } and redirects on a successful connect-mode callback', async () => {
@@ -373,8 +877,8 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       expect.objectContaining({
         eventType: 'login.success',
         severity: 'info',
-        userId: 'u-owner',
-        workspaceId: 'w-home',
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
         payload: { provider: 'google', mode: 'connect' },
       }),
     );
@@ -456,6 +960,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         payload: { provider: 'google', mode: 'login', isNewSignup: true },
       }),
     );
+    expect(sessions.lookupActiveById).not.toHaveBeenCalled();
   });
 
   it('returns an existing user to the exact validated billing choice', async () => {

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common
 import { Redis } from 'ioredis';
 import { and, eq } from 'drizzle-orm';
 
-import { activeSessions } from '@declutrmail/db';
+import { activeSessions, users } from '@declutrmail/db';
 import type { ActiveSession } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -226,12 +226,32 @@ export class SessionsService implements OnModuleDestroy {
   }
 
   /**
+   * Stable-session lookup for flows that outlive one access-token rotation.
+   * Unlike lookupByJti, this follows `active_sessions.id`, which remains fixed
+   * while refresh rotation replaces the row's jti. Revoked rows never pass.
+   */
+  async lookupActiveById(
+    sessionId: string,
+  ): Promise<{ id: string; userId: string; workspaceId: string } | null> {
+    const [row] = await this.db
+      .select({
+        id: activeSessions.id,
+        userId: activeSessions.userId,
+        workspaceId: users.workspaceId,
+      })
+      .from(activeSessions)
+      .innerJoin(users, eq(activeSessions.userId, users.id))
+      .where(and(eq(activeSessions.id, sessionId), eq(activeSessions.isRevoked, false)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
    * Workspace id for `userId`. Accepts an optional `tx` so rotate can
    * read the user row inside the same transaction as the session row
    * lock — both reads see a consistent snapshot.
    */
   private async lookupWorkspaceId(userId: string, tx: DrizzleDb = this.db): Promise<string> {
-    const { users } = await import('@declutrmail/db');
     const [row] = await tx
       .select({ workspaceId: users.workspaceId })
       .from(users)

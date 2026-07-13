@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { z } from 'zod';
 
 import {
   BETA_DENIED_PATH,
@@ -20,19 +21,23 @@ import {
 } from '@declutrmail/shared/contracts';
 
 import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
+import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
+import { JwtService } from './jwt.service.js';
 import { CurrentUser, JwtGuard } from './jwt.guard.js';
-import type { SessionPrincipal } from './sessions.service.js';
+import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
 
 /** Cookie carrying the OAuth state — nonce + post-callback intent. */
 const STATE_COOKIE = 'oauth_state';
 /** Cookie path — scoped to the connect routes only. */
 const STATE_COOKIE_PATH = '/api/auth/google';
+/** Signed state and browser cookie share the same bounded consent window. */
+const STATE_TTL_MS = 10 * 60 * 1000;
 
 /**
  * What the state cookie carries between /start and /callback.
@@ -44,14 +49,64 @@ const STATE_COOKIE_PATH = '/api/auth/google';
  *     user and without re-issuing cookies. `userId` + `workspaceId`
  *     are captured at /start time when the JwtGuard ran.
  */
-interface OAuthState {
+interface OAuthStateBase {
   nonce: string;
-  mode: 'login' | 'connect';
-  userId?: string;
-  workspaceId?: string;
-  /** Canonical local billing destination; login mode only. */
-  returnTo?: string;
+  /** Signed issuance time lets the callback prove the lifetime was never extended. */
+  issuedAt: number;
+  /** Absolute signed expiry, independently enforced from browser cookie eviction. */
+  expiresAt: number;
 }
+
+interface LoginOAuthState extends OAuthStateBase {
+  mode: 'login';
+  /** Canonical local billing destination; login mode only. */
+  returnTo?: string | undefined;
+}
+
+interface ConnectOAuthState extends OAuthStateBase {
+  mode: 'connect';
+  userId: string;
+  workspaceId: string;
+  /** Stable active_sessions.id captured from the guarded originating request. */
+  sessionId: string;
+  /**
+   * Owned active mailbox explicitly being re-authorized. Its identity is
+   * revalidated after Google returns so the account chooser cannot silently
+   * refresh a different mailbox.
+   */
+  reconnectMailboxId?: string | undefined;
+}
+
+type OAuthState = LoginOAuthState | ConnectOAuthState;
+type PendingOAuthState =
+  | Omit<LoginOAuthState, 'issuedAt' | 'expiresAt'>
+  | Omit<ConnectOAuthState, 'issuedAt' | 'expiresAt'>;
+
+const boundedString = z.string().min(1).max(256);
+const uuidSchema = z.string().uuid();
+const oauthStateSchema = z.discriminatedUnion('mode', [
+  z
+    .object({
+      nonce: boundedString,
+      issuedAt: z.number().int().positive(),
+      expiresAt: z.number().int().positive(),
+      mode: z.literal('login'),
+      returnTo: z.string().max(512).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      nonce: boundedString,
+      issuedAt: z.number().int().positive(),
+      expiresAt: z.number().int().positive(),
+      mode: z.literal('connect'),
+      userId: uuidSchema,
+      workspaceId: uuidSchema,
+      sessionId: uuidSchema,
+      reconnectMailboxId: uuidSchema.optional(),
+    })
+    .strict(),
+]);
 
 /**
  * Gmail OAuth connect routes (D4, D205).
@@ -78,11 +133,14 @@ export class GoogleOAuthController {
     private readonly oauth: GoogleOAuthService,
     private readonly orchestrator: AuthSignupOrchestrator,
     private readonly securityEvents: SecurityEventsService,
+    private readonly mailboxes: MailboxAccountsService,
+    private readonly jwt: JwtService,
+    private readonly sessions: SessionsService,
   ) {}
 
   @Get('start')
   @RateLimit('auth')
-  start(@Res() res: Response, @Query('returnTo') returnTo?: string): void {
+  start(@Res() res: Response, @Query('returnTo') returnTo?: unknown): void {
     const safeReturnTo = parseBillingReturnTo(returnTo);
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),
@@ -97,21 +155,46 @@ export class GoogleOAuthController {
    * the callback can verify the same browser still owns the session
    * AND knows which workspace to add the new mailbox to.
    *
-   * `InboxLimitGuard` (D19/D81) gates BEFORE the Google consent screen:
-   * a workspace already at its tier's connected-inbox limit gets a 402
-   * `INBOX_LIMIT_REACHED` envelope instead of an OAuth round-trip that
-   * could only fail after consent. Counts ACTIVE mailboxes only —
-   * existing connections keep working; only ADDING is enforced.
+   * `InboxLimitGuard` (D19/D81) gates a normal add BEFORE the Google
+   * consent screen. A non-empty `reconnectMailboxId` only defers that
+   * fast-fail to this handler: the target must be a syntactically valid,
+   * owned active mailbox before consent begins. The callback binds Google’s
+   * returned identity to the same target, while `addMailbox` remains the
+   * canonical activation-boundary limit check.
    */
   @Get('connect-mailbox/start')
   @RateLimit('auth')
   @UseGuards(JwtGuard, InboxLimitGuard)
-  connectMailboxStart(@CurrentUser() user: SessionPrincipal, @Res() res: Response): void {
+  async connectMailboxStart(
+    @CurrentUser() user: SessionPrincipal,
+    @Res() res: Response,
+    @Query('reconnectMailboxId') reconnectMailboxId?: unknown,
+  ): Promise<void> {
+    let validatedReconnectId: string | undefined;
+    if (reconnectMailboxId !== undefined) {
+      if (typeof reconnectMailboxId !== 'string' || !isUuid(reconnectMailboxId)) {
+        throw new BadRequestException('Reconnect target must be a valid mailbox id.');
+      }
+      const target = await this.findReconnectTarget(
+        user.userId,
+        user.workspaceId,
+        reconnectMailboxId,
+      );
+      if (!target) {
+        // One response for missing, cross-user, and disconnected targets:
+        // do not leak whether a caller-supplied mailbox id exists.
+        throw new BadRequestException('Reconnect target is unavailable.');
+      }
+      validatedReconnectId = target.id;
+    }
+
     this.beginConsent(res, {
       nonce: randomBytes(32).toString('base64url'),
       mode: 'connect',
       userId: user.userId,
       workspaceId: user.workspaceId,
+      sessionId: user.sessionId,
+      ...(validatedReconnectId ? { reconnectMailboxId: validatedReconnectId } : {}),
     });
   }
 
@@ -120,14 +203,15 @@ export class GoogleOAuthController {
   async callback(
     @Req() req: Request,
     @Res() res: Response,
-    @Query('code') code?: string,
-    @Query('state') state?: string,
+    @Query('code') code?: unknown,
+    @Query('state') state?: unknown,
   ): Promise<void> {
     // Request metadata shared by every D181 emit in this handler. Captured
     // up-front because the failure emits below run before any per-flow
     // (login vs connect) branching.
-    const ipAddress = (req.ip ?? null) as string | null;
-    const userAgent = (req.headers['user-agent'] ?? null) as string | null;
+    const ipAddress = req.ip ?? null;
+    const userAgentHeader = req.headers['user-agent'];
+    const userAgent = typeof userAgentHeader === 'string' ? userAgentHeader : null;
 
     const cookieRaw = (req.cookies as Record<string, unknown> | undefined)?.[STATE_COOKIE];
     if (typeof cookieRaw !== 'string') {
@@ -140,22 +224,22 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', reason: 'missing_state_cookie' },
       });
+      this.clearStateCookie(res);
       throw new BadRequestException('Missing OAuth state cookie.');
     }
-    let cookieState: OAuthState;
-    try {
-      cookieState = JSON.parse(cookieRaw) as OAuthState;
-    } catch {
+    const cookieState = this.readStateCookie(cookieRaw);
+    if (!cookieState) {
       void this.securityEvents.record({
         eventType: 'login.failure',
         severity: 'warning',
         sourceIp: ipAddress,
         userAgent,
-        payload: { provider: 'google', reason: 'malformed_state_cookie' },
+        payload: { provider: 'google', reason: 'invalid_state_cookie' },
       });
-      throw new BadRequestException('Malformed OAuth state cookie.');
+      this.clearStateCookie(res);
+      throw new BadRequestException('Invalid OAuth state cookie.');
     }
-    if (!state || !statesMatch(state, cookieState.nonce)) {
+    if (typeof state !== 'string' || !statesMatch(state, cookieState.nonce)) {
       void this.securityEvents.record({
         eventType: 'login.failure',
         severity: 'warning',
@@ -163,9 +247,10 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', reason: 'invalid_state' },
       });
+      this.clearStateCookie(res);
       throw new BadRequestException('Invalid OAuth state.');
     }
-    if (!code) {
+    if (typeof code !== 'string' || code.length === 0) {
       void this.securityEvents.record({
         eventType: 'login.failure',
         severity: 'warning',
@@ -173,7 +258,15 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', reason: 'missing_code' },
       });
+      this.clearStateCookie(res);
       throw new BadRequestException('Missing OAuth `code` query parameter.');
+    }
+
+    if (cookieState.mode === 'connect') {
+      // Rebind the signed authority to the stable originating session before
+      // consuming Google's code. Refresh rotation may change jti, but logout
+      // or an administrator revoke makes this lookup fail immediately.
+      await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
     }
 
     let email: string;
@@ -200,29 +293,51 @@ export class GoogleOAuthController {
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
 
     if (cookieState.mode === 'connect') {
-      // Authenticated connect-mailbox flow. The state cookie was
-      // written by `connect-mailbox/start` which ran JwtGuard, so the
-      // `userId`/`workspaceId` here trace back to a verified session.
-      // We additionally trust the browser still owns the session
-      // because: (a) the state cookie is HttpOnly + Secure + 10-min
-      // TTL + path-scoped, so it cannot be forged from another origin;
-      // (b) the orchestrator's cross-workspace ownership guard refuses
-      // to silently move a Google account between workspaces.
-      if (!cookieState.userId || !cookieState.workspaceId) {
-        void this.securityEvents.record({
-          eventType: 'login.failure',
-          severity: 'warning',
-          sourceIp: ipAddress,
-          userAgent,
-          payload: { provider: 'google', reason: 'connect_state_incomplete' },
-        });
-        throw new UnauthorizedException('Connect-mailbox state cookie is incomplete.');
+      let connectEmail = email;
+      if (cookieState.reconnectMailboxId !== undefined) {
+        const reconnectTarget = await this.findReconnectTarget(
+          cookieState.userId,
+          cookieState.workspaceId,
+          cookieState.reconnectMailboxId,
+        );
+        if (!reconnectTarget) {
+          this.recordReconnectFailure({
+            reason: 'reconnect_target_invalid',
+            userId: cookieState.userId,
+            workspaceId: cookieState.workspaceId,
+            sourceIp: ipAddress,
+            userAgent,
+          });
+          res.redirect(302, `${webBase}/triage?connect_error=reconnect_target_invalid`);
+          return;
+        }
+        if (normalizeEmail(email) !== normalizeEmail(reconnectTarget.email)) {
+          this.recordReconnectFailure({
+            reason: 'reconnect_account_mismatch',
+            userId: cookieState.userId,
+            workspaceId: cookieState.workspaceId,
+            sourceIp: ipAddress,
+            userAgent,
+          });
+          res.redirect(302, `${webBase}/triage?connect_error=reconnect_account_mismatch`);
+          return;
+        }
+        // Use the already-persisted canonical identity so a harmless case or
+        // whitespace difference in Google's claim cannot look like a new
+        // mailbox at the activation-boundary lookup.
+        connectEmail = reconnectTarget.email;
       }
+
+      // Close most of the Google-exchange revocation window. A transaction
+      // cannot span an external OAuth call; this second live read makes the
+      // remaining TOCTOU only the immediate service-call boundary.
+      await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
+
       try {
         const { mailboxId } = await this.orchestrator.addMailbox({
           currentUserId: cookieState.userId,
           currentWorkspaceId: cookieState.workspaceId,
-          email,
+          email: connectEmail,
           refreshToken,
         });
         // D181 success emit — connect-mode adds a mailbox to an existing
@@ -359,16 +474,122 @@ export class GoogleOAuthController {
    * Write the state cookie + redirect to Google consent. Shared by
    * both `start` paths.
    */
-  private beginConsent(res: Response, state: OAuthState): void {
-    res.cookie(STATE_COOKIE, JSON.stringify(state), {
+  private beginConsent(res: Response, pendingState: PendingOAuthState): void {
+    const issuedAt = Date.now();
+    const state: OAuthState = {
+      ...pendingState,
+      issuedAt,
+      expiresAt: issuedAt + STATE_TTL_MS,
+    };
+    res.cookie(STATE_COOKIE, this.jwt.sealOAuthState(JSON.stringify(state)), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: STATE_COOKIE_PATH,
-      maxAge: 600_000, // 10 min — the consent window.
+      maxAge: STATE_TTL_MS,
     });
     res.redirect(302, this.oauth.getConsentUrl(state.nonce));
   }
+
+  /** Authenticate, strictly decode, and enforce the cookie's signed expiry. */
+  private readStateCookie(cookie: string): OAuthState | null {
+    const payload = this.jwt.openOAuthState(cookie);
+    if (!payload) return null;
+
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+    const parsed = oauthStateSchema.safeParse(decoded);
+    if (!parsed.success) return null;
+
+    const now = Date.now();
+    const signedLifetime = parsed.data.expiresAt - parsed.data.issuedAt;
+    if (
+      parsed.data.expiresAt <= now ||
+      signedLifetime <= 0 ||
+      signedLifetime > STATE_TTL_MS ||
+      parsed.data.issuedAt > now + 60_000
+    ) {
+      return null;
+    }
+    return parsed.data;
+  }
+
+  private async assertConnectSessionActive(
+    state: ConnectOAuthState,
+    res: Response,
+    sourceIp: string | null,
+    userAgent: string | null,
+  ): Promise<void> {
+    const originSession = await this.sessions.lookupActiveById(state.sessionId);
+    if (
+      originSession &&
+      originSession.userId === state.userId &&
+      originSession.workspaceId === state.workspaceId
+    ) {
+      return;
+    }
+
+    void this.securityEvents.record({
+      eventType: 'login.failure',
+      severity: 'warning',
+      userId: state.userId,
+      workspaceId: state.workspaceId,
+      sourceIp,
+      userAgent,
+      payload: { provider: 'google', mode: 'connect', reason: 'connect_session_invalid' },
+    });
+    this.clearStateCookie(res);
+    throw new UnauthorizedException('Connect-mailbox session is no longer active.');
+  }
+
+  private clearStateCookie(res: Response): void {
+    res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
+  }
+
+  /** Resolve an active mailbox owned by both the state user and workspace. */
+  private async findReconnectTarget(
+    userId: string,
+    workspaceId: string,
+    mailboxId: unknown,
+  ): Promise<{ id: string; email: string } | null> {
+    if (typeof mailboxId !== 'string' || !isUuid(mailboxId)) return null;
+    const row = await this.mailboxes.findOwned(workspaceId, mailboxId);
+    if (!row || row.userId !== userId || row.status !== 'active') return null;
+    return { id: row.id, email: row.providerAccountId };
+  }
+
+  /** Privacy-safe audit: controlled reason only; no mailbox id or email. */
+  private recordReconnectFailure(input: {
+    reason: 'reconnect_target_invalid' | 'reconnect_account_mismatch';
+    userId: string;
+    workspaceId: string;
+    sourceIp: string | null;
+    userAgent: string | null;
+  }): void {
+    void this.securityEvents.record({
+      eventType: 'login.failure',
+      severity: 'warning',
+      userId: input.userId,
+      workspaceId: input.workspaceId,
+      sourceIp: input.sourceIp,
+      userAgent: input.userAgent,
+      payload: { provider: 'google', mode: 'connect', reason: input.reason },
+    });
+  }
+}
+
+/** UUID shape accepted by Postgres' uuid type; reject malformed hints pre-DB. */
+function isUuid(value: string): boolean {
+  return uuidSchema.safeParse(value).success;
+}
+
+/** Google identity comparison only; stored canonical email wins on mutation. */
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 /**
@@ -376,8 +597,15 @@ export class GoogleOAuthController {
  * The returned path is canonical so OAuth state never carries arbitrary
  * hosts, fragments, duplicate parameters, or future unreviewed routes.
  */
-export function parseBillingReturnTo(value: string | null | undefined): string | undefined {
-  if (!value?.startsWith('/') || value.startsWith('//') || value.includes('#')) return undefined;
+export function parseBillingReturnTo(value: unknown): string | undefined {
+  if (
+    typeof value !== 'string' ||
+    !value.startsWith('/') ||
+    value.startsWith('//') ||
+    value.includes('#')
+  ) {
+    return undefined;
+  }
 
   let url: URL;
   try {
