@@ -16,7 +16,10 @@
  * archive-named hooks here remain the single-sender Archive wire.
  */
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import { undoKeys } from '@/features/undo/query-keys';
 
 import {
   enqueueArchiveSender,
@@ -82,14 +85,28 @@ export function useEnqueueAction() {
  * `actionId` is set. `retry: false` — a read 4xx (e.g. 404 not-owned) is a
  * designed state, never something to hammer (the read-guard-4xx rule, §8).
  */
-export function useActionStatus(actionId: string | null) {
-  return useQuery({
-    queryKey: ['action-status', actionId] as const,
-    queryFn: () => getActionStatus(actionId as string),
+export function useActionStatus(actionId: string | null, mailboxId?: string) {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: ['action-status', actionId, { mailboxId: mailboxId ?? null }] as const,
+    queryFn: () => getActionStatus(actionId as string, mailboxId ? { mailboxId } : undefined),
     enabled: actionId !== null,
     refetchInterval: (query) => actionRefetchInterval(query.state.data),
     retry: false,
   });
+
+  // The poll hook is shared by Senders, Sender Detail, Screener and
+  // Triage. Invalidating here makes every terminal action discoverable in
+  // the global undo tray instead of relying on each surface to remember a
+  // feature-specific invalidation. Include actionId so done → done across
+  // two consecutive handles still invalidates.
+  useEffect(() => {
+    if (query.data && isTerminalStatus(query.data.status)) {
+      void qc.invalidateQueries({ queryKey: undoKeys.all });
+    }
+  }, [actionId, mailboxId, qc, query.data]);
+
+  return query;
 }
 
 /**
@@ -111,8 +128,8 @@ export function useArchivePreview(senderId: string | null) {
 
 /** Reverse a completed action by its undo token (the D226 undo loop). */
 export function useRevertUndo() {
-  return useMutation<UndoRevertResult, Error, { token: string }>({
-    mutationFn: ({ token }) => revertUndo(token),
+  return useMutation<UndoRevertResult, Error, { token: string; mailboxId?: string }>({
+    mutationFn: ({ token, mailboxId }) => revertUndo(token, mailboxId ? { mailboxId } : undefined),
   });
 }
 
@@ -221,13 +238,22 @@ export function batchRefetchInterval(data: BatchStatusResult | undefined): numbe
  * designed state, never something to hammer (§8).
  */
 export function useBatchStatus(batchId: string | null) {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: ['batch-status', batchId] as const,
     queryFn: () => getBatchStatus(batchId as string),
     enabled: batchId !== null,
     refetchInterval: (query) => batchRefetchInterval(query.state.data),
     retry: false,
   });
+
+  useEffect(() => {
+    if (query.data && isTerminalStatus(query.data.status)) {
+      void qc.invalidateQueries({ queryKey: undoKeys.all });
+    }
+  }, [batchId, qc, query.data]);
+
+  return query;
 }
 
 /**

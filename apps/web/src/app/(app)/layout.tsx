@@ -247,7 +247,9 @@ function AppChrome({ children }: { children: ReactNode }) {
           mailbox-scoped app route. Mount once in the shell so leaving
           Triage never hides recovery; keep it off user-scoped routes
           rendered without an active mailbox to avoid a guarded 409. */}
-      {hasActiveMailbox && <TriageUndoTray />}
+      {hasActiveMailbox && (
+        <TriageUndoTray key={me.activeMailboxId} mailboxId={me.activeMailboxId ?? undefined} />
+      )}
       {/* D19/D77/D81 — entitlement-402 upgrade flow. Mounted ONCE in
           the authed chrome; fed by the global MutationCache handler
           (lib/query-client) so every mutation surface is covered. */}

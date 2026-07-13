@@ -4,6 +4,8 @@ import Link from 'next/link';
 
 import { tokens } from '@declutrmail/shared';
 import type { TierId } from '@declutrmail/shared/entitlements';
+import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
+
 import {
   canUseActionSelector,
   canArchive,
@@ -60,10 +62,14 @@ export function SelectionBar({
 
   return (
     <div
+      data-dm-selection-bar
       style={{
         position: 'sticky',
-        bottom: 14,
-        zIndex: 30,
+        bottom: floatingSurfaceLayout.selectionBarBottom,
+        height: floatingSurfaceLayout.selectionBarHeight,
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        zIndex: floatingSurfaceLayout.selectionBarZIndex,
         display: 'flex',
         alignItems: 'center',
         gap: 14,

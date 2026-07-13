@@ -33,9 +33,10 @@ import { render, screen } from '@testing-library/react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 
-const { pushSpy, replaceSpy, pathnameRef } = vi.hoisted(() => ({
+const { pushSpy, replaceSpy, undoTrayPropsSpy, pathnameRef } = vi.hoisted(() => ({
   pushSpy: vi.fn(),
   replaceSpy: vi.fn(),
+  undoTrayPropsSpy: vi.fn(),
   // Mutable so tests can drive the pathname-dependent branch (the
   // user-scoped-route fallback under no active mailbox). Defaults to a
   // mailbox-scoped route so every pre-existing test is unaffected.
@@ -47,7 +48,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => pathnameRef.current,
 }));
 vi.mock('@/features/triage/triage-undo-tray', () => ({
-  TriageUndoTray: () => <div data-testid="triage-undo-tray" />,
+  TriageUndoTray: (props: { mailboxId?: string }) => {
+    undoTrayPropsSpy(props);
+    return <div data-testid="triage-undo-tray" />;
+  },
 }));
 
 import AppLayout from './layout';
@@ -56,6 +60,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   pushSpy.mockClear();
   replaceSpy.mockClear();
+  undoTrayPropsSpy.mockClear();
   pathnameRef.current = '/senders';
 });
 
@@ -232,6 +237,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // Recovery follows the active mailbox across the whole app shell,
     // not only the Triage route.
     expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
+    expect(undoTrayPropsSpy).toHaveBeenCalledWith({ mailboxId: 'mb-1' });
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
   });

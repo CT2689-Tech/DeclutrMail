@@ -32,6 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
@@ -47,6 +48,24 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 });
 vi.mock('@/lib/sentry', () => ({
   captureFeatureException: h.captureFeatureException,
+}));
+// The app shell supplies the active mailbox in production. Keep this
+// integration harness account-aware so Gmail handoffs exercise the same
+// mailbox-bound URL contract instead of silently disappearing.
+vi.mock('@/features/auth/auth-provider', () => ({
+  getActiveMailboxEmail: () => 'owner@gmail.com',
+  useOptionalAuth: () => ({
+    me: {
+      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      user: { email: 'owner@gmail.com' },
+      mailboxes: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          email: 'owner@gmail.com',
+        },
+      ],
+    },
+  }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // archive verdict, unprotected
@@ -189,7 +208,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['undo', 'tray'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 
   it('keeps the acted-on row busy (aria-busy) while the worker has not confirmed', async () => {
@@ -797,7 +816,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
     const link = screen.getByRole('link', { name: 'Open Gmail compose' });
     expect(link.getAttribute('href')).toBe(
-      'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
+      'https://mail.google.com/mail/?authuser=owner%40gmail.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );
     // Dismissible.
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
