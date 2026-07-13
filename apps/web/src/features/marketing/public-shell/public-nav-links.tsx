@@ -19,7 +19,7 @@ export function PublicNavLinks({
       key={link.href}
       href={link.href}
       aria-current={isPublicNavLinkActive(pathname, link.href) ? 'page' : undefined}
-      onClick={onNavigate}
+      {...(onNavigate ? { onClick: onNavigate } : {})}
     >
       {link.label}
     </Link>
