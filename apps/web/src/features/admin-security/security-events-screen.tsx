@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactElement } from 'react';
 import { useMemo, useState } from 'react';
 
-import { Button, EmptyState, Pill, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, ErrorState, Pill, ScreenIntro, tokens } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { SecurityEventSeverity, SecurityEventWire } from '@/lib/api/security-events';
@@ -99,34 +99,105 @@ function Body({
   if (query.isLoading) {
     return <LoadingState />;
   }
-  if (query.error) {
-    return <ErrorState error={query.error} />;
-  }
-  if (rows.length === 0) {
+  // Only replace the body on a cold failure. TanStack retains the
+  // successfully-loaded pages when `fetchNextPage` fails; rendering a
+  // full error for that query-wide error would make the operator's
+  // existing audit context disappear.
+  if (query.error && query.data == null) {
     return (
-      <EmptyState
-        title="No events match these filters."
-        description="Adjust severity / event_type / time range, or clear filters to see the firehose."
+      <ErrorState
+        title="Couldn't load security events"
+        description="The audit log is unavailable right now. Try again to refresh it."
+        onRetry={() => void query.refetch()}
       />
     );
   }
+  const retainedDataError =
+    query.error != null && query.data != null && !query.isFetchNextPageError;
+
   return (
     <>
-      <EventsTable rows={rows} />
-      {query.data?.hasMore ? (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
-          <Button
-            tone="default"
-            onClick={() => {
-              void query.fetchNextPage();
-            }}
-            disabled={query.isFetchingNextPage}
-          >
-            {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-          </Button>
-        </div>
+      {rows.length === 0 ? (
+        <EmptyState
+          title="No events match these filters."
+          description="Adjust severity / event_type / time range, or clear filters to see the firehose."
+        />
+      ) : (
+        <EventsTable rows={rows} />
+      )}
+
+      {retainedDataError ? (
+        <InlineReadError
+          description="Couldn't refresh security events. The events already shown are still available and may be out of date."
+          onRetry={() => void query.refetch()}
+          retryLabel="Retry refresh"
+          pendingLabel="Refreshing…"
+          pending={query.isRefetching}
+        />
+      ) : null}
+
+      {rows.length > 0 ? (
+        query.isFetchNextPageError ? (
+          <InlineReadError
+            description="Couldn't load more events. The events already shown are still available."
+            onRetry={() => void query.fetchNextPage()}
+            retryLabel="Try again"
+            pendingLabel="Retrying…"
+            pending={query.isFetchingNextPage}
+          />
+        ) : query.data?.hasMore ? (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+            <Button
+              tone="default"
+              onClick={() => {
+                void query.fetchNextPage();
+              }}
+              disabled={query.isFetchingNextPage}
+            >
+              {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
+            </Button>
+          </div>
+        ) : null
       ) : null}
     </>
+  );
+}
+
+function InlineReadError({
+  description,
+  onRetry,
+  retryLabel,
+  pendingLabel,
+  pending,
+}: {
+  description: string;
+  onRetry: () => void;
+  retryLabel: string;
+  pendingLabel: string;
+  pending: boolean;
+}): ReactElement {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: '12px',
+        flexWrap: 'wrap',
+        marginTop: '16px',
+        padding: '12px 16px',
+        color: color.fgSoft,
+        background: color.amberBg,
+        border: `1px solid ${color.amber}`,
+        borderRadius: '8px',
+      }}
+    >
+      <span>{description}</span>
+      <Button tone="default" onClick={onRetry} disabled={pending}>
+        {pending ? pendingLabel : retryLabel}
+      </Button>
+    </div>
   );
 }
 
@@ -273,17 +344,6 @@ function LoadingState(): ReactElement {
       Loading events…
     </div>
   );
-}
-
-function ErrorState({ error }: { error: unknown }): ReactElement {
-  // 404 is handled by the top-level early-return in
-  // `AdminSecurityEventsScreen` (it suppresses BOTH the ScreenIntro
-  // and the filter bar so the surface is indistinguishable from a
-  // non-existent route). Anything reaching this branch is a non-404
-  // failure (5xx, network, etc.) and gets the generic error card.
-  const message =
-    error instanceof Error ? error.message : 'Something went wrong loading security events.';
-  return <EmptyState title="Couldn't load events" description={message} />;
 }
 
 /** Compact UTC display — operator-friendly, no locale surprises. */
