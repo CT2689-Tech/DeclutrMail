@@ -137,6 +137,7 @@ describe('BriefScreen — edge states', () => {
         screen.getByRole('heading', { name: /couldn[’']t load your brief/i }),
       ).toBeInTheDocument(),
     );
+    expect(screen.getByRole('alert')).toHaveTextContent(/needs attention/i);
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 

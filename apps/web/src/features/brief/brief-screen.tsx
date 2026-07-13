@@ -6,6 +6,7 @@ import {
   Avatar,
   Button,
   EmptyState,
+  ErrorState as RetryableErrorState,
   Eyebrow,
   ScreenIntro,
   tokens,
@@ -92,7 +93,9 @@ export function BriefScreen() {
     // Non-404 → log to Sentry as a feature exception so the dashboard
     // separates 'brief failed to load' from 'brief is just late'.
     captureFeatureException(query.error, { surface: 'brief', reason: 'fetch_failed' });
-    return <ErrorState error={query.error} onRetry={() => handleBriefRefresh(query.refetch)} />;
+    return (
+      <BriefErrorState error={query.error} onRetry={() => handleBriefRefresh(query.refetch)} />
+    );
   }
 
   const brief = query.data;
@@ -654,21 +657,17 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
       ? `We couldn't load your Brief (${error.status}). Try again in a moment.`
       : "We couldn't load your Brief right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+      <RetryableErrorState
         title="We couldn't load your Brief"
         description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        onRetry={onRetry}
       />
     </div>
   );
