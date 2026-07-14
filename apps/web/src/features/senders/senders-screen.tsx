@@ -159,19 +159,28 @@ export function SendersScreen() {
   useEffect(() => {
     void track('page_viewed', { page: 'senders', mailbox_id: null });
   }, []);
-  // Sort + direction come from the Zustand store (D200 client-state)
-  // so the ComposeStrip's sort chip and a future sort-shortcut/keyboard
-  // surface both write through one seam.
-  const sort = useSendersStore((s) => s.sort);
-  const direction = useSendersStore((s) => s.direction);
-  // Search lives here (above the fetch) so it drives the server query
-  // (#145) — debounced so typing doesn't fire a request per keystroke.
+  // Search, temporary filters, and sort form one URL-backed scope. This
+  // restores shared/refreshed links exactly and lets saved views replace
+  // the whole scope without leaving a hidden search term behind.
+  const {
+    compose,
+    setCompose,
+    clearCompose,
+    query,
+    setQuery,
+    sort,
+    direction,
+    setSort,
+    applySavedScope,
+    clearSearchAndFilters,
+  } = useComposeState();
+  // Search drives the server query (#145) — debounced so typing doesn't
+  // fire a request per keystroke.
   // `keepPreviousData` (in useSenders) holds the list while the new term
   // resolves, so the screen never blanks to a skeleton mid-search.
   // 150ms (was 300): SenderSearch now debounces its own notify by
   // 150ms before this state even updates (keystroke-eating fix), so
   // the stacked total keystroke→fetch stays ~300ms.
-  const [query, setQuery] = useState('');
   const debouncedQuery = useDebouncedValue(query.trim(), 150);
   // `limit: 50` matches the app-shell's `useSenders({ limit: 50 })` so
   // the two share ONE infinite-query cache entry per (category, limit,
@@ -179,7 +188,6 @@ export function SendersScreen() {
   // surface as the user pulls more pages here.
   // D38 compose state — every axis lives on the URL. Wired to the BE
   // list query below so chips narrow mailbox-wide (not loaded-page).
-  const { compose, setCompose, clearCompose } = useComposeState();
   const sendersQuery = useSenders({
     limit: 50,
     sort,
@@ -278,6 +286,9 @@ export function SendersScreen() {
       compose={compose}
       setCompose={setCompose}
       clearCompose={clearCompose}
+      setSort={setSort}
+      applySavedScope={applySavedScope}
+      clearSearchAndFilters={clearSearchAndFilters}
     />
   );
 }
@@ -306,6 +317,9 @@ function SendersScreenContent({
   compose,
   setCompose,
   clearCompose,
+  setSort,
+  applySavedScope,
+  clearSearchAndFilters,
 }: {
   senders: Sender[];
   /** Raw wire rows (BE order) for the flat-table view (D49). Grid mode
@@ -349,6 +363,16 @@ function SendersScreenContent({
   compose: ComposeState;
   setCompose: (next: ComposeState) => void;
   clearCompose: () => void;
+  setSort: (next: {
+    sort: import('@/lib/api/senders').SenderListSort;
+    direction: import('@/lib/api/senders').SenderListDirection;
+  }) => void;
+  applySavedScope: (next: {
+    compose: ComposeState;
+    sort: SavedSenderView['sort'];
+    direction: SavedSenderView['direction'];
+  }) => void;
+  clearSearchAndFilters: () => void;
 }) {
   const { me } = useAuth();
   // Which mailbox these senders belong to — makes a multi-mailbox switch
@@ -508,7 +532,6 @@ function SendersScreenContent({
   // written by it + the saved-views apply path below.
   const sortCol = useSendersStore((s) => s.sort);
   const sortDirection = useSendersStore((s) => s.direction);
-  const setSortState = useSendersStore((s) => s.setSort);
   // Per-session grid/table view (D49). Default is grid; the segmented
   // ViewToggle in the header flips it. Deliberately non-persistent.
   const view = useSendersStore((s) => s.view);
@@ -599,9 +622,12 @@ function SendersScreenContent({
   // Search suggestion picked. The BE typeahead spans the whole mailbox,
   // so the chosen sender may not be on the current list page. Set the
   // query to its name (BE list narrows to that single row).
-  const onSearchPick = useCallback((s: { id: string; name: string; domain: string }) => {
-    setQuery(s.name);
-  }, []);
+  const onSearchPick = useCallback(
+    (s: { id: string; name: string; domain: string }) => {
+      setQuery(s.name);
+    },
+    [setQuery],
+  );
 
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
@@ -1425,10 +1451,18 @@ function SendersScreenContent({
     (name: string) => {
       const view = savedViews.find((v) => v.name === name);
       if (!view) return;
-      setCompose({ ...view.compose });
-      setSortState({ sort: view.sort, direction: view.direction });
+      const clearedSearch = query.trim().length > 0;
+      applySavedScope({
+        compose: { ...view.compose },
+        sort: view.sort,
+        direction: view.direction,
+      });
+      toast(
+        clearedSearch ? `Applied view "${name}" · search cleared` : `Applied view "${name}"`,
+        'success',
+      );
     },
-    [savedViews, setCompose, setSortState],
+    [savedViews, query, applySavedScope],
   );
   const saveCurrentView = useCallback(
     (name: string) => {
@@ -1670,7 +1704,7 @@ function SendersScreenContent({
           domainSuggestions={topDomains(senders)}
           sort={sortCol}
           direction={sortDirection}
-          onSortChange={(next) => setSortState(next)}
+          onSortChange={setSort}
           views={{
             names: savedViews.map((v) => v.name),
             onApply: applySavedView,
@@ -1760,8 +1794,7 @@ function SendersScreenContent({
             action={
               <Button
                 onClick={() => {
-                  setQuery('');
-                  clearCompose();
+                  clearSearchAndFilters();
                 }}
               >
                 Clear search & filters
@@ -1798,7 +1831,7 @@ function SendersScreenContent({
             globalMaxTotal={globalMaxTotal}
             sort={sortCol}
             direction={sortDirection}
-            onSortChange={(next) => setSortState(next)}
+            onSortChange={setSort}
             selectedIds={selected}
             onSelectionChange={(next) => {
               if (!showingStaleRows) setSelected(new Set(next));
