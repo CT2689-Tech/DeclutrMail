@@ -17,6 +17,7 @@ import type {
   AutopilotRuleDto,
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -68,7 +69,7 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  *      summary, pending counts, dry-run preview (D103 scoped per
  *      D192), and Resume for paused rules.
  *   2. **D104 observe-mode buffer** — pending suggestions grouped by
- *      rule with Approve all / Approve selected / per-row Dismiss.
+ *      rule with Approve all / Approve selected / per-row Skip suggestion.
  *      Every approve goes through the mandatory D226 preview modal.
  *   3. **D104 day-7 banner** — rules whose observe window elapsed get
  *      an explicit "Switch to Active" prompt. NO auto-promotion.
@@ -403,7 +404,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     'Activation failed. Please retry.',
   );
 
-  // ── Dismiss (D104) ─────────────────────────────────────────────────
+  // ── Skip suggestion (D104; API state remains `dismissed`) ──────────
 
   const onDismiss = (matchId: string) => {
     void track('autopilot_suggestion_decided', {
@@ -424,10 +425,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           next.delete(matchId);
           return next;
         });
-        toast('Suggestion dismissed', 'info');
+        toast('Suggestion skipped — Gmail was not changed', 'info');
       },
       onError: (err) => {
-        toast('Dismiss failed. Try again.', 'warn');
+        toast("Couldn't skip the suggestion. Try again.", 'warn');
         captureFeatureException(err, { surface: 'autopilot', reason: 'dismiss_failed' });
       },
     });
@@ -530,6 +531,12 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         body="Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once."
         tip="Custom rule creation is not available for this workspace. Only the launch preset rules can be enabled."
       />
+
+      <ContextualHelp question="What changes between Observe and Active?">
+        Observe records matches as suggestions and changes no Gmail mail until you approve them.
+        Active applies future matches automatically after you review the first-sweep preview.
+        Suggestions already collected in Observe stay pending for you to approve or skip.
+      </ContextualHelp>
 
       {allPaused && <PausedBanner rules={rules} />}
 

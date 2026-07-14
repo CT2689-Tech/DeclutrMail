@@ -61,6 +61,15 @@ describe('PrivacyDataView', () => {
     expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);
   });
 
+  it('explains the difference between Google access and stored data in context', () => {
+    renderView();
+
+    expect(
+      screen.getByText('How is Google access different from stored data?'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/separates what is fetched.*what stays/i)).toBeInTheDocument();
+  });
+
   it('lists the indexed mailboxes, marking disconnected ones', () => {
     renderView({
       mailboxes: [TWO_MAILBOXES[0]!, { ...TWO_MAILBOXES[1]!, status: 'disconnected' }],

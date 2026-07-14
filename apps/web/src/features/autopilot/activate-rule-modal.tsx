@@ -86,14 +86,14 @@ export function ActivateRuleModal({
         <li>{goingForwardCopy(rule)}</li>
         <li>
           {pendingApproximate
-            ? 'Suggestions already collected stay pending below — activating does not approve them. Approve or dismiss them separately.'
+            ? 'Suggestions already collected stay pending below — activating does not approve them. Approve or skip them separately.'
             : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                 pendingCount === 1 ? 'stays' : 'stay'
               } pending below — activating does not approve ${
                 pendingCount === 1 ? 'it' : 'them'
-              }. Approve or dismiss ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+              }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
         </li>
-        <li>Senders you mark Protected or VIP are always skipped.</li>
+        <li>Senders you mark Protected are always skipped.</li>
       </ul>
 
       {/* D226 — what the FIRST active sweep would do right now (same

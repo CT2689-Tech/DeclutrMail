@@ -74,6 +74,8 @@ describe('MailboxDataControlsDialog', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/past Gmail actions stay applied/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Gmail is unchanged/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('Which mailbox exit should I choose?')).toBeInTheDocument();
+    expect(screen.getByText(/Keep indexed data if you may reconnect/i)).toBeInTheDocument();
   });
 
   it('runs standard disconnect without requiring the destructive phrase', () => {

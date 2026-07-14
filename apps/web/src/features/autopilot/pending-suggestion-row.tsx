@@ -11,7 +11,7 @@ const { color, font } = tokens;
  *
  * Each row is one (rule, sender) pair: a select checkbox (feeds the
  * group's "Approve selected"), sender identity + the verb phrase the
- * rule would emit ("would archive") + a per-row Dismiss. Approving
+ * rule would emit ("would archive") + a per-row Skip suggestion. Approving
  * goes through the group's Approve buttons + the D226 preview modal —
  * never a one-click mutation on the row itself. The rule name renders
  * once in the group header, not per row.
@@ -143,9 +143,9 @@ export function PendingSuggestionRow({
         size="sm"
         onClick={() => onDismiss(match.id)}
         disabled={isDismissing}
-        ariaLabel={`Dismiss suggestion for ${senderLabel}`}
+        ariaLabel={`Skip suggestion for ${senderLabel} without changing Gmail`}
       >
-        {isDismissing ? 'Dismissing…' : 'Dismiss'}
+        {isDismissing ? 'Skipping…' : 'Skip suggestion'}
       </Button>
     </li>
   );

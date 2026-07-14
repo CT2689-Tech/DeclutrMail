@@ -13,6 +13,7 @@ import {
 } from '@declutrmail/shared';
 
 import type { MeMailbox } from '@/features/auth/api/use-me';
+import { ContextualHelp } from '@/features/help/contextual-help';
 
 const { color, font } = tokens;
 
@@ -125,6 +126,13 @@ export function MailboxDataControlsDialog({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <ContextualHelp question="Which mailbox exit should I choose?">
+            Keep indexed data if you may reconnect and want to continue with the same history.
+            Delete indexed data if you want this mailbox&apos;s product data permanently removed.
+            Both choices stop Google access and leave Gmail mail unchanged; deletion also ends any
+            remaining Activity Undo for this mailbox.
+          </ContextualHelp>
+
           {!alreadyDisconnected && (
             <section style={optionStyle(false)} aria-labelledby="dm-disconnect-keep-title">
               <h3 id="dm-disconnect-keep-title" style={optionTitleStyle}>

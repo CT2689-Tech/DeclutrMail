@@ -170,7 +170,7 @@ export function UpgradeModal() {
             </>
           ) : (
             <Button tone="default" onClick={dismiss}>
-              Got it
+              Keep current inboxes
             </Button>
           )}
         </div>

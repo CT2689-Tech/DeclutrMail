@@ -100,7 +100,7 @@ describe('UpgradeModal', () => {
     expect(screen.getByText('Your Pro plan includes 2 connected inboxes')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'See plans' })).not.toBeInTheDocument();
     expect(screen.queryByText(/money-back/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Got it' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep current inboxes' })).toBeInTheDocument();
   });
 
   it('dismisses via the Not now button', () => {

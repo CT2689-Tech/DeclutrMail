@@ -90,6 +90,10 @@ describe('AutopilotScreen — edge states', () => {
 
   it('groups pending suggestions under their rule (D104)', () => {
     renderScreen(ready());
+    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Active applies future matches automatically after you review/i),
+    ).toBeInTheDocument();
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
       name: /pending suggestions from auto-archive low-engagement — rows/i,
@@ -506,14 +510,14 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     expect(observed).toHaveLength(0);
   });
 
-  it('orphan groups (rule missing) expose Dismiss only — no approve without a truthful verb', () => {
+  it('orphan groups expose Skip suggestion only — no approve without a truthful verb', () => {
     const orphanState: AutopilotScreenState = {
       kind: 'ready',
       rules: [],
       suggestions: [{ match: PENDING_SUGGESTIONS[0]!, rule: null }],
     };
     renderScreen(orphanState);
-    expect(screen.getByRole('button', { name: /dismiss suggestion/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /skip suggestion/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
   });
 });
@@ -522,7 +526,7 @@ describe('AutopilotScreen — dismiss (D104)', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('POSTs the dismiss endpoint when the row Dismiss button is clicked', async () => {
+  it('POSTs the dismiss endpoint when the row Skip suggestion button is clicked', async () => {
     const observed: string[] = [];
     installFetchStub([
       {
@@ -539,7 +543,7 @@ describe('AutopilotScreen — dismiss (D104)', () => {
 
     renderScreen(ready());
 
-    const dismissButtons = screen.getAllByRole('button', { name: /^dismiss suggestion/i });
+    const dismissButtons = screen.getAllByRole('button', { name: /^skip suggestion/i });
     expect(dismissButtons.length).toBeGreaterThan(0);
     await userEvent.click(dismissButtons[0]!);
 

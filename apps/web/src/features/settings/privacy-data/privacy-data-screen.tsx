@@ -22,6 +22,7 @@ import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { track } from '@/lib/posthog';
 import { useBillingSubscription } from '../api/use-billing-subscription';
 import { useDataExport } from '../api/use-data-export';
@@ -116,6 +117,14 @@ export function PrivacyDataView({
             purposes and the fetched, stored, derived, exported, transmitted, and retained data
             contracts implemented by the product.
           </p>
+          <div style={{ marginTop: 12 }}>
+            <ContextualHelp question="How is Google access different from stored data?">
+              Google permission lets DeclutrMail request the limited Gmail fields listed below. The
+              inventory then separates what is fetched, what stays in DeclutrMail, what is derived,
+              and when each category is removed. Full message bodies, attachments, and inline images
+              are never fetched.
+            </ContextualHelp>
+          </div>
           <InventoryGroup
             title="Access granted"
             items={GMAIL_OAUTH_ACCESS.map((item) => ({
