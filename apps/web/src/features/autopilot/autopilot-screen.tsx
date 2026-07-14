@@ -511,7 +511,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
               margin: '4px 0 0',
             }}
           >
-            Suggestions, not actions.
+            Observe first. Activate when ready.
           </h1>
         </div>
         <Button
@@ -527,8 +527,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
-        body="Each rule checks a defined set of sender signals and proposes actions. Until you switch a rule to Active, every match waits here for you to approve or dismiss. Pause all stops every rule across every inbox at once."
-        tip="Custom rules are not available yet. The five preset rules cover the most common repeat-mail patterns."
+        body="Observe and Active are set per rule. Observe records matches as suggestions and changes no mail until you approve one. Active applies future matches automatically; every result is recorded in Activity. Pause all stops every rule across every inbox at once."
+        tip="Custom rule creation is not available for this workspace. Only the launch preset rules can be enabled."
       />
 
       {allPaused && <PausedBanner rules={rules} />}

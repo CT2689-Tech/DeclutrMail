@@ -133,6 +133,10 @@ export function RuleCard({
         <div style={{ fontSize: 11.5, color: color.fgSoft }}>{digestSummary}</div>
       )}
 
+      <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
+        {ruleModeExplanation(rule)}
+      </p>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         {rule.confidenceThreshold != null && (
           <ThresholdSlider
@@ -189,6 +193,20 @@ function ModePill({ rule }: { rule: AutopilotRuleDto }) {
   if (rule.mode === 'paused') return <Pill tone="amber">Paused</Pill>;
   if (rule.mode === 'active') return <Pill tone="emerald">Active</Pill>;
   return <Pill tone="default">Observing</Pill>;
+}
+
+/** Rule-local mode explanation — users should not have to remember the page intro. */
+function ruleModeExplanation(rule: AutopilotRuleDto): string {
+  if (!rule.enabled) {
+    return 'Off — this rule records no new matches and takes no actions.';
+  }
+  if (rule.mode === 'paused') {
+    return 'Paused — this rule records no new matches and takes no actions until you resume it.';
+  }
+  if (rule.mode === 'active') {
+    return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
+  }
+  return 'Observe — matches become suggestions. Nothing changes until you review a preview and approve the action.';
 }
 
 /** "Last run Jun 9 · 14 actions · 7 senders" / "Hasn't run yet". */

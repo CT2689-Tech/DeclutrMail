@@ -16,7 +16,7 @@ const { color, font } = tokens;
 /**
  * Step 5 — First Triage (D112).
  *
- * A guided ≤3-decision practice run that embeds the REAL
+ * A guided ≤3-decision first-use run that embeds the REAL
  * `<TriageScreen/>` — same row component, same K/A/U/L toolbar, same
  * D226 lifecycle (sheet → mandatory preview → mutation → undo), same
  * undo tray. Nothing here is a sandbox: every decision creates a real
@@ -71,7 +71,7 @@ export function StepFirstTriage({
     return (
       <PanelShell corner={corner}>
         <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
-          Picking your first three senders…
+          Finding a useful first sender decision…
         </p>
       </PanelShell>
     );
@@ -93,11 +93,11 @@ export function StepFirstTriage({
             margin: '6px 0 4px',
           }}
         >
-          {meta.pinned === 0 ? 'Your inbox is ready.' : "That's it — first triage done."}
+          {meta.pinned === 0 ? 'Your inbox is ready.' : 'Your first sender decisions are saved.'}
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
-            ? "We didn't find practice candidates right now — head straight in and meet your senders."
+            ? "We didn't find a useful first decision right now — open Senders to review the inbox DeclutrMail indexed."
             : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. The preview for each decision explained which mail changed and its recovery option. Welcome aboard.`}
         </p>
         <Button tone="primary" onClick={onComplete} disabled={completing} style={{ minWidth: 220 }}>
@@ -135,10 +135,10 @@ export function StepFirstTriage({
         <div>
           <Eyebrow>Step 5 of 5 · First triage</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            Practice on your{' '}
-            {meta.pinned === 1 ? 'noisiest sender' : `${meta.pinned} noisiest senders`} — decision{' '}
+            Make a real decision for{' '}
+            {meta.pinned === 1 ? 'this sender' : `these ${meta.pinned} senders`} — decision{' '}
             {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real actions with
-            a real preview and undo.
+            a preview of the affected mail and any available recovery.
           </p>
         </div>
         {corner}

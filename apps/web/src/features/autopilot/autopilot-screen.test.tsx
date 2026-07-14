@@ -136,6 +136,22 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
   });
 
+  it('explains Observe, Active, Paused, and Off consequences at rule level', () => {
+    const active = { ...PRESET_RULES_OBSERVE[0]!, id: 'active-rule', mode: 'active' as const };
+    const paused = { ...PRESET_RULES_ALL_PAUSED[0]!, id: 'paused-rule' };
+    const off = { ...PRESET_RULES_ALL_FIVE[4]!, id: 'off-rule' };
+    renderScreen({
+      kind: 'ready',
+      rules: [PRESET_RULES_OBSERVE[0]!, active, paused, off],
+      suggestions: [],
+    });
+
+    expect(screen.getByText(/observe — matches become suggestions/i)).toBeInTheDocument();
+    expect(screen.getByText(/active — future matches run automatically/i)).toBeInTheDocument();
+    expect(screen.getByText(/paused — this rule records no new matches/i)).toBeInTheDocument();
+    expect(screen.getByText(/off — this rule records no new matches/i)).toBeInTheDocument();
+  });
+
   it('renders the observe digest on enabled observe-mode cards, verb-honest (D10/D101)', () => {
     renderScreen({ kind: 'ready', rules: PRESET_RULES_ALL_FIVE, suggestions: [] });
     const rulesList = screen.getByRole('list', { name: /autopilot rules/i });
@@ -147,7 +163,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
     ).toBeInTheDocument();
     // Unsubscribe preset — sender count only (intent acts per sender).
     expect(
-      within(rulesList).getByText(/would have unsubscribed from 2 senders in the last 7 days/i),
+      within(rulesList).getByText(
+        /would have requested unsubscribe from 2 senders in the last 7 days/i,
+      ),
     ).toBeInTheDocument();
     // Disabled rule (long-dormant) shows NO digest line even in observe mode.
     expect(within(rulesList).queryAllByText(/would have/i)).toHaveLength(4);
@@ -227,7 +245,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       expect(screen.getByText(/senders would match if this rule were active now/i)).toBeVisible(),
     );
     expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText(/preview only — nothing changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/observe preview — this check is read-only/i)).toBeInTheDocument();
   });
 });
 

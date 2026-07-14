@@ -30,30 +30,30 @@ each completed slice.
 - [x] Add one typed K/A/U/L/D semantics contract for current scope,
       destination, future-mail behavior, scheduling, Activity Undo, Gmail recovery,
       finality, and result labels.
-- [ ] Migrate every preview, receipt, Activity row, mobile surface, and return
+- [x] Migrate every preview, receipt, Activity row, mobile surface, and return
       state to generated action semantics instead of local consequence copy.
 - [x] Make Later require a wake time end to end; rename the visible Snoozed
       destination to Later and retain route compatibility.
-- [ ] Use one shared action receipt/undo model across Senders, Triage, bulk
+- [x] Use one shared action receipt/undo model across Senders, Triage, bulk
       actions, Activity, mobile surfaces, and return states.
-- [ ] Distinguish one-click, manual-in-Gmail, requested, delivered, failed, and
+- [x] Distinguish one-click, manual-in-Gmail, requested, delivered, failed, and
       irreversible unsubscribe states everywhere they appear.
 - [x] Replace absolute reversibility and account-deletion claims that conflict
       with actual behavior.
 
 ### P1 — activation, control, and recurring value
 
-- [ ] Rework first-run consent into access → fetched → stored → action scope,
+- [x] Rework first-run consent into access → fetched → stored → action scope,
       followed by a concrete first useful sender decision.
-- [ ] Make every preview identify affected mail, future-mail behavior,
+- [x] Make every preview identify affected mail, future-mail behavior,
       unchanged data, reversal path, and exact confirm action.
-- [ ] Make Activity the canonical action record, with deadlines, status,
+- [x] Make Activity the canonical action record, with deadlines, status,
       failures, Gmail recovery guidance, and available Undo controls.
 - [x] Make Senders fact-first and put any optional suggestion plus its factual
       basis behind progressive disclosure.
-- [ ] Explain Autopilot Observe and Active at rule level; keep Active execution
+- [x] Explain Autopilot Observe and Active at rule level; keep Active execution
       plan-gated and build custom-rule creation behind D234's gate.
-- [ ] Turn Brief into a useful return surface that says what changed and links
+- [x] Turn Brief into a useful return surface that says what changed and links
       each item to the relevant sender, preview, or Activity record.
 - [x] Add explicit mailbox disconnect/data-deletion choices and lifecycle
       states for reconnecting, reauthorizing, and removing indexed data.
@@ -109,15 +109,14 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Public and in-product trust claims now distinguish the
-  generated per-message inventory from the cumulative lifecycle inventory;
-  state the real engagement-based auto-protection behavior; avoid universal
-  reversibility, zero-risk, and full-purge promises; disclose the retained
-  minimal pseudonymous security/compliance evidence; and consistently separate
-  plan-based Activity Undo from Gmail Trash recovery. The accepted D245 record
-  now reflects approved decision 4B for Delete.
-- Last green checks: public/marketing/onboarding/account-deletion suites (5 test
-  files, 82 tests), shared/web typechecks, and `git diff --check`.
-- Next slice: migrate every action preview and result surface to canonical
-  action semantics, replace fragmented receipt/undo presentations with the
-  shared model, and ship the truthful unsubscribe lifecycle.
+- Last completed slice: P0 is complete. One generated action model now drives
+  previews, results, Activity, mobile presentations, exact Later scheduling,
+  plan-based Activity Undo, Gmail recovery guidance, and the one-click/manual
+  unsubscribe lifecycle. First-run consent, rule-level Autopilot explanations,
+  and Brief return links complete all P1 work except under-tier live dry-run
+  previews.
+- Last green checks: all 937 web tests, web typecheck, focused onboarding/Brief/
+  Autopilot tests (7 files, 73 tests), and `git diff --check`.
+- Next slice: capability-exempt, read-only Autopilot preset previews for
+  under-tier users, while keeping Observe persistence, Active execution, and
+  every mutation plan-gated.

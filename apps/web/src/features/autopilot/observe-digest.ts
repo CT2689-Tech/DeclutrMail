@@ -4,7 +4,7 @@
  *
  * Shared by the RuleCard meta row and the day-7 ObserveWindowBanner so
  * the two surfaces can never disagree on the numbers or the verb.
- * Canonical K/A/U/L/D verbs only (D227): archived / unsubscribed /
+ * Canonical K/A/U/L/D verbs only (D227): archived / requested unsubscribe /
  * moved to Later.
  */
 
@@ -28,6 +28,6 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
     case 'unsubscribe':
       // Unsubscribe acts per sender (an intent), not per message — the
       // sender count is the honest number here.
-      return `Would have unsubscribed from ${senders} in the last 7 days`;
+      return `Would have requested unsubscribe from ${senders} in the last 7 days`;
   }
 }

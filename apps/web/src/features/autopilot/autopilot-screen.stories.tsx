@@ -31,6 +31,8 @@ import {
 import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
 import { AutopilotScreen } from './autopilot-screen';
+import { AutopilotObservePreview } from './autopilot-entitlement-surface';
+import { autopilotKeys } from './api/query-keys';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import type { AutopilotScreenState } from './types';
 
@@ -149,6 +151,21 @@ export const AllPaused: Story<typeof AutopilotScreen> = {
     },
   },
   render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
+};
+
+/** Free/Plus — real installed preset catalog before the Pro Active-execution ask. */
+export const PreUpgradeObservePreview: Story<typeof AutopilotObservePreview> = {
+  render: () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(autopilotKeys.rules(), PRESET_RULES_ALL_FIVE);
+    return (
+      <QueryClientProvider client={client}>
+        <div style={{ background: color.bg, minHeight: '100vh' }}>
+          <AutopilotObservePreview />
+        </div>
+      </QueryClientProvider>
+    );
+  },
 };
 
 /**

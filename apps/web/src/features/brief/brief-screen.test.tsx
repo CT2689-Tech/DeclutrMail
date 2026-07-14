@@ -20,7 +20,14 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { BriefScreen, domainOf, formatRunDate, gmailHref, truncate } from './brief-screen';
+import {
+  BriefScreen,
+  domainOf,
+  formatRunDate,
+  gmailHref,
+  senderSearchHref,
+  truncate,
+} from './brief-screen';
 import type { BriefWire } from '@/lib/api/brief';
 
 const BASE_BRIEF: BriefWire = {
@@ -251,6 +258,26 @@ describe('BriefScreen — populated', () => {
     expect(links).toHaveLength(4);
     expect(links[0]).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/m-boss-1');
   });
+
+  it('links the frozen snapshot to Activity and every item to a relevant sender search', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+    expect(await screen.findByRole('link', { name: /see what changed/i })).toHaveAttribute(
+      'href',
+      '/activity',
+    );
+    const senderLinks = screen.getAllByRole('link', { name: /review sender/i });
+    expect(senderLinks).toHaveLength(4);
+    expect(senderLinks[0]).toHaveAttribute('href', '/senders?q=boss%40example.com');
+    expect(senderLinks[3]).toHaveAttribute('href', '/senders?q=Newsletter%20Daily');
+  });
 });
 
 describe('BriefScreen — D61 mark-opened mutation', () => {
@@ -343,5 +370,9 @@ describe('BriefScreen — pure helpers', () => {
   it('gmailHref returns a permalink for a message id, null for empty', () => {
     expect(gmailHref('m-abc')).toBe('https://mail.google.com/mail/u/0/#all/m-abc');
     expect(gmailHref(undefined)).toBeNull();
+  });
+
+  it('senderSearchHref preserves an exact shareable sender query', () => {
+    expect(senderSearchHref('Billing + Reports')).toBe('/senders?q=Billing%20%2B%20Reports');
   });
 });

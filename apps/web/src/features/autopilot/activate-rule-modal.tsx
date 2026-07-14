@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
@@ -119,12 +120,12 @@ export function ActivateRuleModal({
 
 /** Verb-honest description of Active mode (D227 canonical verbs; D230 mailto stays manual). */
 function goingForwardCopy(rule: AutopilotRuleDto): string {
-  switch (rule.actionKind) {
-    case 'archive':
-      return 'New matches have their inbox mail archived automatically. Nothing is deleted, and each archive can be undone from the Activity feed.';
-    case 'unsubscribe':
-      return 'New matches are unsubscribed automatically where the sender supports one-click unsubscribe. Senders that only take unsubscribes by email are queued for you to send manually — DeclutrMail never auto-sends from a no-reply address. Unsubscribe requests cannot be recalled once sent.';
-    case 'later':
-      return "New matches have their current inbox mail moved to the DeclutrMail/Later label and scheduled to return in one week. Future mail is unchanged; change the wake time on Later or undo during your plan's Activity window.";
-  }
+  const presentation = buildActionPresentation({
+    verb: rule.actionKind,
+    liveCount: null,
+    planUndoDeadline: null,
+    wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
+    unsubscribeChannel: null,
+  });
+  return `For each new match: ${presentation.previewCopy}`;
 }

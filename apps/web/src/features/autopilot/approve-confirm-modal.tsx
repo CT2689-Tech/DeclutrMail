@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
@@ -82,24 +83,27 @@ export function ApproveConfirmModal({
 
 /** Verb-true "what happens on approve" lead (D227 canonical verbs). */
 function approveLead(rule: AutopilotRuleDto, n: number): string {
-  const senders = n === 1 ? 'this sender' : `these ${n} senders`;
-  switch (rule.actionKind) {
-    case 'archive':
-      return `DeclutrMail archives the inbox mail from ${senders}. Nothing is deleted.`;
-    case 'unsubscribe':
-      return `DeclutrMail unsubscribes from ${senders} — one-click where the sender supports it; senders that only take unsubscribes by email are queued for you to send manually.`;
-    case 'later':
-      return `DeclutrMail moves current inbox mail from ${senders} into the DeclutrMail/Later label and schedules it to return in one week. Future mail is unchanged.`;
-  }
+  const scope = n === 1 ? 'This suggestion' : `These ${n} suggestions`;
+  const presentation = autopilotPresentation(rule);
+  return `${scope}: ${presentation.previewCopy}`;
 }
 
 /** Undo posture, verb-honest (D58 — unsubscribe requests are one-way). */
 function approveFootnote(rule: AutopilotRuleDto): string {
-  switch (rule.actionKind) {
-    case 'archive':
-    case 'later':
-      return 'Undo each action from the Activity feed.';
-    case 'unsubscribe':
-      return "Sent unsubscribe requests can't be recalled.";
-  }
+  const action = autopilotPresentation(rule).primary;
+  return [
+    action.activityUndo.summary,
+    ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
+    ...(action.finality.kind === 'reversible-or-changeable' ? [] : [action.finality.summary]),
+  ].join(' ');
+}
+
+function autopilotPresentation(rule: AutopilotRuleDto) {
+  return buildActionPresentation({
+    verb: rule.actionKind,
+    liveCount: null,
+    planUndoDeadline: null,
+    wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
+    unsubscribeChannel: rule.actionKind === 'unsubscribe' ? null : null,
+  });
 }

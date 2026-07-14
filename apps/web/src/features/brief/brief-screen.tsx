@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
 
 import {
   Avatar,
@@ -165,6 +166,7 @@ function BriefBody({ brief }: { brief: BriefWire }) {
         tip="Open a message in Gmail to reply or review it."
       />
       <BriefMeta brief={brief} />
+      <BriefReturnLinks />
 
       {isEmpty ? (
         <QuietInboxState />
@@ -210,6 +212,41 @@ function BriefMeta({ brief }: { brief: BriefWire }) {
           <span title="A standard summary is shown for this Brief.">Standard summary</span>
         </>
       )}
+    </div>
+  );
+}
+
+/** D69/D245 — make the frozen snapshot useful as a return surface. */
+function BriefReturnLinks() {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap',
+        padding: '10px 12px',
+        border: `1px solid ${color.lineSoft}`,
+        borderRadius: 9,
+        background: color.paper,
+        fontSize: 12,
+        color: color.fgMuted,
+      }}
+    >
+      <span>This Brief is a morning snapshot. Actions taken afterward appear in Activity.</span>
+      <Link
+        href="/activity"
+        onClick={() =>
+          void track('brief_cta_clicked', {
+            cta_kind: 'review_session_start',
+            target: 'activity',
+          })
+        }
+        style={{ color: color.primary, textDecoration: 'none', whiteSpace: 'nowrap' }}
+      >
+        See what changed →
+      </Link>
     </div>
   );
 }
@@ -444,39 +481,47 @@ function ReplyFyiRow({ row, isMobile }: { row: BriefItemWire; isMobile: boolean 
       >
         {subject}
       </div>
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => {
-            void track('brief_cta_clicked', {
-              cta_kind: 'open_in_gmail',
-              target: 'gmail',
-            });
-            void track('gmail_deep_link_opened', {
-              source: 'activity_row',
-              deep_link_kind: 'thread',
-            });
-            addBreadcrumb({
-              category: 'navigation',
-              message: 'brief: reply-fyi → gmail',
-              level: 'info',
-            });
-          }}
-          style={{
-            fontSize: 12.5,
-            color: color.primary,
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-            ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
-          }}
-        >
-          Open in Gmail →
-        </a>
-      ) : (
-        <span aria-hidden="true" />
-      )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
+        }}
+      >
+        <SenderReviewLink query={row.senderEmail} label={displayName} />
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              void track('brief_cta_clicked', {
+                cta_kind: 'open_in_gmail',
+                target: 'gmail',
+              });
+              void track('gmail_deep_link_opened', {
+                source: 'activity_row',
+                deep_link_kind: 'thread',
+              });
+              addBreadcrumb({
+                category: 'navigation',
+                message: 'brief: reply-fyi → gmail',
+                level: 'info',
+              });
+            }}
+            style={{
+              fontSize: 12.5,
+              color: color.primary,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Open in Gmail →
+          </a>
+        )}
+      </div>
     </li>
   );
 }
@@ -530,41 +575,67 @@ function NoiseRow({ group, isMobile }: { group: BriefSenderGroupWire; isMobile: 
       >
         {countLabel}
       </div>
-      {href ? (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => {
-            void track('brief_cta_clicked', {
-              cta_kind: 'open_in_gmail',
-              target: 'gmail',
-            });
-            void track('gmail_deep_link_opened', {
-              source: 'activity_row',
-              deep_link_kind: 'thread',
-            });
-            addBreadcrumb({
-              category: 'navigation',
-              message: 'brief: noise-row → gmail',
-              level: 'info',
-              data: { message_count: count },
-            });
-          }}
-          style={{
-            fontSize: 12.5,
-            color: color.primary,
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-            ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
-          }}
-        >
-          Open in Gmail →
-        </a>
-      ) : (
-        <span aria-hidden="true" />
-      )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap',
+          ...(isMobile ? { gridColumn: '1 / -1', justifySelf: 'start' } : null),
+        }}
+      >
+        <SenderReviewLink query={group.senderName} label={group.senderName} />
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              void track('brief_cta_clicked', {
+                cta_kind: 'open_in_gmail',
+                target: 'gmail',
+              });
+              void track('gmail_deep_link_opened', {
+                source: 'activity_row',
+                deep_link_kind: 'thread',
+              });
+              addBreadcrumb({
+                category: 'navigation',
+                message: 'brief: noise-row → gmail',
+                level: 'info',
+                data: { message_count: count },
+              });
+            }}
+            style={{
+              fontSize: 12.5,
+              color: color.primary,
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Open in Gmail →
+          </a>
+        )}
+      </div>
     </li>
+  );
+}
+
+function SenderReviewLink({ query, label }: { query: string; label: string }) {
+  return (
+    <Link
+      href={senderSearchHref(query)}
+      aria-label={`Review sender ${label}`}
+      onClick={() =>
+        void track('brief_cta_clicked', {
+          cta_kind: 'sender_detail_open',
+          target: 'sender_detail',
+        })
+      }
+      style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none', whiteSpace: 'nowrap' }}
+    >
+      Review sender →
+    </Link>
   );
 }
 
@@ -699,4 +770,9 @@ export function domainOf(email: string): string {
 export function gmailHref(messageId: string | undefined): string | null {
   if (!messageId) return null;
   return `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(messageId)}`;
+}
+
+/** Senders accepts a shareable `q` value; Brief payloads do not carry sender UUIDs. */
+export function senderSearchHref(query: string): string {
+  return `/senders?q=${encodeURIComponent(query)}`;
 }
