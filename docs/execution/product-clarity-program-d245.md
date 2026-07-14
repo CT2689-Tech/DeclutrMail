@@ -57,7 +57,7 @@ each completed slice.
       each item to the relevant sender, preview, or Activity record.
 - [x] Add explicit mailbox disconnect/data-deletion choices and lifecycle
       states for reconnecting, reauthorizing, and removing indexed data.
-- [ ] Let eligible users experience safe Observe/preview value before asking
+- [x] Let eligible users experience safe Observe/preview value before asking
       them to upgrade for automatic Active execution; keep billing truth sourced
       from the canonical entitlement contract.
 

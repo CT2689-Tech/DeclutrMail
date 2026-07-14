@@ -11,7 +11,9 @@
 // TIER (D19): Autopilot is a Pro capability — every route 402s
 // `PRO_FEATURE_REQUIRED` for under-tier workspaces via
 // `CapabilityGuard`, EXCEPT the rules list, which onboarding's Step-4
-// seed poll reads on every tier (see `@CapabilityExempt` below).
+// seed poll and read-only rule previews are available on every tier
+// (see `@CapabilityExempt` below). Suggestions, stored Observe matches,
+// Active execution, and every mutation remain Pro-gated.
 //
 // PRIVACY (D7, D228): read-only against engine signals + rule
 // metadata; nothing returned contains body content. `sender_key` in
@@ -250,6 +252,7 @@ export class AutopilotController {
    */
   @Post('rules/:id/preview')
   @RateLimit('triage-load')
+  @CapabilityExempt()
   async previewRule(
     @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,

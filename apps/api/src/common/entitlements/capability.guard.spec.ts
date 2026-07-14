@@ -147,10 +147,9 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
         'dismissMatch',
         'approveMatches',
         'approveAllForRule',
-        'previewRule',
       ],
-      // Onboarding's Step-4 seed poll reads the rules list on every tier.
-      exempt: ['listRules'],
+      // Catalog and dry-run preview are read-only pre-upgrade value.
+      exempt: ['listRules', 'previewRule'],
     },
     {
       surface: 'briefs',

@@ -1,14 +1,18 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { EmptyState, Eyebrow, Pill, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, Eyebrow, Pill, tokens } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
+import { useRulePreview } from './api/use-rule-preview';
 import { AutopilotRoute } from './autopilot-screen';
 import { presetDisplayName } from './preset-labels';
+import { RulePreviewPanel } from './rule-preview-panel';
+import type { RulePreviewState } from './types';
 
 const { color, font, radius, shadow } = tokens;
 
@@ -28,6 +32,8 @@ export function AutopilotEntitlementSurface() {
 
 export function AutopilotObservePreview() {
   const rules = useAutopilotRules();
+  const preview = useRulePreview();
+  const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
   const monthly = TIER_MANIFEST.pro.prices.monthly;
   const price = monthly == null ? null : `$${monthly.usdCents / 100}/mo`;
 
@@ -66,9 +72,9 @@ export function AutopilotObservePreview() {
             lineHeight: 1.6,
           }}
         >
-          Observe records matches as suggestions; Active applies future matches automatically. This
-          preview only shows the preset rules installed for your mailbox. It does not inspect new
-          mail, create suggestions, or change anything.
+          Observe records matches as suggestions; Active applies future matches automatically.
+          Review the preset rules installed for your mailbox, then run a read-only current-match
+          preview. Preview does not create suggestions or change Gmail.
         </p>
       </div>
 
@@ -119,10 +125,35 @@ export function AutopilotObservePreview() {
                 <span style={{ fontSize: 13, fontWeight: 600 }}>
                   {presetDisplayName(rule.presetKey, rule.name)}
                 </span>
-                <Pill tone="default">{actionLabel(rule.actionKind)}</Pill>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Pill tone="default">{actionLabel(rule.actionKind)}</Pill>
+                  <Button
+                    size="sm"
+                    tone="default"
+                    disabled={preview.isPending}
+                    onClick={() => {
+                      setPreviewRuleId(rule.id);
+                      preview.mutate(rule.id);
+                    }}
+                  >
+                    Preview current matches
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
+        )}
+        {previewRuleId != null && rules.data != null && (
+          <div style={{ marginTop: 12 }}>
+            <RulePreviewPanel
+              ruleName={presetDisplayName(
+                rules.data.find((rule) => rule.id === previewRuleId)?.presetKey ?? null,
+                rules.data.find((rule) => rule.id === previewRuleId)?.name ?? 'Preset rule',
+              )}
+              state={previewState(preview, previewRuleId)}
+              onRetry={() => preview.mutate(previewRuleId)}
+            />
+          </div>
         )}
       </section>
 
@@ -172,6 +203,22 @@ export function AutopilotObservePreview() {
       </div>
     </div>
   );
+}
+
+function previewState(
+  preview: {
+    isPending: boolean;
+    isError: boolean;
+    data: ReturnType<typeof useRulePreview>['data'];
+  },
+  ruleId: string,
+): RulePreviewState {
+  if (preview.isPending) return { status: 'loading' };
+  if (preview.isError) {
+    return { status: 'error', message: 'Preview failed. Your mailbox was not changed.' };
+  }
+  if (preview.data?.ruleId === ruleId) return { status: 'ready', result: preview.data };
+  return { status: 'loading' };
 }
 
 function actionLabel(kind: 'archive' | 'unsubscribe' | 'later'): string {
