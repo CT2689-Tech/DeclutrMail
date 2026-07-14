@@ -21,6 +21,6 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.3",
     "drizzle-kit": "^0.31.10",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
   }
 }
