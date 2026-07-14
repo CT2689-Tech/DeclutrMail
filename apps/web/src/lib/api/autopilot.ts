@@ -59,14 +59,14 @@ export type AutopilotMatchResolution = 'pending' | 'approved' | 'dismissed';
 
 /**
  * D10/D101 — Observe-mode digest for one rule: what the rule WOULD have
- * done, computed server-side from the pending Observe-mode match buffer
+ * done, computed server-side from the Observe-mode match history
  * joined to current INBOX message counts (the same resolution the
  * action sweep uses). Counts only — no content (D7).
  */
 export interface AutopilotObserveDigestDto {
   /** Total pending Observe-mode matches (uncapped — not the 50-row page). */
   pendingTotal: number;
-  /** Distinct senders matched in the last 7 days (pending rows only). */
+  /** Distinct senders matched in the last 7 days (all resolutions). */
   senders7d: number;
   /** INBOX messages from those senders — what a sweep right now would act on. */
   messages7d: number;

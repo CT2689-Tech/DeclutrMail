@@ -218,7 +218,17 @@ export const PENDING_SUGGESTIONS: AutopilotMatchDto[] = [
 export const RULE_PREVIEW_RESULT: AutopilotRulePreviewResultDto = {
   ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
   wouldMatchCount: 12,
+  actionableSenderCount: 10,
+  actionableMessageCount: 74,
+  protectedWouldMatchCount: 3,
   evaluatedSenders: 148,
+  dailyActionCap: 100,
+  weeklyVolume: {
+    observedMatches: 34,
+    observedDays: 7,
+    estimatedMatches: 34,
+    basis: 'observed_7d',
+  },
   sample: [
     {
       senderKey: 'a1b2c3d4e5f607080910111213141516171819202122232425262728293031ff',

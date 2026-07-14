@@ -54,7 +54,17 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
             data: {
               ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
               wouldMatchCount: 2,
+              actionableSenderCount: 2,
+              actionableMessageCount: 7,
+              protectedWouldMatchCount: 1,
               evaluatedSenders: 14,
+              dailyActionCap: 100,
+              weeklyVolume: {
+                observedMatches: 1,
+                observedDays: 2,
+                estimatedMatches: 4,
+                basis: 'early_estimate',
+              },
               sample: [
                 {
                   senderKey: 'a'.repeat(64),

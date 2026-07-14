@@ -325,7 +325,7 @@ accessibility foundations come before optional workflow acceleration.
 | Activity | Exportable action timeline with human-readable support bundle | Helps users and support diagnose provider or automation issues | Keep IDs/status codes behind technical details. |
 | Brief | “Useful / not useful / wrong reason” feedback on each item | Improves recurring value and exposes poor ranking signals | Start with local/product analytics; do not imply model training without consent. |
 | Brief | Explain why an item ranked highly using observed facts | Builds confidence in prioritization | Show Gmail importance, reply history, recency, and volume—not an opaque score. |
-| Autopilot | Pre-activation change report: current matches, projected weekly volume, protected skips, and undo window | Makes automation consequences concrete before enabling Active | High priority and generated from the same preview contracts. |
+| Autopilot | Pre-activation change report: current matches, projected weekly volume, protected skips, and undo window | Makes automation consequences concrete before enabling Active | **Implemented 2026-07-14:** generated from the same preview and entitlement contracts, with early estimates labelled. |
 | Autopilot | Weekly automation digest with successes, skips, failures, and saved inbox volume | Helps users verify continuing value and catch drift | Link every count to Activity. |
 | Later | Missed-wake/failure state plus optional notification when mail returns | Prevents scheduled mail from silently remaining out of Inbox | High priority; expose retry and last-attempt truth. |
 | Later | Reschedule history on the row | Helps users remember why and when a sender was deferred | Keep the default row compact; disclose history on demand. |
@@ -349,7 +349,7 @@ accessibility foundations come before optional workflow acceleration.
 | Terminology consistency | 5/5 | Later, Protected, Observe/Active, Gmail Preview, and contextual labels are canonical. |
 | Onboarding activation | 4/5 | First useful decision exists; add sample walkthrough and time-to-value measurement. |
 | Recurring user value | 4/5 | Brief/Activity/Autopilot are actionable; add feedback loops and weekly value reporting. |
-| Automation control | 4/5 | Observe, Active, previews, and Protected gates are clear; add the pre-activation change report. |
+| Automation control | 5/5 | Observe, Active, Protected gates, consequence reports, caps, and action-specific recovery are explicit before activation. |
 | Accessibility and mobile confidence | 4/5 | Unit/a11y labels and responsive treatments are strong; authenticated assistive-tech/mobile smoke remains. |
 | Billing clarity | 3/5 | Entitlements are canonical, but standard annual Pro pricing is unresolved. |
 | Operational trust | 4/5 | Freshness and recoverable errors are visible; add connection health and export/deletion progress. |
@@ -362,6 +362,8 @@ accessibility foundations come before optional workflow acceleration.
   state; database and API contracts require a wake time.
 - Added conservative automatic protection with exact reply, star, or Gmail
   importance provenance, visible explanations, and a sticky manual override.
+- Added an Autopilot activation report with current actionable scope, Protected
+  exclusions, evidence-labelled weekly volume, safety caps, and recovery truth.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
 - Static validation covers TypeScript, focused API/worker/web/shared tests,
   migration checks, and diff/format checks. Authenticated live Playwright and

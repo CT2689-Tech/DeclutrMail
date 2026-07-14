@@ -247,7 +247,8 @@ export class AutopilotController {
   /**
    * POST /api/autopilot/rules/:id/preview — U14 dry-run preview (D103
    * scoped to presets per D192). Read-only: runs the rule's matcher
-   * against current signals; returns the would-match count + a 10-row
+   * against current signals; returns actionable + Protected totals,
+   * Observe-based weekly volume, the daily cap, and a 10-row
    * metadata-only sample. Custom rules 404 per D234.
    */
   @Post('rules/:id/preview')

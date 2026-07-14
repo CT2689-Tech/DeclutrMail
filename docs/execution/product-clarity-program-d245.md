@@ -73,6 +73,9 @@ current technical invariant rather than by hypothetical existing users.
       basis behind progressive disclosure.
 - [x] Explain Autopilot Observe and Active at rule level; keep Active execution
       plan-gated and build custom-rule creation behind D234's gate.
+- [x] Show a pre-activation consequence report with actionable senders and
+      messages, Protected skips, observed or labelled-estimated weekly volume,
+      the daily safety cap, and action-specific recovery truth.
 - [x] Turn Brief into a useful return surface that says what changed and links
       each item to the relevant sender, preview, or Activity record.
 - [x] Add explicit mailbox disconnect/data-deletion choices and lifecycle

@@ -137,12 +137,14 @@ export {
   AutopilotApproveResultSchema,
   AutopilotPreviewSampleSchema,
   AutopilotRulePreviewResultSchema,
+  AutopilotWeeklyVolumeSchema,
 } from './autopilot';
 export type {
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
   AutopilotRulePreviewResult,
+  AutopilotWeeklyVolume,
 } from './autopilot';
 
 // D19 waitlist capture — POST /api/waitlist (pricing Team row +

@@ -79,6 +79,12 @@ export function RulePreviewPanel({
             </span>
           </div>
 
+          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+            {state.result.actionableSenderCount.toLocaleString()} actionable now ·{' '}
+            {state.result.protectedWouldMatchCount.toLocaleString()} matching Protected sender
+            {state.result.protectedWouldMatchCount === 1 ? '' : 's'} skipped
+          </span>
+
           {state.result.sample.length > 0 ? (
             <ul
               aria-label={`Sample matches for rule ${ruleName}`}

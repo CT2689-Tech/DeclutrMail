@@ -28,8 +28,10 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotScreen } from './autopilot-screen';
+import { ActivateRuleModal } from './activate-rule-modal';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
+  AUTO_UNSUBSCRIBE_NOISY,
   PENDING_SUGGESTIONS,
   PRESET_RULES_ALL_FIVE,
   PRESET_RULES_ALL_PAUSED,
@@ -374,6 +376,18 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     expect(
       within(dialog).getByText(/senders would match if this rule were active now/i),
     ).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /activation report/i })).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/10 senders and 74 inbox messages actionable now/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/3 additional matching senders are Protected/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/7-day observed volume: 34 matches/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/daily safety cap: 100 actions/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/archive results can be undone from Activity for 30 days/i),
+    ).toBeInTheDocument();
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
@@ -406,6 +420,51 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /try again/i }));
     await waitFor(() => expect(confirm).toBeEnabled());
     expect(previewCalls).toBe(2);
+  });
+});
+
+describe('ActivateRuleModal — action-specific recovery', () => {
+  it('states that unsubscribe is irreversible and does not remove existing mail', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        pendingCount={3}
+        pendingApproximate={false}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+            actionableSenderCount: 2,
+            actionableMessageCount: 11,
+            protectedWouldMatchCount: 1,
+            dailyActionCap: 25,
+            weeklyVolume: {
+              observedMatches: 3,
+              observedDays: 2,
+              estimatedMatches: 11,
+              basis: 'early_estimate',
+            },
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/2 unsubscribe requests actionable now/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/unsubscribing does not remove existing mail/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/early weekly estimate: about 11 matches/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
   });
 });
 
