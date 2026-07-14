@@ -7,7 +7,6 @@ import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/c
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useQuietHours } from './api/use-quiet-hours';
@@ -79,10 +78,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
     : query.isError
       ? {
           kind: 'error',
-          message:
-            query.error instanceof ApiError
-              ? `We couldn't load quiet hours (HTTP ${query.error.status}).`
-              : "We couldn't load quiet hours right now.",
+          message: "We couldn't load quiet hours right now.",
         }
       : {
           kind: 'ready',
@@ -109,11 +105,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
       },
       onError: (err) => {
         captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
-        const message =
-          err instanceof ApiError
-            ? `Saving failed (HTTP ${err.status}). Try again.`
-            : 'Saving failed. Try again.';
-        toast(message, 'warn');
+        toast('Saving failed. Try again.', 'warn');
       },
     });
   };

@@ -699,8 +699,8 @@ export function canArchive(s: Sender): boolean {
   return !isStandingProtected(s);
 }
 
-/** "Later" routes a sender's future mail to a DeclutrMail/Later label
- * (skips the inbox) — safe for anyone not standing-protected. */
+/** "Later" moves a sender's current inbox mail to the
+ * DeclutrMail/Later label — safe for anyone not standing-protected. */
 export function canLater(s: Sender): boolean {
   return !isStandingProtected(s);
 }

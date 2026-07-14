@@ -258,7 +258,9 @@ export function ScreenerRow({
             </span>
             {row.recommendation != null && (
               <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-                <span style={{ fontWeight: 600, color: color.fgSoft }}>Engine's read: </span>
+                <span style={{ fontWeight: 600, color: color.fgSoft }}>
+                  Why this is suggested:{' '}
+                </span>
                 {row.recommendation.reasoning}
               </span>
             )}

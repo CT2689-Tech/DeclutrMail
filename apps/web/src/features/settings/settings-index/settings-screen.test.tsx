@@ -253,7 +253,7 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const toggle = await screen.findByRole('switch', {
-      name: /skip the action sheet for unsubscribe/i,
+      name: /show the unsubscribe preview in the row/i,
     });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 

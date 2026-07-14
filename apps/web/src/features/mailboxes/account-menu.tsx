@@ -306,7 +306,10 @@ export function AccountMenu() {
                       color: color.fgMuted,
                     }}
                   >
-                    <span>Disconnect this Gmail account?</span>
+                    <span>
+                      Disconnect? Sync and Gmail access stop. Indexed data stays until you delete
+                      it, and you can reconnect later.
+                    </span>
                     <button
                       type="button"
                       disabled={disconnect.isPending}

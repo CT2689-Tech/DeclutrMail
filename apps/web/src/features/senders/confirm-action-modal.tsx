@@ -321,16 +321,16 @@ export function ConfirmActionModal({
   const title = isDeleteVerb
     ? `Delete mail from ${n} sender${plural}`
     : isArchiveVerb
-      ? `Archive all mail from ${n} sender${plural}`
+      ? `Archive mail from ${n} sender${plural}`
       : isLaterVerb
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
   const lead = isDeleteVerb
-    ? `Mail from ${subject} moves to Gmail Trash. Gmail recovers from Trash for 30 days; after that Gmail permanently deletes it.`
+    ? `Matching mail now in your inbox from ${subject} moves to Gmail Trash. Gmail keeps it there for up to 30 days before permanently deleting it.`
     : isArchiveVerb
-      ? `Every message from ${subject} moves out of the inbox into Gmail's archive. Nothing is deleted.`
+      ? `Matching mail now in your inbox from ${subject} moves to Gmail's archive. Nothing is deleted.`
       : isLaterVerb
-        ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
+        ? `Mail now in your inbox from ${subject} moves to the DeclutrMail/Later label. Future mail is unchanged. Nothing is unsubscribed or deleted.`
         : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
 
   const numberStyle: CSSProperties = {
@@ -888,6 +888,21 @@ export function ConfirmActionModal({
                     </span>
                   );
                 }
+                if (isUnsubVerb && !hasSecondaryAction) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      No existing email moves. Future mail should stop after the unsubscribe
+                      succeeds.
+                    </span>
+                  );
+                }
+                if (isLaterVerb && !hasSecondaryAction) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Mail now in your inbox from {subject} will move to Later.
+                    </span>
+                  );
+                }
                 if (historic != null) {
                   return (
                     <>
@@ -900,7 +915,7 @@ export function ConfirmActionModal({
                 }
                 return (
                   <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                    We act only on what’s currently in your inbox from {subject}.
+                    Only matching mail currently in your inbox is included.
                   </span>
                 );
               })()}

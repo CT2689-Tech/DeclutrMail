@@ -26,7 +26,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 const TITLE = 'DeclutrMail — Control Gmail by sender, not by email.';
 const DESCRIPTION =
-  'DeclutrMail turns thousands of emails into a handful of sender decisions — with automation, privacy-first indexing, and 7-day undo.';
+  'DeclutrMail turns thousands of emails into a handful of sender decisions — with automation, privacy-first indexing, and previews before mail changes.';
 
 // metadataBase is inherited from the root layout (D128 origin).
 export const metadata: Metadata = marketingPageMetadata({

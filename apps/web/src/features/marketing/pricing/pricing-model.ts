@@ -88,7 +88,7 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'See what’s noisy.',
-  plus: 'Clean it yourself, unlimited.',
+  plus: 'Handle it yourself, without limits.',
   pro: 'Let DeclutrMail keep it clean.',
   team: 'Do this together, with audit.',
   enterprise: 'Do this safely at scale.',

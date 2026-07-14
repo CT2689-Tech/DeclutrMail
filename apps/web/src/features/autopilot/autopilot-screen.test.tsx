@@ -227,7 +227,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       expect(screen.getByText(/senders would match if this rule were active now/i)).toBeVisible(),
     );
     expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText(/dry-run only — nothing changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/preview only — nothing changed/i)).toBeInTheDocument();
   });
 });
 
@@ -377,7 +377,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
-    await waitFor(() => expect(within(dialog).getByText(/dry-run failed/i)).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByText(/preview failed/i)).toBeInTheDocument());
     const confirm = within(dialog).getByRole('button', { name: /switch to active/i });
     expect(confirm).toBeDisabled();
 

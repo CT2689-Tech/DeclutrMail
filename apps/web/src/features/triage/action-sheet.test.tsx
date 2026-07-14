@@ -91,7 +91,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
           onConfirm={() => {}}
         />,
       );
-      expect(html).toContain(`Remember this for ${verb}`);
+      expect(html).toContain('Show this in the row next time');
     }
   });
 
@@ -108,7 +108,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('preview still shows inline');
+    expect(html.toLowerCase()).toContain('same preview will appear below the sender');
   });
 });
 

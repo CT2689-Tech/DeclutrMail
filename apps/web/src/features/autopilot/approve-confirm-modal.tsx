@@ -70,9 +70,9 @@ export function ApproveConfirmModal({
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
             }}
-            title={m.senderEmail ?? m.senderKey}
+            title={m.senderEmail ?? m.senderName ?? 'Sender details still syncing'}
           >
-            {m.senderName ?? `sender·${m.senderKey.slice(0, 8)}`}
+            {m.senderName ?? 'Sender details still syncing'}
           </span>
         ))}
       </div>

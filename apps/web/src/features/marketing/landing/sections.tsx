@@ -14,7 +14,7 @@ export function Problem() {
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 01 — The arithmetic</p>
-      <h2 className="dm-mkt-h2">The cleanup is N decisions. We shrink N.</h2>
+      <h2 className="dm-mkt-h2">The work is N decisions. We shrink N.</h2>
       <p className="dm-mkt-lede">
         Your inbox has thousands of emails — but they come from a few hundred senders. Tools that
         make you process emails leave you with the same N. DeclutrMail makes it N senders.
@@ -26,14 +26,14 @@ export function Problem() {
           <p className="dm-mkt-arith-note">Years of newsletters, receipts, and notifications.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Cleaning it email-by-email</div>
+          <div className="dm-mkt-arith-label">Handling it email-by-email</div>
           <div className="dm-mkt-arith-value">
             <s>12,418 decisions</s>
           </div>
           <p className="dm-mkt-arith-note">That is why every “inbox zero” lapses.</p>
         </div>
         <div className="dm-mkt-arith-cell">
-          <div className="dm-mkt-arith-label">Cleaning it by sender</div>
+          <div className="dm-mkt-arith-label">Handling it by sender</div>
           <div className="dm-mkt-arith-value">
             <em>143 decisions</em>
           </div>
@@ -71,8 +71,8 @@ export function HowItWorks() {
           <div className="dm-mkt-step-no">STEP 3</div>
           <h3 className="dm-mkt-step-title">Done</h3>
           <p className="dm-mkt-step-body">
-            Autopilot keeps your verdicts running on new mail, and the activity ledger records every
-            move — each one undoable for days, not seconds.
+            Active rules apply to matching mail, and Activity records each result along with any
+            available undo.
           </p>
         </div>
       </div>
@@ -85,8 +85,8 @@ const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
   keep: 'Protect a sender. Their mail stays in your inbox, untouched by any rule.',
   archive: 'Out of the inbox, never lost — everything stays searchable in Gmail.',
   unsubscribe:
-    'One-click unsubscribe where the sender supports it, with the leftover mail cleaned up too.',
-  later: 'Park the decision. The sender resurfaces when you are ready to call it.',
+    'One-click unsubscribe where the sender supports it. Past mail stays unless you separately archive or delete it.',
+  later: 'Move current inbox mail to the DeclutrMail/Later label. Future mail is unchanged.',
   delete: 'Move a sender’s mail to Gmail Trash. Recoverable there for 30 days.',
 };
 
@@ -98,8 +98,8 @@ export function Ritual() {
       <h2 className="dm-mkt-h2">Five verbs. One per sender.</h2>
       <p className="dm-mkt-lede">
         Every sender in your inbox gets exactly one of five verdicts, each on a single key. A
-        preview shows you precisely what will move before anything does — and every action lands in
-        an undo journal.
+        preview shows you precisely what will move before anything does. The preview also explains
+        whether and how the action can be reversed.
       </p>
       <div className="dm-mkt-ritual">
         {VERB_REGISTRY.map((verb) => (
@@ -127,18 +127,18 @@ export function PrivacyDesk() {
             <p className="dm-mkt-eyebrow">№ 04 — The fine print, first</p>
             <h2 className="dm-mkt-h2">Built for the most skeptical person in the room.</h2>
             <p className="dm-mkt-lede">
-              A cleanup tool only earns access to your inbox by being boringly specific about what
-              it touches. So here is the whole list, on the badge — the same one shown inside the
+              An inbox tool only earns access to your mail by being boringly specific about what it
+              touches. So here is the whole list, on the badge — the same one shown inside the
               product.
             </p>
             <ul className="dm-mkt-desk-points">
               <li>
-                We index metadata, not mail. The badge on the right is the entire inventory of what
-                we store.
+                We do not fetch full message bodies or attachments. The badge lists the Gmail data
+                used by the product.
               </li>
               <li>
-                Every action is previewed before it runs and journaled after — undo windows are
-                enforced server-side, not promised in marketing copy.
+                Mail-changing actions are previewed before they run and recorded afterward. Any
+                available undo is enforced server-side.
               </li>
               <li>
                 Disconnect any time. Deleting your account schedules a full purge of the little we

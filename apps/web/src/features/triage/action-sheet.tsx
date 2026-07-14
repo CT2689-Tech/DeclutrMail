@@ -121,7 +121,7 @@ export function ActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={danger ? 'amber' : 'primary'}>Action sheet · {verb}</Eyebrow>
+          <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · {verb}</Eyebrow>
           <h2
             id="dm-triage-sheet-title"
             style={{
@@ -184,7 +184,7 @@ export function ActionSheet({
           <button
             onClick={() => setRememberPreference((v) => !v)}
             type="button"
-            aria-label="Remember this preference and skip the action sheet next time"
+            aria-label="Show this preview in the row next time"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -200,9 +200,10 @@ export function ActionSheet({
           >
             <CheckSquare on={rememberPreference} muted />
             <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
-              <strong style={{ color: color.fg, fontWeight: 600 }}>Remember this for {verb}</strong>{' '}
-              — skip the sheet next time. The preview still shows inline below the row, and you can
-              flip this back from Settings.
+              <strong style={{ color: color.fg, fontWeight: 600 }}>
+                Show this in the row next time
+              </strong>{' '}
+              — the same preview will appear below the sender. You can change this in Settings.
             </span>
           </button>
         </div>

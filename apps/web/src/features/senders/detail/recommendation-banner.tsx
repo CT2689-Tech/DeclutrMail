@@ -152,7 +152,7 @@ export function RecommendationBanner({
             <button
               type="button"
               onClick={() => setPopoverOpen(false)}
-              aria-label="Close"
+              aria-label="Close recommendation details"
               style={{
                 background: 'transparent',
                 border: 'none',

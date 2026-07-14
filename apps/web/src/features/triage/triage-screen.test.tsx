@@ -87,7 +87,7 @@ describe('TriageScreen — empty / loading branches', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     // D33 copy markers
     expect(html).toContain('cleared today');
-    expect(html).toContain('Come back tomorrow');
+    expect(html).toContain('New decisions appear after a sync');
     // Stats tile labels
     expect(html).toContain('Decided');
     expect(html).toContain('Archived');
@@ -99,7 +99,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the empty state when state.kind=ready but rows is []', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('Come back tomorrow');
+    expect(html).toContain('New decisions appear after a sync');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
@@ -162,8 +162,8 @@ describe('TriageScreen — empty / loading branches', () => {
     // ("You cleared today's queue." over four zero tiles) would be a
     // false claim here, so the shared EmptyState renders instead.
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
-    expect(html).toContain('Nothing needs a decision.');
-    expect(html).toContain('Autopilot keeps watch');
+    expect(html).toContain('No decisions today.');
+    expect(html).toContain('repeated noise');
     // Next-step framing (D212): a real link to Senders.
     expect(html).toContain('href="/senders"');
     expect(html).toContain('Browse senders');
@@ -178,7 +178,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the resting state for kind=ready with [] rows and no decisions today (W5)', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS_QUIET });
-    expect(html).toContain('Nothing needs a decision.');
+    expect(html).toContain('No decisions today.');
   });
 
   it('keeps the D33 celebration when the user DID decide today', () => {

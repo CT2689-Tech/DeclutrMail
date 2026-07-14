@@ -26,7 +26,7 @@ export function Hero() {
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
             DeclutrMail turns thousands of emails into a handful of sender decisions — with
-            automation, privacy-first indexing, and 7-day undo.
+            automation, privacy-first indexing, and clear recovery options.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta
@@ -50,7 +50,7 @@ export function Hero() {
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free tier · no card · every action reversible
+            Free tier · no card · previews before actions
           </p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
@@ -128,7 +128,7 @@ function TrustStrip() {
         <PrivacyBadge variant="inline" />
       </span>
       <span className="dm-mkt-trust-item">30-day money-back guarantee</span>
-      <span className="dm-mkt-trust-item">Undo on every action</span>
+      <span className="dm-mkt-trust-item">Action-specific undo and recovery</span>
     </div>
   );
 }

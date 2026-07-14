@@ -102,7 +102,7 @@ export function BatchActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone="primary">Action sheet · {verb} · batch</Eyebrow>
+          <Eyebrow tone="primary">Preview · {verb} · multiple senders</Eyebrow>
           <h2
             id="dm-triage-batch-sheet-title"
             style={{

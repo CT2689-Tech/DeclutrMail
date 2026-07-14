@@ -37,7 +37,7 @@ describe('UnsubMailtoCallout', () => {
     render(
       <UnsubMailtoCallout senderName="X" mailtoUrl="mailto:u@x.example" onDismiss={onDismiss} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Gmail unsubscribe reminder' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 

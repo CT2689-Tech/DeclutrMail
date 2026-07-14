@@ -31,7 +31,7 @@ export function FinalCta() {
           </span>
         </TrackedCta>
       </div>
-      <p className="dm-mkt-hero-note">Free tier · no card · every action reversible</p>
+      <p className="dm-mkt-hero-note">Free tier · no card · previews before actions</p>
     </section>
   );
 }

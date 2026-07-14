@@ -11,14 +11,14 @@ const TRUST_CLAIMS = [
   // mutation surface. "Recoverable" covers both Archive/Later (7d
   // Activity undo) and Delete (30d Gmail Trash retention).
   {
-    label: 'Recoverable',
+    label: 'Undo windows',
     title:
-      'Archive + Later: 7 days from Activity. Delete: 30 days in Gmail Trash. Every action is reversible.',
+      "Archive and Later: undo from Activity for 7 days. Delete: recover from Gmail Trash for 30 days. Unsubscribe requests can't be undone.",
   },
   {
-    label: 'Metadata only',
+    label: 'Stored Gmail data',
     title:
-      'We act on labels and message states. Stored: sender, subject, snippet, dates, labels — never message bodies or attachments.',
+      "Stored: sender, subject, Gmail's short preview, dates, and labels. Full message bodies and attachments are never fetched.",
   },
 ];
 

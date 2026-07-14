@@ -43,10 +43,10 @@ export default function TermsOfServicePage() {
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
           cleanup service. It shows you your inbox organized by sender, recommends cleanup
           decisions, and — when you approve them — performs actions on your Gmail on your behalf:
-          keep, archive, unsubscribe, later, or delete. Actions are previewed before they run,
-          recorded in an activity log, and reversible during your plan&rsquo;s undo window. By
-          creating an account or using DeclutrMail you agree to these terms and to our{' '}
-          <a href="/privacy">Privacy Policy</a>.
+          keep, archive, unsubscribe, later, or delete. Mail-changing actions are previewed before
+          they run and recorded in an activity log. Available undo and recovery options depend on
+          the action. By creating an account or using DeclutrMail you agree to these terms and to
+          our <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 
@@ -69,9 +69,9 @@ export default function TermsOfServicePage() {
           DeclutrMail modifies your mailbox only at your instruction — either an action you approve
           directly, or a rule you explicitly enabled. Before any destructive action runs,
           DeclutrMail shows you a preview of exactly what will change. You are responsible for
-          reviewing previews before approving actions. Every action is reversible during your
-          plan&rsquo;s undo window (7 days on Free and Plus, 30 days on Pro); after the undo window
-          expires, an action&rsquo;s effects are permanent.
+          reviewing previews before approving actions. Archive and Later can be undone from Activity
+          for 7 days. Delete moves mail to Gmail Trash, where Gmail may retain it for up to 30 days.
+          A completed unsubscribe request cannot be recalled.
         </p>
         <p>
           Unsubscribe actions use the unsubscribe mechanisms senders publish. We cannot guarantee a
@@ -141,8 +141,8 @@ export default function TermsOfServicePage() {
         <p>
           To the maximum extent permitted by law, DeclutrMail is provided &ldquo;as is&rdquo; and
           &ldquo;as available&rdquo;, without warranties of any kind, express or implied. We do not
-          warrant that the service will be uninterrupted, error-free, or that every action will be
-          reversible after its undo window.
+          warrant that the service will be uninterrupted, error-free, or recoverable after an
+          action&rsquo;s stated undo or recovery window.
         </p>
         <p>
           To the maximum extent permitted by law: (a) neither party is liable for indirect,

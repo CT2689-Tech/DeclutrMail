@@ -111,9 +111,9 @@ export function UpgradeModal() {
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
             {hit.reason === 'free_cap' ? (
               <>
-                Everything you&rsquo;ve already cleaned stays done. Plus unlocks unlimited cleanup
-                for {planPriceLabel('plus', 'monthly')}. Pro could do this for you automatically
-                &mdash; Autopilot, Daily Brief, and Quiet Hours for {proMonthly}.
+                Completed mail actions stay in place. Plus unlocks unlimited sender actions for{' '}
+                {planPriceLabel('plus', 'monthly')}. Pro could do this for you automatically &mdash;
+                Autopilot, Daily Brief, and Quiet Hours for {proMonthly}.
               </>
             ) : nudge ? (
               <>
@@ -181,8 +181,8 @@ export function UpgradeModal() {
 
 function freeCapTitle(d: FreeCapDetails): string {
   return d.requiredUnits > 1 && d.remaining > 0
-    ? `That needs ${d.requiredUnits} cleanup actions — only ${d.remaining} of your ${d.limit} free ones are left`
-    : `You've used all ${d.limit} free cleanup actions`;
+    ? `That needs ${d.requiredUnits} sender actions — only ${d.remaining} of your ${d.limit} free ones are left`
+    : `You've used all ${d.limit} free sender actions`;
 }
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {

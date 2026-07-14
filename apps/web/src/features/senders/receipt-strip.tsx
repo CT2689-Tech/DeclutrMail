@@ -129,7 +129,7 @@ export function ReceiptStrip({
       </button>
       <button
         onClick={onDismiss}
-        aria-label="Dismiss"
+        aria-label="Dismiss action receipt"
         style={{
           background: 'transparent',
           border: 'none',

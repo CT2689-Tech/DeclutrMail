@@ -68,8 +68,8 @@ export function ObserveWindowBanner({
         <Eyebrow>Observe window complete</Eyebrow>
         <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, margin: '2px 0 0' }}>
           {rules.length === 1
-            ? 'Autopilot has been watching for a week.'
-            : `Autopilot has been watching for a week — ${rules.length} rules are ready.`}
+            ? 'Autopilot has collected matches for a week.'
+            : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
         </div>
         <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
           During the window, matches were collected as suggestions without touching your mail.

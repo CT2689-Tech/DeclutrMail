@@ -57,9 +57,11 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
-    expect(screen.getByText("You've used all 5 free cleanup actions")).toBeInTheDocument();
+    expect(screen.getByText("You've used all 5 free sender actions")).toBeInTheDocument();
     // Manifest-derived prices (D19): Plus $9/mo, Pro $19/mo.
-    expect(screen.getByText(/Plus unlocks unlimited cleanup for \$9\/mo/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Plus unlocks unlimited sender actions for \$9\/mo/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\$19\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
   });
@@ -72,7 +74,7 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(
-      screen.getByText('That needs 4 cleanup actions — only 2 of your 5 free ones are left'),
+      screen.getByText('That needs 4 sender actions — only 2 of your 5 free ones are left'),
     ).toBeInTheDocument();
   });
 

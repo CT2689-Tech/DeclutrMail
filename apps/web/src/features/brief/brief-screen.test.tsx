@@ -217,7 +217,7 @@ describe('BriefScreen — populated', () => {
     ]);
 
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/via template/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/standard summary/i)).toBeInTheDocument());
   });
 
   it('D62 — `via template` marker hidden on the Haiku happy path', async () => {

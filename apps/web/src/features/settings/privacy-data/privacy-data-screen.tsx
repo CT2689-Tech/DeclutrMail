@@ -134,19 +134,19 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {undoDays !== null ? (
               <>
-                Reversible actions (Archive, Later, Delete, and archived unsubscribe backlogs) can
-                be undone from Activity for{' '}
+                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
                 <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
               </>
             ) : (
               <>
-                Reversible actions (Archive, Later, Delete, and archived unsubscribe backlogs) can
-                be undone from Activity for {TIER_MANIFEST.free.undoWindowDays} days (
-                {TIER_MANIFEST.pro.undoWindowDays} days on Pro).
+                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
+                {TIER_MANIFEST.free.undoWindowDays} days ({TIER_MANIFEST.pro.undoWindowDays} days on
+                Pro).
               </>
             )}{' '}
-            Account deletion always waits for your open undo windows to expire (unless you
-            explicitly waive them).
+            Delete uses Gmail Trash recovery for up to 30 days; a completed unsubscribe cannot be
+            recalled. Account deletion waits for open Activity undo windows unless you explicitly
+            waive them.
           </p>
         </div>
       </Card>

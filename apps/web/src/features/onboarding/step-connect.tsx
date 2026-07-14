@@ -70,10 +70,10 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
           </span>
         </li>
         <li>
-          <strong style={{ fontWeight: 600 }}>Nothing changes without you.</strong>{' '}
+          <strong style={{ fontWeight: 600 }}>Connecting changes no email.</strong>{' '}
           <span style={{ color: color.fgMuted }}>
-            Connecting only scans. Every Archive, Unsubscribe, Later or Delete shows a preview first
-            and is undoable.
+            Connecting only starts the scan. Archive, Unsubscribe, Later, and Delete each show a
+            preview with their scope and recovery options before anything changes.
           </span>
         </li>
       </ul>

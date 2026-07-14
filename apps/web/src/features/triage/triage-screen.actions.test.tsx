@@ -785,7 +785,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
       'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );
     // Dismissible.
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss Gmail unsubscribe reminder' }));
     expect(screen.queryByTestId('unsub-mailto-callout')).toBeNull();
   });
 

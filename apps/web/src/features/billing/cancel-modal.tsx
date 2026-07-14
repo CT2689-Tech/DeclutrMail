@@ -136,7 +136,7 @@ export function CancelModal({
                 ? `Your ${tierLabel} features stay active until ${end}.`
                 : `Your ${tierLabel} features stay active until the end of the current billing period.`}
             </li>
-            <li>Then your workspace switches to Free — nothing you&rsquo;ve cleaned is undone.</li>
+            <li>Then your workspace switches to Free — completed mail actions stay in place.</li>
             <li>
               Canceling stops your renewal and takes effect at period end — on its own it
               isn&rsquo;t a refund. If you want your money back, use the guarantee below.

@@ -177,8 +177,8 @@ export class EntitlementsService {
         code: 'FREE_CAP_REACHED',
         message:
           remaining > 0
-            ? `This needs ${unitsNeeded} cleanup actions but only ${remaining} of your ${limit} free ones are left. Upgrade for unlimited cleanup.`
-            : `You've used all ${limit} free cleanup actions. Upgrade to keep cleaning — everything you've already done stays done.`,
+            ? `This needs ${unitsNeeded} sender actions but only ${remaining} of your ${limit} free ones are left. Upgrade for unlimited actions.`
+            : `You've used all ${limit} free sender actions. Upgrade for unlimited actions — everything you've already done stays done.`,
         details: { remaining, limit, used, requiredUnits: unitsNeeded },
       });
     }

@@ -333,7 +333,7 @@ describe('SendersScreen — edge states', () => {
 
     // Pressing `A` opens the mandatory preview — never a direct mutation.
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(await screen.findByText(/archive all mail from 1 sender/i)).toBeInTheDocument();
+    expect(await screen.findByText(/archive mail from 1 sender/i)).toBeInTheDocument();
   });
 
   it('archives a single sender for real (enqueue → poll → receipt → working undo) (D226, P6)', async () => {
@@ -408,7 +408,7 @@ describe('SendersScreen — edge states', () => {
 
     // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
     // Wait for the REAL inbox count to load so confirm is no longer gated.
     await screen.findByText(/in your inbox now/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -479,7 +479,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
     await screen.findByText(/in your inbox now/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
@@ -528,7 +528,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // Preview resolves to 0 → "nothing to archive" + the confirm is disabled.
     await screen.findByText(/nothing to archive/i);
@@ -594,7 +594,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // Count check failed → honest fallback copy, confirm NOT gated.
     await screen.findByText(/check how much is in your inbox/i);
@@ -726,7 +726,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // X = sample rows actually shown, Y = the real total; X <= Y always.
     const disclosure = await screen.findByText(/show what will move \(3 of 3\)/i);
@@ -757,7 +757,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // A second verb key with the preview open must not stack a new modal.
     fireEvent.keyDown(document.body, { key: 'u' });
@@ -788,7 +788,7 @@ describe('SendersScreen — edge states', () => {
     const search = screen.getByRole('combobox', { name: /search senders/i });
     search.focus();
     fireEvent.keyDown(search, { key: 'a' });
-    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+    expect(screen.queryByText(/archive mail from 1 sender/i)).toBeNull();
   });
 
   it('does not fire a verb shortcut while the cheatsheet is open', async () => {
@@ -800,7 +800,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: '?' }); // open cheatsheet
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(screen.queryByText(/archive all mail from 1 sender/i)).toBeNull();
+    expect(screen.queryByText(/archive mail from 1 sender/i)).toBeNull();
   });
 
   it('does not stack the cheatsheet on top of an open preview', async () => {
@@ -810,7 +810,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' }); // open the preview
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
 
     // `?` while the preview is open must not pop a second modal over it.
     fireEvent.keyDown(document.body, { key: '?' });
@@ -1009,7 +1009,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/archive all mail from 2 senders/i);
+    await screen.findByText(/archive mail from 2 senders/i);
     await screen.findByText(/will move to Archive/i);
     // The aggregated total (12 + 18) renders in the modal — headline +
     // the "All inbox" chip count both read 30.
@@ -1186,7 +1186,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
 
     // The preview covers the 1 eligible sender AND says what it dropped.
-    await screen.findByText(/archive all mail from 1 sender/i);
+    await screen.findByText(/archive mail from 1 sender/i);
     expect(
       screen.getByText(/1 protected sender skipped — unprotect to include it/i),
     ).toBeInTheDocument();

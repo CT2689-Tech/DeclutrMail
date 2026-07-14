@@ -80,7 +80,7 @@ export function UnsubMailtoCallout({
       {onDismiss && (
         <button
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label="Dismiss Gmail unsubscribe reminder"
           style={{
             background: 'transparent',
             border: 'none',

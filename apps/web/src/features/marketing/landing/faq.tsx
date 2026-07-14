@@ -31,11 +31,11 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'Can it mess up my inbox?',
-    a: 'Every action shows a preview of exactly what will move before anything runs, and every action is journaled with an undo window — 7 days on Free and Plus, 30 on Pro. Archive and Delete map to Gmail’s own archive and trash, so nothing is ever unrecoverable behind your back.',
+    a: 'Mail-changing actions show a preview before they run. Archive and Later can be undone from Activity for 7 days. Delete moves mail to Gmail Trash, where Gmail keeps it for up to 30 days. A completed unsubscribe request cannot be recalled.',
   },
   {
     q: 'How is this different from Gmail filters?',
-    a: 'Filters are per-rule plumbing you write and forget; DeclutrMail is a per-sender ritual with a ledger. You decide once per sender, the decision keeps running on new mail, and every consequence is visible and reversible in one place.',
+    a: 'Filters are rules you write and maintain. DeclutrMail groups mail by sender, previews each action, and records results in Activity along with any available undo.',
   },
   {
     q: 'What happens if I disconnect or delete my account?',

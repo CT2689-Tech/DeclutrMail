@@ -362,7 +362,7 @@ export function ScreenerScreen({
         id="screener"
         title="How the Screener works"
         body="First-time senders are collected here for review — their mail still arrives in your inbox until you decide. One decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Every destructive action shows a preview before anything changes."
-        tip="We never read message bodies. The engine reasons from sender, subject, Gmail's preview snippet, dates, and aggregate stats — that's it."
+        tip="Suggestions use sender, subject, Gmail's short preview, dates, and aggregate activity. Full message bodies are never fetched."
       />
 
       {/* D230 manual path — after Unsubscribe on a mailto sender. */}

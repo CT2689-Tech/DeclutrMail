@@ -178,11 +178,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
   if (detail.isError) {
     return (
       <ErrorState
-        message={
-          detail.error instanceof ApiError
-            ? `We couldn't load this sender (HTTP ${detail.error.status}).`
-            : GENERIC_RETRY_MESSAGE
-        }
+        message={GENERIC_RETRY_MESSAGE}
         onRetry={() => {
           detail.refetch();
           messages.refetch();
@@ -1108,7 +1104,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           >
             See full reasoning ›
           </a>{' '}
-          · how the engine decided
+          · facts behind this suggestion
         </p>
       </section>
 

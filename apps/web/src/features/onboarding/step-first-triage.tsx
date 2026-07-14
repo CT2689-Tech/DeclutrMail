@@ -98,7 +98,7 @@ export function StepFirstTriage({
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
             ? "We didn't find practice candidates right now — head straight in and meet your senders."
-            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Each one applies to that sender's past and future mail — and every destructive one is undoable below. Welcome aboard.`}
+            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. The preview for each decision explained which mail changed and its recovery option. Welcome aboard.`}
         </p>
         <Button tone="primary" onClick={onComplete} disabled={completing} style={{ minWidth: 220 }}>
           {completing ? 'Finishing…' : 'Open your senders →'}

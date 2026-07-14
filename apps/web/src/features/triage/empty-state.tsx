@@ -62,8 +62,8 @@ export function TriageEmptyState({
   if (stats.decidedToday === 0) {
     return (
       <EmptyState
-        title="Nothing needs a decision."
-        description="New senders queue here as mail arrives — Autopilot keeps watch in the meantime."
+        title="No decisions today."
+        description="A decision appears here when a sender starts creating repeated noise."
         action={
           <a
             href="/senders"
@@ -164,8 +164,7 @@ export function TriageEmptyState({
             maxWidth: 460,
           }}
         >
-          The engine refreshes overnight. Come back tomorrow — your next batch will be ready by
-          morning sync.
+          New decisions appear after a sync finds another repeated sender pattern.
         </p>
       </div>
 
@@ -199,7 +198,8 @@ export function TriageEmptyState({
             color: color.fgMuted,
           }}
         >
-          {stats.streakDays}-day streak · keep it going
+          Decisions made on {stats.streakDays} consecutive day
+          {stats.streakDays === 1 ? '' : 's'}
         </span>
       )}
 

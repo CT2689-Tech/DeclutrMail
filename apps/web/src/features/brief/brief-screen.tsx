@@ -162,7 +162,7 @@ function BriefBody({ brief }: { brief: BriefWire }) {
         id="brief"
         title="Daily Brief"
         body={`A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`}
-        tip="Open emails in Gmail to act — actions ship in the next slice."
+        tip="Open a message in Gmail to reply or review it."
       />
       <BriefMeta brief={brief} />
 
@@ -207,9 +207,7 @@ function BriefMeta({ brief }: { brief: BriefWire }) {
       {brief.generatedBy === 'template' && (
         <>
           <span aria-hidden="true">·</span>
-          <span title="LLM narrative was unavailable; deterministic template ran instead.">
-            via template
-          </span>
+          <span title="A standard summary is shown for this Brief.">Standard summary</span>
         </>
       )}
     </div>
@@ -602,11 +600,8 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your Brief (${error.status}). Try again in a moment.`
-      : "We couldn't load your Brief right now. Try again in a moment.";
+function ErrorState({ onRetry }: { error: unknown; onRetry: () => void }) {
+  const message = "We couldn't load your Brief right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState

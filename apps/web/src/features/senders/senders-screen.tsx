@@ -1500,8 +1500,8 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, and service that mails you, regrouped by what we think you should do. Decide once per sender — your choice applies to past and future mail."
-        tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
+        body="Every account, list, person, and service that mails you, grouped by sender. Review what they sent, then choose what happens to matching past or future mail."
+        tip="Suggestions use the sender address, subject, Gmail's short preview, dates, and your email activity. Full message bodies and attachments are never fetched."
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />

@@ -102,7 +102,7 @@ export default function OpenGraphImage() {
         <span>
           Full bodies fetched: <span style={{ color: TEAL, marginLeft: 10 }}>0</span>
         </span>
-        <span>One decision per sender · undo on everything</span>
+        <span>One decision per sender · previews before actions</span>
       </div>
     </div>,
     size,

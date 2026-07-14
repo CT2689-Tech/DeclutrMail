@@ -4,7 +4,6 @@ import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 
 import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
 
-import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
 import { track } from '@/lib/posthog';
 
@@ -84,19 +83,14 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Followups"
-        body="Threads where you sent the last message and haven't heard back. We watch your Sent folder and surface what's overdue — sorted oldest first."
+        body="Threads where you sent the last message and haven't heard back, sorted oldest first."
         tip="Mark resolved once you've nudged them another way (phone, Slack, in-person)."
       />
 
       {rows.length === 0 ? (
         <EmptyState
           title="No follow-ups waiting."
-          description={
-            <>
-              We watch your Sent folder for emails that haven&rsquo;t gotten a reply.
-              Nothing&rsquo;s overdue right now.
-            </>
-          }
+          description="A thread appears here when you sent the latest message and no reply has arrived."
         />
       ) : (
         <>
@@ -458,11 +452,8 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your followups (${error.status}). Try again in a moment.`
-      : "We couldn't load your followups right now. Try again in a moment.";
+function ErrorState({ onRetry }: { error: unknown; onRetry: () => void }) {
+  const message = "We couldn't load your followups right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState

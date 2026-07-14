@@ -55,7 +55,7 @@ export default function PrivacyPolicyPage() {
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
           cleanup service: it helps you decide, once per sender, what should happen to the email you
           no longer want — keep it, archive it, unsubscribe from it, deal with it later, or delete
-          it — and keeps every action reversible for a defined undo window.
+          it — with a preview before mail changes and action-specific recovery options.
         </p>
         <p>
           For the purposes of the EU General Data Protection Regulation (GDPR), DeclutrMail is the
@@ -116,8 +116,8 @@ export default function PrivacyPolicyPage() {
           </li>
           <li>
             Every destructive action shows you a preview of exactly what will change before it runs,
-            and every action is recorded in your Activity log and reversible during your
-            plan&rsquo;s undo window.
+            and every result is recorded in your Activity log. Available undo and recovery options
+            depend on the action.
           </li>
           <li>
             OAuth tokens are encrypted at rest and are never included in data exports or sent to
@@ -187,7 +187,8 @@ export default function PrivacyPolicyPage() {
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
           </li>
           <li>
-            Keep an activity log so every action is auditable and reversible during its undo window.
+            Keep an activity log so results are auditable and any available undo can be used during
+            its window.
           </li>
           <li>Operate your subscription and billing.</li>
           <li>

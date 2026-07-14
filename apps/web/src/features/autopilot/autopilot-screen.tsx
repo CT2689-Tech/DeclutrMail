@@ -10,7 +10,6 @@ import {
   toast,
   tokens,
 } from '@declutrmail/shared';
-import { ApiError } from '@/lib/api/client';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 
 import type {
@@ -87,11 +86,7 @@ export function AutopilotRoute() {
       return { kind: 'loading' };
     }
     if (rulesQuery.isError || suggestionsQuery.isError) {
-      const err = rulesQuery.error ?? suggestionsQuery.error;
-      const message =
-        err instanceof ApiError
-          ? `We couldn't load Autopilot (HTTP ${err.status}).`
-          : "We couldn't load Autopilot right now.";
+      const message = "We couldn't load Autopilot right now.";
       return { kind: 'error', message };
     }
     const rules = rulesQuery.data ?? [];
@@ -432,8 +427,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         toast('Suggestion dismissed', 'info');
       },
       onError: (err) => {
-        const msg = err instanceof ApiError ? `Dismiss failed (${err.status})` : 'Dismiss failed';
-        toast(msg, 'warn');
+        toast('Dismiss failed. Try again.', 'warn');
         captureFeatureException(err, { surface: 'autopilot', reason: 'dismiss_failed' });
       },
     });
@@ -483,12 +477,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     });
   };
 
-  const pauseErrorMessage =
-    pauseAll.error == null
-      ? null
-      : pauseAll.error instanceof ApiError
-        ? `Pause failed (${pauseAll.error.status}). Please retry.`
-        : 'Pause failed. Please retry.';
+  const pauseErrorMessage = pauseAll.error == null ? null : 'Pause failed. Please retry.';
 
   return (
     <div
@@ -538,8 +527,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
-        body="Each rule watches a slice of your inbox and proposes actions. Until you switch a rule to Active it stays in Observe mode — every match lands here for you to approve or dismiss. Pause all stops every rule across every inbox at once."
-        tip="Custom rules ship in a later release. The five rules at launch cover the common cleanup patterns."
+        body="Each rule checks a defined set of sender signals and proposes actions. Until you switch a rule to Active, every match waits here for you to approve or dismiss. Pause all stops every rule across every inbox at once."
+        tip="Custom rules are not available yet. The five preset rules cover the most common repeat-mail patterns."
       />
 
       {allPaused && <PausedBanner rules={rules} />}
@@ -574,7 +563,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules are seeded when your mailbox finishes its first sync. Once they land, they observe quietly and their suggestions appear here."
+                description="The five preset rules appear after your mailbox finishes its first sync. Matching senders then appear here as suggestions."
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (
@@ -721,8 +710,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 }
 
 /** PATCH failure toast copy — shared by toggle/threshold/resume. */
-function patchFailureMessage(err: unknown): string {
-  return err instanceof ApiError ? `Couldn't save (${err.status})` : "Couldn't save the rule";
+function patchFailureMessage(_err: unknown): string {
+  return "Couldn't save the rule";
 }
 
 /**
@@ -742,13 +731,9 @@ function derivePreviewState(
 ): RulePreviewState {
   if (mutation.isPending) return { status: 'loading' };
   if (mutation.isError) {
-    const err = mutation.error;
     return {
       status: 'error',
-      message:
-        err instanceof ApiError
-          ? `Dry-run failed (HTTP ${err.status}).`
-          : 'Dry-run failed. Please retry.',
+      message: 'Preview failed. Please retry.',
     };
   }
   if (mutation.data != null && mutation.data.ruleId === ruleId) {
@@ -760,7 +745,7 @@ function derivePreviewState(
 /** Modal-error string from a mutation error (null when no error). */
 function mutationErrorMessage(err: unknown, fallback: string): string | null {
   if (err == null) return null;
-  return err instanceof ApiError ? `${fallback.replace('.', '')} (HTTP ${err.status}).` : fallback;
+  return fallback;
 }
 
 /** Loading skeleton — rule-card-sized stripes. */
@@ -806,14 +791,14 @@ function SuggestionsEmptyState({ hasAnyRules }: { hasAnyRules: boolean }) {
     return (
       <EmptyState
         title="No pending suggestions"
-        description="Suggestions appear here once your preset rules are seeded and start observing your inbox."
+        description="Suggestions appear here after your preset rules are created and matching senders are found."
       />
     );
   }
   return (
     <EmptyState
       title="No pending suggestions"
-      description="Every rule is watching but nothing has matched recently. Suggestions will appear here as Autopilot observes your inbox."
+      description="No sender currently matches an enabled rule. New matches will appear here."
     />
   );
 }

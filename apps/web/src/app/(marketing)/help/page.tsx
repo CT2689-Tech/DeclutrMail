@@ -55,7 +55,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'bulk-unsubscribe',
     q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first, deciding once per sender. Paid plans add bulk cleanup: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. For each sender, where it supports one-click unsubscribe we send the request for you; where it only offers a mailto: address we prepare the email for you to send from Gmail — nothing is ever auto-sent on your behalf.',
+    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can handle the noisiest first, deciding once per sender. Paid plans add bulk actions: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. Where a sender supports one-click unsubscribe, we send the request for you. Where a sender requires an email, we prepare it for you to send from Gmail — nothing is auto-sent on your behalf.',
     link: { href: '/pricing', label: 'Compare plans →' },
   },
   {
@@ -66,7 +66,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: 'Every action shows a preview of exactly what will move before anything runs, and every action is journaled with an undo window — 7 days on Free and Plus, 30 days on Pro. Undo restores the exact state the action changed.',
+    a: 'Every mail-changing action shows a preview before it runs. Archive and Later can be undone from Activity for 7 days. Delete moves mail to Gmail Trash, where Gmail keeps it for up to 30 days. A completed unsubscribe request cannot be recalled.',
   },
   {
     id: 'disconnect-mailbox',
@@ -87,7 +87,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
-    a: 'Free shows you what’s noisy and lets you clean up sender by sender. Paid plans add bulk cleanup across senders and, on Pro, the 30-day undo window. The pricing page has the current comparison.',
+    a: 'Free shows you what’s noisy and lets you act sender by sender. Paid plans add bulk actions across senders and more automation. The pricing page has the current comparison.',
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

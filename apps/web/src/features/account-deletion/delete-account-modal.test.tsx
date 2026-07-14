@@ -48,15 +48,15 @@ function renderModal(
 
 function advanceToStep2() {
   fireEvent.click(screen.getByRole('checkbox'));
-  fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+  fireEvent.click(screen.getByRole('button', { name: /review deletion timing/i }));
 }
 
 describe('DeleteAccountModal', () => {
   it('step 1 gates Continue behind the acknowledgment checkbox', () => {
     renderModal();
     expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
-    expect(screen.getByText(/emails in your actual gmail account/i)).toBeInTheDocument();
-    const cont = screen.getByRole('button', { name: /continue/i });
+    expect(screen.getByText(/does not delete emails in Gmail/i)).toBeInTheDocument();
+    const cont = screen.getByRole('button', { name: /review deletion timing/i });
     expect(cont).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));
     expect(cont).toBeEnabled();

@@ -15,9 +15,13 @@ const VERB_ROWS: ReadonlyArray<{
   {
     wire: 'unsubscribe',
     verb: 'Unsubscribe',
-    detail: 'Stops future mail; optionally clears the backlog.',
+    detail: 'Stops future mail; past mail moves only if you choose a separate action.',
   },
-  { wire: 'later', verb: 'Later', detail: 'Snoozes the sender out of the inbox for now.' },
+  {
+    wire: 'later',
+    verb: 'Later',
+    detail: 'Moves current inbox mail to the DeclutrMail/Later label.',
+  },
 ];
 
 export type ActionSheetPrefsCardState =
@@ -56,9 +60,8 @@ export function ActionSheetPrefsCard({
           Action preferences
         </h3>
         <p style={mutedTextStyle}>
-          Skip the confirmation sheet per action. The action preview always shows before anything
-          changes — these toggles only skip the sheet around it. Synced to your account, so the
-          choice follows you across devices.
+          Choose whether each preview opens in a window or appears below the sender. A preview
+          always shows before mail changes. This choice follows you across devices.
         </p>
 
         {state.kind === 'loading' ? (
@@ -90,7 +93,7 @@ export function ActionSheetPrefsCard({
               >
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 500, color: color.fg }}>
-                    Skip the sheet for {verb}
+                    Show the {verb} preview in the row
                   </div>
                   <div style={{ fontSize: 12, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
                 </div>
@@ -134,7 +137,7 @@ function SkipSwitch({
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label={`${on ? 'Show' : 'Skip'} the action sheet for ${verb}`}
+      aria-label={`Show the ${verb} preview in the row`}
       onClick={onToggle}
       disabled={disabled}
       style={{

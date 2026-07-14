@@ -139,7 +139,7 @@ export function DeleteAccountModal({
             <div>
               <div style={listHeadStyle}>What is NOT touched</div>
               <ul style={listStyle}>
-                <li>Emails in your actual Gmail account — DeclutrMail never deletes your mail</li>
+                <li>Deleting your DeclutrMail account does not delete emails in Gmail</li>
               </ul>
             </div>
             <label
@@ -289,7 +289,7 @@ export function DeleteAccountModal({
             </Button>
             {step === 1 ? (
               <Button tone="primary" onClick={() => setStep(2)} disabled={!acknowledged}>
-                Continue
+                Review deletion timing
               </Button>
             ) : (
               <Button

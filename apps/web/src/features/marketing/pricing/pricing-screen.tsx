@@ -83,7 +83,7 @@ export function PricingScreen() {
             letterSpacing: '-0.015em',
           }}
         >
-          Pick how clean you want to stay.
+          Pick how much you want to handle manually.
         </h1>
         <p
           style={{
@@ -94,9 +94,9 @@ export function PricingScreen() {
             color: color.fgSoft,
           }}
         >
-          Free shows you what’s noisy. Plus lets you clean it yourself. Pro keeps it clean for you.
-          Every plan acts only with the five verbs you approve — Keep, Archive, Unsubscribe, Later,
-          Delete — and every action is undoable.
+          Free shows you what’s noisy. Plus removes manual action limits. Pro adds automation. Every
+          plan uses the same five verbs — Keep, Archive, Unsubscribe, Later, and Delete — with a
+          preview before mail changes.
         </p>
       </header>
 

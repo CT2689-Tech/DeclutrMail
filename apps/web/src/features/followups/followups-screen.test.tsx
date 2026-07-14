@@ -100,9 +100,8 @@ describe('FollowupsScreen — edge states', () => {
       expect(screen.getByRole('heading', { name: /no follow-ups waiting\./i })).toBeInTheDocument(),
     );
     expect(
-      screen.getByText(/we watch your sent folder for emails that haven/i),
+      screen.getByText(/a thread appears here when you sent the latest message/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/nothing.s overdue right now\./i)).toBeInTheDocument();
   });
 });
 

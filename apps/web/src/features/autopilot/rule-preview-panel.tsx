@@ -29,7 +29,7 @@ export function RulePreviewPanel({
   return (
     <div
       role="region"
-      aria-label={`Dry-run preview for rule ${ruleName}`}
+      aria-label={`Current match preview for rule ${ruleName}`}
       style={{
         background: color.paper,
         border: `1px solid ${color.line}`,
@@ -43,7 +43,7 @@ export function RulePreviewPanel({
     >
       {state.status === 'loading' && (
         <div role="status" aria-live="polite" style={{ fontSize: 12, color: color.fgMuted }}>
-          Running the dry-run against current signals…
+          Checking current sender data…
         </div>
       )}
 
@@ -103,7 +103,7 @@ export function RulePreviewPanel({
                   }}
                 >
                   <span style={{ fontWeight: 600, color: color.fg }}>
-                    {s.senderName ?? `sender·${s.senderKey.slice(0, 8)}`}
+                    {s.senderName ?? 'Sender details still syncing'}
                   </span>
                   {s.senderEmail != null && (
                     <span
@@ -131,7 +131,7 @@ export function RulePreviewPanel({
           )}
 
           <span style={{ fontSize: 11, color: color.fgMuted }}>
-            Dry-run only — nothing changed in your mailbox.
+            Preview only — nothing changed in your mailbox.
           </span>
         </>
       )}

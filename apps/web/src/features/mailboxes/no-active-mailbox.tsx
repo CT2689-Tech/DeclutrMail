@@ -81,7 +81,7 @@ export function NoActiveMailboxView({
         description={
           hasDisconnected
             ? 'You disconnected your last Gmail account. Reconnect it to pick up where you left off — your sender history is preserved.'
-            : 'Connect a Gmail account to start cleaning up your inbox.'
+            : 'Connect a Gmail account to review your inbox by sender.'
         }
         action={
           <Button tone="primary" onClick={onConnect}>
