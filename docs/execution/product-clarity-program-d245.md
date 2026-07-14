@@ -63,11 +63,11 @@ each completed slice.
 
 ### P2 — precision, recovery, and scale
 
-- [ ] Move protocol names, raw headers, IDs, hashes, worker stages, and HTTP
+- [x] Move protocol names, raw headers, IDs, hashes, worker stages, and HTTP
       details behind a reusable **Show technical details** disclosure.
-- [ ] Show data freshness and partial-sync scope anywhere counts or suggested
+- [x] Show data freshness and partial-sync scope anywhere counts or suggested
       actions could otherwise look complete.
-- [ ] Improve bulk selection with explicit selected/matched/skipped counts,
+- [x] Improve bulk selection with explicit selected/matched/skipped counts,
       protected-sender reasons, and a trustworthy preview fallback.
 - [ ] Unify search, temporary filters, sorting, and saved views, including
       stable zero-result recovery and shareable/restorable state where safe.
@@ -75,7 +75,7 @@ each completed slice.
       contextual labels; verify focus, announcements, and reduced-motion paths.
 - [ ] Standardize errors around what changed, what did not change, and the next
       recovery step, with support details disclosed separately.
-- [ ] Make demo/sample states unmistakable and prevent sample counts or actions
+- [x] Make demo/sample states unmistakable and prevent sample counts or actions
       from being confused with connected Gmail data.
 - [x] Clarify Followups as observed sent-mail state, with precise timing,
       completion, dismissal, and false-positive controls.
@@ -109,14 +109,14 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: P0 is complete. One generated action model now drives
-  previews, results, Activity, mobile presentations, exact Later scheduling,
-  plan-based Activity Undo, Gmail recovery guidance, and the one-click/manual
-  unsubscribe lifecycle. First-run consent, rule-level Autopilot explanations,
-  and Brief return links complete all P1 work except under-tier live dry-run
-  previews.
-- Last green checks: all 937 web tests, web typecheck, focused onboarding/Brief/
-  Autopilot tests (7 files, 73 tests), and `git diff --check`.
-- Next slice: capability-exempt, read-only Autopilot preset previews for
-  under-tier users, while keeping Observe persistence, Active execution, and
-  every mutation plan-gated.
+- Last completed slice: P0 and P1 are complete. P2 now has reusable technical
+  disclosures, scoped sender snapshot times with read-only stale rows, explicit
+  bulk selected/eligible/accepted/skipped counts, blocked-and-retryable failed
+  live previews, accessible feedback, truthful demo/live data boundaries, and
+  precise Followups language.
+- Last green checks: focused shared technical-disclosure tests (2), focused web
+  disclosure tests (86), sender/triage live-preview tests (70), entitlement tests
+  across shared/web/API (58), shared/web/API typechecks, and `git diff --check`.
+- Next slice: unify Senders search/filter/sort/saved-view state, standardize
+  recovery errors, finish entitlement-copy reconciliation, then complete P3
+  contextual help and terminology polish.
