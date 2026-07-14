@@ -3,7 +3,7 @@
  *
  * - `useSnoozed` — the Later-bucket list. Plain `useQuery`; the set is
  *   bounded by the user's Later'd senders, no pagination at launch.
- * - `useSetSnooze` — PATCH set/extend/cancel; invalidates the list on
+ * - `useSetSnooze` — PATCH set/extend; invalidates the list on
  *   settle so the row's wake-time bucket updates.
  * - `useWakeNow` — POST wake; the restore runs in the worker, so the
  *   hook invalidates AND the screen keeps a short refetch window open

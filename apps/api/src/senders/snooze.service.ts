@@ -26,7 +26,7 @@ import { SNOOZE_WAKE_QUEUE_TOKEN } from './snoozed.tokens.js';
  * verdict and the VIP/Protect modifiers are never read or written
  * here, so a concurrent policy patch cannot be clobbered.
  *
- * Setting / extending / clearing a timer moves NO mail (D79 — the
+ * Setting or extending a timer moves NO mail (D79 — the
  * Later verb's label-action pipeline owns mail movement; the timer
  * only schedules the restore). That's why this write needs no D226
  * preview, no undo token, and no activity row: it is a standing
@@ -54,26 +54,25 @@ export class SnoozeService {
   ) {}
 
   /**
-   * Set, extend, or clear (until=null) the sender's wake timer. The
+   * Set or extend the sender's required wake timer. The
    * body is validated against `SnoozeUpdateRequestSchema` upstream —
-   * `until` is already known to be a future ISO datetime or null.
+   * `until` is already known to be a future ISO datetime.
    *
    * Reason semantics: the PATCH is a FULL snooze-state write — an
    * omitted `reason` clears any stored note (the FE always sends the
-   * current note when extending). `until: null` clears all three
-   * columns (D80 "Cancel snooze" — the Later'd mail stays put).
+   * current note when extending).
    */
   async setSnooze(input: {
     mailboxAccountId: string;
     senderId: string;
-    until: string | null;
+    until: string;
     reason?: string | undefined;
   }): Promise<SnoozeUpdateResult> {
     const { mailboxAccountId, senderId } = input;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
 
-    const targetUntil = input.until === null ? null : new Date(input.until);
-    const targetReason = input.until === null ? null : (input.reason ?? null);
+    const targetUntil = new Date(input.until);
+    const targetReason = input.reason ?? null;
 
     return await this.db.transaction(async (tx) => {
       const [existing] = await tx
@@ -91,22 +90,21 @@ export class SnoozeService {
         )
         .limit(1);
 
-      const sameUntil =
-        (existing?.snoozedUntil?.getTime() ?? null) === (targetUntil?.getTime() ?? null);
+      const sameUntil = (existing?.snoozedUntil?.getTime() ?? null) === targetUntil.getTime();
       const sameReason = (existing?.snoozedReason ?? null) === targetReason;
       if (sameUntil && sameReason) {
         // Idempotent replay — nothing written; a clear on a sender with
         // no policy row must not CREATE one.
         return {
           senderId,
-          snoozedUntil: existing?.snoozedUntil?.toISOString() ?? null,
+          snoozedUntil: existing!.snoozedUntil!.toISOString(),
           snoozedAt: existing?.snoozedAt?.toISOString() ?? null,
           reason: existing?.snoozedReason ?? null,
           changed: false,
         };
       }
 
-      const snoozedAt = targetUntil === null ? null : new Date();
+      const snoozedAt = new Date();
       const [row] = await tx
         .insert(senderPolicies)
         .values({
@@ -137,8 +135,8 @@ export class SnoozeService {
       }
       return {
         senderId,
-        snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
-        snoozedAt: row.snoozedAt?.toISOString() ?? null,
+        snoozedUntil: row.snoozedUntil!.toISOString(),
+        snoozedAt: row.snoozedAt!.toISOString(),
         reason: row.snoozedReason ?? null,
         changed: true,
       };

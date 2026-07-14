@@ -31,8 +31,8 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  * Lists every sender in the Later bucket — mail currently sitting in
  * the `DeclutrMail/Later` Gmail label and/or an active wake timer —
  * grouped by wake-time bucket per D80 (Later today / Tomorrow / This
- * week / Eventually), plus a "No wake time" group for Later'd senders
- * with no timer set.
+ * week / Eventually), plus a "Needs scheduling" repair group for
+ * legacy Later items created before wake times were required.
  *
  * Row actions (D80):
  *   - **Wake now** — preview-light inline confirm (the wake is
@@ -42,9 +42,8 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  *     exactly what will happen before anything mutates). The restore
  *     runs in the snooze-wake worker; the row shows "Waking…" and the
  *     list polls until it drops off.
- *   - **Set wake time ▾** — D82 presets + custom date/time +
- *     optional note + "Clear wake time" (clears the timer; the
- *     Later'd mail stays put).
+ *   - **Choose/Change wake time ▾** — D82 presets + custom date/time
+ *     + optional note. Later cannot be made indefinite.
  *
  * Canonical product language (D245): "Later" is both the verb and the
  * feature/screen name. Internal snooze identifiers remain stable.
@@ -312,7 +311,7 @@ export function SnoozedRow({
               ? 'Waking…'
               : row.snoozedUntil
                 ? `Wakes ${formatWakeTime(row.snoozedUntil, new Date())}`
-                : 'No wake time'}
+                : 'Needs a wake time'}
           </div>
           {row.reason ? (
             <div
@@ -336,7 +335,7 @@ export function SnoozedRow({
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
-            Set wake time ▾
+            {row.snoozedUntil ? 'Change wake time ▾' : 'Choose wake time ▾'}
           </Button>
           <Button
             tone="primary"
@@ -430,34 +429,27 @@ function WakeConfirm({
   );
 }
 
-/** D82 — preset durations + custom date/time + note + clear wake time. */
+/** D82/D245 — preset durations + custom date/time + optional note. */
 function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => void }) {
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
   const [custom, setCustom] = useState('');
   const presets = useMemo(() => snoozePresets(new Date()), []);
 
-  const submit = (until: string | null, presetId: SnoozePresetEventId | null) => {
+  const submit = (until: string, presetId: SnoozePresetEventId) => {
     const trimmed = reason.trim();
     setSnooze.mutate(
       {
         senderId: row.senderId,
-        body:
-          until === null
-            ? { until: null }
-            : { until, ...(trimmed.length > 0 ? { reason: trimmed } : {}) },
+        body: { until, ...(trimmed.length > 0 ? { reason: trimmed } : {}) },
       },
       {
         onSuccess: () => {
-          if (until === null) {
-            void track('snooze_cleared', { sender_id: row.senderId });
-          } else {
-            void track('snooze_set', {
-              sender_id: row.senderId,
-              preset: presetId ?? 'custom',
-              has_reason: trimmed.length > 0,
-            });
-          }
+          void track('snooze_set', {
+            sender_id: row.senderId,
+            preset: presetId,
+            has_reason: trimmed.length > 0,
+          });
           onClose();
         },
       },
@@ -540,18 +532,13 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
             color: color.fg,
           }}
         />
-        {row.snoozedUntil ? (
-          <Button tone="default" disabled={setSnooze.isPending} onClick={() => submit(null, null)}>
-            Clear wake time
-          </Button>
-        ) : null}
         <Button
           tone="default"
           onClick={onClose}
           disabled={setSnooze.isPending}
-          ariaLabel={`Close wake-time options for ${row.displayName || row.email}`}
+          ariaLabel={`Cancel wake-time changes for ${row.displayName || row.email}`}
         >
-          Close
+          Cancel
         </Button>
       </div>
 

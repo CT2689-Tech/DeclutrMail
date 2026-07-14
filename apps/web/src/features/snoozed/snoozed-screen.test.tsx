@@ -137,12 +137,13 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
 
     expect(screen.getByRole('heading', { name: /later today/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /no wake time/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /needs scheduling/i })).toBeInTheDocument();
 
     expect(screen.getByText('12 in Later')).toBeInTheDocument();
     expect(screen.getByText('“after launch week”')).toBeInTheDocument();
     // Display-name-less sender falls back to its email.
     expect(screen.getByText('noreply@tools.example.com')).toBeInTheDocument();
+    expect(screen.getByText('Needs a wake time')).toBeInTheDocument();
   });
 
   it('renders honest copy when the mirror count is unknown', async () => {
@@ -246,12 +247,12 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('noreply@tools.example.com');
 
-    await user.click(screen.getByRole('button', { name: 'Set wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Choose wake time ▾' }));
     expect(
       screen.getByRole('button', {
-        name: 'Close wake-time options for noreply@tools.example.com',
+        name: 'Cancel wake-time changes for noreply@tools.example.com',
       }),
-    ).toHaveTextContent('Close');
+    ).toHaveTextContent('Cancel');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
     await user.click(screen.getByRole('button', { name: 'Tomorrow (9:00 AM)' }));
 
@@ -261,38 +262,13 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     expect(new Date(body.until).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('offers Clear wake time only when a timer exists, and clears it', async () => {
-    const bodies: unknown[] = [];
-    installFetchStub([
-      listHandler([ROW_TODAY]),
-      {
-        method: 'PATCH',
-        path: new RegExp(`^/api/snoozed/${ROW_TODAY.senderId}$`),
-        respond: async (req) => {
-          bodies.push(await req.json());
-          return new Response(
-            JSON.stringify({
-              data: {
-                senderId: ROW_TODAY.senderId,
-                snoozedUntil: null,
-                snoozedAt: null,
-                reason: null,
-                changed: true,
-              },
-            }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        },
-      },
-    ]);
+  it('never offers an indefinite Later state', async () => {
+    installFetchStub([listHandler([ROW_TODAY])]);
     const user = userEvent.setup();
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Set wake time ▾' }));
-    await user.click(screen.getByRole('button', { name: 'Clear wake time' }));
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ until: null });
+    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
   });
 });

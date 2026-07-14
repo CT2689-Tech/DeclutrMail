@@ -30,7 +30,7 @@ export function fetchSnoozed(signal?: AbortSignal): Promise<Envelope<SnoozedSend
   return apiGet<SnoozedSenderRow[]>('/api/snoozed', { signal });
 }
 
-/** PATCH /api/snoozed/:senderId — set / extend / cancel the wake timer. */
+/** PATCH /api/snoozed/:senderId — set or extend the required wake time. */
 export async function patchSnooze(
   senderId: string,
   body: SnoozeUpdateRequest,

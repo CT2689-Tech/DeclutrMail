@@ -68,9 +68,9 @@ export class SnoozedController {
   }
 
   /**
-   * PATCH /api/snoozed/:senderId — set / extend (`until: <ISO>`) or
-   * cancel (`until: null`) the sender's wake timer (D79, D82). Moves
-   * no mail; idempotent state diff.
+   * PATCH /api/snoozed/:senderId — set or extend the required future
+   * wake time (`until: <ISO>`, D79/D82/D245). Moves no mail;
+   * idempotent state diff. Wake now is the immediate-return path.
    */
   @Patch(':senderId')
   @UseGuards(CsrfGuard)

@@ -113,7 +113,9 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
   disclosures, scoped sender snapshot times with read-only stale rows, explicit
   bulk selected/eligible/accepted/skipped counts, blocked-and-retryable failed
   live previews, accessible feedback, truthful demo/live data boundaries, and
-  precise Followups language.
+  precise Followups language. Later is scheduled end to end: its API rejects an
+  indefinite state, the UI cannot clear a wake time, and legacy rows are called
+  out as needing scheduling.
 - Last green checks: focused shared technical-disclosure tests (2), focused web
   disclosure tests (86), sender/triage live-preview tests (70), entitlement tests
   across shared/web/API (58), shared/web/API typechecks, and `git diff --check`.

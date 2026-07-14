@@ -295,39 +295,6 @@ describe('SnoozeService.setSnooze', () => {
     expect(row!.snoozedUntil).not.toBeNull();
   });
 
-  it('until=null clears timer + note; a no-op clear creates no row', async () => {
-    await service.setSnooze({
-      mailboxAccountId: mailboxId,
-      senderId: senderAId,
-      until: '2026-06-12T09:00:00.000Z',
-      reason: 'note',
-    });
-    const cleared = await service.setSnooze({
-      mailboxAccountId: mailboxId,
-      senderId: senderAId,
-      until: null,
-    });
-    expect(cleared.changed).toBe(true);
-    expect(cleared.snoozedUntil).toBeNull();
-    expect(cleared.reason).toBeNull();
-
-    // Clearing a sender with NO policy row is a no-op, not an insert.
-    const senderBId = await seedSender(db, mailboxId, KEY_B, 'b@shop.example');
-    const noop = await service.setSnooze({
-      mailboxAccountId: mailboxId,
-      senderId: senderBId,
-      until: null,
-    });
-    expect(noop.changed).toBe(false);
-    const [bRow] = await db
-      .select()
-      .from(senderPolicies)
-      .where(
-        and(eq(senderPolicies.mailboxAccountId, mailboxId), eq(senderPolicies.senderKey, KEY_B)),
-      );
-    expect(bRow).toBeUndefined();
-  });
-
   it('idempotent replay — same until + reason is changed:false', async () => {
     const input = {
       mailboxAccountId: mailboxId,
@@ -345,7 +312,7 @@ describe('SnoozeService.setSnooze', () => {
       service.setSnooze({
         mailboxAccountId: mailboxId,
         senderId: randomUUID(),
-        until: null,
+        until: '2026-06-12T09:00:00.000Z',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });

@@ -19,8 +19,8 @@ export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
   tomorrow: 'Tomorrow',
   week: 'This week',
   eventually: 'Eventually',
-  // Mirror-only rows — mail sits in the Later label with no timer.
-  none: 'No wake time',
+  // Legacy mirror-only rows created before Later required a wake time.
+  none: 'Needs scheduling',
 };
 
 function startOfDay(d: Date): Date {
