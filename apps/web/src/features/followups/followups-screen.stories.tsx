@@ -121,7 +121,7 @@ const meta: StoryMeta<typeof FollowupsScreen> = {
     docs: {
       description: {
         component:
-          'Followups screen (D90, D91). Lists threads where you sent the last message and the recipient has not replied. Sorted oldest first per D85. Empty state copy is from D91 verbatim.',
+          'Followups screen (D90, D91, D245). Shows observed sent-mail state from the last 60 days, refreshed about every six hours. Mark resolved hides an item in DeclutrMail; it does not assert that the recipient replied.',
       },
     },
   },
@@ -135,7 +135,7 @@ export const Populated: Story<typeof FollowupsScreen> = {
   render: (_args: ComponentProps<typeof FollowupsScreen>) => frame(makeClient(FIXTURES)),
 };
 
-/** Empty — D91 verbatim copy renders inside the shared EmptyState. */
+/** Empty — the observation window remains explicit even with no rows. */
 export const Empty: Story<typeof FollowupsScreen> = {
   render: (_args: ComponentProps<typeof FollowupsScreen>) => frame(makeClient([])),
 };

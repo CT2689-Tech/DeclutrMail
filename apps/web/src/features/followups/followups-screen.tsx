@@ -16,21 +16,23 @@ const { color, font } = tokens;
  * Followups screen (D90, D91).
  *
  * Layout per D90:
- *   1. ScreenIntro + stats summary line — "N threads awaiting reply · M over a week"
+ *   1. ScreenIntro + observed-state disclosure + stats summary line
  *   2. Grouped sections by D85 age bucket (High / Medium / Low)
  *   3. Per-row: recipient name + domain, subject (truncated to 60 chars),
  *      sent-at relative time, [Open in Gmail →] link
  *
- * D88 "Mark resolved": every row carries a trash-icon button (visible
- * always, emphasized on row hover / keyboard focus per D88's
+ * D88 "Mark resolved": every row carries a labeled button with the
+ * existing trash icon (visible always and emphasized on hover / keyboard focus per D88's
  * "trash icon on hover" — never opacity-0 so touch + keyboard users can
  * reach it). Click → `useDismissFollowup` removes the row optimistically
  * (rolled back with a toast on failure) and the BE flips the
  * `followup_tracker` row + writes the Activity audit entry. When the
  * last row is dismissed the D91 empty state renders on the same pass.
+ * The UI explicitly distinguishes this DeclutrMail-only dismissal from
+ * observing an actual recipient reply in Gmail.
  *
- * Empty / loading / error states are first-class per D211 / D212.
- * Empty copy mirrors D91 verbatim.
+ * Empty / loading / error states are first-class per D211 / D212 and
+ * state the observed 60-day scope instead of implying live Gmail state.
  *
  * Privacy (D7, D228): the screen renders ONLY sender, subject, recipient
  * metadata, and dates. No body. No snippet. No attachments. The wire
@@ -83,14 +85,16 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Followups"
-        body="Threads where you sent the last message and haven't heard back, sorted oldest first."
-        tip="Mark resolved once you've nudged them another way (phone, Slack, in-person)."
+        body="Observed from indexed Sent mail: threads where your latest indexed message is outgoing and no later reply has been found."
+        tip="This is not live Gmail status. Checks run about every six hours across sent mail from the last 60 days."
       />
+
+      <FollowupsScopeDisclosure />
 
       {rows.length === 0 ? (
         <EmptyState
-          title="No follow-ups waiting."
-          description="A thread appears here when you sent the latest message and no reply has arrived."
+          title="No follow-ups observed."
+          description="No thread in the current 60-day window has an outgoing latest message without a later reply in the indexed data. The next check runs within about six hours."
         />
       ) : (
         <>
@@ -156,7 +160,7 @@ function groupByPriority(rows: readonly FollowupRow[]): GroupedFollowups {
 
 /** D90 — stats summary line at the top of the screen. */
 function StatsSummary({ total, overAWeek }: { total: number; overAWeek: number }) {
-  const totalLabel = `${total} thread${total === 1 ? '' : 's'} awaiting reply`;
+  const totalLabel = `${total} thread${total === 1 ? '' : 's'} with no later reply observed`;
   const overLabel = `${overAWeek} over a week`;
   return (
     <div
@@ -175,6 +179,42 @@ function StatsSummary({ total, overAWeek }: { total: number; overAWeek: number }
       <span aria-hidden="true">·</span>
       <span>{overLabel}</span>
     </div>
+  );
+}
+
+/** D245 — disclose the observation window and false-positive control in context. */
+function FollowupsScopeDisclosure() {
+  return (
+    <details
+      style={{
+        background: color.paper,
+        border: `1px solid ${color.lineSoft}`,
+        borderRadius: 8,
+        color: color.fgSoft,
+        fontSize: 12.5,
+        lineHeight: 1.6,
+        padding: '10px 12px',
+      }}
+    >
+      <summary style={{ color: color.primary, cursor: 'pointer', fontWeight: 600 }}>
+        Why a thread may still appear — and how to hide it
+      </summary>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 8 }}>
+        <p style={{ margin: 0 }}>
+          DeclutrMail uses indexed sender, recipient, subject, thread, and date metadata — not
+          message bodies — to find threads where your latest indexed message is outgoing.
+        </p>
+        <p style={{ margin: 0 }}>
+          Checks run about every six hours and consider sent mail from the last 60 days, so a recent
+          reply can remain here until the next check.
+        </p>
+        <p style={{ margin: 0 }}>
+          Already resolved elsewhere or not a useful follow-up? Use <strong>Mark resolved</strong>.
+          It hides the item in DeclutrMail and records the choice in Activity; it does not mark a
+          recipient reply or change Gmail.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -322,7 +362,8 @@ export function FollowupListItem({
       >
         {subject}
       </div>
-      <div
+      <time
+        dateTime={row.sentAt}
         style={{
           fontSize: 12,
           color: color.fgMuted,
@@ -330,12 +371,13 @@ export function FollowupListItem({
           whiteSpace: 'nowrap',
         }}
       >
-        {relative}
-      </div>
+        Sent {relative}
+      </time>
       <a
         href={gmailHref}
         target="_blank"
         rel="noopener noreferrer"
+        aria-label={`Open in Gmail — ${recipient.name}: ${subject}`}
         style={{
           fontSize: 12.5,
           color: color.primary,
@@ -349,29 +391,33 @@ export function FollowupListItem({
         <button
           type="button"
           onClick={() => onDismiss(row)}
-          title="Mark resolved"
-          aria-label={`Mark resolved — ${recipient.name}`}
+          title="Mark resolved in DeclutrMail — this does not mark a recipient reply"
+          aria-label={`Mark resolved in DeclutrMail — ${recipient.name}; does not mark a recipient reply`}
           onMouseEnter={emphasizeDismiss}
           onMouseLeave={resetDismiss}
           onFocus={emphasizeDismiss}
           onBlur={resetDismiss}
           style={{
-            height: 26,
-            width: 26,
+            height: 28,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
+            gap: 5,
             background: 'transparent',
             color: color.fgMuted,
             border: `1px solid ${color.line}`,
             borderRadius: 6,
             cursor: 'pointer',
-            padding: 0,
+            padding: '0 8px',
             flexShrink: 0,
+            fontFamily: font.sans,
+            fontSize: 11.5,
+            fontWeight: 600,
             transition: 'background 0.12s, color 0.12s, border-color 0.12s',
           }}
         >
           <TrashIcon />
+          Mark resolved
         </button>
       )}
     </li>
@@ -447,21 +493,24 @@ function LoadingState() {
           }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading followups</span>
+      <span style={{ position: 'absolute', left: -9999 }}>
+        Loading observed follow-ups from indexed Sent mail
+      </span>
     </div>
   );
 }
 
 function ErrorState({ onRetry }: { error: unknown; onRetry: () => void }) {
-  const message = "We couldn't load your followups right now. Try again in a moment.";
+  const message =
+    "We couldn't load the observed Sent-mail list. Nothing was changed. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState
-        title="We couldn't load your followups"
+        title="We couldn't load your Followups"
         description={message}
         action={
           <Button tone="primary" onClick={onRetry}>
-            Try again
+            Retry Followups
           </Button>
         }
       />

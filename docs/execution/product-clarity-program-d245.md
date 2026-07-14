@@ -77,7 +77,7 @@ each completed slice.
       recovery step, with support details disclosed separately.
 - [ ] Make demo/sample states unmistakable and prevent sample counts or actions
       from being confused with connected Gmail data.
-- [ ] Clarify Followups as observed sent-mail state, with precise timing,
+- [x] Clarify Followups as observed sent-mail state, with precise timing,
       completion, dismissal, and false-positive controls.
 - [ ] Reconcile pricing, plan names, limits, trial/upgrade prompts, and feature
       availability against one entitlement source of truth.
