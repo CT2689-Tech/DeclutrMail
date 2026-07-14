@@ -27,8 +27,11 @@ each completed slice.
       retention in the registry, Privacy policy, Settings, and product FAQ.
 - [x] Generate an honest export manifest and export descriptions from the
       registry; identify the current downloads as subsets instead of full exports.
-- [ ] Centralize action scope, consequence, future-mail behavior, and recovery
-      copy for Keep, Archive, Unsubscribe, Later, and Delete.
+- [x] Add one typed K/A/U/L/D semantics contract for current scope,
+      destination, future-mail behavior, scheduling, Activity Undo, Gmail recovery,
+      finality, and result labels.
+- [ ] Migrate every preview, receipt, Activity row, mobile surface, and return
+      state to generated action semantics instead of local consequence copy.
 - [ ] Make Later require a wake time end to end; rename the visible Snoozed
       destination to Later and retain route compatibility.
 - [ ] Use one shared action receipt/undo model across Senders, Triage, bulk
@@ -106,9 +109,11 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: registry-generated, honest export manifest embedded in
-  JSON downloads and rendered on Privacy & Data; removed full/everything
-  claims from the current subset exports.
-- Last green checks: shared and export contract tests plus shared/API/web
-  typechecks (run after the export slice).
-- Next slice: centralize K/A/U/L/D action semantics and recovery contracts.
+- Last completed slice: canonical typed action-semantics registry wired into
+  the execution manifest and Senders verb registry; Later requires `wakeAt`,
+  Unsubscribe is irreversible after delivery, and Delete carries distinct
+  Activity Undo and Gmail Trash recovery contracts.
+- Last green checks: shared tests (29 files / 270 tests) and shared/web
+  typechecks.
+- Next slice: make `wakeAt` required for Later through API persistence,
+  execution events, sender-policy projection, and wake/undo cleanup.

@@ -5,6 +5,23 @@
 // verb vocabulary from contracts/ so this subpath is a one-stop import.
 
 export { ACTION_REGISTRY, getActionDescriptor, listActionDescriptors } from './manifest-entries';
+export {
+  ACTION_SEMANTICS,
+  actionHasRecovery,
+  getActionSemantics,
+  staticActionPreviewCopy,
+} from './action-semantics';
+export type {
+  ActionFinality,
+  ActionScheduleRequirement,
+  ActionSemantics,
+  ActionSemanticsRegistry,
+  ActivityUndoSemantics,
+  CurrentMailDestination,
+  CurrentMailScope,
+  FutureMailEffect,
+  ProviderRecoverySemantics,
+} from './action-semantics';
 export type {
   ActionCapability,
   ActionCopy,

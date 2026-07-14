@@ -7,6 +7,7 @@ import {
   SELECTOR_TYPES,
 } from '../contracts/verb-constants';
 import { ACTION_REGISTRY, listActionDescriptors } from './manifest-entries';
+import { ACTION_SEMANTICS } from './action-semantics';
 
 /**
  * The Action Registry invariants (ADR-0015 / consensus §5). These are
@@ -19,6 +20,8 @@ describe('Action Registry (ADR-0015)', () => {
     expect(Object.keys(ACTION_REGISTRY).sort()).toEqual([...ACTION_VERBS].sort());
     for (const verb of ACTION_VERBS) {
       expect(ACTION_REGISTRY[verb].verb, verb).toBe(verb);
+      expect(ACTION_REGISTRY[verb].semantics, verb).toBe(ACTION_SEMANTICS[verb]);
+      expect(ACTION_REGISTRY[verb].copy.primary, verb).toBe(ACTION_SEMANTICS[verb].label);
     }
   });
 

@@ -26,6 +26,11 @@ import type {
   PreviewMode,
 } from '../contracts/verb-constants';
 import { ACTION_VERBS, CANONICAL_SHORTCUTS } from '../contracts/verb-constants';
+import {
+  ACTION_SEMANTICS,
+  staticActionPreviewCopy,
+  type ActionSemantics,
+} from './action-semantics';
 
 /**
  * A Gmail label-set delta — structurally identical to the worker's
@@ -146,6 +151,7 @@ export interface CapabilitiesBySelector {
 /** ONE registry descriptor for a verb. */
 export interface ActionDescriptor<V extends ActionVerb = ActionVerb> {
   readonly verb: V;
+  readonly semantics: ActionSemantics & { readonly verb: V };
   readonly copy: ActionCopy;
   /**
    * Single-key shortcut (D227, K/A/U/L); bound to `event.key`. Typed to
@@ -168,9 +174,10 @@ export type ActionRegistry = { readonly [V in ActionVerb]: ActionDescriptor<V> }
 export const ACTION_REGISTRY: ActionRegistry = {
   keep: {
     verb: 'keep',
+    semantics: ACTION_SEMANTICS.keep,
     copy: {
-      primary: 'Keep',
-      description: "Keep this sender's mail in your inbox.",
+      primary: ACTION_SEMANTICS.keep.label,
+      description: staticActionPreviewCopy('keep'),
     },
     shortcut: CANONICAL_SHORTCUTS.keep,
     // Keep is non-destructive — a 200ms toast with a 5s undo, no sheet.
@@ -192,9 +199,10 @@ export const ACTION_REGISTRY: ActionRegistry = {
   },
   archive: {
     verb: 'archive',
+    semantics: ACTION_SEMANTICS.archive,
     copy: {
-      primary: 'Archive',
-      description: 'Remove these messages from your inbox. You can undo this.',
+      primary: ACTION_SEMANTICS.archive.label,
+      description: staticActionPreviewCopy('archive'),
     },
     shortcut: CANONICAL_SHORTCUTS.archive,
     preview: 'modal',
@@ -215,10 +223,10 @@ export const ACTION_REGISTRY: ActionRegistry = {
   },
   later: {
     verb: 'later',
+    semantics: ACTION_SEMANTICS.later,
     copy: {
-      primary: 'Later',
-      description:
-        "Move this sender's mail out of the inbox into a DeclutrMail/Later label. You can undo this.",
+      primary: ACTION_SEMANTICS.later.label,
+      description: staticActionPreviewCopy('later'),
     },
     shortcut: CANONICAL_SHORTCUTS.later,
     preview: 'modal',
@@ -243,9 +251,10 @@ export const ACTION_REGISTRY: ActionRegistry = {
   },
   unsubscribe: {
     verb: 'unsubscribe',
+    semantics: ACTION_SEMANTICS.unsubscribe,
     copy: {
-      primary: 'Unsubscribe',
-      description: 'Stop future mail from this sender. Nothing already in your inbox moves.',
+      primary: ACTION_SEMANTICS.unsubscribe.label,
+      description: staticActionPreviewCopy('unsubscribe'),
     },
     shortcut: CANONICAL_SHORTCUTS.unsubscribe,
     preview: 'modal',
@@ -265,10 +274,10 @@ export const ACTION_REGISTRY: ActionRegistry = {
   },
   delete: {
     verb: 'delete',
+    semantics: ACTION_SEMANTICS.delete,
     copy: {
-      primary: 'Delete',
-      description:
-        "Move this sender's mail to Gmail Trash. Recoverable for 30 days, after which Gmail permanently deletes it.",
+      primary: ACTION_SEMANTICS.delete.label,
+      description: staticActionPreviewCopy('delete'),
     },
     shortcut: CANONICAL_SHORTCUTS.delete,
     // Delete is destructive in a way that survives undo — Trash recovery
@@ -301,11 +310,12 @@ export const ACTION_REGISTRY: ActionRegistry = {
   },
   unarchive: {
     verb: 'unarchive',
+    semantics: ACTION_SEMANTICS.unarchive,
     copy: {
       // Not a K/A/U/L triage verb — a restore op (Q3 "Restore from bulk"),
       // so its label is descriptive, not one of the four canonical verbs.
-      primary: 'Restore to inbox',
-      description: 'Bring this sender’s archived mail back into the inbox.',
+      primary: ACTION_SEMANTICS.unarchive.label,
+      description: staticActionPreviewCopy('unarchive'),
     },
     // No canonical single-key shortcut — unarchive is not part of K/A/U/L.
     shortcut: null,
