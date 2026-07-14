@@ -47,7 +47,8 @@ import { isFeatureEnabled } from '@/lib/flags';
  *   5. no active mailbox  — last mailbox disconnected → full-screen
  *                           reconnect gate instead of a data-less shell.
  *                           EXCEPTION: workspace-scoped routes
- *                           (`/settings`, `/settings/privacy`, `/billing`)
+ *                           (`/settings`, `/settings/privacy`,
+ *                           `/settings/help`, `/billing`)
  *                           render through the gate — account deletion
  *                           (D216), data export, and billing/refunds (D121)
  *                           must stay reachable with zero mailboxes.
@@ -106,7 +107,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
  * safe to the gate.
  */
 function isUserScopedRoute(pathname: string): boolean {
-  return pathname === '/settings' || pathname === '/settings/privacy' || pathname === '/billing';
+  return (
+    pathname === '/settings' ||
+    pathname === '/settings/privacy' ||
+    pathname === '/settings/help' ||
+    pathname === '/billing'
+  );
 }
 
 function AppChrome({ children }: { children: ReactNode }) {

@@ -84,7 +84,7 @@ each completed slice.
 
 ### P3 — learnability and polish
 
-- [ ] Add a compact in-product glossary for Sender, Gmail Preview, Protected,
+- [x] Add a compact in-product glossary for Sender, Gmail Preview, Protected,
       VIP, Observe, Active, Activity Undo, Gmail Trash recovery, and Later.
 - [ ] Add contextual help at the privacy, action, Activity, Autopilot, and
       mailbox-management decision points instead of a generic help dump.

@@ -155,6 +155,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Quiet hours' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Standing policies' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
     // D147 cookie change/withdrawal card, with the effective default
     // (no stored choice → essential-only) selected.
     expect(screen.getByRole('heading', { name: 'Cookie preferences' })).toBeInTheDocument();
@@ -172,6 +173,14 @@ describe('SettingsScreen', () => {
       '#notifications',
     );
     expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '#account');
+    expect(within(nav).getByRole('link', { name: 'Help & glossary' })).toHaveAttribute(
+      'href',
+      '#help',
+    );
+    expect(screen.getByRole('link', { name: 'Open product glossary' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
     // Plan summary resolves from the billing read.
     await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
     // Humanized last-synced stamps resolve from the per-mailbox
