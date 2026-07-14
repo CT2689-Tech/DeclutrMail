@@ -238,12 +238,13 @@ function FoundingProBanner() {
         <strong
           style={{ fontFamily: font.display, fontSize: 16, fontWeight: 650, color: color.mint }}
         >
-          {promo.name} — {formatUsd(promo.annual.usdCents)}/yr for the first {promo.maxRedemptions}{' '}
+          {promo.name} — {formatUsd(promo.annual.usdCents)}/yr, limited to {promo.maxRedemptions}{' '}
           members
         </strong>
         <span style={{ fontFamily: font.sans, fontSize: 13, color: color.fgInverseSoft }}>
           {standardAnnual ? `Instead of ${formatUsd(standardAnnual.usdCents)}/yr — ` : ''}
-          full {hostTier.name}, price locked while your subscription stays active.
+          full {hostTier.name}, price locked while your subscription stays active. Availability is
+          confirmed at checkout.
         </span>
       </div>
       <button
@@ -267,7 +268,7 @@ function FoundingProBanner() {
           cursor: busy ? 'wait' : 'pointer',
         }}
       >
-        {busy ? 'One moment…' : `Claim ${promo.name}`}
+        {busy ? 'Checking…' : 'Check availability'}
       </button>
     </aside>
   );

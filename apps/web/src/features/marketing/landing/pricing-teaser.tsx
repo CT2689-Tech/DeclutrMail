@@ -80,8 +80,9 @@ export function PricingTeaser() {
         <div className="dm-mkt-founding">
           <b>{founding.name}</b>
           <span>
-            {dollars(founding.annual.usdCents)} / year for the first {founding.maxRedemptions}{' '}
-            members — {pro.name} features, price locked while your subscription stays active.
+            {dollars(founding.annual.usdCents)} / year, limited to {founding.maxRedemptions} members
+            — {pro.name} features, price locked while your subscription stays active. Availability
+            is confirmed at checkout.
           </span>
         </div>
       ) : null}

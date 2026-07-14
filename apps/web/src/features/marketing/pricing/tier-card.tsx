@@ -141,7 +141,7 @@ export function TierCard({
                 fontWeight: 600,
               }}
             >
-              {tier.promo.name} — first {tier.promo.maxRedemptions}, price locked
+              {tier.promo.name} — limited to {tier.promo.maxRedemptions}; confirmed at checkout
             </p>
           </>
         ) : price ? (

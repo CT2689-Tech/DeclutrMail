@@ -74,9 +74,11 @@ describe('PricingScreen (D19)', () => {
     const promo = TIER_MANIFEST.pro.promo!;
     expect(
       screen.getByText(
-        new RegExp(`${promo.name} — \\${promoPrice}/yr for the first ${promo.maxRedemptions}`),
+        new RegExp(`${promo.name} — \\${promoPrice}/yr, limited to ${promo.maxRedemptions}`),
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Availability is confirmed at checkout/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check availability/i })).toBeInTheDocument();
   });
 
   it('emits page_viewed on mount (D159)', () => {

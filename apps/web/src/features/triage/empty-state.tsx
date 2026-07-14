@@ -1,9 +1,11 @@
 'use client';
 
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 
 const { color, font } = tokens;
+const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsLifetime;
 
 /**
  * The triage empty state (D33 + D212).
@@ -210,8 +212,8 @@ export function TriageEmptyState({
           <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
             <strong style={{ fontWeight: 600 }}>
               {stats.freeRemaining === 0
-                ? "You've used all 5 free cleanup actions."
-                : `${stats.freeRemaining} of your 5 free cleanup actions left.`}
+                ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions.`
+                : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left.`}
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
               Plus removes the cap — unlimited archive, delete, and unsubscribe.
