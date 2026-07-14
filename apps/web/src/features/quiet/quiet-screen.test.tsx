@@ -85,12 +85,13 @@ describe('QuietRoute', () => {
       {
         method: 'GET',
         path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true }),
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0, endsAt: null }),
       },
       {
         method: 'GET',
         path: `/api/mailboxes/${MAILBOX_B}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: null, activeNow: false }),
+        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0, endsAt: null }),
       },
     ]);
 
@@ -111,14 +112,15 @@ describe('QuietRoute', () => {
       {
         method: 'GET',
         path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false }),
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0, endsAt: null }),
       },
       {
         method: 'PUT',
         path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
         respond: async (req) => {
           putBody = await req.json();
-          return jsonEnvelope({ config: putBody, activeNow: true });
+          return jsonEnvelope({ config: putBody, activeNow: true, heldCount: 0, endsAt: null });
         },
       },
     ]);
@@ -132,5 +134,78 @@ describe('QuietRoute', () => {
     expect(putBody).toEqual({ ...CONFIG, enabled: false });
     // Server said activeNow: true → the pill renders from the response.
     await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+  });
+
+  it('shows held actions and the scheduled quiet end', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    const endsAt = '2026-07-15T05:00:00.000Z';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2, endsAt }),
+      },
+    ]);
+
+    renderRoute();
+
+    const summary = await screen.findByRole('status');
+    expect(summary).toHaveTextContent('2 Autopilot actions are held.');
+    expect(summary).toHaveTextContent('Autopilot will run them afterward.');
+    expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
+  });
+
+  it('explains an indefinite quiet hold without inventing a release time', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 1, endsAt: null }),
+      },
+    ]);
+
+    renderRoute();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      '1 Autopilot action is held. No automatic release time is available; it will stay held until quiet ends.',
+    );
+  });
+
+  it('shows the active zero-held state', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    const endsAt = '2026-07-15T05:00:00.000Z';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0, endsAt }),
+      },
+    ]);
+
+    renderRoute();
+
+    const summary = await screen.findByRole('status');
+    expect(summary).toHaveTextContent('No Autopilot actions are held. Quiet ends at');
+    expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
+  });
+
+  it('does not attribute pending actions to quiet when quiet is off', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 2, endsAt: null }),
+      },
+    ]);
+
+    renderRoute();
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Quiet is off. 2 Autopilot actions are awaiting execution; quiet is not delaying them.',
+    );
   });
 });

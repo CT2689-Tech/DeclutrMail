@@ -83,6 +83,9 @@ current technical invariant rather than by hypothetical existing users.
 - [x] Let eligible users experience safe Observe/preview value before asking
       them to upgrade for automatic Active execution; keep billing truth sourced
       from the canonical entitlement contract.
+- [x] Show Quiet's held Autopilot action count and exact release time, including
+      indefinite and inactive states without implying that Quiet owns all
+      pending work.
 
 ### P2 — precision, recovery, and scale
 

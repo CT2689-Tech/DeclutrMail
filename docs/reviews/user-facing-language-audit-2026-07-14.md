@@ -331,7 +331,7 @@ accessibility foundations come before optional workflow acceleration.
 | Later | Reschedule history on the row | Helps users remember why and when a sender was deferred | Keep the default row compact; disclose history on demand. |
 | Followups | Accuracy feedback and flexible reminder timing per thread/sender | Reduces false positives and makes follow-up timing fit real work | Preserve “observed sent mail,” not a promise that a reply is owed. |
 | Screener | Preview sender history and “allow once / always allow” distinctions | Reduces accidental standing rules from one unusual message | Keep current-message and future-policy choices visibly separate. |
-| Quiet | “What will run when Quiet ends?” queue preview | Prevents delayed automation from feeling hidden | Show counts and allow per-item cancellation before release. |
+| Quiet | “What will run when Quiet ends?” queue preview | Prevents delayed automation from feeling hidden | **Foundation implemented 2026-07-14:** truthful held count and release time. Per-item preview and cancellation remain. |
 | Mailboxes | Connection-health timeline: last successful sync, partial scope, reauth, quota, and next retry | Gives users a single answer to “is my Gmail current?” | Build from existing freshness and lifecycle states. |
 | Privacy and data | Export/deletion job progress, completion receipt, and exact dataset manifest | Makes high-trust account operations verifiable | High priority for launch readiness. |
 | Billing | Usage meter, projected limit date, and one canonical plan comparison | Prevents surprise caps and contradictory upgrade prompts | Resolve annual pricing first, then generate every surface from entitlements. |
@@ -364,6 +364,8 @@ accessibility foundations come before optional workflow acceleration.
   importance provenance, visible explanations, and a sticky manual override.
 - Added an Autopilot activation report with current actionable scope, Protected
   exclusions, evidence-labelled weekly volume, safety caps, and recovery truth.
+- Added Quiet's held-action count and scheduled-release truth, including
+  indefinite Quiet and pending work that Quiet is not delaying.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
 - Static validation covers TypeScript, focused API/worker/web/shared tests,
   migration checks, and diff/format checks. Authenticated live Playwright and

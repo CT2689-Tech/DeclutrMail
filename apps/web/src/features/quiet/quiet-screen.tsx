@@ -111,13 +111,99 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
   };
 
   return (
-    <QuietHoursCard
-      mailboxEmail={mailbox.email}
-      mailboxStatus={mailbox.status}
-      state={state}
-      saving={update.isPending}
-      onSave={onSave}
-      onRetry={() => void query.refetch()}
-    />
+    <div style={{ display: 'grid', gap: 8 }}>
+      <QuietHoursCard
+        mailboxEmail={mailbox.email}
+        mailboxStatus={mailbox.status}
+        state={state}
+        saving={update.isPending}
+        onSave={onSave}
+        onRetry={() => void query.refetch()}
+      />
+      {query.data && (
+        <QuietQueueSummary
+          activeNow={query.data.activeNow}
+          heldCount={query.data.heldCount}
+          endsAt={query.data.endsAt}
+        />
+      )}
+    </div>
   );
+}
+
+function QuietQueueSummary({
+  activeNow,
+  heldCount,
+  endsAt,
+}: {
+  activeNow: boolean;
+  heldCount: number;
+  endsAt: string | null;
+}) {
+  const actionLabel = heldCount === 1 ? 'Autopilot action' : 'Autopilot actions';
+  const endLabel = endsAt ? formatQuietEnd(endsAt) : null;
+
+  let summary = <>Quiet is off. No Autopilot actions are held.</>;
+
+  if (!activeNow && heldCount > 0) {
+    summary = (
+      <>
+        Quiet is off. {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} awaiting execution;{' '}
+        quiet is not delaying {heldCount === 1 ? 'it' : 'them'}.
+      </>
+    );
+  } else if (activeNow && heldCount === 0 && endLabel) {
+    summary = (
+      <>
+        No Autopilot actions are held. Quiet ends at{' '}
+        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
+      </>
+    );
+  } else if (activeNow && heldCount === 0) {
+    summary = <>No Autopilot actions are held. No automatic release time is available.</>;
+  } else if (activeNow && endLabel) {
+    summary = (
+      <>
+        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held. Quiet ends at{' '}
+        <time dateTime={endsAt ?? undefined}>{endLabel}</time>. Autopilot will run{' '}
+        {heldCount === 1 ? 'it' : 'them'} afterward.
+      </>
+    );
+  } else if (activeNow) {
+    summary = (
+      <>
+        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held. No automatic release time
+        is available; {heldCount === 1 ? 'it' : 'they'} will stay held until quiet ends.
+      </>
+    );
+  }
+
+  return (
+    <p
+      role="status"
+      style={{
+        fontFamily: font.sans,
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: color.fgSoft,
+        margin: '0 12px',
+      }}
+    >
+      {summary}
+    </p>
+  );
+}
+
+function formatQuietEnd(value: string): string | null {
+  const end = new Date(value);
+  if (Number.isNaN(end.getTime())) return null;
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  }).format(end);
 }
