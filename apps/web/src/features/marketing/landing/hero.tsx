@@ -79,7 +79,7 @@ function LedgerCard() {
           <span className="dm-mkt-ledger-dot" aria-hidden="true" />
           Triage — decision 1 of 14
         </span>
-        <span>this week</span>
+        <span className="dm-mkt-ledger-demo-label">Illustrative demo</span>
       </div>
       <div className="dm-mkt-ledger-body">
         <div className="dm-mkt-ledger-row">

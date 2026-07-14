@@ -42,7 +42,6 @@ import type {
   TimeseriesPoint,
   Verdict,
 } from '../detail/types';
-import { buildSenderDetail } from '../detail/data';
 
 /** Maps Gmail category → component-side `SenderGroup` (they're synonyms today). */
 const CATEGORY_TO_GROUP: Record<GmailCategory, SenderGroup> = {
@@ -51,6 +50,15 @@ const CATEGORY_TO_GROUP: Record<GmailCategory, SenderGroup> = {
   social: 'social',
   updates: 'updates',
   forums: 'forums',
+};
+
+/** Display labels derived directly from the Gmail category on the wire. */
+const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
+  primary: 'Gmail: Primary',
+  promotions: 'Gmail: Promotions',
+  social: 'Gmail: Social',
+  updates: 'Gmail: Updates',
+  forums: 'Gmail: Forums',
 };
 
 /** Computes days between an ISO date and "now" — clamped to 0. */
@@ -187,13 +195,11 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
  * Adapt the wire `SenderDetailDto` + paginated child responses into the
  * FE `SenderDetail` model the page already consumes.
  *
- * `buildSenderDetail` (the existing fixture helper) already synthesises
- * the optional suggestion / stats / timeseries / history from a `Sender`.
- * For now we layer the wire data ON TOP of that synthesis — wire-driven
- * recent messages, timeseries, and history override the synthesised
- * ones; suggestion + stats fall back to the synthesised values
- * (the BE doesn't return a suggestion row yet — that lands in a
- * later iteration of the Sender Detail API).
+ * Every field in the returned live model comes from the wire or from an
+ * explicit presentation derivation of a wire field. Fixture builders
+ * must not participate in this path: the detail endpoint currently has
+ * no recommendation payload, so live recommendations stay `null` until
+ * that contract exists.
  */
 /**
  * Map the wire `protection_reason` enum (BE source-of-truth) onto the
@@ -232,12 +238,6 @@ export function adaptSenderDetail(args: {
     args.detail.protectionFlags.protectionReason,
   );
 
-  // Use the existing fixture-builder for the synthesised fields
-  // (optional suggestion only — stats are now wire-driven), then overlay
-  // wire-derived lists. When the BE PR adds richer suggestion rows
-  // we delete the fallback and pass the wire values through directly.
-  const seeded = buildSenderDetail(sender, { isVip, isProtected });
-
   const stats: SenderStats = {
     // Both BE fields are nullable when sender has no timeseries; coerce
     // to 0 because the existing chart + stats components carry
@@ -255,7 +255,8 @@ export function adaptSenderDetail(args: {
     // Sender.name may be the display name ("Robinhood") so we keep the
     // raw email separate (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
     email: args.detail.email,
-    gmailCategory: seeded.gmailCategory,
+    // Presentation-only formatting of the real Gmail category enum.
+    gmailCategory: CATEGORY_TO_LABEL[args.detail.gmailCategory],
     isVip,
     isProtected,
     protectionReason,
@@ -270,7 +271,9 @@ export function adaptSenderDetail(args: {
     unsubStatus: args.detail.unsubStatus ?? null,
     unsubscribeMethod: args.detail.unsubscribeMethod ?? null,
     unsubscribeMailtoUrl: args.detail.unsubscribeMailtoUrl ?? null,
-    recommendation: seeded.recommendation,
+    // The detail wire contract has no recommendation field. Do not
+    // manufacture one from fixture heuristics for connected accounts.
+    recommendation: null,
     recentMessages: args.messages.map(adaptMailMessageRow),
     stats,
     timeseries: args.timeseries.map(adaptTimeseriesPoint),

@@ -3,7 +3,7 @@
  * sender-scoped queries.
  *
  * Covers:
- *   • All-four-succeed → ready state with factual actions + optional suggestion
+ *   • All-four-succeed → ready state with factual wire data and no fixture suggestion
  *   • Detail 404 → not-found UI
  *   • Detail 500 → error UI with retry copy
  */
@@ -141,9 +141,12 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    // The recent-messages subject from the wire is present.
+    // Wire-backed category and recent-message subject are present. The
+    // endpoint has no recommendation payload, so no fixture suggestion
+    // may appear even though this sender's facts used to synthesize one.
+    expect(screen.getByText('Gmail: Social')).toBeInTheDocument();
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
-    expect(screen.getByText('Optional suggestion · Archive')).toBeInTheDocument();
+    expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
   });
 

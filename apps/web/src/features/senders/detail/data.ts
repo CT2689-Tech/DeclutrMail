@@ -152,7 +152,7 @@ function seedFor(id: string): number {
   return h >>> 0;
 }
 
-/** Derive an optional suggestion from bounded sender facts. */
+/** Fixture-only suggestion derivation for stories and mock handlers. */
 function inferVerdict(s: Sender, isVip: boolean, isProtected: boolean): Verdict {
   if (isVip || isProtected) return 'keep';
   if (s.group === 'primary') return 'keep';
@@ -328,8 +328,9 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
 }
 
 /**
- * Build a complete `SenderDetail` from a sender + posture overrides.
- * Useful for both the page (live data) and Storybook (variants).
+ * Build a complete fixture `SenderDetail` from a sender + posture
+ * overrides. Production API adapters must map live DTOs directly and
+ * never call this synthetic story/mock helper.
  */
 export function buildSenderDetail(
   sender: Sender,

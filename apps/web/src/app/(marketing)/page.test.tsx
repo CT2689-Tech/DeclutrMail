@@ -75,6 +75,16 @@ describe('landing page — D134', () => {
     expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
   });
 
+  it('visibly marks the hero ledger and its sample counts as illustrative', () => {
+    const { container } = renderLanding();
+    const ledger = container.querySelector('.dm-mkt-ledger');
+
+    expect(ledger).not.toBeNull();
+    expect(ledger?.querySelector('.dm-mkt-ledger-demo-label')).toHaveTextContent(
+      'Illustrative demo',
+    );
+  });
+
   it('uses action-specific recovery and bounded privacy/deletion claims', () => {
     const { container } = renderLanding();
     const text = container.textContent ?? '';
