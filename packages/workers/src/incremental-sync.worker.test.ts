@@ -16,7 +16,7 @@ import {
 } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IncrementalSyncWorker } from './incremental-sync.worker.js';
 import type { IncrementalSyncDeps } from './incremental-sync.worker.js';
@@ -181,6 +181,41 @@ describe('IncrementalSyncWorker', () => {
   beforeEach(async () => {
     db = await freshDb();
     mailboxAccountId = await seedMailbox(db);
+  });
+
+  it('no-ops a disconnected mailbox before Gmail access or cursor writes', async () => {
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('disconnected sync must not request a Gmail client');
+    });
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result).toEqual({
+      recordsProcessed: 0,
+      added: 0,
+      deleted: 0,
+      labelChanges: 0,
+      cursorTooOld: false,
+      advancedToHistoryId: null,
+      mailboxInactive: true,
+    });
+    expect(result.deletionPaused).toBeUndefined();
+    expect(getClient).not.toHaveBeenCalled();
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastHistoryId).toBe(1000n);
+    expect(state!.lastSyncedAt).toBeNull();
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
   });
 
   it('processes a `messagesAdded` event — inserts mail + materialises sender', async () => {

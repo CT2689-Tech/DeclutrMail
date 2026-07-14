@@ -10,7 +10,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { isSyncPausedForDeletion } from './deletion-pause.js';
+import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
 import type { IncrementalSyncJobData } from './queue.js';
@@ -117,6 +117,11 @@ export interface IncrementalSyncResult {
    * (S, H] window on cancel). See `deletion-pause.ts`.
    */
   deletionPaused?: boolean;
+  /**
+   * Disconnect/missing-row guard — no OAuth/Gmail access and no cursor
+   * or freshness write occurred.
+   */
+  mailboxInactive?: true;
 }
 
 /**
@@ -226,11 +231,29 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     }
     const { mailboxAccountId, startHistoryId } = payload;
 
-    // D232 sync pause — eligibility guard BEFORE any Gmail call. The
-    // authoritative backstop for every producer (webhook, drift sweep,
-    // "Sync now"); a paused mailbox's job is a designed no-op that
-    // leaves the cursor untouched so cancel resumes from the gap start.
-    if (await isSyncPausedForDeletion(this.deps.db, mailboxAccountId)) {
+    // One worker-entry eligibility lookup BEFORE any Gmail call. This is
+    // the race-safe backstop for jobs queued just before disconnect.
+    // D232 deletion pending remains a separate, cancellable pause state.
+    const eligibility = await getSyncMailboxEligibility(this.deps.db, mailboxAccountId);
+    if (eligibility === 'inactive') {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.skipped_inactive_mailbox',
+          mailboxAccountId,
+        }),
+      );
+      return {
+        recordsProcessed: 0,
+        added: 0,
+        deleted: 0,
+        labelChanges: 0,
+        cursorTooOld: false,
+        advancedToHistoryId: null,
+        mailboxInactive: true,
+      };
+    }
+    if (eligibility === 'deletion_pending') {
       console.warn(
         JSON.stringify({
           level: 'warn',

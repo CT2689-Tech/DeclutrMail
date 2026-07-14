@@ -109,11 +109,11 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Senders now derives its primary action only from
-  observed policy/capability/recency facts across cards, rows, expanded rows,
-  and detail. Suggestions are collapsed secondary disclosures with factual
-  basis; confidence no longer chooses or styles actions.
-- Last green checks: focused Senders suite (7 files / 81 tests), web typecheck,
-  lint/microcopy checks, and `git diff --check`.
-- Next slice: enforce disconnected-mailbox eligibility everywhere, then add
-  explicit Disconnect versus Disconnect-and-delete-indexed-data choices.
+- Last completed slice: disconnected mailboxes are ineligible at every sync
+  boundary: webhook resolution, periodic drift discovery, initial sync, and
+  incremental sync. Already-queued jobs no-op before OAuth or Gmail access and
+  report an explicit inactive-mailbox outcome.
+- Last green checks: Gmail webhook suite (13 tests), initial/incremental worker
+  suites (50 tests), API/workers typechecks, and `git diff --check`.
+- Next slice: add the explicit Disconnect versus
+  Disconnect-and-delete-indexed-data preview, API lifecycle, and receipts.

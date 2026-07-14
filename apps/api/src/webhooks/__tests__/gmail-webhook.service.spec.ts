@@ -14,7 +14,7 @@ import {
 } from '@declutrmail/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Queue } from 'bullmq';
 import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
@@ -100,6 +100,7 @@ async function seedMailbox(
 describe('GmailWebhookService.processVerifiedPush', () => {
   let db: DrizzleDb;
   let service: GmailWebhookService;
+  let incrementalQueueAdd: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     db = await freshDb();
@@ -112,9 +113,10 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // present at call time. A bare stub with both methods returning
     // resolved promises is enough — the webhook test asserts on the
     // dedup + cursor side of `processVerifiedPush`, not the enqueue.
+    incrementalQueueAdd = vi.fn().mockResolvedValue(undefined);
     const incrementalQueueStub = {
       getJob: async () => null,
-      add: async () => undefined,
+      add: incrementalQueueAdd,
     } as unknown as Queue<IncrementalSyncJobData>;
     const sync = new SyncService(queueStub, incrementalQueueStub, db);
     service = new GmailWebhookService(db, sync, incrementalQueueStub);
@@ -208,6 +210,39 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     const dedup = await db.select().from(webhookDedup);
     expect(dedup.length).toBe(1);
     expect(dedup[0]!.messageId).toBe('msg-orphan');
+  });
+
+  it('treats a disconnected mailbox as unknown and does not advance or enqueue', async () => {
+    const { mailboxId } = await seedMailbox(db, 'alice@example.com', 1000n);
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxId));
+
+    const outcome = await service.processVerifiedPush({
+      messageId: 'msg-after-disconnect',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+
+    expect(outcome).toEqual({
+      kind: 'unknown_mailbox',
+      emailAddress: 'alice@example.com',
+    });
+    expect(incrementalQueueAdd).not.toHaveBeenCalled();
+
+    const [sync] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(sync!.lastHistoryId).toBe(1000n);
+
+    // The dedup gate still records the Pub/Sub envelope, but an ineligible
+    // mailbox is never linked to it or allowed into the sync pipeline.
+    const [dedup] = await db
+      .select()
+      .from(webhookDedup)
+      .where(eq(webhookDedup.messageId, 'msg-after-disconnect'));
+    expect(dedup!.mailboxAccountId).toBeNull();
   });
 
   it('returns deletion_pending + does NOT advance the cursor while a D232 deletion is in flight', async () => {

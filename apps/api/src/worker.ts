@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
@@ -1351,8 +1351,12 @@ async function bootstrap(): Promise<void> {
           lastHistoryId: providerSyncState.lastHistoryId,
         })
         .from(providerSyncState)
+        .innerJoin(mailboxAccounts, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
         .where(
-          sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+          and(
+            eq(mailboxAccounts.status, 'active'),
+            sql`${providerSyncState.lastHistoryId} IS NOT NULL AND ${providerSyncState.historyIdUpdatedAt} < ${cutoff}`,
+          ),
         )
         .limit(INCREMENTAL_DRIFT_BATCH);
 

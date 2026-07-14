@@ -172,6 +172,33 @@ describe('InitialSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it('no-ops a disconnected mailbox before Gmail access or sync-state writes', async () => {
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('disconnected sync must not request a Gmail client');
+    });
+
+    const result = await new InitialSyncWorker({
+      db,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId }, CTX);
+
+    expect(result).toMatchObject({
+      messagesSynced: 0,
+      sendersIndexed: 0,
+      gmailApiCalls: 0,
+      stageTimings: {},
+      mailboxInactive: true,
+    });
+    expect(result.deletionPaused).toBeUndefined();
+    expect(getClient).not.toHaveBeenCalled();
+    expect(await db.select().from(providerSyncState)).toHaveLength(0);
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it("first_seen_at / last_seen_at span every sender's actual MIN / MAX internal_date (regression: 2026-06-09 prod data integrity bug)", async () => {
     // Prod sync 2026-06-09 produced senders.last_seen_at = first_seen_at
     // for 99.94% of senders despite each sender having multiple unique

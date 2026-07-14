@@ -152,7 +152,11 @@ export class GmailWebhookService {
         return { kind: 'duplicate_message_id', messageId: args.messageId };
       }
 
-      // Resolve the mailbox by emailAddress (Gmail's provider_account_id).
+      // Resolve an ACTIVE mailbox by emailAddress (Gmail's
+      // provider_account_id). A best-effort `users.stop` can leave a
+      // watch alive until Google expires it; pushes from that watch must
+      // not advance the disconnected mailbox's cursor or enqueue work.
+      //
       // The D232 pause flag rides the SAME eligibility query (one
       // round-trip, no scattered ifs) — see `deletion-pause.ts` in
       // @declutrmail/workers for the predicate's rationale.
@@ -163,6 +167,7 @@ export class GmailWebhookService {
           and(
             eq(mailboxAccounts.provider, 'gmail'),
             eq(mailboxAccounts.providerAccountId, args.payload.emailAddress),
+            eq(mailboxAccounts.status, 'active'),
           ),
         )
         .limit(1);

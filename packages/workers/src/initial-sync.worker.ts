@@ -18,7 +18,7 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { isSyncPausedForDeletion } from './deletion-pause.js';
+import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import type { GmailAccess, GmailMessageMetadata, GmailMetadataClient } from './ports.js';
@@ -120,6 +120,11 @@ export interface InitialSyncResult {
    * after a cancel). See `deletion-pause.ts`.
    */
   deletionPaused?: boolean;
+  /**
+   * Disconnect/missing-row guard — the job was a terminal designed
+   * no-op before OAuth decryption, Gmail access, or sync-state writes.
+   */
+  mailboxInactive?: true;
   /**
    * `true` when the mailbox was already `readiness_status='ready'` and
    * the job was a designed no-op — a duplicate enqueue (double OAuth
@@ -261,11 +266,22 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       lastMark = now;
     };
 
-    // D232 sync pause — eligibility guard BEFORE any Gmail call or
-    // sync-state write. A paused mailbox's backfill is a designed
-    // no-op; sync state stays as-is so the initial-sync reconciler
-    // re-enqueues it after a cancel. See `deletion-pause.ts`.
-    if (await isSyncPausedForDeletion(this.deps.db, mailboxAccountId)) {
+    // One worker-entry eligibility lookup BEFORE any Gmail call or
+    // sync-state write. Disconnect is terminal; D232 deletion pending
+    // is cancellable and deliberately keeps its distinct result.
+    const eligibility = await getSyncMailboxEligibility(this.deps.db, mailboxAccountId);
+    if (eligibility === 'inactive') {
+      initialSyncLog('skipped_inactive_mailbox', mailboxAccountId);
+      return {
+        messagesSynced: 0,
+        sendersIndexed: 0,
+        gmailApiCalls: 0,
+        durationMs: Date.now() - startedAt,
+        stageTimings,
+        mailboxInactive: true,
+      };
+    }
+    if (eligibility === 'deletion_pending') {
       initialSyncLog('skipped_deletion_pending', mailboxAccountId);
       return {
         messagesSynced: 0,
