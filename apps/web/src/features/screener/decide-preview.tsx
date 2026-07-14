@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 
 import type { ScreenerDecideVerb, ScreenerQueueRow } from './data';
 import { VERB_LABEL } from './verbs';
@@ -23,16 +24,17 @@ export type DecidePreviewCount = number | 'loading' | 'unavailable';
  * the verb rides:
  *
  *   - Keep        → nothing in Gmail changes (D72 soft quarantine).
- *   - Archive     → inbox mail moves to Gmail archive, undoable 7d.
- *   - Later       → inbox mail moves to DeclutrMail/Later, undoable 7d.
+ *   - Archive     → inbox mail moves to Gmail archive; plan-based Activity Undo.
+ *   - Later       → inbox mail moves to DeclutrMail/Later; exact return time required.
  *   - Unsubscribe → one-click sends the real request (one-way, D58);
  *                   mailto is the manual compose path (D230).
- *   - Delete      → Gmail Trash; 30-day recovery window.
+ *   - Delete      → Activity Undo plus a separate Gmail Trash recovery path.
  */
 export function DecidePreview({
   verb,
   row,
   inboxCount,
+  wakeAt,
   confirming,
   onConfirm,
   onCancel,
@@ -40,12 +42,21 @@ export function DecidePreview({
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
   inboxCount: DecidePreviewCount;
+  wakeAt?: string | null;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   const name = row.senderName;
+  const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
+  const presentation = buildActionPresentation({
+    verb,
+    liveCount: verb === 'keep' || verb === 'unsubscribe' ? 0 : liveCount,
+    planUndoDeadline: null,
+    wakeAt: verb === 'later' ? (wakeAt ?? null) : null,
+    unsubscribeChannel: verb === 'unsubscribe' ? row.unsubscribeMethod : null,
+  });
 
   const title =
     verb === 'keep'
@@ -58,20 +69,7 @@ export function DecidePreview({
             ? `Unsubscribe from ${name}`
             : `Delete ${name}'s inbox mail`;
 
-  const lead =
-    verb === 'keep'
-      ? `${name} stays exactly where it is — nothing in Gmail changes. We just remember your decision and stop asking about this sender.`
-      : verb === 'archive'
-        ? `Every message from ${name} now in the inbox moves into Gmail's archive. Nothing is deleted; undo from Activity during your plan's window.`
-        : verb === 'later'
-          ? `Mail from ${name} now in the inbox moves into the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged; change the wake time on Later or undo from Activity during your plan's window.`
-          : verb === 'unsubscribe'
-            ? row.unsubscribeMethod === 'one_click'
-              ? `DeclutrMail sends ${name}'s one-click unsubscribe and confirms the result. The request itself can't be undone. Nothing already in your inbox moves.`
-              : row.unsubscribeMethod === 'mailto'
-                ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
-                : `${name} advertises no unsubscribe channel. We record your decision; Archive is the reliable fallback if mail keeps coming.`
-            : `Every message from ${name} now in the inbox moves to Gmail Trash. DeclutrMail Undo follows your plan's Activity window; Gmail's separate Trash recovery is normally available for up to 30 days.`;
+  const lead = presentation.previewCopy;
 
   // What actually moves — only the label-modify verbs touch the inbox.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';

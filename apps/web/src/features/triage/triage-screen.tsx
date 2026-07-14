@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 import {
   useActionStatus,
@@ -153,9 +154,9 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     senderName: string;
     verb: 'Archive' | 'Later';
     /**
-     * The row's monthly volume at dispatch time — feeds the session
-     * "noise prevented" payoff on confirmation (D33). 0 for follow-ons
-     * (the unsubscribe already counted this sender's volume).
+     * The row's historic monthly volume at dispatch time — contextual
+     * sender scale only. 0 for follow-ons (the unsubscribe already
+     * counted this sender's volume).
      */
     monthlyVolume: number;
     /**
@@ -176,11 +177,13 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const [unsubWatch, setUnsubWatch] = useState<{
     actionId: string;
     senderName: string;
+    monthlyVolume: number;
   } | null>(null);
   const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
   // D230 manual path — the "finish in Gmail" callout for a mailto
   // sender, rendered above the queue after U confirms. Dismissible.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -192,6 +195,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
   const [pendingBatch, setPendingBatch] = useState<{
     verb: BatchVerb;
     batch: DomainBatch;
+    wakeAt: string | null;
   } | null>(null);
   const [batchAction, setBatchAction] = useState<{
     batchId: string;
@@ -283,21 +287,34 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      // Silent success (D35) — refresh Activity so the outcome row shows.
+      // Count projected noise only once the endpoint accepts the request;
+      // recording intent alone proves nothing about future delivery.
+      addSessionNoisePrevented(unsubWatch.monthlyVolume);
+      toast(
+        `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        'success',
+      );
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `Couldn't confirm ${unsubWatch.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       );
     } else {
       toast(
-        `${unsubWatch.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
     setUnsubWatch(null);
-  }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
+  }, [
+    unsubExecStatus.data,
+    unsubExecStatus.isError,
+    unsubExecStatus.error,
+    unsubWatch,
+    qc,
+    addSessionNoisePrevented,
+  ]);
 
   // Find the row the pending action targets — the sheet needs it for
   // the preview body.
@@ -467,14 +484,19 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
               });
               invalidateAfterDecision(qc);
               incrementSessionDecided();
-              // Future mail from this sender stops — its monthly volume
-              // is exactly the noise prevented (D33 formula).
-              addSessionNoisePrevented(row.monthlyVolume);
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
-                setUnsubWatch({ actionId: res.executionActionId, senderName: row.senderName });
+                setUnsubWatch({
+                  actionId: res.executionActionId,
+                  senderName: row.senderName,
+                  monthlyVolume: row.monthlyVolume,
+                });
               } else if (res.method === 'mailto' && res.mailtoUrl) {
-                setMailtoFollowup({ senderName: row.senderName, mailtoUrl: res.mailtoUrl });
+                setMailtoFollowup({
+                  senderId: row.senderId,
+                  senderName: row.senderName,
+                  mailtoUrl: res.mailtoUrl,
+                });
               }
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
@@ -524,7 +546,14 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
       // rendered busy, until the worker confirms.
       const primaryType = verb === 'Archive' ? 'archive' : 'later';
       enqueueComposite.mutate(
-        { senderId: row.senderId, primary: { type: primaryType, olderThanDays: null } },
+        {
+          senderId: row.senderId,
+          primary: {
+            type: primaryType,
+            olderThanDays: null,
+            ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
+          },
+        },
         {
           onSuccess: (res) => {
             // `primaryCount` is the server's real coverage count from
@@ -653,7 +682,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         dispatchAction(
           verb,
           row,
-          { archiveHistoric: verb === 'Unsubscribe', rememberPreference: true },
+          {
+            archiveHistoric: verb === 'Unsubscribe',
+            rememberPreference: true,
+            wakeAt: pendingAction.wakeAt,
+          },
           'inline',
         );
         return;
@@ -683,7 +716,11 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         return;
       }
       clearPending();
-      setPendingBatch({ verb, batch });
+      setPendingBatch({
+        verb,
+        batch,
+        wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
+      });
     },
     [
       activeAction,
@@ -705,13 +742,17 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
    */
   const onBatchConfirm = useCallback(() => {
     if (pendingBatch == null) return;
-    const { verb, batch } = pendingBatch;
+    const { verb, batch, wakeAt } = pendingBatch;
     const eligible = batch.rows.filter((r) => r.protectionReason === null);
     setPendingBatch(null);
     enqueueBulk.mutate(
       {
         senderIds: eligible.map((r) => r.senderId),
-        primary: { type: verb === 'Archive' ? 'archive' : 'later', olderThanDays: null },
+        primary: {
+          type: verb === 'Archive' ? 'archive' : 'later',
+          olderThanDays: null,
+          ...(verb === 'Later' && wakeAt ? { wakeAt } : {}),
+        },
       },
       {
         onSuccess: (res) => {
@@ -840,6 +881,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
           the opt-out from a prefilled Gmail compose. Never auto-sent. */}
       {mailtoFollowup && (
         <UnsubMailtoCallout
+          senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}
@@ -901,6 +943,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={(pendingAction?.verb ?? 'Archive') as SheetableVerb}
         row={pendingRow}
         inboxCount={previewInboxCount}
+        wakeAt={pendingAction?.wakeAt ?? null}
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
       />
@@ -911,6 +954,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
         preview={bulkPreview.isError ? 'unavailable' : (bulkPreview.data ?? 'loading')}
+        wakeAt={pendingBatch?.wakeAt ?? null}
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}
       />

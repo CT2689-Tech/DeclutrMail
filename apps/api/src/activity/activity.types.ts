@@ -111,12 +111,9 @@ export interface ActivityStats {
    */
   needsAttention: number;
   /**
-   * D33 payoff — estimated emails/month of future noise prevented by
-   * the window's archive/unsubscribe/later decisions: the decided
-   * senders' summed last-90d inbound volume ÷ 3 (the same rolling
-   * window every other volume signal uses). `null` when the window has
-   * no deflecting decisions. A rough projection against CURRENT
-   * mail_messages, same imprecision `projectImpact` accepts.
+   * Historic monthly volume for senders represented by actions in the
+   * selected window. This is contextual sender history, not proof that
+   * Archive, Later, or an unsubscribe request prevented future mail.
    */
   noisePreventedPerMonth: number | null;
 }

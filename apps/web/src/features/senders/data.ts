@@ -10,6 +10,7 @@ import {
   getActionDescriptor,
   type ActionVerb as RegistryActionVerb,
 } from '@declutrmail/shared/actions';
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 
 export type SenderGroup = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
 
@@ -93,12 +94,11 @@ export interface Sender {
    */
   unsubPending?: boolean;
   /**
-   * RFC 8058 execution outcome (D9 Wave 2) — refines the unsub pill:
-   * `pending` "confirming…" / `done` "Unsubscribed" / `failed`
-   * "Unsub failed" / `ambiguous` "Unsub unconfirmed". `null`/absent =
-   * no tracked execution (mailto-manual per D230, or method none).
+   * Truthful unsubscribe lifecycle (D9/D245). A remote endpoint accepting
+   * a request is not presented as proof that future mail stopped; manual
+   * Gmail progress and unavailable channels have their own states.
    */
-  unsubStatus?: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  unsubStatus?: UnsubscribeLifecycleStatus | null;
   /**
    * List-Unsubscribe method from the sender's headers — mirrors the
    * wire `SenderListRow.unsubscribeMethod`. `'one_click'` is the
@@ -752,12 +752,12 @@ export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect
 export const VERB_PAST: Record<ActionVerb, string> = {
   Keep: 'Kept',
   Archive: 'Archived',
-  Unsubscribe: 'Unsubscribed from',
+  Unsubscribe: 'Requested unsubscribe from',
   Later: 'Moved to Later',
   Protect: 'Protected',
   // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
   // Past-tense surfaces in the receipt strip after the worker completes.
-  Delete: 'Deleted',
+  Delete: 'Moved to Gmail Trash',
 };
 
 /**

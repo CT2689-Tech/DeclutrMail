@@ -130,14 +130,11 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(pro).not.toContain('See Plus');
   });
 
-  it('renders the estimated impact projection when the user decided something today (D33)', () => {
+  it('does not claim decisions prevented future mail or saved unmeasured time', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('Estimated impact');
-    expect(html).toContain('future emails will skip your inbox');
-    expect(html).toContain('min/week saved on email triage');
-    // The actual numbers from the fixture surface.
-    expect(html).toContain(String(TRIAGE_SESSION_STATS.futureEmailsSkipped));
-    expect(html).toContain(String(TRIAGE_SESSION_STATS.minutesSavedPerWeek));
+    expect(html).not.toContain('Estimated impact');
+    expect(html).not.toContain('future emails will skip your inbox');
+    expect(html).not.toContain('min/week saved on email triage');
   });
 
   it('hides the impact card when the user decided nothing today (no hollow brag)', () => {

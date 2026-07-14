@@ -136,6 +136,7 @@ export function TriageQueue({
                   verb: pendingAction.verb,
                   archiveHistoric: pendingAction.verb === 'Unsubscribe',
                   inboxCount: previewInboxCount,
+                  wakeAt: pendingAction.wakeAt,
                 }
               : null;
           return (

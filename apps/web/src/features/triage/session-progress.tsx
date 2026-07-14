@@ -27,8 +27,8 @@ export function SessionProgress({
   remaining: number;
   /**
    * Summed monthly volume of this session's confirmed Archive/Later/
-   * Unsubscribe decisions (D33 — real numbers, no gamification). 0
-   * hides the line: a session of Keeps prevented nothing, say nothing.
+   * Unsubscribe decisions (D33 — real numbers, no gamification). This
+   * is sender history, not a claim that future messages were prevented.
    */
   noisePreventedPerMonth?: number;
 }) {
@@ -59,7 +59,7 @@ export function SessionProgress({
       >
         {decided} decided · {remaining === 0 ? 'all done' : `${remaining} to go`}
         {noisePreventedPerMonth > 0 && (
-          <> · ~{noisePreventedPerMonth.toLocaleString()}/mo prevented</>
+          <> · ~{noisePreventedPerMonth.toLocaleString()} emails/mo from acted-on senders</>
         )}
       </span>
       <div

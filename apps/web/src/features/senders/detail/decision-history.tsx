@@ -14,7 +14,7 @@ function toneFor(
     case 'Archived':
     case 'Moved to Later':
       return 'default';
-    case 'Unsubscribed':
+    case 'Unsubscribe requested':
       return 'amber';
     case 'Kept':
       return 'primary';

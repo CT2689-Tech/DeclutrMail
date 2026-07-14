@@ -197,9 +197,9 @@ export function PrivacyDataView({
                 Pro).
               </>
             )}{' '}
-            Delete uses Gmail Trash recovery for up to 30 days; a completed unsubscribe cannot be
-            recalled. Account deletion waits for open Activity undo windows unless you explicitly
-            waive them.
+            Delete also uses your plan&apos;s Activity Undo window. Gmail Trash recovery is separate
+            and normally lasts up to 30 days; a delivered unsubscribe request cannot be recalled.
+            Account deletion waits for open Activity undo windows unless you explicitly waive them.
           </p>
         </div>
       </Card>

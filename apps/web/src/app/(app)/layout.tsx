@@ -20,6 +20,7 @@ import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
+import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
 
 /**
@@ -239,6 +240,10 @@ function AppChrome({ children }: { children: ReactNode }) {
           the authed chrome; fed by the global MutationCache handler
           (lib/query-client) so every mutation surface is covered. */}
       <UpgradeModal />
+      {/* D245 — one receipt/undo host survives navigation between every
+          mailbox-backed product surface. The Z shortcut remains a Triage
+          affordance; other screens still show the same server-backed tray. */}
+      {hasActiveMailbox && <ProductUndoTray enableShortcut={active === 'triage'} />}
       <ToastHost />
     </>
   );

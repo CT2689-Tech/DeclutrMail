@@ -434,7 +434,8 @@ export function ReviewSession({
             letterSpacing: '0.04em',
           }}
         >
-          Reversible for 7 days · Activity logs every change
+          Archive, Later, and Delete use your plan&apos;s Activity Undo window · Activity logs every
+          change
         </span>
         <Button tone="ghost" onClick={onCancel}>
           Cancel

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import type { DomainBatch } from './domain-batch';
@@ -28,6 +29,7 @@ export function BatchActionSheet({
   verb,
   batch,
   preview,
+  wakeAt = null,
   onCancel,
   onConfirm,
 }: {
@@ -36,6 +38,8 @@ export function BatchActionSheet({
   batch: DomainBatch | null;
   /** Aggregated preview — `null` while loading, `'unavailable'` on failure. */
   preview: BulkActionPreviewResult | 'loading' | 'unavailable';
+  /** Exact Later return time carried through confirmation. */
+  wakeAt?: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -59,14 +63,18 @@ export function BatchActionSheet({
   if (!open || !batch) return null;
 
   const eligible = batch.rows.filter((r) => r.protectionReason === null);
+  const presentation = buildActionPresentation({
+    verb: verb === 'Archive' ? 'archive' : 'later',
+    liveCount: typeof preview === 'object' ? preview.totals.all : null,
+    planUndoDeadline: null,
+    wakeAt: verb === 'Later' ? wakeAt : null,
+    unsubscribeChannel: null,
+  });
   const title =
     verb === 'Archive'
       ? `Archive all inbox mail from ${eligible.length} senders`
       : `Move ${eligible.length} senders to Later`;
-  const lead =
-    verb === 'Archive'
-      ? `Every inbox message from these ${batch.domain} senders moves into Gmail's archive. Nothing is deleted, and one undo reverses the whole batch during your plan's Activity window.`
-      : `Inbox mail from these ${batch.domain} senders moves into the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged; change individual wake times on Later or use the batch Activity Undo during your plan's window.`;
+  const lead = presentation.previewCopy;
 
   return (
     <>
@@ -233,7 +241,7 @@ export function BatchActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            One undo reverses the whole batch during your plan&apos;s Activity window.
+            {presentation.primary.activityUndo.summary}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button tone="default" onClick={onCancel}>

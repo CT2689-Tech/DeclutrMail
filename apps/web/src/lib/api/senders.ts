@@ -20,7 +20,11 @@
  * the server gave us on the previous response.
  */
 
-import type { Envelope, PaginatedEnvelope } from '@declutrmail/shared/contracts';
+import type {
+  Envelope,
+  PaginatedEnvelope,
+  UnsubscribeLifecycleStatus,
+} from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch } from './client';
 
 // ── BE contract types (mirrors the WT-B PR) ─────────────────────────
@@ -33,15 +37,8 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 /** How a sender can be unsubscribed — drives the V2 unsubscribe flow (D230). */
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
-/**
- * RFC 8058 execution outcome from `sender_policies.unsub_status`
- * (D9 Wave 2): `pending` (job in flight) → `done` (2xx; unsubscribed)
- * / `failed` (target refused or unreachable — recorded honestly) /
- * `ambiguous` (3xx; redirects never followed, may have worked).
- * `null` = no tracked execution (mailto-manual per D230, method
- * `none`, or no unsub intent yet).
- */
-export type UnsubStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
+/** Truthful one-click/manual/unavailable unsubscribe lifecycle (D9/D245). */
+export type UnsubStatus = UnsubscribeLifecycleStatus;
 
 /**
  * Bucketed volume trend mirrored from `senders.types.ts:VolumeTrendBucket`.
@@ -156,10 +153,10 @@ export interface SenderListRow {
    */
   policyType?: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
-   * RFC 8058 execution outcome (D9 Wave 2) — see `UnsubStatus`.
-   * Drives the per-row unsub chip copy (confirming / unsubscribed /
-   * failed / unconfirmed). Optional for fixture compatibility;
-   * absent ⇒ `null`.
+   * Truthful unsubscribe lifecycle (D9/D245) — see `UnsubStatus`.
+   * Endpoint acceptance, manual Gmail progress, failure, uncertainty,
+   * and unavailable channels remain distinct. Optional for fixture
+   * compatibility; absent ⇒ `null`.
    */
   unsubStatus?: UnsubStatus | null;
 }

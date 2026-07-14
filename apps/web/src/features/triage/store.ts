@@ -40,6 +40,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionVerb } from './types';
 
 /** Verbs that surface the action sheet by default (D34). */
@@ -48,6 +49,8 @@ export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Lat
 export interface PendingAction {
   verb: ActionVerb;
   rowId: string;
+  /** Exact return time for a pending Later action; null for other verbs. */
+  wakeAt: string | null;
   /**
    * Source of the pending action — `'sheet'` means the action sheet
    * is mounted and Enter/Escape are intercepted; `'inline'` means the
@@ -77,11 +80,10 @@ export interface TriageState {
    */
   sessionDecidedCount: number;
   /**
-   * Session payoff (D33 — real, not gamified): the summed monthly
-   * volume of senders whose Archive/Later/Unsubscribe decisions the
-   * server confirmed this session — "~N emails/mo of noise prevented".
-   * Client-session ephemeral like the burn-down; the durable window
-   * figure lives in the Activity header.
+   * Summed historic monthly volume for senders acted on in this
+   * session. This contextualizes sender scale without claiming that
+   * Archive, Later, or an unsubscribe request prevented future mail.
+   * Client-session ephemeral like the burn-down.
    */
   sessionNoisePrevented: number;
   /**
@@ -135,7 +137,15 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
 
   toggleExpandedRow: (id) => set((s) => ({ expandedRowId: s.expandedRowId === id ? null : id })),
 
-  openPending: (verb, rowId, surface) => set({ pendingAction: { verb, rowId, surface } }),
+  openPending: (verb, rowId, surface) =>
+    set({
+      pendingAction: {
+        verb,
+        rowId,
+        surface,
+        wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null,
+      },
+    }),
 
   clearPending: () => set({ pendingAction: null }),
 

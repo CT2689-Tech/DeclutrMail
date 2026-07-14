@@ -10,6 +10,8 @@ const { color, font } = tokens;
 
 export interface ConfirmDetails {
   archiveHistoric: boolean;
+  /** Exact return time confirmed for Later; null for other verbs. */
+  wakeAt: string | null;
   /** Final value of the remember-preference toggle when confirming. */
   rememberPreference: boolean;
 }
@@ -36,6 +38,7 @@ export function ActionSheet({
   verb,
   row,
   inboxCount,
+  wakeAt = null,
   onCancel,
   onConfirm,
 }: {
@@ -45,6 +48,7 @@ export function ActionSheet({
   row: TriageDecisionRow | null;
   /** Live inbox count for the preview's impact figure (D226). */
   inboxCount: PreviewCount;
+  wakeAt?: string | null;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
 }) {
@@ -55,12 +59,17 @@ export function ActionSheet({
   // toggle would be a no-op lie.
   const [archiveHistoric, setArchiveHistoric] = useState(false);
   const [rememberPreference, setRememberPreference] = useState(false);
+  const [selectedWakeAt, setSelectedWakeAt] = useState<string | null>(wakeAt);
 
   useEffect(() => {
     if (!open) return;
     setArchiveHistoric(verb === 'Unsubscribe');
     setRememberPreference(false);
-  }, [open, verb]);
+    setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
+  }, [open, verb, wakeAt]);
+
+  const wakeAtInvalid =
+    verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
 
   useEffect(() => {
     if (!open) return;
@@ -68,14 +77,22 @@ export function ActionSheet({
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !wakeAtInvalid) {
         e.preventDefault();
-        onConfirm({ archiveHistoric, rememberPreference });
+        onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, archiveHistoric, rememberPreference, onCancel, onConfirm]);
+  }, [
+    open,
+    archiveHistoric,
+    rememberPreference,
+    selectedWakeAt,
+    wakeAtInvalid,
+    onCancel,
+    onConfirm,
+  ]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
@@ -143,8 +160,34 @@ export function ActionSheet({
             row={row}
             archiveHistoric={archiveHistoric}
             inboxCount={inboxCount}
+            wakeAt={selectedWakeAt}
             mode="modal"
           />
+
+          {verb === 'Later' && selectedWakeAt !== null && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+              <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
+              <input
+                type="datetime-local"
+                aria-label="Later return time"
+                value={toLocalDateTimeInput(selectedWakeAt)}
+                min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
+                onChange={(event) => {
+                  const next = new Date(event.currentTarget.value);
+                  setSelectedWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
+                }}
+                style={{
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  background: color.card,
+                  color: color.fg,
+                  fontFamily: font.sans,
+                  fontSize: 13,
+                }}
+              />
+            </label>
+          )}
 
           {showHistoricToggle && (
             <button
@@ -224,7 +267,7 @@ export function ActionSheet({
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
             {verb === 'Unsubscribe'
-              ? "The unsubscribe itself can't be undone — an archived backlog uses your plan's Activity Undo window."
+              ? "A delivered unsubscribe request can't be recalled — an archived backlog uses your plan's Activity Undo window."
               : "Undo from Activity during your plan's window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -233,7 +276,10 @@ export function ActionSheet({
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
-              onClick={() => onConfirm({ archiveHistoric, rememberPreference })}
+              disabled={wakeAtInvalid}
+              onClick={() =>
+                onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt })
+              }
               iconRight={
                 <Kbd
                   style={{
@@ -253,6 +299,12 @@ export function ActionSheet({
       </div>
     </>
   );
+}
+
+function toLocalDateTimeInput(iso: string): string {
+  const date = new Date(iso);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
 /** Inline checkbox glyph — matches `confirm-action-modal.tsx` shape. */

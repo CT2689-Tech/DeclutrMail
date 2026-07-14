@@ -15,6 +15,7 @@ import {
   getActionStatus,
   isTerminalStatus,
   newIdempotencyKey,
+  recordUnsubscribeManualStatus,
   revertUndo,
 } from './actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -85,9 +86,15 @@ describe('getActionStatus', () => {
             data: {
               actionId: 'a-1',
               status: 'done',
+              verb: 'archive',
+              direction: 'forward',
               requestedCount: 12,
               affectedCount: 12,
+              wakeAt: null,
               undoToken: 'tok-1',
+              undoExpiresAt: '2026-07-21T16:00:00.000Z',
+              undoExecutedAt: null,
+              undoRevertedAt: null,
               errorCode: null,
             },
           });
@@ -100,6 +107,7 @@ describe('getActionStatus', () => {
     expect(observedPath).toBe('/api/actions/a-1');
     expect(res.status).toBe('done');
     expect(res.undoToken).toBe('tok-1');
+    expect(res.undoExpiresAt).toBe('2026-07-21T16:00:00.000Z');
   });
 });
 
@@ -134,6 +142,40 @@ describe('revertUndo', () => {
     expect(observedPath).toBe('/api/undo/tok-1');
     expect(res.actionId).toBe('rev-1');
     expect(res.reverted).toBe(false);
+  });
+});
+
+describe('recordUnsubscribeManualStatus', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('persists the explicit user step instead of inferring delivery', async () => {
+    let observedBody: unknown = null;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-manual-status',
+        respond: async (req) => {
+          observedBody = await req.json();
+          return jsonOk({
+            data: {
+              senderId: 'snd-1',
+              status: 'user_marked_sent',
+              recordedAt: '2026-07-14T16:00:00.000Z',
+              activityLogId: 'activity-1',
+              changed: true,
+              irreversible: true,
+            },
+          });
+        },
+      },
+    ]);
+
+    const result = await recordUnsubscribeManualStatus('snd-1', 'user_marked_sent');
+
+    expect(observedBody).toEqual({ senderId: 'snd-1', status: 'user_marked_sent' });
+    expect(result.status).toBe('user_marked_sent');
+    expect(result.irreversible).toBe(true);
   });
 });
 

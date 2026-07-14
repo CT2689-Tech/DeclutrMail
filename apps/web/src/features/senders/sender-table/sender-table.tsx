@@ -64,7 +64,7 @@ import { adaptSenderListRow } from '../api/adapters';
 import { EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
-import { UNSUB_PILL } from '../grid/sender-card';
+import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
 
 import type {
@@ -489,25 +489,32 @@ function SenderRow({
                   as the grid card so list ↔ grid never contradict:
                   shown while a standing unsubscribe policy exists,
                   copy keyed by the execution outcome. */}
-                {sender.policyType === 'unsubscribe' && (
-                  <span
-                    title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: 9.5,
-                      letterSpacing: '0.10em',
-                      textTransform: 'uppercase',
-                      color: color.primary,
-                      background: color.primarySoft,
-                      border: `1px solid ${color.primaryBorder}`,
-                      borderRadius: 999,
-                      padding: '1px 6px',
-                      flex: '0 0 auto',
-                    }}
-                  >
-                    {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
-                  </span>
-                )}
+                {sender.policyType === 'unsubscribe' &&
+                  (() => {
+                    const copy = unsubscribeStatusCopy(
+                      sender.unsubStatus,
+                      sender.unsubscribeMethod,
+                    );
+                    return (
+                      <span
+                        title={copy.title}
+                        style={{
+                          fontFamily: font.mono,
+                          fontSize: 9.5,
+                          letterSpacing: '0.10em',
+                          textTransform: 'uppercase',
+                          color: color.primary,
+                          background: color.primarySoft,
+                          border: `1px solid ${color.primaryBorder}`,
+                          borderRadius: 999,
+                          padding: '1px 6px',
+                          flex: '0 0 auto',
+                        }}
+                      >
+                        {copy.label}
+                      </span>
+                    );
+                  })()}
               </span>
               <span
                 style={{

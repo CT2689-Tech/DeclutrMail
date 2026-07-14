@@ -11,7 +11,8 @@ import {
   tokens,
   toast,
 } from '@declutrmail/shared';
-import { type ActionRequest, type ActionVerb, type Sender, VERB_PAST } from '../data';
+import { buildActionReceiptResult, getActionSemantics } from '@declutrmail/shared/actions';
+import { type ActionRequest, type ActionVerb, type Sender } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
@@ -38,7 +39,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
-import { UNSUB_PILL } from '../grid/sender-card';
+import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { gmailAllFromSenderDeepLink } from '@/lib/gmail-links';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { track } from '@/lib/posthog';
@@ -250,6 +251,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // the gap until the invalidation refetch flips `detail.policyType`
   // (which then renders the persistent callout below).
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -442,7 +444,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         enqueueComposite.mutate(
           {
             senderId: sender.id,
-            primary: { type: primaryType, olderThanDays: opts?.olderThanDays ?? null },
+            primary: {
+              type: primaryType,
+              olderThanDays: opts?.olderThanDays ?? null,
+              ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+            },
             ...(opts?.secondary
               ? {
                   secondary: {
@@ -509,7 +515,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               } else if (res.method === 'mailto' && res.mailtoUrl) {
                 // The callout (rendered below the toolbar) is the
                 // feedback — it carries the compose link a toast can't.
-                setMailtoFollowup({ senderName: sender.name, mailtoUrl: res.mailtoUrl });
+                setMailtoFollowup({
+                  senderId: sender.id,
+                  senderName: sender.name,
+                  mailtoUrl: res.mailtoUrl,
+                });
               } else {
                 toast(
                   `${sender.name} offers no unsubscribe channel — Archive is the reliable fallback`,
@@ -616,38 +626,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
     if (data.status === 'done') {
-      const verbPast = VERB_PAST[activeAction.verb];
       const verbLowercase = activeAction.verb.toLowerCase();
       if (data.affectedCount === 0 || !data.undoToken) {
-        // No-op: the sender has no inbox mail in the window, so the
-        // worker did nothing and issued no undo token. Never show a
-        // "reversible" receipt with a dead Undo.
+        // No-op: the sender has no inbox mail in the window. Keep the
+        // canonical result visible, but never offer a dead Undo token.
         toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
-        setReceipt({
-          // Use the undo token as the receipt id — it's the only
-          // stable identifier the BE can give us. The previous
-          // `receiptSeq` counter was module-scoped, so ids collided
-          // across SPA mounts and React reconciliation saw different
-          // keys for the same logical receipt (flow-completeness-
-          // auditor 2026-06-06). The token is per-action unique
-          // (UUIDv4 from `undo.service`).
-          id: data.undoToken,
-          verb: activeAction.verb,
-          count: 1,
-          historicTotal: data.affectedCount,
-          // `timeLeft` is the strip's countdown caption. The current
-          // strip implementation renders the literal as-is and does
-          // NOT derive from `undoToken`'s `expiresAt` — surfacing a
-          // 7-day countdown is FOUNDER-FOLLOWUPS work. An empty
-          // string collapses the suffix gracefully.
-          timeLeft: '',
-          undoToken: data.undoToken,
-        });
+        const resultLabel = getActionSemantics(data.verb).resultLabel;
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          `${resultLabel}: ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
           'success',
         );
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -675,15 +665,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+      toast(
+        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        'success',
+      );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       );
     } else {
       toast(
-        `${activeUnsub.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
@@ -725,7 +718,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
    * fix — would have fallen back to the log-only path.
    */
   const onUndo = useCallback(() => {
-    const token = receipt?.undoToken;
+    const token = receipt?.activityUndo.token;
     if (!token) {
       // Defensive: no real-mutation path leaves a tokenless receipt;
       // a null `undoToken` here means a worker no-op (affectedCount=0)
@@ -877,13 +870,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           detail.policyType === 'unsubscribe' &&
           detail.unsubscribeMethod === 'mailto' &&
           detail.unsubscribeMailtoUrl
-            ? { senderName: sender.name, mailtoUrl: detail.unsubscribeMailtoUrl }
+            ? {
+                senderId: sender.id,
+                senderName: sender.name,
+                mailtoUrl: detail.unsubscribeMailtoUrl,
+              }
             : null;
         const callout = mailtoFollowup ?? persistent;
         return callout ? (
           <UnsubMailtoCallout
+            senderId={callout.senderId}
             senderName={callout.senderName}
             mailtoUrl={callout.mailtoUrl}
+            status={detail.unsubStatus}
             {...(mailtoFollowup ? { onDismiss: () => setMailtoFollowup(null) } : {})}
           />
         ) : null;
@@ -969,7 +968,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 — never a static "queued" that outlives a terminal
                 done/failed state. Reads `policyType` + `unsubStatus`
                 directly so Detail and list share one source of truth. */}
-            {detail.policyType === 'unsubscribe' && <UnsubStatusPill status={detail.unsubStatus} />}
+            {detail.policyType === 'unsubscribe' && (
+              <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
+            )}
 
             {/* Open-all-in-Gmail (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
                 DeclutrMail never renders message bodies (D7); the
@@ -1341,10 +1342,12 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
  */
 function UnsubStatusPill({
   status,
+  method,
 }: {
-  status: 'pending' | 'done' | 'failed' | 'ambiguous' | null;
+  status: SenderDetail['unsubStatus'];
+  method: SenderDetail['unsubscribeMethod'];
 }) {
-  const copy = UNSUB_PILL[status ?? 'none'];
+  const copy = unsubscribeStatusCopy(status, method);
   return (
     <span
       role="status"

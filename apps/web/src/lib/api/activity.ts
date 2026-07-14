@@ -43,6 +43,13 @@ export type ActivityActionWire =
   // K/A/U/L/D canonical verb (D227) and not offered as a filter chip —
   // it renders as a feed row only.
   | 'unsubscribe_confirmed'
+  | 'unsubscribe_endpoint_accepted'
+  | 'unsubscribe_failed'
+  | 'unsubscribe_unconfirmed'
+  | 'unsubscribe_action_required'
+  | 'unsubscribe_draft_opened'
+  | 'unsubscribe_user_marked_sent'
+  | 'unsubscribe_unavailable'
   | 'later'
   | 'delete'
   | 'followup-dismiss'
@@ -99,9 +106,8 @@ export interface ActivityStatsWire {
   /** D59 — failed-action surface; 0 until the action_jobs join lands. */
   needsAttention: number;
   /**
-   * D33 payoff — estimated emails/month of future noise prevented by
-   * the window's archive/unsubscribe/later decisions. `null` when the
-   * window has no deflecting decisions.
+   * Historic monthly volume for senders represented by actions in the
+   * selected window. This is not proof that future mail was prevented.
    */
   noisePreventedPerMonth: number | null;
 }

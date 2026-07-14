@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react';
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import {
   Avatar,
   NumericDisplay,
@@ -70,30 +71,49 @@ export interface SenderCardProps {
  * SenderTable row chip and the Sender Detail header pill render the
  * same map so list ↔ detail never contradict each other.
  */
-export const UNSUB_PILL: Record<
-  'pending' | 'done' | 'failed' | 'ambiguous' | 'none',
-  { label: string; title: string }
-> = {
-  pending: {
-    label: 'Unsub confirming…',
-    title: "Unsubscribe requested — confirming with the sender's list",
+export function unsubscribeStatusCopy(
+  status: UnsubscribeLifecycleStatus | null | undefined,
+  method: Sender['unsubscribeMethod'],
+): { label: string; title: string } {
+  const resolved =
+    status ??
+    (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'requested');
+  return UNSUB_PILL[resolved];
+}
+
+export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; title: string }> = {
+  requested: {
+    label: 'Requesting…',
+    title: "The unsubscribe request is being delivered to the sender's endpoint",
   },
-  done: {
-    label: 'Unsubscribed',
-    title: 'Unsubscribed — new mail should stop',
+  endpoint_accepted: {
+    label: 'Request accepted',
+    title: 'The endpoint accepted the request; future delivery still depends on the sender',
   },
   failed: {
-    label: 'Unsub failed',
-    title: 'Their list refused the unsubscribe — Archive is the reliable fallback',
+    label: 'Request failed',
+    title: 'The unsubscribe request failed; Archive remains available for current mail',
   },
-  ambiguous: {
-    label: 'Unsub unconfirmed',
-    title: "Couldn't confirm the unsubscribe — it may have worked; watch for new mail",
+  unconfirmed: {
+    label: 'Result unconfirmed',
+    title: 'The endpoint result could not be confirmed; watch for future mail',
   },
-  none: {
-    label: 'Unsub requested',
+  action_required: {
+    label: 'Send from Gmail',
+    title: 'This sender requires an email request that you send from Gmail',
+  },
+  draft_opened: {
+    label: 'Draft opened',
+    title: 'The Gmail draft was opened; DeclutrMail has not been told it was sent',
+  },
+  user_marked_sent: {
+    label: 'Marked sent',
     title:
-      'Unsubscribe requested — if this list takes email requests, finish from the sender page (you hit Send)',
+      'You reported sending the unsubscribe email; future delivery still depends on the sender',
+  },
+  unavailable: {
+    label: 'Unavailable',
+    title: 'No supported unsubscribe channel was found for this sender',
   },
 };
 
@@ -216,25 +236,29 @@ export function SenderCard({
             >
               {sender.name}
             </span>
-            {sender.unsubPending && (
-              <span
-                title={UNSUB_PILL[sender.unsubStatus ?? 'none'].title}
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 9.5,
-                  letterSpacing: '0.10em',
-                  textTransform: 'uppercase',
-                  color: color.primary,
-                  background: color.primarySoft,
-                  border: `1px solid ${color.primaryBorder}`,
-                  borderRadius: 999,
-                  padding: '1px 6px',
-                  flex: '0 0 auto',
-                }}
-              >
-                {UNSUB_PILL[sender.unsubStatus ?? 'none'].label}
-              </span>
-            )}
+            {sender.unsubPending &&
+              (() => {
+                const copy = unsubscribeStatusCopy(sender.unsubStatus, sender.unsubscribeMethod);
+                return (
+                  <span
+                    title={copy.title}
+                    style={{
+                      fontFamily: font.mono,
+                      fontSize: 9.5,
+                      letterSpacing: '0.10em',
+                      textTransform: 'uppercase',
+                      color: color.primary,
+                      background: color.primarySoft,
+                      border: `1px solid ${color.primaryBorder}`,
+                      borderRadius: 999,
+                      padding: '1px 6px',
+                      flex: '0 0 auto',
+                    }}
+                  >
+                    {copy.label}
+                  </span>
+                );
+              })()}
           </div>
           <div
             style={{

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { buildActionReceiptResult } from '@declutrmail/shared/actions';
 import {
   canArchive,
   canDelete,
@@ -113,8 +114,6 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
   later: 'Later',
   delete: 'Delete',
 };
-
-let receiptSeq = 0;
 
 /**
  * The Senders screen — lean power-surface composition (spec v1.2).
@@ -376,14 +375,13 @@ function SendersScreenContent({
     // a verb-correct receipt + toast (Delete must NOT say "Archived",
     // Later must NOT say "Archived" — composite path mistake 2026-06-05).
     verb: 'Archive' | 'Delete' | 'Later';
-    /** Sender's monthly volume at dispatch — the "~N/mo prevented" payoff (D33). */
-    monthly: number;
   } | null>(null);
   // D52 — the in-flight bulk batch the status effect polls to terminal.
   const [activeBatch, setActiveBatch] = useState<{
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
     senderCount: number;
+    wakeAt: string | null;
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution (single-
@@ -399,6 +397,7 @@ function SendersScreenContent({
   // D230 manual path — the post-confirm "finish in Gmail" callout for
   // a mailto sender. Dismissible; rendered next to the receipt strip.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
@@ -630,7 +629,6 @@ function SendersScreenContent({
               actionId: res.actionId,
               senderName: sender.name,
               verb: 'Archive',
-              monthly: sender.monthly,
             }),
           onError: (err) => {
             // 402 FREE_CAP_REACHED is a designed state — the
@@ -684,6 +682,7 @@ function SendersScreenContent({
             primary: {
               type: primaryType,
               olderThanDays: opts?.olderThanDays ?? null,
+              ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
             },
             ...(opts?.secondary
               ? {
@@ -699,7 +698,6 @@ function SendersScreenContent({
               setActiveAction({
                 actionId: res.actionId,
                 senderName: sender.name,
-                monthly: sender.monthly,
                 verb:
                   primaryType === 'delete'
                     ? 'Delete'
@@ -770,7 +768,11 @@ function SendersScreenContent({
                 } else if (res.method === 'mailto' && res.mailtoUrl) {
                   // The callout is the feedback — it carries the manual
                   // step the toast can't (a compose link).
-                  setMailtoFollowup({ senderName: sref.name, mailtoUrl: res.mailtoUrl });
+                  setMailtoFollowup({
+                    senderId: sref.id,
+                    senderName: sref.name,
+                    mailtoUrl: res.mailtoUrl,
+                  });
                 } else {
                   toast(
                     `${sref.name} offers no unsubscribe channel — Archive is the reliable fallback`,
@@ -797,9 +799,6 @@ function SendersScreenContent({
                           actionId: cres.actionId,
                           senderName: sref.name,
                           verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                          // Follow-on of an unsubscribe that already
-                          // carried the payoff — don't double-claim.
-                          monthly: 0,
                         }),
                       onError: (err) => {
                         // 402 FREE_CAP_REACHED — the upgrade prompt
@@ -879,6 +878,7 @@ function SendersScreenContent({
                   batchId: res.batchId,
                   verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                   senderCount: res.senderCount,
+                  wakeAt: null,
                 }),
               onError: (err) => {
                 // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
@@ -976,7 +976,11 @@ function SendersScreenContent({
         enqueueBulk.mutate(
           {
             senderIds: senders.map((s) => s.id),
-            primary: { type: primaryType, olderThanDays: opts?.olderThanDays ?? null },
+            primary: {
+              type: primaryType,
+              olderThanDays: opts?.olderThanDays ?? null,
+              ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+            },
             ...(opts?.secondary
               ? {
                   secondary: {
@@ -996,7 +1000,12 @@ function SendersScreenContent({
                   'warn',
                 );
               }
-              setActiveBatch({ batchId: res.batchId, verb, senderCount: res.senderCount });
+              setActiveBatch({
+                batchId: res.batchId,
+                verb,
+                senderCount: res.senderCount,
+                wakeAt: verb === 'Later' ? (opts?.wakeAt ?? null) : null,
+              });
             },
             onError: (err) => {
               // 402 FREE_CAP_REACHED — a bulk of N needs N free units;
@@ -1063,6 +1072,7 @@ function SendersScreenContent({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
     if (data.status === 'done') {
       // Verb-correct copy — the composite path runs the SAME done-handler
       // for Archive / Delete / Later, so the receipt + toast must read
@@ -1081,19 +1091,8 @@ function SendersScreenContent({
         // to /activity sees the audit row instead of an empty feed.
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb: activeAction.verb,
-          count: 1,
-          historicTotal: data.affectedCount,
-          timeLeft: '',
-          undoToken: data.undoToken,
-        });
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}` +
-            (activeAction.monthly > 0
-              ? ` — ~${activeAction.monthly.toLocaleString()}/mo of noise prevented`
-              : ''),
+          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
           'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
@@ -1128,15 +1127,18 @@ function SendersScreenContent({
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+      toast(
+        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        'success',
+      );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       );
     } else {
       toast(
-        `${activeUnsub.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       );
     }
@@ -1165,6 +1167,23 @@ function SendersScreenContent({
     }
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setReceipt({
+      ...buildActionReceiptResult({
+        actionId: data.batchId,
+        verb: activeBatch.verb.toLowerCase() as 'archive' | 'later' | 'delete',
+        direction: 'forward',
+        status: data.status,
+        requestedCount: data.requestedCount,
+        affectedCount: data.affectedCount,
+        wakeAt: activeBatch.wakeAt,
+        undoToken: data.undoToken,
+        undoExpiresAt: null,
+        undoExecutedAt: null,
+        undoRevertedAt: null,
+        errorCode: data.status === 'failed' ? 'BATCH_FAILED' : null,
+      }),
+      senderCount: activeBatch.senderCount,
+    });
     const verbPast = VERB_PAST[activeBatch.verb];
     const verbLowercase = activeBatch.verb.toLowerCase();
     if (data.status === 'failed') {
@@ -1186,14 +1205,6 @@ function SendersScreenContent({
         toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
-        setReceipt({
-          id: `r${++receiptSeq}`,
-          verb: activeBatch.verb,
-          count: activeBatch.senderCount,
-          historicTotal: data.affectedCount,
-          timeLeft: '',
-          undoToken: data.undoToken,
-        });
         toast(
           `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders`,
           'success',
@@ -1244,7 +1255,7 @@ function SendersScreenContent({
   // an already-reverted token resolves immediately. Tracer receipts (no
   // token) keep the old log-only behavior.
   const onUndo = useCallback(() => {
-    const token = receipt?.undoToken;
+    const token = receipt?.activityUndo.token;
     if (!token) {
       // Tokenless receipts shouldn't surface a fake "Reverted" — the
       // unsub-intent path makes a real BE call and supplies a token; the
@@ -1510,6 +1521,7 @@ function SendersScreenContent({
           a mailto sender. The user sends the opt-out; never auto-sent. */}
       {mailtoFollowup && (
         <UnsubMailtoCallout
+          senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}

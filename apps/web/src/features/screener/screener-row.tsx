@@ -34,6 +34,7 @@ export function ScreenerRow({
   busy = false,
   pendingVerb = null,
   previewInboxCount = 'loading',
+  wakeAt = null,
   onToggleExpand,
   onVerbClick,
   onConfirm,
@@ -46,6 +47,7 @@ export function ScreenerRow({
   /** Verb awaiting confirmation in this row's preview (D226). */
   pendingVerb?: ScreenerDecideVerb | null;
   previewInboxCount?: DecidePreviewCount;
+  wakeAt?: string | null;
   onToggleExpand: () => void;
   onVerbClick: (verb: ScreenerDecideVerb) => void;
   onConfirm: () => void;
@@ -284,6 +286,7 @@ export function ScreenerRow({
               verb={pendingVerb}
               row={row}
               inboxCount={previewInboxCount}
+              wakeAt={wakeAt}
               confirming={busy}
               onConfirm={onConfirm}
               onCancel={onCancel}

@@ -104,7 +104,12 @@ export function TriageRow({
    * expanded row body — the D34 remember-preference path where the
    * sheet is suppressed but D226's preview is still mandatory.
    */
-  inlinePreview?: { verb: ActionVerb; archiveHistoric: boolean; inboxCount: PreviewCount } | null;
+  inlinePreview?: {
+    verb: ActionVerb;
+    archiveHistoric: boolean;
+    inboxCount: PreviewCount;
+    wakeAt: string | null;
+  } | null;
 }) {
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
@@ -391,6 +396,7 @@ export function TriageRow({
                 row={row}
                 archiveHistoric={inlinePreview.archiveHistoric}
                 inboxCount={inlinePreview.inboxCount}
+                wakeAt={inlinePreview.wakeAt}
                 mode="inline"
               />
             </div>

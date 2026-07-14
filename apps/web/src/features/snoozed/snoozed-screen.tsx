@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
+import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 import { ApiError } from '@/lib/api/client';
@@ -382,6 +383,13 @@ function WakeConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const presentation = buildActionPresentation({
+    verb: 'unarchive',
+    liveCount: row.laterCount,
+    planUndoDeadline: null,
+    wakeAt: null,
+    unsubscribeChannel: null,
+  }).primary;
   const what =
     row.laterCount === null
       ? 'Everything from this sender in the DeclutrMail/Later label moves back to your inbox'
@@ -400,7 +408,8 @@ function WakeConfirm({
       }}
     >
       <span style={{ fontSize: 12.5, color: color.fg }}>
-        {what}, and the wake timer clears. Nothing is unsubscribed or deleted.
+        {what}. {presentation.futureMail.summary} {presentation.unchanged.join(' ')} The wake timer
+        clears.
       </span>
       <span style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
         <Button tone="default" onClick={onCancel} disabled={pending}>

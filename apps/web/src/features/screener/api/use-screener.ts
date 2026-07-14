@@ -67,16 +67,21 @@ export function useScreenerDecide() {
   return useMutation<
     ScreenerDecideResult,
     Error,
-    { senderId: string; verb: ScreenerDecideVerb; olderThanDays?: number | null }
+    {
+      senderId: string;
+      verb: ScreenerDecideVerb;
+      olderThanDays?: number | null;
+      wakeAt?: string;
+    }
   >({
-    mutationFn: async ({ senderId, verb, olderThanDays }) => {
+    mutationFn: async ({ senderId, verb, olderThanDays, wakeAt }) => {
       const envelope = await apiPost<ScreenerDecideResult>(
         '/api/screener/decide',
         {
           senderId,
           verb,
           ...(olderThanDays != null ? { olderThanDays } : {}),
-          ...(verb === 'later' ? { wakeAt: defaultLaterWakeAt() } : {}),
+          ...(verb === 'later' ? { wakeAt: wakeAt ?? defaultLaterWakeAt() } : {}),
         },
         { headers: { 'Idempotency-Key': newIdempotencyKey() } },
       );

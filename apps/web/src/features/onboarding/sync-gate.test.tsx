@@ -58,7 +58,7 @@ describe('SyncGate render', () => {
     expect(html).toContain('aria-valuenow="45"');
     // D228 trust artifact — locked headline + storage list (shared PrivacyBadge).
     expect(html).toContain('Full bodies fetched: 0');
-    expect(html).toContain('Sender (name + email)');
+    expect(html).toContain('Sender name and email address');
     // Pre-D228 wording is BANNED in product UI (CLAUDE.md §2.1).
     expect(html).not.toContain('Bodies read: 0');
     // No time promise (D109 hard rule).
@@ -79,7 +79,7 @@ describe('SyncGate render', () => {
     expect(html).toContain('Try again');
     // D228 trust artifact present on the failed state too — banned copy absent.
     expect(html).toContain('Full bodies fetched: 0');
-    expect(html).toContain('Sender (name + email)');
+    expect(html).toContain('Sender name and email address');
     expect(html).not.toContain('Bodies read: 0');
   });
 

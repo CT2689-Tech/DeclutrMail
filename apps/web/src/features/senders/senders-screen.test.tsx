@@ -57,6 +57,34 @@ const ROW = {
   },
 };
 
+function archiveStatus(
+  overrides: Partial<{
+    actionId: string;
+    status: 'queued' | 'executing' | 'done' | 'failed';
+    requestedCount: number;
+    affectedCount: number;
+    undoToken: string | null;
+    undoExpiresAt: string | null;
+    errorCode: string | null;
+  }> = {},
+) {
+  return {
+    actionId: 'act-1',
+    verb: 'archive',
+    direction: 'forward',
+    status: 'done',
+    requestedCount: 12,
+    affectedCount: 12,
+    wakeAt: null,
+    undoToken: 'tok-1',
+    undoExpiresAt: '2027-06-16T14:35:00.000Z',
+    undoExecutedAt: null,
+    undoRevertedAt: null,
+    errorCode: null,
+    ...overrides,
+  };
+}
+
 function renderScreen() {
   const client = createTestQueryClient();
   return render(
@@ -373,14 +401,11 @@ describe('SendersScreen — edge states', () => {
         path: /^\/api\/actions\/[^/]+$/,
         respond: (_req, url) =>
           jsonOk({
-            data: {
+            data: archiveStatus({
               actionId: url.pathname.endsWith('rev-1') ? 'rev-1' : 'act-1',
-              status: 'done',
-              requestedCount: 12,
-              affectedCount: 12,
               undoToken: url.pathname.endsWith('rev-1') ? null : 'tok-1',
-              errorCode: null,
-            },
+              undoExpiresAt: url.pathname.endsWith('rev-1') ? null : '2027-06-16T14:35:00.000Z',
+            }),
           }),
       },
       {
@@ -417,7 +442,8 @@ describe('SendersScreen — edge states', () => {
     // worker reports `done` (never optimistically).
     const receipt = await screen.findByRole('status');
     expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    expect(receipt).toHaveTextContent(/archived/i);
+    expect(receipt).toHaveTextContent(/1 sender/i);
     const undoBtn = screen.getByRole('button', { name: /^undo$/i });
 
     // Undo reverses for real (token → reverse job → poll) and clears the receipt.
@@ -462,14 +488,13 @@ describe('SendersScreen — edge states', () => {
         respond: () => {
           statusPolled = true;
           return jsonOk({
-            data: {
+            data: archiveStatus({
               actionId: 'act-0',
-              status: 'done',
               requestedCount: 0,
               affectedCount: 0,
               undoToken: null,
-              errorCode: null,
-            },
+              undoExpiresAt: null,
+            }),
           });
         },
       },
@@ -484,11 +509,10 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
-    // Let the terminal-status effect run, then assert no receipt was shown.
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(screen.queryByRole('status')).toBeNull();
+    // The canonical result preserves the no-op, but never offers a dead Undo.
+    const noOp = await screen.findByRole('status');
+    expect(noOp).toHaveTextContent(/no matching inbox mail moved/i);
+    expect(screen.queryByRole('button', { name: /^undo$/i })).toBeNull();
   });
 
   it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
@@ -578,14 +602,7 @@ describe('SendersScreen — edge states', () => {
         path: /^\/api\/actions\/[^/]+$/,
         respond: () =>
           jsonOk({
-            data: {
-              actionId: 'act-1',
-              status: 'done',
-              requestedCount: 3,
-              affectedCount: 3,
-              undoToken: 'tok-1',
-              errorCode: null,
-            },
+            data: archiveStatus({ requestedCount: 3, affectedCount: 3 }),
           }),
       },
     ]);
@@ -604,7 +621,8 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     const receipt = await screen.findByRole('status');
     expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    expect(receipt).toHaveTextContent(/archived/i);
+    expect(receipt).toHaveTextContent(/1 sender/i);
   });
 
   it('Unsubscribe with 0 inbox mail hides the "also archive" toggle but still confirms (D226)', async () => {
@@ -1024,8 +1042,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     // Real receipt appears only after the batch poll reports done.
     const receipt = await screen.findByRole('status');
-    expect(receipt).toHaveTextContent(/archived 2 senders/i);
-    expect(receipt).toHaveTextContent(/30 emails archived/i);
+    expect(receipt).toHaveTextContent(/archived/i);
+    expect(receipt).toHaveTextContent(/30 emails/i);
+    expect(receipt).toHaveTextContent(/2 senders/i);
     // Wire shape — ONE bulk POST carrying the senders selector.
     expect(bulkBody).toMatchObject({
       selector: { type: 'senders', senderIds: ['a', 'b'] },
@@ -1112,7 +1131,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // One sender failing never hides the other's real result — the
     // receipt reflects what DID move and stays undoable.
     const receipt = await screen.findByRole('status');
-    expect(receipt).toHaveTextContent(/12 emails archived/i);
+    expect(receipt).toHaveTextContent(/12 of 30 emails changed/i);
     expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
   });
 

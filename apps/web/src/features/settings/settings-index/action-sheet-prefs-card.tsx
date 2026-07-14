@@ -15,12 +15,12 @@ const VERB_ROWS: ReadonlyArray<{
   {
     wire: 'unsubscribe',
     verb: 'Unsubscribe',
-    detail: 'Stops future mail; past mail moves only if you choose a separate action.',
+    detail: 'Sends or prepares a request; past mail moves only with a separate action.',
   },
   {
     wire: 'later',
     verb: 'Later',
-    detail: 'Moves current inbox mail to DeclutrMail/Later and schedules a one-week return.',
+    detail: 'Moves current inbox mail to DeclutrMail/Later and requires a return time.',
   },
 ];
 

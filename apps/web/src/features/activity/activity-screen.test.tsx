@@ -281,7 +281,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
-  it('D56 — renders a distinct "Unsubscribe confirmed" row for the outcome action', async () => {
+  it('D56 — renders a distinct endpoint-accepted row for the outcome action', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -301,11 +301,13 @@ describe('ActivityScreen — D58 undo affordances', () => {
     renderScreen();
     // The outcome row renders its own label, distinct from the intent's
     // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
-    await waitFor(() => expect(screen.getByText(/^Unsubscribe confirmed$/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/^Unsubscribe endpoint accepted request$/)).toBeInTheDocument(),
+    );
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
   });
 
-  it('D9 — the intent row records the ATTEMPT, never success ("Unsubscribe requested")', async () => {
+  it('D9 — the intent row records the request, never success', async () => {
     // A one-click POST can still fail and a mailto is manual (D230), so the
     // intent row must not claim completion — otherwise a FAILED unsubscribe
     // reads as done. The intent renders "Unsubscribe requested"; only the
@@ -330,7 +332,9 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/^Unsubscribe requested$/)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText(/^Unsubscribe request recorded$/)).toBeInTheDocument(),
+    );
   });
 
   it('renders UNDO EXPIRED for `expired`', async () => {
@@ -425,7 +429,7 @@ describe('ActivityScreen — pure helpers', () => {
     expect(lines[1]).toContain('"Smith, John"');
     expect(lines[2]).toContain('"Quote ""Co"""');
     expect(lines[1]).toContain('Archived');
-    expect(lines[2]).toContain('Deleted');
+    expect(lines[2]).toContain('Moved to Gmail Trash');
   });
 });
 

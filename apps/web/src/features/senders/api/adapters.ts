@@ -328,7 +328,7 @@ export function adaptTimeseriesPoint(p: TimeseriesPointDto): TimeseriesPoint {
 const VERDICT_TO_ACTION: Record<DecisionHistoryRowDto['verdict'], DecisionAction> = {
   keep: 'Kept',
   archive: 'Archived',
-  unsubscribe: 'Unsubscribed',
+  unsubscribe: 'Unsubscribe requested',
   later: 'Moved to Later',
 };
 

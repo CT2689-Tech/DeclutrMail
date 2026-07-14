@@ -15,8 +15,14 @@
  * archive-only undo). `later` / `unsubscribe` have no enqueue route yet.
  */
 
-import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
+import type {
+  ActionJobStatus,
+  UndoActionKind,
+  UnsubscribeLifecycleStatus,
+  UnsubscribeManualTransition,
+} from '@declutrmail/shared/contracts';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
 import { apiGet, apiPost } from './client';
 
@@ -35,16 +41,8 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
-/** Returned by `GET /api/actions/:id` — the polled action state. */
-export interface ActionStatusResult {
-  actionId: string;
-  status: ActionJobStatus;
-  requestedCount: number;
-  affectedCount: number;
-  /** Present once `status === 'done'` for a reversible verb; else null. */
-  undoToken: string | null;
-  errorCode: string | null;
-}
+/** Returned by `GET /api/actions/:id` — canonical shared poll snapshot. */
+export type ActionStatusResult = ActionStatusSnapshot;
 
 /** Returned by `GET /api/actions/archive/preview` — the REAL inbox count. */
 export interface ArchivePreviewResult {
@@ -255,6 +253,8 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /** Method-specific progress; never implies future delivery has stopped. */
+  lifecycleStatus: UnsubscribeLifecycleStatus;
   /**
    * The sender's unsubscribe capability at intent time:
    *   - `one_click` → an execution job is in flight; poll
@@ -275,6 +275,15 @@ export interface UnsubscribeIntentResult {
   executionActionId: string | null;
   /** Raw `mailto:` URL for the manual path. Null unless `method === 'mailto'`. */
   mailtoUrl: string | null;
+}
+
+export interface UnsubscribeManualStatusResult {
+  senderId: string;
+  status: UnsubscribeManualTransition;
+  recordedAt: string;
+  activityLogId: string | null;
+  changed: boolean;
+  irreversible: boolean;
 }
 
 /** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
@@ -303,6 +312,20 @@ export async function recordUnsubscribeIntent(
       headers: { 'Idempotency-Key': idempotencyKey },
       ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
     },
+  );
+  return env.data;
+}
+
+/** Persist an explicit step in the user-sent mailto unsubscribe flow. */
+export async function recordUnsubscribeManualStatus(
+  senderId: string,
+  status: UnsubscribeManualTransition,
+  options: ActionRequestOptions = {},
+): Promise<UnsubscribeManualStatusResult> {
+  const env = await apiPost<UnsubscribeManualStatusResult>(
+    '/api/actions/unsubscribe-manual-status',
+    { senderId, status },
+    { ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}) },
   );
   return env.data;
 }

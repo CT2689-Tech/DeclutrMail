@@ -66,7 +66,7 @@ function useUndoEntries() {
 }
 
 /**
- * The persistent undo tray on the Triage surface (D35).
+ * The persistent product-wide undo tray (D35, D245).
  *
  *   - Lists active undo tokens via `GET /api/undo`, newest first.
  *   - Per-row Undo reverses by token: `POST /api/undo/:token` enqueues
@@ -82,7 +82,7 @@ function useUndoEntries() {
  * tray IS the decision feedback. Undo completion and failures DO
  * toast: the tray row is already gone, so there is no other channel.
  */
-export function TriageUndoTray() {
+export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: boolean }) {
   const qc = useQueryClient();
   const router = useRouter();
   const entriesQuery = useUndoEntries();
@@ -183,7 +183,7 @@ export function TriageUndoTray() {
         const tag = target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
       }
-      if (pendingAction != null) return;
+      if (!enableShortcut || pendingAction != null) return;
       const newest = entries[0];
       if (!newest) return;
       e.preventDefault();
@@ -191,7 +191,7 @@ export function TriageUndoTray() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [entries, pendingAction, revertToken]);
+  }, [enableShortcut, entries, pendingAction, revertToken]);
 
   const dataSource: UndoTrayDataSource = {
     entries,
@@ -202,4 +202,9 @@ export function TriageUndoTray() {
   };
 
   return <UndoTray dataSource={dataSource} onViewActivity={() => router.push('/activity')} />;
+}
+
+/** Triage/onboarding wrapper retains the original Z-key behavior. */
+export function TriageUndoTray() {
+  return <ProductUndoTray enableShortcut />;
 }

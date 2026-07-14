@@ -695,7 +695,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     };
   }
 
-  it("D58: the sheet says the unsubscribe itself can't be undone", async () => {
+  it("D58: the sheet says a delivered unsubscribe request can't be recalled", async () => {
     const client = createTestQueryClient();
     renderScreen(client);
     expandRow(LINKEDIN.senderName);
@@ -703,12 +703,12 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
       screen.getByText(
-        "The unsubscribe itself can't be undone — an archived backlog uses your plan's Activity Undo window.",
+        "A delivered unsubscribe request can't be recalled — an archived backlog uses your plan's Activity Undo window.",
       ),
     ).toBeDefined();
   });
 
-  it('one_click → done: execution polled to done, queue refreshed, NO success toast (D35)', async () => {
+  it('one_click → done: execution polled and endpoint acceptance is stated precisely', async () => {
     addFetchHandlers([
       intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
       execStatusHandler('done', null),
@@ -723,11 +723,13 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await waitFor(() =>
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
-    // …and the execution settles silently (tray discipline — no
-    // success toast, no warn toast). The done-handler re-invalidates
-    // so /activity picks up the worker's outcome row.
+    // …and the execution states only what the 2xx proves. The
+    // done-handler re-invalidates so /activity picks up the outcome row.
     await waitFor(() => expect(invalidateSpy.mock.calls.length).toBeGreaterThanOrEqual(2));
-    expect(h.toast).not.toHaveBeenCalled();
+    expect(h.toast).toHaveBeenCalledWith(
+      `${LINKEDIN.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+      'success',
+    );
   });
 
   it('one_click → target refused (4xx/5xx): honest warn toast suggesting Archive', async () => {
@@ -742,7 +744,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s list refused the unsubscribe — Archive is the reliable fallback`,
+        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
         'warn',
       ),
     );
@@ -760,7 +762,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't confirm ${LINKEDIN.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
+        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
         'warn',
       ),
     );
@@ -780,7 +782,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await confirmUnsubWithoutBacklog();
 
     await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
-    const link = screen.getByRole('link', { name: 'Open Gmail compose' });
+    const link = screen.getByRole('link', { name: 'Open Gmail draft' });
     expect(link.getAttribute('href')).toBe(
       'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );

@@ -2,6 +2,12 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import {
+  buildActionPresentation,
+  defaultLaterWakeAtIso,
+  type PresentedAction,
+  type UnsubscribeChannel,
+} from '@declutrmail/shared/actions';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
@@ -15,6 +21,8 @@ const { color, font } = tokens;
 export type ConfirmSecondaryVerb = 'archive' | 'delete' | null;
 
 export interface ConfirmOptions {
+  /** Exact return time confirmed for a Later action. */
+  wakeAt?: string;
   /**
    * Time-window filter for the PRIMARY verb (Archive primary, Delete
    * primary, or the secondary historic action on Unsub/Later when its
@@ -193,6 +201,7 @@ export function ConfirmActionModal({
   // Time-window filter for the historic-scope verb (archive/delete
   // primary OR the active secondary).
   const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
+  const [wakeAt, setWakeAt] = useState<string | null>(null);
   // "Show what will move" expand panel state (spec v1.2 Decision 15).
   const [showSubjects, setShowSubjects] = useState(false);
   // Per-sender breakdown expand state (D52 — "Per-sender breakdown"
@@ -203,6 +212,7 @@ export function ConfirmActionModal({
     if (!request) return;
     setSecondaryVerb(null);
     setOlderThanDays(defaultWindow(request.verb));
+    setWakeAt(request.verb === 'Later' ? defaultLaterWakeAtIso() : null);
     setShowSubjects(false);
     setShowAllSenders(false);
   }, [request]);
@@ -254,13 +264,17 @@ export function ConfirmActionModal({
   // the aggregated preview's error, single the composite preview's).
   const previewBlocksDelete =
     isDeleteVerb && (isBulk ? (bulkPreview?.error ?? false) : (compositePreviewError ?? false));
+  const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
   const confirmDisabled =
-    ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) || previewBlocksDelete;
+    ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) ||
+    previewBlocksDelete ||
+    wakeAtInvalid;
 
   // Derived ConfirmOptions for onConfirm — packages secondary into the
   // shape the BE composite endpoint expects.
   const buildConfirmOpts = (): ConfirmOptions => {
     const opts: ConfirmOptions = {};
+    if (isLaterVerb && wakeAt !== null) opts.wakeAt = wakeAt;
     if (showWindowRow) opts.olderThanDays = olderThanDays;
     if (hasSecondaryAction) {
       opts.secondary = {
@@ -293,6 +307,7 @@ export function ConfirmActionModal({
     request,
     secondaryVerb,
     olderThanDays,
+    wakeAt,
     onCancel,
     onConfirm,
     confirmDisabled,
@@ -318,6 +333,30 @@ export function ConfirmActionModal({
   // mail), but moves no past mail by itself.
   const danger = isUnsubVerb || isDeleteVerb;
 
+  const primaryVerb = isDeleteVerb
+    ? 'delete'
+    : isArchiveVerb
+      ? 'archive'
+      : isLaterVerb
+        ? 'later'
+        : 'unsubscribe';
+  const unsubscribeChannel: UnsubscribeChannel | null = (() => {
+    if (!isUnsubVerb) return null;
+    const channels = new Set(
+      senders.map((sender) => sender.unsubscribeMethod).filter((value) => value != null),
+    );
+    return channels.size === 1 ? ([...channels][0] ?? null) : null;
+  })();
+  const presentation = buildActionPresentation({
+    verb: primaryVerb,
+    liveCount: isUnsubVerb ? 0 : (compositeCount ?? inboxNow ?? null),
+    planUndoDeadline: null,
+    wakeAt: isLaterVerb ? wakeAt : null,
+    unsubscribeChannel,
+    secondaryAction:
+      secondaryVerb === null ? null : { verb: secondaryVerb, liveCount: compositeCount ?? null },
+  });
+
   const title = isDeleteVerb
     ? `Delete mail from ${n} sender${plural}`
     : isArchiveVerb
@@ -325,13 +364,9 @@ export function ConfirmActionModal({
       : isLaterVerb
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
-  const lead = isDeleteVerb
-    ? `Matching mail now in your inbox from ${subject} moves to Gmail Trash. Gmail keeps it there for up to 30 days before permanently deleting it.`
-    : isArchiveVerb
-      ? `Matching mail now in your inbox from ${subject} moves to Gmail's archive. Nothing is deleted.`
-      : isLaterVerb
-        ? `Mail now in your inbox from ${subject} moves to the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged. Nothing is unsubscribed or deleted; change the wake time on Later.`
-        : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
+  const lead = [actionEffectCopy(presentation.primary), presentation.secondary]
+    .filter((copy): copy is string => copy !== null)
+    .join(' Also: ');
 
   const numberStyle: CSSProperties = {
     fontFamily: font.display,
@@ -358,18 +393,7 @@ export function ConfirmActionModal({
     return `${primaryPart} + ${secondaryPart}`;
   })();
 
-  // Recovery-window banner (spec v1.2 Decision 15 — top of the modal).
-  // Delete = 30 days (Gmail Trash physical guarantee); Archive/Later = 7d.
-  // Unsubscribe = NOT undoable (D58): a delivered opt-out can't be
-  // recalled, so the banner says so where the undo promise would
-  // normally sit — only a paired archive keeps its own undo.
-  const recoveryCopy = isDeleteVerb
-    ? 'Recoverable for 30 days in Gmail Trash.'
-    : isArchiveVerb || isLaterVerb
-      ? 'Reversible for 7 days from Activity.'
-      : verb === 'Unsubscribe'
-        ? "The unsubscribe itself can't be undone — only an archived backlog uses your plan's Activity Undo window."
-        : null;
+  const recoveryCopy = recoveryFacts(presentation.primary, presentation.secondary).join(' ');
 
   // Subjects for the "Show what will move" panel (spec v1.3 — recent
   // beats oldest for 3-sec sender recognition). Single-sender single-
@@ -534,8 +558,8 @@ export function ConfirmActionModal({
           )}
         </div>
 
-        {/* Recovery banner (spec v1.2 Decision 15 — top of body). Tone
-            matches action: amber for Archive 7d, red-ish for Delete 30d. */}
+        {/* Recovery copy is generated from the canonical semantics for
+            both primary and optional secondary actions. */}
         {recoveryCopy && (
           <div
             role="status"
@@ -560,6 +584,38 @@ export function ConfirmActionModal({
         )}
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {isLaterVerb && wakeAt !== null && (
+            <label
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                fontSize: 12.5,
+                color: color.fgSoft,
+              }}
+            >
+              <span style={{ fontWeight: 600, color: color.fg }}>Return to Inbox</span>
+              <input
+                type="datetime-local"
+                value={toLocalDateTimeInput(wakeAt)}
+                min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
+                onChange={(event) => {
+                  const next = new Date(event.currentTarget.value);
+                  setWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
+                }}
+                aria-label="Later return time"
+                style={{
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 8,
+                  padding: '8px 10px',
+                  background: color.card,
+                  color: color.fg,
+                  fontFamily: font.sans,
+                  fontSize: 13,
+                }}
+              />
+            </label>
+          )}
           {/* Per-sender breakdown (D52) — each lozenge carries the REAL
               count for the active time-window from the aggregated
               preview; protected senders are flagged (the BE skips them).
@@ -889,17 +945,25 @@ export function ConfirmActionModal({
                   );
                 }
                 if (isUnsubVerb && !hasSecondaryAction) {
+                  const channel = presentation.primary.unsubscribeChannel;
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      No existing email moves. Future mail should stop after the unsubscribe
-                      succeeds.
+                      {presentation.primary.currentMail.summary}{' '}
+                      {channel.kind === 'not-applicable'
+                        ? presentation.primary.futureMail.summary
+                        : channel.summary}
                     </span>
                   );
                 }
                 if (isLaterVerb && !hasSecondaryAction) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Mail now in your inbox from {subject} will move to Later.
+                      {presentation.primary.currentMail.summary}{' '}
+                      {presentation.primary.schedule.kind === 'scheduled'
+                        ? presentation.primary.schedule.summary
+                        : presentation.primary.schedule.kind === 'required'
+                          ? presentation.primary.schedule.summary
+                          : null}
                     </span>
                   );
                 }
@@ -1047,4 +1111,38 @@ export function ConfirmActionModal({
       </div>
     </>
   );
+}
+
+function actionEffectCopy(action: PresentedAction | null): string | null {
+  if (action === null) return null;
+  const future =
+    action.unsubscribeChannel.kind === 'not-applicable'
+      ? action.futureMail.summary
+      : action.unsubscribeChannel.summary;
+  return [
+    action.currentMail.summary,
+    future,
+    ...action.unchanged,
+    ...(action.schedule.kind === 'none' ? [] : [action.schedule.summary]),
+  ].join(' ');
+}
+
+function recoveryFacts(primary: PresentedAction, secondary: PresentedAction | null): string[] {
+  return [
+    ...new Set(
+      [primary, secondary]
+        .filter((action): action is PresentedAction => action !== null)
+        .flatMap((action) => [
+          action.activityUndo.summary,
+          ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
+          ...(action.finality.kind === 'reversible-or-changeable' ? [] : [action.finality.summary]),
+        ]),
+    ),
+  ];
+}
+
+function toLocalDateTimeInput(iso: string): string {
+  const date = new Date(iso);
+  const two = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
 }

@@ -21,6 +21,7 @@ import {
   useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { getActionSemantics } from '@declutrmail/shared/actions';
 
 import { ApiError } from '@/lib/api/client';
 import type {
@@ -253,7 +254,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Undo windows: Archive/Later 7 days, Delete 30 days (Gmail Trash)."
+        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery for Delete is separate and normally lasts up to 30 days."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
@@ -564,13 +565,6 @@ function MetricsHeader({
         {stats.needsAttention > 0 && (
           <span style={{ color: color.amber, fontWeight: 600 }}>
             {stats.needsAttention} need attention
-          </span>
-        )}
-        {(stats.noisePreventedPerMonth ?? 0) > 0 && (
-          /* D33 payoff — real projection from the window's decisions,
-             computed server-side (activity.read-service). */
-          <span style={{ color: color.primary, fontWeight: 600 }}>
-            ~{stats.noisePreventedPerMonth!.toLocaleString()}/mo of noise prevented
           </span>
         )}
       </header>
@@ -1682,6 +1676,13 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   // D56 — the confirmed outcome reads as a completion; emerald (the
   // "done/kept" accent) sets it apart from the primary-accent intent row.
   unsubscribe_confirmed: color.emerald,
+  unsubscribe_endpoint_accepted: color.emerald,
+  unsubscribe_failed: color.red,
+  unsubscribe_unconfirmed: color.amber,
+  unsubscribe_action_required: color.amber,
+  unsubscribe_draft_opened: color.primary,
+  unsubscribe_user_marked_sent: color.emerald,
+  unsubscribe_unavailable: color.fgMuted,
   later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
@@ -2342,23 +2343,30 @@ function Chip({
 // ── Helpers ───────────────────────────────────────────────────────────
 
 const ACTION_LABEL: Record<ActivityActionWire, string> = {
-  keep: 'Kept',
-  archive: 'Archived',
+  keep: getActionSemantics('keep').resultLabel,
+  archive: getActionSemantics('archive').resultLabel,
   // D9 — the intent row records the ATTEMPT, never success: "UI copy is
   // deliberately uncertain — never promise." A one-click POST may still
   // fail and a mailto is manual (D230), so at click time the outcome is
   // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
   // honest; the separate `unsubscribe_confirmed` row is the only place
   // that promises success, and it is written only on a 2xx accept.
-  unsubscribe: 'Unsubscribe requested',
+  unsubscribe: getActionSemantics('unsubscribe').resultLabel,
   // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
   // the one row that states the unsubscribe actually went through.
-  unsubscribe_confirmed: 'Unsubscribe confirmed',
-  later: 'Later',
+  unsubscribe_confirmed: 'Unsubscribe endpoint accepted request',
+  unsubscribe_endpoint_accepted: 'Unsubscribe endpoint accepted request',
+  unsubscribe_failed: 'Unsubscribe request failed',
+  unsubscribe_unconfirmed: 'Unsubscribe result unconfirmed',
+  unsubscribe_action_required: 'Email request required',
+  unsubscribe_draft_opened: 'Gmail draft opened',
+  unsubscribe_user_marked_sent: 'Marked unsubscribe email sent',
+  unsubscribe_unavailable: 'No unsubscribe channel available',
+  later: getActionSemantics('later').resultLabel,
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with
   // "Archived"; spec L312 confirms "Delete" is the user-facing verb.
-  delete: 'Deleted',
+  delete: getActionSemantics('delete').resultLabel,
   'followup-dismiss': 'Followup resolved',
   // D43 VIP/Protect toggle audit rows (senders policy write path).
   marked_vip: 'Marked VIP',

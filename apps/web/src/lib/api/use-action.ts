@@ -30,6 +30,7 @@ import {
   isTerminalStatus,
   newIdempotencyKey,
   recordUnsubscribeIntent,
+  recordUnsubscribeManualStatus,
   revertUndo,
   type ActionEnqueueResult,
   type ActionStatusResult,
@@ -42,7 +43,9 @@ import {
   type CompositeSecondaryVerb,
   type UndoRevertResult,
   type UnsubscribeIntentResult,
+  type UnsubscribeManualStatusResult,
 } from './actions';
+import type { UnsubscribeManualTransition } from '@declutrmail/shared/contracts';
 
 /** Poll cadence in ms while an action job is in flight. */
 export const ACTION_POLL_MS = 1_000;
@@ -240,6 +243,17 @@ export function useBatchStatus(batchId: string | null) {
 export function useRecordUnsubscribeIntent() {
   return useMutation<UnsubscribeIntentResult, Error, { senderId: string }>({
     mutationFn: ({ senderId }) => recordUnsubscribeIntent(senderId),
+  });
+}
+
+/** Persist explicit progress in the user-sent Gmail unsubscribe handoff. */
+export function useRecordUnsubscribeManualStatus() {
+  return useMutation<
+    UnsubscribeManualStatusResult,
+    Error,
+    { senderId: string; status: UnsubscribeManualTransition }
+  >({
+    mutationFn: ({ senderId, status }) => recordUnsubscribeManualStatus(senderId, status),
   });
 }
 
