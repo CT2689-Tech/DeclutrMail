@@ -20,6 +20,7 @@ import {
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
+  GMAIL_METADATA_HEADERS,
 } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -32,7 +33,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
@@ -71,8 +72,9 @@ export default function SecurityPage() {
           ))}
         </ul>
         <p>
-          Because bodies and attachments are never in our systems, the most sensitive content in
-          your mailbox cannot leak from us — it was never there.
+          Not fetching bodies or attachments materially reduces the Gmail data DeclutrMail could
+          expose. Stored fields such as subjects and Gmail Preview snippets can still contain
+          sensitive information, so they receive the encryption and access controls described below.
         </p>
       </LegalSection>
 
@@ -87,7 +89,9 @@ export default function SecurityPage() {
           The scope is broader than what we use, and that gap is closed in code: message data is
           fetched with Gmail&rsquo;s <code>metadata</code> format and an explicit header allowlist,
           never the <code>full</code> or <code>raw</code> formats that carry bodies and attachments.
-          You can revoke access at any time from Settings or from your{' '}
+          The generated allowlist is <code>{GMAIL_METADATA_HEADERS.join(', ')}</code>. Other Gmail
+          headers are not requested by the message adapter. You can revoke access at any time from
+          Settings or from your{' '}
           <a href="https://myaccount.google.com/permissions" rel="noopener noreferrer">
             Google account permissions page
           </a>
@@ -115,20 +119,23 @@ export default function SecurityPage() {
 
       <LegalSection id="no-prediction" title="No ML category prediction">
         <p>
-          DeclutrMail does not use machine learning to predict email categories or to auto-protect
-          or auto-route senders. Decisions are yours, or they follow preset rules you explicitly
-          enabled — never a model&rsquo;s guess. We also do not use Gmail data to train generalized
-          AI or machine-learning models.
+          DeclutrMail does not use machine learning to predict email categories or route senders. It
+          can automatically protect a sender using deterministic product rules, such as when your
+          reply history crosses the documented protection threshold; you can review and change that
+          protection. Mail-changing automation follows rules you explicitly enable, not a
+          model&rsquo;s guess. We also do not use Gmail data to train generalized AI or
+          machine-learning models.
         </p>
       </LegalSection>
 
       <LegalSection id="deletion" title="Leaving cleanly">
         <p>
-          You can disconnect an inbox (revokes our Google access and stops all syncing), delete an
-          inbox&rsquo;s data, or delete your whole account — all from Settings. Account deletion has
-          a 7-day grace period, and if you have actions still inside a longer undo window, deletion
-          is scheduled after the latest window expires so undo keeps working for its full window.
-          Details are in the <a href="/privacy">Privacy Policy</a>.
+          You can disconnect an inbox (removes our saved Google credential and stops syncing),
+          delete one inbox&rsquo;s indexed data, or delete your account and mailbox product data —
+          all from Settings. Account deletion has a 7-day grace period, and a longer open undo
+          window can extend the deletion date. Narrowly scoped pseudonymous security and deletion
+          evidence remains under the operational retention policy. Details are in the{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

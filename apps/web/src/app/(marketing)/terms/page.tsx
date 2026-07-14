@@ -17,7 +17,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/terms',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'service', label: 'The service' },
@@ -69,9 +69,11 @@ export default function TermsOfServicePage() {
           DeclutrMail modifies your mailbox only at your instruction — either an action you approve
           directly, or a rule you explicitly enabled. Before any destructive action runs,
           DeclutrMail shows you a preview of exactly what will change. You are responsible for
-          reviewing previews before approving actions. Archive and Later can be undone from Activity
-          for 7 days. Delete moves mail to Gmail Trash, where Gmail may retain it for up to 30 days.
-          A completed unsubscribe request cannot be recalled.
+          reviewing previews before approving actions. Archive, Later, and Delete can be undone from
+          Activity until the deadline recorded for your plan (7 days on Free and Plus; 30 days on
+          Pro). Delete also moves mail to Gmail Trash, whose recovery path is separate from Activity
+          Undo and where Gmail may retain it for up to 30 days. A completed unsubscribe request
+          cannot be recalled.
         </p>
         <p>
           Unsubscribe actions use the unsubscribe mechanisms senders publish. We cannot guarantee a

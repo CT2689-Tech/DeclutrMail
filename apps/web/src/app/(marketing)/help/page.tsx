@@ -28,7 +28,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-14';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -44,7 +44,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'what-we-store',
     q: 'What does DeclutrMail store from my Gmail?',
-    a: `Exactly this list, and nothing more: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, inline images, and raw MIME are never fetched or stored.`,
+    a: `The complete per-message storage list is: ${PRIVACY_STORAGE_ITEMS.join('; ')}. It is generated from the Gmail fields the adapter requests. The complete lifecycle inventory in the Privacy Policy also lists connection data, derived product data, and retained audit records. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, inline images, and raw MIME are never fetched or stored.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
   },
   {
@@ -66,7 +66,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: "Every mail-changing action shows a preview before it runs. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled.",
+    a: "Every mail-changing action shows a preview before it runs. Archive, Later, and Delete use your plan's Activity Undo window. Delete also has a separate Gmail Trash recovery path, which normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled.",
   },
   {
     id: 'disconnect-mailbox',
@@ -76,7 +76,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'delete-account',
     q: 'How do I delete my account?',
-    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window.',
+    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires. Account and mailbox product data is removed; narrowly scoped pseudonymous security and deletion evidence remains under the operational retention policy.',
     link: { href: '/privacy', label: 'Data retention and deletion →' },
   },
   {

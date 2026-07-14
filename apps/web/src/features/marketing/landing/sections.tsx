@@ -37,7 +37,9 @@ export function Problem() {
           <div className="dm-mkt-arith-value">
             <em>143 decisions</em>
           </div>
-          <p className="dm-mkt-arith-note">One verdict per sender covers everything they sent.</p>
+          <p className="dm-mkt-arith-note">
+            One sender view groups the current messages they sent.
+          </p>
         </div>
       </div>
     </section>
@@ -83,11 +85,11 @@ export function HowItWorks() {
 /** One-line explainer per canonical verb, keyed by registry id. */
 const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
   keep: 'Protect a sender. Their mail stays in your inbox, untouched by any rule.',
-  archive: 'Out of the inbox, never lost — everything stays searchable in Gmail.',
+  archive: 'Remove current mail from the inbox. Gmail keeps it searchable in All Mail.',
   unsubscribe:
     'One-click unsubscribe where the sender supports it. Past mail stays unless you separately archive or delete it.',
   later: 'Move current inbox mail to the DeclutrMail/Later label. Future mail is unchanged.',
-  delete: 'Move a sender’s mail to Gmail Trash. Recoverable there for 30 days.',
+  delete: 'Move current mail to Gmail Trash, where Gmail normally keeps it for up to 30 days.',
 };
 
 /** D134 §5 wedge, framed as the five-verb ritual (D227 canonical verbs). */
@@ -97,9 +99,9 @@ export function Ritual() {
       <p className="dm-mkt-eyebrow">№ 03 — The ritual</p>
       <h2 className="dm-mkt-h2">Five verbs. One per sender.</h2>
       <p className="dm-mkt-lede">
-        Every sender in your inbox gets exactly one of five verdicts, each on a single key. A
-        preview shows you precisely what will move before anything does. The preview also explains
-        whether and how the action can be reversed.
+        Choose one of five actions for a sender, each on a single key. A preview shows which current
+        mail will move, what future mail will do, available Activity Undo, any separate Gmail
+        recovery, and finality before anything changes.
       </p>
       <div className="dm-mkt-ritual">
         {VERB_REGISTRY.map((verb) => (
@@ -128,8 +130,9 @@ export function PrivacyDesk() {
             <h2 className="dm-mkt-h2">Built for the most skeptical person in the room.</h2>
             <p className="dm-mkt-lede">
               An inbox tool only earns access to your mail by being boringly specific about what it
-              touches. So here is the whole list, on the badge — the same one shown inside the
-              product.
+              touches. The badge shows the complete per-message storage list generated from the
+              Gmail fields used by the product; the Privacy Policy also lists connection, derived,
+              and retained audit data.
             </p>
             <ul className="dm-mkt-desk-points">
               <li>
@@ -141,8 +144,9 @@ export function PrivacyDesk() {
                 available undo is enforced server-side.
               </li>
               <li>
-                Disconnect any time. Deleting your account schedules a full purge of the little we
-                kept.
+                Disconnect any time. Account deletion removes account and mailbox product data;
+                narrowly scoped pseudonymous security and deletion evidence follows its operational
+                retention policy.
               </li>
             </ul>
             <a href="/privacy" className="dm-mkt-desk-link">

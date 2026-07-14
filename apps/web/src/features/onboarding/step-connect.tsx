@@ -9,7 +9,7 @@ const { color, font } = tokens;
 /**
  * Step 2 — Connect (D108).
  *
- * Explains exactly what the Google consent screen will ask for, then
+ * Explains what the Google consent screen will ask for, then
  * starts the OAuth flow. DeclutrMail requests ONE Gmail scope
  * (`gmail.modify`, per D4): metadata-shaped reads for the sender
  * index + the label/archive mutations the K/A/U/L verbs need. The
@@ -66,7 +66,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         <li>
           <strong style={{ fontWeight: 600 }}>We still never fetch bodies.</strong>{' '}
           <span style={{ color: color.fgMuted }}>
-            The step-1 storage list is the whole list. Full bodies fetched: 0.
+            The step-1 list is the complete per-message storage list, generated from the fields the
+            Gmail adapter requests. Settings → Privacy &amp; Data also lists connection, derived,
+            and retained audit data. Full bodies fetched: 0.
           </span>
         </li>
         <li>

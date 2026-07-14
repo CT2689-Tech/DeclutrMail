@@ -39,7 +39,7 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'What happens if I disconnect or delete my account?',
-    a: 'Disconnecting stops all syncing and actions immediately. Deleting your account schedules a purge of everything we stored — the deletion date respects any undo windows still open, so your safety net outlives your subscription.',
+    a: 'Disconnecting removes DeclutrMail’s saved Google credential and stops syncing and new actions while keeping indexed history for reconnecting. Account deletion schedules removal of your account and mailbox product data after any protected undo window; narrowly scoped pseudonymous security and deletion evidence remains under the operational retention policy.',
   },
   {
     q: 'Is there a refund policy?',

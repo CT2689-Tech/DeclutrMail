@@ -75,6 +75,16 @@ describe('landing page — D134', () => {
     expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
   });
 
+  it('uses action-specific recovery and bounded privacy/deletion claims', () => {
+    const { container } = renderLanding();
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Activity Undo through the plan window/);
+    expect(text).toMatch(/Archive, Later, and Delete use your plan's Activity Undo window/);
+    expect(text).toMatch(/Gmail Trash recovery is separate/);
+    expect(text).toMatch(/pseudonymous security and deletion evidence remains/i);
+    expect(text).not.toMatch(/· reversible|whole list|full purge/i);
+  });
+
   it('points the primary CTA at the OAuth start endpoint and links the legal + pricing routes', () => {
     const { container } = renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));

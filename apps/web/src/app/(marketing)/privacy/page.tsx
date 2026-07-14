@@ -17,7 +17,9 @@ import {
   GMAIL_CONNECTION_DATA_INVENTORY,
   GMAIL_DATA_PROCESSORS,
   GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_METADATA_HEADERS,
   GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -74,8 +76,8 @@ export default function PrivacyPolicyPage() {
       <LegalSection id="what-we-store" title="2. What we store — and what we never store">
         <p>
           Our entire product is built around one boundary: <strong>{PRIVACY_BADGE_HEADLINE}</strong>
-          . We never fetch or store the body of your messages. Here is the exact list of what we do
-          store, and what we do not.
+          . We never fetch or store the body of your messages. The lists below are generated from
+          the product&rsquo;s Gmail data lifecycle inventory.
         </p>
         <p>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
@@ -98,9 +100,17 @@ export default function PrivacyPolicyPage() {
           in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
           metadata form — we never download or parse the message body to produce it.
         </p>
-        <p>The complete inventory also includes connection and product-derived data:</p>
+        <p>The complete lifecycle inventory also includes connection and product-derived data:</p>
         <ul>
           {[...GMAIL_CONNECTION_DATA_INVENTORY, ...GMAIL_DERIVED_DATA_INVENTORY].map((item) => (
+            <li key={item.id}>
+              <strong>{item.label}</strong> — {item.purpose} {item.retention}
+            </li>
+          ))}
+        </ul>
+        <p>Minimal operational records retained under a separate policy:</p>
+        <ul>
+          {GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map((item) => (
             <li key={item.id}>
               <strong>{item.label}</strong> — {item.purpose} {item.retention}
             </li>
@@ -128,9 +138,9 @@ export default function PrivacyPolicyPage() {
         </ul>
         <ul>
           <li>
-            Message data is fetched in <strong>metadata format only</strong>, using the complete
-            generated field list in Section 2. We do not request message bodies or attachments from
-            the API.
+            Message data is fetched in <strong>metadata format only</strong>. The generated Gmail
+            metadata header allowlist is <code>{GMAIL_METADATA_HEADERS.join(', ')}</code>. Other
+            Gmail headers, message bodies, and attachments are not requested by the message adapter.
           </li>
           <li>
             Every destructive action shows you a preview of exactly what will change before it runs,
@@ -194,8 +204,10 @@ export default function PrivacyPolicyPage() {
         <ul>
           <li>
             Show a per-sender view of your inbox, observed activity facts, and optional suggestions.
-            DeclutrMail does not use machine learning to predict email categories or auto-protect
-            senders; decisions are yours or follow rules you explicitly enabled.
+            DeclutrMail does not use machine learning to predict email categories. Deterministic
+            product rules can automatically protect a sender based on observed facts such as your
+            reply history; you can review and change that protection. Mail-changing automation
+            follows rules you explicitly enabled.
           </li>
           <li>
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
@@ -221,9 +233,10 @@ export default function PrivacyPolicyPage() {
           We use essential cookies for sign-in and billing — these are required for the service to
           function and do not need consent. Optional analytics (PostHog) is initialized only after
           you accept it in the cookie banner; it is off by default. We never use advertising cookies
-          or cross-site trackers, and our analytics never sees your inbox content. You can change or
-          withdraw your choice at any time on the <a href="/cookies">Cookie preferences</a> page
-          (also in the app under Settings); withdrawal takes effect immediately.
+          or cross-site trackers. Analytics events are designed to exclude Gmail message fields and
+          are scrubbed before transmission. You can change or withdraw your choice at any time on
+          the <a href="/cookies">Cookie preferences</a> page (also in the app under Settings);
+          withdrawal takes effect immediately.
         </p>
       </LegalSection>
 
@@ -231,26 +244,28 @@ export default function PrivacyPolicyPage() {
         <p>You can leave cleanly, in three tiers, all from Settings:</p>
         <ul>
           <li>
-            <strong>Disconnect an inbox</strong> — revokes our Google access and stops all syncing
-            for that inbox. Your historical activity log is kept so you can reconnect later.
+            <strong>Disconnect an inbox</strong> — removes our saved Google credential and stops
+            syncing for that inbox. Indexed and derived history is kept so you can reconnect later.
           </li>
           <li>
-            <strong>Delete an inbox&rsquo;s data</strong> — wipes everything DeclutrMail stored
-            about that inbox (messages metadata, sender profiles, decisions, activity).
+            <strong>Delete an inbox&rsquo;s data</strong> — removes its indexed message data and
+            derived product data. The disconnected Gmail address and narrowly scoped pseudonymous
+            security/deletion evidence remain under their stated retention rules.
           </li>
           <li>
-            <strong>Delete your DeclutrMail account</strong> — removes all inboxes, all activity,
-            all preferences, and your account itself, with no recovery.
+            <strong>Delete your DeclutrMail account</strong> — removes the account, inbox indexes,
+            Activity, preferences, and other product data. Narrowly scoped pseudonymous security and
+            compliance evidence remains under the operational retention policy.
           </li>
         </ul>
         <p>
           Account deletion has a <strong>7-day grace period</strong> during which you can change
           your mind. If you have recent actions still inside an undo window longer than 7 days
-          (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires — so
-          &ldquo;undo always works for its full window&rdquo; stays true. If you want deletion
-          sooner, you can explicitly waive the grace period and any remaining undo windows with a
-          typed confirmation during the deletion flow — deletion then takes effect immediately. Once
-          deletion is scheduled, syncing stops immediately.
+          (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires,
+          preserving those Activity Undo deadlines. If you want deletion sooner, you can explicitly
+          waive the grace period and any remaining undo windows with a typed confirmation during the
+          deletion flow. That path waives the waiting periods and queues the purge without a grace
+          period. Once deletion is scheduled, new syncing is paused.
         </p>
         <p>
           You can export the current JSON and CSV datasets at any time from Settings → Privacy &amp;
@@ -351,9 +366,9 @@ export default function PrivacyPolicyPage() {
         <p>
           All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
           envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. And because we never store message bodies or attachments, the most sensitive
-          content in your mailbox is simply not in our systems to begin with — that is the point of
-          the design.
+          logged. Not storing message bodies or attachments reduces the amount of sensitive Gmail
+          data in our systems; subjects and Gmail Preview snippets may still be sensitive and are
+          protected by the controls described here.
         </p>
       </LegalSection>
 

@@ -1,6 +1,6 @@
 # DeclutrMail
 
-> DeclutrMail is a Gmail cleanup service. You decide once per sender — Keep, Archive, Unsubscribe, Later, or Delete — and every action shows a preview before it runs and stays reversible for your plan's undo window (7 days on Free and Plus, 30 on Pro).
+> DeclutrMail is a Gmail control service. You decide by sender — Keep, Archive, Unsubscribe, Later, or Delete — and mail-changing actions show a preview before they run. Archive, Later, and Delete use the plan's Activity Undo window. Delete also has a separate Gmail Trash recovery path; a delivered unsubscribe request cannot be recalled.
 
 Privacy is the product's boundary, stated literally: Full bodies fetched: 0.
 DeclutrMail stores only: Sender (name + email), Subject, Gmail Preview (the short snippet shown in your inbox list), Dates (received), Gmail labels, Read/unread state.
@@ -14,7 +14,7 @@ It never fetches or stores: Full message body, HTML, Attachments, Inline images,
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
 - [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
-- [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
+- [Privacy policy](https://declutrmail.com/privacy): the generated lifecycle inventory of Gmail fields, connection data, derived product data, and retained audit records; what is never fetched; Google Limited Use disclosure; retention and deletion
 
 ## Legal
 

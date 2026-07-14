@@ -56,6 +56,11 @@ describe('DeleteAccountModal', () => {
     renderModal();
     expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
     expect(screen.getByText(/does not delete emails in Gmail/i)).toBeInTheDocument();
+    expect(screen.getByText(/what is retained under policy/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/pseudonymous security and deletion evidence/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/deletes everything/i)).not.toBeInTheDocument();
     const cont = screen.getByRole('button', { name: /review deletion timing/i });
     expect(cont).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox'));

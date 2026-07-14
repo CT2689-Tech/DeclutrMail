@@ -38,7 +38,7 @@ each completed slice.
       actions, Activity, mobile surfaces, and return states.
 - [ ] Distinguish one-click, manual-in-Gmail, requested, delivered, failed, and
       irreversible unsubscribe states everywhere they appear.
-- [ ] Replace absolute reversibility and account-deletion claims that conflict
+- [x] Replace absolute reversibility and account-deletion claims that conflict
       with actual behavior.
 
 ### P1 — activation, control, and recurring value
@@ -109,18 +109,15 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Disconnect now presents two exact, generated-data
-  choices. Standard Disconnect removes Gmail credentials and retains indexed
-  history. Disconnect & delete indexed data requires `DELETE <gmail-address>`,
-  persists a retryable mailbox-scoped request, prevents reconnect while it is
-  in flight, chunks the large message index, scrubs every registered mailbox
-  child plus outbox/dead-letter records, preserves the disconnected identity
-  and minimal audit, and exposes queued/deleting/delayed/deleted UI states.
-  Reconnect after completion starts a clean index.
-- Last green checks: generated inventory contract (5 tests), mailbox API and
-  ownership/reconnect suites (11 tests), DB migration round-trip (3 tests),
-  deletion/dead-letter worker suites (31 tests), mailbox lifecycle web suites
-  (45 tests), shared/API/DB/workers/web typechecks, and `git diff --check`.
-- Next slice: migrate every action preview and result surface to the canonical
-  action semantics, fix remaining plan-based Undo/Gmail Trash copy, and replace
-  the fragmented receipt/undo presentations with one shared model.
+- Last completed slice: Public and in-product trust claims now distinguish the
+  generated per-message inventory from the cumulative lifecycle inventory;
+  state the real engagement-based auto-protection behavior; avoid universal
+  reversibility, zero-risk, and full-purge promises; disclose the retained
+  minimal pseudonymous security/compliance evidence; and consistently separate
+  plan-based Activity Undo from Gmail Trash recovery. The accepted D245 record
+  now reflects approved decision 4B for Delete.
+- Last green checks: public/marketing/onboarding/account-deletion suites (5 test
+  files, 82 tests), shared/web typechecks, and `git diff --check`.
+- Next slice: migrate every action preview and result surface to canonical
+  action semantics, replace fragmented receipt/undo presentations with the
+  shared model, and ship the truthful unsubscribe lifecycle.

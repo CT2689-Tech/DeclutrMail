@@ -55,7 +55,9 @@ export function Hero() {
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerCard />
-          <p className="dm-mkt-ledger-caption">one decision · 412 emails handled · reversible</p>
+          <p className="dm-mkt-ledger-caption">
+            one decision · 412 emails archived · Activity Undo through the plan window
+          </p>
         </div>
       </section>
 

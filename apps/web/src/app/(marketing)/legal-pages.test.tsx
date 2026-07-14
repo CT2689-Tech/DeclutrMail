@@ -26,6 +26,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
+  GMAIL_METADATA_HEADERS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -120,6 +122,15 @@ describe('/refunds content — D121 canonical refund terms', () => {
     expect(text).toContain('Razorpay');
     expect(text).toMatch(/original payment method/);
   });
+
+  it('keeps Activity Undo distinct from Gmail Trash and unsubscribe finality', () => {
+    const { container } = render(<RefundPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Activity Undo.*Archive, Later, or Delete/i);
+    expect(text).toMatch(/separate Gmail Trash recovery path/i);
+    expect(text).toMatch(/delivered unsubscribe request cannot be recalled/i);
+    expect(text).not.toMatch(/actions DeclutrMail performed remain reversible/i);
+  });
 });
 
 describe('/terms content — D121 governing law confirmed', () => {
@@ -129,6 +140,15 @@ describe('/terms content — D121 governing law confirmed', () => {
     expect(text).toContain('governed by the laws of India');
     expect(text).toContain('Mumbai');
     expect(text).toMatch(/exclusive jurisdiction/);
+  });
+
+  it('defines plan Activity Undo and the separate Gmail Trash path', () => {
+    const { container } = render(<TermsOfServicePage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).toMatch(/Archive, Later, and Delete can be undone from Activity/);
+    expect(text).toMatch(/7 days on Free and Plus; 30 days on Pro/);
+    expect(text).toMatch(/recovery path is separate from Activity Undo/);
+    expect(text).toMatch(/unsubscribe request cannot be recalled/);
   });
 });
 
@@ -147,6 +167,28 @@ describe('/privacy content — D7 + D228 posture', () => {
   it('never uses the banned pre-D228 phrase "Bodies read: 0"', () => {
     const { container } = render(<PrivacyPolicyPage />);
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
+  });
+
+  it('renders the generated Gmail header allowlist and retained audit inventory', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = container.textContent ?? '';
+    for (const header of GMAIL_METADATA_HEADERS) {
+      expect(text).toContain(header);
+    }
+    for (const item of GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY) {
+      expect(text).toContain(item.label);
+    }
+    expect(text).not.toMatch(/exact list|whole list/i);
+  });
+
+  it('states deterministic protection and sensitive metadata without absolutes', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/automatically protect a sender based on observed facts/i);
+    expect(text).toMatch(/reply history/i);
+    expect(text).not.toMatch(/does not automatically protect/i);
+    expect(text).toMatch(/subjects and Gmail Preview snippets may still be sensitive/i);
+    expect(text).not.toMatch(/sensitive Gmail data cannot leak/i);
   });
 
   it('§6 links the /cookies withdrawal surface (GDPR Art. 7(3), D147)', () => {
@@ -178,13 +220,15 @@ describe('/privacy content — D7 + D228 posture', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('§7 deletion wording matches the shipped flow: 7-day grace + immediate delete via typed waiver (D232)', () => {
+  it('§7 deletion wording matches the shipped flow and retained audit boundary (D232)', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
     expect(text).toContain('7-day grace period');
     expect(text).toContain('waive the grace period and any remaining undo windows');
     expect(text).toContain('typed confirmation');
-    expect(text).toContain('deletion then takes effect immediately');
+    expect(text).toContain('queues the purge without a grace period');
+    expect(text).toContain('new syncing is paused');
+    expect(text).toMatch(/pseudonymous security and compliance evidence remains/i);
   });
 
   it('enumerates all nine subprocessors', () => {

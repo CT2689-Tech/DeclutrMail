@@ -23,7 +23,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import {
+  GMAIL_METADATA_HEADERS,
+  PRIVACY_BADGE_HEADLINE,
+  PRIVACY_STORAGE_ITEMS,
+} from '@declutrmail/shared';
 
 import HelpPage from './help/page';
 import ContactPage from './contact/page';
@@ -124,12 +128,15 @@ describe('/help content — D219 + D137', () => {
     }
   });
 
-  it('states the undo windows and the 7-day account-deletion grace', () => {
+  it('states action-specific undo, separate Trash recovery, and account-deletion retention', () => {
     const { container } = render(<HelpPage />);
-    expect(container.textContent).toMatch(
-      /Archive, Later, and Delete use your plan's Activity Undo window/,
-    );
-    expect(container.textContent).toMatch(/7-day grace period/);
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Archive, Later, and Delete use your plan's Activity Undo window/);
+    expect(text).toMatch(/separate Gmail Trash recovery path/);
+    expect(text).toMatch(/delivered unsubscribe request cannot be recalled/);
+    expect(text).toMatch(/7-day grace period/);
+    expect(text).toMatch(/pseudonymous security and deletion evidence remains/);
+    expect(text).not.toContain('Exactly this list, and nothing more');
   });
 
   it('emits FAQPage JSON-LD mirroring the rendered questions', () => {
@@ -177,8 +184,12 @@ describe('/security content — verified claims only', () => {
 
   it('names the single Gmail scope and the metadata-only fetch posture', () => {
     const { container } = render(<SecurityPage />);
-    expect(container.textContent).toContain('gmail.modify');
-    expect(container.textContent).toMatch(/metadata/i);
+    const text = container.textContent ?? '';
+    expect(text).toContain('gmail.modify');
+    expect(text).toMatch(/metadata/i);
+    for (const header of GMAIL_METADATA_HEADERS) {
+      expect(text).toContain(header);
+    }
   });
 
   it('describes token envelope encryption and TLS accurately', () => {
@@ -196,7 +207,19 @@ describe('/security content — verified claims only', () => {
 
   it('states the D222 no-ML-category-prediction posture', () => {
     const { container } = render(<SecurityPage />);
-    expect(container.textContent).toMatch(/not use machine learning to predict email categories/i);
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/not use machine learning to predict email categories/i);
+    expect(text).toMatch(/automatically protect a sender using deterministic product rules/i);
+    expect(text).toMatch(/reply history/i);
+    expect(text).not.toMatch(/does not automatically protect/i);
+  });
+
+  it('does not overstate the sensitivity or deletion boundary', () => {
+    const { container } = render(<SecurityPage />);
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/subjects and Gmail Preview snippets can still contain sensitive/i);
+    expect(text).not.toMatch(/sensitive information cannot leak/i);
+    expect(text).toMatch(/pseudonymous security and deletion evidence remains/i);
   });
 
   it('points vulnerability reports at privacy@declutrmail.com', () => {

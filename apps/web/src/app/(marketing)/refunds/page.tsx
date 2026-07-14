@@ -22,7 +22,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/refunds',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'summary', label: 'The short version' },
@@ -114,9 +114,11 @@ export default function RefundPolicyPage() {
           </li>
         </ul>
         <p>
-          One thing a refund never affects: your mailbox. Actions DeclutrMail performed remain
-          reversible for their full undo window regardless of your billing state, and your data
-          stays exportable and deletable per the <a href="/privacy">Privacy Policy</a>.
+          One thing a refund does not do is reverse mailbox changes. Any Activity Undo already
+          granted for Archive, Later, or Delete stays available until its recorded deadline
+          regardless of billing state. Delete also has a separate Gmail Trash recovery path, and a
+          delivered unsubscribe request cannot be recalled. Your current export and deletion options
+          are described in the <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

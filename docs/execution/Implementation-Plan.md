@@ -9501,11 +9501,12 @@ surface-level descriptions:
    disclosure, clearly labelled as a suggestion with its factual basis. A
    confidence score or legacy `intentOf` value must not select or masquerade
    as the primary action.
-4. **DeclutrMail Undo and Gmail Trash recovery are distinct.** Archive and
-   Later can be undone from Activity for the retention period provided by the
-   user's plan. Delete moves mail to Gmail Trash and recovery follows Gmail's
-   Trash behavior; it is never described as DeclutrMail Undo. A delivered
-   unsubscribe request cannot be recalled.
+4. **DeclutrMail Undo and Gmail Trash recovery are distinct.** Archive, Later,
+   and Delete can be undone from Activity for the retention period provided by
+   the user's plan. Delete also moves mail to Gmail Trash, whose separate
+   provider recovery normally remains available for up to 30 days. Neither
+   recovery path may be presented as the other. A delivered unsubscribe
+   request cannot be recalled.
 5. **Disconnect presents two explicit data choices.** Standard Disconnect
    revokes Gmail access and stops sync while retaining the existing indexed
    mailbox data until the user deletes it, and explains that reconnection is
