@@ -64,6 +64,15 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
+export {
+  mailboxDataDeletionRequests,
+  mailboxDataDeletionStatus,
+} from './schema/mailbox-data-deletion-requests';
+export type {
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  NewMailboxDataDeletionRequest,
+} from './schema/mailbox-data-deletion-requests';
 export { outboxEvents, outboxStatus } from './schema/outbox-events';
 export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-events';
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';

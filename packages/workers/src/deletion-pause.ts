@@ -1,7 +1,11 @@
 import { sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { accountDeletionRequests, mailboxAccounts } from '@declutrmail/db';
+import {
+  accountDeletionRequests,
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
+} from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
@@ -46,7 +50,27 @@ export const deletionPendingSql = sql<boolean>`EXISTS (
   SELECT 1 FROM account_deletion_requests adr
   WHERE adr.user_id = mailbox_accounts.user_id
     AND adr.status IN ('pending', 'executing')
+) OR EXISTS (
+  SELECT 1 FROM mailbox_data_deletion_requests mdr
+  WHERE mdr.mailbox_account_id = mailbox_accounts.id
+    AND mdr.status IN ('pending', 'executing', 'failed')
 )`;
+
+/** True when this mailbox has a retryable indexed-data purge request. */
+export async function hasInFlightMailboxDataDeletion(
+  db: WorkerDb,
+  mailboxAccountId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: mailboxDataDeletionRequests.id })
+    .from(mailboxDataDeletionRequests)
+    .where(
+      sql`${mailboxDataDeletionRequests.mailboxAccountId} = ${mailboxAccountId}
+          AND ${mailboxDataDeletionRequests.status} IN ('pending', 'executing', 'failed')`,
+    )
+    .limit(1);
+  return row !== undefined;
+}
 
 /** Worker-entry eligibility for Gmail sync jobs. */
 export type SyncMailboxEligibility = 'active' | 'inactive' | 'deletion_pending';

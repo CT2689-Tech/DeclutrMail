@@ -11,6 +11,8 @@
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
     "Until the user deletes this mailbox's indexed data or deletes their DeclutrMail account.",
+  mailboxIdentity:
+    'The disconnected Gmail address and mailbox deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
   derivedMailboxData:
     "Until the user deletes this mailbox's indexed data or deletes their DeclutrMail account.",
@@ -21,6 +23,8 @@ export const GMAIL_DATA_RETENTION = {
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
 export type GmailDataExportFormat = 'json' | 'csv' | 'senders-csv' | 'decisions-csv';
 export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic';
+export type GmailDataRemovalTrigger =
+  'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 
 export const GMAIL_OAUTH_ACCESS = [
   {
@@ -68,6 +72,8 @@ export interface GmailDataInventoryItem {
   purpose: string;
   /** Exact product retention rule; never an aspirational TTL. */
   retention: string;
+  /** User action that removes this dataset from DeclutrMail. */
+  removalTrigger: GmailDataRemovalTrigger;
   /** Download formats that currently contain at least part of this dataset. */
   exportedIn: readonly GmailDataExportFormat[];
   /** External processors that receive this dataset in production paths. */
@@ -87,6 +93,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose:
       'Prevent duplicate indexing, group messages, open the original email, and apply actions.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -106,6 +113,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Group email by sender and show who sent it.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
@@ -119,6 +127,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Identify messages in previews, Brief, and sender details.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
@@ -132,6 +141,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Give enough context to review a message without fetching its body.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
@@ -145,6 +155,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Sort email, apply time ranges, and calculate sender activity.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -158,6 +169,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Determine inbox state and apply or reverse label changes.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -171,6 +183,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: true,
     purpose: 'Show engagement facts and calculate sender-level read rates.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
@@ -184,6 +197,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: true,
     purpose: 'Separate sent mail from received mail and support reply and follow-up features.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -197,6 +211,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Attribute replies and show follow-ups for sent mail.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -214,6 +229,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: true,
     purpose: 'Offer a supported one-click request or open a prefilled Gmail draft.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -227,6 +243,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     derived: false,
     purpose: 'Show the approximate encoded size of a message.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
@@ -242,7 +259,8 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     storageRefs: ['mailbox_accounts.provider_account_id', 'mailbox_accounts.status'],
     derived: false,
     purpose: 'Identify, switch, disconnect, and reconnect a mailbox.',
-    retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    retention: GMAIL_DATA_RETENTION.mailboxIdentity,
+    removalTrigger: 'delete-account',
     exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
@@ -260,6 +278,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     derived: false,
     purpose: 'Sync and change Gmail only while the account is connected.',
     retention: GMAIL_DATA_RETENTION.connection,
+    removalTrigger: 'disconnect',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
@@ -278,6 +297,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     derived: false,
     purpose: 'Resume incremental sync without rescanning the full mailbox.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
@@ -294,6 +314,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     derived: true,
     purpose: 'Summarize who sends mail and show observed activity facts.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'senders-csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: false,
@@ -308,10 +329,12 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
       'triage_decisions.*',
       'automation_rules.*',
       'rule_match_log.*',
+      'users.preferences',
     ],
     derived: true,
     purpose: 'Remember user choices and explain or apply explicitly enabled rules.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'senders-csv', 'decisions-csv'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: false,
@@ -325,6 +348,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     derived: true,
     purpose: 'Run approved changes, show what happened, and reverse eligible actions.',
     retention: `${GMAIL_DATA_RETENTION.derivedMailboxData} Undo payloads use the shorter Undo-journal retention rule.`,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'decisions-csv'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
@@ -345,8 +369,43 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose:
       'Build return summaries, track sent-mail replies, and hold unknown senders for review.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
+    showInMessageStorageList: false,
+  },
+  {
+    id: 'processing-and-retry-records',
+    category: 'derived',
+    label: 'Mailbox processing, delivery, retry, and webhook deduplication records',
+    fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
+    storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*'],
+    derived: true,
+    purpose:
+      'Deliver background work once, recover failed jobs, and avoid processing the same Gmail notification twice.',
+    retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+] as const satisfies readonly GmailDataInventoryItem[];
+
+export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
+  {
+    id: 'mailbox-security-and-deletion-audit',
+    category: 'connection',
+    label: 'Minimal mailbox security and deletion audit records',
+    fetchedFrom: ['DeclutrMail connection, security, and deletion lifecycle events'],
+    storageRefs: ['mailbox_data_deletion_requests.*', 'security_events.*'],
+    derived: true,
+    purpose:
+      'Investigate security incidents and retain narrowly scoped evidence that a requested deletion ran.',
+    retention:
+      'These pseudonymous security and compliance records remain after mailbox or account deletion under DeclutrMail operational retention policy; they do not contain message bodies or attachments.',
+    removalTrigger: 'retention-policy',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
 ] as const satisfies readonly GmailDataInventoryItem[];
@@ -355,7 +414,26 @@ export const GMAIL_DATA_INVENTORY = [
   ...GMAIL_CONNECTION_DATA_INVENTORY,
   ...GMAIL_MESSAGE_DATA_INVENTORY,
   ...GMAIL_DERIVED_DATA_INVENTORY,
+  ...GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
 ] as const satisfies readonly GmailDataInventoryItem[];
+
+/** Datasets removed immediately by revoking and nullifying the Gmail connection. */
+export const GMAIL_DISCONNECT_DATA_INVENTORY = Object.freeze(
+  GMAIL_DATA_INVENTORY.filter((item) => item.removalTrigger === 'disconnect'),
+);
+
+/** Remaining mailbox-scoped datasets removed by the durable indexed-data purge. */
+export const GMAIL_INDEXED_DATA_DELETION_INVENTORY = Object.freeze(
+  GMAIL_DATA_INVENTORY.filter((item) => item.removalTrigger === 'delete-indexed-data'),
+);
+
+/** Minimal mailbox records intentionally retained after indexed-data deletion. */
+export const GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY = Object.freeze(
+  GMAIL_DATA_INVENTORY.filter(
+    (item) =>
+      item.removalTrigger === 'delete-account' || item.removalTrigger === 'retention-policy',
+  ),
+);
 
 /** Gmail headers requested by `messages.get?format=metadata`. */
 export const GMAIL_METADATA_HEADERS = Object.freeze(

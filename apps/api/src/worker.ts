@@ -1687,6 +1687,7 @@ async function bootstrap(): Promise<void> {
     topicName: gmailPubsubTopic,
     emailQueue: emailSendQueue,
     renderReceiptEmail: deletionReceiptEmail,
+    mailboxLock,
     observer,
   });
   deletionPurgeWorker.setObserver(observer);

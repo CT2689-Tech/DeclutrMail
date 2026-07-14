@@ -181,10 +181,14 @@ export {
   GMAIL_DATA_INVENTORY,
   GMAIL_DATA_RETENTION,
   GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_DISCONNECT_DATA_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_MESSAGE_STORAGE_LABELS,
   GMAIL_METADATA_HEADERS,
   GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   gmailDataInventoryItem,
 } from './contracts/gmail-data-inventory';
 export type {
@@ -192,5 +196,21 @@ export type {
   GmailDataExportFormat,
   GmailDataInventoryItem,
   GmailDataProcessor,
+  GmailDataRemovalTrigger,
 } from './contracts/gmail-data-inventory';
 export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './contracts/data-export';
+export {
+  MAILBOX_DATA_DELETION_CONFIRM_PREFIX,
+  mailboxDataDeletionConfirmPhrase,
+  MailboxDataDeletionRequestSchema,
+  MailboxDataDeletionStatusSchema,
+  MailboxDataDeletionViewSchema,
+  MailboxIndexedDataStateSchema,
+} from './contracts/mailbox-data-deletion';
+export type {
+  MailboxDataDeletionReceipt,
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  MailboxDataDeletionView,
+  MailboxIndexedDataState,
+} from './contracts/mailbox-data-deletion';

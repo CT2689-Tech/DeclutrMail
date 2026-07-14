@@ -13,10 +13,14 @@ export {
   GMAIL_DATA_INVENTORY,
   GMAIL_DATA_RETENTION,
   GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_DISCONNECT_DATA_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_INVENTORY,
+  GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_MESSAGE_STORAGE_LABELS,
   GMAIL_METADATA_HEADERS,
   GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   gmailDataInventoryItem,
 } from './gmail-data-inventory';
 export type {
@@ -24,6 +28,7 @@ export type {
   GmailDataExportFormat,
   GmailDataInventoryItem,
   GmailDataProcessor,
+  GmailDataRemovalTrigger,
 } from './gmail-data-inventory';
 
 export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './data-export';
@@ -253,3 +258,20 @@ export type {
   AccountDeletionRequest,
   AccountDeletionStatus,
 } from './account-deletion';
+
+// D245 mailbox-only indexed-data deletion — explicit disconnect vs purge.
+export {
+  MAILBOX_DATA_DELETION_CONFIRM_PREFIX,
+  mailboxDataDeletionConfirmPhrase,
+  MailboxDataDeletionRequestSchema,
+  MailboxDataDeletionStatusSchema,
+  MailboxDataDeletionViewSchema,
+  MailboxIndexedDataStateSchema,
+} from './mailbox-data-deletion';
+export type {
+  MailboxDataDeletionReceipt,
+  MailboxDataDeletionRequest,
+  MailboxDataDeletionStatus,
+  MailboxDataDeletionView,
+  MailboxIndexedDataState,
+} from './mailbox-data-deletion';

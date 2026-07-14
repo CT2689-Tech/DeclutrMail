@@ -1,5 +1,6 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { deadLetterJobs } from '@declutrmail/db';
+import { desc, eq } from 'drizzle-orm';
+import { deadLetterJobs, mailboxDataDeletionRequests } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 /**
@@ -131,14 +132,39 @@ export class DrizzleDeadLetterRecorder implements DeadLetterRecorder {
   constructor(private readonly deps: { db: WorkerDb }) {}
 
   async record(entry: DeadLetterEntry): Promise<void> {
-    await this.deps.db.insert(deadLetterJobs).values({
+    const payload = sanitizeDeadLetterPayload(entry.payload);
+    const mailboxAccountId = payload['mailboxAccountId'];
+    const values = {
       queue: entry.queue,
       jobId: entry.jobId,
-      payload: sanitizeDeadLetterPayload(entry.payload),
+      payload,
       error:
         entry.error.length > DEAD_LETTER_ERROR_MAX_LEN
           ? `${entry.error.slice(0, DEAD_LETTER_ERROR_MAX_LEN)}…`
           : entry.error,
-    });
+    };
+    if (typeof mailboxAccountId === 'string' && isUuid(mailboxAccountId)) {
+      await this.deps.db.transaction(async (tx) => {
+        // Lock the latest request row across check + insert. The purge's
+        // final transaction updates this same row to completed, so either
+        // our insert happens first (and the purge deletes it) or we observe
+        // completed and skip. There is no check/insert window after purge.
+        const [latest] = await tx
+          .select({ status: mailboxDataDeletionRequests.status })
+          .from(mailboxDataDeletionRequests)
+          .where(eq(mailboxDataDeletionRequests.mailboxAccountId, mailboxAccountId))
+          .orderBy(desc(mailboxDataDeletionRequests.requestedAt))
+          .limit(1)
+          .for('update');
+        if (latest?.status === 'completed') return;
+        await tx.insert(deadLetterJobs).values(values);
+      });
+      return;
+    }
+    await this.deps.db.insert(deadLetterJobs).values(values);
   }
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }

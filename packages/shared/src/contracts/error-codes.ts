@@ -203,6 +203,20 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'There is no scheduled deletion to cancel.',
   },
+
+  // --- domain: mailbox indexed-data deletion (D245) ---
+  MAILBOX_DATA_DELETION_CONFIRM_MISMATCH: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'The confirmation phrase did not match this Gmail account.',
+  },
+  MAILBOX_DATA_DELETION_IN_PROGRESS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Indexed data deletion is still in progress. Reconnect after it finishes.',
+  },
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /** The union of every registered error code. */

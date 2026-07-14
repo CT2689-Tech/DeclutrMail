@@ -23,7 +23,14 @@ function makeCtx(req: ReturnType<typeof makeReq>): ExecutionContext {
 }
 
 function summary(id: string, status: 'active' | 'disconnected' = 'active'): MailboxSummary {
-  return { id, email: `${id}@x.test`, status, connectedAt: null };
+  return {
+    id,
+    email: `${id}@x.test`,
+    status,
+    connectedAt: null,
+    indexedDataState: status === 'active' ? 'indexed' : 'retained',
+    dataDeletion: null,
+  };
 }
 
 describe('CurrentMailboxGuard (D155 + D205)', () => {

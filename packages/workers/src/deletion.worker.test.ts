@@ -5,14 +5,29 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   accountDeletionRequests,
+  actionJobs,
+  activityLog,
+  automationRules,
+  briefRuns,
   cronRuns,
+  deadLetterJobs,
+  followupTracker,
   mailboxAccounts,
+  mailboxDataDeletionRequests,
   mailMessages,
+  outboxEvents,
+  providerSyncState,
+  ruleMatchLog,
   schema,
+  screenerQuarantine,
   securityEvents,
+  senderPolicies,
+  senderTimeseries,
   senders,
+  triageDecisions,
   undoJournal,
   users,
+  webhookDedup,
   workspaces,
 } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
@@ -20,7 +35,10 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
 import type { Queue } from 'bullmq';
 
-import { AccountDeletionPurgeWorker } from './deletion.worker.js';
+import {
+  AccountDeletionPurgeWorker,
+  MAILBOX_PURGE_DIRECT_CHILD_TABLES,
+} from './deletion.worker.js';
 import { isSyncPausedForDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { GmailWatchAccess, GmailWatchClient } from './ports.js';
@@ -42,7 +60,7 @@ const TOPIC = 'projects/p/topics/gmail-push';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-async function freshDb(): Promise<Db> {
+async function freshHarness(): Promise<{ db: Db; pg: PGlite }> {
   const pg = new PGlite({ extensions: { citext } });
   for (const file of readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
@@ -55,7 +73,11 @@ async function freshDb(): Promise<Db> {
       }
     }
   }
-  return drizzle(pg, { schema });
+  return { db: drizzle(pg, { schema }), pg };
+}
+
+async function freshDb(): Promise<Db> {
+  return (await freshHarness()).db;
 }
 
 const ctx = {} as WorkerContext;
@@ -182,6 +204,180 @@ function makeWorker(db: Db) {
     }),
   });
   return { worker, watch, email };
+}
+
+interface MailboxGraph {
+  mailboxId: string;
+  userId: string;
+  workspaceId: string;
+}
+
+/** Seed one row in every direct mailbox child plus both non-FK stores. */
+async function seedMailboxGraph(
+  db: Db,
+  tag: string,
+  owner?: { userId: string; workspaceId: string },
+): Promise<MailboxGraph> {
+  let workspaceId = owner?.workspaceId;
+  let userId = owner?.userId;
+  if (!workspaceId || !userId) {
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: `Mailbox purge ${tag}` })
+      .returning({ id: workspaces.id });
+    workspaceId = workspace!.id;
+    const [user] = await db
+      .insert(users)
+      .values({
+        workspaceId,
+        email: `${tag}@declutrmail.test`,
+        preferences: {
+          onboardingFirstTriageKeys: [`pinned-${tag}`],
+        },
+      })
+      .returning({ id: users.id });
+    userId = user!.id;
+  }
+
+  const [mailbox] = await db
+    .insert(mailboxAccounts)
+    .values({
+      workspaceId,
+      userId,
+      provider: 'gmail',
+      providerAccountId: `${tag}@gmail.test`,
+      status: 'active',
+      quietState: { gmail_watch: { history_id: '9' }, quiet_hours: { enabled: true } },
+      encryptedRefreshToken: Buffer.from(`token-${tag}`),
+      dekEncrypted: Buffer.from(`dek-${tag}`),
+      keyVersion: 1,
+      connectedAt: new Date(),
+    })
+    .returning({ id: mailboxAccounts.id });
+  const mailboxId = mailbox!.id;
+  const senderKey = tag.padEnd(64, '0').slice(0, 64);
+  const now = new Date();
+
+  await db.insert(mailMessages).values({
+    mailboxAccountId: mailboxId,
+    providerMessageId: `message-${tag}`,
+    providerThreadId: `thread-${tag}`,
+    senderKey,
+    subject: `Subject ${tag}`,
+    snippet: `Snippet ${tag}`,
+    internalDate: now,
+    isUnread: true,
+  });
+  await db.insert(senders).values({
+    mailboxAccountId: mailboxId,
+    senderKey,
+    displayName: `Sender ${tag}`,
+    email: `sender-${tag}@example.test`,
+    domain: 'example.test',
+    gmailCategory: 'updates',
+    firstSeenAt: now,
+    lastSeenAt: now,
+  });
+  await db.insert(senderTimeseries).values({
+    mailboxAccountId: mailboxId,
+    senderKey,
+    yearMonth: '2026-07-01',
+    volume: 1,
+  });
+  await db.insert(senderPolicies).values({ mailboxAccountId: mailboxId, senderKey });
+  await db.insert(triageDecisions).values({
+    mailboxAccountId: mailboxId,
+    senderKey,
+    verdict: 'archive',
+    confidence: '0.90',
+    reasoning: 'Fixture',
+    generatedBy: 'template',
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  const [rule] = await db
+    .insert(automationRules)
+    .values({
+      mailboxAccountId: mailboxId,
+      presetKey: 'auto_archive_low_engagement',
+      name: 'Fixture',
+      actionKind: 'archive',
+    })
+    .returning({ id: automationRules.id });
+  const [journal] = await db
+    .insert(undoJournal)
+    .values({
+      mailboxAccountId: mailboxId,
+      actionKind: 'archive',
+      payload: { message_ids: [`message-${tag}`] },
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+    .returning({ token: undoJournal.token });
+  await db.insert(ruleMatchLog).values({
+    ruleId: rule!.id,
+    mailboxAccountId: mailboxId,
+    senderKey,
+    modeAtMatch: 'observe',
+    confidence: '0.90',
+    reason: 'Fixture match',
+    intentToken: journal!.token,
+  });
+  await db.insert(activityLog).values({
+    mailboxAccountId: mailboxId,
+    senderKey,
+    source: 'manual',
+    action: 'archive',
+    affectedCount: 1,
+    undoToken: journal!.token,
+    ruleId: rule!.id,
+  });
+  await db.insert(actionJobs).values({
+    mailboxAccountId: mailboxId,
+    verb: 'archive',
+    selector: { type: 'messages' },
+    resolvedMessageIds: [`message-${tag}`],
+    idempotencyKey: `fixture-${tag}`,
+    undoToken: journal!.token,
+  });
+  await db.insert(briefRuns).values({
+    workspaceId,
+    mailboxAccountId: mailboxId,
+    runDateLocal: '2026-07-14',
+    generatedBy: 'template',
+  });
+  await db.insert(followupTracker).values({
+    workspaceId,
+    mailboxAccountId: mailboxId,
+    providerThreadId: `thread-${tag}`,
+    recipientEmail: `recipient-${tag}@example.test`,
+    subject: `Followup ${tag}`,
+    sentAt: now,
+  });
+  await db.insert(screenerQuarantine).values({ mailboxAccountId: mailboxId, senderKey });
+  await db.insert(providerSyncState).values({
+    mailboxAccountId: mailboxId,
+    readinessStatus: 'ready',
+    currentStage: 'ready',
+    progressPct: 100,
+    lastHistoryId: 9n,
+  });
+  await db.insert(webhookDedup).values({
+    messageId: `pubsub-${tag}`,
+    mailboxAccountId: mailboxId,
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  await db.insert(outboxEvents).values({
+    topic: 'fixture.mailbox_indexed',
+    aggregateId: mailboxId,
+    payload: { mailboxAccountId: mailboxId, senderKey },
+  });
+  await db.insert(deadLetterJobs).values({
+    queue: 'fixture',
+    jobId: `job-${tag}`,
+    payload: { mailboxAccountId: mailboxId, senderKey },
+    error: 'fixture failure',
+  });
+
+  return { mailboxId, userId, workspaceId };
 }
 
 describe('AccountDeletionPurgeWorker', () => {
@@ -400,6 +596,212 @@ describe('AccountDeletionPurgeWorker', () => {
   });
 });
 
+describe('mailbox indexed-data purge', () => {
+  it('purges only the target index, preserves its stub, and completes the durable request', async () => {
+    const { db, pg } = await freshHarness();
+    const target = await seedMailboxGraph(db, 'target');
+    const sibling = await seedMailboxGraph(db, 'sibling', {
+      userId: target.userId,
+      workspaceId: target.workspaceId,
+    });
+    const stranger = await seedMailboxGraph(db, 'stranger');
+    await db
+      .update(users)
+      .set({
+        preferences: {
+          activeMailboxId: target.mailboxId,
+          onboardingFirstTriageKeys: ['target-pin'],
+          keepMe: true,
+        },
+      })
+      .where(eq(users.id, target.userId));
+    await db
+      .update(users)
+      .set({
+        preferences: {
+          activeMailboxId: stranger.mailboxId,
+          onboardingFirstTriageKeys: ['stranger-pin'],
+        },
+      })
+      .where(eq(users.id, stranger.userId));
+    const [request] = await db
+      .insert(mailboxDataDeletionRequests)
+      .values({ mailboxAccountId: target.mailboxId })
+      .returning({ id: mailboxDataDeletionRequests.id });
+
+    const { worker, watch } = makeWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:00' }, ctx);
+
+    expect(result).toMatchObject({ outcome: 'swept', due: 1, purged: 1, failed: 0 });
+    expect(watch.stopped).toEqual([target.mailboxId]);
+
+    for (const table of MAILBOX_PURGE_DIRECT_CHILD_TABLES) {
+      const targetCount = await pg.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "${table}" WHERE mailbox_account_id = $1`,
+        [target.mailboxId],
+      );
+      const siblingCount = await pg.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "${table}" WHERE mailbox_account_id = $1`,
+        [sibling.mailboxId],
+      );
+      expect(Number(targetCount.rows[0]!.count), `${table} target`).toBe(0);
+      expect(Number(siblingCount.rows[0]!.count), `${table} sibling`).toBe(1);
+    }
+
+    for (const table of ['outbox_events', 'dead_letter_jobs']) {
+      const targetCount = await pg.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "${table}" WHERE payload->>'mailboxAccountId' = $1`,
+        [target.mailboxId],
+      );
+      const siblingCount = await pg.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM "${table}" WHERE payload->>'mailboxAccountId' = $1`,
+        [sibling.mailboxId],
+      );
+      expect(Number(targetCount.rows[0]!.count), `${table} target`).toBe(0);
+      expect(Number(siblingCount.rows[0]!.count), `${table} sibling`).toBe(1);
+    }
+
+    const [stub] = await db
+      .select()
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.id, target.mailboxId));
+    expect(stub).toMatchObject({
+      id: target.mailboxId,
+      userId: target.userId,
+      workspaceId: target.workspaceId,
+      providerAccountId: 'target@gmail.test',
+      status: 'disconnected',
+      quietState: {},
+      encryptedRefreshToken: null,
+      dekEncrypted: null,
+      keyVersion: null,
+      connectedAt: null,
+    });
+    expect(
+      await db.select().from(mailboxAccounts).where(eq(mailboxAccounts.id, sibling.mailboxId)),
+    ).toHaveLength(1);
+    expect(
+      await db.select().from(mailboxAccounts).where(eq(mailboxAccounts.id, stranger.mailboxId)),
+    ).toHaveLength(1);
+    expect(await db.select().from(users)).toHaveLength(2);
+
+    const [completed] = await db
+      .select()
+      .from(mailboxDataDeletionRequests)
+      .where(eq(mailboxDataDeletionRequests.id, request!.id));
+    expect(completed).toMatchObject({ status: 'completed', lastError: null });
+    expect(completed!.completedAt).not.toBeNull();
+
+    const [owner] = await db.select().from(users).where(eq(users.id, target.userId));
+    expect(owner!.preferences).toEqual({ activeMailboxId: null, keepMe: true });
+    const [otherUser] = await db.select().from(users).where(eq(users.id, stranger.userId));
+    expect(otherUser!.preferences).toEqual({
+      activeMailboxId: stranger.mailboxId,
+      onboardingFirstTriageKeys: ['stranger-pin'],
+    });
+
+    const audit = await db
+      .select()
+      .from(securityEvents)
+      .where(eq(securityEvents.eventType, 'mailbox.indexed_data_deleted'));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!.payload).toEqual({
+      requestId: request!.id,
+      mailboxAccountId: target.mailboxId,
+    });
+  });
+
+  it('registry covers every direct mailbox FK except the durable request table', async () => {
+    const { pg } = await freshHarness();
+    const result = await pg.query<{ table_name: string; delete_action: string }>(`
+      SELECT child.relname AS table_name, constraint_row.confdeltype::text AS delete_action
+      FROM pg_constraint constraint_row
+      JOIN pg_class child ON child.oid = constraint_row.conrelid
+      JOIN pg_class parent ON parent.oid = constraint_row.confrelid
+      WHERE constraint_row.contype = 'f'
+        AND parent.relname = 'mailbox_accounts'
+      ORDER BY child.relname
+    `);
+    const requestFk = result.rows.find(
+      (row) => row.table_name === 'mailbox_data_deletion_requests',
+    );
+    expect(requestFk?.delete_action).toBe('c');
+    expect(
+      result.rows
+        .map((row) => row.table_name)
+        .filter((table) => table !== 'mailbox_data_deletion_requests'),
+    ).toEqual([...MAILBOX_PURGE_DIRECT_CHILD_TABLES]);
+  });
+
+  it('records a failed attempt and retries it on a later sweep', async () => {
+    const db = await freshDb();
+    const target = await seedMailboxGraph(db, 'retry');
+    const [request] = await db
+      .insert(mailboxDataDeletionRequests)
+      .values({ mailboxAccountId: target.mailboxId })
+      .returning({ id: mailboxDataDeletionRequests.id });
+    let lockCalls = 0;
+    const lock = {
+      run: async <T>(_mailboxAccountId: string, fn: () => Promise<T>): Promise<T> => {
+        lockCalls += 1;
+        if (lockCalls === 1) throw new Error('injected lock failure');
+        return fn();
+      },
+    };
+    const watch = fakeWatch();
+    const worker = new AccountDeletionPurgeWorker({
+      db: db as never,
+      gmailWatch: watch.access,
+      topicName: null,
+      emailQueue: null,
+      mailboxLock: lock,
+      renderReceiptEmail: () => ({ subject: 's', text: 't' }),
+    });
+
+    await expect(worker.processJob({ scheduledAtMinute: '2026-07-14T10:05' }, ctx)).rejects.toThrow(
+      'all 1 due deletion requests failed',
+    );
+    const [failed] = await db
+      .select()
+      .from(mailboxDataDeletionRequests)
+      .where(eq(mailboxDataDeletionRequests.id, request!.id));
+    expect(failed).toMatchObject({ status: 'failed', lastError: 'Error' });
+    expect(failed!.failedAt).not.toBeNull();
+
+    const retry = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:10' }, ctx);
+    expect(retry).toMatchObject({ due: 1, purged: 1, failed: 0 });
+    const [completed] = await db
+      .select()
+      .from(mailboxDataDeletionRequests)
+      .where(eq(mailboxDataDeletionRequests.id, request!.id));
+    expect(completed).toMatchObject({ status: 'completed', lastError: null, failedAt: null });
+  });
+
+  it('takes over a stranded executing mailbox request', async () => {
+    const db = await freshDb();
+    const target = await seedMailboxGraph(db, 'resume');
+    const [request] = await db
+      .insert(mailboxDataDeletionRequests)
+      .values({
+        mailboxAccountId: target.mailboxId,
+        status: 'executing',
+        executedAt: new Date(Date.now() - 30 * 60 * 1_000),
+        updatedAt: new Date(Date.now() - 30 * 60 * 1_000),
+      })
+      .returning({ id: mailboxDataDeletionRequests.id });
+    const { worker } = makeWorker(db);
+
+    const result = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:15' }, ctx);
+
+    expect(result).toMatchObject({ due: 1, purged: 1, failed: 0 });
+    const [completed] = await db
+      .select()
+      .from(mailboxDataDeletionRequests)
+      .where(eq(mailboxDataDeletionRequests.id, request!.id));
+    expect(completed!.status).toBe('completed');
+  });
+});
+
 describe('isSyncPausedForDeletion (D232 sync pause predicate)', () => {
   it('true while pending/executing; false after cancel and for strangers', async () => {
     const db = await freshDb();
@@ -428,5 +830,22 @@ describe('isSyncPausedForDeletion (D232 sync pause predicate)', () => {
     expect(await isSyncPausedForDeletion(db as never, '00000000-0000-0000-0000-000000000000')).toBe(
       false,
     );
+  });
+
+  it('also pauses a mailbox with a retryable indexed-data deletion request', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailboxGraph(db, 'pause-index');
+    const [request] = await db
+      .insert(mailboxDataDeletionRequests)
+      .values({ mailboxAccountId: mailbox.mailboxId })
+      .returning({ id: mailboxDataDeletionRequests.id });
+
+    expect(await isSyncPausedForDeletion(db as never, mailbox.mailboxId)).toBe(true);
+
+    await db
+      .update(mailboxDataDeletionRequests)
+      .set({ status: 'completed', completedAt: new Date() })
+      .where(eq(mailboxDataDeletionRequests.id, request!.id));
+    expect(await isSyncPausedForDeletion(db as never, mailbox.mailboxId)).toBe(false);
   });
 });

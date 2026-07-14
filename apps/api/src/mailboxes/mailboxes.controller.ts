@@ -4,16 +4,21 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
+  Post,
   Put,
   UseGuards,
 } from '@nestjs/common';
 
 import {
+  MailboxDataDeletionRequestSchema,
   ok,
   QuietHoursConfigSchema,
   type Envelope,
+  type MailboxDataDeletionReceipt,
   type QuietHoursState,
 } from '@declutrmail/shared/contracts';
 
@@ -21,6 +26,8 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
+import { AppException } from '../common/app-exception.js';
+import { RateLimit } from '../common/rate-limit/index.js';
 import { UsersService } from '../users/users.service.js';
 import { MailboxAccountsService, type MailboxSummary } from './mailbox-accounts.service.js';
 
@@ -29,6 +36,7 @@ import { MailboxAccountsService, type MailboxSummary } from './mailbox-accounts.
  *
  *   GET    /api/mailboxes                   → list workspace mailboxes
  *   DELETE /api/mailboxes/:id               → disconnect (revoke + nullify)
+ *   POST   /api/mailboxes/:id/indexed-data-deletion → disconnect + schedule mailbox purge
  *   PATCH  /api/mailboxes/:id/active        → set as the user's active mailbox
  *   GET    /api/mailboxes/:id/quiet-hours   → quiet-hours config + activeNow (U18, D92/D95)
  *   PUT    /api/mailboxes/:id/quiet-hours   → replace quiet-hours config (jsonb-merge write)
@@ -70,18 +78,47 @@ export class MailboxesController {
     @CurrentUser() user: SessionPrincipal,
     @Param('id') id: string,
   ): Promise<Envelope<MailboxSummary>> {
+    assertUuid(id);
     const summary = await this.mailboxes.disconnect({
       workspaceId: user.workspaceId,
+      userId: user.userId,
       mailboxAccountId: id,
     });
-    // If the disconnected mailbox was the active one, clear the
-    // preference so the next request resolves a different mailbox.
-    const userRow = await this.users.findById(user.userId);
-    const prefs = (userRow?.preferences ?? {}) as { activeMailboxId?: unknown };
-    if (prefs.activeMailboxId === id) {
-      await this.users.patchPreferences(user.userId, { activeMailboxId: null });
-    }
+    await this.clearActiveMailboxPreference(user, id);
     return ok(summary);
+  }
+
+  /**
+   * Disconnect and schedule deletion of this mailbox's indexed Gmail
+   * data. The durable worker performs the large purge asynchronously;
+   * this 202 response confirms the Gmail credential is already removed
+   * and the deletion request is persisted.
+   */
+  @Post(':id/indexed-data-deletion')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 5, windowSec: 60 })
+  @HttpCode(HttpStatus.ACCEPTED)
+  async deleteIndexedData(
+    @CurrentUser() user: SessionPrincipal,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ): Promise<Envelope<MailboxDataDeletionReceipt>> {
+    assertUuid(id);
+    const parsed = MailboxDataDeletionRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new AppException({
+        code: 'BAD_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid indexed-data deletion request.',
+      });
+    }
+    const receipt = await this.mailboxes.requestIndexedDataDeletion({
+      workspaceId: user.workspaceId,
+      userId: user.userId,
+      mailboxAccountId: id,
+      confirmPhrase: parsed.data.confirmPhrase,
+    });
+    await this.clearActiveMailboxPreference(user, id);
+    return ok(receipt);
   }
 
   @Patch(':id/active')
@@ -157,6 +194,15 @@ export class MailboxesController {
     }
     const state = await this.mailboxes.putQuietHours(user.workspaceId, id, parsed.data);
     return ok(state);
+  }
+
+  /** Clear only a preference that points at the mailbox being disconnected. */
+  private async clearActiveMailboxPreference(user: SessionPrincipal, id: string): Promise<void> {
+    const userRow = await this.users.findById(user.userId);
+    const prefs = (userRow?.preferences ?? {}) as { activeMailboxId?: unknown };
+    if (prefs.activeMailboxId === id) {
+      await this.users.patchPreferences(user.userId, { activeMailboxId: null });
+    }
   }
 }
 

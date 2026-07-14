@@ -284,9 +284,13 @@ export {
 export {
   deletionPendingSql,
   hasInFlightDeletion,
+  hasInFlightMailboxDataDeletion,
   isSyncPausedForDeletion,
 } from './deletion-pause.js';
-export { AccountDeletionPurgeWorker } from './deletion.worker.js';
+export {
+  AccountDeletionPurgeWorker,
+  MAILBOX_PURGE_DIRECT_CHILD_TABLES,
+} from './deletion.worker.js';
 export type {
   DeletionPurgeDeps,
   DeletionSweepJobData,
