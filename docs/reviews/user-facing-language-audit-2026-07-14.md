@@ -336,7 +336,7 @@ accessibility foundations come before optional workflow acceleration.
 | Privacy and data | Export/deletion job progress, completion receipt, and exact dataset manifest | Makes high-trust account operations verifiable | High priority for launch readiness. |
 | Billing | Usage meter, projected limit date, and one canonical plan comparison | Prevents surprise caps and contradictory upgrade prompts | Resolve annual pricing first, then generate every surface from entitlements. |
 | Global navigation | Command palette for sender search, recent Activity, and primary destinations | Speeds up expert workflows without crowding every page | Add keyboard-first with full screen-reader labels. |
-| Accessibility | Authenticated 375px, keyboard, reduced-motion, and screen-reader smoke suite | Catches interaction problems static copy/unit tests cannot | Make this a release gate rather than a one-time audit. |
+| Accessibility | Authenticated 375px, keyboard, reduced-motion, and screen-reader smoke suite | Catches interaction problems static copy/unit tests cannot | **CI foundation implemented 2026-07-14:** desktop/mobile, reduced motion, Axe, names, overflow, and focus. A real screen-reader session remains. |
 | Support/admin | User-visible incident banner and provider-status context | Separates a Gmail/service outage from a user-specific failure | Show only actionable, scoped status; avoid leaking internal systems. |
 
 ## Post-implementation scorecard
@@ -350,7 +350,7 @@ accessibility foundations come before optional workflow acceleration.
 | Onboarding activation | 4/5 | First useful decision exists; add sample walkthrough and time-to-value measurement. |
 | Recurring user value | 4/5 | Brief/Activity/Autopilot are actionable; add feedback loops and weekly value reporting. |
 | Automation control | 5/5 | Observe, Active, Protected gates, consequence reports, caps, and action-specific recovery are explicit before activation. |
-| Accessibility and mobile confidence | 4/5 | Unit/a11y labels and responsive treatments are strong; authenticated assistive-tech/mobile smoke remains. |
+| Accessibility and mobile confidence | 4/5 | Authenticated desktop/mobile CI now gates Axe, names, overflow, reduced motion, and keyboard focus; a real screen-reader session remains. |
 | Billing clarity | 3/5 | Entitlements are canonical, but standard annual Pro pricing is unresolved. |
 | Operational trust | 4/5 | Freshness and recoverable errors are visible; add connection health and export/deletion progress. |
 
@@ -366,6 +366,8 @@ accessibility foundations come before optional workflow acceleration.
   exclusions, evidence-labelled weekly volume, safety caps, and recovery truth.
 - Added Quiet's held-action count and scheduled-release truth, including
   indefinite Quiet and pending work that Quiet is not delaying.
+- Added a Gmail-free authenticated accessibility CI gate for representative
+  desktop and mobile/reduced-motion routes plus keyboard focus behavior.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
 - Static validation covers TypeScript, focused API/worker/web/shared tests,
   migration checks, and diff/format checks. Authenticated live Playwright and
@@ -375,5 +377,6 @@ accessibility foundations come before optional workflow acceleration.
 
 - No `check-microcopy.sh` or `copy-tokens.md` exists in the repository despite D209, D221, D227, D228, and ADR-0011 referring to them.
 - The implemented recommendation surfaces now lead with observed facts; authenticated usability testing is still needed to validate whether users understand the resulting choices without assistance.
-- Mobile gesture behavior is documented as proposed in ADR-0018; the copy was reviewed statically, not through a 375×812 interactive smoke.
+- Mobile gesture behavior is documented as proposed in ADR-0018; the new
+  375×812 smoke covers layout and controls, not gesture-specific behavior.
 - Legal/privacy claims require founder/legal confirmation against the now-settled cumulative storage inventory.

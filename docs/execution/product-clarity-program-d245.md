@@ -110,6 +110,10 @@ current technical invariant rather than by hypothetical existing users.
 
 ### P3 — learnability and polish
 
+- [x] Gate representative authenticated routes in CI at desktop and 375×812,
+      with reduced motion, serious/critical Axe checks, control names,
+      overflow, and keyboard-dialog focus behavior.
+
 - [x] Add a compact in-product glossary for Sender, Gmail Preview, Protected,
       Observe, Active, Activity Undo, Gmail Trash recovery, and Later.
 - [x] Add contextual help at the privacy, action, Activity, Autopilot, and
