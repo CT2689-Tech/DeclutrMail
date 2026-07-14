@@ -1,19 +1,19 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { headers } from 'next/headers';
-import { Inter, JetBrains_Mono, Fraunces } from 'next/font/google';
+import { Fraunces, Geist, Geist_Mono } from 'next/font/google';
 import '@declutrmail/shared/tokens.css';
 import { isFeatureEnabled } from '@/lib/flags';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { Providers } from './providers';
 
-const inter = Inter({
+const geist = Geist({
   subsets: ['latin'],
   variable: '--dm-font-sans',
   display: 'swap',
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const geistMono = Geist_Mono({
   subsets: ['latin'],
   variable: '--dm-font-mono',
   display: 'swap',
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   // resolve against the canonical origin (D128 — declutrmail.com).
   metadataBase: new URL(siteUrl()),
   title: 'DeclutrMail',
-  description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
+  description: 'A Gmail sender-control companion with live previews and Activity undo.',
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -50,7 +50,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     // from the server-rendered ones.
     <html
       lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} ${fraunces.variable}`}
+      className={`${geist.variable} ${geistMono.variable} ${fraunces.variable}`}
       suppressHydrationWarning
     >
       <body>

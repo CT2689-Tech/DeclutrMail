@@ -1,0 +1,10 @@
+-- Rollback for 0035_mailbox_provider_account_citext.sql
+--
+-- Restores the original case-sensitive text type while preserving the
+-- canonical trim/lower values written by the forward migration. The
+-- existing UNIQUE(provider, provider_account_id) index remains in place.
+-- Original casing/whitespace is intentionally not reconstructable.
+
+ALTER TABLE "mailbox_accounts"
+  ALTER COLUMN "provider_account_id" TYPE text
+  USING "provider_account_id"::text;

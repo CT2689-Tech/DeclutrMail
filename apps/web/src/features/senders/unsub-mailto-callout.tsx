@@ -9,6 +9,7 @@
 // `activityKeys`.
 
 import { tokens } from '@declutrmail/shared';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { gmailComposeUrlFromMailto } from '@/lib/gmail-links';
 
 const { color, font } = tokens;
@@ -34,7 +35,9 @@ export function UnsubMailtoCallout({
   /** Present on transient (post-confirm) placements; omit for persistent ones. */
   onDismiss?: () => void;
 }) {
-  const composeUrl = gmailComposeUrlFromMailto(mailtoUrl);
+  const auth = useOptionalAuth();
+  const mailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  const composeUrl = mailboxEmail ? gmailComposeUrlFromMailto(mailboxEmail, mailtoUrl) : null;
   if (!composeUrl) return null;
 
   return (
@@ -95,5 +98,109 @@ export function UnsubMailtoCallout({
         </button>
       )}
     </div>
+  );
+}
+
+/**
+ * Bulk mailto follow-up. A recorded intent is not a sent request: every
+ * email-based list stays visible here until the user opens and sends its
+ * prefilled Gmail draft.
+ */
+export function UnsubMailtoChecklist({
+  items,
+  onDismiss,
+}: {
+  items: ReadonlyArray<{ senderName: string; mailtoUrl: string }>;
+  onDismiss: () => void;
+}) {
+  const auth = useOptionalAuth();
+  const mailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  const drafts = items.flatMap((item) => {
+    const composeUrl = mailboxEmail
+      ? gmailComposeUrlFromMailto(mailboxEmail, item.mailtoUrl)
+      : null;
+    return composeUrl ? [{ ...item, composeUrl }] : [];
+  });
+  if (drafts.length === 0) return null;
+
+  return (
+    <section
+      aria-label="Email unsubscribe drafts"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: '12px 14px',
+        background: color.primarySoft,
+        border: `1px solid ${color.primaryBorder}`,
+        borderRadius: 10,
+        fontFamily: font.sans,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <strong style={{ color: color.fg, fontSize: 13 }}>
+            {drafts.length} email unsubscribe draft{drafts.length === 1 ? '' : 's'} still{' '}
+            {drafts.length === 1 ? 'needs' : 'need'} you
+          </strong>
+          <p style={{ margin: '3px 0 0', color: color.fgSoft, fontSize: 12.5, lineHeight: 1.45 }}>
+            DeclutrMail recorded these decisions but did not send the email requests. Open each
+            prefilled Gmail draft and press Send from the subscribed account.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss email unsubscribe drafts"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: color.fgMuted,
+            cursor: 'pointer',
+            fontSize: 16,
+            lineHeight: 1,
+            padding: '0 4px',
+          }}
+        >
+          ×
+        </button>
+      </div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
+        {drafts.map((draft) => (
+          <li
+            key={`${draft.senderName}:${draft.mailtoUrl}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span
+              style={{ minWidth: 0, color: color.fg, fontSize: 12.5, overflowWrap: 'anywhere' }}
+            >
+              {draft.senderName}
+            </span>
+            <a
+              href={draft.composeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: color.fgInverse,
+                background: color.primary,
+                borderRadius: 6,
+                padding: '5px 10px',
+                fontSize: 12,
+                fontWeight: 600,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Open draft
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

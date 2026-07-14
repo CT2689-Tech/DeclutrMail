@@ -3,13 +3,18 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Button, Card, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Button, Card, ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import type { ToastTone } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
+import {
+  startMailboxConnect,
+  startMailboxReactivation,
+} from '@/features/mailboxes/connect-mailbox-url';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import {
@@ -24,6 +29,104 @@ import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
 
 const { color, font } = tokens;
+
+type ReconnectResult = 'success' | 'account_mismatch' | 'target_invalid' | 'cancelled' | 'failed';
+type ConnectStartResult = 'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
+
+/**
+ * Closed, privacy-safe copy for the OAuth return contract. Never echo
+ * provider errors, mailbox ids, or email addresses from the URL.
+ */
+type ReconnectResultCopy = {
+  message: string;
+  tone: ToastTone;
+  liveRole: 'status' | 'alert';
+};
+
+const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
+  success: {
+    message: 'Gmail reconnected. Sync status is shown below.',
+    tone: 'success',
+    liveRole: 'status',
+  },
+  account_mismatch: {
+    message:
+      'That was a different Google account. Retry Reconnect next to the Gmail address you intended to restore.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
+  target_invalid: {
+    message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
+  cancelled: {
+    message: 'Gmail reconnect was cancelled. Nothing changed.',
+    tone: 'info',
+    liveRole: 'status',
+  },
+  failed: {
+    message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
+};
+
+const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy> = {
+  target_invalid: {
+    message: 'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
+  inbox_limit: {
+    message:
+      'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  session_retry: {
+    message:
+      'We couldn’t verify your session for that Gmail connection attempt. Your session is active now—try again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  rate_limited: {
+    message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+};
+
+const MAILBOX_HASH = /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function reconnectResultOf(value: string | null): ReconnectResult | null {
+  switch (value) {
+    case 'success':
+    case 'account_mismatch':
+    case 'target_invalid':
+    case 'cancelled':
+    case 'failed':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function connectStartResultOf(value: string | null): ConnectStartResult | null {
+  switch (value) {
+    case 'target_invalid':
+    case 'inbox_limit':
+    case 'session_retry':
+    case 'rate_limited':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function reconnectMailboxIdFromHash(hash: string): string | null {
+  return MAILBOX_HASH.exec(hash)?.[1] ?? null;
+}
 
 /**
  * Settings index (U23 — D34 / D114 / D116 / D216).
@@ -92,6 +195,63 @@ export function SettingsScreen() {
     return () => clearTimeout(t);
   }, [wantsCancelDeletion, layoutSettled]);
 
+  // OAuth reconnect/cold-start return. Query values are closed enums and
+  // a reconnect target is accepted only from an exact UUID fragment.
+  // Resolve rows with getElementById (never a selector built from URL
+  // input), then scrub transient context so refresh cannot replay the
+  // toast or retain a mailbox id in browser history.
+  const reconnectResultParam = searchParams.get('reconnect_result');
+  const connectStartResultParam = searchParams.get('connect_start_result');
+  const reconnectSearch = searchParams.toString();
+  const didHandleReconnectResult = useRef(false);
+  const [highlightMailboxId, setHighlightMailboxId] = useState<string | null>(null);
+  const [reconnectAnnouncement, setReconnectAnnouncement] = useState<ReconnectResultCopy | null>(
+    null,
+  );
+  useEffect(() => {
+    if (
+      (reconnectResultParam === null && connectStartResultParam === null) ||
+      didHandleReconnectResult.current
+    )
+      return;
+    didHandleReconnectResult.current = true;
+
+    const reconnectResult = reconnectResultOf(reconnectResultParam);
+    const connectStartResult = connectStartResultOf(connectStartResultParam);
+    const copy = reconnectResult
+      ? RECONNECT_RESULT_COPY[reconnectResult]
+      : connectStartResult
+        ? CONNECT_START_RESULT_COPY[connectStartResult]
+        : null;
+    if (copy) {
+      setReconnectAnnouncement(copy);
+      toast(copy.message, copy.tone);
+    }
+
+    const mailboxId = reconnectResult ? reconnectMailboxIdFromHash(window.location.hash) : null;
+    const mailboxRow = mailboxId ? document.getElementById(`mailbox-${mailboxId}`) : null;
+    const scrollTarget = mailboxRow ?? document.getElementById('mailboxes');
+
+    if (mailboxRow && mailboxId) setHighlightMailboxId(mailboxId);
+    scrollTarget?.focus({ preventScroll: true });
+    scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const nextParams = new URLSearchParams(reconnectSearch);
+    nextParams.delete('reconnect_result');
+    nextParams.delete('connect_start_result');
+    const nextSearch = nextParams.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#mailboxes`;
+    window.history.replaceState(window.history.state, '', nextUrl);
+  }, [connectStartResultParam, reconnectResultParam, reconnectSearch]);
+
+  // Keep highlight lifetime independent from the URL effect: Next's
+  // native-history integration updates useSearchParams after replaceState.
+  useEffect(() => {
+    if (!highlightMailboxId) return;
+    const timeout = window.setTimeout(() => setHighlightMailboxId(null), 2600);
+    return () => window.clearTimeout(timeout);
+  }, [highlightMailboxId]);
+
   useEffect(() => {
     void track('page_viewed', { page: 'settings', mailbox_id: null });
   }, []);
@@ -113,9 +273,12 @@ export function SettingsScreen() {
   const tier = billing.data?.tier ?? null;
   const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
 
-  function connectAnother() {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-    window.location.assign(`${apiBase}/api/auth/google/connect-mailbox/start`);
+  function connectMailbox(reconnectMailboxId?: string) {
+    startMailboxConnect(reconnectMailboxId);
+  }
+
+  function reactivateMailbox(mailboxId: string) {
+    startMailboxReactivation(mailboxId);
   }
 
   return (
@@ -173,6 +336,24 @@ export function SettingsScreen() {
           gap: 16,
         }}
       >
+        <div
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="reconnect-result-status"
+          style={screenReaderOnlyStyle}
+        >
+          {reconnectAnnouncement?.liveRole === 'status' ? reconnectAnnouncement.message : ''}
+        </div>
+        <div
+          role="alert"
+          aria-live="assertive"
+          aria-atomic="true"
+          data-testid="reconnect-result-alert"
+          style={screenReaderOnlyStyle}
+        >
+          {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
+        </div>
         <ScreenIntro
           id="settings"
           title="Settings"
@@ -188,13 +369,17 @@ export function SettingsScreen() {
           }
         />
 
-        <SectionLabel id="mailboxes">Mailboxes</SectionLabel>
+        <SectionLabel id="mailboxes" focusable>
+          Mailboxes
+        </SectionLabel>
         <MailboxesCard
           mailboxes={me.mailboxes}
           activeMailboxId={me.activeMailboxId}
           inboxLimit={manifestTier?.inboxLimit ?? null}
           healthById={healthById}
-          onConnect={connectAnother}
+          highlightMailboxId={highlightMailboxId}
+          onConnect={connectMailbox}
+          onReactivate={reactivateMailbox}
         />
 
         <SectionLabel id="actions">Actions</SectionLabel>
@@ -311,10 +496,19 @@ export function SettingsScreen() {
   );
 }
 
-function SectionLabel({ id, children }: { id: string; children: React.ReactNode }) {
+function SectionLabel({
+  id,
+  children,
+  focusable = false,
+}: {
+  id: string;
+  children: React.ReactNode;
+  focusable?: boolean;
+}) {
   return (
     <div
       id={id}
+      tabIndex={focusable ? -1 : undefined}
       style={{
         fontFamily: font.mono,
         fontSize: 10.5,
@@ -398,4 +592,16 @@ const mutedTextStyle = {
   color: color.fgSoft,
   lineHeight: 1.55,
   margin: '8px 0 0',
+} as const;
+
+const screenReaderOnlyStyle = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
 } as const;

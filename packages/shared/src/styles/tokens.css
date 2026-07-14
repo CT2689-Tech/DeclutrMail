@@ -21,8 +21,8 @@
   /* Font families. The --dm-font-* custom properties are overridden
      by next/font on <html> (it injects self-hosted faces); these are
      the fallbacks. */
-  --dm-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --dm-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --dm-font-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --dm-font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --dm-font-display: 'Fraunces', 'Times New Roman', serif;
 }
 

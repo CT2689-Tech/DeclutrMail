@@ -21,7 +21,15 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
-import { Avatar, Button, EmptyState, Eyebrow, toast, tokens } from '@declutrmail/shared';
+import {
+  Avatar,
+  Button,
+  EmptyState,
+  ErrorState as RecoverableErrorState,
+  Eyebrow,
+  toast,
+  tokens,
+} from '@declutrmail/shared';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
 import { adaptSenderListRow } from '@/features/senders/api/adapters';
@@ -67,7 +75,7 @@ export function SendersPoliciesScreen() {
 
   if (sendersQuery.isLoading) return <LoadingState />;
   if (sendersQuery.isError) {
-    return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+    return <PoliciesErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
   }
 
   return (
@@ -453,28 +461,23 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your standing policies (${error.status}). Try again in a moment.`
-      : "We couldn't load your standing policies right now. Try again in a moment.";
+function PoliciesErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        width: '100%',
+        boxSizing: 'border-box',
         maxWidth: 720,
         margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >
-      <EmptyState
+      <RecoverableErrorState
         title="We couldn't load standing policies"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}Your existing policies remain active. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

@@ -46,7 +46,7 @@ const UNSUB: Option = { id: 'unsub', label: 'Unsubscribe', tone: 'warn' };
 
 const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
   promo: {
-    eyebrow: 'Promotional sweep · reversible for 7 days',
+    eyebrow: 'Promotional sweep · Activity recovery',
     tag: 'warn',
     headline: 'Unsubscribe these marketers?',
     sub: "These senders rarely get opened. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
@@ -56,7 +56,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     historicToggle: 'Also archive historic mail from unsubscribed senders',
   },
   quiet: {
-    eyebrow: 'Newsletter pulse · reversible for 7 days',
+    eyebrow: 'Newsletter pulse · Activity recovery',
     tag: null,
     headline: 'Decide what stays in the inbox.',
     sub: 'Low-volume senders you sometimes read. Keep the ones worth it, move the rest to Later, or unsubscribe entirely.',
@@ -434,7 +434,7 @@ export function ReviewSession({
             letterSpacing: '0.04em',
           }}
         >
-          Reversible for 7 days · Activity logs every change
+          Activity shows the exact recovery window · every change is logged
         </span>
         <Button tone="ghost" onClick={onCancel}>
           Cancel

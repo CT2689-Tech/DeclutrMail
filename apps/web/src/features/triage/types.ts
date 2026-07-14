@@ -32,7 +32,7 @@ export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later';
 export const VERB_PAST: Record<ActionVerb, string> = {
   Keep: 'Kept',
   Archive: 'Archived',
-  Unsubscribe: 'Unsubscribed from',
+  Unsubscribe: 'Requested unsubscribe from',
   Later: 'Moved to Later',
 };
 

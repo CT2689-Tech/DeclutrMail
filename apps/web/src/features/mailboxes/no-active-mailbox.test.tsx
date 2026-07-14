@@ -1,113 +1,185 @@
 /**
  * Tests for the no-active-mailbox gate (D116) — shown when the user
- * disconnects their last active mailbox. Without it, reads 409 and the
- * dashboard renders broken.
- *
- * The presentational `NoActiveMailboxView` is driven directly by props
- * (no AuthProvider needed); the container wiring is smoke-checked with
- * a stubbed `useAuth` / `useLogout`.
+ * disconnects their last active mailbox. Recovery must bind OAuth to the
+ * exact mailbox selected while keeping normal account-add available.
  */
 
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
-import { NoActiveMailboxView } from './no-active-mailbox';
+import type { Me } from '@/features/auth/api/use-me';
+import {
+  NoActiveMailbox,
+  NoActiveMailboxView,
+  type NoActiveMailboxViewProps,
+} from './no-active-mailbox';
+
+const mocks = vi.hoisted(() => ({
+  useAuth: vi.fn(),
+  logoutMutate: vi.fn(),
+  startMailboxConnect: vi.fn(),
+  startMailboxReactivation: vi.fn(),
+}));
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  useAuth: () => mocks.useAuth(),
+}));
+
+vi.mock('@/features/auth/api/use-logout', () => ({
+  useLogout: () => ({ mutate: mocks.logoutMutate, isPending: false }),
+}));
+
+vi.mock('./connect-mailbox-url', () => ({
+  startMailboxConnect: () => mocks.startMailboxConnect(),
+  startMailboxReactivation: (mailboxId: string) => mocks.startMailboxReactivation(mailboxId),
+}));
+
+const MAILBOX_A = {
+  id: '11111111-1111-4111-8111-111111111111',
+  email: 'primary@example.com',
+};
+const MAILBOX_B = {
+  id: '22222222-2222-4222-8222-222222222222',
+  email: 'other@example.com',
+};
+
+function viewProps(overrides: Partial<NoActiveMailboxViewProps> = {}): NoActiveMailboxViewProps {
+  return {
+    disconnectedMailboxes: [],
+    signingOut: false,
+    onConnect: vi.fn(),
+    onReactivate: vi.fn(),
+    onSignOut: vi.fn(),
+    ...overrides,
+  };
+}
 
 describe('NoActiveMailboxView', () => {
-  it('offers reconnect + lists disconnected accounts when some exist', () => {
+  it('offers normal account add when no disconnected mailbox exists', () => {
     const onConnect = vi.fn();
-    render(
-      <NoActiveMailboxView
-        disconnectedEmails={['primary@example.com']}
-        signingOut={false}
-        onConnect={onConnect}
-        onSignOut={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: /reconnect gmail/i }));
+    render(<NoActiveMailboxView {...viewProps({ onConnect })} />);
+
+    const connect = screen.getByRole('button', { name: /connect a gmail account/i });
+    expect(connect).toHaveStyle({ minHeight: '44px' });
+    fireEvent.click(connect);
+
     expect(onConnect).toHaveBeenCalledOnce();
-    expect(screen.getByText(/primary@example\.com/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: /disconnected gmail accounts/i })).toBeNull();
+    expect(screen.getByText('Need something else?')).toBeInTheDocument();
+    expect(screen.queryByText('Not reconnecting?')).toBeNull();
   });
 
-  it('offers a first-connect CTA when there are no mailboxes at all', () => {
+  it('reactivates the exact sole mailbox and keeps normal account add separate', () => {
+    const onConnect = vi.fn();
+    const onReactivate = vi.fn();
     render(
       <NoActiveMailboxView
-        disconnectedEmails={[]}
-        signingOut={false}
-        onConnect={vi.fn()}
-        onSignOut={vi.fn()}
+        {...viewProps({
+          disconnectedMailboxes: [MAILBOX_A],
+          onConnect,
+          onReactivate,
+        })}
       />,
     );
-    expect(screen.getByRole('button', { name: /connect a gmail account/i })).toBeInTheDocument();
+
+    const reconnect = screen.getByRole('button', { name: `Reconnect ${MAILBOX_A.email}` });
+    expect(reconnect).toHaveStyle({ minHeight: '44px' });
+    fireEvent.click(reconnect);
+    expect(onReactivate).toHaveBeenCalledWith(MAILBOX_A.id);
+    expect(onConnect).not.toHaveBeenCalled();
+    expect(screen.queryByText(MAILBOX_A.id)).toBeNull();
+    expect(screen.getByText('Not reconnecting?')).toBeInTheDocument();
+
+    const connectDifferent = screen.getByRole('button', {
+      name: /connect a different gmail account/i,
+    });
+    expect(connectDifferent).toHaveStyle({ minHeight: '44px' });
+    fireEvent.click(connectDifferent);
+    expect(onConnect).toHaveBeenCalledOnce();
+    expect(onReactivate).toHaveBeenCalledOnce();
   });
 
-  it('always offers account + billing escape hatches (reachable with no mailbox — D216/D121)', () => {
+  it('renders multiple disconnected mailboxes as a semantic list with exact actions', () => {
+    const onReactivate = vi.fn();
     render(
       <NoActiveMailboxView
-        disconnectedEmails={[]}
-        signingOut={false}
-        onConnect={vi.fn()}
-        onSignOut={vi.fn()}
+        {...viewProps({
+          disconnectedMailboxes: [MAILBOX_A, MAILBOX_B],
+          onReactivate,
+        })}
       />,
     );
-    expect(screen.getByRole('link', { name: /manage account/i })).toHaveAttribute(
-      'href',
-      '/settings#account',
-    );
-    expect(screen.getByRole('link', { name: 'Billing' })).toHaveAttribute('href', '/billing');
+
+    const list = screen.getByRole('list', { name: 'Disconnected Gmail accounts' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(list).getByText(MAILBOX_A.email)).toBeInTheDocument();
+    expect(within(list).getByText(MAILBOX_B.email)).toBeInTheDocument();
+
+    const reconnectOther = within(list).getByRole('button', {
+      name: `Reconnect ${MAILBOX_B.email}`,
+    });
+    expect(reconnectOther).toHaveStyle({ minHeight: '44px' });
+    fireEvent.click(reconnectOther);
+    expect(onReactivate).toHaveBeenCalledWith(MAILBOX_B.id);
+    expect(onReactivate).not.toHaveBeenCalledWith(MAILBOX_A.id);
+    expect(screen.queryByText(MAILBOX_A.id)).toBeNull();
+    expect(screen.queryByText(MAILBOX_B.id)).toBeNull();
+  });
+
+  it('always offers account and billing escape hatches', () => {
+    render(<NoActiveMailboxView {...viewProps()} />);
+
+    const manageAccount = screen.getByRole('link', { name: /manage account/i });
+    const billing = screen.getByRole('link', { name: 'Billing' });
+    expect(manageAccount).toHaveAttribute('href', '/settings#account');
+    expect(billing).toHaveAttribute('href', '/billing');
+    expect(manageAccount).toHaveStyle({ minHeight: '44px' });
+    expect(billing).toHaveStyle({ minHeight: '44px' });
   });
 
   it('calls onSignOut and disables the button while signing out', () => {
     const onSignOut = vi.fn();
-    const { rerender } = render(
-      <NoActiveMailboxView
-        disconnectedEmails={[]}
-        signingOut={false}
-        onConnect={vi.fn()}
-        onSignOut={onSignOut}
-      />,
-    );
+    const { rerender } = render(<NoActiveMailboxView {...viewProps({ onSignOut })} />);
+
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
     expect(onSignOut).toHaveBeenCalledOnce();
 
-    rerender(
-      <NoActiveMailboxView
-        disconnectedEmails={[]}
-        signingOut
-        onConnect={vi.fn()}
-        onSignOut={onSignOut}
-      />,
-    );
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeDisabled();
+    rerender(<NoActiveMailboxView {...viewProps({ signingOut: true, onSignOut })} />);
+    const signOut = screen.getByRole('button', { name: /sign out/i });
+    expect(signOut).toBeDisabled();
+    expect(signOut).toHaveStyle({ minHeight: '44px' });
   });
 });
 
 describe('NoActiveMailbox container', () => {
-  it('forwards disconnected mailbox emails from useAuth to the view', async () => {
-    vi.resetModules();
-    vi.doMock('@/features/auth/auth-provider', () => ({
-      useAuth: () => ({
-        me: {
-          user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
-          activeMailboxId: null,
-          mailboxes: [
-            {
-              id: 'm0',
-              email: 'gone@example.com',
-              status: 'disconnected',
-              connectedAt: null,
-              readiness: null,
-            },
-          ],
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const me: Me = {
+      user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
+      activeMailboxId: null,
+      mailboxes: [
+        {
+          ...MAILBOX_A,
+          status: 'disconnected',
+          connectedAt: null,
+          readiness: null,
         },
-      }),
-    }));
-    vi.doMock('@/features/auth/api/use-logout', () => ({
-      useLogout: () => ({ mutate: vi.fn(), isPending: false }),
-    }));
-    const { NoActiveMailbox } = await import('./no-active-mailbox');
+      ],
+      tier: 'plus',
+      cleanupRemaining: null,
+    };
+    mocks.useAuth.mockReturnValue({ me });
+  });
+
+  it('binds sole-mailbox recovery to reactivation and keeps add-account unbound', () => {
     render(<NoActiveMailbox />);
-    expect(screen.getByText(/gone@example\.com/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reconnect gmail/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: `Reconnect ${MAILBOX_A.email}` }));
+    expect(mocks.startMailboxReactivation).toHaveBeenCalledWith(MAILBOX_A.id);
+    expect(mocks.startMailboxConnect).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /connect a different gmail account/i }));
+    expect(mocks.startMailboxConnect).toHaveBeenCalledWith();
+    expect(mocks.startMailboxReactivation).toHaveBeenCalledOnce();
   });
 });

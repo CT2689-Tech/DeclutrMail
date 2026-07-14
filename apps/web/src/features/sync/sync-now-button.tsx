@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast, tokens } from '@declutrmail/shared';
 
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { SYNC_STATUS_KEY, useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useSyncNow } from './api/use-sync-now';
 
@@ -22,6 +23,9 @@ const { color, font, radius } = tokens;
  *   - **Hidden** — initial sync is in flight (`readiness_status !== 'ready'`).
  *     The sync-gate progress card carries the "we're working on it" UI;
  *     a secondary button would be redundant + confusing.
+ *   - **Hidden** — the current Gmail grant needs reconnection. Retrying
+ *     cannot repair a revoked token; the persistent reconnect banner owns
+ *     the recovery action.
  *   - **Idle** — ready + not in-flight. Click → mutation fires. A muted
  *     "synced Xm ago" label sits beside the button (hover = absolute
  *     time) so the user always knows data freshness.
@@ -88,8 +92,8 @@ function movedPast(current: string | null, base: string | null): boolean {
   return new Date(current).getTime() > new Date(base).getTime();
 }
 
-export function SyncNowButton() {
-  const status = useSyncStatus();
+export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell');
   const qc = useQueryClient();
 
@@ -159,9 +163,10 @@ export function SyncNowButton() {
   }, [watching, lastSyncedAt, lastErrorAt, qc]);
 
   // Only render when the mailbox is past initial-sync. Pre-ready states
-  // (`queued` / `syncing`) already render the sync-gate.
+  // (`queued` / `syncing`) already render the sync-gate. A current invalid
+  // grant gets the banner's reconnect action, never a doomed Sync-now CTA.
   const ready = status.data?.readiness_status === 'ready';
-  if (!ready) return null;
+  if (!ready || syncStatusNeedsReconnect(status.data)) return null;
 
   const busy = arming || sync.isPending || watching;
 

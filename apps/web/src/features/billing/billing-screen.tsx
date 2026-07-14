@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, EmptyState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  Eyebrow,
+  ErrorState as RecoverableErrorState,
+  ScreenIntro,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
 import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
@@ -15,6 +22,7 @@ import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { isBillingDisabledError, useBillingSubscription } from './api/use-billing-subscription';
+import { billingIntentPath, type BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import {
   canCancel,
@@ -45,13 +53,14 @@ const { color, font, radius, shadow } = tokens;
  * No payment-method / invoice sections at beta: the BE exposes no
  * portal or invoice surface yet (D119's full layout lands with it).
  */
-export function BillingScreen() {
+export function BillingScreen({ initialIntent = null }: { initialIntent?: BillingIntent | null }) {
   const { me } = useAuth();
   const { tier: meTier, cleanupRemaining } = useTier();
   const subscriptionQuery = useBillingSubscription();
   const cancel = useCancelSubscription();
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const handledIntent = useRef<string | null>(null);
 
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
@@ -59,6 +68,16 @@ export function BillingScreen() {
 
   const billingDisabled = isBillingDisabledError(subscriptionQuery.error);
   const data = subscriptionQuery.data ?? null;
+  const intentKey = initialIntent ? billingIntentPath(initialIntent) : null;
+
+  // A paid CTA lands here with an exact plan/cycle selection. Wait for
+  // the authoritative billing read before opening checkout; a disabled
+  // or failed billing backend keeps the honest designed state visible.
+  useEffect(() => {
+    if (!intentKey || !subscriptionQuery.isSuccess || handledIntent.current === intentKey) return;
+    handledIntent.current = intentKey;
+    setPlanChangeOpen(true);
+  }, [intentKey, subscriptionQuery.isSuccess]);
 
   // While billing is dark the workspace tier still comes from `me`.
   const tier: TierId = data?.tier ?? meTier;
@@ -69,7 +88,10 @@ export function BillingScreen() {
   }
   if (subscriptionQuery.isError && !billingDisabled) {
     return (
-      <ErrorState error={subscriptionQuery.error} onRetry={() => subscriptionQuery.refetch()} />
+      <BillingErrorState
+        error={subscriptionQuery.error}
+        onRetry={() => subscriptionQuery.refetch()}
+      />
     );
   }
 
@@ -106,7 +128,7 @@ export function BillingScreen() {
         id="billing"
         title="Plan & billing"
         body="Your plan, what it includes, and how it renews. Upgrades start today; cancellations take effect at the end of the period you've paid for."
-        tip="Every paid plan comes with a 30-day money-back guarantee — no questions asked."
+        tip="Every paid plan includes a 30-day money-back guarantee, subject to the published Refund Policy and fair-use terms."
       />
 
       {billingDisabled ? <BillingDisabledNotice /> : null}
@@ -126,6 +148,7 @@ export function BillingScreen() {
 
       <PlanChangeModal
         open={planChangeOpen}
+        initialIntent={initialIntent}
         currentTier={tier}
         hasActiveSubscription={subscription !== null && subscription.status !== 'canceled'}
         currentPeriodEnd={subscription?.currentPeriodEnd ?? null}
@@ -445,21 +468,23 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your billing details (${error.status}). Try again in a moment.`
-      : "We couldn't load your billing details right now. Try again in a moment.";
+function BillingErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
         title="We couldn't load your billing details"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}No charge or plan change was made. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

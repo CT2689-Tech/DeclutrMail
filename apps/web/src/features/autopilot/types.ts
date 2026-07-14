@@ -38,7 +38,7 @@ export type RulePreviewState =
 /** Top-level UI state — one of four branches per D211. */
 export type AutopilotScreenState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; retry: () => void }
   | { kind: 'empty'; rules: AutopilotRuleDto[] }
   | {
       kind: 'ready';

@@ -6,6 +6,7 @@ import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 
 const { color, font } = tokens;
+const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
 
 /**
  * Settings → Mailboxes (D114 "Inboxes" section + D115 health, scoped).
@@ -13,23 +14,24 @@ const { color, font } = tokens;
  * Per-mailbox connection health: status (Active / Needs reconnect /
  * Disconnected), initial-sync readiness, and a humanized last-synced
  * stamp from the sync-status facade (`useMailboxesHealth` in the
- * container). Reconnect routes to the SAME OAuth flow as "connect
- * another" (`/api/auth/google/connect-mailbox/start`) — Google's
- * account chooser reactivates the account via `addMailbox` (D116),
- * exactly like the header account menu's Reconnect. Switch and
- * disconnect stay in the account menu (reuse, don't rebuild).
+ * container). An active mailbox whose Gmail grant expired uses a
+ * target-bound reconnect; a disconnected mailbox uses a distinct,
+ * target-bound reactivation flow because it can change the connected-inbox
+ * count without allowing Google account selection to change the target.
+ * Switch and disconnect stay in the account menu (reuse, don't rebuild).
  *
- * Inbox limit (D19 tiers): `connect` AND `reconnect` disable at the
- * tier's `inboxLimit` with an upgrade pointer (the BE start route
- * would 402 anyway). Disconnected accounts don't count against the
- * limit.
+ * Inbox limit (D19 tiers): adding or reactivating disables at the tier's
+ * `inboxLimit`. Re-authorizing an already-active mailbox remains enabled
+ * because it is already counted and does not consume another slot.
  */
 export function MailboxesCard({
   mailboxes,
   activeMailboxId,
   inboxLimit,
   healthById,
+  highlightMailboxId = null,
   onConnect,
+  onReactivate,
 }: {
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
@@ -37,15 +39,15 @@ export function MailboxesCard({
   inboxLimit: number | null;
   /** Per-mailbox sync health; entries absent while their query loads. */
   healthById: Record<string, MailboxHealth | undefined>;
-  /** OAuth start — shared by connect-another AND reconnect (same flow). */
-  onConnect: () => void;
+  /** Brief visual acknowledgement after a target-bound reconnect return. */
+  highlightMailboxId?: string | null;
+  /** OAuth start; an id binds reauthorization to that active mailbox. */
+  onConnect: (reconnectMailboxId?: string) => void;
+  /** OAuth start bound to the disconnected mailbox being reactivated. */
+  onReactivate: (mailboxId: string) => void;
 }) {
   const activeCount = mailboxes.filter((m) => m.status === 'active').length;
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
-  const limitTitle =
-    atLimit && inboxLimit !== null
-      ? `Your plan includes ${inboxLimit} connected ${inboxLimit === 1 ? 'inbox' : 'inboxes'} — upgrade to reconnect this one.`
-      : undefined;
 
   return (
     <Card padding={0}>
@@ -61,19 +63,31 @@ export function MailboxesCard({
         ) : (
           <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }}>
             {mailboxes.map((m, i) => {
-              const isActive = m.id === activeMailboxId && m.status === 'active';
+              const isSelected = m.id === activeMailboxId && m.status === 'active';
               const health = healthById[m.id];
               const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
               const showReconnect = m.status === 'disconnected' || needsReconnect;
+              const reconnectBlocked = atLimit && !needsReconnect;
+              const reconnectHighlighted = m.id === highlightMailboxId;
               return (
                 <li
                   key={m.id}
+                  id={`mailbox-${m.id}`}
+                  tabIndex={-1}
+                  data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 10,
                     padding: '9px 0',
                     borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+                    borderRadius: 8,
+                    scrollMarginTop: 24,
+                    background: reconnectHighlighted ? color.primarySoft : 'transparent',
+                    outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
+                    outlineOffset: 2,
+                    transition: 'background-color 300ms, outline-color 300ms',
                   }}
                 >
                   <span
@@ -91,7 +105,7 @@ export function MailboxesCard({
                             : color.primary,
                     }}
                   />
-                  <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ flex: '1 1 220px', minWidth: 160 }}>
                     <span
                       style={{
                         display: 'block',
@@ -113,42 +127,60 @@ export function MailboxesCard({
                       </span>
                     )}
                   </span>
-                  {isActive && <StatusTag tone="primary">Active</StatusTag>}
-                  {m.status === 'disconnected' ? (
-                    <StatusTag tone="muted">Disconnected</StatusTag>
-                  ) : needsReconnect ? (
-                    <StatusTag tone="danger">Needs reconnect</StatusTag>
-                  ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
-                    <StatusTag tone="muted">Syncing…</StatusTag>
-                  ) : m.readiness === 'failed' ? (
-                    <StatusTag tone="danger">Sync failed</StatusTag>
-                  ) : (
-                    <StatusTag tone="muted">Ready</StatusTag>
-                  )}
-                  {showReconnect && (
-                    <Button
-                      tone="default"
-                      size="sm"
-                      disabled={atLimit}
-                      {...(limitTitle ? { title: limitTitle } : {})}
-                      ariaLabel={`Reconnect ${m.email}`}
-                      onClick={onConnect}
-                    >
-                      Reconnect
-                    </Button>
-                  )}
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      marginLeft: 'auto',
+                      minWidth: 0,
+                    }}
+                  >
+                    {isSelected && (
+                      <StatusTag tone="primary">{needsReconnect ? 'Selected' : 'Active'}</StatusTag>
+                    )}
+                    {m.status === 'disconnected' ? (
+                      <StatusTag tone="muted">Disconnected</StatusTag>
+                    ) : needsReconnect ? (
+                      <StatusTag tone="danger">Needs reconnect</StatusTag>
+                    ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
+                      <StatusTag tone="muted">Syncing…</StatusTag>
+                    ) : m.readiness === 'failed' ? (
+                      <StatusTag tone="danger">Sync failed</StatusTag>
+                    ) : (
+                      <StatusTag tone="muted">Ready</StatusTag>
+                    )}
+                    {showReconnect && (
+                      <ReconnectButton
+                        disabled={reconnectBlocked}
+                        describedBy={reconnectBlocked ? MAILBOX_LIMIT_EXPLANATION_ID : undefined}
+                        email={m.email}
+                        onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
+                      />
+                    )}
+                  </span>
                 </li>
               );
             })}
           </ul>
         )}
 
-        <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Button tone="default" onClick={onConnect} disabled={atLimit}>
+        <div
+          style={{
+            marginTop: 14,
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <Button tone="default" onClick={() => onConnect()} disabled={atLimit}>
             + Connect another Gmail account
           </Button>
           {atLimit && (
-            <span style={{ fontSize: 12, color: color.fgMuted }}>
+            <span id={MAILBOX_LIMIT_EXPLANATION_ID} style={{ fontSize: 12, color: color.fgMuted }}>
               Your plan includes {inboxLimit} connected {inboxLimit === 1 ? 'inbox' : 'inboxes'} —{' '}
               <Link href="/billing" style={{ color: color.primary }}>
                 upgrade for more
@@ -159,6 +191,48 @@ export function MailboxesCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+function ReconnectButton({
+  disabled,
+  describedBy,
+  email,
+  onClick,
+}: {
+  disabled: boolean;
+  describedBy: string | undefined;
+  email: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={`Reconnect ${email}`}
+      aria-describedby={describedBy}
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 26,
+        padding: '0 10px',
+        background: color.card,
+        color: color.fg,
+        border: `1px solid ${color.line}`,
+        borderRadius: 6,
+        fontFamily: font.sans,
+        fontSize: 11.5,
+        fontWeight: 600,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+      }}
+    >
+      Reconnect
+    </button>
   );
 }
 

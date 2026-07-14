@@ -16,6 +16,7 @@ import {
   Avatar,
   Button,
   EmptyState,
+  ErrorState as RecoverableErrorState,
   ScreenIntro,
   tokens,
   useFocusTrap,
@@ -32,6 +33,8 @@ import type {
   ActivityVerbFilterWire,
   ActivityWindowWire,
 } from '@/lib/api/activity';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useActivity, useRevertActivity } from './api/use-activity';
 import { track } from '@/lib/posthog';
@@ -72,8 +75,11 @@ const { color, font, shadow } = tokens;
 export function ActivityScreen() {
   const router = useRouter();
   const params = useSearchParams();
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
 
-  const filters = readFiltersFromUrl(params);
+  const dateFilters = readDateFiltersFromUrl(params);
+  const filters = readFiltersFromUrl(params, dateFilters);
   const groupMode = readGroupMode(params.get('group'));
 
   // Layout breakpoint resolved ONCE at the screen root and threaded down
@@ -87,7 +93,10 @@ export function ActivityScreen() {
   // the user sees the row appear without manual refresh on
   // mid-poll navigation (flow-completeness-auditor 2026-06-05).
   const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
-  const query = useActivity(filters, { hasInFlightAction: inFlightActionPolls > 0 });
+  const query = useActivity(filters, {
+    hasInFlightAction: inFlightActionPolls > 0,
+    enabled: !dateFilters.isInvalid,
+  });
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -172,6 +181,7 @@ export function ActivityScreen() {
         filters.senderQuery,
         filters.dateFrom,
         filters.dateTo,
+        dateFilters.isInvalid,
       ]),
     [
       filters.window,
@@ -180,6 +190,7 @@ export function ActivityScreen() {
       filters.senderQuery,
       filters.dateFrom,
       filters.dateTo,
+      dateFilters.isInvalid,
     ],
   );
   useEffect(() => {
@@ -201,31 +212,35 @@ export function ActivityScreen() {
     });
   }, []);
 
-  if (query.isLoading) return <LoadingState />;
-  // A 4xx means the CURRENT filters are invalid (e.g. dateFrom > dateTo).
+  const invalidActiveFilters =
+    dateFilters.isInvalid ||
+    (isActivityFilterValidationError(query.error) && !query.isFetchNextPageError);
+  if (query.isLoading && !invalidActiveFilters) return <LoadingState />;
+  // A known Activity date-validation 400 means the CURRENT filters are
+  // invalid (e.g. dateFrom > dateTo). Other 4xx statuses remain normal
+  // recoverable failures; auth, permissions, missing resources, and rate
+  // limits are not problems the user can solve by resetting filters.
   // With `keepPreviousData` the previous filter's rows are retained as
   // placeholder, so `!query.data` no longer catches this — showing stale
-  // rows under an invalid query would be misleading. Gate the full-screen
-  // error on a cold failure (no data) OR any client 4xx on the active
-  // filters. Transient 5xx (a failed 1.5s poll / focus refetch) keeps the
-  // rows and never trips this — it's not a 4xx and data is present.
-  const clientError =
-    query.error instanceof ApiError && query.error.status >= 400 && query.error.status < 500;
-  // Exclude a next-page 4xx — that keeps its loaded rows + the inline
-  // amber retry (D211), it must not escalate to a full-screen error.
-  const invalidActiveFilters = clientError && !query.isFetchNextPageError;
-  if (query.isError && (!query.data || invalidActiveFilters)) {
-    // Full-screen error only when NOTHING loaded (cold) or the active
-    // filters are invalid (4xx). A failed fetchNextPage keeps the loaded
-    // pages on screen and renders an inline retry in <LoadMoreRegion>
-    // instead (D211 partial-error — some rows loaded, some did not).
-    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+  // rows under an invalid query would be misleading. Only the controller's
+  // known filter-validation envelope trips the filter-local recovery.
+  // Transient failures with retained data leave the current rows in place.
+  // A next-page validation failure keeps its loaded rows + the inline amber
+  // retry (D211); it must not escalate to the filter-local error.
+  if (query.isError && !query.data && !invalidActiveFilters) {
+    // A cold transient/server failure has no useful page data or filters
+    // to preserve. A failed fetchNextPage keeps its loaded rows and renders
+    // the inline retry in <LoadMoreRegion> instead (D211 partial-error).
+    return <ActivityErrorState error={query.error} onRecover={() => query.refetch()} />;
   }
 
   // U27 — pages flatten into one row list; meta (stats + filter echo)
   // comes from the first page, which refetches with every page on the
   // poll/focus cadence, so it never goes staler than the rows do.
-  const pages = query.data!.pages;
+  // An invalid active-filter response can be cold (no data) or retain the
+  // previous query as placeholder data. In both cases the filter surface
+  // stays mounted below while the stale rows stay hidden.
+  const pages = query.data?.pages ?? [];
   const rows = pages.flatMap((page) => page.data);
   const meta = pages[0]?.meta;
   const stats = meta?.stats;
@@ -253,23 +268,25 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Undo windows: Archive/Later 7 days, Delete 30 days (Gmail Trash)."
+        body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Each reversible row shows its exact Activity window; Delete can be undone for up to 30 days while Gmail still retains Trash."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
 
-      <MetricsHeader
-        windowLabel={windowToLabel(
-          filters.window ?? '30d',
-          filters.dateFrom ?? null,
-          filters.dateTo ?? null,
-        )}
-        stats={stats ?? null}
-        allTimeStats={allTimeStats ?? null}
-        isWindowAllTime={
-          (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
-        }
-        isMobile={isMobile}
-      />
+      {!invalidActiveFilters && (
+        <MetricsHeader
+          windowLabel={windowToLabel(
+            filters.window ?? '30d',
+            filters.dateFrom ?? null,
+            filters.dateTo ?? null,
+          )}
+          stats={stats ?? null}
+          allTimeStats={allTimeStats ?? null}
+          isWindowAllTime={
+            (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
+          }
+          isMobile={isMobile}
+        />
+      )}
 
       <FilterToolbar
         source={filters.source ?? 'all'}
@@ -285,93 +302,107 @@ export function ActivityScreen() {
         onSenderQuery={setSenderQuery}
         groupMode={groupMode}
         onGroupMode={setGroupMode}
-        rows={rows}
+        rows={invalidActiveFilters ? [] : rows}
         filters={filters}
         isMobile={isMobile}
       />
 
-      <BulkActionBar
-        rows={rows}
-        selectedIds={selectedIds}
-        bulkBusy={bulkBusy}
-        bulkError={bulkError}
-        onSetBulkBusy={setBulkBusy}
-        onSetBulkError={setBulkError}
-        onSetFailedTokens={setFailedTokens}
-        onClear={() => {
-          setSelectedIds(new Set());
-          setBulkError(null);
-        }}
-      />
-
-      <div
-        aria-busy={showingStaleRows}
-        style={{
-          opacity: showingStaleRows ? 0.55 : 1,
-          pointerEvents: showingStaleRows ? 'none' : undefined,
-          transition: 'opacity 120ms ease',
-        }}
-      >
-        {rows.length === 0 ? (
-          <EmptyState
-            title="No activity in this window."
-            description={
-              <>
-                Try widening the time range, clearing the verb / sender filter, or switching the
-                source — the activity log is append-only, so nothing has been removed.
-              </>
-            }
-          />
-        ) : groupMode === 'sender' ? (
-          <GroupedList
+      {invalidActiveFilters ? (
+        <ActivityErrorState
+          error={query.error}
+          onRecover={() => writeUrl({ date_from: null, date_to: null })}
+          recoveryLabel="Reset filters"
+          isFilterError
+          embedded
+        />
+      ) : (
+        <>
+          <BulkActionBar
             rows={rows}
             selectedIds={selectedIds}
-            onToggle={toggleRow}
-            failedTokens={failedTokens}
-            isMobile={isMobile}
+            bulkBusy={bulkBusy}
+            bulkError={bulkError}
+            onSetBulkBusy={setBulkBusy}
+            onSetBulkError={setBulkError}
+            onSetFailedTokens={setFailedTokens}
+            onClear={() => {
+              setSelectedIds(new Set());
+              setBulkError(null);
+            }}
           />
-        ) : (
-          <ul
+
+          <div
+            aria-busy={showingStaleRows}
             style={{
-              listStyle: 'none',
-              margin: 0,
-              padding: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
+              opacity: showingStaleRows ? 0.55 : 1,
+              pointerEvents: showingStaleRows ? 'none' : undefined,
+              transition: 'opacity 120ms ease',
             }}
           >
-            {rows.map((row) => (
-              <ActivityRow
-                key={row.id}
-                row={row}
-                isSelected={selectedIds.has(row.id)}
-                onToggleSelect={() => toggleRow(row.id)}
+            {rows.length === 0 ? (
+              <EmptyState
+                title="No activity in this window."
+                description={
+                  <>
+                    Try widening the time range, clearing the verb / sender filter, or switching the
+                    source — the activity log is append-only, so nothing has been removed.
+                  </>
+                }
+              />
+            ) : groupMode === 'sender' ? (
+              <GroupedList
+                rows={rows}
+                selectedIds={selectedIds}
+                onToggle={toggleRow}
                 failedTokens={failedTokens}
                 isMobile={isMobile}
+                mailboxEmail={activeMailboxEmail}
               />
-            ))}
-          </ul>
-        )}
-      </div>
+            ) : (
+              <ul
+                style={{
+                  listStyle: 'none',
+                  margin: 0,
+                  padding: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {rows.map((row) => (
+                  <ActivityRow
+                    key={row.id}
+                    row={row}
+                    isSelected={selectedIds.has(row.id)}
+                    onToggleSelect={() => toggleRow(row.id)}
+                    failedTokens={failedTokens}
+                    isMobile={isMobile}
+                    mailboxEmail={activeMailboxEmail}
+                  />
+                ))}
+              </ul>
+            )}
+          </div>
 
-      {rows.length > 0 && (
-        <LoadMoreRegion
-          hasNextPage={query.hasNextPage}
-          isFetchingNextPage={query.isFetchingNextPage}
-          // Next-page-scoped error signal (TanStack v5): true only when
-          // the failed fetch was a `fetchNextPage` (fetchMeta direction
-          // 'forward'). The query-wide `isError` also flips on a failed
-          // background refetch (the 1.5s in-flight poll or
-          // refetchOnWindowFocus) while data is retained — gating the
-          // amber retry on it showed "Couldn't load more" to users who
-          // never loaded more.
-          nextPageFailed={query.isFetchNextPageError}
-          onLoadMore={() => {
-            if (!query.isFetchingNextPage) void query.fetchNextPage();
-          }}
-          loadedCount={rows.length}
-        />
+          {rows.length > 0 && (
+            <LoadMoreRegion
+              hasNextPage={query.hasNextPage}
+              isFetchingNextPage={query.isFetchingNextPage}
+              // Next-page-scoped error signal (TanStack v5): true only when
+              // the failed fetch was a `fetchNextPage` (fetchMeta direction
+              // 'forward'). The query-wide `isError` also flips on a failed
+              // background refetch (the 1.5s in-flight poll or
+              // refetchOnWindowFocus) while data is retained — gating the
+              // amber retry on it showed "Couldn't load more" to users who
+              // never loaded more.
+              nextPageFailed={query.isFetchNextPageError}
+              onLoadMore={() => {
+                if (!query.isFetchingNextPage) void query.fetchNextPage();
+              }}
+              loadedCount={rows.length}
+            />
+          )}
+        </>
       )}
     </div>
   );
@@ -520,7 +551,7 @@ function MetricsHeader({
     // and mailto that we never confirm. "Unsubscribes" (a count of the
     // actions taken) makes no completion claim; "Unsubscribed" would
     // overclaim success. Confirmed outcomes render per-row as
-    // "Unsubscribe confirmed" (never aggregated as verified success —
+    // "Request accepted" (never aggregated as verified compliance —
     // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
     // metric-definition options if an exact confirmed count is wanted.
     { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
@@ -1516,12 +1547,14 @@ function GroupedList({
   onToggle,
   failedTokens,
   isMobile,
+  mailboxEmail,
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   failedTokens?: Set<string> | undefined;
   isMobile: boolean;
+  mailboxEmail: string | null;
 }) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1660,6 +1693,7 @@ function GroupedList({
                     variant="grouped"
                     failedTokens={failedTokens}
                     isMobile={isMobile}
+                    mailboxEmail={mailboxEmail}
                   />
                 ))}
               </ul>
@@ -1701,6 +1735,7 @@ function ActivityRow({
   variant = 'flat',
   failedTokens,
   isMobile = false,
+  mailboxEmail,
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
@@ -1713,6 +1748,8 @@ function ActivityRow({
   /** Below `sm` the row restacks into a card so its 7 grid columns stop
    *  clipping under ~375px. Resolved once at the screen root. */
   isMobile?: boolean;
+  /** Active Gmail account. Null in isolated stories, where links fail closed. */
+  mailboxEmail: string | null;
 }) {
   const senderName = row.sender?.displayName ?? 'Account-scoped action';
   const senderEmail = row.sender?.email ?? '';
@@ -1854,7 +1891,7 @@ function ActivityRow({
           >
             {sourceAttribution}
           </span>
-          <RowActions row={row} failedTokens={failedTokens} />
+          <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
         </div>
       </li>
     );
@@ -2002,7 +2039,7 @@ function ActivityRow({
             : `via ${sourceLabel}`}
         </span>
       </div>
-      <RowActions row={row} failedTokens={failedTokens} />
+      <RowActions row={row} failedTokens={failedTokens} mailboxEmail={mailboxEmail} />
       <div
         style={{
           fontSize: 11.5,
@@ -2026,9 +2063,11 @@ function ActivityRow({
 function RowActions({
   row,
   failedTokens,
+  mailboxEmail,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
+  mailboxEmail: string | null;
 }) {
   return (
     <div
@@ -2044,7 +2083,7 @@ function RowActions({
       }}
     >
       <UndoCell row={row} bulkFailedTokens={failedTokens} />
-      <OpenInGmailLink row={row} />
+      <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
     </div>
   );
 }
@@ -2058,9 +2097,19 @@ function RowActions({
  * Privacy (D7): the link is built FE-side from the already-rendered
  * sender email — no new data flows through the BE.
  */
-function OpenInGmailLink({ row }: { row: ActivityRowWire }) {
-  if (!row.sender) return <span aria-hidden="true" />;
-  const href = `https://mail.google.com/mail/u/0/#search/from:${encodeURIComponent(row.sender.email)}`;
+function OpenInGmailLink({
+  row,
+  mailboxEmail,
+}: {
+  row: ActivityRowWire;
+  mailboxEmail: string | null;
+}) {
+  if (!row.sender || !mailboxEmail) return <span aria-hidden="true" />;
+  const href = GmailOpenLinkService.buildFromSearchLink({
+    mailboxEmail,
+    from: row.sender.email,
+  });
+  if (!href) return <span aria-hidden="true" />;
   return (
     <>
       <span
@@ -2250,32 +2299,73 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  // Distinguish user-input errors (400) from server errors (5xx). A
-  // generic "Try again in a moment" on a 400 produced by `dateFrom >
-  // dateTo` would loop the user back into the same broken filter
-  // forever — flow-completeness-auditor 2026-06-05.
-  const isClientInput = error instanceof ApiError && error.status >= 400 && error.status < 500;
-  const title = isClientInput
-    ? 'Your filters returned an invalid query'
-    : "We couldn't load your activity";
+function ActivityErrorState({
+  error,
+  onRecover,
+  recoveryLabel = 'Try again',
+  isFilterError = false,
+  embedded = false,
+}: {
+  error: unknown;
+  onRecover: () => void;
+  recoveryLabel?: string;
+  isFilterError?: boolean;
+  embedded?: boolean;
+}) {
+  // Distinguish the Activity controller's known date validation from
+  // transport/domain failures. A generic "Try again in a moment" on
+  // `dateFrom > dateTo` would loop the user back into the same broken
+  // filter forever — flow-completeness-auditor 2026-06-05.
+  const isClientInput = isFilterError || isActivityFilterValidationError(error);
+  const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Check the date range (From must be earlier than To) and the source/verb filters, then try again.'
+    ? 'Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
     : error instanceof ApiError
       ? `We couldn't load your activity (${error.status}). Try again in a moment.`
       : "We couldn't load your activity right now. Try again in a moment.";
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+    <div
+      style={{
+        ...(embedded ? {} : { padding: '20px 24px 28px' }),
+        width: '100%',
+        maxWidth: 720,
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
         title={title}
         description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        onRetry={onRecover}
+        retryLabel={recoveryLabel}
       />
     </div>
+  );
+}
+
+const ACTIVITY_FILTER_VALIDATION_MESSAGES: ReadonlySet<string> = new Set([
+  'date_from must be a valid ISO-8601 date.',
+  'date_to must be a valid ISO-8601 date.',
+  'date_from must be earlier than date_to.',
+]);
+
+/**
+ * Only the Activity controller's known date-validation envelope unlocks
+ * filter-reset recovery. Other 4xx responses (expired auth, permissions,
+ * missing resources, rate limits) are transport/domain failures and must
+ * never be presented as something the user can fix by changing dates.
+ */
+function isActivityFilterValidationError(error: unknown): error is ApiError {
+  if (!(error instanceof ApiError) || error.status !== 400) return false;
+  if (typeof error.body !== 'object' || error.body === null || !('error' in error.body)) {
+    return false;
+  }
+  const envelope = (error.body as { error?: unknown }).error;
+  if (typeof envelope !== 'object' || envelope === null) return false;
+  const { code, message } = envelope as { code?: unknown; message?: unknown };
+  return (
+    code === 'BAD_REQUEST' &&
+    typeof message === 'string' &&
+    ACTIVITY_FILTER_VALIDATION_MESSAGES.has(message)
   );
 }
 
@@ -2348,12 +2438,12 @@ const ACTION_LABEL: Record<ActivityActionWire, string> = {
   // deliberately uncertain — never promise." A one-click POST may still
   // fail and a mailto is manual (D230), so at click time the outcome is
   // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
-  // honest; the separate `unsubscribe_confirmed` row is the only place
-  // that promises success, and it is written only on a 2xx accept.
+  // honest; the separate `unsubscribe_confirmed` row records only that
+  // the sender endpoint accepted the request with a 2xx response.
   unsubscribe: 'Unsubscribe requested',
-  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
-  // the one row that states the unsubscribe actually went through.
-  unsubscribe_confirmed: 'Unsubscribe confirmed',
+  // D56 — the endpoint accepted the request. The sender still controls
+  // whether and when future delivery stops.
+  unsubscribe_confirmed: 'Request accepted',
   later: 'Later',
   // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
   // "Deleted" rather than "Trashed" to stay verb-symmetric with
@@ -2383,14 +2473,36 @@ const ALLOWED_VERBS: ReadonlySet<ActivityVerbFilterWire> = new Set([
   'followup-dismiss',
 ]);
 
-function readFiltersFromUrl(params: URLSearchParams): ActivityFilters {
+interface ActivityDateFilters {
+  dateFrom: string | null;
+  dateTo: string | null;
+  isInvalid: boolean;
+}
+
+function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
+  const rawDateFrom = params.get('date_from');
+  const rawDateTo = params.get('date_to');
+  const dateFrom = readIsoDate(rawDateFrom);
+  const dateTo = readIsoDate(rawDateTo);
+  const hasMalformedDate =
+    (rawDateFrom !== null && rawDateFrom !== '' && dateFrom === null) ||
+    (rawDateTo !== null && rawDateTo !== '' && dateTo === null);
+  const hasReversedRange =
+    dateFrom !== null && dateTo !== null && Date.parse(dateFrom) >= Date.parse(dateTo);
+  return { dateFrom, dateTo, isInvalid: hasMalformedDate || hasReversedRange };
+}
+
+function readFiltersFromUrl(
+  params: URLSearchParams,
+  dates: ActivityDateFilters = readDateFiltersFromUrl(params),
+): ActivityFilters {
   return {
     window: readWindow(params.get('window')),
     source: readSource(params.get('source')),
     verbs: readVerbs(params.get('verb')),
     senderQuery: (params.get('sender_q') ?? '').trim(),
-    dateFrom: readIsoDate(params.get('date_from')),
-    dateTo: readIsoDate(params.get('date_to')),
+    dateFrom: dates.dateFrom,
+    dateTo: dates.dateTo,
   };
 }
 

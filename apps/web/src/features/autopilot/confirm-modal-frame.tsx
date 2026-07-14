@@ -2,6 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 const { color, font } = tokens;
 
@@ -114,6 +115,7 @@ export function ConfirmModalFrame({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <MailboxActionContext />
           {children}
           {error != null && (
             <div

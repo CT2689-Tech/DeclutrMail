@@ -33,6 +33,11 @@ export function pricingTiers(): readonly TierDefinition[] {
   return PRICING_TIER_ORDER.map((id) => TIER_MANIFEST[id]);
 }
 
+/** Only tiers a visitor can actually choose today. */
+export function comparablePricingTiers(): readonly TierDefinition[] {
+  return pricingTiers().filter((tier) => tier.purchasable);
+}
+
 /** $0 / $9 / $7.50 — whole dollars unless the amount has real cents. */
 export function formatUsd(cents: number): string {
   const dollars = cents / 100;
@@ -88,8 +93,8 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'See what’s noisy.',
-  plus: 'Clean it yourself, unlimited.',
-  pro: 'Let DeclutrMail keep it clean.',
+  plus: 'Handle it yourself, unlimited.',
+  pro: 'Automate recurring noise with explicit rules.',
   team: 'Do this together, with audit.',
   enterprise: 'Do this safely at scale.',
 };
@@ -149,7 +154,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
     bullets.push(`${tier.inboxLimit} connected ${tier.inboxLimit === 1 ? 'inbox' : 'inboxes'}`);
   }
   if (!prev || tier.undoWindowDays !== prev.undoWindowDays) {
-    bullets.push(`${tier.undoWindowDays}-day undo window`);
+    bullets.push(`${tier.undoWindowDays}-day Archive/Later Activity undo`);
   }
 
   return bullets;
@@ -170,7 +175,12 @@ export interface CompareRow {
  *   - quota rows (inboxes / undo window) from the manifest limits.
  */
 export function compareRows(): readonly CompareRow[] {
-  const tiers = pricingTiers();
+  // Team and Enterprise have provisional Pro-equivalent values in the
+  // entitlement manifest for administrative safety. Publishing those
+  // placeholders as purchasable promises would be misleading, so the
+  // launch comparison covers only Free / Plus / Pro. The unavailable
+  // tiers remain visible below the cards as waitlist/contact rows.
+  const tiers = comparablePricingTiers();
 
   const capabilityRows: CompareRow[] = CAPABILITIES.map((capability) => ({
     label: CAPABILITY_LABELS[capability],
@@ -191,7 +201,7 @@ export function compareRows(): readonly CompareRow[] {
       values: tiers.map((tier) => String(tier.inboxLimit)),
     },
     {
-      label: 'Undo window',
+      label: 'Archive/Later Activity undo',
       values: tiers.map((tier) => `${tier.undoWindowDays} days`),
     },
   ];

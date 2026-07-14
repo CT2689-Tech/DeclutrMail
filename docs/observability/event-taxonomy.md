@@ -31,6 +31,11 @@ Every event payload below is checked against the no-body / no-PII rules:
 Gmail `messageId`, `threadId`, raw email addresses, and message body
 content are NEVER sent.
 
+When optional analytics consent exists, the authenticated shell identifies
+PostHog with `users.id` (the internal UUID) and retries if consent is granted
+mid-session. Sign-out resets that identity before navigation. Gmail addresses
+and mailbox addresses are never used as analytics identities.
+
 ---
 
 ## Events
@@ -118,25 +123,27 @@ sync-duration-p50/p95 dashboards.
 
 ### `triage_action_taken`
 
-**When fired.** When the preview-confirmed mutation succeeds — per
-D226's strict order (sheet → preview → mutation → undo): the intent
-POST for Keep/Unsubscribe, the composite-enqueue accept for
-Archive/Later. NEVER fired optimistically or on preview open; a failed
-mutation fires nothing. One decision → one event (the unsubscribe
-sheet's optional backlog archive does not emit a second event).
+**When fired.** When the server accepts a preview-confirmed decision:
+the intent POST for Keep/Unsubscribe or the composite enqueue for
+Archive/Later. This is a decision/enqueue event, not proof that the
+worker completed or that a sender honored an unsubscribe request. It is
+never fired on preview open or on a rejected POST. One decision → one
+event (the unsubscribe sheet's optional backlog archive does not emit a
+second event).
 
 **Payload.**
 
-| Field                    | Type                                                          | Notes                                                                                 |
-| ------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `verb`                   | `'keep' \| 'archive' \| 'unsubscribe' \| 'later' \| 'delete'` | Canonical K/A/U/L/D (D227)                                                            |
-| `sender_id`              | `string`                                                      | UUID                                                                                  |
-| `matched_recommendation` | `boolean`                                                     | User's verb equals the engine verdict for the row (D21/D29)                           |
-| `affected_messages`      | `number`                                                      | Server coverage count; `0` for Keep/Unsubscribe (no messages move); `-1` when unknown |
-| `source`                 | `'sheet' \| 'inline' \| 'shortcut'`                           | Confirm surface; Keep (no preview, D40) records as `inline`                           |
+| Field                    | Type                                                          | Notes                                                                       |
+| ------------------------ | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `verb`                   | `'keep' \| 'archive' \| 'unsubscribe' \| 'later' \| 'delete'` | Canonical K/A/U/L/D (D227)                                                  |
+| `sender_id`              | `string`                                                      | UUID                                                                        |
+| `matched_recommendation` | `boolean`                                                     | User's verb equals the engine verdict for the row (D21/D29)                 |
+| `requested_messages`     | `number`                                                      | Count accepted for enqueue; `0` for Keep/Unsubscribe; `-1` when unavailable |
+| `source`                 | `'sheet' \| 'inline' \| 'shortcut'`                           | Confirm surface; Keep (no preview, D40) records as `inline`                 |
 
-**Retention / aggregation.** 1y raw. Powers the "triage actions per
-user per week" cohort and the K/A/U/L mix dashboard.
+**Retention / aggregation.** 1y raw. Powers the "triage decisions per
+user per week" cohort and K/A/U/L mix dashboard. Never use this event
+for affected-message value; use terminal worker-confirmed Activity data.
 
 ### `undo_clicked`
 
@@ -211,39 +218,55 @@ retention). Drives MRR cohort, churn cohort, free-to-paid funnel.
 
 ### `page_viewed`
 
-**When fired.** Once per mount of an instrumented page. Currently
-emitted by the marketing landing (`page: 'landing'`, D134) from its
-always-mounted nav island; app surfaces adopt the same event as they
-get instrumented (the `page` union in `events.ts` already enumerates
-them).
+**When fired.** Once per mount of an instrumented page. The public route
+tracker covers the landing, product-story, comparison, education, changelog,
+FAQ, and sign-in families; public pages with richer local islands (pricing,
+legal/support, and the inbox simulator) emit from those islands. Authenticated
+surfaces emit after their own screen mounts.
 
 **Payload.**
 
-| Field        | Type                                                                                                                                                                   | Notes                                              |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| `page`       | `'landing' \| 'senders' \| 'sender_detail' \| 'activity' \| 'brief' \| 'autopilot' \| 'triage' \| 'onboarding' \| 'settings' \| 'mailboxes' \| 'pricing' \| 'billing'` | Closed union                                       |
-| `mailbox_id` | `string \| null`                                                                                                                                                       | UUID; `null` on public pages (landing has no auth) |
+| Field        | Type                                          | Notes                                                                        |
+| ------------ | --------------------------------------------- | ---------------------------------------------------------------------------- |
+| `page`       | Closed enum in `EventPayloads['page_viewed']` | Product surface or bounded public content family; dynamic slugs are not sent |
+| `mailbox_id` | `string \| null`                              | UUID; `null` on public pages (landing has no auth)                           |
 
 **Retention / aggregation.** PostHog default. Top of the
 landing → OAuth → onboarding funnel insight.
 
 ### `landing_cta_clicked`
 
-**When fired.** On click of any landing-page CTA (D134), before the
-browser follows the link — fire-and-forget, navigation never waits on
+**When fired.** On click of any acquisition CTA across the public site
+(D134), before the browser follows the link — fire-and-forget, navigation never waits on
 telemetry. Anonymous visitors are expected; no identify call precedes
 this event.
 
 **Payload.**
 
-| Field       | Type                                             | Notes                                         |
-| ----------- | ------------------------------------------------ | --------------------------------------------- |
-| `cta`       | `'connect_gmail' \| 'open_app' \| 'see_pricing'` | `connect_gmail` is the OAuth-start conversion |
-| `placement` | `'nav' \| 'hero' \| 'pricing_teaser' \| 'final'` | Where on the page                             |
+| Field       | Type                                                           | Notes                                                                                      |
+| ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cta`       | `'connect_gmail' \| 'open_app' \| 'see_pricing' \| 'try_demo'` | `connect_gmail` is the OAuth-start conversion; `try_demo` enters the synthetic walkthrough |
+| `placement` | `'nav' \| 'hero' \| 'pricing_teaser' \| 'final' \| 'demo'`     | Positional section; `page_viewed` identifies the public route family                       |
 
 **Retention / aggregation.** PostHog default. `connect_gmail` clicks
-vs `page_viewed{page='landing'}` is the landing conversion rate;
-placement breakdown ranks the sections.
+vs the matching `page_viewed` family give each public route's conversion
+rate; filtering `page_viewed{page='landing'}` retains the original
+landing-only view. Placement breakdown ranks positions within a page.
+
+### `demo_preview_opened` / `demo_decision_confirmed` / `demo_reset`
+
+**When fired.** The synthetic inbox simulator emits `demo_preview_opened`
+when a visitor chooses a K/A/U/L verb, `demo_decision_confirmed` only after
+the explicit preview confirmation, and `demo_reset` when the local walkthrough
+is cleared. No Gmail data or sender identity is captured.
+
+**Payload.** Preview/confirm carry the verb and one-based decision index;
+confirm also carries the synthetic affected-message count. Reset carries only
+the number of completed sample decisions.
+
+**Retention / aggregation.** PostHog default. The preview→confirm ratio is the
+demo comprehension funnel; join to `page_viewed{page='inbox_simulator'}` for
+demo engagement. Never compare synthetic affected counts to production impact.
 
 ### `autopilot_paused`
 
@@ -336,6 +359,19 @@ shipping per-user schedule details.
 worker-side deferral signal is the structured log line
 `autopilot.action.quiet_deferred` (Cloud Run logs), not a PostHog
 event.
+
+### `pricing_plan_selected`
+
+**When fired.** When a visitor clicks a Free, Plus, Pro, or Founding Pro
+CTA on public pricing, before the lazy session probe and any OAuth/billing
+navigation. This is paid/free intent, not checkout or revenue.
+
+**Payload.** `tier` (`free|plus|pro`), `cycle` (`monthly|annual`), and
+`promo` (`foundingPro|null`). No identity or email fields are attached.
+
+**Retention / aggregation.** 2y raw. Joins consented pricing page views to
+plan interest, then to `checkout_started` and terminal `billing_event` once
+the server-side outcome sink is live.
 
 ### `waitlist_joined`
 
@@ -524,7 +560,8 @@ failure-rate alarm (a spike in `failed` flags a broken export stream).
 
 **When fired.** When an entitlement gate (D19/D77/D81) surfaces an
 upgrade affordance to the user: the global `UpgradeModal` opening on an
-entitlement 402 — `FREE_CAP_REACHED` or `INBOX_LIMIT_REACHED` — routed
+entitlement 402 — `FREE_CAP_REACHED`, `INBOX_LIMIT_REACHED`, or
+`ACTION_TIER_REQUIRED` — routed
 through the MutationCache handler (`source: 'upgrade_modal'`, U13), the
 `TierGate` placeholder replacing a Pro feature screen for an under-tier
 workspace (`source: 'tier_gate'`, `reason: 'pro_feature'`, D68/D77),
@@ -537,7 +574,7 @@ the pre-U13 inline prompt, retired in favor of the modal.)
 
 | Field    | Type                                                                                        | Notes                    |
 | -------- | ------------------------------------------------------------------------------------------- | ------------------------ |
-| `reason` | `'free_cap' \| 'inbox_limit' \| 'pro_feature'`                                              | Which gate triggered it  |
+| `reason` | `'free_cap' \| 'inbox_limit' \| 'action_tier' \| 'feature_tier' \| 'pro_feature'`           | Which gate triggered it  |
 | `source` | `'actions_402' \| 'account_menu' \| 'triage_empty_state' \| 'upgrade_modal' \| 'tier_gate'` | Surface that rendered it |
 
 **Retention / aggregation.** PostHog default. Drives the

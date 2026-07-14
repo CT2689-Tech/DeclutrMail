@@ -86,6 +86,12 @@ export interface ApiRequestOptions {
    */
   mailboxId?: string | undefined;
   /**
+   * Keep a terminal 401 in the caller instead of starting generic OAuth.
+   * Used only by public CTA session probes that must attach a validated
+   * post-login destination to the OAuth start URL.
+   */
+  suppressAuthRedirect?: boolean | undefined;
+  /**
    * Internal: disable the 401-retry path when the call IS the retry.
    * Library callers leave this unset.
    */
@@ -200,7 +206,7 @@ async function apiRequest<T>(
       // Terminal 401: refresh failed → session gone. Hard-redirect to
       // re-auth. `redirectToLogin` is idempotent within a tick so
       // concurrent terminal-401s don't stack navigations.
-      redirectToLogin();
+      if (!options.suppressAuthRedirect) redirectToLogin();
     }
     throw new ApiError(
       res.status,

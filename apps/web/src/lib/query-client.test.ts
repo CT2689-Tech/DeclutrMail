@@ -52,6 +52,27 @@ describe('makeQueryClient — global entitlement-402 handler', () => {
     expect(useUpgradeGateStore.getState().hit?.reason).toBe('inbox_limit');
   });
 
+  it('routes an ACTION_TIER_REQUIRED 402 into the upgrade-gate store', async () => {
+    await runFailingMutation(
+      new ApiError(
+        402,
+        {
+          error: {
+            code: 'ACTION_TIER_REQUIRED',
+            details: {
+              tier: 'free',
+              requiredTier: 'plus',
+              selector: 'multi-sender',
+              verb: 'archive',
+            },
+          },
+        },
+        'POST /api/actions failed: 402',
+      ),
+    );
+    expect(useUpgradeGateStore.getState().hit?.reason).toBe('action_tier');
+  });
+
   it('leaves the store untouched for non-entitlement failures', async () => {
     await runFailingMutation(new ApiError(500, { error: { code: 'INTERNAL_ERROR' } }, 'boom'));
     await runFailingMutation(new Error('network down'));

@@ -17,6 +17,9 @@ describe('flagEnvKey', () => {
   it('maps camelCase to DM_FLAG_SNAKE', () => {
     expect(flagEnvKey('darkMode')).toBe('DM_FLAG_DARK_MODE');
     expect(flagEnvKey('senderPeek')).toBe('DM_FLAG_SENDER_PEEK');
+    expect(flagEnvKey('gmailDeeplinkSearchFallback')).toBe(
+      'DM_FLAG_GMAIL_DEEPLINK_SEARCH_FALLBACK',
+    );
   });
 });
 

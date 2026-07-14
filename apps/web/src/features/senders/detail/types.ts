@@ -50,7 +50,7 @@ export type DecisionSource = 'You' | 'Triage' | 'Manual' | 'Autopilot' | 'Screen
 export type DecisionAction =
   | 'Archived'
   | 'Kept'
-  | 'Unsubscribed'
+  | 'Unsubscribe recommended'
   | 'Moved to Later'
   | 'Marked VIP'
   | 'Unmarked VIP'

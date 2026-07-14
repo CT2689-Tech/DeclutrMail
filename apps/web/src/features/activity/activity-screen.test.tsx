@@ -21,6 +21,11 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { ActivityScreen, relativeTime, rowsToCsv } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: {} }),
+  getActiveMailboxEmail: () => 'active+mailbox@example.com',
+}));
+
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
 
 // next/navigation shim — the screen reads useSearchParams + uses
@@ -97,21 +102,239 @@ describe('ActivityScreen — edge states', () => {
     expect(screen.getAllByRole('status').length).toBeGreaterThan(0);
   });
 
-  it('renders the error branch on 500 with a retry CTA', async () => {
+  it('renders a recoverable alert on 500 and retries the request from a 44px CTA', async () => {
+    let requests = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/activity',
-        respond: () => jsonServerError(),
+        respond: () => {
+          requests += 1;
+          return requests === 1
+            ? jsonServerError()
+            : jsonOk({
+                data: [],
+                meta: {
+                  pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                  stats: STATS_BASE,
+                  window: '30d',
+                  source: 'all',
+                },
+              });
+        },
       },
     ]);
     renderScreen();
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your activity/i }),
+    ).toBeInTheDocument();
+
+    const retry = within(alert).getByRole('button', { name: 'Try again' });
+    expect(retry).toHaveStyle({ minHeight: '44px' });
+    await userEvent.click(retry);
+
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /couldn[’']t load your activity/i }),
+        screen.getByRole('heading', { name: /no activity in this window/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    expect(requests).toBe(2);
+  });
+
+  it('keeps filter context on a controller validation 400 and resets its date', async () => {
+    currentSearch = 'date_from=2026-05-20&source=manual&group=sender';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 'BAD_REQUEST',
+                message: 'date_from must be a valid ISO-8601 date.',
+              },
+            }),
+            {
+              status: 400,
+              headers: { 'content-type': 'application/json' },
+            },
+          );
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'About Activity' })).getByText('Activity'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Filters' })).toBeInTheDocument();
+
+    const reset = within(alert).getByRole('button', { name: 'Reset filters' });
+    expect(reset).toHaveStyle({ minHeight: '44px' });
+    expect(within(alert).queryByRole('button', { name: 'Try again' })).toBeNull();
+    await userEvent.click(reset);
+
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
+    expect(requests).toBe(1);
+  });
+
+  it('blocks a malformed deep link until reset, then fetches clean filters on rerender', async () => {
+    currentSearch = 'date_from=not-a-date&source=manual&group=sender';
+    const requestedUrls: URL[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requestedUrls.push(url);
+          return jsonOk({
+            data: [row({})],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'manual',
+            },
+          });
+        },
+      },
+    ]);
+    const view = renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requestedUrls).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
+    expect(alert.parentElement).not.toHaveStyle({ padding: '20px 24px 28px' });
+
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reset filters' }));
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
+    expect(requestedUrls).toHaveLength(0);
+
+    // next/navigation owns the real URL update. Mirror that transition in
+    // the test and rerender with the same query client so the disabled query
+    // becomes enabled without losing its cache identity.
+    currentSearch = 'source=manual&group=sender';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+
+    await waitFor(() => expect(requestedUrls).toHaveLength(1));
+    expect(requestedUrls[0]!.searchParams.get('source')).toBe('manual');
+    expect(requestedUrls[0]!.searchParams.has('date_from')).toBe(false);
+    expect(requestedUrls[0]!.searchParams.has('date_to')).toBe(false);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(await screen.findByText('Sender One')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('blocks a reversed valid date range before making an API request', async () => {
+    currentSearch = 'date_from=2026-05-20&date_to=2026-05-01';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: [], meta: {} });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requests).toBe(0);
+  });
+
+  it('hides cached rows, export data, and bulk actions when a raw date becomes malformed', async () => {
+    currentSearch = 'source=manual';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({
+            data: [row({})],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'manual',
+            },
+          });
+        },
+      },
+    ]);
+    const view = renderScreen();
+
+    expect(await screen.findByText('Sender One')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
+    expect(screen.getByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+    expect(requests).toBe(1);
+
+    currentSearch = 'date_from=still-not-a-date&source=manual';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+
+    await screen.findByRole('alert');
+    expect(requests).toBe(1);
+    expect(screen.queryByText('Sender One')).toBeNull();
+    expect(screen.queryByRole('status', { name: 'Activity metrics' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Bulk actions' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+  });
+
+  it('does not mislabel a non-validation 4xx as a filter problem', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'RATE_LIMITED', message: 'Too many requests' },
+            }),
+            {
+              status: 429,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your activity/i }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(within(alert).queryByRole('button', { name: 'Reset filters' })).toBeNull();
   });
 
   it('renders the empty state when the page is empty', async () => {
@@ -281,7 +504,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
   });
 
-  it('D56 — renders a distinct "Unsubscribe confirmed" row for the outcome action', async () => {
+  it('D56 — renders a distinct "Request accepted" row for the endpoint outcome', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -300,8 +523,8 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     // The outcome row renders its own label, distinct from the intent's
-    // "Unsubscribe requested" — and the confirmed row shows no count (0 affected).
-    await waitFor(() => expect(screen.getByText(/^Unsubscribe confirmed$/)).toBeInTheDocument());
+    // "Unsubscribe requested" — and the accepted row shows no count (0 affected).
+    await waitFor(() => expect(screen.getByText(/^Request accepted$/)).toBeInTheDocument());
     expect(screen.queryByText(/email/)).not.toBeInTheDocument();
   });
 
@@ -309,7 +532,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     // A one-click POST can still fail and a mailto is manual (D230), so the
     // intent row must not claim completion — otherwise a FAILED unsubscribe
     // reads as done. The intent renders "Unsubscribe requested"; only the
-    // separate `unsubscribe_confirmed` row promises success. (The stats
+    // separate `unsubscribe_confirmed` row records endpoint acceptance. (The stats
     // tile + verb chip legitimately keep the aggregate "Unsubscribed"
     // label, so we assert the ROW label positively rather than the absence
     // of "Unsubscribed" anywhere on the page.)
@@ -806,8 +1029,9 @@ describe('ActivityScreen — B12 Open in Gmail', () => {
     const link = await screen.findByRole('link', { name: /gmail/i });
     expect(link).toHaveAttribute(
       'href',
-      'https://mail.google.com/mail/u/0/#search/from:one%40example.com',
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#search/from%3A%22one%40example.com%22',
     );
+    expect(link.getAttribute('href')).not.toContain('/u/0');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
   });

@@ -23,8 +23,9 @@ const { color, font } = tokens;
  *      live ONLY in packages/shared/src/copy/privacy.ts.
  *   2. Indexed mailboxes — which accounts the storage list applies to.
  *   3. Undo retention — how long reversible actions stay reversible.
- *   4. Data export — JSON (everything) plus per-dataset CSVs (message
- *      index / senders / decisions) via GET /api/account/export.
+ *   4. Data export — mailbox metadata grouped as JSON plus per-dataset
+ *      CSVs (message index / senders / decisions) via GET
+ *      /api/account/export.
  *      D228-allowlisted columns only.
  *   5. Leave cleanly — pointers to disconnect + account deletion.
  *   6. Legal & evidence — CASA Tier 2 row (static copy, link lands
@@ -134,19 +135,20 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {undoDays !== null ? (
               <>
-                Reversible actions (Archive, Later, Delete, and archived unsubscribe backlogs) can
-                be undone from Activity for{' '}
+                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
                 <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
               </>
             ) : (
               <>
-                Reversible actions (Archive, Later, Delete, and archived unsubscribe backlogs) can
-                be undone from Activity for {TIER_MANIFEST.free.undoWindowDays} days (
-                {TIER_MANIFEST.pro.undoWindowDays} days on Pro).
+                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
+                {TIER_MANIFEST.free.undoWindowDays} days ({TIER_MANIFEST.pro.undoWindowDays} days on
+                Pro).
               </>
             )}{' '}
-            Account deletion always waits for your open undo windows to expire (unless you
-            explicitly waive them).
+            Delete has an Activity undo token for up to {TIER_MANIFEST.pro.undoWindowDays} days
+            while Gmail still retains the message; permanently deleting it or emptying Trash can end
+            recovery sooner. Account deletion always waits for your open undo windows to expire
+            (unless you explicitly waive them).
           </p>
         </div>
       </Card>
@@ -156,11 +158,13 @@ export function PrivacyDataView({
         <div style={{ padding: '18px 20px' }}>
           <h3 style={cardTitleStyle}>Export my data</h3>
           <p style={mutedTextStyle}>
-            Download everything DeclutrMail stores for your account. JSON contains the full export —
-            mailboxes, senders with your decisions, the message metadata index, and your activity
-            log. The CSVs cover one dataset each: the message metadata index, your senders with
-            their standing policies, and your decision history. Exports never contain message bodies
-            or OAuth tokens — we don't store them.
+            JSON groups the current export by mailbox: mailbox email, connection status and date;
+            sender records with standing policies; message metadata (sender, subject, Gmail preview
+            snippet, received date, labels, and read state); and decision/activity history (source,
+            action, affected count, and sender). The CSVs cover the message metadata, sender-policy,
+            and decision/activity datasets separately. This is not a complete account dump: app
+            preferences, billing records, message bodies, attachments, and encrypted OAuth
+            credentials are not included.
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button

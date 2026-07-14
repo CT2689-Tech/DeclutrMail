@@ -1,7 +1,13 @@
 'use client';
 
+import Link from 'next/link';
+
 import { tokens } from '@declutrmail/shared';
+import type { TierId } from '@declutrmail/shared/entitlements';
+import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
+
 import {
+  canUseActionSelector,
   canArchive,
   canDelete,
   canLater,
@@ -24,11 +30,14 @@ export function SelectionBar({
   senders,
   onClear,
   onAct,
+  tier,
   busy = false,
 }: {
   senders: Sender[];
   onClear: () => void;
   onAct: (verb: SelectionBarVerb) => void;
+  /** Workspace tier; selector access is resolved from ACTION_REGISTRY. */
+  tier: TierId;
   /**
    * True while a bulk enqueue is in flight (D52). Disables every verb
    * button so a slow round-trip can't double-fire; the selection stays
@@ -47,13 +56,20 @@ export function SelectionBar({
     Unsubscribe: senders.filter(canUnsubscribe).length,
     Delete: senders.filter(canDelete).length,
   };
+  const selector = senders.length > 1 ? 'multi-sender' : 'sender';
+  const multiSenderLocked =
+    selector === 'multi-sender' && !canUseActionSelector(tier, 'Archive', selector);
 
   return (
     <div
+      data-dm-selection-bar
       style={{
         position: 'sticky',
-        bottom: 14,
-        zIndex: 30,
+        bottom: floatingSurfaceLayout.selectionBarBottom,
+        height: floatingSurfaceLayout.selectionBarHeight,
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        zIndex: floatingSurfaceLayout.selectionBarZIndex,
         display: 'flex',
         alignItems: 'center',
         gap: 14,
@@ -98,9 +114,31 @@ export function SelectionBar({
 
       <span style={{ flex: 1 }} />
 
+      {multiSenderLocked ? (
+        <span
+          role="note"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            color: color.fgInverseSoft,
+            fontSize: 12,
+          }}
+        >
+          Multi-sender actions require Plus.
+          <Link
+            href="/billing"
+            style={{ color: color.fgInverse, fontWeight: 700, textUnderlineOffset: 3 }}
+          >
+            See plans
+          </Link>
+        </span>
+      ) : null}
+
       {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) => {
         const n = eligible[verb];
-        const disabled = n === 0 || busy;
+        const entitled = canUseActionSelector(tier, verb, selector);
+        const disabled = n === 0 || busy || !entitled;
         const primary = verb === 'Unsubscribe';
         // Delete carries the destructive treatment — same `color.danger`
         // the single-sender Delete confirm uses (spec v1.2 Decision 1).
@@ -115,8 +153,14 @@ export function SelectionBar({
             key={verb}
             onClick={() => !disabled && onAct(verb)}
             disabled={disabled}
-            title={shortcut ? `${label} (${shortcut})` : label}
-            aria-keyshortcuts={shortcut ?? undefined}
+            title={
+              !entitled
+                ? `${label} — Plus required for multi-sender actions`
+                : shortcut
+                  ? `${label} (${shortcut})`
+                  : label
+            }
+            aria-keyshortcuts={entitled ? (shortcut ?? undefined) : undefined}
             style={{
               display: 'inline-flex',
               alignItems: 'center',

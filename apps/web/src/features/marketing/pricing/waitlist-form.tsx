@@ -11,7 +11,7 @@ import { track } from '@/lib/posthog';
 const { color, font, radius } = tokens;
 
 /**
- * Inline waitlist capture (D19 — Team "Coming Q3 2026" row).
+ * Inline waitlist capture (D19 — Team demand signal; no speculative ship date).
  *
  * States: idle → submitting → confirmed | error. The server answers
  * 202 with one constant body for new AND duplicate emails (no

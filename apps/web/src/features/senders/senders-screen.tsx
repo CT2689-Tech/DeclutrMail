@@ -1,12 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Button, EmptyState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import {
+  Button,
+  EmptyState,
+  ErrorState as RecoverableErrorState,
+  Eyebrow,
+  ScreenIntro,
+  tokens,
+  toast,
+} from '@declutrmail/shared';
 import {
   canArchive,
   canDelete,
   canLater,
   canUnsubscribe,
+  canUseActionSelector,
   isStandingProtected,
   VERB_PAST,
   type ActionRequest,
@@ -41,7 +50,7 @@ import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
-import { UnsubMailtoCallout } from './unsub-mailto-callout';
+import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -253,7 +262,7 @@ export function SendersScreen() {
     return <LoadingState />;
   }
   if (sendersQuery.isError) {
-    return <ErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
+    return <SendersErrorState error={sendersQuery.error} onRetry={() => sendersQuery.refetch()} />;
   }
   return (
     <SendersScreenContent
@@ -338,6 +347,7 @@ function SendersScreenContent({
   clearCompose: () => void;
 }) {
   const { me } = useAuth();
+  const tier = me.tier ?? 'free';
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
   const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
@@ -402,6 +412,9 @@ function SendersScreenContent({
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
+  const [bulkMailtoFollowups, setBulkMailtoFollowups] = useState<
+    Array<{ senderName: string; mailtoUrl: string }>
+  >([]);
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const batchStatus = useBatchStatus(activeBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
@@ -465,16 +478,18 @@ function SendersScreenContent({
           error: archivePreviewQuery.isError,
         }
       : undefined;
-  // D52 — aggregated multi-sender preview. Enabled only while a bulk
-  // (>1 sender) A/L/D preview is open; supplies the REAL per-window
-  // bucket totals + per-sender breakdown the D226 modal renders.
+  // D52 — aggregated multi-sender preview. Unsubscribe also starts this
+  // read in the background because selecting Archive/Delete for its
+  // backlog turns the otherwise non-mail-moving request into a required
+  // preview path.
   const bulkPreviewSenderIds = useMemo(
     () =>
       pendingAction != null &&
       pendingAction.senders.length > 1 &&
       (pendingAction.verb === 'Archive' ||
         pendingAction.verb === 'Later' ||
-        pendingAction.verb === 'Delete')
+        pendingAction.verb === 'Delete' ||
+        pendingAction.verb === 'Unsubscribe')
         ? pendingAction.senders.map((s) => s.id)
         : null,
     [pendingAction],
@@ -594,11 +609,10 @@ function SendersScreenContent({
       void track('bulk_action_taken', {
         verb: phVerb,
         selected_count: senders.length,
-        // We don't know the affected_messages count at fire-time
-        // (composite preview resolves it server-side). Conservatively
-        // report sender count; downstream Activity action_completed
-        // events carry the real message count.
-        affected_messages: senders.length,
+        // This event records the confirmed decision, not a worker
+        // outcome. The enqueue path resolves the message count later;
+        // terminal Activity data remains the value source.
+        requested_messages: -1,
         source: 'senders_bulk_bar',
       });
       addBreadcrumb({
@@ -742,6 +756,7 @@ function SendersScreenContent({
         if (recordUnsubIntent.isPending) return;
         setPendingAction(null);
         setSelected(new Set());
+        setBulkMailtoFollowups([]);
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name, domain: s.domain }));
         const isBulk = senderRefs.length > 1;
 
@@ -755,7 +770,7 @@ function SendersScreenContent({
         if (!isBulk) {
           const sref = senderRefs[0]!;
           recordUnsubIntent.mutate(
-            { senderId: sref.id },
+            { senderId: sref.id, includesBacklogAction: secondary != null },
             {
               onSuccess: (res) => {
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -841,10 +856,23 @@ function SendersScreenContent({
         void Promise.allSettled(
           senderRefs.map((sref) => recordUnsubIntent.mutateAsync({ senderId: sref.id })),
         ).then((results) => {
-          const succeededIds = senderRefs
-            .filter((_, i) => results[i]!.status === 'fulfilled')
-            .map((s) => s.id);
+          const fulfilled = results.flatMap((result, index) =>
+            result.status === 'fulfilled'
+              ? [{ sender: senderRefs[index]!, result: result.value }]
+              : [],
+          );
+          const succeededIds = fulfilled.map(({ sender }) => sender.id);
           const failedCount = senderRefs.length - succeededIds.length;
+          const oneClickCount = fulfilled.filter(
+            ({ result }) => result.method === 'one_click',
+          ).length;
+          const mailtoFollowups = fulfilled.flatMap(({ sender, result }) =>
+            result.method === 'mailto' && result.mailtoUrl
+              ? [{ senderName: sender.name, mailtoUrl: result.mailtoUrl }]
+              : [],
+          );
+          const noChannelCount = fulfilled.filter(({ result }) => result.method === 'none').length;
+          setBulkMailtoFollowups(mailtoFollowups);
           for (const r of results) {
             if (r.status === 'rejected') {
               captureFeatureException(r.reason, { surface: 'senders', reason: 'record_unsub' });
@@ -859,9 +887,25 @@ function SendersScreenContent({
             );
             return;
           }
+          const outcomes = [
+            oneClickCount > 0
+              ? `${oneClickCount} one-click request${oneClickCount === 1 ? '' : 's'} queued`
+              : null,
+            mailtoFollowups.length > 0
+              ? `${mailtoFollowups.length} email draft${mailtoFollowups.length === 1 ? '' : 's'} need sending below`
+              : null,
+            noChannelCount > 0
+              ? `${noChannelCount} sender${noChannelCount === 1 ? '' : 's'} had no unsubscribe channel`
+              : null,
+            failedCount > 0 ? `${failedCount} failed` : null,
+          ].filter((part): part is string => part !== null);
           toast(
-            `Unsubscribe requested for ${succeededIds.length} sender${succeededIds.length === 1 ? '' : 's'}${failedCount ? ` (${failedCount} failed)` : ''} — each sender's chip shows the result; email-based lists finish from the sender's page.`,
-            failedCount > 0 ? 'warn' : 'success',
+            `Unsubscribe decisions recorded — ${outcomes.join(' · ')}.`,
+            failedCount > 0 || noChannelCount > 0
+              ? 'warn'
+              : mailtoFollowups.length > 0
+                ? 'info'
+                : 'success',
           );
           // The preview's secondary chip (D226 — counts already shown):
           // fan the backlog out as ONE bulk batch (D52 pipeline) over
@@ -1128,7 +1172,10 @@ function SendersScreenContent({
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast(`Unsubscribed from ${activeUnsub.senderName} — new mail should stop`, 'success');
+      toast(
+        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request — watch for new mail`,
+        'success',
+      );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
         `Couldn't confirm ${activeUnsub.senderName}'s unsubscribe — it may have worked. Watch for new mail.`,
@@ -1314,6 +1361,10 @@ function SendersScreenContent({
   // opening an empty preview.
   const requestBulkAction = useCallback(
     (verb: 'Keep' | keyof typeof ELIGIBLE) => {
+      if (selectedSenders.length > 1 && !canUseActionSelector(tier, verb, 'multi-sender')) {
+        toast('Multi-sender actions require Plus — select one sender or see plans.', 'info');
+        return;
+      }
       // Keep (D40) — a standing-policy write, non-destructive: no
       // eligibility gate (protected senders can be Kept) and no D226
       // preview; `performAction`'s Keep branch fans the policy PATCHes.
@@ -1356,7 +1407,7 @@ function SendersScreenContent({
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },
-    [selectedSenders, requestAction],
+    [selectedSenders, requestAction, tier],
   );
 
   const closePending = useCallback(() => setPendingAction(null), []);
@@ -1500,8 +1551,8 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Every account, list, and service that mails you, regrouped by what we think you should do. Decide once per sender — your choice applies to past and future mail."
-        tip="We classify from the sender address and public list-headers only. We store sender, subject, and Gmail's preview snippet — never message bodies or attachments."
+        body="Every account, list, and service that mails you, regrouped by a recommended next step. Manual Archive, Later, and Delete affect matching inbox mail when they run; future matches change only through Pro Autopilot rules you explicitly enable."
+        tip="Recommendations use bounded metadata signals such as sender identity, volume, read and reply history, recency, and protection settings. Full message bodies and attachments are never fetched."
       />
 
       <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
@@ -1513,6 +1564,12 @@ function SendersScreenContent({
           senderName={mailtoFollowup.senderName}
           mailtoUrl={mailtoFollowup.mailtoUrl}
           onDismiss={() => setMailtoFollowup(null)}
+        />
+      )}
+      {bulkMailtoFollowups.length > 0 && (
+        <UnsubMailtoChecklist
+          items={bulkMailtoFollowups}
+          onDismiss={() => setBulkMailtoFollowups([])}
         />
       )}
 
@@ -1774,6 +1831,7 @@ function SendersScreenContent({
           senders={selectedSenders}
           onClear={() => setSelected(new Set())}
           onAct={requestBulkAction}
+          tier={tier}
           busy={enqueueBulk.isPending}
         />
       )}
@@ -1785,6 +1843,7 @@ function SendersScreenContent({
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
         compositePreviewError={compositePreviewQuery.isError}
+        mailboxEmail={activeEmail}
         bulkPreview={
           bulkPreviewSenderIds != null
             ? {
@@ -1937,28 +1996,24 @@ function LoadingState() {
   );
 }
 
-/** D211 error branch — surfaces the error message with a retry affordance. */
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your senders (${error.status}). Try again in a moment.`
-      : "We couldn't load your senders right now. Try again in a moment.";
+/** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
+function SendersErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        width: '100%',
+        boxSizing: 'border-box',
         maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >
-      <EmptyState
+      <RecoverableErrorState
         title="We couldn't load your senders"
-        body={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}Your Gmail messages and sender settings haven't changed. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

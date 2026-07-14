@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ToastHost, toast, tokens } from '@declutrmail/shared';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
 import { SyncGate, type SyncGateEscape } from '@/features/onboarding/sync-gate';
@@ -15,10 +16,12 @@ import {
 import { deriveAuthedStep, type AuthedOnboardingStep } from '@/features/onboarding/derive-step';
 import { StepConnect } from '@/features/onboarding/step-connect';
 import { StepFirstTriage } from '@/features/onboarding/step-first-triage';
-import { StepPresetPick } from '@/features/onboarding/step-preset-pick';
+import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
+import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { useMe } from '@/features/auth/api/use-me';
+import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
 import { ApiError } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
@@ -30,7 +33,8 @@ const { color, font } = tokens;
  * Onboarding route — the D106 five-step machine.
  *
  *   1 Promise (D107)  → 2 Connect (D108) → 3 Sync gate (D109/D224)
- *   → 4 Starting rules (D110) → 5 First triage (D112) → done (D113:
+ *   → 4 First-review handoff (Free/Plus) or Starting rules (Pro+, D110)
+ *   → 5 First triage (D112) → done (D113:
  *   `onboarded_at` write + redirect to /senders — first-triage IS the
  *   "land somewhere with real data" moment, and post-sync Senders has
  *   real data immediately, which is why /senders stays the exit).
@@ -52,6 +56,10 @@ const { color, font } = tokens;
  *   - Secondary connect → `/onboarding?mailbox=<id>` (D116): gates
  *     THAT mailbox with the escape hatch, then exits to /senders —
  *     it is NOT part of the 5-step flow (the user already onboarded).
+ *   - Target-bound reconnect → `/onboarding?mailbox=<id>&reconnect=1`:
+ *     uses that same strict gate, then returns to the fixed Settings
+ *     repair surface with a controlled one-shot result. No arbitrary
+ *     post-OAuth destination crosses this boundary.
  *
  * D159 funnel: `onboarding_step_viewed` on step entry,
  * `onboarding_step_completed` (with duration) on step exit; `finished`
@@ -69,22 +77,31 @@ export default function OnboardingPage() {
 function OnboardingFlow() {
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
+  // Exact closed flag, honored only alongside the secondary-mailbox
+  // target. Values such as `true`, `01`, or an attacker-supplied path
+  // remain ordinary secondary connects and retain the /senders exit.
+  const isTargetedReconnect = secondaryMailboxId !== null && params.get('reconnect') === '1';
+  const billingIntent = parseBillingIntentPath(params.get('returnTo'));
+  const returnTo = billingIntent ? billingIntentPath(billingIntent) : null;
 
   if (secondaryMailboxId) {
     // Secondary-connect gate is an authed surface — an unauthed hit
     // bounces to OAuth start via the provider, exactly as before.
     return (
       <AuthProvider>
-        <SecondaryConnectGate mailboxId={secondaryMailboxId} />
+        <SecondaryConnectGate
+          mailboxId={secondaryMailboxId}
+          isTargetedReconnect={isTargetedReconnect}
+        />
       </AuthProvider>
     );
   }
-  return <FreshFlow />;
+  return <FreshFlow returnTo={returnTo} />;
 }
 
 /* ── Fresh-flow: pre-auth boundary ─────────────────────────────────── */
 
-function FreshFlow() {
+function FreshFlow({ returnTo }: { returnTo: string | null }) {
   // Soft session probe — same query key AuthProvider uses, so when a
   // session exists the provider below resolves from cache instantly.
   const me = useMe();
@@ -116,16 +133,17 @@ function FreshFlow() {
 
   return (
     <AuthProvider>
-      <AuthedFlow />
+      <AuthedFlow returnTo={returnTo} />
     </AuthProvider>
   );
 }
 
 /* ── Fresh-flow: authed steps 3-5 ──────────────────────────────────── */
 
-function AuthedFlow() {
+function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   const router = useRouter();
   const { me } = useAuth();
+  useAnalyticsIdentity(me.user.id);
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
 
@@ -160,9 +178,9 @@ function AuthedFlow() {
   const isDone = step.kind === 'done';
   useEffect(() => {
     if (isDone) {
-      router.replace('/senders');
+      router.replace(returnTo ?? '/senders');
     }
-  }, [isDone, router]);
+  }, [isDone, returnTo, router]);
 
   /** D113 completion (finish or D106 skip) → funnel `finished` → exit. */
   const finish = useCallback(
@@ -173,7 +191,7 @@ function AuthedFlow() {
         {
           onSuccess: () => {
             void track('onboarding_step_completed', { step: 'finished', duration_ms: 0 });
-            router.replace('/senders');
+            router.replace(returnTo ?? '/senders');
           },
           onError: (err) => {
             captureFeatureException(err, { surface: 'onboarding', reason: 'complete' });
@@ -182,7 +200,7 @@ function AuthedFlow() {
         },
       );
     },
-    [complete, router],
+    [complete, returnTo, router],
   );
 
   const skipCorner = (
@@ -236,12 +254,14 @@ function AuthedFlow() {
       return <SyncGate status={status} />;
     }
     case 'preset-pick':
-      return (
+      return hasCapability(me.tier, 'autopilot') ? (
         <StepPresetPick
           presets={state.data?.presets ?? []}
           onSubmitted={() => void state.refetch()}
           corner={skipCorner}
         />
+      ) : (
+        <StepFirstSenderReview onSubmitted={() => void state.refetch()} corner={skipCorner} />
       );
     case 'first-triage':
       return (
@@ -256,10 +276,18 @@ function AuthedFlow() {
 
 /* ── Secondary-connect gate (D116) — behavior unchanged ────────────── */
 
-function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
+function SecondaryConnectGate({
+  mailboxId,
+  isTargetedReconnect,
+}: {
+  mailboxId: string;
+  isTargetedReconnect: boolean;
+}) {
   const router = useRouter();
   const { me } = useAuth();
+  useAnalyticsIdentity(me.user.id);
   const setActive = useSetActiveMailbox();
+  const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/senders';
 
   // Gate THAT mailbox explicitly so it survives the user switching
   // their active mailbox back to the primary mid-sync.
@@ -270,9 +298,9 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
 
   useEffect(() => {
     if (ready) {
-      router.replace('/senders');
+      router.replace(exitPath);
     }
-  }, [ready, router]);
+  }, [exitPath, ready, router]);
 
   // Escape hatch only when ANOTHER active mailbox exists to return to.
   const other = me.mailboxes.find((m) => m.status === 'active' && m.id !== mailboxId);
@@ -281,7 +309,7 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
         returnToEmail: other.email,
         returning: setActive.isPending,
         onReturn: () => {
-          setActive.mutate(other.id, { onSuccess: () => router.replace('/senders') });
+          setActive.mutate(other.id, { onSuccess: () => router.replace(exitPath) });
         },
       }
     : undefined;
@@ -295,6 +323,17 @@ function SecondaryConnectGate({ mailboxId }: { mailboxId: string }) {
 
   // Not part of the 5-step flow — no step counter in the eyebrow.
   return <SyncGate status={status} escape={escape} eyebrow="One-time scan" />;
+}
+
+/**
+ * Fixed, PII-free reconnect result destination.
+ *
+ * The mailbox id is the server-bound opaque target. It lives in the
+ * fragment so it is not sent to the web server or in Referer headers;
+ * Settings uses it only to scroll/highlight the matching owned row.
+ */
+function reconnectSettingsResultPath(mailboxId: string): string {
+  return `/settings?reconnect_result=success#mailbox-${encodeURIComponent(mailboxId)}`;
 }
 
 /* ── Funnel + small states ─────────────────────────────────────────── */

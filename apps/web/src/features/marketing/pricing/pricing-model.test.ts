@@ -98,36 +98,39 @@ describe('CAPABILITY_LABELS — D227 verb language', () => {
 });
 
 describe('compareRows — derived from the manifest', () => {
-  it('emits one row per capability plus the two quota rows, 5 cells each', () => {
+  it('emits one row per capability plus quota rows for the three available tiers', () => {
     const rows = compareRows();
     expect(rows).toHaveLength(CAPABILITIES.length + 2);
+    const comparableCount = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable).length;
     for (const row of rows) {
-      expect(row.values).toHaveLength(TIER_IDS.length);
+      expect(row.values).toHaveLength(comparableCount);
     }
   });
 
   it('shows the Free lifetime cleanup quota from the manifest, not a literal', () => {
     const cleanupRow = compareRows().find((r) => r.label === CAPABILITY_LABELS['cleanup-actions']);
-    const freeIdx = TIER_IDS.indexOf('free');
+    const compareIds = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable);
+    const freeIdx = compareIds.indexOf('free');
     expect(cleanupRow?.values[freeIdx]).toBe(
       `${TIER_MANIFEST.free.cleanupActionsLifetime} lifetime`,
     );
-    const proIdx = TIER_IDS.indexOf('pro');
+    const proIdx = compareIds.indexOf('pro');
     expect(cleanupRow?.values[proIdx]).toBe('Unlimited');
   });
 
   it('marks Pro-only capabilities absent on Free and present on Pro', () => {
     const rows = compareRows();
     const briefRow = rows.find((r) => r.label === CAPABILITY_LABELS.brief);
-    expect(briefRow?.values[TIER_IDS.indexOf('free')]).toBeNull();
-    expect(briefRow?.values[TIER_IDS.indexOf('pro')]).toBe('Included');
+    const compareIds = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable);
+    expect(briefRow?.values[compareIds.indexOf('free')]).toBeNull();
+    expect(briefRow?.values[compareIds.indexOf('pro')]).toBe('Included');
   });
 
   it('quota rows read inboxLimit/undoWindowDays straight off the manifest', () => {
     const rows = compareRows();
     const inboxRow = rows.find((r) => r.label === 'Connected inboxes');
-    const undoRow = rows.find((r) => r.label === 'Undo window');
-    TIER_IDS.forEach((id, i) => {
+    const undoRow = rows.find((r) => r.label === 'Archive/Later Activity undo');
+    TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable).forEach((id, i) => {
       expect(inboxRow?.values[i]).toBe(String(TIER_MANIFEST[id].inboxLimit));
       expect(undoRow?.values[i]).toBe(`${TIER_MANIFEST[id].undoWindowDays} days`);
     });
@@ -154,7 +157,9 @@ describe('cardBullets — manifest-derived card copy', () => {
     const bullets = cardBullets(TIER_MANIFEST.pro);
     expect(bullets).toContain('Everything in Plus');
     expect(bullets).toContain(CAPABILITY_LABELS.autopilot);
-    expect(bullets).toContain(`${TIER_MANIFEST.pro.undoWindowDays}-day undo window`);
+    expect(bullets).toContain(
+      `${TIER_MANIFEST.pro.undoWindowDays}-day Archive/Later Activity undo`,
+    );
     expect(bullets).toContain(
       `${TIER_MANIFEST.pro.inboxLimit} connected ${TIER_MANIFEST.pro.inboxLimit === 1 ? 'inbox' : 'inboxes'}`,
     );

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { color, font } from '../tokens/tokens';
+import { useFocusTrap } from '../hooks/use-focus-trap';
 import { Sidebar } from './sidebar';
 
 const TRUST_CLAIMS = [
@@ -11,9 +12,9 @@ const TRUST_CLAIMS = [
   // mutation surface. "Recoverable" covers both Archive/Later (7d
   // Activity undo) and Delete (30d Gmail Trash retention).
   {
-    label: 'Recoverable',
+    label: 'Recovery',
     title:
-      'Archive + Later: 7 days from Activity. Delete: 30 days in Gmail Trash. Every action is reversible.',
+      "Archive and Later use your plan's Activity window. Delete can be undone while Gmail retains Trash, up to 30 days. A delivered unsubscribe request is one-way.",
   },
   {
     label: 'Metadata only',
@@ -52,11 +53,23 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerRef = useFocusTrap<HTMLDivElement>(drawerOpen);
 
   // Close the drawer whenever the route changes.
   useEffect(() => {
     setDrawerOpen(false);
   }, [active]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      setDrawerOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [drawerOpen]);
 
   const navigate = (id: string) => {
     onNavigate(id);
@@ -98,7 +111,33 @@ export function AppShell({
               zIndex: 80,
             }}
           />
-          <div style={{ position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 81 }}>
+          <div
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            style={{ position: 'fixed', top: 0, bottom: 0, left: 0, zIndex: 81 }}
+          >
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="Close navigation menu"
+              style={{
+                position: 'absolute',
+                top: 12,
+                right: 12,
+                zIndex: 1,
+                width: 44,
+                height: 44,
+                border: `1px solid ${color.border}`,
+                borderRadius: 8,
+                background: color.card,
+                color: color.fg,
+                cursor: 'pointer',
+              }}
+            >
+              ×
+            </button>
             <Sidebar active={active} onNavigate={navigate} counts={counts ?? {}} />
           </div>
         </>
@@ -128,11 +167,21 @@ export function AppShell({
           <button
             type="button"
             className="dm-topbar-hamburger"
-            onClick={() => setDrawerOpen(true)}
+            onClick={(event) => {
+              // Establish a deterministic restore target even in
+              // browsers/test DOMs that do not focus buttons on click.
+              event.currentTarget.focus();
+              setDrawerOpen(true);
+            }}
             aria-label="Open navigation menu"
             aria-expanded={drawerOpen}
             style={{
-              padding: '4px 6px',
+              width: 44,
+              height: 44,
+              padding: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               background: 'transparent',
               border: 'none',
               color: color.fg,
@@ -182,7 +231,7 @@ export function AppShell({
                 {i > 0 && <span style={{ opacity: 0.35 }}>·</span>}
                 <button
                   type="button"
-                  onClick={() => onNavigate('activity')}
+                  onClick={() => onNavigate(claim.label === 'Recovery' ? 'activity' : 'settings')}
                   title={claim.title}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.color = color.primary;

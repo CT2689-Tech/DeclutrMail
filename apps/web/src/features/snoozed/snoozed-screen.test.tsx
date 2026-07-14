@@ -116,6 +116,7 @@ describe('SnoozedScreen — edge states', () => {
     ]);
     renderScreen();
     expect(await screen.findByText(/couldn't load Snoozed/i)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Needs attention');
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 

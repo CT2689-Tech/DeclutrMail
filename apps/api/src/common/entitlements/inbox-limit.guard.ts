@@ -6,7 +6,7 @@ import type { SessionPrincipal } from '../../auth/sessions.service.js';
 import { EntitlementsService } from './entitlements.service.js';
 
 /**
- * InboxLimitGuard (D19/D81) — blocks the connect-mailbox OAuth START
+ * InboxLimitGuard (D19/D81) — blocks a normal connect-mailbox OAuth START
  * when the workspace is already at its tier's connected-inbox limit,
  * BEFORE any Google consent screen renders.
  *
@@ -15,7 +15,13 @@ import { EntitlementsService } from './entitlements.service.js';
  * via `EntitlementsService.assertCanConnectMailbox` — the FE
  * AccountMenu reads the same limit from `/api/auth/me` + the shared
  * manifest and gates the affordance first, so this guard is the
- * defense-in-depth layer for direct hits.
+ * defense-in-depth layer for direct hits. A non-empty
+ * `reconnectMailboxId` is a hint, not authority: it only defers this UX
+ * fast-fail so Google can re-authorize an already-counted active mailbox.
+ * A `reactivateMailboxId` receives no bypass: a disconnected row is not
+ * counted and activating it consumes a slot. The controller validates +
+ * binds either target before consent and the callback's activation-boundary
+ * check remains authoritative.
  */
 @Injectable()
 export class InboxLimitGuard implements CanActivate {
@@ -27,6 +33,10 @@ export class InboxLimitGuard implements CanActivate {
       // Defensive — only reachable if a route lists this guard without
       // JwtGuard before it.
       throw new UnauthorizedException('InboxLimitGuard requires JwtGuard to run first.');
+    }
+    const reconnectMailboxId = req.query?.['reconnectMailboxId'];
+    if (typeof reconnectMailboxId === 'string' && reconnectMailboxId.trim().length > 0) {
+      return true;
     }
     await this.entitlements.assertCanConnectMailbox(req.user.workspaceId);
     return true;

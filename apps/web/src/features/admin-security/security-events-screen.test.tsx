@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import {
@@ -20,6 +20,7 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
+import { securityEventsKeys } from './api/query-keys';
 import { AdminSecurityEventsScreen } from './security-events-screen';
 
 const NOW = '2026-05-29T18:00:00.000Z';
@@ -60,11 +61,12 @@ function envelope(items: WireRow[], nextCursor: string | null = null) {
 
 function renderScreen() {
   const client = createTestQueryClient();
-  return render(
+  render(
     <QueryWrapper client={client}>
       <AdminSecurityEventsScreen />
     </QueryWrapper>,
   );
+  return client;
 }
 
 beforeEach(() => {
@@ -147,14 +149,79 @@ describe('AdminSecurityEventsScreen — render states', () => {
     expect(document.body.textContent ?? '').not.toMatch(/admin only/i);
   });
 
-  it('renders an error surface for non-404 failures (server error)', async () => {
+  it('renders a privacy-safe error surface and recovers when retry succeeds', async () => {
+    let attempts = 0;
     installFetchStub([
-      { method: 'GET', path: '/api/security-events', respond: () => jsonServerError() },
+      {
+        method: 'GET',
+        path: '/api/security-events',
+        respond: () => {
+          attempts += 1;
+          return attempts === 1
+            ? jsonServerError('database.internal=private')
+            : jsonOk(envelope([row({ id: 'recovered', eventType: 'login.success' })]));
+        },
+      },
     ]);
     renderScreen();
-    await waitFor(() => {
-      expect(screen.getByText(/Couldn't load events/i)).toBeInTheDocument();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      screen.getByRole('heading', { name: /couldn't load security events/i }),
+    ).toBeInTheDocument();
+    expect(alert).not.toHaveTextContent('/api/security-events');
+    expect(alert).not.toHaveTextContent('database.internal');
+
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('login.success')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(attempts).toBe(2);
+  });
+
+  it('keeps loaded rows and pagination visible when a refresh fails, then retries it', async () => {
+    let attempts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/security-events',
+        respond: () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return jsonOk(
+              envelope([row({ id: 'cached', eventType: 'login.failure' })], 'next-cursor-1'),
+            );
+          }
+          if (attempts === 2) return jsonServerError('refresh.internal=private');
+          return jsonOk(
+            envelope([row({ id: 'refreshed', eventType: 'login.success' })], 'next-cursor-1'),
+          );
+        },
+      },
+    ]);
+    const client = renderScreen();
+
+    expect(await screen.findByText('login.failure')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: securityEventsKeys.all });
     });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/couldn't refresh security events/i);
+    expect(alert).not.toHaveTextContent('refresh.internal');
+    expect(screen.getByText('login.failure')).toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /retry refresh/i }));
+
+    expect(await screen.findByText('login.success')).toBeInTheDocument();
+    expect(screen.queryByText('login.failure')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
+    expect(attempts).toBe(3);
   });
 });
 
@@ -248,5 +315,45 @@ describe('AdminSecurityEventsScreen — Load more', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /load more/i })).not.toBeInTheDocument();
     });
+  });
+
+  it('keeps page one visible when loading more fails, then retries the same page', async () => {
+    let callCount = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/security-events',
+        respond: (req, url) => {
+          callCount += 1;
+          if (callCount === 1) {
+            return jsonOk(
+              envelope([row({ id: 'page-1', eventType: 'login.failure' })], 'next-cursor-1'),
+            );
+          }
+
+          expect(url.search).toContain('cursor=next-cursor-1');
+          if (callCount === 2) return jsonServerError('pagination.internal=private');
+
+          return jsonOk(envelope([row({ id: 'page-2', eventType: 'rate_limit.breach' })], null));
+        },
+      },
+    ]);
+    renderScreen();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: /load more/i }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/couldn't load more events/i);
+    expect(alert).not.toHaveTextContent('pagination.internal');
+    expect(screen.getByText('login.failure')).toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('rate_limit.breach')).toBeInTheDocument();
+    expect(screen.getByText('login.failure')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(callCount).toBe(3);
   });
 });

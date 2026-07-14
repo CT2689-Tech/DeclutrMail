@@ -1,0 +1,109 @@
+.dm-public-error {
+  min-height: 62vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(56px, 9vw, 104px) 20px;
+  background: var(--dm-bg);
+  color: var(--dm-fg);
+  font-family: var(--dm-font-sans);
+}
+
+.dm-public-error-card {
+  width: min(100%, 680px);
+  padding: clamp(28px, 5vw, 48px);
+  border: 1px solid var(--dm-line-soft);
+  border-radius: 16px;
+  background: var(--dm-card);
+  box-shadow: var(--dm-shadow-card);
+}
+
+.dm-public-error-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.dm-public-error-eyebrow {
+  padding: 5px 9px;
+  border: 1px solid var(--dm-primary-border);
+  border-radius: 9999px;
+  background: var(--dm-primary-soft);
+  color: var(--dm-primary);
+  font: 650 10px/1 var(--dm-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.dm-public-error h1 {
+  max-width: 560px;
+  margin: 20px 0 12px;
+  font: 560 clamp(32px, 5vw, 48px) / 1.05 var(--dm-font-display);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.dm-public-error p {
+  max-width: 540px;
+  margin: 0;
+  color: var(--dm-fg-soft);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.dm-public-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.dm-public-error-retry,
+.dm-public-error-link {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 15px;
+  border: 1px solid var(--dm-line);
+  border-radius: 8px;
+  font: 650 13px/1 var(--dm-font-sans);
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.dm-public-error-retry {
+  border-color: var(--dm-primary);
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+  cursor: pointer;
+}
+
+.dm-public-error-link {
+  background: var(--dm-card);
+  color: var(--dm-fg);
+}
+
+.dm-public-error-retry:hover {
+  background: var(--dm-primary-deep);
+  border-color: var(--dm-primary-deep);
+}
+
+.dm-public-error-link:hover {
+  border-color: var(--dm-primary-border);
+  color: var(--dm-primary);
+}
+
+.dm-public-error-retry:focus-visible,
+.dm-public-error-link:focus-visible {
+  outline: 3px solid var(--dm-primary-border);
+  outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+  .dm-public-error-actions > * {
+    flex: 1 1 calc(50% - 5px);
+  }
+}

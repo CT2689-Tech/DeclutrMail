@@ -1,8 +1,45 @@
-import { BadRequestException, ConflictException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AllExceptionsFilter } from './all-exceptions.filter.js';
 import { AppException } from './app-exception.js';
+
+const sentryHarness = vi.hoisted(() => ({
+  captured: [] as Error[],
+  tags: [] as Array<Record<string, unknown>>,
+  fingerprints: [] as string[][],
+}));
+
+vi.mock('@sentry/node', () => ({
+  withScope(
+    callback: (scope: {
+      setTags(tags: Record<string, unknown>): void;
+      setTag(key: string, value: string): void;
+      setFingerprint(parts: string[]): void;
+    }) => void,
+  ) {
+    callback({
+      setTags(tags) {
+        sentryHarness.tags.push(tags);
+      },
+      setTag(key, value) {
+        sentryHarness.tags.push({ [key]: value });
+      },
+      setFingerprint(parts) {
+        sentryHarness.fingerprints.push(parts);
+      },
+    });
+  },
+  captureException(error: Error) {
+    sentryHarness.captured.push(error);
+  },
+}));
 
 /**
  * Tests for the D168 error envelope + D169 severity classification.
@@ -162,5 +199,96 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     expect((body.error.correlationId as string).length).toBeGreaterThan(0);
     expect(body.error.displayId).toMatch(/^DM-[0-9A-F]{6}$/);
     expect(body.error.traceId).toBeNull();
+  });
+
+  it('uses a route template and sends no raw 5xx detail to logs or Sentry', async () => {
+    const leakMarker = 'LEAK_MARKER_undo_31ed0f12';
+    const lowercaseLeakMarker = 'secretvalue31ed0f12';
+    const loggerSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousDsn = process.env.SENTRY_DSN;
+    process.env.SENTRY_DSN = 'https://public@example.invalid/1';
+    sentryHarness.captured.length = 0;
+    sentryHarness.tags.length = 0;
+    sentryHarness.fingerprints.length = 0;
+    let constructorGetterCalls = 0;
+    try {
+      const exception = Object.assign(new Error(leakMarker), {
+        code: lowercaseLeakMarker,
+        response: { status: 502, data: { private: leakMarker, identifier: lowercaseLeakMarker } },
+      });
+      Object.defineProperty(exception, 'constructor', {
+        get() {
+          constructorGetterCalls += 1;
+          throw new Error(lowercaseLeakMarker);
+        },
+      });
+      exception.stack = `Error: ${leakMarker}\n    at ${leakMarker}`;
+      invoke(new AllExceptionsFilter(), exception, {
+        ...REQ_WITH_CORRELATION,
+        path: `/api/undo/${leakMarker}`,
+        route: { path: '/api/undo/:token' },
+      });
+      await vi.waitFor(() => expect(sentryHarness.captured).toHaveLength(1));
+
+      const serialized = JSON.stringify({
+        logger: loggerSpy.mock.calls,
+        console: consoleSpy.mock.calls,
+        tags: sentryHarness.tags,
+        fingerprints: sentryHarness.fingerprints,
+      });
+      expect(serialized).not.toContain(leakMarker);
+      expect(serialized).not.toContain(lowercaseLeakMarker);
+      expect(serialized).toContain('/api/undo/:token');
+      expect(constructorGetterCalls).toBe(0);
+      const captured = sentryHarness.captured[0]!;
+      expect(`${captured.name}\n${captured.message}\n${captured.stack ?? ''}`).not.toContain(
+        leakMarker,
+      );
+      expect(`${captured.name}\n${captured.message}\n${captured.stack ?? ''}`).not.toContain(
+        lowercaseLeakMarker,
+      );
+      expect(captured.message).toBe('Server exception');
+    } finally {
+      if (previousDsn === undefined) {
+        delete process.env.SENTRY_DSN;
+      } else {
+        process.env.SENTRY_DSN = previousDsn;
+      }
+      loggerSpy.mockRestore();
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('omits numeric and unregistered exception codes from 5xx telemetry', () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      invoke(new AllExceptionsFilter(), Object.assign(new Error('failure'), { code: 424_242 }), {
+        ...REQ_WITH_CORRELATION,
+        route: { path: '/api/test' },
+      });
+
+      const detail = JSON.parse(String(consoleSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+      expect(detail).not.toHaveProperty('code');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it('labels an unresolved route as unmatched instead of logging attacker text', () => {
+    const leakMarker = 'LEAK_MARKER_unmatched_f8fd951b';
+    const loggerSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    try {
+      invoke(new AllExceptionsFilter(), new BadRequestException('bad input'), {
+        ...REQ_WITH_CORRELATION,
+        path: `/${leakMarker}`,
+      });
+
+      const serialized = JSON.stringify(loggerSpy.mock.calls);
+      expect(serialized).not.toContain(leakMarker);
+      expect(serialized).toContain('unmatched');
+    } finally {
+      loggerSpy.mockRestore();
+    }
   });
 });

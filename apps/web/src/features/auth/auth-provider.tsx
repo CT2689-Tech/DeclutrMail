@@ -29,12 +29,28 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Resolve the mailbox that every action and deep link on the current screen targets. */
+export function getActiveMailboxEmail(me: Me): string {
+  return me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ?? me.user.email;
+}
+
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) {
     throw new Error('useAuth() requires <AuthProvider> in the tree.');
   }
   return ctx;
+}
+
+/**
+ * Read the authenticated mailbox context when a component can also be
+ * rendered in isolation (tests, stories, and public demos). Production app
+ * surfaces still live under `<AuthProvider>`; the nullable form simply keeps
+ * reusable confirmation dialogs from inventing an account in those isolated
+ * environments.
+ */
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

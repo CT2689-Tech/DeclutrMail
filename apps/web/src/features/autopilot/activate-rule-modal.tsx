@@ -123,7 +123,7 @@ function goingForwardCopy(rule: AutopilotRuleDto): string {
     case 'archive':
       return 'New matches have their inbox mail archived automatically. Nothing is deleted, and each archive can be undone from the Activity feed.';
     case 'unsubscribe':
-      return 'New matches are unsubscribed automatically where the sender supports one-click unsubscribe. Senders that only take unsubscribes by email are queued for you to send manually — DeclutrMail never auto-sends from a no-reply address. Unsubscribe requests cannot be recalled once sent.';
+      return 'New matches trigger an unsubscribe request automatically where the sender supports one-click unsubscribe. The sender controls whether and when delivery stops. Senders that only take requests by email are queued for you to send manually — DeclutrMail never auto-sends from a no-reply address. Delivered requests cannot be recalled.';
     case 'later':
       return 'New matches have their inbox mail moved to the DeclutrMail/Later label automatically — out of your way, one click away, undoable from the Activity feed.';
   }

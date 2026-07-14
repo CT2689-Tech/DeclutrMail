@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, tokens } from '@declutrmail/shared';
+import { ANALYTICS_PRIVACY_CLAIM, Button, tokens } from '@declutrmail/shared';
 import {
   CONSENT_CHANGE_EVENT,
   readStoredConsent,
@@ -59,10 +59,11 @@ export function CookieConsentBanner() {
       style={{
         position: 'fixed',
         bottom: 16,
-        left: 16,
+        right: 16,
         // Below ToastHost (200): an in-flight undo toast outranks
         // chrome. Above page content and the marketing masthead.
         zIndex: 150,
+        width: 'calc(100vw - 32px)',
         maxWidth: 400,
         padding: '14px 16px',
         display: 'flex',
@@ -81,10 +82,10 @@ export function CookieConsentBanner() {
         onClick={() => choose('essential')}
         style={{
           position: 'absolute',
-          top: 6,
-          right: 6,
-          width: 24,
-          height: 24,
+          top: 0,
+          right: 0,
+          width: 44,
+          height: 44,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -99,18 +100,28 @@ export function CookieConsentBanner() {
       >
         ×
       </button>
-      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fg, paddingRight: 20 }}>
+      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fg, paddingRight: 44 }}>
         We use essential cookies for sign-in and billing.
       </p>
       <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgSoft }}>
-        Help us improve DeclutrMail? We use PostHog to understand which features matter. We never
-        see your inbox content.
+        Help us improve DeclutrMail? We use PostHog to understand which features matter.{' '}
+        {ANALYTICS_PRIVACY_CLAIM}
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
-        <Button size="sm" tone="default" onClick={() => choose('all')}>
+        <Button
+          size="lg"
+          tone="default"
+          style={{ minHeight: 44, flex: 1 }}
+          onClick={() => choose('all')}
+        >
           Accept all
         </Button>
-        <Button size="sm" tone="default" onClick={() => choose('essential')}>
+        <Button
+          size="lg"
+          tone="default"
+          style={{ minHeight: 44, flex: 1 }}
+          onClick={() => choose('essential')}
+        >
           Essential only
         </Button>
       </div>

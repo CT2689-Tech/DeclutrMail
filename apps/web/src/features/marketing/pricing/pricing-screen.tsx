@@ -1,15 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { PrivacyBadge, tokens } from '@declutrmail/shared';
+import { ACTION_SAFETY_SUMMARY, tokens } from '@declutrmail/shared';
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
-import { track } from '@/lib/posthog';
-
-import { navigateToCheckout, oauthStartUrl } from './cta';
+import { navigateToCheckout } from './cta';
 import {
   foundingProPromo,
   formatUsd,
@@ -20,6 +17,8 @@ import {
 import { CompareTable } from './compare-table';
 import { TierCard } from './tier-card';
 import { WaitlistForm } from './waitlist-form';
+import { useConsentedPageView } from '../use-consented-page-view';
+import { track } from '@/lib/posthog';
 
 const { color, font, radius, shadow } = tokens;
 
@@ -46,9 +45,7 @@ const ENTERPRISE_CONTACT_MAILTO = 'mailto:hello@declutrmail.com?subject=DeclutrM
 export function PricingScreen() {
   const [interval, setInterval] = useState<BillingInterval>('monthly');
 
-  useEffect(() => {
-    void track('page_viewed', { page: 'pricing', mailbox_id: null });
-  }, []);
+  useConsentedPageView('pricing');
 
   const tiers = pricingTiers();
   const cards = tiers.filter((tier) => tier.purchasable);
@@ -56,8 +53,6 @@ export function PricingScreen() {
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', padding: '0 24px 72px' }}>
-      <Nav />
-
       <header style={{ padding: '48px 0 8px', maxWidth: 640 }}>
         <p
           style={{
@@ -94,9 +89,9 @@ export function PricingScreen() {
             color: color.fgSoft,
           }}
         >
-          Free shows you what’s noisy. Plus lets you clean it yourself. Pro keeps it clean for you.
-          Every plan acts only with the five verbs you approve — Keep, Archive, Unsubscribe, Later,
-          Delete — and every action is undoable.
+          Free shows you what’s noisy. Plus adds unlimited manual actions. Pro adds explicit
+          Autopilot rules for recurring mail. Keep, Archive, Unsubscribe, Later, and Delete keep the
+          same meaning on every plan. {ACTION_SAFETY_SUMMARY}
         </p>
       </header>
 
@@ -138,71 +133,7 @@ export function PricingScreen() {
         </h2>
         <CompareTable />
       </section>
-
-      <footer
-        style={{
-          marginTop: 64,
-          paddingTop: 20,
-          borderTop: `1px solid ${color.lineSoft}`,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 12,
-          fontFamily: font.sans,
-          fontSize: 12.5,
-          color: color.fgMuted,
-        }}
-      >
-        <span>© {new Date().getFullYear()} DeclutrMail</span>
-        {/* D228 locked trust copy — rendered ONLY via the shared badge. */}
-        <PrivacyBadge variant="inline" />
-      </footer>
     </div>
-  );
-}
-
-function Nav() {
-  return (
-    <nav
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '20px 0',
-        borderBottom: `1px solid ${color.lineSoft}`,
-      }}
-    >
-      <Link
-        href="/"
-        style={{
-          fontFamily: font.display,
-          fontSize: 17,
-          fontWeight: 700,
-          color: color.fg,
-          textDecoration: 'none',
-          letterSpacing: '-0.01em',
-        }}
-      >
-        DeclutrMail
-      </Link>
-      <a
-        href={oauthStartUrl()}
-        style={{
-          fontFamily: font.sans,
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: color.fg,
-          textDecoration: 'none',
-          padding: '7px 14px',
-          border: `1px solid ${color.border}`,
-          borderRadius: radius.md,
-          background: color.card,
-        }}
-      >
-        Sign in
-      </a>
-    </nav>
   );
 }
 
@@ -239,11 +170,12 @@ function FoundingProBanner() {
           style={{ fontFamily: font.display, fontSize: 16, fontWeight: 650, color: color.mint }}
         >
           {promo.name} — {formatUsd(promo.annual.usdCents)}/yr for the first {promo.maxRedemptions}{' '}
-          members
+          subscriptions
         </strong>
         <span style={{ fontFamily: font.sans, fontSize: 13, color: color.fgInverseSoft }}>
           {standardAnnual ? `Instead of ${formatUsd(standardAnnual.usdCents)}/yr — ` : ''}
-          full {hostTier.name}, price locked while your subscription stays active.
+          full {hostTier.name}, price locked while your subscription stays active. Availability is
+          confirmed at checkout; no spot is reserved until payment succeeds.
         </span>
       </div>
       <button
@@ -252,7 +184,16 @@ function FoundingProBanner() {
         onClick={() => {
           if (busy) return;
           setBusy(true);
-          void navigateToCheckout((path) => router.push(path)).finally(() => setBusy(false));
+          void track('pricing_plan_selected', {
+            tier: 'pro',
+            cycle: 'annual',
+            promo: 'foundingPro',
+          });
+          void navigateToCheckout((path) => router.push(path), {
+            plan: 'pro',
+            cycle: 'annual',
+            promo: 'foundingPro',
+          }).finally(() => setBusy(false));
         }}
         style={{
           height: 36,
@@ -267,7 +208,7 @@ function FoundingProBanner() {
           cursor: busy ? 'wait' : 'pointer',
         }}
       >
-        {busy ? 'One moment…' : `Claim ${promo.name}`}
+        {busy ? 'One moment…' : 'Check availability'}
       </button>
     </aside>
   );

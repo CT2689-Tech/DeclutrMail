@@ -11,9 +11,9 @@ const { color, font } = tokens;
  * D226 mandatory preview for the D104 approve flow — both "Approve
  * all" (every pending suggestion for one rule) and "Approve selected"
  * (the checked subset). Approving flips the matches to `approved` and
- * enqueues the action sweep, so mail WILL move: the preview enumerates
- * the exact senders and states the verb-true consequence before the
- * mutation fires.
+ * enqueues the action sweep. This preview enumerates the sender scope;
+ * Gmail is re-checked at execution, so it never claims a frozen message
+ * count.
  *
  * Copy honesty (D230, D58): archive/Later actions are undoable from
  * Activity; one-click unsubscribes cannot be recalled, and mailto
@@ -85,11 +85,11 @@ function approveLead(rule: AutopilotRuleDto, n: number): string {
   const senders = n === 1 ? 'this sender' : `these ${n} senders`;
   switch (rule.actionKind) {
     case 'archive':
-      return `DeclutrMail archives the inbox mail from ${senders}. Nothing is deleted.`;
+      return `Approving enqueues an Archive sweep for current inbox mail from ${senders}. Nothing is deleted. Gmail is re-checked at execution, so the final message count can change.`;
     case 'unsubscribe':
-      return `DeclutrMail unsubscribes from ${senders} — one-click where the sender supports it; senders that only take unsubscribes by email are queued for you to send manually.`;
+      return `Approving sends or prepares an unsubscribe request for ${senders} — one-click where supported; email-only requests are queued for you to send manually. Each sender controls whether and when delivery stops.`;
     case 'later':
-      return `DeclutrMail moves the inbox mail from ${senders} into the DeclutrMail/Later label — out of your way, one click away.`;
+      return `Approving enqueues a sweep that moves current inbox mail from ${senders} into the untimed DeclutrMail/Later label. Gmail is re-checked at execution, so the final message count can change.`;
   }
 }
 

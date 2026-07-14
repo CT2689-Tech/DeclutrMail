@@ -3,12 +3,13 @@
 import { useMemo } from 'react';
 import { Button, Eyebrow, tokens } from '@declutrmail/shared';
 import type { TimeseriesPointDto } from '@/lib/api/senders';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import {
   canLater,
   canUnsubscribe,
-  gmailSearchUrl,
   isStandingProtected,
   recommendAction,
   relTimeLabel,
@@ -109,6 +110,13 @@ export function SenderRowDetail({
    */
   variant?: 'row' | 'panel';
 }) {
+  const auth = useOptionalAuth();
+  const gmailUrl = auth
+    ? GmailOpenLinkService.buildFromSearchLink({
+        mailboxEmail: getActiveMailboxEmail(auth.me),
+        from: `@${s.domain}`,
+      })
+    : null;
   const rec = recommendAction(s);
   const recLabel = rec ?? 'Keep';
 
@@ -328,21 +336,23 @@ export function SenderRowDetail({
             </Button>
           </div>
         </div>
-        <a
-          href={gmailSearchUrl(s.domain)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontFamily: font.mono,
-            fontSize: 11,
-            letterSpacing: '0.04em',
-            color: color.fgSoft,
-            textDecoration: 'none',
-            fontWeight: 600,
-          }}
-        >
-          View in Gmail ↗
-        </a>
+        {gmailUrl && (
+          <a
+            href={gmailUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontFamily: font.mono,
+              fontSize: 11,
+              letterSpacing: '0.04em',
+              color: color.fgSoft,
+              textDecoration: 'none',
+              fontWeight: 600,
+            }}
+          >
+            View in Gmail ↗
+          </a>
+        )}
       </div>
     </div>
   );

@@ -114,9 +114,10 @@ export default function RefundPolicyPage() {
           </li>
         </ul>
         <p>
-          One thing a refund never affects: your mailbox. Actions DeclutrMail performed remain
-          reversible for their full undo window regardless of your billing state, and your data
-          stays exportable and deletable per the <a href="/privacy">Privacy Policy</a>.
+          One thing a refund never shortens: an existing Activity undo token for Archive, Later, or
+          Delete remains valid for its issued window regardless of billing state. A delivered
+          unsubscribe request remains one-way. Your data stays exportable and deletable per the{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

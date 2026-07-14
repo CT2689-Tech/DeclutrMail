@@ -2,11 +2,19 @@
 
 import { useEffect, useMemo, type FocusEvent, type MouseEvent } from 'react';
 
-import { Button, EmptyState, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
+import {
+  EmptyState,
+  ErrorState as RecoverableErrorState,
+  ScreenIntro,
+  tokens,
+  useIsAtMost,
+} from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
 import type { FollowupRow } from '@/lib/api/followups';
 import { track } from '@/lib/posthog';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useDismissFollowup } from './api/use-dismiss-followup';
 import { useFollowups } from './api/use-followups';
@@ -40,12 +48,14 @@ const { color, font } = tokens;
  * construction.
  */
 export function FollowupsScreen() {
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useFollowups();
   const dismiss = useDismissFollowup();
 
-  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
-  // its Storybook stories mount without an auth shim; PostHog
-  // `identify` ties the event to the user regardless.
+  // `mailbox_id: null` keeps the historical event contract. The nullable
+  // auth hook above binds Gmail links in production without making isolated
+  // stories invent a mailbox; PostHog identity still attaches separately.
   useEffect(() => {
     void track('page_viewed', { page: 'followups', mailbox_id: null });
   }, []);
@@ -65,7 +75,7 @@ export function FollowupsScreen() {
     return <LoadingState />;
   }
   if (query.isError) {
-    return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+    return <FollowupsErrorState error={query.error} onRetry={() => query.refetch()} />;
   }
 
   const rows = query.data ?? [];
@@ -108,6 +118,7 @@ export function FollowupsScreen() {
               rows={grouped.high}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
+              mailboxEmail={activeMailboxEmail}
             />
           )}
           {grouped.medium.length > 0 && (
@@ -117,6 +128,7 @@ export function FollowupsScreen() {
               rows={grouped.medium}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
+              mailboxEmail={activeMailboxEmail}
             />
           )}
           {grouped.low.length > 0 && (
@@ -126,6 +138,7 @@ export function FollowupsScreen() {
               rows={grouped.low}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
+              mailboxEmail={activeMailboxEmail}
             />
           )}
           {grouped.fresh.length > 0 && (
@@ -135,6 +148,7 @@ export function FollowupsScreen() {
               rows={grouped.fresh}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
+              mailboxEmail={activeMailboxEmail}
             />
           )}
         </>
@@ -192,12 +206,14 @@ function PriorityGroup({
   rows,
   onDismiss,
   isMobile,
+  mailboxEmail,
 }: {
   label: string;
   tone: GroupTone;
   rows: FollowupRow[];
   onDismiss?: (row: FollowupRow) => void;
   isMobile: boolean;
+  mailboxEmail: string | null;
 }) {
   return (
     <section
@@ -216,7 +232,13 @@ function PriorityGroup({
         }}
       >
         {rows.map((row) => (
-          <FollowupListItem key={row.id} row={row} onDismiss={onDismiss} isMobile={isMobile} />
+          <FollowupListItem
+            key={row.id}
+            row={row}
+            onDismiss={onDismiss}
+            isMobile={isMobile}
+            mailboxEmail={mailboxEmail}
+          />
         ))}
       </ul>
     </section>
@@ -265,16 +287,24 @@ export function FollowupListItem({
   row,
   onDismiss,
   isMobile = false,
+  mailboxEmail,
 }: {
   row: FollowupRow;
   onDismiss?: ((row: FollowupRow) => void) | undefined;
   /** Below `sm` the row restacks to a single-column card (D60). */
   isMobile?: boolean;
+  /** Active Gmail account. Null in isolated stories, where links fail closed. */
+  mailboxEmail: string | null;
 }) {
   const recipient = recipientLine(row);
   const subject = truncate(row.subject, 60);
   const relative = relativeTime(row.sentAt);
-  const gmailHref = `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(row.providerThreadId)}`;
+  const gmailHref = mailboxEmail
+    ? GmailOpenLinkService.buildOpenLink({
+        mailboxEmail,
+        gmailMessageId: row.providerThreadId,
+      })
+    : null;
 
   return (
     <li
@@ -338,19 +368,23 @@ export function FollowupListItem({
       >
         {relative}
       </div>
-      <a
-        href={gmailHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          fontSize: 12.5,
-          color: color.primary,
-          textDecoration: 'none',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Open in Gmail →
-      </a>
+      {gmailHref ? (
+        <a
+          href={gmailHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: 12.5,
+            color: color.primary,
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Open in Gmail →
+        </a>
+      ) : (
+        <span aria-hidden="true" />
+      )}
       {onDismiss && (
         <button
           type="button"
@@ -458,21 +492,23 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? `We couldn't load your followups (${error.status}). Try again in a moment.`
-      : "We couldn't load your followups right now. Try again in a moment.";
+function FollowupsErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const status = error instanceof ApiError ? `The request returned ${error.status}. ` : '';
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <EmptyState
+    <div
+      style={{
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 720,
+        margin: '0 auto',
+        padding: '20px clamp(12px, 4vw, 24px) 28px',
+        fontFamily: font.sans,
+      }}
+    >
+      <RecoverableErrorState
         title="We couldn't load your followups"
-        description={message}
-        action={
-          <Button tone="primary" onClick={onRetry}>
-            Try again
-          </Button>
-        }
+        description={`${status}Your tracked follow-ups are unchanged. Try again in a moment.`}
+        onRetry={onRetry}
       />
     </div>
   );

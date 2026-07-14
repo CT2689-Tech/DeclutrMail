@@ -112,7 +112,7 @@ export const TIER_MANIFEST: TierManifest = {
     cleanupActionsLifetime: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: false,
-    nonPurchasableRow: { kind: 'waitlist', label: 'Coming Q3 2026' },
+    nonPurchasableRow: { kind: 'waitlist', label: 'Join the waitlist' },
   },
   enterprise: {
     id: 'enterprise',

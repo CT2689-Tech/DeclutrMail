@@ -1,5 +1,7 @@
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
+import { TrackedCta } from './tracked-cta';
+
 /**
  * Pricing teaser (D134 §8) — Free / Plus / ⭐ Pro strip + Founding Pro
  * banner + money-back line, linking to /pricing for the full grid.
@@ -19,7 +21,7 @@ export function PricingTeaser() {
 
   return (
     <section className="dm-mkt-section dm-mkt-shell">
-      <p className="dm-mkt-eyebrow">№ 05 — Pricing</p>
+      <p className="dm-mkt-eyebrow">№ 07 — Pricing</p>
       <h2 className="dm-mkt-h2">Start free. Pay when it earns it.</h2>
 
       <div className="dm-mkt-tiers">
@@ -33,7 +35,7 @@ export function PricingTeaser() {
             <li>{free.cleanupActionsLifetime} cleanup actions to taste the ritual</li>
             <li>Full sender ledger + activity journal</li>
             <li>
-              {free.inboxLimit} inbox · {free.undoWindowDays}-day undo
+              {free.inboxLimit} inbox · {free.undoWindowDays}-day Archive/Later Activity undo
             </li>
           </ul>
         </div>
@@ -51,7 +53,7 @@ export function PricingTeaser() {
             <li>Unlimited cleanup actions</li>
             <li>The full Triage ritual</li>
             <li>
-              {plus.inboxLimit} inbox · {plus.undoWindowDays}-day undo
+              {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Archive/Later Activity undo
             </li>
           </ul>
         </div>
@@ -70,7 +72,7 @@ export function PricingTeaser() {
             <li>Everything in {plus.name}, plus automation</li>
             <li>Autopilot rules, Brief, Screener</li>
             <li>
-              {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day undo
+              {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Archive/Later Activity undo
             </li>
           </ul>
         </div>
@@ -80,15 +82,18 @@ export function PricingTeaser() {
         <div className="dm-mkt-founding">
           <b>{founding.name}</b>
           <span>
-            {dollars(founding.annual.usdCents)} / year for the first {founding.maxRedemptions}{' '}
-            members — {pro.name} features, price locked while your subscription stays active.
+            {dollars(founding.annual.usdCents)} / year, limited to the first{' '}
+            {founding.maxRedemptions} paid subscriptions. Availability is confirmed at checkout; the
+            price stays locked while an eligible subscription remains active.
           </span>
         </div>
       ) : null}
 
       <div className="dm-mkt-pricing-foot">
         <span>30-day money-back guarantee on every paid plan</span>
-        <a href="/pricing">See full pricing →</a>
+        <TrackedCta href="/pricing" cta="see_pricing" placement="pricing_teaser">
+          See full pricing →
+        </TrackedCta>
       </div>
     </section>
   );

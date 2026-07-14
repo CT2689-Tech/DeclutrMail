@@ -42,6 +42,62 @@ describe('Sidebar — honest nav (D207)', () => {
     }
   });
 
+  it('groups destinations by user job in journey order', () => {
+    const html = renderSidebar();
+    const expectedOrder = [
+      'Decide',
+      'Senders',
+      'Triage',
+      'Screener',
+      'Automate',
+      'Autopilot',
+      'Quiet',
+      'Review',
+      'Brief',
+      'Follow-ups',
+      'Snoozed',
+      'Activity',
+      'Account',
+      'Billing',
+      'Settings',
+    ] as const;
+
+    let previous = -1;
+    for (const label of expectedOrder) {
+      const position = html.indexOf(`>${label}<`);
+      expect(position, `nav must contain "${label}"`).toBeGreaterThan(-1);
+      expect(position, `"${label}" must follow the previous nav item`).toBeGreaterThan(previous);
+      previous = position;
+    }
+  });
+
+  it('exposes heading-linked navigation groups to assistive technology', () => {
+    const html = renderSidebar();
+    expect(html).toContain('<nav aria-label="Product navigation"');
+
+    const groups = [
+      { heading: 'decide', items: ['Senders', 'Triage', 'Screener'] },
+      { heading: 'automate', items: ['Autopilot', 'Quiet'] },
+      { heading: 'review', items: ['Brief', 'Follow-ups', 'Snoozed', 'Activity'] },
+      { heading: 'account', items: ['Billing', 'Settings'] },
+    ] as const;
+    for (const [index, group] of groups.entries()) {
+      const id = `sidebar-group-${group.heading}-heading`;
+      const start = html.indexOf(`<section aria-labelledby="${id}"`);
+      const end =
+        index === groups.length - 1
+          ? html.indexOf('</nav>', start)
+          : html.indexOf('<section aria-labelledby=', start + 1);
+      const section = html.slice(start, end);
+
+      expect(start, `${group.heading} section must exist`).toBeGreaterThan(-1);
+      expect(section).toContain(`<h2 id="${id}"`);
+      for (const item of group.items) {
+        expect(section, `${item} must belong to ${group.heading}`).toContain(`>${item}</span>`);
+      }
+    }
+  });
+
   it('marks the active item with aria-current', () => {
     expect(renderSidebar()).toContain('aria-current="page"');
   });

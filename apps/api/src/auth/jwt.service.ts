@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
@@ -23,6 +23,9 @@ import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 
 const ACCESS_TOKEN_TTL_SEC = 15 * 60; // 15 minutes
 const REFRESH_TOKEN_TTL_SEC = 30 * 24 * 60 * 60; // 30 days
+const OAUTH_STATE_VERSION = 'v1';
+const OAUTH_STATE_MAX_COOKIE_BYTES = 4096;
+const OAUTH_STATE_KEY_CONTEXT = 'declutrmail:oauth-state:v1:key';
 
 /** Custom claims carried in both access and refresh tokens. */
 export interface SessionTokenClaims extends JWTPayload {
@@ -55,6 +58,8 @@ export interface IssuedTokens {
 export class JwtService {
   private readonly accessSecret: Uint8Array;
   private readonly refreshSecret: Uint8Array;
+  /** Domain-separated from access-token signing while reusing its mandatory secret. */
+  private readonly oauthStateSecret: Uint8Array;
 
   constructor() {
     const access = process.env.JWT_ACCESS_SECRET;
@@ -79,6 +84,63 @@ export class JwtService {
     }
     this.accessSecret = new TextEncoder().encode(access);
     this.refreshSecret = new TextEncoder().encode(refresh);
+    this.oauthStateSecret = createHmac('sha256', this.accessSecret)
+      .update(OAUTH_STATE_KEY_CONTEXT)
+      .digest();
+  }
+
+  /**
+   * Authenticate an OAuth-state payload as a compact, cookie-safe value.
+   *
+   * The HMAC covers both the format version and the complete base64url
+   * payload. OAuth state has its own derived key, so it cannot be confused
+   * with an HS256 access token even though both roots come from the existing
+   * mandatory JWT_ACCESS_SECRET.
+   */
+  sealOAuthState(payload: string): string {
+    const encodedPayload = Buffer.from(payload, 'utf8').toString('base64url');
+    const authenticated = `${OAUTH_STATE_VERSION}.${encodedPayload}`;
+    const signature = createHmac('sha256', this.oauthStateSecret)
+      .update(authenticated)
+      .digest('base64url');
+    return `${authenticated}.${signature}`;
+  }
+
+  /**
+   * Verify and open an OAuth-state cookie. Returns null for every malformed
+   * or unauthenticated representation so callers expose one controlled
+   * failure instead of a format/signature oracle.
+   */
+  openOAuthState(cookie: string): string | null {
+    if (Buffer.byteLength(cookie, 'utf8') > OAUTH_STATE_MAX_COOKIE_BYTES) return null;
+
+    const parts = cookie.split('.');
+    if (parts.length !== 3) return null;
+    const [version, encodedPayload, encodedSignature] = parts;
+    if (
+      version !== OAUTH_STATE_VERSION ||
+      !encodedPayload ||
+      !/^[A-Za-z0-9_-]+$/.test(encodedPayload) ||
+      !encodedSignature ||
+      !/^[A-Za-z0-9_-]{43}$/.test(encodedSignature)
+    ) {
+      return null;
+    }
+
+    const authenticated = `${version}.${encodedPayload}`;
+    const expected = createHmac('sha256', this.oauthStateSecret).update(authenticated).digest();
+    const actual = Buffer.from(encodedSignature, 'base64url');
+    if (
+      actual.toString('base64url') !== encodedSignature ||
+      actual.length !== expected.length ||
+      !timingSafeEqual(actual, expected)
+    ) {
+      return null;
+    }
+
+    const decoded = Buffer.from(encodedPayload, 'base64url');
+    if (decoded.toString('base64url') !== encodedPayload) return null;
+    return decoded.toString('utf8');
   }
 
   /**

@@ -22,6 +22,42 @@ import {
 
 import { AppException } from './app-exception.js';
 
+const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+]);
+
+const SAFE_EXCEPTION_ERROR_KINDS: ReadonlySet<string> = new Set([
+  'AggregateError',
+  'AppException',
+  'BadGatewayException',
+  'BadRequestException',
+  'ConflictException',
+  'Error',
+  'ForbiddenException',
+  'GatewayTimeoutException',
+  'GoneException',
+  'HttpException',
+  'InternalServerErrorException',
+  'MethodNotAllowedException',
+  'NotAcceptableException',
+  'NotFoundException',
+  'NotImplementedException',
+  'PayloadTooLargeException',
+  'RangeError',
+  'RequestTimeoutException',
+  'ServiceUnavailableException',
+  'SyntaxError',
+  'TypeError',
+  'UnauthorizedException',
+  'UnprocessableEntityException',
+  'UnsupportedMediaTypeException',
+]);
+
 /**
  * AllExceptionsFilter — maps every thrown exception to the D168 error
  * envelope: `{ error: { code, message, correlationId, traceId,
@@ -40,11 +76,10 @@ import { AppException } from './app-exception.js';
  * request ever reaches the filter without them, so the envelope is
  * never missing its join key.
  *
- * Privacy (D7, D228): a raw exception message, stack, request body, or
- * the OAuth `code` query param must never reach the response. Logging is
- * deliberately minimal: `<METHOD> <path> -> <status> <ErrorClassName>
- * cid=<correlationId>`. The exception message and request params are NOT
- * logged — they can carry the OAuth `code` or token-exchange detail.
+ * Privacy (D7, D228): a raw request path can contain capability tokens
+ * (`/undo/:token`) or attacker-controlled unmatched text. Operational
+ * telemetry therefore uses only the application-owned route template;
+ * an unresolved route is the closed value `unmatched`.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -58,47 +93,36 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const correlationId = req.correlationId ?? randomUUID();
     const traceId = req.traceId ?? null;
     const displayId = req.displayId ?? deriveDisplayId(correlationId);
+    const operation = this.requestOperation(req);
 
     const { status, ...rest } = this.resolve(exception);
 
     this.logger.error(
-      `${req.method} ${req.path} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,
+      `${operation.method} ${operation.route} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,
     );
 
-    // 5xx-only diagnostics: the inner error message + any HTTP-response
-    // status / payload from libraries like Gaxios (Google OAuth) is the
-    // only signal that distinguishes "Google returned invalid_client"
-    // from "redirect_uri mismatch" from "DB write failed" at the
-    // exception-filter layer. We emit it as a structured JSON log line
-    // (not the colored Nest one-liner) so Cloud Logging filters can
-    // group by `cid`, AND ship the same exception to Sentry tagged
-    // with `cid` so the operator sees the stack + the trail in the
-    // alert inbox, not just Cloud Logging.
-    //
-    // Privacy: the message is the SDK's error text, never a request
-    // body, and is only emitted on 5xx where the alternative is a
-    // totally opaque INTERNAL_ERROR envelope. The Sentry SDK's
-    // `beforeSend` (see `observability/sentry.ts`) runs the shared
-    // `scrubTelemetryPayload` as defense in depth.
+    // 5xx-only diagnostics are deliberately structural until the server
+    // Sentry bootstrap has a deny-by-default event sanitizer. Exception
+    // messages, response payloads and original stacks can all contain
+    // provider ids, OAuth codes or capability URLs, so none cross this
+    // operational boundary.
     if (status >= 500 && exception instanceof Error) {
       const errObj = exception as Error & {
         response?: { status?: number; data?: unknown };
         code?: string | number;
-        stack?: string;
       };
+      const errorKind = this.errorName(exception);
+      const exceptionCode = this.safeExceptionCode(errObj.code);
+      const upstreamStatus = this.safeNumericStatus(errObj.response?.status);
       const detail = {
         kind: 'exception.5xx',
         cid: correlationId,
-        path: req.path,
-        method: req.method,
-        name: errObj.name,
-        message: errObj.message,
-        code: errObj.code,
-        responseStatus: errObj.response?.status,
-        responseData: errObj.response?.data,
-        stack: (errObj.stack ?? '').split('\n').slice(0, 6).join(' | '),
+        route: operation.route,
+        method: operation.method,
+        errorKind,
+        ...(exceptionCode !== null ? { code: exceptionCode } : {}),
+        ...(upstreamStatus !== null ? { responseStatus: upstreamStatus } : {}),
       };
-      // eslint-disable-next-line no-console
       console.error(JSON.stringify(detail));
       // Fire-and-forget Sentry capture. The dynamic import keeps the
       // @sentry/node bundle out of the no-DSN path. Errors in capture
@@ -110,14 +134,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
             Sentry.withScope((scope) => {
               scope.setTags({
                 cid: correlationId,
-                method: req.method,
-                path: req.path,
+                method: operation.method,
+                route: operation.route,
                 response_status: String(status),
               });
-              if (errObj.response?.status) {
-                scope.setTag('upstream_status', String(errObj.response.status));
+              if (upstreamStatus !== null) {
+                scope.setTag('upstream_status', String(upstreamStatus));
               }
-              Sentry.captureException(errObj);
+              scope.setFingerprint([
+                'server-exception',
+                operation.method,
+                operation.route,
+                errorKind,
+                String(status),
+              ]);
+              const safeException = new Error('Server exception');
+              safeException.name = errorKind;
+              Sentry.captureException(safeException);
             });
           })
           .catch(() => {
@@ -128,6 +161,39 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const error: ApiError = { ...rest, correlationId, traceId, displayId };
     res.status(status).json({ error });
+  }
+
+  /** Application-owned route identity; never falls back to the raw URL. */
+  private requestOperation(req: Request): { method: string; route: string } {
+    const method = /^(DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT)$/.test(req.method)
+      ? req.method
+      : 'OTHER';
+    const routePath: unknown = req.route?.path;
+    if (
+      typeof routePath !== 'string' ||
+      routePath.length === 0 ||
+      routePath.length > 180 ||
+      !/^\/(?:[a-z0-9._~-]+|:[a-z][a-z0-9_]*)(?:\/(?:[a-z0-9._~-]+|:[a-z][a-z0-9_]*))*$/i.test(
+        routePath,
+      )
+    ) {
+      return { method, route: 'unmatched' };
+    }
+    return { method, route: routePath };
+  }
+
+  /** Registry/allowlist projection; arbitrary SDK/user strings drop. */
+  private safeExceptionCode(code: unknown): string | null {
+    if (typeof code === 'string' && (isErrorCode(code) || SAFE_RUNTIME_ERROR_CODES.has(code))) {
+      return code;
+    }
+    return null;
+  }
+
+  private safeNumericStatus(status: unknown): number | null {
+    return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599
+      ? status
+      : null;
   }
 
   /**
@@ -250,8 +316,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
   }
 
-  /** Class name of the thrown value, for the log line only. */
+  /** Exact source-owned class allowlist; every unknown kind collapses to `Error`. */
   private errorName(exception: unknown): string {
-    return exception instanceof Error ? exception.constructor.name : typeof exception;
+    if (!(exception instanceof Error)) {
+      return 'NonErrorThrow';
+    }
+    try {
+      // Read from the prototype, not `exception.constructor`: a hostile
+      // Error can install an own throwing getter on that property.
+      const prototype = Object.getPrototypeOf(exception) as { constructor?: unknown } | null;
+      const constructor = prototype?.constructor;
+      const name =
+        typeof constructor === 'function' && typeof constructor.name === 'string'
+          ? constructor.name
+          : '';
+      return SAFE_EXCEPTION_ERROR_KINDS.has(name) ? name : 'Error';
+    } catch {
+      return 'Error';
+    }
   }
 }

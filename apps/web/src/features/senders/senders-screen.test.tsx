@@ -9,13 +9,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+const mockAuth = vi.hoisted(() => ({
+  tier: 'plus' as 'free' | 'plus' | 'pro' | 'team' | 'enterprise',
+}));
+
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
+vi.mock('@/features/auth/auth-provider', () => {
+  const useMockAuth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
       activeMailboxId: 'mb-1',
+      tier: mockAuth.tier,
+      cleanupRemaining: null,
       mailboxes: [
         {
           id: 'mb-1',
@@ -26,8 +32,14 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
     },
-  }),
-}));
+  });
+
+  return {
+    getActiveMailboxEmail: () => 'me@example.com',
+    useOptionalAuth: useMockAuth,
+    useAuth: useMockAuth,
+  };
+});
 
 import { ToastHost } from '@declutrmail/shared';
 import { SendersScreen } from './senders-screen';
@@ -56,6 +68,10 @@ const ROW = {
     protectionSetAt: null,
   },
 };
+
+beforeEach(() => {
+  mockAuth.tier = 'plus';
+});
 
 function renderScreen() {
   const client = createTestQueryClient();
@@ -151,6 +167,43 @@ function oneSenderHandler() {
   };
 }
 
+/** Successful current-match preview for the single fixture sender. */
+function compositePreviewHandler(all: number) {
+  return {
+    method: 'GET' as const,
+    path: '/api/actions/preview',
+    respond: () =>
+      jsonOk({
+        data: {
+          sender: {
+            id: 'a',
+            name: 'Sender A',
+            domain: 'example.com',
+            lastSeenDays: 2,
+            repliedCount: 0,
+            monthly: 30,
+          },
+          counts: {
+            all,
+            olderThan30d: 0,
+            olderThan90d: 0,
+            olderThan180d: 0,
+            olderThan365d: 0,
+          },
+          recentSubjects: {
+            all: [],
+            olderThan30d: [],
+            olderThan90d: [],
+            olderThan180d: [],
+            olderThan365d: [],
+          },
+          unsubAvailable: true,
+          protected: false,
+        },
+      }),
+  };
+}
+
 describe('SendersScreen — edge states', () => {
   beforeEach(() => {
     installFetchStub([]);
@@ -174,24 +227,34 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
-  it('renders the error branch with a retry CTA on 500', async () => {
+  it('renders an alert on 500 and recovers the sender list when Retry succeeds', async () => {
+    let attempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/senders',
-        respond: () => jsonServerError(),
+        respond: () => {
+          attempts += 1;
+          return attempts === 1 ? jsonServerError() : oneSenderHandler().respond();
+        },
       },
+      sendersSummaryHandler(),
     ]);
 
     renderScreen();
-    // Both the EmptyState heading and the body copy carry this phrase;
-    // target the heading so the assertion is unambiguous.
-    await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /couldn[’']t load your senders/i }),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your senders/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(screen.getAllByText(/Sender A/).length).toBeGreaterThan(0));
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('renders the empty-mailbox state when the API returns an empty page', async () => {
@@ -358,6 +421,7 @@ describe('SendersScreen — edge states', () => {
         path: '/api/actions/archive/preview',
         respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
       },
+      compositePreviewHandler(12),
       {
         method: 'POST',
         path: '/api/actions/archive',
@@ -409,8 +473,8 @@ describe('SendersScreen — edge states', () => {
     // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
-    // Wait for the REAL inbox count to load so confirm is no longer gated.
-    await screen.findByText(/in your inbox now/i);
+    // Wait for the current-match preview to unlock confirm.
+    await screen.findByText(/emails currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
@@ -451,6 +515,7 @@ describe('SendersScreen — edge states', () => {
         path: '/api/actions/archive/preview',
         respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 5 } }),
       },
+      compositePreviewHandler(5),
       {
         method: 'POST',
         path: '/api/actions/archive',
@@ -480,7 +545,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
-    await screen.findByText(/in your inbox now/i);
+    await screen.findByText(/emails currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -514,6 +579,7 @@ describe('SendersScreen — edge states', () => {
         path: '/api/actions/archive/preview',
         respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 0 } }),
       },
+      compositePreviewHandler(0),
       {
         method: 'POST',
         path: '/api/actions/archive',
@@ -530,8 +596,8 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
 
-    // Preview resolves to 0 → "nothing to archive" + the confirm is disabled.
-    await screen.findByText(/nothing to archive/i);
+    // Preview resolves to 0 current matches and the confirm is disabled.
+    await screen.findByText(/emails currently match.*Archive/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
 
@@ -543,9 +609,10 @@ describe('SendersScreen — edge states', () => {
     expect(archivePosted).toBe(false);
   });
 
-  it('degrades gracefully when the preview count fetch fails (confirm still works)', async () => {
-    // A failed count check must say so honestly — never a fabricated number —
-    // and still let the user proceed (the worker resolves the real set).
+  it('fails closed when the required live preview fetch fails', async () => {
+    // A failed preview must say so honestly and block both pointer and
+    // keyboard confirmation. The worker may re-resolve the set, but no
+    // mail-moving request starts without a preview.
     let archivePosted = false;
     installFetchStub([
       {
@@ -563,6 +630,11 @@ describe('SendersScreen — edge states', () => {
       {
         method: 'GET',
         path: '/api/actions/archive/preview',
+        respond: () => jsonServerError(),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
         respond: () => jsonServerError(),
       },
       {
@@ -596,15 +668,15 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive all mail from 1 sender/i);
 
-    // Count check failed → honest fallback copy, confirm NOT gated.
-    await screen.findByText(/check how much is in your inbox/i);
+    await screen.findAllByText(/close and retry/i);
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('button', { name: /archive/i })).not.toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    const receipt = await screen.findByRole('status');
-    expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived 1 sender/i);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(archivePosted).toBe(false);
   });
 
   it('Unsubscribe with 0 inbox mail hides the "also archive" toggle but still confirms (D226)', async () => {
@@ -631,7 +703,7 @@ describe('SendersScreen — edge states', () => {
     // Once the count resolves to 0, the backlog toggle disappears — no offer
     // to archive mail that isn't there.
     await waitFor(() => expect(screen.queryByText(/currently in the inbox/i)).toBeNull());
-    // ...and the confirm stays enabled (unsubscribe stops FUTURE mail; an empty
+    // ...and the confirm stays enabled (the request targets FUTURE mail; an empty
     // inbox doesn't make it a no-op the way it does for Archive).
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
@@ -668,9 +740,78 @@ describe('SendersScreen — edge states', () => {
     expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).not.toBeDisabled();
   });
 
-  it('never advertises more sample subjects than the real total in "Show what will move" (live smoke 2026-06-09)', async () => {
+  it('preflights two Free actions before a single-sender unsubscribe backlog move', async () => {
+    mockAuth.tier = 'free';
+    let unsubscribeBody: unknown = null;
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(3),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: async (req) => {
+          unsubscribeBody = await req.json();
+          return jsonOk({
+            data: {
+              senderId: 'a',
+              recordedAt: '2026-07-12T12:00:00.000Z',
+              activityLogId: 'activity-a',
+              method: 'none',
+              executionActionId: null,
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'action-backlog',
+              compositeId: 'action-backlog',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/action-backlog',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'action-backlog',
+              status: 'done',
+              requestedCount: 3,
+              affectedCount: 3,
+              undoToken: 'undo-backlog',
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'u' });
+    await screen.findByText(/unsubscribe from 1 sender/i);
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(unsubscribeBody).toEqual({ senderId: 'a', includesBacklogAction: true }),
+    );
+  });
+
+  it('never advertises more sample subjects than the real total in "Show what currently matches" (live smoke 2026-06-09)', async () => {
     // The disclosure used to hardcode "(5 of N)" — a sender with 3 mails
-    // rendered "Show what will move (5 of 3)". The label must read the
+    // rendered "Show what currently matches (5 of 3)". The label must read the
     // ACTUAL sample length, trimmed to the bucket total, even when the
     // wire returns more subjects than the count (drift defense).
     installFetchStub([
@@ -729,7 +870,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/archive all mail from 1 sender/i);
 
     // X = sample rows actually shown, Y = the real total; X <= Y always.
-    const disclosure = await screen.findByText(/show what will move \(3 of 3\)/i);
+    const disclosure = await screen.findByText(/show what currently matches \(3 of 3\)/i);
     fireEvent.click(disclosure);
     expect(screen.getByText('Subject one')).toBeInTheDocument();
     expect(screen.getByText('Subject three')).toBeInTheDocument();
@@ -931,6 +1072,34 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it('gates Free multi-sender actions in the bar and shortcuts while preserving one-sender actions', async () => {
+    mockAuth.tier = 'free';
+    installFetchStub([TWO_SENDER_LIST]);
+    renderScreenWithToasts();
+
+    const senderA = await screen.findByRole('checkbox', { name: /select sender a/i });
+    const senderB = screen.getByRole('checkbox', { name: /select sender b/i });
+    fireEvent.click(senderA);
+    fireEvent.click(senderB);
+
+    expect(screen.getByRole('note')).toHaveTextContent('Multi-sender actions require Plus');
+    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByTitle('Archive — Plus required for multi-sender actions')).toBeDisabled();
+    expect(screen.getByTitle('Keep — Plus required for multi-sender actions')).toBeDisabled();
+
+    // The keyboard path shares the same gate; it cannot sneak around
+    // disabled buttons and open the destructive preview.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(await screen.findByText(/select one sender or see plans/i)).toBeInTheDocument();
+
+    // Free's five lifetime cleanup actions are still available one
+    // sender at a time; dropping back to one selection restores A/L/U/D.
+    fireEvent.click(senderB);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Archive (A)')).not.toBeDisabled();
+  });
+
   it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
     let bulkBody: unknown = null;
     let undoPosted = false;
@@ -1010,7 +1179,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
     await screen.findByText(/archive all mail from 2 senders/i);
-    await screen.findByText(/will move to Archive/i);
+    await screen.findByText(/currently match.*Archive/i);
     // The aggregated total (12 + 18) renders in the modal — headline +
     // the "All inbox" chip count both read 30.
     expect(within(screen.getByRole('dialog')).getAllByText('30').length).toBeGreaterThan(0);
@@ -1040,6 +1209,95 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(undoPosted).toBe(true);
   });
 
+  it.each([
+    ['Archive them', 'archive', 'Archive'],
+    ['Delete them', 'delete', 'Delete'],
+  ] as const)(
+    'uses the bulk live preview before Unsubscribe can add the %s backlog action',
+    async (choice, primaryType, displayVerb) => {
+      let bulkBody: unknown = null;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-intent',
+          respond: async (req) => {
+            const body = (await req.json()) as { senderId: string };
+            const mailto = body.senderId === 'b';
+            return jsonOk({
+              data: {
+                senderId: body.senderId,
+                recordedAt: '2026-07-12T12:00:00.000Z',
+                activityLogId: `activity-${body.senderId}`,
+                method: mailto ? 'mailto' : 'one_click',
+                executionActionId: null,
+                mailtoUrl: mailto ? 'mailto:leave@b.example?subject=Remove%20me' : null,
+              },
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            bulkBody = await req.json();
+            return jsonOk({
+              data: {
+                batchId: 'batch-unsub-backlog',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 30,
+                skipped: [],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/batch/batch-unsub-backlog',
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-unsub-backlog',
+                status: 'done',
+                total: 2,
+                done: 2,
+                failed: 0,
+                requestedCount: 30,
+                affectedCount: 30,
+                undoToken: 'tok-unsub-backlog',
+              },
+            }),
+        },
+      ]);
+
+      renderScreen();
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      fireEvent.click(screen.getByRole('radio', { name: choice }));
+
+      // The secondary stays locked until the aggregated current-match
+      // preview resolves; then keyboard confirm may proceed.
+      const dialog = screen.getByRole('dialog');
+      const confirm = within(dialog).getByRole('button', {
+        name: new RegExp(`Unsubscribe.*${displayVerb}`, 'i'),
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      expect(within(dialog).getByText(/emails currently match the backlog/i)).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await waitFor(() => expect(bulkBody).not.toBeNull());
+      expect(screen.getByRole('region', { name: 'Email unsubscribe drafts' })).toHaveTextContent(
+        '1 email unsubscribe draft still needs you',
+      );
+      expect(bulkBody).toMatchObject({
+        selector: { type: 'senders', senderIds: ['a', 'b'] },
+        primary: { type: primaryType, olderThanDays: null },
+      });
+    },
+  );
+
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
     let enqueueAttempted = false;
     installFetchStub([
@@ -1057,7 +1315,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/will move to Archive/i);
+    await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(enqueueAttempted).toBe(true));
@@ -1106,7 +1364,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/will move to Archive/i);
+    await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // One sender failing never hides the other's real result — the
@@ -1132,7 +1390,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/delete mail from 2 senders/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load preview/i);
+    await screen.findByText(/couldn't load the live preview/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();

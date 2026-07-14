@@ -5,6 +5,7 @@ import { createRedisConnection, SCORE_QUEUE } from '@declutrmail/workers';
 import type { ScoreJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { TriageController } from './triage.controller.js';
 import { TriageReadService } from './triage.read-service.js';
@@ -31,7 +32,7 @@ import { SCORE_QUEUE_TOKEN, TriageService } from './triage.service.js';
  * the module without the queue.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule],
+  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
   controllers: [TriageController],
   providers: [
     {
