@@ -9471,3 +9471,55 @@ ADR-0012 + `~/.claude/plans/how-can-we-uplift-foamy-cloud.md` §D2.
 9 audit + 19 Round 2 + **5 ADR-0009/10/11/12 patches** + 3 reversal
 markers across 5 phases.
 
+---
+
+# Product clarity program — 2026-07-14
+
+### D245 — Unified product clarity and control contract
+
+**Status:** Accepted — founder-approved 2026-07-14.
+
+The user-facing language audit exposed five cases where copy could not be
+made accurate without first choosing the underlying product behavior. The
+following choices are now canonical and supersede older conflicting copy or
+surface-level descriptions:
+
+1. **One cumulative Gmail-data inventory.** A typed shared registry is the
+   source of truth for Gmail data DeclutrMail accesses, fetches, stores,
+   derives, exports, and retains. Every entry records purpose and retention.
+   Onboarding, Privacy, Security, Settings, consent explanations, and data
+   export descriptions are generated from that registry. No surface may call
+   a hand-maintained subset the “exact” list.
+2. **Later is a timed current-mail action.** Later moves the selected sender's
+   current Inbox mail to `DeclutrMail/Later` and requires an explicit wake
+   time. Future mail is unchanged. The user-facing Snoozed destination is
+   renamed **Later**; `/snoozed` may remain as a compatibility route, but it
+   must render or redirect to the Later surface. A standing future-mail rule
+   is a separate policy and must not be called Later.
+3. **Senders is fact-first.** Observed facts and exact action consequences are
+   primary. An optional suggestion may be shown only as secondary progressive
+   disclosure, clearly labelled as a suggestion with its factual basis. A
+   confidence score or legacy `intentOf` value must not select or masquerade
+   as the primary action.
+4. **DeclutrMail Undo and Gmail Trash recovery are distinct.** Archive and
+   Later can be undone from Activity for the retention period provided by the
+   user's plan. Delete moves mail to Gmail Trash and recovery follows Gmail's
+   Trash behavior; it is never described as DeclutrMail Undo. A delivered
+   unsubscribe request cannot be recalled.
+5. **Disconnect presents two explicit data choices.** Standard Disconnect
+   revokes Gmail access and stops sync while retaining the existing indexed
+   mailbox data until the user deletes it, and explains that reconnection is
+   available. **Disconnect and delete data** additionally purges that
+   mailbox's indexed Gmail data. Both choices identify affected and retained
+   datasets before confirmation; neither deletes mail in Gmail.
+
+The complete P0–P3 product-clarity backlog is approved as one implementation
+program. Work ships as small, independently validated commits on one branch.
+Safety contracts remain in force: preview before mutation, no message bodies
+or attachments, canonical K/A/U/L/D verbs, protected-sender exclusions, and
+manual Gmail sending for mailto unsubscribe. Custom Autopilot rule creation
+may be implemented behind the existing D234 gate; this decision does not
+silently enable it for every user.
+
+Implementation status and handoff checkpoints live in
+`docs/execution/product-clarity-program-d245.md`.
