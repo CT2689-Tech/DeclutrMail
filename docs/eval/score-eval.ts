@@ -143,12 +143,13 @@ function cascadeToBucket(verdict: string, ruleId: string): Bucket {
     case 'replied_at_least_once':
     case 'gmail_primary':
     case 'protect_user_defined':
-    case 'protect_vip':
       return 'people';
     case 'high_read_rate':
     case 'starred_recently':
     case 'long_relationship_engaged':
-    case 'protect_engagement_based':
+    case 'protect_replied':
+    case 'protect_starred':
+    case 'protect_gmail_important':
       return 'engaged';
     default:
       return 'engaged';

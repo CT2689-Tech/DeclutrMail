@@ -116,7 +116,7 @@ export const Protected: Story<typeof SenderDetailPage> = {
       kind: 'ready',
       detail: buildSenderDetail(stripeSender, {
         isProtected: true,
-        protectionReason: 'auto-receipts',
+        protectionReason: 'starred',
       }),
     },
   },

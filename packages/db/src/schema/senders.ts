@@ -125,22 +125,19 @@ export const senders = pgTable(
      *   B. idempotently on incremental ingest by
      *      `IncrementalSyncWorker` (per-job upsert deltas).
      *
-     * Auto-protect rule (spec v1.3 §"Trust-canary CI fixture" L488):
-     * any sender with `replied_count >= 3` is upserted into
-     * `sender_policies` with `is_protected = true` +
-     * `protection_reason = 'engagement_based'`. The flip is sticky —
-     * subsequent drops below 3 do NOT unprotect.
+     * Automatic protection uses conservative, explainable evidence:
+     * `replied_count >= 3`, a recent starred message, or at least three
+     * recent Gmail-important messages. The exact basis is stored in
+     * `sender_policies.protection_reason`. The flip is sticky — later
+     * signal changes do NOT unprotect.
      *
      * User-agency-wins semantic (flow-completeness-auditor 2026-06-05
      * 🔴-3, founder-defaulted): the auto-protect UPSERT respects a
-     * MANUAL demote of an engagement_based-protected row. If the user
-     * flips `is_protected=false` on a row whose
-     * `protection_reason='engagement_based'`, subsequent worker passes
-     * do NOT re-protect — the user's decision survives. Fresh
-     * unprotected rows (NULL reason) still pick up engagement_based
-     * normally. Encoded in both worker `runReplyAttributionPostPass`
-     * SQL blocks via
-     * `WHERE is_protected = false AND (reason IS NULL OR reason <> 'engagement_based')`.
+     * MANUAL demote of an automatically protected row. If the user
+     * flips `is_protected=false`, the exact non-null reason remains as
+     * a memory pin and subsequent syncs do NOT re-protect. Fresh
+     * unprotected rows (NULL reason) still pick up strong evidence.
+     * Encoded once in `automatic-protection.ts`.
      *
      * `mode: 'number'` because counts are bounded far below 2^53 and
      * the wire shape per the senders list contract is a JSON number,

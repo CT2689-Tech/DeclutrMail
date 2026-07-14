@@ -649,10 +649,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       domain: sender.domain,
       signals: {
         isProtected: Boolean(policy?.isProtected),
-        ...(policy?.protectionReason === 'user_defined' ||
-        policy?.protectionReason === 'engagement_based'
-          ? { protectionReason: policy.protectionReason }
-          : {}),
+        ...(policy?.protectionReason ? { protectionReason: policy.protectionReason } : {}),
         hasReplied: replies90 > 0,
         gmailCategory: sender.gmailCategory,
         starredInLastYear,

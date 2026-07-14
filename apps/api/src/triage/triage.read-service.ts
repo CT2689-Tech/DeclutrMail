@@ -40,7 +40,7 @@ export interface TriageQueueRow {
   confidence: number;
   reasoning: string;
   signals: string[];
-  protectionReason: 'manual' | 'engagement' | 'auto-receipts' | 'auto-financial' | null;
+  protectionReason: 'manual' | 'replied' | 'starred' | 'gmail-important' | null;
   monthlyVolume: number;
   /**
    * Raw last-90-day message count. Used by the FE to render an honest
@@ -117,11 +117,8 @@ const SECONDS_SAVED_PER_DEFLECTED_EMAIL = 6;
  * listed (D7 § 2.1) but THIS read path doesn't need it — the queue
  * row shows reasoning + signals, not the snippet.
  *
- * The protectionReason mapping is intentional: user-defined protection
- * maps to `manual`, while engagement-based protection maps to
- * `engagement`. The auto-receipts / auto-financial
- * paths land with the D21 Phase-A receipt detector — when it ships
- * the DB enum gains those values and this mapper extends.
+ * The protectionReason mapping retains the exact observed evidence so
+ * the UI can explain every automatic protection and offer an override.
  */
 @Injectable()
 export class TriageReadService {
@@ -617,6 +614,8 @@ function mapProtectionReason(
 ): TriageQueueRow['protectionReason'] {
   if (!isProtected) return null;
   if (reason === 'user_defined') return 'manual';
-  if (reason === 'engagement_based') return 'engagement';
+  if (reason === 'replied') return 'replied';
+  if (reason === 'starred') return 'starred';
+  if (reason === 'gmail_important') return 'gmail-important';
   return null;
 }

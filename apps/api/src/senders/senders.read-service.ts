@@ -2306,5 +2306,13 @@ function ensureSafeIntegerNumber(value: string | number, label: string): number 
 function normalizeProtectionReason(
   reason: string | null | undefined,
 ): ProtectionFlags['protectionReason'] {
-  return reason === 'user_defined' || reason === 'engagement_based' ? reason : null;
+  if (
+    reason === 'user_defined' ||
+    reason === 'replied' ||
+    reason === 'starred' ||
+    reason === 'gmail_important'
+  ) {
+    return reason;
+  }
+  return null;
 }

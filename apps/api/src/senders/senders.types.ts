@@ -16,7 +16,7 @@
 
 import { z } from 'zod';
 
-import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import type { ProtectionReason, TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 
 /**
@@ -138,9 +138,8 @@ export interface SenderListRow {
    * the engine default (no replies seen); never `null` because
    * `senders.replied_count` is `NOT NULL DEFAULT 0`.
    *
-   * The auto-protect rule fires at `repliedCount >= 3` —
-   * `protectionFlags.isProtected = true, protectionReason =
-   * 'engagement_based'` follow.
+   * Replies are one conservative automatic-protection signal; starred
+   * and Gmail-important messages are evaluated from message labels.
    */
   repliedCount: number;
   monthlyVolume: number | null;
@@ -208,7 +207,7 @@ export type UnsubExecutionStatus = UnsubscribeLifecycleStatus;
  */
 export interface ProtectionFlags {
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | null;
+  protectionReason: ProtectionReason | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
 }
@@ -277,7 +276,7 @@ export interface SenderPolicyResult {
   senderId: string;
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | null;
+  protectionReason: ProtectionReason | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
   /**

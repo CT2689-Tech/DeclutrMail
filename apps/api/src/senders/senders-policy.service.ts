@@ -182,10 +182,7 @@ function projectResult(
     senderId,
     policyType: row?.policyType ?? null,
     isProtected: row?.isProtected ?? false,
-    protectionReason:
-      row?.protectionReason === 'user_defined' || row?.protectionReason === 'engagement_based'
-        ? row.protectionReason
-        : null,
+    protectionReason: row?.protectionReason ?? null,
     protectionSetAt: row?.protectionSetAt ? row.protectionSetAt.toISOString() : null,
     changed,
   };

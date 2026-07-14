@@ -6,7 +6,14 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import { drizzle } from 'drizzle-orm/pglite';
 import { describe, expect, it } from 'vitest';
 
-import { mailboxAccounts, schema, senderPolicies, users, workspaces } from '../src';
+import {
+  mailboxAccounts,
+  protectionReason,
+  schema,
+  senderPolicies,
+  users,
+  workspaces,
+} from '../src';
 
 /**
  * sender_policies × protection_reason CHECK integration test
@@ -20,10 +27,10 @@ import { mailboxAccounts, schema, senderPolicies, users, workspaces } from '../s
  *
  * The biconditional `is_protected = (reason IS NOT NULL)` is
  * intentionally NOT enforced — the **user-agency-wins memory pin**
- * (initial-sync.worker.ts:660-705, incremental-sync.worker.ts §3,
- * schema/senders.ts:133-142, MISTAKES.md 2026-06-05 🔴-3) DELIBERATELY
- * leaves a manually-demoted engagement_based row in the state
- * `(is_protected=false, protection_reason='engagement_based')` so the
+ * (`automatic-protection.ts`, schema/senders.ts, MISTAKES.md
+ * 2026-06-05 🔴-3) DELIBERATELY
+ * leaves a manually-demoted automatically protected row with its
+ * non-null reason as a memory pin so the
  * next sync skips re-protect. A biconditional CHECK would forbid that.
  *
  * Three cases asserted:
@@ -72,6 +79,15 @@ async function seedMailbox(db: Awaited<ReturnType<typeof freshDb>>): Promise<str
 }
 
 describe('sender_policies × protection_reason CHECK integration', () => {
+  it('keeps the exact automatic-protection reasons closed', () => {
+    expect(protectionReason.enumValues).toEqual([
+      'user_defined',
+      'replied',
+      'starred',
+      'gmail_important',
+    ]);
+  });
+
   it('CHECK rejects is_protected=true with NULL protection_reason', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
@@ -98,12 +114,12 @@ describe('sender_policies × protection_reason CHECK integration', () => {
       senderKey: 'sender-memory-pin',
       policyType: 'keep',
       isProtected: false,
-      protectionReason: 'engagement_based',
+      protectionReason: 'replied',
     });
     const rows = await db.select().from(senderPolicies);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.isProtected).toBe(false);
-    expect(rows[0]!.protectionReason).toBe('engagement_based');
+    expect(rows[0]!.protectionReason).toBe('replied');
   });
 
   it('CHECK accepts fresh unprotected row (NULL reason)', async () => {

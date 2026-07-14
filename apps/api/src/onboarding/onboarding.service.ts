@@ -259,7 +259,7 @@ export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueR
   };
 
   take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
-  const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason === 'engagement');
+  const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason !== null);
   take([...keeps].sort((a, b) => b.readRate - a.readRate)[0]);
   take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
 

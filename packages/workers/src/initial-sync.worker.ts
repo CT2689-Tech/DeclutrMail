@@ -2,7 +2,6 @@ import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
-  senderPolicies,
   senders,
   senderTimeseries,
 } from '@declutrmail/db';
@@ -18,6 +17,7 @@ import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
@@ -860,57 +860,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
 
-      // Auto-protect on replied ≥ 3 (spec v1.3 §"Trust-canary CI
-      // fixture" L488). Engagement-based provenance — the cascade
-      // audit copy reads `protection_reason` to render the audit
-      // string (score-cascade.ts:159-173). The WHERE-clause guard on
-      // UPSERT preserves prior user_defined provenance.
-      //
-      // User-agency-wins guard (flow-completeness-auditor 2026-06-05
-      // 🔴-3; widened 2026-06-09 for the D40/D42 manual-unprotect
-      // endpoint): a manual demote leaves `is_protected=false` with the
-      // prior `protection_reason` PRESERVED as the memory pin
-      // (schema/sender-policies.ts, senders-policy.service.ts). ANY
-      // non-NULL reason on a demoted row therefore signals a deliberate
-      // demote — `engagement_based` (the original 🔴-3 case) AND
-      // `user_defined` (reachable since manual Unprotect
-      // shipped). Only `protection_reason IS NULL` rows may be
-      // auto-protected; a demoted row stays demoted until the user
-      // manually re-protects.
-      await tx.execute(sql`
-        INSERT INTO ${senderPolicies} (
-          ${sql.identifier('mailbox_account_id')},
-          ${sql.identifier('sender_key')},
-          ${sql.identifier('policy_type')},
-          ${sql.identifier('is_protected')},
-          ${sql.identifier('protection_reason')},
-          ${sql.identifier('protection_set_at')}
-        )
-        SELECT
-          s.${sql.identifier('mailbox_account_id')},
-          s.${sql.identifier('sender_key')},
-          'keep'::sender_policy_type,
-          true,
-          'engagement_based'::protection_reason,
-          now()
-        FROM ${senders} AS s
-        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-          AND s.${sql.identifier('replied_count')} >= 3
-        ON CONFLICT (${sql.identifier('mailbox_account_id')}, ${sql.identifier('sender_key')}) DO UPDATE
-        SET
-          ${sql.identifier('is_protected')} = true,
-          ${sql.identifier('protection_reason')} = COALESCE(
-            sender_policies.${sql.identifier('protection_reason')},
-            'engagement_based'::protection_reason
-          ),
-          ${sql.identifier('protection_set_at')} = COALESCE(
-            sender_policies.${sql.identifier('protection_set_at')},
-            now()
-          ),
-          ${sql.identifier('updated_at')} = now()
-        WHERE sender_policies.${sql.identifier('is_protected')} = false
-          AND sender_policies.${sql.identifier('protection_reason')} IS NULL
-      `);
+      await applyAutomaticProtection(tx, mailboxAccountId);
     });
 
     if (orphans > 0) {

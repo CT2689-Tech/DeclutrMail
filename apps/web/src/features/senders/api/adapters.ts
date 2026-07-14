@@ -203,9 +203,10 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
 /**
  * Map the wire `protection_reason` enum (BE source-of-truth) onto the
  * narrower FE `ProtectionReason` union used by the header chip + banner:
- *   user_defined     → user-marked
- *   engagement_based → auto-receipts (closest existing FE bucket today;
- *                       a richer enum lands when the BE adds more reasons)
+ *   user_defined    → user-marked
+ *   replied         → replied
+ *   starred         → starred
+ *   gmail_important → gmail-important
  * If `isProtected` is true but the wire omits the reason, fall back to
  * `user-marked` so the chip renders something rather than nothing.
  *
@@ -217,7 +218,10 @@ export function adaptProtectionReason(
   isProtected: boolean,
   wireReason: ProtectionReasonWire | null,
 ): ProtectionReason | null {
-  return isProtected ? (wireReason === 'engagement_based' ? 'auto-receipts' : 'user-marked') : null;
+  if (!isProtected) return null;
+  if (wireReason === 'replied' || wireReason === 'starred') return wireReason;
+  if (wireReason === 'gmail_important') return 'gmail-important';
+  return 'user-marked';
 }
 
 export function adaptSenderDetail(args: {

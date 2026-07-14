@@ -156,11 +156,13 @@ export interface SenderListRow {
 /**
  * Why a sender is protected. Mirrors the BE `protection_reason` enum
  * (see `apps/api/src/senders/senders.types.ts`):
- *   - `user_defined` — founder toggled Protect on
- *   - `engagement_based` — engagement signals pinned the sender
+ *   - `user_defined` — the user toggled Protect on
+ *   - `replied` — the user replied at least three times
+ *   - `starred` — the user starred a message in the past year
+ *   - `gmail_important` — Gmail marked at least three recent messages important
  *   - `null` — not protected
  */
-export type ProtectionReasonWire = 'user_defined' | 'engagement_based';
+export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gmail_important';
 
 /**
  * Detail shape on `GET /api/senders/:id` — extends the list row with

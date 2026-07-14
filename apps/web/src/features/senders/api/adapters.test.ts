@@ -6,7 +6,12 @@
 // blank / mis-buckets in production — these tests catch that class.
 
 import { describe, expect, it } from 'vitest';
-import { adaptDecisionHistoryRow, adaptSenderDetail, adaptSenderListRow } from './adapters';
+import {
+  adaptDecisionHistoryRow,
+  adaptProtectionReason,
+  adaptSenderDetail,
+  adaptSenderListRow,
+} from './adapters';
 import { canArchive, canLater, canUnsubscribe, isStandingProtected } from '../data';
 import { derivePrimaryVerbId } from '../action-row';
 import type { DecisionHistoryRowDto, SenderDetailDto, SenderListRow } from '@/lib/api/senders';
@@ -145,6 +150,21 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     );
     expect(s.lastReview?.confidence).toBe(0.6);
     expect(derivePrimaryVerbId(s)).toBe('keep');
+  });
+});
+
+describe('adaptProtectionReason — explainable automatic protection', () => {
+  it.each([
+    ['user_defined', 'user-marked'],
+    ['replied', 'replied'],
+    ['starred', 'starred'],
+    ['gmail_important', 'gmail-important'],
+  ] as const)('maps %s to %s', (wire, expected) => {
+    expect(adaptProtectionReason(true, wire)).toBe(expected);
+  });
+
+  it('hides the retained memory-pin reason after manual Unprotect', () => {
+    expect(adaptProtectionReason(false, 'replied')).toBeNull();
   });
 });
 

@@ -28,9 +28,10 @@ export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
  *
  */
 export type ProtectionReason =
-  | 'user-marked' // founder toggled Protect on
-  | 'auto-receipts' // receipts / statements auto-protected (default)
-  | 'auto-financial'; // financial-institution sender auto-protected
+  | 'user-marked' // user toggled Protect on
+  | 'replied' // user replied at least three times
+  | 'starred' // user starred a message in the past year
+  | 'gmail-important'; // Gmail marked at least three recent messages important
 
 /**
  * Source of a decision-history row (D46).

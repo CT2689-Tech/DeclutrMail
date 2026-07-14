@@ -549,7 +549,7 @@ describe('IncrementalSyncWorker', () => {
         ),
       );
     expect(policy?.isProtected).toBe(true);
-    expect(policy?.protectionReason).toBe('engagement_based');
+    expect(policy?.protectionReason).toBe('replied');
   });
 
   it('auto-protect post-pass honors a manually demoted user_defined row (D40/D42 unprotect)', async () => {

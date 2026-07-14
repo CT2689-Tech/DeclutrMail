@@ -57,14 +57,14 @@ function pickUnsubscribeMethod(s: Sender): UnsubscribeMethod | null {
  * Project a fixture `Sender`'s standing-policy flags to the wire shape.
  * Shared by the list + detail projections so both agree (the BE now
  * carries `protectionFlags` on the list row too). Auto-protected senders
- * project to `engagement_based` (closest BE bucket for "system-pinned").
+ * project to `starred` as an explicit automatic-protection fixture.
  * Non-protected senders carry null reason + null timestamp.
  */
 function fixtureProtectionFlags(s: Sender, now: number): SenderListRow['protectionFlags'] {
   const isProtected = s.protected === true;
   return {
     isProtected,
-    protectionReason: isProtected ? 'engagement_based' : null,
+    protectionReason: isProtected ? 'starred' : null,
     protectionSetAt: isProtected ? new Date(now).toISOString() : null,
   };
 }

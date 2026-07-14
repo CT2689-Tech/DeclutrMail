@@ -32,9 +32,9 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
 function whyLine(row: TriageDecisionRow): string {
   const pct = Math.round(row.readRate * 100);
   if (row.protectionReason === 'user-marked') return 'Protected — always kept';
-  if (row.protectionReason === 'engagement') return `${pct}% read · engagement-protected`;
-  if (row.protectionReason === 'auto-receipts') return 'Auto-protected receipts sender';
-  if (row.protectionReason === 'auto-financial') return 'Auto-protected financial sender';
+  if (row.protectionReason === 'replied') return 'Protected · you replied at least 3 times';
+  if (row.protectionReason === 'starred') return 'Protected · you starred a message';
+  if (row.protectionReason === 'gmail-important') return 'Protected · Gmail importance';
   if (row.last90dMessages === 0) {
     // Quiet within the rolling window — say so plainly. Lifetime total
     // carries the "they DID mail you" context without faking cadence.

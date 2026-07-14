@@ -97,6 +97,8 @@ export { securityEvents } from './schema/security-events';
 export type { NewSecurityEvent, SecurityEvent } from './schema/security-events';
 export { protectionReason, senderPolicies, senderPolicyType } from './schema/sender-policies';
 export type { NewSenderPolicy, SenderPolicy } from './schema/sender-policies';
+import type { protectionReason as _protectionReason } from './schema/sender-policies';
+export type ProtectionReason = (typeof _protectionReason.enumValues)[number];
 export { senderTimeseries } from './schema/sender-timeseries';
 export type { NewSenderTimeseries, SenderTimeseries } from './schema/sender-timeseries';
 export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders';

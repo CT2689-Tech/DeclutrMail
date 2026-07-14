@@ -63,13 +63,26 @@ describe('runCascade — Phase A (protection / engagement)', () => {
     expect(result.ruleId).toBe('protect_user_defined');
   });
 
-  it('engagement-protected sender → keep with engagement provenance', () => {
+  it('reply-protected sender → keep with exact provenance', () => {
     const result = runCascade({
       ...baseSignals(),
       isProtected: true,
-      protectionReason: 'engagement_based',
+      protectionReason: 'replied',
     });
-    expect(result.ruleId).toBe('protect_engagement_based');
+    expect(result.ruleId).toBe('protect_replied');
+    expect(result.verdict).toBe('keep');
+  });
+
+  it.each([
+    ['starred', 'protect_starred'],
+    ['gmail_important', 'protect_gmail_important'],
+  ] as const)('maps %s protection to its exact audit rule', (protectionReason, ruleId) => {
+    const result = runCascade({
+      ...baseSignals(),
+      isProtected: true,
+      protectionReason,
+    });
+    expect(result.ruleId).toBe(ruleId);
     expect(result.verdict).toBe('keep');
   });
 

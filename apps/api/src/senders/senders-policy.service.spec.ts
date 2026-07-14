@@ -228,7 +228,7 @@ describe('SendersPolicyService', () => {
         senderKey: SENDER_KEY,
         policyType: 'keep',
         isProtected: true,
-        protectionReason: 'engagement_based',
+        protectionReason: 'replied',
         protectionSetAt: new Date('2026-05-01'),
       });
 
@@ -241,9 +241,9 @@ describe('SendersPolicyService', () => {
       expect(res.isProtected).toBe(false);
       expect(res.protectionSetAt).toBeNull();
       // The pin: reason survives the demote so the sync workers'
-      // re-protect guard (`reason <> 'engagement_based'`) skips this
+      // re-protect guard (non-null reason memory pin) skips this
       // row instead of silently re-protecting on the next sync.
-      expect(res.protectionReason).toBe('engagement_based');
+      expect(res.protectionReason).toBe('replied');
 
       const audit = await auditRows(db, mailboxId);
       expect(audit.map((a) => a.action)).toEqual(['unmarked_protected']);
@@ -255,7 +255,7 @@ describe('SendersPolicyService', () => {
         senderKey: SENDER_KEY,
         policyType: 'keep',
         isProtected: false,
-        protectionReason: 'engagement_based',
+        protectionReason: 'replied',
       });
 
       const res = await svc.setPolicy({

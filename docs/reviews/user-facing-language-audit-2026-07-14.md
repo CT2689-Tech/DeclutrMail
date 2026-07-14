@@ -256,6 +256,11 @@ question during the implementation Q&A:
 8. DeclutrMail is prelaunch with no production users or production data. Remove
    superseded routes, schema, contracts, fixtures, and docs directly instead of
    carrying hypothetical legacy compatibility.
+9. Strong observed signals may automatically set Protected. The conservative
+   triggers are at least three replies, a message starred in the past year, or
+   at least three Gmail-important messages in the past year. Read/open rate is
+   never sufficient. Show the exact reason and preserve manual Unprotect as a
+   sticky override.
 
 These decisions are canonical in D245 and supersede the conflicting VIP,
 Snoozed-compatibility, and Later descriptions cited in the original audit.
@@ -290,21 +295,9 @@ automatically.
 | Navigation and search | Snoozed/Later routes and transient list state were inconsistent. | `/later` is canonical; search/filter/sort state is shareable and restores through browser navigation. |
 | Contextual labels | Generic Close, Dismiss, and mode labels depended on visual context. | Controls name their target; privacy, previews, Activity, Autopilot, billing, and mailbox exits explain the decision in place. |
 
-## Product decisions still required
+## Product decision still required
 
-### 1. May observed engagement set Protected automatically?
-
-- **A — Conservative automatic protection (recommended):** protect only on
-  strong, explainable signals such as replies/starred correspondence; show the
-  reason and provide a one-click override. This is safest against accidental
-  automation and preserves the current engagement-based protection model.
-- **B — Suggest, then confirm:** show “Suggested Protected” and require the
-  user to accept it. This maximizes agency but creates more setup work and
-  leaves users exposed until they review suggestions.
-- **C — Manual only:** never set Protected automatically. This is simplest to
-  explain but puts all safety discovery on the user.
-
-### 2. What is the standard Pro annual price?
+### What is the standard Pro annual price?
 
 - **A — $190/year (recommended):** matches the current $19 monthly price with
   roughly two months free and keeps the $129 Founding offer meaningfully
@@ -317,8 +310,9 @@ automatically.
 
 ## Highest-value product opportunity map
 
-These are improvements to evaluate after the two remaining decisions. They are
-not silently approved behavior in D245.
+The founder approved this opportunity map for phased implementation on
+2026-07-14. Launch-critical trust, recovery, automation-control, and
+accessibility foundations come before optional workflow acceleration.
 
 | Surface | Improvement or feature | User benefit | Recommendation |
 | --- | --- | --- | --- |
@@ -366,8 +360,8 @@ not silently approved behavior in D245.
   filters, audit actions, Brief markers, UI controls, fixtures, and active docs.
 - Removed the `/snoozed` compatibility route and timerless Later response/UI
   state; database and API contracts require a wake time.
-- Preserved manual and engagement-based protection provenance without exposing
-  a second safety label.
+- Added conservative automatic protection with exact reply, star, or Gmail
+  importance provenance, visible explanations, and a sticky manual override.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
 - Static validation covers TypeScript, focused API/worker/web/shared tests,
   migration checks, and diff/format checks. Authenticated live Playwright and

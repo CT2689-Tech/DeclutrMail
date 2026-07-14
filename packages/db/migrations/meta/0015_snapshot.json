@@ -2921,7 +2921,9 @@
       "schema": "public",
       "values": [
         "user_defined",
-        "engagement_based"
+        "replied",
+        "starred",
+        "gmail_important"
       ]
     },
     "public.sender_policy_type": {

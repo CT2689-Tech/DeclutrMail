@@ -39,7 +39,7 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
 /** Why a sender's verdict is locked to Keep — surfaces in the row. */
-export type ProtectionReason = 'user-marked' | 'engagement' | 'auto-receipts' | 'auto-financial';
+export type ProtectionReason = 'user-marked' | 'replied' | 'starred' | 'gmail-important';
 
 /**
  * One row in the triage queue — sender identity + engine verdict +
@@ -79,7 +79,7 @@ export interface TriageDecisionRow {
 
   /**
    * Why the verdict is locked to Keep. Non-null means the engine's
-   * Phase A protection ran (user-marked, engagement, auto-receipts, etc.) —
+   * Phase A protection ran (manual or an exact strong-signal reason) —
    * destructive verbs are disabled for these rows.
    */
   protectionReason: ProtectionReason | null;
@@ -375,7 +375,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
       'Volume: 6 messages/month',
       'Engagement-protected (read rate ≥ 70%) — destructive verbs hidden',
     ],
-    protectionReason: 'engagement',
+    protectionReason: 'replied',
     monthlyVolume: 6,
     last90dMessages: 18,
     readRate: 0.95,

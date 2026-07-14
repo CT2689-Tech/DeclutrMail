@@ -15,7 +15,10 @@ each completed slice.
 - Safety: **Protected** is the sole visible safety state. Protected
   senders are excluded from bulk and automatic mail-changing actions. The
   overlapping VIP state is removed from the UI, contracts, and persistence.
-  Whether observed engagement may set Protected automatically remains open.
+  Strong observed signals may set protection automatically: at least three
+  replies, a recent explicit star, or at least three recent Gmail-important
+  messages. The exact reason is visible, read/open rate is excluded, and a
+  manual Unprotect is a sticky override.
 - Priority: Brief priority comes from observed engagement and Gmail importance.
   If manual priority is needed later, add a clearly named **Pin in Brief**
   control; never reuse Protected for ranking.
@@ -64,6 +67,8 @@ current technical invariant rather than by hypothetical existing users.
       unchanged data, reversal path, and exact confirm action.
 - [x] Make Activity the canonical action record, with deadlines, status,
       failures, Gmail recovery guidance, and available Undo controls.
+- [x] Apply conservative automatic protection from strong, explainable
+      engagement signals, preserve the exact reason, and honor manual override.
 - [x] Make Senders fact-first and put any optional suggestion plus its factual
       basis behind progressive disclosure.
 - [x] Explain Autopilot Observe and Active at rule level; keep Active execution
@@ -133,7 +138,8 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
   contract/service (62) and Later service (13); label-action worker (17);
   shared edge-state inventory (9); focused DB protection (5); plus the DB/E2E
   migration, schema, constraint, and discovery checks recorded by the DB slice.
-- Current slice: implementation is complete for every decided P0–P3 item.
-  Remaining Q&A decisions are engagement-based automatic protection and the
-  standard annual Pro price; pricing reconciliation stays unchecked until the
-  founder chooses.
+- Current slice: conservative automatic protection is implemented with exact
+  reply/star/Gmail-importance provenance and a sticky manual override. The
+  audit opportunity map is approved for phased implementation. The standard
+  annual Pro price remains the only open Q&A decision; pricing reconciliation
+  stays unchecked until the founder chooses.

@@ -154,8 +154,11 @@ Enforced by `webhook-security-auditor` subagent.
   excluded from bulk and automatic mail-changing actions. VIP is retired; do
   not add it back as a ranking or safety alias. Brief priority uses observed
   engagement and Gmail importance. A future manual ranking control must be a
-  separate **Pin in Brief** concept. Whether engagement signals may set
-  protection automatically remains an explicit product decision.
+  separate **Pin in Brief** concept. Automatic protection is limited to
+  explainable strong signals: at least three replies, a message starred in the
+  past year, or at least three Gmail-important messages in the past year. Never
+  auto-protect from read/open rate. Show the exact reason and preserve a manual
+  Unprotect as a sticky override.
 - **Prelaunch means no hypothetical compatibility** (D245) — DeclutrMail is not
   live and has no production users or production data. Remove superseded
   routes, columns, contracts, fixtures, and docs directly unless a current

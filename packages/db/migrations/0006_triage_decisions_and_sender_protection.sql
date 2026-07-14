@@ -57,7 +57,7 @@ CREATE TYPE "public"."triage_verdict" AS ENUM('keep', 'archive', 'unsubscribe', 
 --> statement-breakpoint
 CREATE TYPE "public"."triage_reasoning_source" AS ENUM('llm_haiku', 'template');
 --> statement-breakpoint
-CREATE TYPE "public"."protection_reason" AS ENUM('user_defined', 'engagement_based');
+CREATE TYPE "public"."protection_reason" AS ENUM('user_defined', 'replied', 'starred', 'gmail_important');
 --> statement-breakpoint
 CREATE TABLE "triage_decisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

@@ -46,15 +46,22 @@ export const senderPolicyType = pgEnum('sender_policy_type', [
 /**
  * Provenance of a `is_protected=true` flag (D22).
  *
- * Two sources, used by the cascade audit copy:
- *   - `user_defined`     — explicit Always-Keep toggle on Sender Detail.
- *   - `engagement_based` — derived from D21 Phase A rules (replied,
- *                          starred, high read rate, long relationship).
+ * Exact sources, used by the cascade and user-facing explanation:
+ *   - `user_defined`    — explicit Protect toggle on Sender Detail.
+ *   - `replied`         — at least three replies to the sender.
+ *   - `starred`         — a message starred in the past year.
+ *   - `gmail_important` — at least three Gmail-important messages in
+ *                         the past year.
  *
  * No `ml_predicted` value — D222 bans ML category prediction; protection
  * is always observed (engagement) or user-set, never inferred.
  */
-export const protectionReason = pgEnum('protection_reason', ['user_defined', 'engagement_based']);
+export const protectionReason = pgEnum('protection_reason', [
+  'user_defined',
+  'replied',
+  'starred',
+  'gmail_important',
+]);
 
 /**
  * Truthful unsubscribe lifecycle (D9 Wave 2 + D245, migrations 0029/0037).
@@ -111,11 +118,9 @@ export const senderPolicies = pgTable(
      *
      * MAY be non-NULL while `is_protected = false` — the
      * **user-agency-wins memory pin**: when the user manually demotes
-     * an `engagement_based`-protected row, the worker leaves
-     * `protection_reason='engagement_based'` so the next sync skips
-     * re-protect (initial-sync.worker.ts:660-705,
-     * incremental-sync.worker.ts §3, schema/senders.ts:133-142,
-     * MISTAKES.md 2026-06-05 🔴-3).
+     * an automatically protected row, the worker leaves its exact
+     * `protection_reason` so the next sync skips re-protect
+     * (`automatic-protection.ts`, MISTAKES.md 2026-06-05 🔴-3).
      *
      * **DB INVARIANT** (migration 0023): a one-way CHECK enforces the
      * only impossible-by-code state:

@@ -1,15 +1,10 @@
-import {
-  mailMessages,
-  providerSyncState,
-  senderPolicies,
-  senders,
-  senderTimeseries,
-} from '@declutrmail/db';
+import { mailMessages, providerSyncState, senders, senderTimeseries } from '@declutrmail/db';
 import type { GmailCategory, schema } from '@declutrmail/db';
 import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
@@ -785,47 +780,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           AND st.${sql.identifier('sender_key')} = sub.sender_key
           AND st.${sql.identifier('year_month')} = sub.year_month
       `);
-      // User-agency-wins guard — see InitialSyncWorker for full
-      // rationale. A manually demoted row (`is_protected=false` with
-      // the prior `protection_reason` preserved as the memory pin —
-      // either provenance: engagement_based or user_defined) stays
-      // demoted on this incremental pass — the user's decision
-      // survives the next webhook. Only `protection_reason IS NULL`
-      // rows may be auto-protected.
-      await tx.execute(sql`
-        INSERT INTO ${senderPolicies} (
-          ${sql.identifier('mailbox_account_id')},
-          ${sql.identifier('sender_key')},
-          ${sql.identifier('policy_type')},
-          ${sql.identifier('is_protected')},
-          ${sql.identifier('protection_reason')},
-          ${sql.identifier('protection_set_at')}
-        )
-        SELECT
-          s.${sql.identifier('mailbox_account_id')},
-          s.${sql.identifier('sender_key')},
-          'keep'::sender_policy_type,
-          true,
-          'engagement_based'::protection_reason,
-          now()
-        FROM ${senders} AS s
-        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-          AND s.${sql.identifier('replied_count')} >= 3
-        ON CONFLICT (${sql.identifier('mailbox_account_id')}, ${sql.identifier('sender_key')}) DO UPDATE
-        SET
-          ${sql.identifier('is_protected')} = true,
-          ${sql.identifier('protection_reason')} = COALESCE(
-            sender_policies.${sql.identifier('protection_reason')},
-            'engagement_based'::protection_reason
-          ),
-          ${sql.identifier('protection_set_at')} = COALESCE(
-            sender_policies.${sql.identifier('protection_set_at')},
-            now()
-          ),
-          ${sql.identifier('updated_at')} = now()
-        WHERE sender_policies.${sql.identifier('is_protected')} = false
-          AND sender_policies.${sql.identifier('protection_reason')} IS NULL
-      `);
+      await applyAutomaticProtection(tx, mailboxAccountId);
     });
   }
 }

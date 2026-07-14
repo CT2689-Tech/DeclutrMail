@@ -338,7 +338,7 @@ export function buildSenderDetail(
 ): SenderDetail {
   const isProtected = overrides.isProtected ?? sender.protected === true;
   const protectionReason: ProtectionReason | null = isProtected
-    ? (overrides.protectionReason ?? (sender.protected ? 'auto-receipts' : 'user-marked'))
+    ? (overrides.protectionReason ?? (sender.protected ? 'starred' : 'user-marked'))
     : null;
 
   return {

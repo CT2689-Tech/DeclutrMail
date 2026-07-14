@@ -174,7 +174,7 @@ describe('TriageReadService.listQueue — decided-sender exclusion (D30/D226)', 
       mailboxAccountId: mailboxId,
       senderKey: SENDER_A,
       isProtected: false,
-      protectionReason: 'engagement_based',
+      protectionReason: 'replied',
     });
 
     const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });

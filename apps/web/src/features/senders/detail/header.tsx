@@ -68,13 +68,15 @@ export function SenderDetailHeader({
   onToggleProtect: () => void;
 }) {
   const protectTooltip =
-    protectionReason === 'auto-receipts'
-      ? "Auto-protected — receipts and statements aren't acted on in bulk."
-      : protectionReason === 'auto-financial'
-        ? "Auto-protected — financial-institution sender. Bulk actions won't apply."
-        : isProtected
-          ? 'Protect — never re-suggested. A silent guard against accidental bulk action.'
-          : 'Protect — never re-suggested. A silent guard against accidental bulk action.';
+    protectionReason === 'replied'
+      ? 'Automatically protected because you replied at least three times. Select to remove protection.'
+      : protectionReason === 'starred'
+        ? 'Automatically protected because you starred a message this year. Select to remove protection.'
+        : protectionReason === 'gmail-important'
+          ? 'Automatically protected because Gmail marked at least three messages important this year. Select to remove protection.'
+          : isProtected
+            ? 'Protected by you. Select to remove protection.'
+            : 'Protect this sender from bulk and automatic mail-changing actions.';
 
   return (
     <header
