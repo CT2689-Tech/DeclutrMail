@@ -22,6 +22,7 @@ import {
   compositeActionRequestSchema,
   keepIntentRequestSchema,
   unsubscribeIntentRequestSchema,
+  unsubscribeManualStatusRequestSchema,
   type ActionEnqueueResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
@@ -32,6 +33,7 @@ import {
   type CompositeActionPreviewResult,
   type KeepIntentResult,
   type UnsubscribeIntentResult,
+  type UnsubscribeManualStatusResult,
 } from './actions.types.js';
 
 /**
@@ -198,16 +200,13 @@ export class ActionsController {
    * POST /api/actions/unsubscribe-intent — record the user's intent to
    * unsubscribe from a sender (D38 + 2026-06-05 founder brainstorm).
    *
-   * Unlike Archive/Delete/Later, this does NOT enqueue a Gmail
-   * mutation; the real unsub pipeline (RFC8058 + mailto + manual
-   * fallback per D230) lands later. The endpoint just:
+   * Unlike Archive/Delete/Later, this does not enqueue a Gmail label
+   * mutation. It records the decision, then routes by capability:
    *
-   *   1. Upserts `sender_policies.policy_type='unsubscribe'` so the
-   *      Sender Detail "Unsub queued" pill has its source-of-truth.
-   *   2. Writes a 0-affected `activity_log` row so the user sees their
-   *      decision in /activity — replaces the prior tracer toast that
-   *      LIED ("Unsubscribed from DKNY") with no BE call (CLAUDE.md §10
-   *      no-fake-completion violation).
+   *   1. one_click → requested + an RFC 8058 execution job.
+   *   2. mailto → action_required; the client opens compose and reports
+   *      explicit progress through the manual-status route.
+   *   3. none → unavailable. All paths append truthful Activity rows.
    *
    * Idempotency (D202). Requires `Idempotency-Key` header (≥8 chars)
    * matching the sibling routes. A network-retried POST with the same
@@ -243,6 +242,34 @@ export class ActionsController {
       mailboxAccountId: mailbox.id,
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
+    });
+    return ok(result);
+  }
+
+  /**
+   * POST /api/actions/unsubscribe-manual-status — explicitly record
+   * progress on a mailto unsubscribe. The client calls draft_opened
+   * immediately before opening compose and user_marked_sent only after
+   * an explicit user confirmation. Neither state claims delivery.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('unsubscribe-manual-status')
+  @UseGuards(CsrfGuard)
+  async unsubscribeManualStatus(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: unknown,
+  ): Promise<Envelope<UnsubscribeManualStatusResult>> {
+    const parsed = unsubscribeManualStatusRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid manual unsubscribe status request.',
+      });
+    }
+    const result = await this.actions.recordUnsubscribeManualStatus({
+      mailboxAccountId: mailbox.id,
+      senderId: parsed.data.senderId,
+      status: parsed.data.status,
     });
     return ok(result);
   }

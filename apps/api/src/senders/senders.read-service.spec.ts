@@ -1434,6 +1434,40 @@ describe('SendersReadService', () => {
   });
 
   describe('getSenderDetail', () => {
+    it('normalizes legacy unsubscribe statuses on list and detail wire shapes', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'legacy-unsub@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: a.senderKey,
+        policyType: 'unsubscribe',
+        unsubStatus: 'pending',
+      });
+
+      const rows = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        sort: 'last_seen',
+        cursor: null,
+        limit: 10,
+      });
+      expect(rows[0]!.unsubStatus).toBe('requested');
+
+      await db
+        .update(senderPolicies)
+        .set({ unsubStatus: 'done' })
+        .where(eq(senderPolicies.senderKey, a.senderKey));
+      expect((await svc.getSenderDetail(mailboxId, a.id))!.unsubStatus).toBe('endpoint_accepted');
+      await db
+        .update(senderPolicies)
+        .set({ unsubStatus: 'ambiguous' })
+        .where(eq(senderPolicies.senderKey, a.senderKey));
+      expect((await svc.getSenderDetail(mailboxId, a.id))!.unsubStatus).toBe('unconfirmed');
+    });
+
     it('returns the sender with policy flags when both exist', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,

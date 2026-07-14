@@ -75,6 +75,16 @@ export const activityAction = pgEnum('activity_action', [
   // in the activity-suite PR (value ships ahead of it — 0024 staging
   // precedent).
   'unsubscribe_confirmed',
+  // D245 truthful unsubscribe outcome/progress records (0037). These
+  // rows are distinct from the canonical `unsubscribe` intent row and
+  // therefore never double-count the user's decision in K/A/U/L/D stats.
+  'unsubscribe_endpoint_accepted',
+  'unsubscribe_failed',
+  'unsubscribe_unconfirmed',
+  'unsubscribe_action_required',
+  'unsubscribe_draft_opened',
+  'unsubscribe_user_marked_sent',
+  'unsubscribe_unavailable',
 ]);
 
 export const activityLog = pgTable(

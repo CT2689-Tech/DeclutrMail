@@ -312,12 +312,9 @@ export const ActionsUnsubscribeIntentRecordedPayloadSchema = z
     /** ISO-8601 — when the activity_log row's `occurred_at` landed. */
     recordedAt: z.string().datetime(),
     /**
-     * Sender's unsubscribe capability at intent time (D9 Wave 2,
-     * additive). `one_click` ⇒ the consumer projects
-     * `sender_policies.unsub_status = 'pending'` (an execution job is
-     * in flight); `mailto` / `none` ⇒ no tracked execution (D230
-     * manual path). Optional so events published before this field
-     * existed still parse.
+     * Sender capability at intent time. The consumer projects the
+     * method-specific initial lifecycle: requested, action_required,
+     * or unavailable. Optional so older events still parse.
      */
     method: z.enum(['one_click', 'mailto', 'none']).optional(),
   })
@@ -339,11 +336,16 @@ export type ActionsUnsubscribeIntentRecordedPayload = z.infer<
  * consumer projection exists at this build.
  *
  * `outcome`:
- *   - `done`      — target answered 2xx.
+ *   - `endpoint_accepted` — target answered 2xx; request delivery is
+ *                           proven, future-mail suppression is not.
  *   - `failed`    — target 4xx/5xx, blocked/invalid URL, or network
  *                   retries exhausted (`httpStatus` null then).
- *   - `ambiguous` — target answered 3xx; redirects are never
+ *   - `unconfirmed` — target answered 3xx; redirects are never
  *                   followed, so the result is unknown.
+ *
+ * `done` and `ambiguous` remain parser-compatible for outbox rows
+ * published by an older worker during a rolling deploy. New publishers
+ * use only the canonical names above.
  *
  * Privacy (D7, D228): metadata only — ids, enum outcome, HTTP status
  * code. The target URL is deliberately NOT carried (it can embed
@@ -355,7 +357,7 @@ export const ActionsUnsubscribeExecutedPayloadSchema = z
     senderKey: SenderKeySchema,
     /** The execution's `action_jobs.id` — the FE poll handle. */
     actionId: UuidSchema,
-    outcome: z.enum(['done', 'failed', 'ambiguous']),
+    outcome: z.enum(['endpoint_accepted', 'failed', 'unconfirmed', 'done', 'ambiguous']),
     /** HTTP status from the target; null when the request never completed. */
     httpStatus: z.number().int().nullable(),
     /** ISO-8601 — when the terminal outcome was recorded. */

@@ -129,6 +129,13 @@ async function seedActivity(
       | 'archive'
       | 'unsubscribe'
       | 'unsubscribe_confirmed'
+      | 'unsubscribe_endpoint_accepted'
+      | 'unsubscribe_failed'
+      | 'unsubscribe_unconfirmed'
+      | 'unsubscribe_action_required'
+      | 'unsubscribe_draft_opened'
+      | 'unsubscribe_user_marked_sent'
+      | 'unsubscribe_unavailable'
       | 'later'
       | 'delete'
       | 'followup-dismiss';
@@ -599,6 +606,40 @@ describe('ActivityReadService', () => {
       // Stats count the decision ONCE — the confirmed row is excluded
       // from the `unsubscribed` bucket (it is not the `unsubscribe` verb).
       expect(stats.unsubscribed).toBe(1);
+    });
+
+    it('surfaces failed/unconfirmed unsubscribe outcomes as needing attention', async () => {
+      const senderKey = 'f'.repeat(64);
+      for (const [action, daysAgo] of [
+        ['unsubscribe', 3],
+        ['unsubscribe_failed', 2],
+        ['unsubscribe_unconfirmed', 1],
+      ] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - daysAgo * ONE_DAY_MS),
+          source: 'manual',
+          action,
+          affectedCount: 0,
+          senderKey,
+        });
+      }
+
+      const { stats, rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((r) => r.action)).toEqual([
+        'unsubscribe_unconfirmed',
+        'unsubscribe_failed',
+        'unsubscribe',
+      ]);
+      expect(stats.unsubscribed).toBe(1);
+      expect(stats.needsAttention).toBe(2);
     });
 
     it('stats also respect the window boundary', async () => {

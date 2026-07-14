@@ -108,6 +108,24 @@ export type { UndoActionKind } from './undo-action-kind';
 // Contract-tested in apps/api/src/actions/actions.types.ts.
 export type { ActionJobStatus } from './action-job-status';
 
+// D245 unsubscribe truthfulness — one-click endpoint acceptance,
+// manual-mailto progress, and unavailable channels are distinct states.
+export {
+  initialUnsubscribeLifecycleStatus,
+  normalizeUnsubscribeLifecycleStatus,
+  UNSUBSCRIBE_LIFECYCLE_STATUSES,
+  UNSUBSCRIBE_MANUAL_TRANSITIONS,
+  UnsubscribeLifecycleStatusSchema,
+  UnsubscribeManualStatusRequestSchema,
+  UnsubscribeManualTransitionSchema,
+} from './unsubscribe-lifecycle';
+export type {
+  LegacyUnsubscribeLifecycleStatus,
+  UnsubscribeLifecycleStatus,
+  UnsubscribeManualStatusRequest,
+  UnsubscribeManualTransition,
+} from './unsubscribe-lifecycle';
+
 // Gmail category mirror — `gmail_category` pg_enum. Contract-tested in
 // apps/api/src/senders/senders.types.ts.
 export type { GmailCategory } from './gmail-category';

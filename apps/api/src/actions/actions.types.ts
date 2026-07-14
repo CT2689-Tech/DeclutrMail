@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
+import {
+  UnsubscribeManualStatusRequestSchema,
+  type UnsubscribeLifecycleStatus,
+  type UnsubscribeManualStatusRequest,
+  type UnsubscribeManualTransition,
+} from '@declutrmail/shared/contracts';
 
 /**
  * Action API contracts (D226).
@@ -52,6 +59,10 @@ export const unsubscribeIntentRequestSchema = z
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
 
+/** Explicit progress update for the manual mailto unsubscribe path. */
+export const unsubscribeManualStatusRequestSchema = UnsubscribeManualStatusRequestSchema;
+export type { UnsubscribeManualStatusRequest };
+
 /**
  * Unsubscribe-intent response — `POST /api/actions/unsubscribe-intent`.
  *
@@ -64,6 +75,8 @@ export interface UnsubscribeIntentResult {
   recordedAt: string;
   /** activity_log.id of the freshly-written row. */
   activityLogId: string;
+  /** Truthful method-specific state after recording (or replaying) the intent. */
+  lifecycleStatus: UnsubscribeLifecycleStatus;
   /**
    * The sender's unsubscribe capability at intent time (ADR-0006
    * derivation; `none` when the sender carries no method). Drives the
@@ -88,6 +101,19 @@ export interface UnsubscribeIntentResult {
    * into a Gmail compose deep link — DeclutrMail never auto-sends.
    */
   mailtoUrl: string | null;
+}
+
+/** Result of an explicit manual-mailto progress transition. */
+export interface UnsubscribeManualStatusResult {
+  senderId: string;
+  status: UnsubscribeManualTransition;
+  /** ISO timestamp of the transition, or the current policy update on an idempotent replay. */
+  recordedAt: string;
+  /** Fresh Activity outcome row; null when the requested state already held. */
+  activityLogId: string | null;
+  changed: boolean;
+  /** True only for user_marked_sent, which cannot be regressed in-app. */
+  irreversible: boolean;
 }
 
 /**
@@ -156,15 +182,12 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
-export interface ActionStatusResult {
-  actionId: string;
-  status: ActionJobStatus;
-  /** Same semantics as `ActionEnqueueResult.requestedCount` — see above. */
-  requestedCount: number;
-  affectedCount: number;
-  undoToken: string | null;
-  errorCode: string | null;
-}
+/**
+ * Poll result shared with the web client. The original fields remain intact;
+ * verb/schedule/Undo timing are additive facts used to derive the canonical
+ * D245 receipt without another request.
+ */
+export type ActionStatusResult = ActionStatusSnapshot;
 
 /**
  * Non-mutating archive preview (D226). `inboxCount` is the REAL number of

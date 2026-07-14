@@ -392,6 +392,8 @@ describe('AutopilotActionWorker', () => {
     expect(result.unsubscribeExecutionsEnqueued).toBe(1);
     expect(unsubJobs).toHaveLength(1);
     expect(unsubJobs[0]!.idempotencyKey).toBe(`autopilot-unsubexec-${matchId}`);
+    expect(unsubJobs[0]!.source).toBe('autopilot');
+    expect(unsubJobs[0]!.ruleId).toBe(ruleId);
 
     // Activity: unsubscribe decision, autopilot-attributed, no undo (D58).
     const activity = await db.select().from(activityLog);
@@ -442,6 +444,38 @@ describe('AutopilotActionWorker', () => {
     const events = await db.select().from(outboxEvents);
     const intent = events.filter((e) => e.topic === TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED);
     expect((intent[0]!.payload as { method: string }).method).toBe('mailto');
+    const activities = await db.select().from(activityLog);
+    expect(activities.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_action_required']);
+    expect(activities.every((a) => a.source === 'autopilot' && a.ruleId === ruleId)).toBe(true);
+  });
+
+  it('unsubscribe enqueue failure records a canonical failed outcome', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+    const { senderKey } = await seedSender(db, mailboxId, 'failed@news.com', {
+      unsubscribeMethod: 'one_click',
+      unsubscribeUrl: 'https://news.com/unsub',
+    });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    worker = buildWorker({
+      enqueueUnsubExecution: async () => {
+        throw new Error('redis unavailable');
+      },
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+    expect(result.unsubscribeExecutionsEnqueued).toBe(0);
+    const [job] = await db.select().from(actionJobs);
+    expect(job!).toMatchObject({ status: 'failed', errorCode: 'ENQUEUE_FAILED' });
+    const activities = await db.select().from(activityLog);
+    expect(activities.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_failed']);
+    const events = await db.select().from(outboxEvents);
+    expect(events.map((e) => e.topic)).toEqual([
+      TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
+      TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,
+    ]);
   });
 
   it('defers the whole sweep while quiet state is active (U18 seam)', async () => {

@@ -19,6 +19,7 @@ import {
 } from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
+  ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotActionIntentEmittedPayloadSchema,
   TOPICS,
@@ -180,7 +181,7 @@ export interface AutopilotActionDeps {
   lock: MailboxActionLock;
   /**
    * Enqueue an RFC 8058 one-click unsub execution job on the
-   * `unsub-execution` queue. REQUIRED — recording a `pending`
+   * `unsub-execution` queue. REQUIRED — recording a `requested`
    * unsub_status with no job behind it is the stuck state CLAUDE.md
    * §10 bans, so the dependency cannot be optional. The composition
    * root wires `(data) => queue.add(UNSUB_EXECUTION_JOB, data,
@@ -848,6 +849,18 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         throw new Error('activity_log insert returned no row');
       }
 
+      if (method !== 'one_click') {
+        await tx.insert(activityLog).values({
+          mailboxAccountId,
+          senderKey: match.senderKey,
+          source: 'autopilot',
+          action: method === 'mailto' ? 'unsubscribe_action_required' : 'unsubscribe_unavailable',
+          affectedCount: 0,
+          undoToken: null,
+          ruleId: match.ruleId,
+        });
+      }
+
       // D204 boundary — sender_policies is senders-owned; this event is
       // the projection channel (the same consumer the manual path uses).
       await this.deps.outbox.publish(tx, {
@@ -913,13 +926,43 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           actionId: executionActionId,
           mailboxAccountId,
           idempotencyKey: executionKey,
+          source: 'autopilot',
+          ruleId: match.ruleId,
         });
         return { executionEnqueued: true };
       } catch (err) {
-        await db
-          .update(actionJobs)
-          .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-          .where(eq(actionJobs.id, executionActionId));
+        const failedAt = new Date();
+        await db.transaction(async (tx) => {
+          const [failedJob] = await tx
+            .update(actionJobs)
+            .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+            .where(eq(actionJobs.id, executionActionId))
+            .returning({ id: actionJobs.id });
+          if (failedJob) {
+            await tx.insert(activityLog).values({
+              mailboxAccountId,
+              senderKey: match.senderKey,
+              source: 'autopilot',
+              action: 'unsubscribe_failed',
+              affectedCount: 0,
+              undoToken: null,
+              ruleId: match.ruleId,
+            });
+            await this.deps.outbox.publish(tx, {
+              topic: TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,
+              aggregateId: executionActionId,
+              payload: {
+                mailboxAccountId,
+                senderKey: match.senderKey,
+                actionId: executionActionId,
+                outcome: 'failed',
+                httpStatus: null,
+                executedAt: failedAt.toISOString(),
+              },
+              schema: ActionsUnsubscribeExecutedPayloadSchema,
+            });
+          }
+        });
         console.error(
           JSON.stringify({
             level: 'error',

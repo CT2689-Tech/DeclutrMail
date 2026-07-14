@@ -393,11 +393,62 @@ describe('ActionsService', () => {
       idempotencyKey: 'click-status',
       override: false,
     });
+    const [undo] = await db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'archive',
+        payload: {},
+        expiresAt: new Date('2099-07-21T09:00:00.000Z'),
+        executedAt: new Date('2099-07-20T09:00:00.000Z'),
+        revertedAt: new Date('2099-07-20T09:01:00.000Z'),
+      })
+      .returning({ token: undoJournal.token });
+    await db
+      .update(actionJobs)
+      .set({ status: 'done', affectedCount: 1, undoToken: undo!.token })
+      .where(eq(actionJobs.id, res.actionId));
     const status = await svc.getStatus(res.actionId, mailboxId);
-    expect(status.actionId).toBe(res.actionId);
+    expect(status).toEqual({
+      actionId: res.actionId,
+      verb: 'archive',
+      direction: 'forward',
+      status: 'done',
+      requestedCount: 1,
+      affectedCount: 1,
+      wakeAt: null,
+      undoToken: undo!.token,
+      undoExpiresAt: '2099-07-21T09:00:00.000Z',
+      undoExecutedAt: '2099-07-20T09:00:00.000Z',
+      undoRevertedAt: '2099-07-20T09:01:00.000Z',
+      errorCode: null,
+    });
     await expect(
       svc.getStatus(res.actionId, '00000000-0000-0000-0000-000000000000'),
     ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
+  });
+
+  it('getStatus includes the Later wake time', async () => {
+    const wakeAt = new Date('2099-08-01T18:45:00.000Z');
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'later',
+        selector: { type: 'messages' },
+        resolvedMessageIds: [],
+        requestedCount: 0,
+        status: 'queued',
+        idempotencyKey: 'later-status-wake',
+        wakeAt,
+      })
+      .returning({ id: actionJobs.id });
+
+    await expect(svc.getStatus(job!.id, mailboxId)).resolves.toMatchObject({
+      verb: 'later',
+      wakeAt: wakeAt.toISOString(),
+      undoExpiresAt: null,
+    });
   });
 
   it('returns 503 when the queue is unavailable', async () => {
@@ -1157,6 +1208,7 @@ describe('ActionsService', () => {
       });
       expect(result.senderId).toBe(senderId);
       expect(result.activityLogId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(result.lifecycleStatus).toBe('unavailable');
       // sender_policies upsert: policy_type='unsubscribe'.
       const policies = await db
         .select()
@@ -1164,16 +1216,15 @@ describe('ActionsService', () => {
         .where(eq(senderPolicies.mailboxAccountId, mailboxId));
       expect(policies).toHaveLength(1);
       expect(policies[0]!.policyType).toBe('unsubscribe');
-      // activity_log: 0-affected unsubscribe row, source='manual', no undo token.
+      // Activity keeps the decision and the unavailable outcome distinct.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(acts).toHaveLength(1);
-      expect(acts[0]!.action).toBe('unsubscribe');
-      expect(acts[0]!.source).toBe('manual');
-      expect(acts[0]!.affectedCount).toBe(0);
-      expect(acts[0]!.undoToken).toBeNull();
+      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_unavailable']);
+      expect(acts.every((a) => a.source === 'manual')).toBe(true);
+      expect(acts.every((a) => a.affectedCount === 0)).toBe(true);
+      expect(acts.every((a) => a.undoToken === null)).toBe(true);
     });
 
     it('is idempotent at the policy level — second call upserts to the same row but writes a SECOND audit row', async () => {
@@ -1194,13 +1245,14 @@ describe('ActionsService', () => {
       // Single policy row — upsert dedups.
       expect(policies).toHaveLength(1);
       expect(policies[0]!.policyType).toBe('unsubscribe');
-      // Two activity_log rows — each click is a recorded decision.
+      // Two decisions + two explicit unavailable outcomes.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(acts).toHaveLength(2);
-      expect(acts.every((a) => a.action === 'unsubscribe')).toBe(true);
+      expect(acts).toHaveLength(4);
+      expect(acts.filter((a) => a.action === 'unsubscribe')).toHaveLength(2);
+      expect(acts.filter((a) => a.action === 'unsubscribe_unavailable')).toHaveLength(2);
     });
 
     it('DB-level idempotency dedup — same key twice → ONE activity_log row + ONE cached action_jobs row (mig 0024)', async () => {
@@ -1222,12 +1274,12 @@ describe('ActionsService', () => {
       expect(second.activityLogId).toBe(first.activityLogId);
       expect(second.recordedAt).toBe(first.recordedAt);
 
-      // One audit row (NOT two — that's the dedup we're enforcing).
+      // One decision + one unavailable outcome; replay writes neither again.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(acts).toHaveLength(1);
+      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_unavailable']);
 
       // One cached action_jobs row, verb=unsubscribe, status=done.
       const jobs = await db
@@ -1295,7 +1347,7 @@ describe('ActionsService', () => {
         .where(eq(senders.id, senderId));
     }
 
-    it('one_click: returns the execution handle, persists the queued execution row, sets unsub_status=pending, enqueues', async () => {
+    it('one_click: returns the execution handle, persists the queued execution row, sets unsub_status=requested, enqueues', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
       const service = svcWithUnsubQueue();
 
@@ -1306,6 +1358,7 @@ describe('ActionsService', () => {
       });
 
       expect(result.method).toBe('one_click');
+      expect(result.lifecycleStatus).toBe('requested');
       expect(result.mailtoUrl).toBeNull();
       expect(result.executionActionId).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -1319,12 +1372,12 @@ describe('ActionsService', () => {
       expect(execRow!.requestedCount).toBe(1);
       expect(execRow!.undoToken).toBeNull(); // D58 — never an undo token
 
-      // Policy chip state: pending until the worker records the outcome.
+      // Policy chip state: requested until the worker records the outcome.
       const [policy] = await db
         .select()
         .from(senderPolicies)
         .where(eq(senderPolicies.mailboxAccountId, mailboxId));
-      expect(policy!.unsubStatus).toBe('pending');
+      expect(policy!.unsubStatus).toBe('requested');
 
       // Enqueued on the UNSUB queue (not the label queue), jobId = row key.
       expect(unsubQueue.count).toBe(1);
@@ -1350,6 +1403,7 @@ describe('ActionsService', () => {
       expect(second.executionActionId).toBe(first.executionActionId);
       expect(second.activityLogId).toBe(first.activityLogId);
       expect(second.method).toBe('one_click');
+      expect(second.lifecycleStatus).toBe('requested');
       // The replay re-adds while the row is still 'queued' (crash-window
       // self-heal below), but BullMQ's duplicate-jobId no-op means ONE
       // execution per intent ever reaches the wire.
@@ -1414,6 +1468,7 @@ describe('ActionsService', () => {
       });
 
       expect(result.method).toBe('mailto');
+      expect(result.lifecycleStatus).toBe('action_required');
       expect(result.mailtoUrl).toBe('mailto:opt-out@shop.example?subject=unsubscribe');
       expect(result.executionActionId).toBeNull();
       expect(unsubQueue.count).toBe(0); // D230 hard guardrail — no auto-send
@@ -1423,7 +1478,12 @@ describe('ActionsService', () => {
         .from(senderPolicies)
         .where(eq(senderPolicies.mailboxAccountId, mailboxId));
       expect(policy!.policyType).toBe('unsubscribe');
-      expect(policy!.unsubStatus).toBeNull(); // no claimed outcome
+      expect(policy!.unsubStatus).toBe('action_required');
+      const activities = await db.select().from(activityLog);
+      expect(activities.map((a) => a.action)).toEqual([
+        'unsubscribe',
+        'unsubscribe_action_required',
+      ]);
     });
 
     it('none: decision recorded, nothing to execute', async () => {
@@ -1437,6 +1497,7 @@ describe('ActionsService', () => {
       });
 
       expect(result.method).toBe('none');
+      expect(result.lifecycleStatus).toBe('unavailable');
       expect(result.mailtoUrl).toBeNull();
       expect(result.executionActionId).toBeNull();
       expect(unsubQueue.count).toBe(0);
@@ -1452,6 +1513,7 @@ describe('ActionsService', () => {
         idempotencyKey: 'broken-pair-1',
       });
       expect(result.method).toBe('none');
+      expect(result.lifecycleStatus).toBe('unavailable');
       expect(result.executionActionId).toBeNull();
       expect(unsubQueue.count).toBe(0);
     });
@@ -1474,7 +1536,7 @@ describe('ActionsService', () => {
       expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
-    it('intent event carries the method so the senders consumer can project pending', async () => {
+    it('intent event carries the method so the senders consumer can project requested', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
       const service = svcWithUnsubQueue();
       await service.recordUnsubscribeIntent({
@@ -1485,6 +1547,73 @@ describe('ActionsService', () => {
       const events = await db.select().from(outboxEvents);
       const intent = events.find((e) => e.topic === 'actions.unsubscribe_intent_recorded');
       expect(intent?.payload).toMatchObject({ method: 'one_click' });
+    });
+
+    it('records enqueue failure as a terminal failed policy + Activity outcome', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+      unsubQueue.add = async () => {
+        throw new Error('redis unavailable');
+      };
+
+      await expect(
+        service.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'enqueue-failure-1',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+      const [policy] = await db.select().from(senderPolicies);
+      expect(policy!.unsubStatus).toBe('failed');
+      const activities = await db.select().from(activityLog);
+      expect(activities.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_failed']);
+    });
+
+    it('mailto progress is monotonic, explicit, and idempotent', async () => {
+      await setSenderMethod('mailto', 'mailto:opt-out@shop.example?subject=unsubscribe');
+      const service = svcWithUnsubQueue();
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'mailto-progress-1',
+      });
+
+      const opened = await service.recordUnsubscribeManualStatus({
+        mailboxAccountId: mailboxId,
+        senderId,
+        status: 'draft_opened',
+      });
+      expect(opened).toMatchObject({ status: 'draft_opened', changed: true, irreversible: false });
+      const sent = await service.recordUnsubscribeManualStatus({
+        mailboxAccountId: mailboxId,
+        senderId,
+        status: 'user_marked_sent',
+      });
+      expect(sent).toMatchObject({ status: 'user_marked_sent', changed: true, irreversible: true });
+      const replay = await service.recordUnsubscribeManualStatus({
+        mailboxAccountId: mailboxId,
+        senderId,
+        status: 'user_marked_sent',
+      });
+      expect(replay).toMatchObject({ changed: false, activityLogId: null });
+
+      const [policy] = await db.select().from(senderPolicies);
+      expect(policy!.unsubStatus).toBe('user_marked_sent');
+      const activities = await db.select().from(activityLog);
+      expect(activities.map((a) => a.action)).toEqual([
+        'unsubscribe',
+        'unsubscribe_action_required',
+        'unsubscribe_draft_opened',
+        'unsubscribe_user_marked_sent',
+      ]);
+      await expect(
+        service.recordUnsubscribeManualStatus({
+          mailboxAccountId: mailboxId,
+          senderId,
+          status: 'draft_opened',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'UNSUBSCRIBE_INVALID_TRANSITION' } });
     });
   });
 

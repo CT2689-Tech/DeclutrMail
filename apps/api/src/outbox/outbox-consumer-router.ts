@@ -3,6 +3,7 @@ import type { Queue } from 'bullmq';
 import { screenerQuarantine, senderPolicies } from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
+  ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
@@ -11,6 +12,7 @@ import {
 } from '@declutrmail/events';
 import type {
   ActionLabelAppliedPayload,
+  ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
   MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
@@ -152,11 +154,14 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         return;
       }
       case TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED:
-        // Observability-only (D9 Wave 2): `UnsubExecutionWorker` writes
-        // the durable effects itself in its terminal tx; this event
-        // exists for Cloud Logging / future audit consumers. ACK
-        // explicitly so the dispatcher doesn't WARN `unknown_topic` on
-        // every unsubscribe.
+        // The worker writes this projection directly as a same-tx
+        // backstop. Consuming the event as well keeps enqueue failures
+        // (which never reach the worker) and future boundary cleanup
+        // truthful in the senders-owned table.
+        await handleUnsubscribeExecuted(
+          db,
+          ActionsUnsubscribeExecutedPayloadSchema.parse(event.payload),
+        );
         return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
@@ -177,6 +182,31 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         return;
     }
   };
+}
+
+/** Project canonical terminal one-click outcomes into sender policies. */
+async function handleUnsubscribeExecuted(
+  db: DrizzleDb,
+  payload: ActionsUnsubscribeExecutedPayload,
+): Promise<void> {
+  const unsubStatus =
+    payload.outcome === 'endpoint_accepted' || payload.outcome === 'done'
+      ? ('endpoint_accepted' as const)
+      : payload.outcome === 'unconfirmed' || payload.outcome === 'ambiguous'
+        ? ('unconfirmed' as const)
+        : ('failed' as const);
+  await db
+    .insert(senderPolicies)
+    .values({
+      mailboxAccountId: payload.mailboxAccountId,
+      senderKey: payload.senderKey,
+      policyType: 'unsubscribe',
+      unsubStatus,
+    })
+    .onConflictDoUpdate({
+      target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+      set: { policyType: 'unsubscribe', unsubStatus, updatedAt: sql`now()` },
+    });
 }
 
 /**
@@ -221,21 +251,28 @@ async function enqueueAutopilotApply(
  * is the first projection of the event or a redelivered one. We do NOT
  * touch `is_protected` / `is_vip` / `protection_reason` so a Protect
  * override stays preserved (a sender can be both "Protect to avoid
- * bulk" + "Unsub pending" until the brand honours the unsub).
+ * bulk" + "Unsubscribe requested" until the brand honours it).
  */
 async function handleUnsubscribeIntentRecorded(
   db: DrizzleDb,
   payload: ActionsUnsubscribeIntentRecordedPayload,
 ): Promise<void> {
-  // D9 Wave 2 — `unsub_status` projection. 'pending' only for a
-  // one_click intent (an execution job is in flight); mailto/none and
-  // legacy events (no `method` field) project NULL — the manual path
-  // never claims an outcome (D230). Guarded with `coalesce` against
+  // D245 truthful lifecycle projection. Every known method gets an
+  // explicit initial state: one_click=requested, mailto=action_required,
+  // none=unavailable. Legacy events without `method` retain NULL.
+  // Guarded against
   // the executed-before-intent dispatch race: the dispatcher processes
   // rows in insert order, so in practice intent precedes execution,
   // but a redelivered intent event must not stomp a terminal status
-  // back to 'pending' — see the WHERE-less upsert note below.
-  const unsubStatus = payload.method === 'one_click' ? ('pending' as const) : null;
+  // back to an initial state — see the WHERE-less upsert note below.
+  const unsubStatus =
+    payload.method === 'one_click'
+      ? ('requested' as const)
+      : payload.method === 'mailto'
+        ? ('action_required' as const)
+        : payload.method === 'none'
+          ? ('unavailable' as const)
+          : null;
   await db
     .insert(senderPolicies)
     .values({
@@ -248,13 +285,15 @@ async function handleUnsubscribeIntentRecorded(
       target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
       set: {
         policyType: 'unsubscribe',
-        // Redelivery safety: only move a NULL/'pending' status to
-        // 'pending' — never regress a terminal outcome the worker
-        // already recorded for THIS intent generation.
+        // Redelivery safety: initialize NULL, and normalize the legacy
+        // one-click in-flight value. Never regress a terminal outcome or
+        // explicit manual progress.
         unsubStatus:
-          unsubStatus === 'pending'
-            ? sql`CASE WHEN ${senderPolicies.unsubStatus} IS NULL OR ${senderPolicies.unsubStatus} = 'pending' THEN 'pending'::unsub_status ELSE ${senderPolicies.unsubStatus} END`
-            : null,
+          unsubStatus === null
+            ? senderPolicies.unsubStatus
+            : unsubStatus === 'requested'
+              ? sql`CASE WHEN ${senderPolicies.unsubStatus} IS NULL OR ${senderPolicies.unsubStatus} = 'pending' THEN 'requested'::unsub_status ELSE ${senderPolicies.unsubStatus} END`
+              : sql`CASE WHEN ${senderPolicies.unsubStatus} IS NULL THEN ${unsubStatus}::unsub_status ELSE ${senderPolicies.unsubStatus} END`,
         updatedAt: sql`now()`,
       },
     });

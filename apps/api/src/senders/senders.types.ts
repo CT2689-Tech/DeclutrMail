@@ -17,6 +17,7 @@
 import { z } from 'zod';
 
 import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 
 /**
  * Bucketed month-over-month volume trend, computed BE-side from
@@ -185,21 +186,17 @@ export interface SenderListRow {
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
-   * RFC 8058 execution outcome from `sender_policies.unsub_status`
-   * (D9 Wave 2, migration 0029):
-   *   - `pending`   — execution job queued / in flight.
-   *   - `done`      — the list processor answered 2xx.
-   *   - `failed`    — terminal failure, recorded honestly.
-   *   - `ambiguous` — the target answered 3xx (redirects never
-   *                   followed); may have worked.
-   * `null` = no tracked execution: mailto senders (manual per D230),
-   * method `none`, or no unsub intent yet. Drives the per-row chip copy.
+   * Truthful unsubscribe lifecycle from `sender_policies.unsub_status`.
+   * One-click endpoint acceptance, manual mailto progress, terminal
+   * failure/uncertainty, and unavailable channels are distinct. Legacy
+   * DB values are normalized before they reach the wire. `null` means
+   * the sender has no recorded unsubscribe intent yet.
    */
   unsubStatus: UnsubExecutionStatus | null;
 }
 
-/** `sender_policies.unsub_status` pg_enum mirror (migration 0029). */
-export type UnsubExecutionStatus = 'pending' | 'done' | 'failed' | 'ambiguous';
+/** Canonical external lifecycle; legacy DB spellings never reach clients. */
+export type UnsubExecutionStatus = UnsubscribeLifecycleStatus;
 
 /**
  * Standing protection / VIP flags for `GET /api/senders/:id` (D42).

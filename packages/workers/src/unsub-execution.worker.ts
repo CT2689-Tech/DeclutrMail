@@ -32,8 +32,9 @@ import type { WorkerContext } from './worker-context.js';
  * No auth headers, no cookies, no redirects followed. The outcome is
  * recorded HONESTLY (D226 — no fake success):
  *
- *   - 2xx        → 'done'      (the list processor accepted)
- *   - 3xx        → 'ambiguous' (redirects are never followed — SSRF
+ *   - 2xx        → 'endpoint_accepted' (request accepted; future-mail
+ *                                     suppression is not proven)
+ *   - 3xx        → 'unconfirmed' (redirects are never followed — SSRF
  *                  posture — so the result is unknown; it may have
  *                  worked)
  *   - 4xx / 5xx  → 'failed'    (the list processor said no; retrying
@@ -56,7 +57,7 @@ import type { WorkerContext } from './worker-context.js';
  *     fake), never the broader private ranges.
  *   - Redirects are never followed (cross-origin or otherwise) —
  *     `node:http(s).request` does not auto-follow, so a 3xx comes back
- *     as-is and classifies terminal 'ambiguous'.
+ *     as-is and classifies terminal 'unconfirmed'.
  *   - DNS-rebinding TOCTOU closed: the pre-flight's validated address is
  *     PINNED into the connection via a custom `lookup` (the port dials
  *     the pre-validated IP, never re-resolving). No second resolution
@@ -96,11 +97,15 @@ export interface UnsubExecutionJobData {
   actionId: string;
   mailboxAccountId: string;
   idempotencyKey: string;
+  /** Activity attribution. Optional for queued jobs created before 0037. */
+  source?: 'manual' | 'autopilot';
+  /** Rule attribution for Autopilot outcomes; null/absent for manual. */
+  ruleId?: string | null;
 }
 
 /** Metric-only result (logged on `worker.succeeded`). */
 export interface UnsubExecutionResult {
-  outcome: 'done' | 'failed' | 'ambiguous';
+  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed';
   httpStatus: number | null;
   alreadyDone: boolean;
 }
@@ -173,7 +178,7 @@ export function buildPinnedLookup(pinnedAddress: string, family: 4 | 6): PinnedL
  * on the insecure local-smoke path), pinned to the pre-validated address
  * via a custom `lookup` (see `buildPinnedLookup`). `node:http(s)` does
  * NOT auto-follow redirects, so a 3xx comes back as-is and classifies
- * 'ambiguous'. No cookie jar, no auth header; the response body is never
+ * 'unconfirmed'. No cookie jar, no auth header; the response body is never
  * consumed — the socket is destroyed once the status line is read.
  * `servername` stays the hostname so TLS SNI + certificate validation
  * remain correct (the cert is validated against the hostname, not the
@@ -270,11 +275,12 @@ export function unsubExecutionJobOptions(idempotencyKey: string): JobsOptions {
 
 /** Terminal outcome + the classification detail that lands in `error_code`. */
 interface OutcomeRecord {
-  outcome: 'done' | 'failed' | 'ambiguous';
+  outcome: 'endpoint_accepted' | 'failed' | 'unconfirmed';
   httpStatus: number | null;
   /**
-   * `action_jobs.error_code` value. NULL for 'done'. The FE poll reads
-   * this to distinguish ambiguous from failed (status 'failed' both).
+   * `action_jobs.error_code` value. NULL for endpoint acceptance. The
+   * FE poll reads this to distinguish unconfirmed from failed (generic
+   * action-job status is `failed` for both).
    */
   errorCode: string | null;
 }
@@ -313,7 +319,12 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       // Idempotent replay — the terminal tx already committed. NEVER
       // re-POST: the list processor was already asked once.
       return {
-        outcome: job.status === 'done' ? 'done' : 'failed',
+        outcome:
+          job.status === 'done'
+            ? 'endpoint_accepted'
+            : job.errorCode === 'UNSUB_AMBIGUOUS_REDIRECT'
+              ? 'unconfirmed'
+              : 'failed',
         httpStatus: null,
         alreadyDone: true,
       };
@@ -345,21 +356,27 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)))
       .limit(1);
     if (!sender || sender.unsubscribeMethod !== 'one_click' || !sender.unsubscribeUrl) {
-      return this.recordOutcome(job.id, mailboxAccountId, senderKey, {
-        outcome: 'failed',
-        httpStatus: null,
-        errorCode: 'UNSUB_NOT_ONE_CLICK',
-      });
+      return this.recordOutcome(
+        job.id,
+        mailboxAccountId,
+        senderKey,
+        { outcome: 'failed', httpStatus: null, errorCode: 'UNSUB_NOT_ONE_CLICK' },
+        payload.source ?? 'manual',
+        payload.ruleId ?? null,
+      );
     }
 
     // SSRF pre-flight — scheme + resolved-address checks.
     const targetCheck = await this.validateTarget(sender.unsubscribeUrl);
     if (!targetCheck.ok) {
-      return this.recordOutcome(job.id, mailboxAccountId, senderKey, {
-        outcome: 'failed',
-        httpStatus: null,
-        errorCode: targetCheck.errorCode,
-      });
+      return this.recordOutcome(
+        job.id,
+        mailboxAccountId,
+        senderKey,
+        { outcome: 'failed', httpStatus: null, errorCode: targetCheck.errorCode },
+        payload.source ?? 'manual',
+        payload.ruleId ?? null,
+      );
     }
 
     let response: UnsubHttpResponse;
@@ -380,19 +397,22 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           `one-click POST failed (attempt ${ctx.attempt}): ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-      return this.recordOutcome(job.id, mailboxAccountId, senderKey, {
-        outcome: 'failed',
-        httpStatus: null,
-        errorCode: 'UNSUB_NETWORK_ERROR',
-      });
+      return this.recordOutcome(
+        job.id,
+        mailboxAccountId,
+        senderKey,
+        { outcome: 'failed', httpStatus: null, errorCode: 'UNSUB_NETWORK_ERROR' },
+        payload.source ?? 'manual',
+        payload.ruleId ?? null,
+      );
     }
 
     const record: OutcomeRecord =
       response.status >= 200 && response.status < 300
-        ? { outcome: 'done', httpStatus: response.status, errorCode: null }
+        ? { outcome: 'endpoint_accepted', httpStatus: response.status, errorCode: null }
         : response.status >= 300 && response.status < 400
           ? {
-              outcome: 'ambiguous',
+              outcome: 'unconfirmed',
               httpStatus: response.status,
               errorCode: 'UNSUB_AMBIGUOUS_REDIRECT',
             }
@@ -401,14 +421,21 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
               httpStatus: response.status,
               errorCode: 'UNSUB_TARGET_REJECTED',
             };
-    return this.recordOutcome(job.id, mailboxAccountId, senderKey, record);
+    return this.recordOutcome(
+      job.id,
+      mailboxAccountId,
+      senderKey,
+      record,
+      payload.source ?? 'manual',
+      payload.ruleId ?? null,
+    );
   }
 
   /**
    * Terminal failure that bypassed the in-band outcome path (malformed
    * job, unexpected throw). Mirror the label worker: flip the action
    * row to failed so the FE poll terminates; best-effort flip the
-   * policy status off 'pending' so a chip never sticks at "confirming".
+   * policy status off requested/legacy-pending so a chip never sticks.
    */
   protected override async onTerminalFailure(
     payload: UnsubExecutionJobData,
@@ -420,22 +447,41 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
         .from(actionJobs)
         .where(eq(actionJobs.id, payload.actionId))
         .limit(1);
-      await this.deps.db
-        .update(actionJobs)
-        .set({ status: 'failed', errorCode: error.name, updatedAt: sql`now()` })
-        .where(eq(actionJobs.id, payload.actionId));
-      if (job && job.selector.type === 'sender') {
-        await this.deps.db
-          .update(senderPolicies)
-          .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+      await this.deps.db.transaction(async (tx) => {
+        const [failedJob] = await tx
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: error.name, updatedAt: sql`now()` })
           .where(
             and(
-              eq(senderPolicies.mailboxAccountId, payload.mailboxAccountId),
-              eq(senderPolicies.senderKey, job.selector.senderKey),
-              eq(senderPolicies.unsubStatus, 'pending'),
+              eq(actionJobs.id, payload.actionId),
+              sql`${actionJobs.status} NOT IN ('done', 'failed')`,
             ),
-          );
-      }
+          )
+          .returning({ id: actionJobs.id });
+        if (job && job.selector.type === 'sender') {
+          await tx
+            .update(senderPolicies)
+            .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+            .where(
+              and(
+                eq(senderPolicies.mailboxAccountId, payload.mailboxAccountId),
+                eq(senderPolicies.senderKey, job.selector.senderKey),
+                sql`${senderPolicies.unsubStatus} IN ('pending', 'requested')`,
+              ),
+            );
+          if (failedJob) {
+            await tx.insert(activityLog).values({
+              mailboxAccountId: payload.mailboxAccountId,
+              senderKey: job.selector.senderKey,
+              source: payload.source ?? 'manual',
+              action: 'unsubscribe_failed',
+              affectedCount: 0,
+              undoToken: null,
+              ruleId: payload.ruleId ?? null,
+            });
+          }
+        }
+      });
     } catch (recordErr) {
       // Recording the failure must never mask the original error.
       console.error(
@@ -455,16 +501,11 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
    *      1 SENDER on success — unsub affects the sender, not messages).
    *   2. `sender_policies.unsub_status` → the outcome (the senders
    *      list/detail chips read this).
-   *   3. `activity_log` CONFIRMED row (D56) — written ONLY on a 2xx
-   *      accept, as `action='unsubscribe_confirmed'`: the outcome,
-   *      distinct from the intent `unsubscribe` row the enqueuer
-   *      already wrote. A failed/ambiguous attempt writes NO row here —
-   *      the intent row + `sender_policies.unsub_status` +
-   *      `action_jobs.status` record it. (The prior unconditional
-   *      `unsubscribe` write both double-counted the intent in the
-   *      Activity stats buckets AND read as success in the timeline for
-   *      a FAILED POST — D226 "no fake success".) 0-affected (no mail
-   *      moved) and NO undo token (D58 — one-way).
+   *   3. `activity_log` canonical terminal row (D56/D245), distinct
+   *      from the `unsubscribe` intent: endpoint accepted, failed, or
+   *      unconfirmed. This avoids both double-counting the decision and
+   *      presenting a failed POST as success. All are 0-affected and
+   *      have no undo token.
    *   4. `actions.unsubscribe_executed` outbox event (observability) —
    *      still fires for EVERY outcome, so failure is fully observable.
    */
@@ -473,15 +514,17 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     mailboxAccountId: string,
     senderKey: string,
     record: OutcomeRecord,
+    source: 'manual' | 'autopilot',
+    ruleId: string | null,
   ): Promise<UnsubExecutionResult> {
     const executedAt = new Date();
     await this.deps.db.transaction(async (tx) => {
       await tx
         .update(actionJobs)
         .set({
-          status: record.outcome === 'done' ? 'done' : 'failed',
+          status: record.outcome === 'endpoint_accepted' ? 'done' : 'failed',
           errorCode: record.errorCode,
-          affectedCount: record.outcome === 'done' ? 1 : 0,
+          affectedCount: record.outcome === 'endpoint_accepted' ? 1 : 0,
           updatedAt: sql`now()`,
         })
         .where(eq(actionJobs.id, actionId));
@@ -496,24 +539,23 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           ),
         );
 
-      // D56 — the CONFIRMED outcome row, written only when the brand's
-      // RFC 8058 endpoint accepted the unsubscribe. Distinct from the
-      // intent 'unsubscribe' row (the click) so the Activity timeline
-      // renders the confirmation separately and the K/A/U/L/D stats
-      // buckets count the DECISION once, not twice.
-      if (record.outcome === 'done') {
-        await tx.insert(activityLog).values({
-          mailboxAccountId,
-          senderKey,
-          source: 'manual',
-          action: 'unsubscribe_confirmed',
-          // 0 — an unsubscribe moves no messages; the sender-level
-          // effect lives on action_jobs.affected_count + policy status.
-          affectedCount: 0,
-          // D58: no undo token, ever — the POST cannot be recalled.
-          undoToken: null,
-        });
-      }
+      // D56/D245 — append a canonical outcome for every terminal
+      // classification. The original `unsubscribe` row remains the
+      // single decision row used by K/A/U/L/D stats.
+      await tx.insert(activityLog).values({
+        mailboxAccountId,
+        senderKey,
+        source,
+        action:
+          record.outcome === 'endpoint_accepted'
+            ? 'unsubscribe_endpoint_accepted'
+            : record.outcome === 'unconfirmed'
+              ? 'unsubscribe_unconfirmed'
+              : 'unsubscribe_failed',
+        affectedCount: 0,
+        undoToken: null,
+        ruleId,
+      });
 
       await this.deps.outbox.publish(tx, {
         topic: TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,

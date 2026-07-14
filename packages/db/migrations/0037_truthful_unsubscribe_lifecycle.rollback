@@ -1,0 +1,22 @@
+-- Rollback for 0037_truthful_unsubscribe_lifecycle.sql
+--
+-- PostgreSQL cannot drop individual enum values. Recreate both enums
+-- with their pre-0037 sets. The final casts intentionally fail if rows
+-- already use a new lifecycle value; operators must preserve or migrate
+-- that audit data before rolling back the contract.
+
+ALTER TABLE "sender_policies" ALTER COLUMN "unsub_status" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."unsub_status";
+--> statement-breakpoint
+CREATE TYPE "public"."unsub_status" AS ENUM('pending', 'done', 'failed', 'ambiguous');
+--> statement-breakpoint
+ALTER TABLE "sender_policies" ALTER COLUMN "unsub_status" TYPE "public"."unsub_status" USING unsub_status::"public"."unsub_status";
+--> statement-breakpoint
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."activity_action";
+--> statement-breakpoint
+CREATE TYPE "public"."activity_action" AS ENUM('keep', 'archive', 'unsubscribe', 'later', 'followup-dismiss', 'delete', 'marked_vip', 'unmarked_vip', 'marked_protected', 'unmarked_protected', 'unsubscribe_confirmed');
+--> statement-breakpoint
+ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE "public"."activity_action" USING action::"public"."activity_action";

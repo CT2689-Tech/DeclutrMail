@@ -106,8 +106,8 @@ export interface ActivityStats {
   deleted: number;
   followupsDismissed: number;
   /**
-   * D59 "needing attention" — reserved for the failed-action surface
-   * that lands with the action_jobs join (deferred). Zero for now.
+   * D59 "needing attention" — truthful unsubscribe terminal outcomes
+   * that failed or could not be confirmed in the selected window.
    */
   needsAttention: number;
   /**

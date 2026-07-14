@@ -47,6 +47,8 @@ import {
   senders,
   triageDecisions,
 } from '@declutrmail/db';
+import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
+import { normalizeUnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import {
   CONFIDENCE,
   FREE_MAIL_DOMAINS,
@@ -78,7 +80,6 @@ import type {
   WeeklyHeroSenderRow,
   WeeklyHeroSlice,
 } from './senders.types.js';
-import type { TriageReasoningSource, TriageVerdict } from '@declutrmail/db';
 
 /**
  * Sorts the service implements at Slice 1. `read` and `recommended` are
@@ -564,7 +565,7 @@ export class SendersReadService {
         // by POST /api/actions/unsubscribe-intent (D38 2026-06-05).
         policyType: senderPolicies.policyType,
         // RFC 8058 execution outcome (D9 Wave 2) — drives the per-row
-        // unsub chip's pending/done/failed/ambiguous copy.
+        // truthful unsubscribe lifecycle copy.
         unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
@@ -642,7 +643,7 @@ export class SendersReadService {
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
         },
         policyType: row.policyType ?? null,
-        unsubStatus: row.unsubStatus ?? null,
+        unsubStatus: normalizeUnsubscribeLifecycleStatus(row.unsubStatus),
       };
     });
   }
@@ -1305,9 +1306,8 @@ export class SendersReadService {
         // Surfaces the "Unsub queued" pill on the sender row — written
         // by POST /api/actions/unsubscribe-intent (D38 2026-06-05).
         policyType: senderPolicies.policyType,
-        // RFC 8058 execution outcome (D9 Wave 2, migration 0029) —
-        // pending / done / failed / ambiguous; NULL = no tracked
-        // execution (mailto manual per D230, or method none).
+        // Truthful unsubscribe lifecycle (migrations 0029/0037).
+        // Legacy values normalize at the mapping boundary below.
         unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
@@ -1365,7 +1365,7 @@ export class SendersReadService {
       ),
       protectionFlags,
       policyType: row.policyType ?? null,
-      unsubStatus: row.unsubStatus ?? null,
+      unsubStatus: normalizeUnsubscribeLifecycleStatus(row.unsubStatus),
     };
   }
 

@@ -370,7 +370,8 @@ export class ActivityReadService {
       kept: byVerb.get('keep') ?? 0,
       later: byVerb.get('later') ?? 0,
       followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
-      needsAttention: 0,
+      needsAttention:
+        (byVerb.get('unsubscribe_failed') ?? 0) + (byVerb.get('unsubscribe_unconfirmed') ?? 0),
       noisePreventedPerMonth,
     };
   }

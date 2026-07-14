@@ -65,22 +65,43 @@ export const protectionReason = pgEnum('protection_reason', [
 ]);
 
 /**
- * Unsubscribe execution status (D9 Wave 2, migration 0029).
+ * Truthful unsubscribe lifecycle (D9 Wave 2 + D245, migrations 0029/0037).
  *
- * Tracks the RFC 8058 one-click execution outcome for a sender whose
- * intent was recorded with `policy_type = 'unsubscribe'`:
- *   - `pending`   — execution job queued / in flight.
- *   - `done`      — target answered 2xx; unsubscribed.
- *   - `failed`    — terminal: target 4xx/5xx, blocked URL, or network
- *                   retries exhausted. Never auto-retried past that.
- *   - `ambiguous` — target answered 3xx; redirects are not followed
- *                   (SSRF posture), so the outcome is unknown.
+ * Canonical values:
+ *   - `requested`          — RFC 8058 execution queued / in flight.
+ *   - `endpoint_accepted`  — target answered 2xx. This proves request
+ *                            delivery/acceptance, NOT that mail stopped.
+ *   - `failed`             — terminal 4xx/5xx, blocked URL, or exhausted
+ *                            network retry.
+ *   - `unconfirmed`        — target answered 3xx; redirects are not
+ *                            followed, so the result is unknown.
+ *   - `action_required`    — mailto channel; the user must send a draft.
+ *   - `draft_opened`       — the compose affordance was opened.
+ *   - `user_marked_sent`   — the user explicitly reports sending it;
+ *                            delivery remains unverified.
+ *   - `unavailable`        — the sender published no usable channel.
  *
- * NULL = no tracked execution (mailto-manual per D230, method 'none',
- * or a policy row that predates the pipeline). No undo linkage (D58) —
- * a delivered network unsubscribe is one-way by design.
+ * `pending`, `done`, and `ambiguous` remain in the DB enum for additive
+ * rollout compatibility. API read boundaries normalize them to
+ * `requested`, `endpoint_accepted`, and `unconfirmed`; new writes never
+ * emit the legacy values. NULL is reserved for policy rows that predate
+ * lifecycle tracking. No undo linkage (D58).
  */
-export const unsubStatus = pgEnum('unsub_status', ['pending', 'done', 'failed', 'ambiguous']);
+export const unsubStatus = pgEnum('unsub_status', [
+  // Legacy values retained for rolling-deploy/backfill compatibility.
+  'pending',
+  'done',
+  'failed',
+  'ambiguous',
+  // Canonical lifecycle values (0037).
+  'requested',
+  'endpoint_accepted',
+  'unconfirmed',
+  'action_required',
+  'draft_opened',
+  'user_marked_sent',
+  'unavailable',
+]);
 
 export const senderPolicies = pgTable(
   'sender_policies',
@@ -118,11 +139,9 @@ export const senderPolicies = pgTable(
     /** When `is_protected` last flipped true. NULL when not protected. */
     protectionSetAt: timestamp('protection_set_at', { withTimezone: true, mode: 'date' }),
     /**
-     * RFC 8058 one-click execution outcome (migration 0029). See the
-     * `unsub_status` enum doc. Written 'pending' when an unsubscribe
-     * intent is recorded for a `one_click` sender; flipped to its
-     * terminal value by `UnsubExecutionWorker`. NULL for mailto/none
-     * senders (D230 manual path — no claimed outcome).
+     * Unsubscribe lifecycle (migrations 0029/0037). See `unsub_status`
+     * above. New intents always write a method-specific initial state;
+     * one-click results and explicit manual-mailto progress advance it.
      */
     unsubStatus: unsubStatus('unsub_status'),
     /**
