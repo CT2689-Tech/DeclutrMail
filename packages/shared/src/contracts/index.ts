@@ -26,6 +26,8 @@ export type {
   GmailDataProcessor,
 } from './gmail-data-inventory';
 
+export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './data-export';
+
 // D202 API response envelope — shared between NestJS controllers and
 // FE TanStack Query hooks so the wire shape is typed end-to-end.
 export type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './envelope';

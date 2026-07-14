@@ -103,6 +103,8 @@ describe('DataExportService.streamJson', () => {
     });
     const doc = JSON.parse(await collect(service.streamJson('ws-1')));
     expect(doc.format).toBe('declutrmail-export-v1');
+    expect(doc.scope.completeAccountExport).toBe(false);
+    expect(doc.scope.limitation).toMatch(/not a complete copy/i);
     expect(doc.mailboxes).toHaveLength(1);
     const mb = doc.mailboxes[0];
     expect(mb.email).toBe('user@example.com');

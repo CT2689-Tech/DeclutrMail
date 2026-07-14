@@ -5,6 +5,8 @@ import Link from 'next/link';
 import {
   Button,
   Card,
+  DATA_EXPORT_FORMAT_MANIFEST,
+  DATA_EXPORT_LIMITATION,
   GMAIL_CONNECTION_DATA_INVENTORY,
   GMAIL_DATA_PROCESSORS,
   GMAIL_DERIVED_DATA_INVENTORY,
@@ -202,11 +204,10 @@ export function PrivacyDataView({
         <div style={{ padding: '18px 20px' }}>
           <h3 style={cardTitleStyle}>Export my data</h3>
           <p style={mutedTextStyle}>
-            Download everything DeclutrMail stores for your account. JSON contains the full export —
-            mailboxes, senders with your decisions, the message metadata index, and your activity
-            log. The CSVs cover one dataset each: the message metadata index, your senders with
-            their standing policies, and your decision history. Exports never contain message bodies
-            or OAuth tokens — we don't store them.
+            {DATA_EXPORT_LIMITATION} Current JSON includes{' '}
+            {DATA_EXPORT_FORMAT_MANIFEST.json.description} The CSVs each cover the dataset named on
+            the button. Exports never contain message bodies; DeclutrMail never fetches or stores
+            them.
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button
@@ -214,28 +215,36 @@ export function PrivacyDataView({
               disabled={exportPendingFormat !== null}
               onClick={() => onExport('json')}
             >
-              {exportPendingFormat === 'json' ? 'Preparing JSON…' : 'Download JSON'}
+              {exportPendingFormat === 'json'
+                ? DATA_EXPORT_FORMAT_MANIFEST.json.pendingLabel
+                : DATA_EXPORT_FORMAT_MANIFEST.json.buttonLabel}
             </Button>
             <Button
               tone="default"
               disabled={exportPendingFormat !== null}
               onClick={() => onExport('csv')}
             >
-              {exportPendingFormat === 'csv' ? 'Preparing CSV…' : 'Messages CSV'}
+              {exportPendingFormat === 'csv'
+                ? DATA_EXPORT_FORMAT_MANIFEST.csv.pendingLabel
+                : DATA_EXPORT_FORMAT_MANIFEST.csv.buttonLabel}
             </Button>
             <Button
               tone="default"
               disabled={exportPendingFormat !== null}
               onClick={() => onExport('senders-csv')}
             >
-              {exportPendingFormat === 'senders-csv' ? 'Preparing CSV…' : 'Senders CSV'}
+              {exportPendingFormat === 'senders-csv'
+                ? DATA_EXPORT_FORMAT_MANIFEST['senders-csv'].pendingLabel
+                : DATA_EXPORT_FORMAT_MANIFEST['senders-csv'].buttonLabel}
             </Button>
             <Button
               tone="default"
               disabled={exportPendingFormat !== null}
               onClick={() => onExport('decisions-csv')}
             >
-              {exportPendingFormat === 'decisions-csv' ? 'Preparing CSV…' : 'Decisions CSV'}
+              {exportPendingFormat === 'decisions-csv'
+                ? DATA_EXPORT_FORMAT_MANIFEST['decisions-csv'].pendingLabel
+                : DATA_EXPORT_FORMAT_MANIFEST['decisions-csv'].buttonLabel}
             </Button>
           </div>
           {exportFailed && (

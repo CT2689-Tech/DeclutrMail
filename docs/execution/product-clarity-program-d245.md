@@ -25,8 +25,8 @@ each completed slice.
       Security, onboarding, Settings, and trust copy from it.
 - [x] Disclose Anthropic's selected-field processing and standard API
       retention in the registry, Privacy policy, Settings, and product FAQ.
-- [ ] Generate an honest export manifest and export descriptions from the
-      registry; expand the export or stop describing the current subset as full.
+- [x] Generate an honest export manifest and export descriptions from the
+      registry; identify the current downloads as subsets instead of full exports.
 - [ ] Centralize action scope, consequence, future-mail behavior, and recovery
       copy for Keep, Archive, Unsubscribe, Later, and Delete.
 - [ ] Make Later require a wake time end to end; rename the visible Snoozed
@@ -106,10 +106,9 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: cumulative Gmail-data lifecycle registry, generated
-  fetched-header allowlist/trust surfaces, reverse schema-completeness test,
-  and Anthropic processor disclosure.
-- Last green checks: shared tests (27 files / 262 tests), API tests (72 files /
-  914 passed / 10 skipped), and shared/API/web typechecks.
-- Next slice: generate an honest export manifest from the registry and align
-  actual exports plus every export description with it.
+- Last completed slice: registry-generated, honest export manifest embedded in
+  JSON downloads and rendered on Privacy & Data; removed full/everything
+  claims from the current subset exports.
+- Last green checks: shared and export contract tests plus shared/API/web
+  typechecks (run after the export slice).
+- Next slice: centralize K/A/U/L/D action semantics and recovery contracts.

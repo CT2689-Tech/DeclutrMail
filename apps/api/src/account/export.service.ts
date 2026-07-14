@@ -8,6 +8,7 @@ import {
   senderPolicies,
   senders,
 } from '@declutrmail/db';
+import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -146,14 +147,20 @@ export class DataExportService {
   }
 
   /**
-   * Full JSON export. Yields a valid JSON document chunk-by-chunk:
+   * JSON subset export. Yields a valid JSON document chunk-by-chunk:
    * `{ exportedAt, format, mailboxes: [ { …, senders, messages,
    * activity } ] }`. Arrays are streamed element-wise so memory stays
    * bounded at one batch.
    */
   async *streamJson(workspaceId: string): AsyncGenerator<string> {
     const mailboxes = await this.listMailboxes(workspaceId);
-    yield `{"exportedAt":${JSON.stringify(new Date().toISOString())},"format":"declutrmail-export-v1","mailboxes":[`;
+    const scope = {
+      completeAccountExport: DATA_EXPORT_FORMAT_MANIFEST.json.completeAccountExport,
+      description: DATA_EXPORT_FORMAT_MANIFEST.json.description,
+      limitation: DATA_EXPORT_LIMITATION,
+      includedInventoryIds: DATA_EXPORT_FORMAT_MANIFEST.json.includedInventoryIds,
+    };
+    yield `{"exportedAt":${JSON.stringify(new Date().toISOString())},"format":"declutrmail-export-v1","scope":${JSON.stringify(scope)},"mailboxes":[`;
     for (let i = 0; i < mailboxes.length; i++) {
       const mb = mailboxes[i]!;
       if (i > 0) yield ',';

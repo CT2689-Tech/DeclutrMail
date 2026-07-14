@@ -193,3 +193,4 @@ export type {
   GmailDataInventoryItem,
   GmailDataProcessor,
 } from './contracts/gmail-data-inventory';
+export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './contracts/data-export';

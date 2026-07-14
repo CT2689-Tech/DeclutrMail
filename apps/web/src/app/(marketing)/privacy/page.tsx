@@ -12,6 +12,8 @@
 
 import type { Metadata } from 'next';
 import {
+  DATA_EXPORT_FORMAT_MANIFEST,
+  DATA_EXPORT_LIMITATION,
   GMAIL_CONNECTION_DATA_INVENTORY,
   GMAIL_DATA_PROCESSORS,
   GMAIL_DERIVED_DATA_INVENTORY,
@@ -251,8 +253,8 @@ export default function PrivacyPolicyPage() {
           deletion is scheduled, syncing stops immediately.
         </p>
         <p>
-          You can export your data (activity log, sender profiles, preferences) as JSON at any time
-          from Settings → Privacy &amp; Data. Exports never include OAuth tokens.
+          You can export the current JSON and CSV datasets at any time from Settings → Privacy &amp;
+          Data. {DATA_EXPORT_FORMAT_MANIFEST.json.description} {DATA_EXPORT_LIMITATION}
         </p>
       </LegalSection>
 
