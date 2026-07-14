@@ -12,6 +12,10 @@
 
 import type { Metadata } from 'next';
 import {
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_OAUTH_ACCESS,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
@@ -25,11 +29,11 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Privacy Policy — DeclutrMail',
   description:
-    'What DeclutrMail stores (sender, subject, Gmail preview, dates, labels, read state), what it never stores (bodies, attachments, images), and your rights.',
+    'What DeclutrMail can access, fetches, stores, derives, exports, and retains — and what it never fetches.',
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-14';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -92,12 +96,17 @@ export default function PrivacyPolicyPage() {
           in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
           metadata form — we never download or parse the message body to produce it.
         </p>
+        <p>The complete inventory also includes connection and product-derived data:</p>
+        <ul>
+          {[...GMAIL_CONNECTION_DATA_INVENTORY, ...GMAIL_DERIVED_DATA_INVENTORY].map((item) => (
+            <li key={item.id}>
+              <strong>{item.label}</strong> — {item.purpose} {item.retention}
+            </li>
+          ))}
+        </ul>
         <p>
-          Beyond message metadata, we also store: your Google account email address and display name
-          (from sign-in), your DeclutrMail preferences and per-sender decisions, an activity log of
-          the actions DeclutrMail performed on your behalf, and billing records (handled by our
-          payment providers — see <a href="#subprocessors">Section 8</a>; we never see or store full
-          card numbers).
+          We also store your DeclutrMail preferences and billing records. Payment providers handle
+          card details; DeclutrMail never sees or stores full card numbers.
         </p>
       </LegalSection>
 
@@ -109,10 +118,17 @@ export default function PrivacyPolicyPage() {
           instruction: archive, label, delete, and unsubscribe.
         </p>
         <ul>
+          {GMAIL_OAUTH_ACCESS.map((access) => (
+            <li key={access.scope}>
+              <code>{access.scope}</code> — {access.label}. {access.usedFor}
+            </li>
+          ))}
+        </ul>
+        <ul>
           <li>
-            Message data is fetched in <strong>metadata format only</strong>: sender, subject,
-            Gmail&rsquo;s snippet, dates, labels, and read/unread state. We do not request message
-            bodies or attachments from the API.
+            Message data is fetched in <strong>metadata format only</strong>, using the complete
+            generated field list in Section 2. We do not request message bodies or attachments from
+            the API.
           </li>
           <li>
             Every destructive action shows you a preview of exactly what will change before it runs,
@@ -152,15 +168,12 @@ export default function PrivacyPolicyPage() {
           , including the Limited Use requirements. In plain terms:
         </p>
         <ul>
-          <li>
-            We only use Gmail data to provide and improve the user-facing features of DeclutrMail
-            that you can see in the product.
-          </li>
+          <li>We only use Gmail data to provide and improve user-facing DeclutrMail features.</li>
           <li>We do not sell Gmail data, and we do not use it for advertising of any kind.</li>
           <li>
-            We do not transfer Gmail data to third parties except the subprocessors needed to run
-            the service (<a href="#subprocessors">Section 8</a>), as required by law, or as part of
-            a merger or acquisition with notice to you.
+            We transfer selected Gmail data only to the subprocessors needed to run the service (
+            <a href="#subprocessors">Section 8</a>), as required by law, or as part of a merger or
+            acquisition with notice to you.
           </li>
           <li>
             Humans at DeclutrMail do not read your Gmail data, except with your explicit permission
@@ -178,10 +191,9 @@ export default function PrivacyPolicyPage() {
         <p>We use the data described above to:</p>
         <ul>
           <li>
-            Show you a per-sender view of your inbox and recommend cleanup decisions — driven by
-            volume, your engagement, and rules you set. DeclutrMail does not use machine learning to
-            predict email categories or auto-protect senders; decisions are yours or follow rules
-            you explicitly enabled.
+            Show a per-sender view of your inbox, observed activity facts, and optional suggestions.
+            DeclutrMail does not use machine learning to predict email categories or auto-protect
+            senders; decisions are yours or follow rules you explicitly enabled.
           </li>
           <li>
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
@@ -264,6 +276,17 @@ export default function PrivacyPolicyPage() {
             <tr>
               <td>Supabase</td>
               <td>Postgres database (the metadata listed in Section 2)</td>
+            </tr>
+            <tr>
+              <td>Anthropic</td>
+              <td>
+                {GMAIL_DATA_PROCESSORS.Anthropic.purpose} Selected inputs and generated output are
+                retained under{' '}
+                <a href={GMAIL_DATA_PROCESSORS.Anthropic.privacyUrl} rel="noopener noreferrer">
+                  Anthropic&rsquo;s API retention terms
+                </a>
+                : {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+              </td>
             </tr>
             <tr>
               <td>Vercel</td>

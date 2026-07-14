@@ -79,17 +79,22 @@ DeclutrMail **never** fetches or stores:
 - Raw MIME
 - Headers other than the explicit allowlist
 
-DeclutrMail stores ONLY:
-- Sender (name + email)
-- Subject
-- Gmail's `snippet` (short preview)
-- Dates (received / internalDate)
-- Gmail labels
-- Read/unread state
+The cumulative Gmail-data lifecycle registry lives in
+`packages/shared/src/contracts/gmail-data-inventory.ts` (D245). It is the
+source of truth for fetched fields, persisted and derived datasets, purposes,
+retention, exports, processors, and the generated public storage list.
+
+The message adapter may fetch only the registry-generated metadata envelope
+fields and these headers: `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
+and `List-Unsubscribe-Post`. Accepted allowlist amendments include outbound
+recipient addresses, parsed unsubscribe channels/one-click support, outbound
+state, Gmail message/thread identifiers, and Gmail's size estimate. Adding a
+Gmail field requires updating the typed registry and its adapter/schema
+contract tests in the same change.
 
 Enforced by `privacy-auditor` subagent + `verify-no-body-storage.sh` hook.
 
-The trust badge copy is: **"Full bodies fetched: 0"** + explicit storage list.
+The trust badge copy is: **"Full bodies fetched: 0"** + the generated storage list.
 **Never:** "Bodies read: 0 forever."
 
 ### 2.2 Canonical verbs — K/A/U/L/D (D227)

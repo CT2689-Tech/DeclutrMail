@@ -174,3 +174,22 @@ export {
   PRIVACY_NEVER_LABEL,
   GMAIL_PREVIEW_FIELD_LABEL,
 } from './copy/privacy';
+
+export {
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_RETENTION,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_MESSAGE_DATA_INVENTORY,
+  GMAIL_MESSAGE_STORAGE_LABELS,
+  GMAIL_METADATA_HEADERS,
+  GMAIL_OAUTH_ACCESS,
+  gmailDataInventoryItem,
+} from './contracts/gmail-data-inventory';
+export type {
+  GmailDataCategory,
+  GmailDataExportFormat,
+  GmailDataInventoryItem,
+  GmailDataProcessor,
+} from './contracts/gmail-data-inventory';

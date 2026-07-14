@@ -2,7 +2,18 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
-import { Button, Card, PrivacyBadge, ScreenIntro, tokens } from '@declutrmail/shared';
+import {
+  Button,
+  Card,
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_MESSAGE_DATA_INVENTORY,
+  GMAIL_OAUTH_ACCESS,
+  PrivacyBadge,
+  ScreenIntro,
+  tokens,
+} from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
@@ -93,6 +104,41 @@ export function PrivacyDataView({
 
       {/* 1 — the D228 trust badge (locked copy module). */}
       <PrivacyBadge variant="card" />
+
+      <Card padding={0}>
+        <div style={{ padding: '18px 20px' }}>
+          <h3 style={cardTitleStyle}>Complete Gmail data inventory</h3>
+          <p style={mutedTextStyle}>
+            Google grants broader account access than DeclutrMail uses. These are the exact access
+            purposes and the fetched, stored, derived, exported, transmitted, and retained data
+            contracts implemented by the product.
+          </p>
+          <InventoryGroup
+            title="Access granted"
+            items={GMAIL_OAUTH_ACCESS.map((item) => ({
+              id: item.scope,
+              label: item.label,
+              detail: item.usedFor,
+            }))}
+          />
+          <InventoryGroup
+            title="Connection and sync data"
+            items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Message data"
+            items={GMAIL_MESSAGE_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Derived product data"
+            items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <p style={{ ...mutedTextStyle, marginTop: 12 }}>
+            Anthropic receives only the inventory items marked for generated Brief narratives or
+            optional sender explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+          </p>
+        </div>
+      </Card>
 
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
@@ -270,6 +316,49 @@ export function PrivacyDataView({
         </div>
       </Card>
     </div>
+  );
+}
+
+function inventoryDisplayItem(item: {
+  id: string;
+  label: string;
+  purpose: string;
+  retention: string;
+  exportedIn: readonly string[];
+  transmittedTo: readonly string[];
+}) {
+  const exportDetail =
+    item.exportedIn.length > 0
+      ? `Included in: ${item.exportedIn.join(', ')}.`
+      : 'Not currently included in a data export.';
+  const processorDetail = item.transmittedTo.includes('Anthropic')
+    ? ' May be sent to Anthropic for generated text.'
+    : '';
+  return {
+    id: item.id,
+    label: item.label,
+    detail: `${item.purpose} ${item.retention} ${exportDetail}${processorDetail}`,
+  };
+}
+
+function InventoryGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: ReadonlyArray<{ id: string; label: string; detail: string }>;
+}) {
+  return (
+    <details style={{ marginTop: 12 }}>
+      <summary style={{ cursor: 'pointer', fontWeight: 600, color: color.fg }}>{title}</summary>
+      <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+        {items.map((item) => (
+          <li key={item.id} style={{ marginBottom: 8, color: color.fgMuted, lineHeight: 1.5 }}>
+            <strong style={{ color: color.fg }}>{item.label}</strong> — {item.detail}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

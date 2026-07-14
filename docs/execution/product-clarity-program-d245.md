@@ -21,8 +21,12 @@ each completed slice.
 
 ### P0 — consent, data safety, and action truth
 
-- [ ] Add the typed cumulative data-inventory registry and generate Privacy,
-      Security, onboarding, Settings, and export descriptions from it.
+- [x] Add the typed cumulative data-inventory registry and generate Privacy,
+      Security, onboarding, Settings, and trust copy from it.
+- [x] Disclose Anthropic's selected-field processing and standard API
+      retention in the registry, Privacy policy, Settings, and product FAQ.
+- [ ] Generate an honest export manifest and export descriptions from the
+      registry; expand the export or stop describing the current subset as full.
 - [ ] Centralize action scope, consequence, future-mail behavior, and recovery
       copy for Keep, Archive, Unsubscribe, Later, and Delete.
 - [ ] Make Later require a wake time end to end; rename the visible Snoozed
@@ -102,10 +106,10 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: audit-preserving high-confidence copy corrections
-  committed before D245 was accepted.
-- Last green checks: web tests (97 files / 918 tests), repository typecheck,
-  targeted API entitlement tests, and formatting. Lint had no errors and 15
-  pre-existing warnings.
-- Next slice: inventory the cumulative persisted Gmail-data contract and add
-  the typed shared registry with contract tests.
+- Last completed slice: cumulative Gmail-data lifecycle registry, generated
+  fetched-header allowlist/trust surfaces, reverse schema-completeness test,
+  and Anthropic processor disclosure.
+- Last green checks: shared tests (27 files / 262 tests), API tests (72 files /
+  914 passed / 10 skipped), and shared/API/web typechecks.
+- Next slice: generate an honest export manifest from the registry and align
+  actual exports plus every export description with it.

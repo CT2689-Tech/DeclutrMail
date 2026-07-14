@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import { PRIVACY_STORAGE_ITEMS } from '../copy/privacy';
 import { color, font } from '../tokens/tokens';
 import { Sidebar } from './sidebar';
 
@@ -17,8 +18,7 @@ const TRUST_CLAIMS = [
   },
   {
     label: 'Stored Gmail data',
-    title:
-      "Stored: sender, subject, Gmail's short preview, dates, and labels. Full message bodies and attachments are never fetched.",
+    title: `Stored message data: ${PRIVACY_STORAGE_ITEMS.join(', ')}. Full message bodies and attachments are never fetched.`,
   },
 ];
 

@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
@@ -52,8 +52,10 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
 
     expect(screen.getByText(PRIVACY_BADGE_HEADLINE)).toBeInTheDocument();
+    const badge = container.querySelector('[data-dm-privacy-badge="card"]');
+    expect(badge).not.toBeNull();
     for (const item of PRIVACY_STORAGE_ITEMS) {
-      expect(screen.getByText(item)).toBeInTheDocument();
+      expect(within(badge as HTMLElement).getByText(item)).toBeInTheDocument();
     }
     // The banned pre-D228 phrase must appear nowhere (CLAUDE.md §2.1).
     expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);

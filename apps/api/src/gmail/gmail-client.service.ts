@@ -1,4 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
+import { GMAIL_METADATA_HEADERS } from '@declutrmail/shared/contracts';
 import {
   AuthExpiredError,
   InvalidGrantError,
@@ -28,7 +29,8 @@ import type {
  *
  * PRIVACY — D7 / D228. `getMessageMetadata` calls `messages.get` with
  * `format=metadata` and the six-header allowlist defined in
- * `METADATA_HEADERS` below (founder-approved per ADR-0004:
+ * `GMAIL_METADATA_HEADERS` from D245's cumulative registry (founder-approved
+ * per ADR-0004:
  * `From`, `Subject`, `To`, `Cc`, `List-Unsubscribe`,
  * `List-Unsubscribe-Post`). It NEVER uses `format=full` or
  * `format=raw`, so message bodies, attachments, inline images, and
@@ -65,14 +67,6 @@ const METADATA_FORMAT = 'metadata';
  *   - `List-Unsubscribe`, `List-Unsubscribe-Post` — RFC 8058 unsubscribe
  *     capability (D9 auto-unsubscribe).
  */
-const METADATA_HEADERS = [
-  'From',
-  'Subject',
-  'To',
-  'Cc',
-  'List-Unsubscribe',
-  'List-Unsubscribe-Post',
-];
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -243,7 +237,7 @@ export class GmailClientService
   async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
     const params = new URLSearchParams();
     params.set('format', METADATA_FORMAT);
-    for (const header of METADATA_HEADERS) {
+    for (const header of GMAIL_METADATA_HEADERS) {
       params.append('metadataHeaders', header);
     }
     const json = await this.get<GmailGetResponse>(

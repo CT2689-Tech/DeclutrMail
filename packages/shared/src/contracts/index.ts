@@ -5,6 +5,27 @@
 
 export type { KmsProvider } from './kms-provider';
 
+// D245 cumulative Gmail-data lifecycle registry. This contract generates
+// privacy copy and the Gmail metadata-header allowlist.
+export {
+  GMAIL_CONNECTION_DATA_INVENTORY,
+  GMAIL_DATA_PROCESSORS,
+  GMAIL_DATA_INVENTORY,
+  GMAIL_DATA_RETENTION,
+  GMAIL_DERIVED_DATA_INVENTORY,
+  GMAIL_MESSAGE_DATA_INVENTORY,
+  GMAIL_MESSAGE_STORAGE_LABELS,
+  GMAIL_METADATA_HEADERS,
+  GMAIL_OAUTH_ACCESS,
+  gmailDataInventoryItem,
+} from './gmail-data-inventory';
+export type {
+  GmailDataCategory,
+  GmailDataExportFormat,
+  GmailDataInventoryItem,
+  GmailDataProcessor,
+} from './gmail-data-inventory';
+
 // D202 API response envelope — shared between NestJS controllers and
 // FE TanStack Query hooks so the wire shape is typed end-to-end.
 export type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './envelope';

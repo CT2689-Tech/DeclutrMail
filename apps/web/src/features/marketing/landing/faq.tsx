@@ -22,12 +22,12 @@ import { siteUrl } from './urls';
 const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: string } }> = [
   {
     q: 'What does DeclutrMail actually see in my Gmail?',
-    a: `Exactly what the trust badge says: ${PRIVACY_STORAGE_ITEMS.slice(0, 3).join(', ')}, dates, labels, and read/unread state. The headline is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, and raw MIME are never fetched.`,
+    a: `The message fields DeclutrMail fetches and stores are: ${PRIVACY_STORAGE_ITEMS.join(', ')}. The headline is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, and raw MIME are never fetched.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
   },
   {
     q: 'Does it read my emails?',
-    a: 'No. We index metadata plus the short preview snippet Gmail itself shows in your inbox list — enough to rank senders, not enough to read your mail. There is no AI summarising of message content, because the content is never there.',
+    a: 'DeclutrMail never fetches full message bodies. It indexes the listed Gmail fields, including subject and Gmail’s short Preview. When optional generated explanations or a Brief narrative are enabled, selected listed fields are sent to Anthropic’s API; the Privacy Policy names those fields and the processor retention terms.',
   },
   {
     q: 'Can it mess up my inbox?',
