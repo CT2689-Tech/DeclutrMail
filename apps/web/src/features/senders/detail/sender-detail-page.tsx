@@ -51,8 +51,7 @@ const { color, font, radius, shadow, space } = tokens;
  *
  * Order (Variant D):
  *   1. Editorial hero card — avatar + name + meta + Fraunces narrative
- *      + per-message ROI + recommendation box + K/A/U/L toolbar +
- *      quiet "See full reasoning" disclosure.
+ *      + K/A/U/L fact-derived actions + collapsed optional suggestion.
  *   2. 4-cell KPI strip — Volume / Read rate / Relationship /
  *      Reading cost (replaces D44's 5-stat strip; absorbs the
  *      open-rate footnote previously in Charts).
@@ -890,7 +889,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         ) : null;
       })()}
 
-      {/* 1. Editorial hero card — name, narrative, ROI, recommendation, actions */}
+      {/* 1. Editorial hero card — identity, observed facts, actions, optional suggestion */}
       <section
         style={{
           background: color.card,
@@ -1057,11 +1056,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           {latestPoint != null ? (
             <>
               Sent <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span> in{' '}
-              {latestMonthAbbrev}. You read{' '}
+              {latestMonthAbbrev}.{' '}
               <span style={{ color: color.fg, fontWeight: 600 }}>
                 {Math.round(stats.readRate * 100)}%
               </span>{' '}
-              of what they send.
+              of their messages were marked read.
             </>
           ) : (
             <>Hasn&rsquo;t mailed you yet.</>
@@ -1072,40 +1071,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             (ban editorial inference). The 1.6 min/msg coefficient was
             never calibrated against real user data; rendering it inside
             an editorial Fraunces moment made the guess feel authoritative.
-            The fact half ("Mails you 2x/mo. You read 0% of what they
-            send") above stays. */}
+            The factual volume + marked-read line above stays. */}
 
-        {/* Recommendation banner (existing component, sits inside hero now) */}
-        <div style={{ position: 'relative', marginBottom: 18 }}>
-          <RecommendationBanner recommendation={recommendation} />
-        </div>
-
-        {/* K/A/U/L toolbar (existing) */}
+        {/* Fact-derived K/A/U/L actions stay primary (D245). */}
         <div style={{ position: 'relative' }}>
-          <ActionToolbar sender={sender} recommendation={recommendation} onAction={requestAction} />
+          <ActionToolbar sender={sender} onAction={requestAction} />
         </div>
 
-        {/* Quiet reasoning disclosure (per ADR-0011 — out of the rec box) */}
-        <p
-          style={{
-            marginTop: 12,
-            fontSize: 12,
-            color: color.fgMuted,
-            position: 'relative',
-          }}
-        >
-          <a
-            href="#reasoning"
-            style={{
-              color: color.fgMuted,
-              textDecoration: 'underline',
-              textUnderlineOffset: 2,
-            }}
-          >
-            See full reasoning ›
-          </a>{' '}
-          · facts behind this suggestion
-        </p>
+        {/* Suggestions are optional secondary disclosure below actions. */}
+        {recommendation != null && (
+          <div style={{ position: 'relative', marginTop: 12 }}>
+            <RecommendationBanner recommendation={recommendation} />
+          </div>
+        )}
       </section>
 
       {/* 2. 4-cell KPI strip — replaces D44 5-stat strip; absorbs open-rate footnote */}

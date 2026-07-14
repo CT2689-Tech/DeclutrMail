@@ -86,16 +86,36 @@ const READY_SUBJECTS: RowDetailSubjects = {
 function renderDetail(
   timeseries: RowDetailTimeseries,
   subjects: RowDetailSubjects = READY_SUBJECTS,
+  row: Sender = sender(),
 ) {
   return render(
-    <SenderRowDetail
-      s={sender()}
-      onAction={() => {}}
-      timeseries={timeseries}
-      subjects={subjects}
-    />,
+    <SenderRowDetail s={row} onAction={() => {}} timeseries={timeseries} subjects={subjects} />,
   );
 }
+
+describe('SenderRowDetail — D245 fact-first actions', () => {
+  const CHART_READY: RowDetailTimeseries = { status: 'ready', points: TIMESERIES };
+
+  it('removes the dominant recommendation callout and uses honest fact labels', () => {
+    renderDetail(CHART_READY);
+    expect(screen.queryByText(/recommended/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Last received')).toBeInTheDocument();
+    expect(screen.getByText('Marked read')).toBeInTheDocument();
+    expect(screen.getByText('Last 30 days')).toBeInTheDocument();
+  });
+
+  it('offers factual one-click Unsubscribe and restores Archive to the action set', () => {
+    renderDetail(CHART_READY, READY_SUBJECTS, sender({ unsubscribeMethod: 'one_click' }));
+    expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Keep',
+      'Archive',
+      'Unsubscribe',
+      'Later',
+    ]);
+  });
+});
 
 describe('SenderRowDetail volume chart', () => {
   it('ready: renders one bar per timeseries month with real peak + month-range labels', () => {

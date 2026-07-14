@@ -49,7 +49,7 @@ each completed slice.
       unchanged data, reversal path, and exact confirm action.
 - [ ] Make Activity the canonical action record, with deadlines, status,
       failures, Gmail recovery guidance, and available Undo controls.
-- [ ] Make Senders fact-first and put any optional suggestion plus its factual
+- [x] Make Senders fact-first and put any optional suggestion plus its factual
       basis behind progressive disclosure.
 - [ ] Explain Autopilot Observe and Active at rule level; keep Active execution
       plan-gated and build custom-rule creation behind D234's gate.
@@ -109,13 +109,11 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Later is canonical at `/later` (`/snoozed` redirects),
-  every manual/Screener/bulk/Autopilot Later action carries the canonical
-  one-week wake preset, action jobs persist it, and the sender timer projects
-  only after Gmail success. Later Undo cancels only its matching timer. Delete
-  now uses plan-based Activity Undo while Gmail Trash recovery remains separate.
-- Last green checks: action schema/service/outbox tests, label-action and
-  Autopilot worker tests, Later route/sidebar/screen tests, shared tests, and
-  shared/API/workers/web typechecks.
-- Next slice: commit the completed fact-first Senders work, then build the
-  shared action receipt/Activity recovery model.
+- Last completed slice: Senders now derives its primary action only from
+  observed policy/capability/recency facts across cards, rows, expanded rows,
+  and detail. Suggestions are collapsed secondary disclosures with factual
+  basis; confidence no longer chooses or styles actions.
+- Last green checks: focused Senders suite (7 files / 81 tests), web typecheck,
+  lint/microcopy checks, and `git diff --check`.
+- Next slice: enforce disconnected-mailbox eligibility everywhere, then add
+  explicit Disconnect versus Disconnect-and-delete-indexed-data choices.

@@ -9,7 +9,8 @@ import {
   type ActionVerb,
   type Sender,
 } from '../data';
-import type { Recommendation, Verdict } from './types';
+import { derivePrimaryVerbId } from '../action-row';
+import type { Verdict } from './types';
 
 const { color, font, radius } = tokens;
 
@@ -38,20 +39,17 @@ const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdic
  * mandatory `<ConfirmActionModal>` (the action preview per D226).
  * Keep applies immediately and records `sender_policy(policy_type=keep)`.
  *
- * The recommended verb is highlighted via D31 — confidence ≥0.85
- * elevates the corresponding button to the `dark` tone.
+ * The observed-fact primary verb is highlighted. Recommendation and
+ * confidence data never changes action order or emphasis (D245).
  */
 export function ActionToolbar({
   sender,
-  recommendation,
   onAction,
 }: {
   sender: Sender;
-  recommendation: Recommendation | null;
   onAction: (req: ActionRequest) => void;
 }) {
-  const highlight: Verdict | null =
-    recommendation != null && recommendation.confidence >= 0.85 ? recommendation.verdict : null;
+  const highlight = derivePrimaryVerbId(sender);
 
   return (
     <div

@@ -152,7 +152,7 @@ function seedFor(id: string): number {
   return h >>> 0;
 }
 
-/** Map the parent module's recommended verb onto the closed `Verdict` union. */
+/** Derive an optional suggestion from bounded sender facts. */
 function inferVerdict(s: Sender, isVip: boolean, isProtected: boolean): Verdict {
   if (isVip || isProtected) return 'keep';
   if (s.group === 'primary') return 'keep';
@@ -177,31 +177,19 @@ function inferConfidence(s: Sender, verdict: Verdict): number {
 
 function buildReasoning(s: Sender, verdict: Verdict): string {
   const read = Math.round(s.read * 100);
-  if (verdict === 'archive') {
-    return `You open ${read}% of ${s.name}'s ${s.monthly}/mo. Volume is high and they send most days.`;
-  }
-  if (verdict === 'unsubscribe') {
-    return s.spike
-      ? `Volume spiked ${s.spike}× while you almost never opened (${read}% read).`
-      : `${s.monthly}/mo at ${read}% read — this sender mostly fills the inbox without being seen.`;
-  }
-  if (verdict === 'later') {
-    return `${s.monthly}/mo at ${read}% read. "Later" keeps the mail in Gmail but stops surfacing it in your daily queue.`;
-  }
-  return `You read ${read}% of ${s.name}'s mail. No change recommended.`;
+  const action = verdict[0]!.toUpperCase() + verdict.slice(1);
+  return `${action} is suggested from ${s.monthly} messages received in the last 30 days and ${read}% marked read.`;
 }
 
-function buildSignals(s: Sender, verdict: Verdict): string[] {
-  const out: string[] = [];
-  out.push(`Read rate: ${Math.round(s.read * 100)}% over the last 90 days`);
-  out.push(`Volume: ${s.monthly} messages/month (4-week trailing average)`);
-  if (s.spike != null) {
-    out.push(`Volume spike: ${s.spike}× the sender's usual cadence`);
-  }
-  out.push(`Relationship: ${Math.round((s.firstSeenMo / 12) * 10) / 10} years since first message`);
-  if (verdict === 'archive' || verdict === 'unsubscribe') {
-    out.push('No reply from you to this sender in the last 12 months');
-  }
+function buildSignals(s: Sender): string[] {
+  const out = [
+    `${s.monthly} messages received in the last 30 days`,
+    `${Math.round(s.read * 100)}% marked read in the last 30 days`,
+    s.lastDays === 0
+      ? 'Last message received today'
+      : `Last message received ${s.lastDays} days ago`,
+  ];
+  if (s.repliedCount !== undefined) out.push(`You replied ${s.repliedCount} times`);
   return out;
 }
 
@@ -213,12 +201,13 @@ function buildRecommendation(
   if (isVip || isProtected) return null;
   const verdict = inferVerdict(s, isVip, isProtected);
   if (verdict === 'keep' && s.group !== 'primary') {
-    // For non-Primary senders with no strong signal, surface a low-confidence Keep.
+    // For non-Primary senders with no strong signal, Keep may appear only
+    // inside the collapsed optional-suggestion disclosure.
     return {
       verdict,
       confidence: inferConfidence(s, verdict),
       reasoning: buildReasoning(s, verdict),
-      signals: buildSignals(s, verdict),
+      signals: buildSignals(s),
     };
   }
   if (verdict === 'keep') return null;
@@ -226,7 +215,7 @@ function buildRecommendation(
     verdict,
     confidence: inferConfidence(s, verdict),
     reasoning: buildReasoning(s, verdict),
-    signals: buildSignals(s, verdict),
+    signals: buildSignals(s),
   };
 }
 

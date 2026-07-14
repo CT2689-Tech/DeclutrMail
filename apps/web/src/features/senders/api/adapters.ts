@@ -164,8 +164,8 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     lastReview: row.lastReview,
     // Standing policy flags now ride the list row (BE
     // `SenderListRow.protectionFlags`). `protected` drives the row's
-    // "Protected" chip + the "Protected" KPI; `isVip` is OR-ed into the
-    // "Protect" intent bucket (intentOf) so VIPs never land in Cleanup.
+    // "Protected" chip + the "Protected" KPI; `isVip` joins it in the
+    // fact-derived Keep rule so VIPs never receive a destructive primary.
     // Optional-chained so a malformed / older response that omits the
     // block degrades to "not protected" rather than crashing the list.
     protected: row.protectionFlags?.isProtected ?? false,
@@ -188,11 +188,11 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
  * FE `SenderDetail` model the page already consumes.
  *
  * `buildSenderDetail` (the existing fixture helper) already synthesises
- * the recommendation / stats / timeseries / history from a `Sender`.
+ * the optional suggestion / stats / timeseries / history from a `Sender`.
  * For now we layer the wire data ON TOP of that synthesis — wire-driven
  * recent messages, timeseries, and history override the synthesised
- * ones; recommendation + stats fall back to the synthesised values
- * (the BE doesn't return a recommendation row yet — that lands in a
+ * ones; suggestion + stats fall back to the synthesised values
+ * (the BE doesn't return a suggestion row yet — that lands in a
  * later iteration of the Sender Detail API).
  */
 /**
@@ -233,8 +233,8 @@ export function adaptSenderDetail(args: {
   );
 
   // Use the existing fixture-builder for the synthesised fields
-  // (recommendation only — stats are now wire-driven), then overlay
-  // wire-derived lists. When the BE PR adds richer recommendation rows
+  // (optional suggestion only — stats are now wire-driven), then overlay
+  // wire-derived lists. When the BE PR adds richer suggestion rows
   // we delete the fallback and pass the wire values through directly.
   const seeded = buildSenderDetail(sender, { isVip, isProtected });
 

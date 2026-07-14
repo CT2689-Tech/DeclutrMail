@@ -31,7 +31,6 @@ import {
   type ActionVerb,
   type Sender,
 } from './data';
-import { intentOf, type SenderIntent } from './uplift-d/intent';
 
 const ARROW = (
   <svg
@@ -50,18 +49,6 @@ const ARROW = (
 );
 
 /**
- * Lead-verb map keyed by intent (ADR-0016 §B3 — `intentOf` retains the
- * semantic role of deriving the primary CTA per row/card). Chrome tones
- * stay out of it — intent drives the verb, never the chrome.
- */
-const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep' | 'Archive'> = {
-  cleanup: 'Unsubscribe',
-  later: 'Later',
-  protect: 'Keep',
-  people: 'Keep',
-};
-
-/**
  * Fact-rule primary derivation (ADR-0019) for a row's lead CTA.
  *
  * `unsub_ready` = the wire List-Unsubscribe method is `'one_click'`
@@ -73,19 +60,16 @@ const LEAD_VERB_BY_INTENT: Record<SenderIntent, 'Unsubscribe' | 'Later' | 'Keep'
  * Registry rule order guarantees protected → Keep wins over unsub-ready
  * (`deriveDefaultPrimary` checks `protected` first — D42/D43).
  *
- * Falls back to the legacy `intentOf` lead verb when neither rule's
- * antecedent fires — preserves continuity until Phase 2 PR-FE2 lands
- * the fact-first cut.
+ * No recommendation or confidence value participates in this choice.
+ * D245 makes observed facts authoritative; an optional suggestion may
+ * be disclosed separately but never selects the primary action.
  */
 export function derivePrimaryVerbId(sender: Sender): VerbId {
-  const factPrimary = deriveDefaultPrimary({
+  return deriveDefaultPrimary({
     protected: sender.protected === true || sender.isVip === true,
     unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
-  return factPrimary === 'keep'
-    ? mapLegacyVerb(LEAD_VERB_BY_INTENT[intentOf(sender)])
-    : factPrimary;
 }
 
 export function SenderActionRow({

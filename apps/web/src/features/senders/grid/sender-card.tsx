@@ -4,13 +4,15 @@
  * `SenderCard` — one sender card on the grid view (D49).
  *
  * Visual vocabulary aligned to ADR-0016 §B3: neutral hairline chrome
- * (no tone-wash by intent), `NumericDisplay variant="hero"` for the
- * primary monthly volume, mono accents, mini sparkline, K/A/U/L lead
- * verb derived from `intentOf` (semantics retained per ADR-0016 §B3).
+ * (no recommendation tone-wash), `NumericDisplay variant="display"`
+ * for the primary monthly volume, mono accents, mini sparkline, and a
+ * K/A/U/L lead verb derived from observed facts.
  *
  * The card↔detail navigation no longer presents chrome discontinuity:
  * card sits on `color.card` with `color.line` hairline border + 8px
  * corners (`radius.md`), matching the `SenderDetailHeader` chrome rule.
+ * The lead verb and its only accent derive from observed sender facts;
+ * engine intent/confidence never drives card presentation (D245).
  *
  * Privacy (D7, D228). Renders only allowlisted fields: sender name,
  * domain, monthly volume, read rate, last-seen days. Never body
@@ -25,11 +27,10 @@ import {
   tokens,
   type NumericDisplayTone,
 } from '@declutrmail/shared';
-import { SenderActionRow } from '../action-row';
+import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 import { ReadBucketText } from '../fact-language';
 import { EPOCH_GUARD_DAYS, isStandingProtected, type Sender } from '../data';
 import type { ActionRequest } from '../data';
-import { intentOf } from '../uplift-d/intent';
 import { isFeatureEnabled } from '@/lib/flags';
 import { SenderPeek } from './sender-peek';
 
@@ -103,7 +104,7 @@ export function SenderCard({
   onAction,
   globalMaxTotal,
 }: SenderCardProps) {
-  const intent = intentOf(sender);
+  const primaryVerb = derivePrimaryVerbId(sender);
   const protectedNow = isStandingProtected(sender);
   // Quick-peek dialog (grid↔table parity) — renders the same
   // `SenderRowDetailLive` panel the table's expand-row shows. Opened
@@ -119,9 +120,9 @@ export function SenderCard({
       data-dm-lift=""
       style={{
         // ADR-0016 §A2 — neutral hairline chrome. Was tone-wash by
-        // intent which created a trust hit on financial-institution
-        // senders (BofA / Chase reading "Cleanup"). Intent still
-        // drives the lead verb (§B3) — it no longer drives chrome.
+        // recommendation grouping, which created a trust hit on
+        // financial-institution senders (BofA / Chase reading
+        // "Cleanup"). Facts now drive both the lead verb and accent.
         background: color.card,
         border: `1px solid ${selected ? color.primary : color.line}`,
         borderRadius: radius.md,
@@ -310,9 +311,9 @@ export function SenderCard({
         </div>
 
         {/* Magnitude under-bar (spec v1.2 Decision 13 + ADR-0016 §B1).
-            2px bar width-proportional to mailbox max. Amber when
-            sender is unsub-ready (recommendation-action-available);
-            muted otherwise. Hidden when totalsAcrossMailbox absent —
+            2px bar width-proportional to mailbox max. Amber when the
+            factual one-click unsubscribe action is available; muted
+            otherwise. Hidden when totalsAcrossMailbox absent —
             wire shape varies. */}
         {sender.total !== undefined && (
           <div
@@ -330,7 +331,7 @@ export function SenderCard({
                 position: 'absolute',
                 inset: 0,
                 width: '100%',
-                background: intent === 'cleanup' ? color.amber : color.fgSoft,
+                background: primaryVerb === 'unsubscribe' ? color.amber : color.fgSoft,
                 transformOrigin: 'left center',
                 // ADR-0016 §B1 — denominator is mailbox-wide MAX, not
                 // a hardcoded 100. `sender.total` is the sender's

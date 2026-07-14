@@ -73,12 +73,12 @@ export interface DecisionHistoryRow {
   undoExpiresAt?: string;
 }
 
-/** Recommendation banner payload, returned by the engine per sender. */
+/** Optional secondary suggestion payload, returned by the engine per sender. */
 export interface Recommendation {
   verdict: Verdict;
-  /** 0–1, displayed as percentage. ≥0.85 highlights the verb (D31). */
+  /** 0–1 engine metadata. D245 forbids using it to select or style actions. */
   confidence: number;
-  /** One-sentence rationale — shown inline + in the popover header. */
+  /** One-sentence factual basis shown only inside the optional disclosure. */
   reasoning: string;
   /** Supporting signals — bullet list in the popover. */
   signals: string[];
@@ -184,7 +184,7 @@ export interface SenderDetail {
    * removal. The pill mirrors the senders-list row so the user knows
    * the request is in flight regardless of which surface they land on.
    *
-   * `null` = no standing policy; the engine recommendation drives the UI.
+   * `null` = no standing policy. Observed facts still drive the primary action.
    */
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
   /**
@@ -205,7 +205,7 @@ export interface SenderDetail {
    * Gmail" callout. `null` unless `unsubscribeMethod === 'mailto'`.
    */
   unsubscribeMailtoUrl: string | null;
-  /** Engine recommendation. `null` = no recommendation (VIP / Protected). */
+  /** Optional engine suggestion. `null` for VIP / Protected senders. */
   recommendation: Recommendation | null;
   recentMessages: RecentMessage[];
   stats: SenderStats;

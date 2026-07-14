@@ -14,7 +14,7 @@
  * card. This module is the single source both consume.
  *
  * Tone rules (ADR-0016 A3 — no new hues, no off-map hues):
- *   - `amber`  = recommendation-action-available. `up` (volume
+ *   - `amber`  = unsubscribe-action-available. `up` (volume
  *     pressure building) and `Never` read (the cleanup scent) earn it.
  *   - `primary`= notable-but-safe. `new` sender only.
  *   - everything else is neutral (`fg` / `fgMuted`) — facts, calmly.

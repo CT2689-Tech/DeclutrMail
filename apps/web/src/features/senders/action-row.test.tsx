@@ -75,11 +75,11 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     expect(derivePrimaryVerbId(sender({ lastDays: 250 }))).toBe('archive');
   });
 
-  it('no method + recent falls to Keep (fact rule 4 via legacy people intent)', () => {
+  it('no method + recent falls to Keep (fact rule 4)', () => {
     expect(derivePrimaryVerbId(sender())).toBe('keep');
   });
 
-  it('legacy fallback preserved: a high-confidence engine cleanup verdict still leads Unsubscribe when no fact rule fires', () => {
+  it('ignores a high-confidence engine verdict when observed facts derive Keep (D245)', () => {
     expect(
       derivePrimaryVerbId(
         sender({
@@ -91,7 +91,7 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
           },
         }),
       ),
-    ).toBe('unsubscribe');
+    ).toBe('keep');
   });
 });
 

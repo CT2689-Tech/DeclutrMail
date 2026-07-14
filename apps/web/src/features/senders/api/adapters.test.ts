@@ -7,14 +7,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { adaptDecisionHistoryRow, adaptSenderListRow } from './adapters';
-import {
-  canArchive,
-  canLater,
-  canUnsubscribe,
-  isStandingProtected,
-  recommendAction,
-} from '../data';
-import { intentOf } from '../uplift-d/intent';
+import { canArchive, canLater, canUnsubscribe, isStandingProtected } from '../data';
+import { derivePrimaryVerbId } from '../action-row';
 import type { DecisionHistoryRowDto, SenderListRow } from '@/lib/api/senders';
 
 function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
@@ -122,8 +116,8 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
   it('shields a VIP-only sender (isVip && !isProtected) from every destructive action', () => {
     // The real BE sends VIP and Protect independently (D42/D43). A VIP
     // that is not also `isProtected` must STILL be untouchable by bulk
-    // actions and route to the Protect bucket — the gap the design gate
-    // caught: the surfaces must agree on one `isStandingProtected` predicate.
+    // actions and derive Keep — the gap the design gate caught: the
+    // surfaces must agree on one `isStandingProtected` predicate.
     const vipOnly = adaptSenderListRow(
       listRow({
         protectionFlags: {
@@ -140,14 +134,13 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     expect(canArchive(vipOnly)).toBe(false);
     expect(canLater(vipOnly)).toBe(false);
     expect(canUnsubscribe(vipOnly)).toBe(false);
-    expect(intentOf(vipOnly)).toBe('protect');
-    // A VIP must never get a cleanup recommendation either (row-detail callout).
-    expect(recommendAction(vipOnly)).toBeNull();
+    expect(derivePrimaryVerbId(vipOnly)).toBe('keep');
   });
 
-  it('passes the confidence through on lastReview so the intent gate can read it', () => {
+  it('retains confidence as review metadata without using it for the primary action', () => {
     const s = adaptSenderListRow(
       listRow({
+        unsubscribeMethod: 'none',
         lastReview: {
           at: '2026-05-01T00:00:00.000Z',
           verdict: 'unsubscribe',
@@ -157,5 +150,6 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
       }),
     );
     expect(s.lastReview?.confidence).toBe(0.6);
+    expect(derivePrimaryVerbId(s)).toBe('keep');
   });
 });

@@ -35,16 +35,9 @@ export interface SenderLastReview {
   /** Provenance — LLM call vs deterministic template fallback. */
   generatedBy: 'llm_haiku' | 'template';
   /**
-   * Engine confidence, 0..1. Drives the confidence gate in
-   * `uplift-d/intent.ts` — low-confidence verdicts are suppressed from
-   * the action buckets (sender stays in the catch-all rather than
-   * showing a "Cleanup recommendation" the engine isn't sure about).
-   *
-   * Optional for backward compatibility — when omitted (older wire
-   * payloads), defaults to `1.0` (full confidence) so existing
-   * behavior is preserved. BE adapter
-   * (`apps/api/src/senders/senders.service.ts`) should populate from
-   * `triage_decisions.confidence` once a follow-up PR wires that.
+   * Engine confidence, 0..1. Retained as decision-history metadata;
+   * D245 forbids it from choosing or styling the primary action.
+   * Optional for backward compatibility with older wire payloads.
    */
   confidence?: number;
 }
@@ -117,8 +110,8 @@ export interface Sender {
   unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null;
   /**
    * Standing VIP policy (D42/D43). Distinct from `protected`, but both
-   * route a sender into the "Protect" intent bucket (intentOf OR-s
-   * them) — a VIP must never surface as a Cleanup recommendation.
+   * force the fact-derived primary action to Keep and block destructive
+   * actions — a VIP must never surface as a cleanup suggestion.
    */
   isVip?: boolean;
   /** Volume spike multiplier vs. the sender's usual rate. */
@@ -810,24 +803,6 @@ export interface ActionRequest {
     protectedCount: number;
     peopleCount: number;
   };
-}
-
-// ─── Recommendation engine ─────────────────────────────────────
-// The action we think the user should take. Canonical verbs only
-// (D227): the prototype's "Mute" maps to "Later".
-
-export type RecommendedVerb = 'Unsubscribe' | 'Later' | null;
-
-export function recommendAction(s: Sender): RecommendedVerb {
-  // A standing-protected sender (Protect OR VIP) never gets a cleanup
-  // recommendation — same predicate the row chip / CTA / intent bucket use.
-  if (isStandingProtected(s) || s.group === 'primary') return null;
-  const { read, monthly } = s;
-  if (read === 0 && monthly >= 8) return 'Unsubscribe';
-  if (read < 0.2 && s.spike) return 'Unsubscribe';
-  if (read < 0.2 && monthly >= 4) return 'Later';
-  if (read >= 0.2 && read < 0.6 && monthly >= 6) return 'Later';
-  return null;
 }
 
 /** Which curated slice the focused review session is working on. */

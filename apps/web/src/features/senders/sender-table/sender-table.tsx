@@ -59,14 +59,13 @@
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
-import { SenderActionRow } from '../action-row';
+import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 import { adaptSenderListRow } from '../api/adapters';
-import { EPOCH_GUARD_DAYS } from '../data';
+import { EPOCH_GUARD_DAYS, isStandingProtected } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
 import { UNSUB_PILL } from '../grid/sender-card';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
-import { intentOf, type SenderIntent } from '../uplift-d/intent';
 
 import type {
   SenderListDirection,
@@ -389,13 +388,11 @@ function SenderRow({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Intent tone — drives the left-edge tone stripe + magnitude-bar
-  // accent so the table row visually rhymes with the grid SenderCard
-  // and the Hero Bloc cards. Same predicate (`intentOf`) feeds the
-  // chip count, so row tone and chip count cannot disagree.
+  // Fact-derived primary tone — drives the left-edge stripe and
+  // magnitude-bar accent. The same derivation feeds SenderActionRow,
+  // so presentation and the primary CTA cannot disagree (D245).
   const adapted = useMemo(() => adaptSenderListRow(sender), [sender]);
-  const intent = intentOf(adapted);
-  const toneAccent = ROW_TONE_ACCENT[intent];
+  const toneAccent = primaryToneAccent(adapted);
 
   const cellStyle: CSSProperties = {
     padding: pad,
@@ -429,8 +426,8 @@ function SenderRow({
             paddingLeft: pad,
           }}
         >
-          {/* Tone stripe — 3px left edge, intent-colored. Subtle but
-              makes every row instantly readable by bucket. */}
+          {/* Tone stripe — 3px left edge, colored only by the factual
+              primary action or standing protection state. */}
           <span
             aria-hidden="true"
             style={{
@@ -659,17 +656,14 @@ function TotalCell({ value, max, accent }: { value: number; max: number; accent?
   );
 }
 
-/**
- * Per-row tone-stripe accent — same intent-to-tone mapping the grid
- * `SenderCard` and Hero `Bloc` use. Cleanup = amber, Protect = primary,
- * Later = subtle neutral, People = transparent (no stripe).
- */
-const ROW_TONE_ACCENT: Record<SenderIntent, string> = {
-  cleanup: color.amber,
-  later: color.fgMuted,
-  protect: color.primary,
-  people: 'transparent',
-};
+/** Per-row accent from the same observed-fact primary rule as the CTA. */
+function primaryToneAccent(sender: Sender): string {
+  if (isStandingProtected(sender)) return color.primary;
+  const primary = derivePrimaryVerbId(sender);
+  if (primary === 'unsubscribe') return color.amber;
+  if (primary === 'archive') return color.fgMuted;
+  return 'transparent';
+}
 
 // Trend + read-state rendering moved to `../fact-language.tsx`
 // (2026-07-03 consistency pass) — the table, the grid card stat strip,

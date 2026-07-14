@@ -3,7 +3,7 @@
  * sender-scoped queries.
  *
  * Covers:
- *   • All-four-succeed → ready state with header + recommendation
+ *   • All-four-succeed → ready state with factual actions + optional suggestion
  *   • Detail 404 → not-found UI
  *   • Detail 500 → error UI with retry copy
  */
@@ -143,6 +143,8 @@ describe('SenderDetailRoute', () => {
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
     // The recent-messages subject from the wire is present.
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
+    expect(screen.getByText('Optional suggestion · Archive')).toBeInTheDocument();
+    expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
   });
 
   it('renders the not-found UI when the detail endpoint returns 404', async () => {

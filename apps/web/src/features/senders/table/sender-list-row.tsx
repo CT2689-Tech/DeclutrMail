@@ -1,70 +1,13 @@
 'use client';
 
-import type { MouseEvent, ReactNode } from 'react';
-import { Avatar, Button, tokens, useIsAtMost } from '@declutrmail/shared';
-import {
-  canArchive,
-  canLater,
-  canUnsubscribe,
-  isStandingProtected,
-  recommendAction,
-  type ActionRequest,
-  type Sender,
-} from '../data';
+import type { MouseEvent } from 'react';
+import { Avatar, tokens, useIsAtMost } from '@declutrmail/shared';
+import { SenderActionRow } from '../action-row';
+import { isStandingProtected, type ActionRequest, type Sender } from '../data';
 import { RowCheckbox } from './row-checkbox';
 import { SenderRowDetailLive } from './sender-row-detail';
 
 const { color, font } = tokens;
-
-const VERB_ICONS: Record<'Archive' | 'Later' | 'Unsubscribe', ReactNode> = {
-  Archive: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="21 8 21 21 3 21 3 8" />
-      <rect x="1" y="3" width="22" height="5" />
-      <line x1="10" y1="12" x2="14" y2="12" />
-    </svg>
-  ),
-  Later: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <polyline points="12 7 12 12 15 14" />
-    </svg>
-  ),
-  Unsubscribe: (
-    <svg
-      width="11"
-      height="11"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 4h16v16H4z" />
-      <polyline points="22 6 12 13 2 6" />
-      <line x1="3" y1="20" x2="21" y2="4" />
-    </svg>
-  ),
-};
 
 /**
  * Render a `Sender.volumeTrend` bucket as a short evidence-line token.
@@ -159,7 +102,6 @@ export function SenderListRow({
   onToggleExpand: () => void;
   onAction: (req: ActionRequest) => void;
 }) {
-  const recommended = recommendAction(s); // "Unsubscribe" | "Later" | null
   // Below `sm` the evidence line drops so the row keeps the name +
   // actions reachable without horizontal clipping. The evidence-line
   // tokens are deterministically ordered so when the visible string
@@ -169,11 +111,6 @@ export function SenderListRow({
   const isMobile = useIsAtMost('sm');
   const evidenceTokens = buildEvidenceTokens(s);
   const evidenceLine = evidenceTokens.join(' · ');
-
-  const verbs: ('Archive' | 'Later' | 'Unsubscribe')[] = [];
-  if (canArchive(s)) verbs.push('Archive');
-  if (canLater(s)) verbs.push('Later');
-  if (canUnsubscribe(s)) verbs.push('Unsubscribe');
 
   return (
     <>
@@ -295,31 +232,7 @@ export function SenderListRow({
           onClick={(e) => e.stopPropagation()}
           style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4 }}
         >
-          {isStandingProtected(s) ? (
-            <Button tone="ghost" size="sm" disabled>
-              Protected
-            </Button>
-          ) : (
-            verbs.map((verb) => {
-              const isRec = recommended === verb;
-              if (isRec) {
-                return (
-                  <Button
-                    key={verb}
-                    tone={verb === 'Unsubscribe' ? 'warn' : 'dark'}
-                    size="sm"
-                    onClick={() => onAction({ verb, senders: [s] })}
-                    title={`Recommended for ${s.name}`}
-                  >
-                    {verb}
-                  </Button>
-                );
-              }
-              return (
-                <IconVerb key={verb} verb={verb} onClick={() => onAction({ verb, senders: [s] })} />
-              );
-            })
-          )}
+          <SenderActionRow sender={s} onAction={onAction} />
         </div>
 
         <span
@@ -343,49 +256,5 @@ export function SenderListRow({
 
       {expanded && <SenderRowDetailLive s={s} onAction={onAction} />}
     </>
-  );
-}
-
-function IconVerb({
-  verb,
-  onClick,
-}: {
-  verb: 'Archive' | 'Later' | 'Unsubscribe';
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={verb}
-      aria-label={verb}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.background = color.paper;
-        e.currentTarget.style.color = color.fg;
-        e.currentTarget.style.borderColor = color.fgMuted;
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'transparent';
-        e.currentTarget.style.color = color.fgMuted;
-        e.currentTarget.style.borderColor = color.line;
-      }}
-      style={{
-        height: 26,
-        width: 26,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'transparent',
-        color: color.fgMuted,
-        border: `1px solid ${color.line}`,
-        borderRadius: 6,
-        cursor: 'pointer',
-        padding: 0,
-        flexShrink: 0,
-        transition: 'background 0.12s, color 0.12s, border-color 0.12s',
-      }}
-    >
-      {VERB_ICONS[verb]}
-    </button>
   );
 }
