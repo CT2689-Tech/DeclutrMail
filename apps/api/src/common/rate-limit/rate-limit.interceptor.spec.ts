@@ -2,7 +2,7 @@ import { Controller, Get, type CallHandler, type ExecutionContext } from '@nestj
 import { Reflector } from '@nestjs/core';
 import type { Response } from 'express';
 import { of } from 'rxjs';
-import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
 import { InMemoryTokenBucketStore } from './in-memory-token-bucket.store.js';
 import { RateLimit } from './rate-limit.decorator.js';
@@ -73,12 +73,12 @@ function makeHandler(): CallHandler {
 describe('RateLimitInterceptor (D156)', () => {
   let store: InMemoryTokenBucketStore;
   let interceptor: RateLimitInterceptor;
-  let setHeader: ReturnType<typeof vi.fn>;
+  let setHeader: Mock<(name: string, value: string) => void>;
 
   beforeEach(() => {
     store = new InMemoryTokenBucketStore();
     interceptor = new RateLimitInterceptor(new Reflector(), store);
-    setHeader = vi.fn();
+    setHeader = vi.fn<(name: string, value: string) => void>();
   });
 
   afterEach(() => {

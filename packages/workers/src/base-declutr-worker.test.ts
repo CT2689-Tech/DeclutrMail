@@ -1,6 +1,6 @@
 import { UnrecoverableError } from 'bullmq';
 import type { Job } from 'bullmq';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
@@ -101,8 +101,8 @@ function recordingObserver(): WorkerObserver & {
 }
 
 describe('BaseDeclutrWorker', () => {
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let consoleLogSpy: MockInstance<typeof console.log>;
+  let consoleErrorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

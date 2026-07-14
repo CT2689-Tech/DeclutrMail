@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import {
   __resetForTests,
   __testing,
@@ -64,9 +64,9 @@ describe('lazy browser Sentry facade', () => {
   const originalDsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
   let requestIdleCallback: ReturnType<typeof vi.fn>;
   let cancelIdleCallback: ReturnType<typeof vi.fn>;
-  let addEventListenerSpy: ReturnType<typeof vi.spyOn>;
-  let removeEventListenerSpy: ReturnType<typeof vi.spyOn>;
-  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let addEventListenerSpy: MockInstance<typeof window.addEventListener>;
+  let removeEventListenerSpy: MockInstance<typeof window.removeEventListener>;
+  let warnSpy: MockInstance<typeof console.warn>;
   let idleCallback: (() => void) | undefined;
 
   beforeEach(() => {
