@@ -54,14 +54,11 @@ export const activityAction = pgEnum('activity_action', [
   // completes the Gmail messages.trash mutation. DB enum mirror
   // migration is packages/db/migrations/0021_delete_action_kinds.sql.
   'delete',
-  // D43 — VIP and Protect toggles are recorded as separate audit
-  // entries. Snake_case spelling follows D43's literal enum strings.
+  // Protect toggles are recorded as separate audit entries.
   // Written by the senders policy write path (SendersPolicyService);
   // affected_count is always 0 (a standing-policy flip moves no mail).
   // DB enum mirror migration is
-  // packages/db/migrations/0028_activity_action_vip_protect.sql.
-  'marked_vip',
-  'unmarked_vip',
+  // packages/db/migrations/0028_activity_action_protect.sql.
   'marked_protected',
   'unmarked_protected',
   // Founder decision 2026-07-08 — the unsubscribe OUTCOME row, written

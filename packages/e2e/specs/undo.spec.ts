@@ -29,7 +29,7 @@ interface SenderRow {
   id: string;
   displayName: string;
   domain: string;
-  protectionFlags: { isVip: boolean; isProtected: boolean };
+  protectionFlags: { isProtected: boolean };
 }
 
 const api = new ApiClient();
@@ -80,7 +80,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   for (const row of rows) {
     // Bound the probe burst — each candidate costs one preview GET.
     if (probes >= 15) break;
-    if (row.protectionFlags.isVip || row.protectionFlags.isProtected) continue;
+    if (row.protectionFlags.isProtected) continue;
     // Unique display name keeps the receipt/toast assertions unambiguous.
     if (rows.filter((r) => r.displayName === row.displayName).length !== 1) continue;
     probes += 1;

@@ -34,7 +34,7 @@
 --   2. EXTEND `sender_policies` — add `protection_reason` enum +
 --      `protection_set_at` (D22). The engine's cascade rule #1
 --      reads `(is_protected, protection_reason)` and the value drives
---      audit copy ("Protected because you marked them VIP"). Both
+--      audit copy. Both
 --      columns are NULLABLE — additive, no data-depend risk — and are
 --      populated by the same code path that sets `is_protected = true`.
 --
@@ -57,7 +57,7 @@ CREATE TYPE "public"."triage_verdict" AS ENUM('keep', 'archive', 'unsubscribe', 
 --> statement-breakpoint
 CREATE TYPE "public"."triage_reasoning_source" AS ENUM('llm_haiku', 'template');
 --> statement-breakpoint
-CREATE TYPE "public"."protection_reason" AS ENUM('user_defined', 'engagement_based', 'vip');
+CREATE TYPE "public"."protection_reason" AS ENUM('user_defined', 'engagement_based');
 --> statement-breakpoint
 CREATE TABLE "triage_decisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

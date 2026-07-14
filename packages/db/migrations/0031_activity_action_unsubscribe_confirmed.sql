@@ -14,7 +14,7 @@
 -- producer), so the producer PR carries zero migration risk.
 --
 -- Value spelling follows the 0028 precedent (snake_case for non-verb,
--- feature-specific audit entries: `marked_vip`, `unmarked_protected`).
+-- feature-specific audit entries such as `marked_protected`).
 -- Not a K/A/U/L/D canonical verb (D227) — it is an outcome record, not
 -- a user-facing action; UI copy stays within the canonical verb set.
 --

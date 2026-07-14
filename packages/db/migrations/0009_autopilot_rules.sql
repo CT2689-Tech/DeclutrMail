@@ -18,8 +18,8 @@
 --        - `auto_screen_new_senders`         (D101 #3)
 --        - `newsletter_graveyard`            (D101 #4)
 --        - `long_dormant_unsubscribe`        (D101 #5 — D124 replaces
---                                             "VIP Brief priority"
---                                             with this; VIP elevation
+--                                             the previous fifth preset
+--                                             with this
 --                                             is now hard-coded engine
 --                                             behavior)
 --

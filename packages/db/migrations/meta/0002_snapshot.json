@@ -629,13 +629,6 @@
           "notNull": true,
           "default": "'keep'"
         },
-        "is_vip": {
-          "name": "is_vip",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "is_protected": {
           "name": "is_protected",
           "type": "boolean",

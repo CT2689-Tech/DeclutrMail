@@ -44,7 +44,7 @@ import { mailboxAccounts } from './mailbox-accounts';
  *   - `auto_unsubscribe_noisy`          (#2, threshold-bearing)
  *   - `auto_screen_new_senders`         (#3)
  *   - `newsletter_graveyard`            (#4)
- *   - `long_dormant_unsubscribe`        (#5 — replaces VIP Brief per D124)
+ *   - `long_dormant_unsubscribe`        (#5)
  *
  * "Auto-screen new senders" (#3) emits the `later` verdict per D227 —
  * "Screen" is an internal-only product noun for the Screener feature; the

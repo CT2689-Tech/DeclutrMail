@@ -48,7 +48,6 @@ CREATE TABLE "sender_policies" (
 	"mailbox_account_id" uuid NOT NULL,
 	"sender_key" text NOT NULL,
 	"policy_type" "sender_policy_type" DEFAULT 'keep' NOT NULL,
-	"is_vip" boolean DEFAULT false NOT NULL,
 	"is_protected" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

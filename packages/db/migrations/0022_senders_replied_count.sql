@@ -45,7 +45,7 @@
 --   'engagement_based', protection_set_at=now())` for every sender
 --   with `replied_count >= 3`. The UPSERT's WHERE clause guards
 --   `sender_policies.is_protected = false` so an existing
---   user_defined or vip protection KEEPS its provenance — the
+--   user_defined protection KEEPS its provenance — the
 --   cascade audit copy depends on it (D22, score-cascade.ts:159-173).
 --
 -- INDEX. None added. `replied_count` is a boolean filter predicate
@@ -90,7 +90,7 @@ WHERE s."mailbox_account_id" = sub."mailbox_account_id"
 
 -- Auto-protect backfill — spec v1.3 §"Trust-canary CI fixture" L488.
 -- Engagement-based provenance ("we kept them because you reply to
--- them"). WHERE-clause guard preserves prior user_defined / vip
+-- them"). WHERE-clause guard preserves prior user_defined
 -- provenance on the rare row that already exists with a different
 -- reason — the cascade audit copy reads `protection_reason` as cause.
 -- atlas:nolint data_depend

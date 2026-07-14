@@ -23,7 +23,6 @@ export function dbConnect(): postgres.Sql {
 export interface SenderPolicyRow {
   id: string;
   policy_type: string;
-  is_vip: boolean;
   is_protected: boolean;
   protection_reason: string | null;
   protection_set_at: Date | null;
@@ -36,7 +35,7 @@ export async function getSenderPolicy(
   senderKey: string,
 ): Promise<SenderPolicyRow | null> {
   const rows = await sql<SenderPolicyRow[]>`
-    SELECT id, policy_type, is_vip, is_protected, protection_reason,
+    SELECT id, policy_type, is_protected, protection_reason,
            protection_set_at, unsub_status
     FROM sender_policies
     WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${senderKey}

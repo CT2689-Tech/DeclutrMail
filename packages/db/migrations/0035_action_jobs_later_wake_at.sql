@@ -5,10 +5,11 @@
 -- the durable action intent until Gmail mutation succeeds; only then does
 -- the outbox projection set sender_policies.snoozed_until.
 --
--- Nullable preserves legacy Later rows, whose old product contract did
--- not require a wake time. The API requires a future wake_at for every new
--- forward Later action and rejects wake_at for other verbs. Reverse Later
--- rows copy the original value so Undo can cancel only its matching timer.
+-- The product is prelaunch, so there are no compatibility rows to preserve.
+-- The column stays nullable for non-Later verbs, while the CHECK requires
+-- every Later row (forward or reverse) to carry a wake_at and forbids it on
+-- every other verb. Reverse Later rows copy the original value so Undo can
+-- cancel only its matching timer.
 
 ALTER TABLE "action_jobs" ADD COLUMN "wake_at" timestamptz;
 --> statement-breakpoint
@@ -16,6 +17,6 @@ ALTER TABLE "action_jobs" ADD COLUMN "wake_at" timestamptz;
 ALTER TABLE "action_jobs"
   ADD CONSTRAINT "action_jobs_wake_at_verb_check"
   CHECK (
-    "wake_at" IS NULL
-    OR "verb" = 'later'
+    ("verb" = 'later' AND "wake_at" IS NOT NULL)
+    OR ("verb" <> 'later' AND "wake_at" IS NULL)
   );

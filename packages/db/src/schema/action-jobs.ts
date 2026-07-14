@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  check,
   index,
   integer,
   jsonb,
@@ -181,11 +182,12 @@ export const actionJobs = pgTable(
      */
     olderThanDays: integer('older_than_days'),
     /**
-     * D245 Later schedule, captured with the action intent. Required by
-     * the API for new forward Later jobs; copied onto reverse Later rows
-     * so Undo can cancel only its matching timer. Nullable for legacy
-     * rows and every other verb. The successful worker event projects
-     * this onto sender_policies only after Gmail confirms the move.
+     * D245 Later schedule, captured with the action intent. Required for
+     * every Later job and forbidden for every other verb by the table
+     * CHECK below. Reverse Later rows copy the original value so Undo can
+     * cancel only its matching timer. The column remains nullable because
+     * non-Later jobs store NULL. The successful worker event projects this
+     * onto sender_policies only after Gmail confirms the move.
      */
     wakeAt: timestamp('wake_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
@@ -208,6 +210,11 @@ export const actionJobs = pgTable(
     undoTokenIdx: index('action_jobs_undo_token_idx').on(table.undoToken),
     /** Composite cascade-undo lookup (ADR-0020). */
     compositeIdIdx: index('action_jobs_composite_id_idx').on(table.compositeId),
+    /** Later always has a wake time; no other verb may carry one. */
+    wakeAtVerbCheck: check(
+      'action_jobs_wake_at_verb_check',
+      sql`(${table.verb} = 'later' AND ${table.wakeAt} IS NOT NULL) OR (${table.verb} <> 'later' AND ${table.wakeAt} IS NULL)`,
+    ),
   }),
 );
 

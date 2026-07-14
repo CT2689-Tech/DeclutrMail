@@ -17,6 +17,6 @@ ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE text;
 --> statement-breakpoint
 DROP TYPE "public"."activity_action";
 --> statement-breakpoint
-CREATE TYPE "public"."activity_action" AS ENUM('keep', 'archive', 'unsubscribe', 'later', 'followup-dismiss', 'delete', 'marked_vip', 'unmarked_vip', 'marked_protected', 'unmarked_protected', 'unsubscribe_confirmed');
+CREATE TYPE "public"."activity_action" AS ENUM('keep', 'archive', 'unsubscribe', 'later', 'followup-dismiss', 'delete', 'marked_protected', 'unmarked_protected', 'unsubscribe_confirmed');
 --> statement-breakpoint
 ALTER TABLE "activity_log" ALTER COLUMN "action" TYPE "public"."activity_action" USING action::"public"."activity_action";
