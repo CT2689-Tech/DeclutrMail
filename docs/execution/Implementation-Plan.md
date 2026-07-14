@@ -674,10 +674,10 @@ differentiation, Cleanup Pass dropped, premium positioning at $9/$19.
   perform as PMV §11 anticipates.
 
 **Action items captured:**
-- [CODEX PATCH 2026-05-18] Billing items below superseded — see **D117**
-  (Paddle + Razorpay, no Stripe) and **D126** (Pro annual = $149, not $190).
-  Originals retained for audit:
-- Stripe products to create:
+- Billing provider choice is superseded by **D117**: Paddle + Razorpay, no
+  Stripe. The founder reconfirmed D19's $190 standard Pro annual price on
+  2026-07-14; conflicting annual-price experiments are removed.
+- Provider products to create:
   - `plus_monthly` $9.00, `plus_annual` $90.00
   - `pro_monthly` $19.00, `pro_annual` $190.00
   - `pro_annual_founding` $129.00 (limited-redemption coupon, max 250 uses)
@@ -2982,11 +2982,11 @@ Split by user region:
 - `plus_monthly` ($9 / ₹749)
 - `plus_annual` ($90 / ₹7,499)
 - `pro_monthly` ($19 / ₹1,599)
-- `pro_annual` ($149 / ₹12,499) [CODEX PATCH: was $190, aligned with D126]
+- `pro_annual` ($190 / ₹15,999)
 - `pro_annual_founding` ($129 / ₹10,999, limited to first 250)
 
-(INR prices are rough conversions; final pricing to be set during
-Razorpay setup.)
+(INR prices are canonical provider amounts. Change them in the entitlement
+manifest before provisioning; never patch Razorpay independently.)
 
 ### D118 — Cancellation: **Respectful flow with optional reason + pause-30-days offer**
 
@@ -3302,22 +3302,23 @@ locked into the plan:
   no marketing chrome.
 - Sequence sends from `notifications@declutrmail.com` or equivalent.
 
-**Part 4 — Annual Pro pricing variant (updates D19):**
+**Part 4 — Annual Pro pricing (reconfirms D19):**
 
 | Tier | Monthly | Annual |
 |---|---|---|
 | Free | $0 | — |
 | Plus | $9/mo | $90/yr |
-| **Pro** | **$19/mo** | **$149/yr** *(was $190 — sweetened for retention)* |
+| **Pro** | **$19/mo** | **$190/yr** *(two months free)* |
 | Pro Founding | — | $129/yr (first 250) |
 | Power | TBD | TBD |
 
-- Pro annual $149 = $12.42/mo effective = 35% off monthly. Strong
-  reason to commit annually.
-- Annual users have ~50% lower churn than monthly (industry standard);
-  this becomes the retention strategy: convert monthly users to annual
-  via a *"Save $79/yr — switch to annual"* prompt at Day 60-90.
-- D19's $190/yr Pro annual is replaced. Plus annual stays at $90/yr.
+- Pro annual $190 = $15.83/mo effective, exactly ten monthly payments.
+  The familiar two-month-free structure rewards commitment without
+  collapsing the distinction between standard and Founding Pro.
+- Convert monthly users to annual via a factual *"Save $38/yr — switch
+  to annual"* prompt at Day 60-90; do not make unsupported churn claims.
+- D19's $190/year Pro annual price is canonical. Plus annual stays at
+  $90/year.
 
 **Part 5 — No lifetime Pro at launch (defer as emergency lever):**
 - Don't add lifetime Pro pricing in V2 launch.
@@ -3328,13 +3329,13 @@ locked into the plan:
 
 **Implications:**
 - Pricing page on marketing site: 2 annual prices for Pro (regular
-  $149 + Founding $129 for first 250). Founding badge ribbon makes
+  $190 + Founding $129 for first 250). Founding badge ribbon makes
   this clear.
-- Paddle / Razorpay products created: `pro_annual_149`,
-  `pro_annual_founding_129`, `pro_monthly_19`. Founding has limited
+- Paddle / Razorpay products use stable plan codes: `pro_annual`,
+  `pro_annual_founding`, `pro_monthly`. Founding has limited
   redemption count (max 250 across providers).
   [CODEX PATCH 2026-05-18: "Stripe" removed — D117 locked Paddle + Razorpay only.]
-- Annual-conversion prompt logic in app: surface "Save $79 — switch
+- Annual-conversion prompt logic in app: surface "Save $38 — switch
   to annual" banner to monthly Pro users at Day 60.
 
 ---
@@ -3859,7 +3860,7 @@ Plan file now contains **148 numbered decisions** spanning:
   D20-D22).
 - **Scope realistic:** full V2 in 6-7 months at 25-35 hrs/week with
   Claude OS (D149).
-- **Pricing locked:** Pro $19/mo or $149/yr; Founding $129/yr first
+- **Pricing locked:** Pro $19/mo or $190/yr; Founding $129/yr first
   250; 30-day MBG (D121, D126).
 - **Activation safety nets:** D107 promise screen, D109 sync gate
   polish, D74 sidebar badge, D75 onboarding screener handoff.
@@ -4570,8 +4571,8 @@ following the existing convention (the D121-replaces-D113 pattern).
 **Inline patches applied** (5):
 - D19 — Stripe product list marked superseded by D117 + D126
 - D61 — Brief email provider narrowed to Resend (was "SendGrid/Resend")
-- D117 — Pro annual price $190 → $149 (aligns with D126); `trialing`
-  removed from `subscriptions.status` enum (aligns with D121)
+- D117 — Provider catalog aligned to canonical Pro annual pricing;
+  `trialing` removed from `subscriptions.status` enum (aligns with D121)
 - D126 — "Stripe" reference removed from Part 4 implementation note
 
 **New decisions (9):** D187 (anti-redesign), D188 (launch flags), D189

@@ -295,18 +295,14 @@ automatically.
 | Navigation and search | Snoozed/Later routes and transient list state were inconsistent. | `/later` is canonical; search/filter/sort state is shareable and restores through browser navigation. |
 | Contextual labels | Generic Close, Dismiss, and mode labels depended on visual context. | Controls name their target; privacy, previews, Activity, Autopilot, billing, and mailbox exits explain the decision in place. |
 
-## Product decision still required
+## Product decision resolved
 
-### What is the standard Pro annual price?
+### Standard Pro annual price
 
-- **A — $190/year (recommended):** matches the current $19 monthly price with
-  roughly two months free and keeps the $129 Founding offer meaningfully
-  differentiated.
-- **B — $149/year:** lowers the adoption barrier but compresses the Founding
-  discount and creates a much larger annual-versus-monthly discount.
-- **C — Reprice monthly and annual together:** useful only if the product's
-  willingness-to-pay assumptions have changed; this broadens the decision
-  beyond the current consistency fix.
+The founder selected **$190/year** on 2026-07-14. It is exactly ten monthly
+payments at $19/month, so annual customers receive roughly two months free.
+The $129/year Founding Pro offer remains meaningfully differentiated and is
+limited to the first 250 paying users.
 
 ## Highest-value product opportunity map
 
@@ -334,7 +330,7 @@ accessibility foundations come before optional workflow acceleration.
 | Quiet | “What will run when Quiet ends?” queue preview | Prevents delayed automation from feeling hidden | **Foundation implemented 2026-07-14:** truthful held count and release time. Per-item preview and cancellation remain. |
 | Mailboxes | Connection-health timeline: last successful sync, partial scope, reauth, quota, and next retry | Gives users a single answer to “is my Gmail current?” | Build from existing freshness and lifecycle states. |
 | Privacy and data | Export/deletion job progress, completion receipt, and exact dataset manifest | Makes high-trust account operations verifiable | High priority for launch readiness. |
-| Billing | Usage meter, projected limit date, and one canonical plan comparison | Prevents surprise caps and contradictory upgrade prompts | Resolve annual pricing first, then generate every surface from entitlements. |
+| Billing | Usage meter, projected limit date, and one canonical plan comparison | Prevents surprise caps and contradictory upgrade prompts | **Pricing foundation implemented 2026-07-14:** canonical $19/month, $190/year, and $129 Founding Pro values generate product surfaces. Usage forecasting remains. |
 | Global navigation | Command palette for sender search, recent Activity, and primary destinations | Speeds up expert workflows without crowding every page | Add keyboard-first with full screen-reader labels. |
 | Accessibility | Authenticated 375px, keyboard, reduced-motion, and screen-reader smoke suite | Catches interaction problems static copy/unit tests cannot | **CI foundation implemented 2026-07-14:** desktop/mobile, reduced motion, Axe, names, overflow, and focus. A real screen-reader session remains. |
 | Support/admin | User-visible incident banner and provider-status context | Separates a Gmail/service outage from a user-specific failure | Show only actionable, scoped status; avoid leaking internal systems. |
@@ -351,7 +347,7 @@ accessibility foundations come before optional workflow acceleration.
 | Recurring user value | 4/5 | Brief/Activity/Autopilot are actionable; add feedback loops and weekly value reporting. |
 | Automation control | 5/5 | Observe, Active, Protected gates, consequence reports, caps, and action-specific recovery are explicit before activation. |
 | Accessibility and mobile confidence | 4/5 | Authenticated desktop/mobile CI now gates Axe, names, overflow, reduced motion, and keyboard focus; a real screen-reader session remains. |
-| Billing clarity | 3/5 | Entitlements are canonical, but standard annual Pro pricing is unresolved. |
+| Billing clarity | 4/5 | Entitlements and provider catalog inputs are canonical at $19/month, $190/year, and $129 Founding Pro; add usage forecasting. |
 | Operational trust | 4/5 | Freshness and recoverable errors are visible; add connection health and export/deletion progress. |
 
 ## Implementation and verification summary
@@ -368,10 +364,12 @@ accessibility foundations come before optional workflow acceleration.
   indefinite Quiet and pending work that Quiet is not delaying.
 - Added a Gmail-free authenticated accessibility CI gate for representative
   desktop and mobile/reduced-motion routes plus keyboard focus behavior.
+- Reconciled standard Pro at $19/month or $190/year and kept the $129/year
+  Founding Pro offer distinct across product and provider catalog sources.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
-- Static validation covers TypeScript, focused API/worker/web/shared tests,
-  migration checks, and diff/format checks. Authenticated live Playwright and
-  assistive-technology smoke remain release verification work.
+- Validation covers TypeScript, focused API/worker/web/shared tests, migration
+  checks, diff/format checks, and a 12-case authenticated live Playwright smoke.
+  A real screen-reader session remains release verification work.
 
 ## Remaining verification risks
 

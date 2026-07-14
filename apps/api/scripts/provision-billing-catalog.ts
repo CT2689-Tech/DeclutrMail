@@ -13,11 +13,9 @@
  * is missing — re-runs are no-ops that re-print the manifest patch.
  *
  * USD amounts come from `TIER_MANIFEST` (the single source of pricing
- * truth — D19). INR amounts are D117's published rough conversions;
- * the founder finalizes them during Razorpay setup (F3). NOTE for the
- * founder: D117's `pro_annual` INR (₹12,499) tracked the D126 $149
- * patch, while the locked manifest carries D19's $190 — reconcile when
- * patching the manifest.
+ * truth — D19). INR amounts mirror the same annual-value structure:
+ * standard annual plans cost about ten monthly payments, while the
+ * ₹10,999 Founding Pro offer remains meaningfully lower.
  *
  * OUTPUT: a copy-pasteable manifest patch block (tier → provider ids)
  * + the equivalent BILLING_CATALOG_JSON overlay for sandbox envs,
@@ -44,8 +42,8 @@ interface PlanSpec {
 }
 
 /**
- * The five D117 plan codes. INR per the D117 table (₹749 / ₹7,499 /
- * ₹1,599 / ₹12,499 / ₹10,999) — see header note re: pro_annual.
+ * The five D117 plan codes. INR ladder: ₹749 / ₹7,499 / ₹1,599 /
+ * ₹15,999 / ₹10,999.
  */
 const PLANS: PlanSpec[] = [
   {
@@ -54,7 +52,7 @@ const PLANS: PlanSpec[] = [
     name: 'DeclutrMail Plus (monthly)',
     interval: 'month',
     usdCents: TIER_MANIFEST.plus.prices.monthly!.usdCents,
-    inrPaise: 74_900,
+    inrPaise: TIER_MANIFEST.plus.prices.monthly!.inrPaise,
   },
   {
     sku: 'plus_annual',
@@ -62,7 +60,7 @@ const PLANS: PlanSpec[] = [
     name: 'DeclutrMail Plus (annual)',
     interval: 'year',
     usdCents: TIER_MANIFEST.plus.prices.annual!.usdCents,
-    inrPaise: 749_900,
+    inrPaise: TIER_MANIFEST.plus.prices.annual!.inrPaise,
   },
   {
     sku: 'pro_monthly',
@@ -70,7 +68,7 @@ const PLANS: PlanSpec[] = [
     name: 'DeclutrMail Pro (monthly)',
     interval: 'month',
     usdCents: TIER_MANIFEST.pro.prices.monthly!.usdCents,
-    inrPaise: 159_900,
+    inrPaise: TIER_MANIFEST.pro.prices.monthly!.inrPaise,
   },
   {
     sku: 'pro_annual',
@@ -78,7 +76,7 @@ const PLANS: PlanSpec[] = [
     name: 'DeclutrMail Pro (annual)',
     interval: 'year',
     usdCents: TIER_MANIFEST.pro.prices.annual!.usdCents,
-    inrPaise: 1_249_900,
+    inrPaise: TIER_MANIFEST.pro.prices.annual!.inrPaise,
   },
   {
     sku: 'pro_annual_founding',
@@ -86,7 +84,7 @@ const PLANS: PlanSpec[] = [
     name: 'DeclutrMail Founding Pro (annual, first 250)',
     interval: 'year',
     usdCents: TIER_MANIFEST.pro.promo!.annual.usdCents,
-    inrPaise: 1_099_900,
+    inrPaise: TIER_MANIFEST.pro.promo!.annual.inrPaise,
   },
 ];
 
@@ -264,9 +262,8 @@ function emitSummary(
     JSON.stringify({ paddle: paddle ?? {}, razorpay: razorpay ?? {} }),
     '```',
     '',
-    'INR amounts are D117 rough conversions — finalize during Razorpay',
-    'setup (note: D117 pro_annual ₹12,499 tracked the D126 $149 patch;',
-    'the manifest carries D19 $190).',
+    'INR amounts preserve the canonical annual-value structure: standard',
+    'annual is about ten monthly payments; Founding Pro remains ₹10,999.',
     '',
   ];
   const summary = lines.join('\n');

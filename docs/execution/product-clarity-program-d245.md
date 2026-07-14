@@ -105,7 +105,7 @@ current technical invariant rather than by hypothetical existing users.
       from being confused with connected Gmail data.
 - [x] Clarify Followups as observed sent-mail state, with precise timing,
       completion, dismissal, and false-positive controls.
-- [ ] Reconcile pricing, plan names, limits, trial/upgrade prompts, and feature
+- [x] Reconcile pricing, plan names, limits, trial/upgrade prompts, and feature
       availability against one entitlement source of truth.
 
 ### P3 — learnability and polish
@@ -139,17 +139,12 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: VIP is removed from schema through UI and canonical
-  docs; Protected is the sole visible safety state. Later is timer-backed only,
-  `/later` is the sole route, and the successful Gmail mutation stores its wake
-  timer atomically. The language audit now includes the post-implementation
-  scorecard and product-opportunity map.
-- Last green checks: all-workspace typecheck; full web suite (960); API action
-  contract/service (62) and Later service (13); label-action worker (17);
-  shared edge-state inventory (9); focused DB protection (5); plus the DB/E2E
-  migration, schema, constraint, and discovery checks recorded by the DB slice.
-- Current slice: conservative automatic protection is implemented with exact
-  reply/star/Gmail-importance provenance and a sticky manual override. The
-  audit opportunity map is approved for phased implementation. The standard
-  annual Pro price remains the only open Q&A decision; pricing reconciliation
-  stays unchecked until the founder chooses.
+- Last completed slice: pricing and provider catalog inputs are reconciled to
+  the canonical manifest, including standard and Founding Pro in USD and INR.
+- Last green checks: all-workspace typecheck; shared entitlement manifest (21);
+  web pricing and billing surfaces (39); API billing catalog/service (13); plus
+  the earlier authenticated accessibility live smoke (12).
+- Current slice: standard Pro is founder-confirmed at $19/month or $190/year,
+  with the $129/year Founding Pro offer reserved for the first 250 paying
+  users. Pricing, plan names, limits, prompts, provider catalog inputs, and
+  feature availability resolve through the canonical entitlement manifest.

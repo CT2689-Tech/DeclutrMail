@@ -41,6 +41,15 @@ describe('Tier manifest (D19)', () => {
     expect(TIER_MANIFEST.enterprise.prices).toEqual({ monthly: null, annual: null });
   });
 
+  it('pins the matching INR provider ladder', () => {
+    expect(TIER_MANIFEST.free.prices.monthly?.inrPaise).toBe(0);
+    expect(TIER_MANIFEST.plus.prices.monthly?.inrPaise).toBe(74_900);
+    expect(TIER_MANIFEST.plus.prices.annual?.inrPaise).toBe(749_900);
+    expect(TIER_MANIFEST.pro.prices.monthly?.inrPaise).toBe(159_900);
+    expect(TIER_MANIFEST.pro.prices.annual?.inrPaise).toBe(1_599_900);
+    expect(TIER_MANIFEST.pro.promo?.annual.inrPaise).toBe(1_099_900);
+  });
+
   // 3. Annual = 10× monthly (the "2 months free" D19 framing).
   it('gives paid tiers an annual price of exactly 10x monthly', () => {
     for (const id of ['plus', 'pro'] as const) {
@@ -153,6 +162,8 @@ describe('Tier manifest (D19)', () => {
     for (const point of points) {
       expect(Number.isInteger(point.usdCents)).toBe(true);
       expect(point.usdCents).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(point.inrPaise)).toBe(true);
+      expect(point.inrPaise).toBeGreaterThanOrEqual(0);
       for (const catalogId of [point.paddlePriceId, point.razorpayPlanId]) {
         expect(catalogId === null || catalogId.length > 0).toBe(true);
       }
