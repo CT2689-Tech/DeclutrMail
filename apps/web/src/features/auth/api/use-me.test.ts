@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
-import { meHasSyncingMailbox, type Me } from './use-me';
+import { meHasDataDeletionInFlight, meHasSyncingMailbox, type Me } from './use-me';
 
 function me(
   mailboxes: Array<{ status: 'active' | 'disconnected'; readiness: SyncReadiness | null }>,
@@ -50,5 +50,21 @@ describe('meHasSyncingMailbox', () => {
 
   it('false for undefined data', () => {
     expect(meHasSyncingMailbox(undefined)).toBe(false);
+  });
+});
+
+describe('meHasDataDeletionInFlight', () => {
+  it('polls queued, executing, and delayed mailbox-data deletion lifecycles', () => {
+    for (const indexedDataState of ['deletion_pending', 'deleting', 'deletion_delayed'] as const) {
+      const data = me([{ status: 'disconnected', readiness: null }]);
+      data.mailboxes[0]!.indexedDataState = indexedDataState;
+      expect(meHasDataDeletionInFlight(data)).toBe(true);
+    }
+  });
+
+  it('stops polling after deletion completes', () => {
+    const data = me([{ status: 'disconnected', readiness: null }]);
+    data.mailboxes[0]!.indexedDataState = 'deleted';
+    expect(meHasDataDeletionInFlight(data)).toBe(false);
   });
 });

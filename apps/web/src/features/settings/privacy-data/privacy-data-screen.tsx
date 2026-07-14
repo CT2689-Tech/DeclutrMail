@@ -12,6 +12,7 @@ import {
   GMAIL_DERIVED_DATA_INVENTORY,
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_OAUTH_ACCESS,
+  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   PrivacyBadge,
   ScreenIntro,
   tokens,
@@ -134,6 +135,10 @@ export function PrivacyDataView({
           <InventoryGroup
             title="Derived product data"
             items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
+          />
+          <InventoryGroup
+            title="Operational audit data retained under policy"
+            items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
           />
           <p style={{ ...mutedTextStyle, marginTop: 12 }}>
             Anthropic receives only the inventory items marked for generated Brief narratives or
@@ -265,8 +270,20 @@ export function PrivacyDataView({
               <div>
                 <div style={exitTitleStyle}>Disconnect a mailbox</div>
                 <div style={exitDetailStyle}>
-                  Revokes DeclutrMail's Gmail access and stops sync for that account. Use the
-                  account menu in the top bar.
+                  Removes DeclutrMail's saved Google credential and stops sync and Gmail actions.
+                  Indexed and derived mailbox data stays so reconnecting can continue its history;
+                  Gmail is unchanged. Choose Manage in the top-bar account menu.
+                </div>
+              </div>
+            </li>
+            <li style={exitRowStyle}>
+              <div>
+                <div style={exitTitleStyle}>Disconnect &amp; delete one mailbox's indexed data</div>
+                <div style={exitDetailStyle}>
+                  Also permanently deletes that mailbox's indexed message details, sender data,
+                  choices, rules, Activity, and Undo data. Your DeclutrMail account, other
+                  mailboxes, disconnected Gmail address, and Gmail mail remain. Choose Manage in the
+                  top-bar account menu.
                 </div>
               </div>
             </li>
@@ -335,6 +352,7 @@ function inventoryDisplayItem(item: {
   retention: string;
   exportedIn: readonly string[];
   transmittedTo: readonly string[];
+  removalTrigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 }) {
   const exportDetail =
     item.exportedIn.length > 0
@@ -343,11 +361,27 @@ function inventoryDisplayItem(item: {
   const processorDetail = item.transmittedTo.includes('Anthropic')
     ? ' May be sent to Anthropic for generated text.'
     : '';
+  const deletionDetail = deletionTriggerDetail(item.removalTrigger);
   return {
     id: item.id,
     label: item.label,
-    detail: `${item.purpose} ${item.retention} ${exportDetail}${processorDetail}`,
+    detail: `${item.purpose} ${item.retention} ${deletionDetail} ${exportDetail}${processorDetail}`,
   };
+}
+
+function deletionTriggerDetail(
+  trigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy',
+): string {
+  switch (trigger) {
+    case 'disconnect':
+      return 'Removed when this Gmail account is disconnected.';
+    case 'delete-indexed-data':
+      return 'Deleted when you choose Disconnect & delete indexed data, or when you delete your DeclutrMail account.';
+    case 'delete-account':
+      return 'Retained after one mailbox’s indexed data is deleted; deleted with the DeclutrMail account.';
+    case 'retention-policy':
+      return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
+  }
 }
 
 function InventoryGroup({

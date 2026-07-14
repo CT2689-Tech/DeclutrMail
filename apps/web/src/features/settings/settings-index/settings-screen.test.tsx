@@ -229,7 +229,40 @@ describe('SettingsScreen', () => {
     });
     // One active of two allowed — reconnecting is allowed.
     expect(reconnect).toBeEnabled();
-    expect(screen.getByText('Disconnected')).toBeInTheDocument();
+    expect(screen.getByText('Disconnected · data kept')).toBeInTheDocument();
+  });
+
+  it('shows mailbox-data deletion lifecycle and blocks reconnect until completion', async () => {
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deletion_delayed',
+      },
+    ]);
+    const { unmount } = renderScreen();
+
+    expect(await screen.findByText('Deletion delayed')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toBeDisabled();
+    unmount();
+
+    me = makeMe([
+      {
+        ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
+        status: 'disconnected',
+        indexedDataState: 'deleted',
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Data deleted')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    ).toHaveTextContent(/reconnect · new index/i);
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {

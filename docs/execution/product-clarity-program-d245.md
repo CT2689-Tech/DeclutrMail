@@ -55,7 +55,7 @@ each completed slice.
       plan-gated and build custom-rule creation behind D234's gate.
 - [ ] Turn Brief into a useful return surface that says what changed and links
       each item to the relevant sender, preview, or Activity record.
-- [ ] Add explicit mailbox disconnect/data-deletion choices and lifecycle
+- [x] Add explicit mailbox disconnect/data-deletion choices and lifecycle
       states for reconnecting, reauthorizing, and removing indexed data.
 - [ ] Let eligible users experience safe Observe/preview value before asking
       them to upgrade for automatic Active execution; keep billing truth sourced
@@ -109,11 +109,18 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: disconnected mailboxes are ineligible at every sync
-  boundary: webhook resolution, periodic drift discovery, initial sync, and
-  incremental sync. Already-queued jobs no-op before OAuth or Gmail access and
-  report an explicit inactive-mailbox outcome.
-- Last green checks: Gmail webhook suite (13 tests), initial/incremental worker
-  suites (50 tests), API/workers typechecks, and `git diff --check`.
-- Next slice: add the explicit Disconnect versus
-  Disconnect-and-delete-indexed-data preview, API lifecycle, and receipts.
+- Last completed slice: Disconnect now presents two exact, generated-data
+  choices. Standard Disconnect removes Gmail credentials and retains indexed
+  history. Disconnect & delete indexed data requires `DELETE <gmail-address>`,
+  persists a retryable mailbox-scoped request, prevents reconnect while it is
+  in flight, chunks the large message index, scrubs every registered mailbox
+  child plus outbox/dead-letter records, preserves the disconnected identity
+  and minimal audit, and exposes queued/deleting/delayed/deleted UI states.
+  Reconnect after completion starts a clean index.
+- Last green checks: generated inventory contract (5 tests), mailbox API and
+  ownership/reconnect suites (11 tests), DB migration round-trip (3 tests),
+  deletion/dead-letter worker suites (31 tests), mailbox lifecycle web suites
+  (45 tests), shared/API/DB/workers/web typechecks, and `git diff --check`.
+- Next slice: migrate every action preview and result surface to the canonical
+  action semantics, fix remaining plan-based Undo/Gmail Trash copy, and replace
+  the fragmented receipt/undo presentations with one shared model.

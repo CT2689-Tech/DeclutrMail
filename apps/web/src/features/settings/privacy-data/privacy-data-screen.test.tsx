@@ -69,6 +69,21 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(/disconnected — sync stopped/i)).toBeInTheDocument();
   });
 
+  it('states removal triggers and distinguishes one-mailbox purge from account deletion', () => {
+    renderView();
+
+    expect(
+      screen.getAllByText(/removed when this Gmail account is disconnected/i).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Disconnect & delete indexed data/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Operational audit data retained under policy/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disconnect & delete one mailbox's indexed data/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
+  });
+
   it('renders the no-mailboxes empty state', () => {
     renderView({ mailboxes: [] });
     expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();

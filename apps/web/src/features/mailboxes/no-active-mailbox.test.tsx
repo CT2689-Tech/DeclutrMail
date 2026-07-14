@@ -41,6 +41,37 @@ describe('NoActiveMailboxView', () => {
     expect(screen.getByRole('button', { name: /connect a gmail account/i })).toBeInTheDocument();
   });
 
+  it('blocks reconnect while the last mailbox data deletion is in progress', () => {
+    render(
+      <NoActiveMailboxView
+        disconnectedEmails={[]}
+        deletionInProgressEmails={['primary@example.com']}
+        signingOut={false}
+        onConnect={vi.fn()}
+        onSignOut={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(/reconnect becomes available after deletion completes/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /connect|reconnect/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/primary@example\.com/i);
+  });
+
+  it('explains that reconnect after completed deletion builds a fresh index', () => {
+    render(
+      <NoActiveMailboxView
+        disconnectedEmails={['primary@example.com']}
+        deletedDataEmails={['primary@example.com']}
+        signingOut={false}
+        onConnect={vi.fn()}
+        onSignOut={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/build a new index from Gmail/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /reconnect Gmail/i })).toBeEnabled();
+  });
+
   it('always offers account + billing escape hatches (reachable with no mailbox — D216/D121)', () => {
     render(
       <NoActiveMailboxView
@@ -97,6 +128,8 @@ describe('NoActiveMailbox container', () => {
               status: 'disconnected',
               connectedAt: null,
               readiness: null,
+              indexedDataState: 'retained',
+              dataDeletion: null,
             },
           ],
         },

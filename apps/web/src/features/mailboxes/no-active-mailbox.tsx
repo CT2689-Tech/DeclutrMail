@@ -29,13 +29,23 @@ export function NoActiveMailbox() {
   const { me } = useAuth();
   const logout = useLogout();
 
-  const disconnectedEmails = me.mailboxes
-    .filter((m) => m.status === 'disconnected')
+  const disconnected = me.mailboxes.filter((m) => m.status === 'disconnected');
+  const deletionInProgressEmails = disconnected
+    .filter((m) =>
+      ['deletion_pending', 'deleting', 'deletion_delayed'].includes(m.indexedDataState ?? ''),
+    )
     .map((m) => m.email);
+  const reconnectable = disconnected.filter((m) => !deletionInProgressEmails.includes(m.email));
+  const deletedDataEmails = reconnectable
+    .filter((m) => m.indexedDataState === 'deleted')
+    .map((m) => m.email);
+  const disconnectedEmails = reconnectable.map((m) => m.email);
 
   return (
     <NoActiveMailboxView
       disconnectedEmails={disconnectedEmails}
+      deletionInProgressEmails={deletionInProgressEmails}
+      deletedDataEmails={deletedDataEmails}
       signingOut={logout.isPending}
       onConnect={() => {
         const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -49,6 +59,10 @@ export function NoActiveMailbox() {
 export interface NoActiveMailboxViewProps {
   /** Emails of disconnected accounts; non-empty drives the "reconnect" framing. */
   disconnectedEmails: string[];
+  /** Reconnect is blocked until these durable purge requests complete. */
+  deletionInProgressEmails?: string[];
+  /** Reconnecting these mailboxes builds a fresh index; prior history was deleted. */
+  deletedDataEmails?: string[];
   signingOut: boolean;
   onConnect: () => void;
   onSignOut: () => void;
@@ -56,11 +70,16 @@ export interface NoActiveMailboxViewProps {
 
 export function NoActiveMailboxView({
   disconnectedEmails,
+  deletionInProgressEmails = [],
+  deletedDataEmails = [],
   signingOut,
   onConnect,
   onSignOut,
 }: NoActiveMailboxViewProps) {
   const hasDisconnected = disconnectedEmails.length > 0;
+  const deletionInProgress = deletionInProgressEmails.length > 0;
+  const onlyDeletedData =
+    hasDisconnected && disconnectedEmails.every((email) => deletedDataEmails.includes(email));
 
   return (
     <main
@@ -80,13 +99,19 @@ export function NoActiveMailboxView({
         title="No active mailbox"
         description={
           hasDisconnected
-            ? 'You disconnected your last Gmail account. Reconnect it to pick up where you left off — your sender history is preserved.'
-            : 'Connect a Gmail account to review your inbox by sender.'
+            ? onlyDeletedData
+              ? 'This mailbox’s indexed data was deleted. Reconnect to build a new index from Gmail; the deleted history does not return.'
+              : 'You disconnected your last Gmail account. Reconnect it to pick up where you left off — its indexed history is preserved.'
+            : deletionInProgress
+              ? 'Indexed data deletion is in progress. Gmail access stays disconnected, and reconnect becomes available after deletion completes.'
+              : 'Connect a Gmail account to review your inbox by sender.'
         }
         action={
-          <Button tone="primary" onClick={onConnect}>
-            {hasDisconnected ? 'Reconnect Gmail' : 'Connect a Gmail account'}
-          </Button>
+          deletionInProgress && !hasDisconnected ? undefined : (
+            <Button tone="primary" onClick={onConnect}>
+              {hasDisconnected ? 'Reconnect Gmail' : 'Connect a Gmail account'}
+            </Button>
+          )
         }
       />
 
@@ -101,6 +126,21 @@ export function NoActiveMailboxView({
           }}
         >
           Disconnected: {disconnectedEmails.join(' · ')}
+        </p>
+      )}
+
+      {deletionInProgress && (
+        <p
+          role="status"
+          style={{
+            marginTop: 14,
+            fontFamily: font.mono,
+            fontSize: 11,
+            color: color.fgMuted,
+            letterSpacing: '0.02em',
+          }}
+        >
+          Deleting indexed data: {deletionInProgressEmails.join(' · ')}
         </p>
       )}
 
