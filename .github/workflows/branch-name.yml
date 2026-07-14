@@ -18,7 +18,10 @@ jobs:
     # human-authored work — dependency bumps have no D-tie by design, so
     # exempt the bot rather than rename its branches. The substantive
     # gates (Typecheck / Lint / Test) still run.
-    if: github.actor != 'dependabot[bot]'
+    # The head-ref check covers follow-up commits pushed by a human to a
+    # bot branch (e.g. fixing a major-version migration) — that flips
+    # `github.actor`, but the branch is still bot-named.
+    if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')
     steps:
       - name: Validate branch name
         env:
@@ -70,8 +73,9 @@ jobs:
     timeout-minutes: 2
     # Dependabot bodies are auto-generated changelog dumps with no
     # `Closes D###` trailer — same reasoning as the branch-name job
-    # above: exempt the bot, not rename its convention.
-    if: github.actor != 'dependabot[bot]'
+    # above: exempt the bot, not rename its convention (and keep the
+    # exemption when a human pushes follow-up commits to the bot branch).
+    if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')
     steps:
       - name: Check body
         env:
