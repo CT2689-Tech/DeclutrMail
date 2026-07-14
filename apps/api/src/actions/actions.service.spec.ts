@@ -555,6 +555,19 @@ describe('ActionsService', () => {
       expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
+    it('rejects a message-scoped Later before writing a job (D245)', async () => {
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'messages', messageIds: ['m1'] },
+          primary: { type: 'later', wakeAt: new Date('2099-07-21T09:00:00Z') },
+          idempotencyKey: 'click-later-message',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'LATER_SENDER_REQUIRED' } });
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+    });
+
     it('single-verb Archive: ONE row, composite_id null, namespaced idempotency key', async () => {
       await seedMessage(db, mailboxId, 'm1', ['INBOX'], daysAgo(5));
       const res = await svc.enqueueComposite({
@@ -724,6 +737,7 @@ describe('ActionsService', () => {
           resolvedMessageIds: ['m1', 'm2'],
           idempotencyKey: 'later-comp-1',
           undoToken: uP!.token,
+          wakeAt: new Date('2099-07-21T09:00:00Z'),
         })
         .returning({ id: actionJobs.id });
       await db.insert(actionJobs).values({
@@ -838,7 +852,7 @@ describe('ActionsService', () => {
       expect(queue.count).toBe(0);
     });
 
-    it('excludes Protected/VIP senders from totals but keeps them flagged in the breakdown', async () => {
+    it('excludes Protected senders from totals but keeps them flagged in the breakdown', async () => {
       const sender2Id = await seedSecondSender(db, mailboxId);
       await seedMessage(db, mailboxId, 's1-m', ['INBOX'], daysAgo(5));
       await seedMessage(db, mailboxId, 's2-m', ['INBOX'], daysAgo(5), SENDER_KEY_2);

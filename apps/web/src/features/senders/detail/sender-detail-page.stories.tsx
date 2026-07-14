@@ -12,7 +12,6 @@
 //   • Loading     — skeleton placeholder for fetch in-flight
 //   • Error       — fetch failed branch
 //   • Empty       — sender exists but has no recent messages
-//   • VIP         — VIP-marked, recommendation suppressed
 //   • Protected   — Protect-marked, recommendation suppressed
 //   • HighConfidence — verdict ≥0.85 — highlighted in the toolbar
 //   • MobileNarrow — phone-width reflow regression guard
@@ -105,17 +104,6 @@ export const Empty: Story<typeof SenderDetailPage> = {
       detail: {
         ...buildSenderDetail(sarah, { recentMessages: [], history: [] }),
       },
-    },
-  },
-  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
-};
-
-/** VIP — recommendation suppressed; VIP icon shows filled in header. */
-export const VIP: Story<typeof SenderDetailPage> = {
-  args: {
-    state: {
-      kind: 'ready',
-      detail: buildSenderDetail(sarah, { isVip: true }),
     },
   },
   render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),

@@ -919,7 +919,4 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   },
 };
 
-/** Physical routes retained only to redirect old bookmarks. */
-export const COMPATIBILITY_REDIRECT_ROUTES = ['snoozed'] as const;
-
 export type EdgeStateInventory = typeof EDGE_STATE_INVENTORY;

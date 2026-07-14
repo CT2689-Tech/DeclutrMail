@@ -9,7 +9,7 @@
 // Scope is SENDER-level only (D78) — there is no message-level snooze
 // at launch. "Later" is the canonical user-facing verb (D227); the
 // user-facing screen/feature name is "Later"; Snoozed remains only in
-// internal route and API compatibility names.
+// internal API and implementation names.
 //
 // PRIVACY (D7, D228): rows carry sender display metadata (name, email,
 // domain — all from the `senders` projection), counts, and timestamps.
@@ -18,16 +18,9 @@
 import { z } from 'zod';
 
 /**
- * One sender on the Snoozed screen. A sender is listed when EITHER:
- *
- *   - it currently has ≥1 message carrying the DeclutrMail/Later Gmail
- *     label (`laterCount > 0`) — the durable ground truth written by
- *     the Later verb's label-action pipeline and mirrored into
- *     `mail_messages.label_ids`; OR
- *   - it has an active snooze timer (`snoozedUntil` non-null) set via
- *     `PATCH /api/snoozed/:senderId` (D79 schema columns).
- *
- * Both can hold at once (the normal case: Later'd mail + a wake time).
+ * One sender on the Later screen. A sender is listed only while it has
+ * an active Later timer. Its matching Gmail label mirror supplies the
+ * real message count but does not create timerless rows (D245).
  */
 export interface SnoozedSenderRow {
   /** `senders.id` — the selector for PATCH / wake. */
@@ -44,11 +37,8 @@ export interface SnoozedSenderRow {
    * mirror cannot be queried for this mailbox).
    */
   laterCount: number | null;
-  /**
-   * ISO-8601 wake time. Null is accepted only when reading legacy rows
-   * created before D245 required a schedule; the UI must repair it.
-   */
-  snoozedUntil: string | null;
+  /** Required ISO-8601 wake time. Later is never indefinite (D245). */
+  snoozedUntil: string;
   /** ISO-8601 — when the timer was last set; null when no timer. */
   snoozedAt: string | null;
   /** Optional user note (D79/D80); null when unset. */
@@ -90,7 +80,7 @@ export type SnoozeUpdateRequest = z.infer<typeof SnoozeUpdateRequestSchema>;
 export interface SnoozeUpdateResult {
   senderId: string;
   snoozedUntil: string;
-  /** Legacy rows may not have recorded when their timer was created. */
+  /** ISO-8601 time when the timer was last set. */
   snoozedAt: string | null;
   reason: string | null;
   /** False when the write was an idempotent no-op (already at target). */

@@ -16,7 +16,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import {
   addFetchHandlers,
@@ -47,10 +47,24 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
-// The route reads only `me.activeMailboxId` — the provider itself is
-// exercised in the auth feature's own tests.
 vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({ me: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }),
+  useAuth: () => ({
+    me: {
+      user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },
+      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      mailboxes: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          email: 'user@example.com',
+          status: 'active',
+          connectedAt: '2026-07-14T00:00:00.000Z',
+          readiness: 'ready',
+        },
+      ],
+      tier: 'pro',
+      cleanupRemaining: null,
+    },
+  }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // verdict: archive
@@ -129,6 +143,13 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
+async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
+  const dialog = await screen.findByRole('dialog');
+  const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
+  await waitFor(() => expect(confirm).not.toBeDisabled());
+  fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+}
+
 beforeEach(() => {
   resetTriageStore();
   h.track.mockClear();
@@ -154,12 +175,12 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await screen.findByRole('dialog');
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
 
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
     expect(h.track).toHaveBeenCalledWith('triage_action_taken', {
@@ -252,10 +273,10 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await screen.findByRole('dialog');
     // Backlog toggle defaults ON for Unsubscribe — the confirm rides
     // BOTH the intent POST and the composite archive enqueue.
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
     expect(h.track).toHaveBeenCalledWith('triage_action_taken', {
@@ -278,11 +299,13 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(`Couldn't archive ${GROUPON.senderName}`, 'warn'),
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't start archive ${GROUPON.senderName}. Nothing changed. The request was not accepted, so Gmail was not changed. Try again.`,
+        'warn',
+      ),
     );
     expect(actionTakenCalls()).toHaveLength(0);
   });

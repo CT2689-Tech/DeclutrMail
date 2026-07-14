@@ -864,7 +864,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // fixture" L488). Engagement-based provenance — the cascade
       // audit copy reads `protection_reason` to render the audit
       // string (score-cascade.ts:159-173). The WHERE-clause guard on
-      // UPSERT preserves prior user_defined / vip provenance.
+      // UPSERT preserves prior user_defined provenance.
       //
       // User-agency-wins guard (flow-completeness-auditor 2026-06-05
       // 🔴-3; widened 2026-06-09 for the D40/D42 manual-unprotect
@@ -873,7 +873,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // (schema/sender-policies.ts, senders-policy.service.ts). ANY
       // non-NULL reason on a demoted row therefore signals a deliberate
       // demote — `engagement_based` (the original 🔴-3 case) AND
-      // `user_defined` / `vip` (reachable since manual Unprotect
+      // `user_defined` (reachable since manual Unprotect
       // shipped). Only `protection_reason IS NULL` rows may be
       // auto-protected; a demoted row stays demoted until the user
       // manually re-protects.

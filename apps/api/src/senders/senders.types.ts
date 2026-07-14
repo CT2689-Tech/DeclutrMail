@@ -168,11 +168,11 @@ export interface SenderListRow {
    */
   lastReview: LastReview | null;
   /**
-   * Standing VIP / Protect policy flags (D42, D43) — mirrors
+   * Standing Protect policy state (D42, D43) — mirrors
    * `sender_policies`. Surfaced on the LIST row (not just detail) so the
    * Senders screen can render the "Protected" chip, populate the
-   * "Protected" KPI, and route VIPs / protected senders to the "Protect"
-   * intent bucket. Defaults (`isVip: false, isProtected: false,
+   * "Protected" KPI, and route protected senders to the "Protect"
+   * intent bucket. Defaults (`isProtected: false,
    * protectionReason: null, protectionSetAt: null`) when the sender has
    * no `sender_policies` row — i.e. engine-default, not pinned.
    */
@@ -199,17 +199,16 @@ export interface SenderListRow {
 export type UnsubExecutionStatus = UnsubscribeLifecycleStatus;
 
 /**
- * Standing protection / VIP flags for `GET /api/senders/:id` (D42).
+ * Standing protection state for `GET /api/senders/:id` (D42).
  *
- * `isProtected`, `isVip`, `protectionReason`, and `protectionSetAt`
+ * `isProtected`, `protectionReason`, and `protectionSetAt`
  * mirror the columns on `sender_policies`. NULL `protectionReason`
  * and `protectionSetAt` are valid when `isProtected = false` —
  * documented at the schema column.
  */
 export interface ProtectionFlags {
-  isVip: boolean;
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | 'vip' | null;
+  protectionReason: 'user_defined' | 'engagement_based' | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
 }
@@ -248,8 +247,7 @@ export interface SenderDetail extends SenderListRow {
  *     keep)"). `unsubscribe` has its own intent endpoint
  *     (`POST /api/actions/unsubscribe-intent`); `archive` / `later`
  *     standing policies have no write semantics yet — fail-closed.
- *   - `isVip` / `isProtected` — the two distinct standing modifiers
- *     (D42). Independent: a sender can be neither, either, or both.
+ *   - `isProtected` — the sole manual safety state (D42).
  *
  * `.strict()` rejects unknown keys so a future field can't silently
  * no-op; the refine requires at least one field so an empty body 400s
@@ -258,14 +256,12 @@ export interface SenderDetail extends SenderListRow {
 export const senderPolicyPatchSchema = z
   .object({
     policyType: z.literal('keep').optional(),
-    isVip: z.boolean().optional(),
     isProtected: z.boolean().optional(),
   })
   .strict()
-  .refine(
-    (p) => p.policyType !== undefined || p.isVip !== undefined || p.isProtected !== undefined,
-    { message: 'At least one of policyType, isVip, isProtected is required.' },
-  );
+  .refine((p) => p.policyType !== undefined || p.isProtected !== undefined, {
+    message: 'At least one of policyType, isProtected is required.',
+  });
 export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
 
 /**
@@ -280,9 +276,8 @@ export type SenderPolicyPatch = z.infer<typeof senderPolicyPatchSchema>;
 export interface SenderPolicyResult {
   senderId: string;
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
-  isVip: boolean;
   isProtected: boolean;
-  protectionReason: 'user_defined' | 'engagement_based' | 'vip' | null;
+  protectionReason: 'user_defined' | 'engagement_based' | null;
   /** ISO-8601 — when `is_protected` last flipped true; null otherwise. */
   protectionSetAt: string | null;
   /**

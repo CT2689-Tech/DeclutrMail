@@ -18,11 +18,11 @@ const { color, font, radius } = tokens;
  * D40 verb set (post D227 reverbing).
  *
  * The action toolbar contains exactly the 4 canonical user-facing
- * verbs: Keep / Archive / Unsubscribe / Later — K/A/U/L. VIP and
- * Protect are NOT in the toolbar; they live in the header (D43).
+ * verbs: Keep / Archive / Unsubscribe / Later — K/A/U/L. Protect is
+ * not in the toolbar; it lives in the header.
  *
- * The "Always-Keep" button is intentionally absent (D40) — VIP and
- * Protect already serve that intent more clearly.
+ * The "Always-Keep" button is intentionally absent; Protect already
+ * serves that safety intent more clearly.
  */
 const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdict }> = [
   { verb: 'Keep', shortcut: 'K', verdict: 'keep' },

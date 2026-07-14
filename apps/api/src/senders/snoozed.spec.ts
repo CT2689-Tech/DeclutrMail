@@ -140,9 +140,9 @@ describe('SnoozedReadService.list', () => {
     senderAId = await seedSender(db, mailboxId, KEY_A, 'digest@news.example');
   });
 
-  it('merges mirror membership and timer membership', async () => {
+  it('lists only timer-backed Later rows and uses the mirror for counts', async () => {
     const senderBId = await seedSender(db, mailboxId, KEY_B, 'offers@shop.example');
-    // A: 2 messages in Later, no timer. B: timer only, no labelled mail.
+    // A: mirror-only, so it is not a valid Later row. B: timer-backed.
     await seedMessage(db, mailboxId, KEY_A, 'm1', [LATER_ID]);
     await seedMessage(db, mailboxId, KEY_A, 'm2', [LATER_ID, 'STARRED']);
     await seedMessage(db, mailboxId, KEY_A, 'm3', ['INBOX']); // not Later
@@ -157,15 +157,12 @@ describe('SnoozedReadService.list', () => {
     const service = new SnoozedReadService(db as never, labelMapWith({ [mailboxId]: LATER_ID }));
     const rows = await service.list(mailboxId);
 
-    expect(rows).toHaveLength(2);
-    // Timer rows sort before timer-less rows.
+    expect(rows).toHaveLength(1);
     expect(rows[0]!.senderId).toBe(senderBId);
     expect(rows[0]!.laterCount).toBe(0);
     expect(rows[0]!.snoozedUntil).toBe('2026-06-12T09:00:00.000Z');
     expect(rows[0]!.reason).toBe('after launch');
-    expect(rows[1]!.senderId).toBe(senderAId);
-    expect(rows[1]!.laterCount).toBe(2);
-    expect(rows[1]!.snoozedUntil).toBeNull();
+    expect(rows.some((row) => row.senderId === senderAId)).toBe(false);
   });
 
   it('degrades honestly when the label mapping is missing', async () => {
@@ -277,12 +274,11 @@ describe('SnoozeService.setSnooze', () => {
     expect(result.reason).toBeNull();
   });
 
-  it('does not clobber an existing standing verdict or modifiers', async () => {
+  it('does not clobber an existing standing verdict', async () => {
     await db.insert(senderPolicies).values({
       mailboxAccountId: mailboxId,
       senderKey: KEY_A,
       policyType: 'unsubscribe',
-      isVip: true,
     });
     await service.setSnooze({
       mailboxAccountId: mailboxId,
@@ -291,7 +287,6 @@ describe('SnoozeService.setSnooze', () => {
     });
     const row = await policyRow();
     expect(row!.policyType).toBe('unsubscribe');
-    expect(row!.isVip).toBe(true);
     expect(row!.snoozedUntil).not.toBeNull();
   });
 

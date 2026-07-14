@@ -36,7 +36,6 @@ import type { CascadeResult, CascadeRuleId } from './score-cascade.js';
  */
 const RULE_PHRASE = {
   protect_user_defined: "Kept because you've marked them as protected.",
-  protect_vip: "Kept because you've marked them VIP.",
   protect_engagement_based: 'Kept because of your engagement signals.',
   replied_at_least_once: "Kept because you've replied to them.",
   gmail_primary: 'Kept because Gmail puts them in your Primary inbox.',

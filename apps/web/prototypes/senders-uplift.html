@@ -2111,11 +2111,6 @@
         background: var(--paper);
         color: var(--fgSoft);
       }
-      .vD-row .freq-eyebrow.vip {
-        background: var(--primarySoft);
-        color: var(--primaryDeep);
-        border-color: rgba(0, 107, 95, 0.18);
-      }
       .vD-row .freq-eyebrow.protected {
         background: var(--emeraldWash);
         color: var(--emerald);
@@ -2866,7 +2861,6 @@
           read: 0.12,
           trend: 'up',
           last: 0,
-          vip: false,
           protected: false,
           rec: 'unsubscribe',
           conf: 0.89,
@@ -2883,7 +2877,6 @@
           read: 0.95,
           trend: 'steady',
           last: 1,
-          vip: false,
           protected: true,
           rec: null,
           conf: 0,
@@ -2900,7 +2893,6 @@
           read: 0.34,
           trend: 'up',
           last: 0,
-          vip: false,
           protected: false,
           rec: 'archive',
           conf: 0.68,
@@ -2917,8 +2909,7 @@
           read: 0.78,
           trend: 'steady',
           last: 0,
-          vip: true,
-          protected: false,
+          protected: true,
           rec: null,
           conf: 0,
           vol: monthlyVol12(45, 0),
@@ -2934,7 +2925,6 @@
           read: 0.22,
           trend: 'down',
           last: 3,
-          vip: false,
           protected: false,
           rec: 'unsubscribe',
           conf: 0.72,
@@ -2951,7 +2941,6 @@
           read: 0.05,
           trend: 'up',
           last: 1,
-          vip: false,
           protected: false,
           rec: 'unsubscribe',
           conf: 0.92,
@@ -2968,7 +2957,6 @@
           read: 0.18,
           trend: 'steady',
           last: 4,
-          vip: false,
           protected: false,
           rec: 'archive',
           conf: 0.55,
@@ -2985,7 +2973,6 @@
           read: 0.81,
           trend: 'steady',
           last: 2,
-          vip: false,
           protected: false,
           rec: null,
           conf: 0,
@@ -3002,7 +2989,6 @@
           read: 0.08,
           trend: 'up',
           last: 0,
-          vip: false,
           protected: false,
           rec: 'unsubscribe',
           conf: 0.91,
@@ -3019,7 +3005,6 @@
           read: 0.21,
           trend: 'up',
           last: 0,
-          vip: false,
           protected: false,
           rec: 'archive',
           conf: 0.61,
@@ -3036,8 +3021,7 @@
           read: 0.86,
           trend: 'steady',
           last: 1,
-          vip: true,
-          protected: false,
+          protected: true,
           rec: null,
           conf: 0,
           vol: monthlyVol12(13, 0),
@@ -3053,7 +3037,6 @@
           read: 0.04,
           trend: 'up',
           last: 1,
-          vip: false,
           protected: false,
           rec: 'unsubscribe',
           conf: 0.93,
@@ -3318,10 +3301,6 @@
             fill = 'rgba(180,83,9,0.55)';
             stroke = '#B45309';
           }
-          if (s.vip) {
-            fill = 'rgba(0,107,95,0.55)';
-            stroke = '#006B5F';
-          }
           if (s.protected) {
             fill = 'rgba(4,120,87,0.55)';
             stroke = '#047857';
@@ -3443,7 +3422,7 @@
       function brandHeader(extraRight) {
         extraRight = extraRight || '';
         return (
-          '<div class="top-nav"><div class="brand"><span class="logo-dot"></span>DeclutrMail</div><div class="right"><div class="search"><span>⌕</span><span>Search senders…</span></div><button class="btn">+ Add VIP</button>' +
+          '<div class="top-nav"><div class="brand"><span class="logo-dot"></span>DeclutrMail</div><div class="right"><div class="search"><span>⌕</span><span>Search senders…</span></div>' +
           extraRight +
           '</div></div>'
         );
@@ -3538,19 +3517,10 @@
                     : '';
               const evidenceParts = [s.monthly + '/mo', trendBit, readBit].filter(Boolean);
               const evidence = evidenceParts.join(' <span class="sep">·</span> ');
-              const sparkColor =
-                s.rec === 'unsubscribe'
-                  ? 'var(--amber)'
-                  : s.vip
-                    ? 'var(--primary)'
-                    : 'var(--fgMuted)';
-              const chips =
-                (s.protected
-                  ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
-                  : '') +
-                (s.vip
-                  ? ' <span class="pill teal" style="margin-left:8px;font-size:9px;padding:1px 6px;">VIP</span>'
-                  : '');
+              const sparkColor = s.rec === 'unsubscribe' ? 'var(--amber)' : 'var(--fgMuted)';
+              const chips = s.protected
+                ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
+                : '';
               html +=
                 '<div class="vA-row"><input type="checkbox" /><div class="av-tint-' +
                 s.avIdx +
@@ -3603,7 +3573,7 @@
           s.name +
           '</div><div class="dom">' +
           s.domain +
-          '</div><div class="chips"><span class="pill">VIP</span><span class="pill">PROTECT</span></div></div></div>';
+          '</div><div class="chips"><span class="pill">PROTECT</span></div></div></div>';
         html +=
           '<div class="hero-kpi"><div class="label">Volume · last 30 days</div><div class="num">' +
           s.monthly +
@@ -3767,13 +3737,9 @@
                 '/mo · ' +
                 (s.read < 0.1 ? 'rarely read' : Math.round(s.read * 100) + '% read');
               const pulseDot = s.last24h ? '<span class="pulse"></span>' : '';
-              const chips =
-                (s.protected
-                  ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
-                  : '') +
-                (s.vip
-                  ? ' <span class="pill teal" style="margin-left:8px;font-size:9px;padding:1px 6px;">VIP</span>'
-                  : '');
+              const chips = s.protected
+                ? ' <span class="pill emerald" style="margin-left:8px;font-size:9px;padding:1px 6px;">PROTECTED</span>'
+                : '';
               html +=
                 '<div class="vB-row" style="animation-delay:' +
                 i * 30 +
@@ -3858,7 +3824,7 @@
           s.name +
           '</div><div class="dom">' +
           s.domain +
-          '</div><div class="chips"><span class="pill">VIP</span><span class="pill">PROTECT</span></div></div></div><div style="display:flex;gap:6px;"><button class="btn">K</button><button class="btn warn" style="color:white;">Unsubscribe</button></div></div></div>';
+          '</div><div class="chips"><span class="pill">PROTECT</span></div></div></div><div style="display:flex;gap:6px;"><button class="btn">K</button><button class="btn warn" style="color:white;">Unsubscribe</button></div></div></div>';
         html +=
           '<div class="vB-kpi6"><div class="cell"><div class="label">Monthly</div><div class="num">' +
           s.monthly +
@@ -3939,7 +3905,7 @@
         html +=
           '<section class="vC-quadrant-card"><div class="vC-quadrant-head"><h2>The pattern at a glance</h2><div class="toggle"><button class="active">Quadrant</button><button>List</button></div></div><div class="vC-quadrant-wrap">' +
           quadrantSvg(SENDERS) +
-          '</div><div class="vC-quadrant-legend"><span class="key"><span class="swatch" style="background:rgba(180,83,9,0.55);border:1px solid var(--amber);"></span>Unsub candidate</span><span class="key"><span class="swatch" style="background:rgba(0,107,95,0.55);border:1px solid var(--primary);"></span>VIP</span><span class="key"><span class="swatch" style="background:rgba(4,120,87,0.55);border:1px solid var(--emerald);"></span>Protected</span><span class="key"><span class="swatch" style="background:rgba(100,109,105,0.55);border:1px solid rgba(100,109,105,0.9);"></span>Neutral</span></div></section>';
+          '</div><div class="vC-quadrant-legend"><span class="key"><span class="swatch" style="background:rgba(180,83,9,0.55);border:1px solid var(--amber);"></span>Unsub candidate</span><span class="key"><span class="swatch" style="background:rgba(4,120,87,0.55);border:1px solid var(--emerald);"></span>Protected</span><span class="key"><span class="swatch" style="background:rgba(100,109,105,0.55);border:1px solid rgba(100,109,105,0.9);"></span>Neutral</span></div></section>';
 
         groups.forEach((g) => {
           const sharePct = Math.round((g.noise / totalNoise) * 100);
@@ -4076,10 +4042,9 @@
       }
 
       /* ─── VARIANT D — composite winner (Codex-tightened) ─── */
-      // Status eyebrow — ONLY for VIP / Protected (avoid Daily/Weekly noise — already in sub line)
+      // Status eyebrow — ONLY for Protected (avoid Daily/Weekly noise — already in sub line)
       function statusEyebrow(s) {
         if (s.protected) return { txt: 'Protected', cls: 'protected' };
-        if (s.vip) return { txt: 'VIP', cls: 'vip' };
         return null;
       }
 
@@ -4097,8 +4062,8 @@
       function intentGroups() {
         const cleanup = SENDERS.filter((s) => s.rec === 'unsubscribe');
         const later = SENDERS.filter((s) => s.rec === 'archive');
-        const protect = SENDERS.filter((s) => (s.vip || s.protected) && !s.rec);
-        const people = SENDERS.filter((s) => !s.rec && !s.vip && !s.protected);
+        const protect = SENDERS.filter((s) => s.protected && !s.rec);
+        const people = SENDERS.filter((s) => !s.rec && !s.protected);
         return [
           {
             key: 'cleanup',
@@ -4120,7 +4085,7 @@
             key: 'protect',
             label: 'Protect',
             icon: '◆',
-            desc: 'Always-keep · receipts, VIPs, important threads',
+            desc: 'Always-keep · receipts and important threads',
             items: protect,
             accent: 'emerald',
           },
@@ -4142,7 +4107,7 @@
         const readingHrs = 4.2;
         const noiseUnsubCount = SENDERS.filter((s) => s.rec === 'unsubscribe').length;
         const noiseDropPct = noiseReductionPct;
-        const protectedCount = SENDERS.filter((s) => s.vip || s.protected).length;
+        const protectedCount = SENDERS.filter((s) => s.protected).length;
         const needsReview = SENDERS.filter((s) => s.rec).length;
         const doneCount = 2,
           totalDecisions = needsReview; // demo progress state
@@ -4353,7 +4318,7 @@
         });
 
         html +=
-          '<div class="demo-note"><strong>Variant D — Codex-tightened.</strong> Hero: 2-line story + trust line ("Metadata only · No message bodies · Reversible for 7 days"). Weekly progress loop ("2 of 5 cleanup decisions done · 3.1h/year saved"). KPI labels reframed (Senders / Noise reducible / Time cost / Protected / Needs review). Filters + groups are user-intent (Clean up / Move later / Protect / People), not Gmail categories. Rows: one primary action (subtler — no glow shadow), K/A/U/L hidden behind "···" hover-revealed overflow. Inline "Why:" line shows engine reason. Status eyebrow only for VIP/Protected — Daily/Weekly chips dropped to avoid duplicating sub line.</div></div>';
+          '<div class="demo-note"><strong>Variant D — Codex-tightened.</strong> Hero: 2-line story + trust line ("Metadata only · No message bodies · Reversible for 7 days"). Weekly progress loop ("2 of 5 cleanup decisions done · 3.1h/year saved"). KPI labels reframed (Senders / Noise reducible / Time cost / Protected / Needs review). Filters + groups are user-intent (Clean up / Move later / Protect / People), not Gmail categories. Rows: one primary action (subtler — no glow shadow), K/A/U/L hidden behind "···" hover-revealed overflow. Inline "Why:" line shows engine reason. Status eyebrow only for Protected — Daily/Weekly chips dropped to avoid duplicating sub line.</div></div>';
         return html;
       }
 

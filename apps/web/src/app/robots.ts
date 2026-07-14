@@ -28,7 +28,6 @@ export const AUTHED_APP_PATHS = [
   '/screener',
   '/senders',
   '/settings',
-  '/snoozed',
   '/triage',
 ] as const;
 

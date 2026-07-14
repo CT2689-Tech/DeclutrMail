@@ -76,7 +76,7 @@ export function ActionToolbar({
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
 
   // No-channel reason, surfaced as visible text below the verbs (W2).
-  // Protected rows are excluded — the row header's Protected/VIP badge
+  // Protected rows are excluded — the row header's Protected badge
   // already explains why their destructive verbs are inert.
   const unsubNoChannelReason =
     row.protectionReason === null ? verbDisabledReason('Unsubscribe', row) : null;

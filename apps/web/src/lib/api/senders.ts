@@ -129,16 +129,8 @@ export interface SenderListRow {
   unsubscribeMethod: UnsubscribeMethod | null;
   /** Most-recent triage decision summary. `null` when never reviewed. */
   lastReview: LastReviewWire | null;
-  /**
-   * Standing VIP / Protect policy flags (D42, D43) — mirrors the BE
-   * `SenderListRow.protectionFlags`. Present on every list row (not just
-   * detail) so the Senders screen can render the "Protected" chip,
-   * populate the "Protected" KPI, and route VIPs / protected senders to
-   * the "Protect" intent bucket. Defaults to all-false / null when the
-   * sender has no `sender_policies` row (engine default).
-   */
+  /** Standing protection state for destructive and automatic-action gates. */
   protectionFlags: {
-    isVip: boolean;
     isProtected: boolean;
     protectionReason: ProtectionReasonWire | null;
     protectionSetAt: string | null;
@@ -166,15 +158,13 @@ export interface SenderListRow {
  * (see `apps/api/src/senders/senders.types.ts`):
  *   - `user_defined` — founder toggled Protect on
  *   - `engagement_based` — engagement signals pinned the sender
- *   - `vip` — protection inherited from VIP status
  *   - `null` — not protected
  */
-export type ProtectionReasonWire = 'user_defined' | 'engagement_based' | 'vip';
+export type ProtectionReasonWire = 'user_defined' | 'engagement_based';
 
 /**
  * Detail shape on `GET /api/senders/:id` — extends the list row with
- * the protection-flag block. VIP and Protect are separate user-driven
- * policies (D42 / D43); both are mutually independent of each other.
+ * the protection-flag block.
  *
  * Field names mirror the BE source-of-truth (`SenderDetail.protectionFlags`
  * in `apps/api/src/senders/senders.types.ts`). Drift between FE and BE
@@ -183,7 +173,6 @@ export type ProtectionReasonWire = 'user_defined' | 'engagement_based' | 'vip';
  */
 export interface SenderDetailDto extends SenderListRow {
   protectionFlags: {
-    isVip: boolean;
     isProtected: boolean;
     /** Why the sender is protected — null when `isProtected` is false. */
     protectionReason: ProtectionReasonWire | null;
@@ -421,12 +410,6 @@ export interface ListSendersParams {
    * contract.
    */
   isProtected?: TriStateFilter | undefined;
-  /**
-   * VIP filter (U23 settings VIP list). `true` = only VIP senders
-   * (`sender_policies.is_vip`). Maps to wire `?vip=true`. No negated
-   * form (not a product surface).
-   */
-  isVip?: boolean | undefined;
   /** Sortable column. Omit to take the BE default (`total`). */
   sort?: SenderListSort | undefined;
   /** Sort direction. Omit to take the BE's sane per-sort default. */
@@ -548,7 +531,6 @@ export function fetchSenders(
       // wire reads as the compose-strip negation primitive.
       protected:
         params.isProtected === true ? 'true' : params.isProtected === false ? 'not' : undefined,
-      vip: params.isVip === true ? 'true' : undefined,
       sort: params.sort,
       direction: params.direction,
       // Empty string collapses to omitted so a cleared search keys the
@@ -592,7 +574,6 @@ export function fetchSenderDetail(
 export interface SenderPolicyPatch {
   /** Only `'keep'` is writable on this route (D40). */
   policyType?: 'keep';
-  isVip?: boolean;
   isProtected?: boolean;
 }
 
@@ -606,7 +587,6 @@ export interface SenderPolicyPatch {
 export interface SenderPolicyResultDto {
   senderId: string;
   policyType: 'keep' | 'archive' | 'unsubscribe' | 'later' | null;
-  isVip: boolean;
   isProtected: boolean;
   protectionReason: ProtectionReasonWire | null;
   protectionSetAt: string | null;
@@ -618,8 +598,8 @@ export interface SenderPolicyResultDto {
  * PATCH /api/senders/:id/policy — standing-policy write (D40, D42, D43).
  *
  * Non-destructive (no Gmail mutation, no undo token) — Keep applies
- * immediately per D40 and the VIP / Protect chips are plain set-state
- * toggles per D42/D43, so this does NOT ride the D226 destructive
+ * immediately per D40 and the Protect chip is a plain set-state toggle,
+ * so this does NOT ride the D226 destructive
  * lifecycle (no preview, no Idempotency-Key header; idempotency is the
  * set-state semantics).
  */

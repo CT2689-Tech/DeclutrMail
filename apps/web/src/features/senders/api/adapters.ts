@@ -172,12 +172,11 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
     lastReview: row.lastReview,
     // Standing policy flags now ride the list row (BE
     // `SenderListRow.protectionFlags`). `protected` drives the row's
-    // "Protected" chip + the "Protected" KPI; `isVip` joins it in the
-    // fact-derived Keep rule so VIPs never receive a destructive primary.
+    // "Protected" chip + the fact-derived Keep rule so protected senders
+    // never receive a destructive primary.
     // Optional-chained so a malformed / older response that omits the
     // block degrades to "not protected" rather than crashing the list.
     protected: row.protectionFlags?.isProtected ?? false,
-    isVip: row.protectionFlags?.isVip ?? false,
     // Standing-policy unsub state (D38 + 2026-06-05 brainstorm). True
     // when the BE has the sender's policy at `'unsubscribe'`. Drives
     // the unsub pill on the sender card; `unsubStatus` (D9 Wave 2)
@@ -207,13 +206,11 @@ export function adaptSenderListRow(row: SenderListRow, now: number = Date.now())
  *   user_defined     → user-marked
  *   engagement_based → auto-receipts (closest existing FE bucket today;
  *                       a richer enum lands when the BE adds more reasons)
- *   vip              → user-marked (header already renders the VIP chip
- *                       separately from the Protect chip)
  * If `isProtected` is true but the wire omits the reason, fall back to
  * `user-marked` so the chip renders something rather than nothing.
  *
  * Shared by `adaptSenderDetail` (query path) and the Sender Detail
- * VIP/Protect toggle `onSuccess` reconcile (mutation path) so both
+ * Protect toggle `onSuccess` reconcile (mutation path) so both
  * derive the header chip from the same mapping.
  */
 export function adaptProtectionReason(
@@ -231,7 +228,6 @@ export function adaptSenderDetail(args: {
   now?: number;
 }): SenderDetail {
   const sender = adaptSenderListRow(args.detail, args.now);
-  const isVip = args.detail.protectionFlags.isVip;
   const isProtected = args.detail.protectionFlags.isProtected;
   const protectionReason: ProtectionReason | null = adaptProtectionReason(
     isProtected,
@@ -257,7 +253,6 @@ export function adaptSenderDetail(args: {
     email: args.detail.email,
     // Presentation-only formatting of the real Gmail category enum.
     gmailCategory: CATEGORY_TO_LABEL[args.detail.gmailCategory],
-    isVip,
     isProtected,
     protectionReason,
     // Standing-policy pill on Sender Detail (FOUNDER-FOLLOWUPS
@@ -343,7 +338,7 @@ const GENERATED_BY_TO_SOURCE: Record<DecisionHistoryRowDto['generatedBy'], Decis
 /**
  * Wire history row → FE history row. The wire schema is narrower (just
  * the engine's recorded decisions) than the FE component supports (the
- * component renders any `activity_log` row, including VIP toggles and
+ * component renders any `activity_log` row, including protection and
  * Restore actions). The component handles a degenerate `count` of 0 by
  * omitting the email-count span, so we leave it unset.
  */

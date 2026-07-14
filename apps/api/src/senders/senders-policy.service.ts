@@ -10,13 +10,12 @@ import type { SenderPolicyPatch, SenderPolicyResult } from './senders.types.js';
  * SendersPolicyService — the standing-policy WRITE surface for the
  * Senders feature (D40, D42, D43).
  *
- * Owns the `sender_policies` writes for the three user-facing policy
+ * Owns the `sender_policies` writes for the two user-facing policy
  * mutations:
  *
  *   - **Keep** (D40) — `policy_type='keep'`; applies immediately, no
  *     Gmail mutation, no preview (ADR-0015: `keep` is `policy-only`
  *     with `buildPolicyWrite() → { policyType: 'keep' }`).
- *   - **VIP toggle** (D42/D43) — `is_vip` set-state.
  *   - **Protect toggle** (D42/D43) — `is_protected` set-state with
  *     `protection_reason='user_defined'` provenance (D22) on protect
  *     and the user-agency-wins memory pin on unprotect (the prior
@@ -29,8 +28,8 @@ import type { SenderPolicyPatch, SenderPolicyResult } from './senders.types.js';
  * which publishes an event for the senders-owned consumer instead).
  *
  * Audit (D43): every actual state change appends `activity_log` rows —
- * `keep` for the standing verdict, `marked_vip` / `unmarked_vip` /
- * `marked_protected` / `unmarked_protected` for the modifiers — in the
+ * `keep` for the standing verdict and `marked_protected` /
+ * `unmarked_protected` for the safety state — in the
  * SAME transaction as the policy upsert. `affected_count` is always 0
  * (a standing-policy flip moves no mail) and `undo_token` is null
  * (nothing destructive to reverse; the toggle itself is the undo).
@@ -90,11 +89,10 @@ export class SendersPolicyService {
       // so the first Keep on a fresh sender IS a change.
       const keepChange =
         patch.policyType !== undefined && existing?.policyType !== patch.policyType;
-      const vipChange = patch.isVip !== undefined && patch.isVip !== (existing?.isVip ?? false);
       const protectChange =
         patch.isProtected !== undefined && patch.isProtected !== (existing?.isProtected ?? false);
 
-      if (!keepChange && !vipChange && !protectChange) {
+      if (!keepChange && !protectChange) {
         // Idempotent no-op: nothing written, no audit row, and — when
         // the sender has no policy row — none created (a no-op must not
         // promote an engine-default sender to `policy_type='keep'`).
@@ -102,8 +100,7 @@ export class SendersPolicyService {
       }
 
       // Upsert with ONLY the changed fields in the conflict SET so a
-      // VIP toggle can never clobber a concurrent Protect (or the
-      // standing verdict) and vice versa.
+      // Protect can never clobber a concurrent standing-verdict write.
       const [row] = await tx
         .insert(senderPolicies)
         .values({
@@ -111,9 +108,8 @@ export class SendersPolicyService {
           senderKey,
           // Fresh row: unspecified fields take their column defaults
           // (policy_type='keep' is the schema default for any policy
-          // row; both modifiers default false).
+          // row; protection defaults false).
           ...(patch.policyType !== undefined ? { policyType: patch.policyType } : {}),
-          ...(patch.isVip !== undefined ? { isVip: patch.isVip } : {}),
           ...(patch.isProtected !== undefined ? { isProtected: patch.isProtected } : {}),
           ...(patch.isProtected === true
             ? { protectionReason: 'user_defined' as const, protectionSetAt: sql`now()` }
@@ -123,7 +119,6 @@ export class SendersPolicyService {
           target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
           set: {
             ...(keepChange ? { policyType: patch.policyType } : {}),
-            ...(vipChange ? { isVip: patch.isVip } : {}),
             ...(protectChange
               ? patch.isProtected === true
                 ? {
@@ -164,9 +159,6 @@ export class SendersPolicyService {
       if (keepChange) {
         auditValues.push({ ...base, action: 'keep' });
       }
-      if (vipChange) {
-        auditValues.push({ ...base, action: patch.isVip ? 'marked_vip' : 'unmarked_vip' });
-      }
       if (protectChange) {
         auditValues.push({
           ...base,
@@ -189,9 +181,11 @@ function projectResult(
   return {
     senderId,
     policyType: row?.policyType ?? null,
-    isVip: row?.isVip ?? false,
     isProtected: row?.isProtected ?? false,
-    protectionReason: row?.protectionReason ?? null,
+    protectionReason:
+      row?.protectionReason === 'user_defined' || row?.protectionReason === 'engagement_based'
+        ? row.protectionReason
+        : null,
     protectionSetAt: row?.protectionSetAt ? row.protectionSetAt.toISOString() : null,
     changed,
   };

@@ -29,7 +29,7 @@ const { color, font } = tokens;
  * Layout (D61 + D63):
  *   1. ScreenIntro — "Daily Brief" + the local-date the snapshot covers.
  *   2. Narrative — the D62 "sharp executive assistant" pre-amble.
- *   3. Reply section (max 6 per D63) — VIP star (D67) inline on each row.
+ *   3. Reply section (max 6 per D63).
  *   4. FYI section (max 4 per D63).
  *   5. Noise section (uncapped) — D65 bulk-archive flow lands in its
  *      own PR; here Noise renders as a count-per-sender list with a
@@ -277,7 +277,7 @@ function Narrative({ text }: { text: string }) {
 
 /**
  * Reply / FYI shared layout. Both render the same row shape — sender,
- * subject, VIP star (D67), Gmail deep-link. Section caps (D63) are
+ * subject and Gmail deep-link. Section caps (D63) are
  * enforced by the BE; `max` here is for the heading label only ("3 of 6").
  */
 function ReplyFyiSection({
@@ -403,7 +403,7 @@ function SectionHeading({
 // ── Rows ──────────────────────────────────────────────────────────────
 
 /**
- * One Reply or FYI row. Avatar → sender name (with D67 ⭐ inline if VIP)
+ * One Reply or FYI row. Avatar → sender name
  * → email domain → subject (truncated) → "Open in Gmail →".
  *
  * D41 deep-link: links to the first message id in the row's group via
@@ -456,15 +456,6 @@ function ReplyFyiRow({ row, isMobile }: { row: BriefItemWire; isMobile: boolean 
           >
             {row.senderName || row.senderEmail}
           </span>
-          {row.isVip && (
-            <span
-              aria-label="VIP sender"
-              title="VIP sender"
-              style={{ color: color.amber, fontSize: 13 }}
-            >
-              ★
-            </span>
-          )}
         </div>
         <div style={{ fontSize: 12, color: color.fgMuted, fontFamily: font.mono }}>{domain}</div>
       </div>

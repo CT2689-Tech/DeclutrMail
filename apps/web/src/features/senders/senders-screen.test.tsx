@@ -50,7 +50,6 @@ const ROW = {
   unsubscribeMethod: 'one_click' as const,
   lastReview: null,
   protectionFlags: {
-    isVip: false,
     isProtected: false,
     protectionReason: null,
     protectionSetAt: null,

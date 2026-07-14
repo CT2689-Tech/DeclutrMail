@@ -1,9 +1,9 @@
 /**
  * Standing-policy mutation hook (D40, D42, D43).
  *
- * One mutation backs all three policy writes — Keep (`policyType:
- * 'keep'`), the VIP toggle (`isVip`), and the Protect toggle
- * (`isProtected`). The wire is SET-STATE (explicit target values), so
+ * One mutation backs both standing-policy writes — Keep (`policyType:
+ * 'keep'`) and the Protect toggle (`isProtected`). The wire is
+ * SET-STATE (explicit target values), so
  * a retried mutation is naturally idempotent server-side.
  *
  * Non-destructive — no preview, no undo token, standard mutation UX
@@ -17,9 +17,8 @@
  *   - `sendersKeys.all` — detail (+ its child queries), list pages, and
  *     summary all carry `protectionFlags` / `policyType` / the Protect
  *     intent-bucket + KPI counts.
- *   - `activityKeys.all` — the BE appends D43 audit rows
- *     (`keep` / `marked_vip` / `unmarked_vip` / `marked_protected` /
- *     `unmarked_protected`) on every actual change.
+ *   - `activityKeys.all` — the BE appends audit rows (`keep` /
+ *     `marked_protected` / `unmarked_protected`) on actual changes.
  *
  * The protected-sender capability gate stays correct without extra
  * wiring: the BE reads `sender_policies` live on every enqueue, and the

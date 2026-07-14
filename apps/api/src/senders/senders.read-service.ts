@@ -237,13 +237,6 @@ export class SendersReadService {
      */
     isProtected?: boolean | null;
     /**
-     * When `true`, return only senders with the VIP flag
-     * (`sender_policies.is_vip = true`). When `null`/omitted, no
-     * filter. Backs the Settings VIP list (U23 — same server-side
-     * stance as `isProtected`). No negated form yet (not a surface).
-     */
-    isVip?: boolean | null;
-    /**
      * Sortable column — Slice 1 supports `total` | `last_seen` |
      * `first_seen` | `name`. Defaults to `'total'` per the senders
      * list contract — the new "flood" headline. `read` / `recommended`
@@ -483,12 +476,6 @@ export class SendersReadService {
         sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
       );
     }
-    if (args.isVip === true) {
-      // VIP filter — rides the same `sender_policies` left join as the
-      // protected predicate (NULL rows excluded, the correct default
-      // for a "show only VIPs" surface).
-      conditions.push(eq(senderPolicies.isVip, true));
-    }
     if (args.activity) {
       const pred = buildActivityPredicate(args.activity);
       conditions.push(pred);
@@ -556,7 +543,6 @@ export class SendersReadService {
         // `sender_policies` row reads null (engine default). Mirrors the
         // join in `getSenderDetail`; `sender_policies` is unique on
         // `(mailbox_account_id, sender_key)` so no row multiplication.
-        isVip: senderPolicies.isVip,
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
@@ -637,9 +623,8 @@ export class SendersReadService {
           row.lastDecisionConfidence,
         ),
         protectionFlags: {
-          isVip: row.isVip ?? false,
           isProtected: row.isProtected ?? false,
-          protectionReason: row.protectionReason ?? null,
+          protectionReason: normalizeProtectionReason(row.protectionReason),
           protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
         },
         policyType: row.policyType ?? null,
@@ -725,8 +710,6 @@ export class SendersReadService {
     mailboxAccountId: string;
     category: GmailCategory | null;
     isProtected?: boolean | null;
-    /** VIP filter (U23) — mirrored from the list scan. */
-    isVip?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
      *  the list scan uses, so "All N" counts the search hits, not the
      *  whole mailbox. */
@@ -753,9 +736,6 @@ export class SendersReadService {
       totalMatchingConditions.push(
         sql`(${senderPolicies.isProtected} IS NULL OR ${senderPolicies.isProtected} = false)`,
       );
-    }
-    if (args.isVip === true) {
-      totalMatchingConditions.push(eq(senderPolicies.isVip, true));
     }
     if (args.activity) {
       totalMatchingConditions.push(buildActivityPredicate(args.activity));
@@ -921,7 +901,7 @@ export class SendersReadService {
    * The eight buckets (priority order):
    *   1. one_time     — lifetime ≤ ONE_TIME_MAX_TOTAL (noise floor,
    *                     hidden by default in the FE)
-   *   2. protect      — explicit user marking (is_protected OR is_vip)
+   *   2. protect      — active Protected safety state
    *   3. people       — additive score ≥ PERSON_SCORE_THRESHOLD
    *                     (replied/free-mail/own-domain minus bulk signals)
    *   4. needs_review — engine recommends cleanup/later at conf ≥ gate
@@ -1041,7 +1021,7 @@ export class SendersReadService {
             -- Priority 1: one-time (lifetime ≤ N msgs)
             WHEN s.total_received <= ${VOLUMES.ONE_TIME_MAX_TOTAL} THEN 'one_time'
             -- Priority 2: explicit protect
-            WHEN COALESCE(sp.is_protected, false) OR COALESCE(sp.is_vip, false) THEN 'protect'
+            WHEN COALESCE(sp.is_protected, false) THEN 'protect'
             -- Priority 3: people score
             WHEN (
                   (CASE WHEN lower(s.email) IN (SELECT email FROM replied) THEN ${SCORE.REPLIED_WEIGHT} ELSE 0 END)
@@ -1298,7 +1278,6 @@ export class SendersReadService {
         lastDecisionConfidence: lastDecisionConfidenceSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
-        isVip: senderPolicies.isVip,
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
         protectionSetAt: senderPolicies.protectionSetAt,
@@ -1326,9 +1305,8 @@ export class SendersReadService {
     }
 
     const protectionFlags: ProtectionFlags = {
-      isVip: row.isVip ?? false,
       isProtected: row.isProtected ?? false,
-      protectionReason: row.protectionReason ?? null,
+      protectionReason: normalizeProtectionReason(row.protectionReason),
       protectionSetAt: row.protectionSetAt ? row.protectionSetAt.toISOString() : null,
     };
 
@@ -2323,4 +2301,10 @@ function ensureSafeIntegerNumber(value: string | number, label: string): number 
     throw new InternalServerErrorException(`${label} out of safe-integer range: ${value}`);
   }
   return n;
+}
+
+function normalizeProtectionReason(
+  reason: string | null | undefined,
+): ProtectionFlags['protectionReason'] {
+  return reason === 'user_defined' || reason === 'engagement_based' ? reason : null;
 }

@@ -11,16 +11,10 @@ import { SNOOZE_LABEL_MAP_TOKEN } from './snoozed.tokens.js';
 /**
  * SnoozedReadService — the Snoozed/Later review list (D78, D80).
  *
- * A sender is on the list when EITHER:
- *
- *   1. MIRROR membership — it has ≥1 message currently carrying the
- *      per-mailbox `DeclutrMail/Later` Gmail label, per the local label
- *      mirror (`mail_messages.label_ids`). The mirror is maintained by
- *      the label-action worker's terminal tx + Gmail sync, so this is
- *      ground truth: a triage "Later" lands here the moment its action
- *      job completes, and an UNDONE Later (label removed) drops off.
- *   2. TIMER membership — `sender_policies.snoozed_until` is set
- *      (D79 schema), written by `PATCH /api/snoozed/:senderId`.
+ * A sender is on the list only while `sender_policies.snoozed_until`
+ * contains its required future return time. The matching Gmail label
+ * mirror supplies the real message count but never creates a
+ * timerless Later row (D245).
  *
  * The mirror stores raw Gmail label IDS, and only the worker process
  * has a Gmail client — so the per-mailbox Later-label-id arrives via
@@ -28,9 +22,8 @@ import { SNOOZE_LABEL_MAP_TOKEN } from './snoozed.tokens.js';
  * packages/workers/src/snooze-wake.queue.ts). When the mapping is
  * unavailable (Redis down, or the mailbox's first sweep hasn't run
  * yet), the read DEGRADES HONESTLY: timer rows still return, with
- * `laterCount: null` ("count unknown"), and mirror-only rows are
- * absent until the next sweep publishes the mapping (≤15 min). No
- * Gmail call ever happens on this read path.
+ * `laterCount: null` ("count unknown"). No Gmail call ever happens on
+ * this read path.
  *
  * PRIVACY (D7, D228): sender display metadata, counts, timestamps.
  * No subjects, snippets, or body-adjacent content.
@@ -85,7 +78,7 @@ export class SnoozedReadService {
       );
     const timers = new Map(timerRows.map((row) => [row.senderKey, row]));
 
-    const senderKeys = Array.from(new Set([...mirrorCounts.keys(), ...timers.keys()]));
+    const senderKeys = Array.from(timers.keys());
     if (senderKeys.length === 0) {
       return [];
     }
@@ -113,21 +106,14 @@ export class SnoozedReadService {
         // `null` = mirror unavailable (no mapping yet) — distinct from
         // the honest `0` of a timer-only sender with no Later'd mail.
         laterCount: labelId === null ? null : (mirrorCounts.get(sender.senderKey) ?? 0),
-        snoozedUntil: timer?.snoozedUntil ? timer.snoozedUntil.toISOString() : null,
+        snoozedUntil: timer!.snoozedUntil!.toISOString(),
         snoozedAt: timer?.snoozedAt ? timer.snoozedAt.toISOString() : null,
         reason: timer?.snoozedReason ?? null,
       };
     });
 
-    // Soonest wake first; timer-less rows last, biggest pile first.
-    result.sort((a, b) => {
-      if (a.snoozedUntil !== null && b.snoozedUntil !== null) {
-        return a.snoozedUntil.localeCompare(b.snoozedUntil);
-      }
-      if (a.snoozedUntil !== null) return -1;
-      if (b.snoozedUntil !== null) return 1;
-      return (b.laterCount ?? 0) - (a.laterCount ?? 0);
-    });
+    // Soonest wake first.
+    result.sort((a, b) => a.snoozedUntil.localeCompare(b.snoozedUntil));
     return result;
   }
 

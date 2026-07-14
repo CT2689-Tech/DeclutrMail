@@ -108,12 +108,6 @@ export interface Sender {
    * absent ⇒ not unsub-ready.
    */
   unsubscribeMethod?: 'one_click' | 'mailto' | 'none' | null;
-  /**
-   * Standing VIP policy (D42/D43). Distinct from `protected`, but both
-   * force the fact-derived primary action to Keep and block destructive
-   * actions — a VIP must never surface as a cleanup suggestion.
-   */
-  isVip?: boolean;
   /** Volume spike multiplier vs. the sender's usual rate. */
   spike?: number;
   /**
@@ -675,13 +669,13 @@ export const SENDERS: Sender[] = [
 
 /**
  * A sender is shielded from destructive / bulk actions when it carries a
- * standing policy — either Protect OR VIP (D42/D43, independent flags).
+ * standing Protect policy.
  * The single predicate every "can this be bulk-acted?" surface reads, so
  * the row chip, the action CTAs, the KPI count, and the intent bucket can
- * never disagree (the disagreement was the VIP-only-bulk-actionable gap).
+ * never disagree.
  */
-export function isStandingProtected(s: Pick<Sender, 'protected' | 'isVip'>): boolean {
-  return s.protected === true || s.isVip === true;
+export function isStandingProtected(s: Pick<Sender, 'protected'>): boolean {
+  return s.protected === true;
 }
 
 export function canUnsubscribe(s: Sender): boolean {
@@ -744,7 +738,7 @@ export function gmailSearchUrl(domain: string): string {
 
 // ─── Actions ───────────────────────────────────────────────────
 // Canonical verbs (D227: Keep / Archive / Unsubscribe / Later) plus
-// Protect — a distinct VIP/lock operation, not a triage verb.
+// Protect — a distinct safety operation, not a triage verb.
 
 export type ActionVerb = 'Keep' | 'Archive' | 'Unsubscribe' | 'Later' | 'Protect' | 'Delete';
 
@@ -764,7 +758,7 @@ export const VERB_PAST: Record<ActionVerb, string> = {
  * Bridge the senders-feature's capitalized verb labels to the lowercase
  * Action Registry verbs (ADR-0015) so every action surface sources its
  * button label + shortcut from the ONE registry instead of a local
- * hardcode (P4). `Protect` is a VIP/lock op with no registry verb.
+ * hardcode (P4). `Protect` is a safety operation with no registry verb.
  */
 const VERB_TO_REGISTRY: Partial<Record<ActionVerb, RegistryActionVerb>> = {
   Keep: 'keep',

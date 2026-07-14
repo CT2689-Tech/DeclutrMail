@@ -30,7 +30,27 @@
 
 import { z } from 'zod';
 
-import type { BriefItem, BriefPayload, BriefSenderGroup } from '@declutrmail/db';
+export interface BriefItem {
+  senderKey: string;
+  senderName: string;
+  senderEmail: string;
+  subject: string;
+  messageIds: string[];
+}
+
+export interface BriefSenderGroup {
+  senderKey: string;
+  senderName: string;
+  messageCount: number;
+  messageIds: string[];
+}
+
+export interface BriefPayload {
+  reply: BriefItem[];
+  fyi: BriefItem[];
+  noise: BriefSenderGroup[];
+  narrative: string;
+}
 
 /**
  * D62 — narrative provider port. `undefined` on the worker deps means
@@ -66,7 +86,6 @@ export interface BriefNarrativeItem {
   subject: string;
   /** Gmail's `snippet` — D7-allowlisted preview, capped at 300 chars. */
   snippet: string;
-  isVip: boolean;
 }
 
 /** One Noise sender group — counts only for the narrative. */
@@ -164,7 +183,6 @@ export const briefItemSchema = z
     senderName: z.string(),
     senderEmail: z.string(),
     subject: z.string(),
-    isVip: z.boolean(),
     messageIds: z.array(z.string()),
   })
   .strict();

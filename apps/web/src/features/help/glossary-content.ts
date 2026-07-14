@@ -20,12 +20,7 @@ export const GLOSSARY_TERMS = {
   protected: {
     term: 'Protected',
     definition:
-      'A silent standing policy that locks a sender to Keep and prevents new cleanup suggestions. Protected senders are not elevated in Brief.',
-  },
-  vip: {
-    term: 'VIP',
-    definition:
-      'A visible standing policy for an important sender. VIP locks the sender to Keep and includes the sender in every Brief.',
+      'A standing safety policy that locks a sender to Keep, prevents cleanup suggestions, and excludes the sender from bulk and automatic actions.',
   },
   observe: {
     term: 'Observe',
@@ -68,8 +63,8 @@ export const GLOSSARY_GROUPS: ReadonlyArray<{
   },
   {
     title: 'Standing sender controls',
-    description: 'Two different ways to tell DeclutrMail to leave a sender alone.',
-    terms: ['protected', 'vip'],
+    description: 'How to tell DeclutrMail to leave a sender alone.',
+    terms: ['protected'],
   },
   {
     title: 'Autopilot modes',

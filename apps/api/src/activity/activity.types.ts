@@ -134,7 +134,7 @@ export type ActivityVerbFilter = ActivityLogEntry['action'];
  * pending founder ratification — see docs/execution/decision-queue.md).
  *
  * Counts only the five canonical verbs (K/A/U/L/D, D227 + ADR-0019);
- * feature-specific actions (`followup-dismiss`, VIP/Protect toggles)
+ * feature-specific actions (`followup-dismiss`, Protect toggles)
  * are not cleanup decisions and are excluded from every field.
  *
  * Derived from existing tables only (`activity_log` + `undo_journal`);

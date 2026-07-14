@@ -107,7 +107,7 @@ export const Selected: Story<typeof SenderCard> = {
 /** Protected — Unsubscribe + Archive disabled. */
 export const Protected: Story<typeof SenderCard> = {
   args: {
-    sender: sender({ name: 'VIP Sender', protected: true }),
+    sender: sender({ name: 'Protected Sender', protected: true }),
     selected: false,
     onToggleSelect: noop,
     onAction: noop,

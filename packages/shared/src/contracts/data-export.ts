@@ -78,7 +78,7 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     buttonLabel: 'Senders CSV',
     pendingLabel: 'Preparing senders CSV…',
     description:
-      'Sender identity and observed totals plus selected Keep, Archive, Unsubscribe, Later, VIP, and Protected fields.',
+      'Sender identity and observed totals plus selected Keep, Archive, Unsubscribe, Later, and Protected fields.',
     includedInventoryIds: includedInventoryIds('senders-csv'),
     completeAccountExport: false,
   },

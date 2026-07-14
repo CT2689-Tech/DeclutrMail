@@ -26,8 +26,6 @@ export type Verdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
  * Why a sender is protected. Each variant has a different copy in
  * the header tooltip and the recommendation banner.
  *
- * VIP is a SEPARATE standing policy (D42, D43) — its own header chip
- * and its own tooltip — never a protection reason.
  */
 export type ProtectionReason =
   | 'user-marked' // founder toggled Protect on
@@ -45,7 +43,7 @@ export type DecisionSource = 'You' | 'Triage' | 'Manual' | 'Autopilot' | 'Screen
 
 /**
  * Past-tense action labels surfaced in the decision-history list.
- * The set spans all V2 actions (D46) — including VIP/Protect toggles
+ * The set spans all V2 actions (D46) — including Protect toggles
  * and the lifecycle actions (Restored, Snoozed).
  */
 export type DecisionAction =
@@ -53,8 +51,6 @@ export type DecisionAction =
   | 'Kept'
   | 'Unsubscribe requested'
   | 'Moved to Later'
-  | 'Marked VIP'
-  | 'Unmarked VIP'
   | 'Protected'
   | 'Unprotected'
   | 'Restored';
@@ -172,7 +168,6 @@ export interface SenderDetail {
   email: string;
   /** Verbose Gmail-side category — e.g. "Gmail: Social". */
   gmailCategory: string;
-  isVip: boolean;
   isProtected: boolean;
   /** Why the sender is protected — only set when `isProtected` is true. */
   protectionReason: ProtectionReason | null;
@@ -204,7 +199,7 @@ export interface SenderDetail {
    * Gmail" callout. `null` unless `unsubscribeMethod === 'mailto'`.
    */
   unsubscribeMailtoUrl: string | null;
-  /** Optional engine suggestion. `null` for VIP / Protected senders. */
+  /** Optional engine suggestion. `null` for Protected senders. */
   recommendation: Recommendation | null;
   recentMessages: RecentMessage[];
   stats: SenderStats;

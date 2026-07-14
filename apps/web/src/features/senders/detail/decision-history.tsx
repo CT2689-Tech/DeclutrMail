@@ -18,9 +18,6 @@ function toneFor(
       return 'amber';
     case 'Kept':
       return 'primary';
-    case 'Marked VIP':
-    case 'Unmarked VIP':
-      return 'amber';
     case 'Protected':
     case 'Unprotected':
       return 'emerald';

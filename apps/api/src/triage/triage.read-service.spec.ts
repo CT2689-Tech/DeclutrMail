@@ -142,15 +142,15 @@ describe('TriageReadService.listQueue — decided-sender exclusion (D30/D226)', 
       mailboxAccountId: mailboxId,
       senderKey: SENDER_A,
       isProtected: true,
-      protectionReason: 'engagement_based',
+      protectionReason: 'user_defined',
       protectionSetAt: new Date(),
     });
 
     const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
     const protectedRow = rows.find((r) => r.senderKey === SENDER_A)!;
     expect(protectedRow.verdict).toBe('keep');
-    expect(protectedRow.protectionReason).toBe('engagement');
-    expect(protectedRow.reasoning).toContain('protected (engagement)');
+    expect(protectedRow.protectionReason).toBe('manual');
+    expect(protectedRow.reasoning).toContain('protected (manual)');
     expect(protectedRow.reasoning).toContain('the engine would suggest: archive');
 
     // The stored engine verdict is NOT rewritten.

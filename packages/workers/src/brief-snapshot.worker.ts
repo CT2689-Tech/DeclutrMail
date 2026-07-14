@@ -2,14 +2,11 @@ import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
-  type BriefItem,
-  type BriefPayload,
-  type BriefSenderGroup,
+  type BriefPayload as PersistedBriefPayload,
   briefRuns,
   mailMessages,
   mailboxAccounts,
   type schema,
-  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -25,9 +22,12 @@ import {
   renderTemplateNarrative,
   resolveBriefLlmTimeoutMs,
   type BriefLlmPort,
+  type BriefItem,
   type BriefNarrativeInput,
   type BriefNarrativeItem,
   type BriefNarrativeNoiseGroup,
+  type BriefPayload,
+  type BriefSenderGroup,
 } from './brief-narrative.js';
 import { createLimiter, runWithTimeout } from './reasoning.js';
 import type { WorkerContext } from './worker-context.js';
@@ -139,7 +139,7 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *   - For each mailbox, checks whether today's Brief already exists
  *     (D69 frozen-once invariant) and skips if so.
  *   - Queries yesterday's INBOUND `mail_messages` metadata.
- *   - Groups by sender, joins `senders` + `sender_policies` for VIP
+ *   - Groups by sender, joins sender identity/engagement facts
  *     state + `triage_decisions` for engine verdict.
  *   - Categorizes into D63 sections:
  *       reply  — non-VIPs whose engine verdict is 'keep' or who have
@@ -170,9 +170,6 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     arrives.
  *   - D61 email digest delivery — separate worker that watches for
  *     `email_sent_at IS NULL` rows from users opted in.
- *   - VIP `is_vip` is read directly from `sender_policies`; the
- *     D67 auto-elevation rule is applied in code here.
- *
  * Privacy (D7, D228): every read is metadata. The worker touches
  * `mail_messages.{provider_message_id, provider_thread_id, sender_key,
  * subject, internal_date, is_outbound}` — every column is allowlisted.
@@ -369,6 +366,10 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // to the FE as broken data. Worker's per-mailbox try/catch upstream
     // counts the failure and continues to the next mailbox.
     briefPayloadSchema.parse(payload);
+    // The DB package still carries the removed prelaunch marker in its
+    // JSONB TypeScript declaration. Runtime validation above is the source
+    // of truth until that separately-owned schema type is cleaned up.
+    const persistedPayload = payload as unknown as PersistedBriefPayload;
 
     if (existing) {
       // Heal path — replace the frozen EMPTY run with the first
@@ -376,7 +377,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       // concurrent tick that healed it first wins and this one no-ops.
       const updated = await this.deps.db
         .update(briefRuns)
-        .set({ generatedBy, briefPayload: payload, generatedAt: now })
+        .set({ generatedBy, briefPayload: persistedPayload, generatedAt: now })
         .where(and(eq(briefRuns.id, existing.id), briefRunIsEmptySql()))
         .returning({ id: briefRuns.id });
       if (updated.length === 0) return null;
@@ -388,7 +389,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           mailboxAccountId,
           runDateLocal: todayLocal,
           generatedBy,
-          briefPayload: payload,
+          briefPayload: persistedPayload,
           generatedAt: now,
         })
         .onConflictDoNothing({
@@ -454,6 +455,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         providerMessageId: mailMessages.providerMessageId,
         subject: mailMessages.subject,
         snippet: mailMessages.snippet,
+        labelIds: mailMessages.labelIds,
       })
       .from(mailMessages)
       .where(
@@ -482,50 +484,46 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       /** First snippet seen for this sender — used by the LLM prompt
        *  only; NEVER persisted into `brief_payload`. */
       representativeSnippet: string;
+      hasImportant: boolean;
+      hasStarred: boolean;
     };
     const bySender = new Map<string, SenderBucket>();
     for (const m of messages) {
       const prev = bySender.get(m.senderKey);
       if (prev) {
         prev.messageIds.push(m.providerMessageId);
+        prev.hasImportant ||= m.labelIds.includes('IMPORTANT');
+        prev.hasStarred ||= m.labelIds.includes('STARRED');
       } else {
         bySender.set(m.senderKey, {
           senderKey: m.senderKey,
           messageIds: [m.providerMessageId],
           representativeSubject: m.subject,
           representativeSnippet: m.snippet,
+          hasImportant: m.labelIds.includes('IMPORTANT'),
+          hasStarred: m.labelIds.includes('STARRED'),
         });
       }
     }
 
     const senderKeys = [...bySender.keys()];
 
-    // Look up sender identity + VIP state + engine verdict in 3 small
+    // Look up sender identity/engagement and engine verdict in 2 small
     // parallel queries. Per-feature filter on (mailbox, sender_key in [...]).
-    const [identityRows, policyRows, decisionRows] = await Promise.all([
+    const [identityRows, decisionRows] = await Promise.all([
       this.deps.db
         .select({
           senderKey: senders.senderKey,
           displayName: senders.displayName,
           email: senders.email,
+          gmailCategory: senders.gmailCategory,
+          repliedCount: senders.repliedCount,
         })
         .from(senders)
         .where(
           and(
             eq(senders.mailboxAccountId, mailboxAccountId),
             inArray(senders.senderKey, senderKeys),
-          ),
-        ),
-      this.deps.db
-        .select({
-          senderKey: senderPolicies.senderKey,
-          isVip: senderPolicies.isVip,
-        })
-        .from(senderPolicies)
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            inArray(senderPolicies.senderKey, senderKeys),
           ),
         ),
       this.deps.db
@@ -543,8 +541,8 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     ]);
 
     const identityBy = new Map(identityRows.map((r) => [r.senderKey, r]));
-    const vipBy = new Map(policyRows.map((r) => [r.senderKey, Boolean(r.isVip)]));
     const verdictBy = new Map(decisionRows.map((r) => [r.senderKey, r.verdict]));
+    const priorityBySenderKey = new Map<string, number>();
 
     // D63 + D67 categorization. Snippets are tracked in a parallel
     // map keyed on senderKey so the BriefItem (which is persisted)
@@ -562,24 +560,23 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       // a placeholder so we never crash a Brief on stale data.
       const senderName = identity?.displayName ?? '(unknown sender)';
       const senderEmail = identity?.email ?? '';
-      const isVip = vipBy.get(bucket.senderKey) ?? false;
       const verdict = verdictBy.get(bucket.senderKey) ?? null;
       snippetBySenderKey.set(bucket.senderKey, bucket.representativeSnippet);
+      priorityBySenderKey.set(
+        bucket.senderKey,
+        (bucket.hasImportant ? 8 : 0) +
+          (bucket.hasStarred ? 4 : 0) +
+          ((identity?.repliedCount ?? 0) > 0 ? 2 : 0) +
+          (identity?.gmailCategory === 'primary' ? 1 : 0),
+      );
 
       const item: BriefItem = {
         senderKey: bucket.senderKey,
         senderName,
         senderEmail,
         subject: bucket.representativeSubject,
-        isVip,
         messageIds: [...bucket.messageIds],
       };
-
-      // D67 — VIPs always elevate to Reply, regardless of verdict.
-      if (isVip) {
-        replyCandidates.push(item);
-        continue;
-      }
 
       switch (verdict) {
         case 'archive':
@@ -605,12 +602,12 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       }
     }
 
-    // D63 — cap reply at 6, fyi at 4. VIPs are appended FIRST so a
-    // mixed list naturally favors VIPs in the cap (D67's elevation
-    // rule means VIPs already won bucket selection; this preserves
-    // them in the cap).
-    const reply = sortVipFirst(replyCandidates).slice(0, REPLY_MAX);
-    const fyi = sortVipFirst(fyiCandidates).slice(0, FYI_MAX);
+    // D63 — cap reply at 6, fyi at 4. Within each engine-selected
+    // section, observed engagement and Gmail importance decide which
+    // items survive the cap. Manual safety state never changes Brief
+    // categorization or priority.
+    const reply = sortObservedPriority(replyCandidates, priorityBySenderKey).slice(0, REPLY_MAX);
+    const fyi = sortObservedPriority(fyiCandidates, priorityBySenderKey).slice(0, FYI_MAX);
 
     // D62 — narrative composition. The LLM path is preferred when wired
     // and successful; on any failure (null return, timeout, throw) the
@@ -725,7 +722,6 @@ function buildNarrativeInput(input: {
     senderEmail: item.senderEmail,
     subject: item.subject,
     snippet: input.snippetBySenderKey.get(item.senderKey) ?? '',
-    isVip: item.isVip,
   });
   const toNoiseGroup = (group: BriefSenderGroup): BriefNarrativeNoiseGroup => ({
     senderName: group.senderName,
@@ -739,15 +735,17 @@ function buildNarrativeInput(input: {
 }
 
 /**
- * D67 — preserve the VIP elevation invariant inside a capped section.
- * Stable-sorts so VIPs sit before non-VIPs without disturbing the
- * intra-bucket arrival order.
+ * Stable-sort a capped section by observed importance. Equal-scored
+ * items retain arrival order because modern JS sort is stable.
  */
-function sortVipFirst<T extends { isVip: boolean }>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    if (a.isVip === b.isVip) return 0;
-    return a.isVip ? -1 : 1;
-  });
+function sortObservedPriority<T extends { senderKey: string }>(
+  items: T[],
+  priorityBySenderKey: ReadonlyMap<string, number>,
+): T[] {
+  return [...items].sort(
+    (a, b) =>
+      (priorityBySenderKey.get(b.senderKey) ?? 0) - (priorityBySenderKey.get(a.senderKey) ?? 0),
+  );
 }
 
 /** Render `YYYY-MM-DD` from a Date treating it as UTC. */

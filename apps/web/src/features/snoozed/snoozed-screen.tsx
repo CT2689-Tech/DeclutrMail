@@ -28,11 +28,9 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
 /**
  * Later screen (D78–D80, D82, D245).
  *
- * Lists every sender in the Later bucket — mail currently sitting in
- * the `DeclutrMail/Later` Gmail label and/or an active wake timer —
- * grouped by wake-time bucket per D80 (Later today / Tomorrow / This
- * week / Eventually), plus a "Needs scheduling" repair group for
- * legacy Later items created before wake times were required.
+ * Lists every sender with an active Later return time, grouped by
+ * wake-time bucket per D80 (Later today / Tomorrow / This week /
+ * Eventually). Every Later action requires that time (D245).
  *
  * Row actions (D80):
  *   - **Wake now** — preview-light inline confirm (the wake is
@@ -42,7 +40,7 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  *     exactly what will happen before anything mutates). The restore
  *     runs in the snooze-wake worker; the row shows "Waking…" and the
  *     list polls until it drops off.
- *   - **Choose/Change wake time ▾** — D82 presets + custom date/time
+ *   - **Change wake time ▾** — D82 presets + custom date/time
  *     + optional note. Later cannot be made indefinite.
  *
  * Canonical product language (D245): "Later" is both the verb and the
@@ -183,7 +181,7 @@ function BucketGroup({
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: bucket === 'none' ? color.fgMuted : color.amber,
+            background: color.amber,
           }}
         />
         {label}
@@ -307,11 +305,7 @@ export function SnoozedRow({
 
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: color.fg, whiteSpace: 'nowrap' }}>
-            {waking
-              ? 'Waking…'
-              : row.snoozedUntil
-                ? `Wakes ${formatWakeTime(row.snoozedUntil, new Date())}`
-                : 'Needs a wake time'}
+            {waking ? 'Waking…' : `Wakes ${formatWakeTime(row.snoozedUntil, new Date())}`}
           </div>
           {row.reason ? (
             <div
@@ -335,7 +329,7 @@ export function SnoozedRow({
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
-            {row.snoozedUntil ? 'Change wake time ▾' : 'Choose wake time ▾'}
+            Change wake time ▾
           </Button>
           <Button
             tone="primary"

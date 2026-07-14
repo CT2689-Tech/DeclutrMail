@@ -39,11 +39,6 @@ export interface UseSendersOptions {
    */
   isProtected?: TriStateFilter | undefined;
   /**
-   * VIP filter (U23 settings VIP list). `true` = only VIP senders.
-   * Omit = no constraint. No negated form on the wire.
-   */
-  isVip?: boolean | undefined;
-  /**
    * Sortable column (ADR-0014). Server-side default = `'total'` when
    * omitted, so omitting takes the contract default — only pass when
    * the caller wants a non-default sort.
@@ -88,7 +83,6 @@ export function useSenders(options: UseSendersOptions = {}) {
       category: options.category,
       limit: options.limit,
       isProtected: options.isProtected,
-      isVip: options.isVip,
       sort: options.sort,
       direction: options.direction,
       q: options.q,
@@ -106,7 +100,6 @@ export function useSenders(options: UseSendersOptions = {}) {
           category: options.category,
           limit: options.limit,
           isProtected: options.isProtected,
-          isVip: options.isVip,
           sort: options.sort,
           direction: options.direction,
           q: options.q,

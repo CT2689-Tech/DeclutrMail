@@ -159,7 +159,7 @@ export function SenderCard({
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         {/* Emerald protected dot (spec v1.2 + ADR-0019). 6px overlay
             bottom-right of avatar when the sender is standing-protected
-            (D42/D43 — Protect OR VIP). Replaces the inline "STATUS:
+            (D42/D43 — Protect). Replaces the inline "STATUS:
             Protected" text the stat strip used to render — surfaces
             the state at a glance without a label leak. */}
         <span

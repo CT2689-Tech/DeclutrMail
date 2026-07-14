@@ -25,7 +25,6 @@ const sampleItem = (overrides: Record<string, unknown> = {}) => ({
   senderName: 'Sender',
   senderEmail: 'sender@example.com',
   subject: 'subject',
-  isVip: false,
   messageIds: ['msg-1'],
   ...overrides,
 });

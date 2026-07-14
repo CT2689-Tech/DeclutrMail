@@ -468,7 +468,7 @@ function SenderRow({
               }}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
-                <ProtectStar flags={sender.protectionFlags} />
+                <ProtectIndicator flags={sender.protectionFlags} />
                 <span
                   // Full identity on hover — duplicate display names
                   // ("Amazon.com" ×5) are only distinguishable by the
@@ -711,7 +711,7 @@ function UnsubGlyph({ method }: { method: UnsubscribeMethod | null }) {
  * canonical-cased verbs ('Archive' / 'Keep' / …); the table's public
  * `onAction` speaks the lowercase `SenderTableVerb` union. Keep routes
  * through (non-destructive, consumer applies immediately per D40);
- * Protect stays a status star (D42/D43), never a row verb.
+ * Protect stays a shield status (D245), never a row verb.
  */
 const ROW_VERB_TO_TABLE: Record<ActionVerb, SenderTableVerb | null> = {
   Keep: 'keep',
@@ -723,26 +723,38 @@ const ROW_VERB_TO_TABLE: Record<ActionVerb, SenderTableVerb | null> = {
 };
 
 /**
- * Read-only standing-protection indicator (D42/D43). Protect is a *status*,
- * not a triage verb (D227), so it renders as a ⭐ on protected / VIP rows —
+ * Read-only standing-protection indicator (D245). Protect is a *status*,
+ * not a triage verb (D227), so it renders as a shield on protected rows —
  * never a verb button. It is intentionally non-interactive here BY DESIGN:
  * the Protect write endpoint exists (`PATCH /api/senders/:id/policy` via
  * `useSetSenderPolicy`), but toggling a standing policy is a deliberate
  * per-sender decision that lives on the Sender Detail page — a one-click
- * row star invites accidental flips mid-scan. Renders nothing for
+ * row icon invites accidental flips mid-scan. Renders nothing for
  * unprotected rows so the name column stays quiet.
  */
-function ProtectStar({ flags }: { flags: SenderListRow['protectionFlags'] }) {
-  if (!flags.isVip && !flags.isProtected) return null;
-  const label = flags.isVip ? 'VIP — protected' : 'Protected';
+function ProtectIndicator({ flags }: { flags: SenderListRow['protectionFlags'] }) {
+  if (!flags.isProtected) return null;
+  const label = 'Protected';
   return (
     <span
       role="img"
       aria-label={label}
       title={label}
-      style={{ color: color.amber, fontSize: text.sm, flexShrink: 0, lineHeight: 1 }}
+      style={{ color: color.primary, display: 'inline-flex', flexShrink: 0, lineHeight: 1 }}
     >
-      ★
+      <svg
+        width={13}
+        height={13}
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      </svg>
     </span>
   );
 }

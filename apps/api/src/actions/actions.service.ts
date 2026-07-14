@@ -10,7 +10,7 @@ import {
 import { Queue } from 'bullmq';
 import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-// `senderPolicies` is imported for READ-ONLY queries (Protect/VIP guards
+// `senderPolicies` is imported for READ-ONLY queries (Protect guards
 // on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
 // are explicitly allowed.
 import {
@@ -172,7 +172,7 @@ export class ActionsService {
       const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
 
       const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .select({ isProtected: senderPolicies.isProtected })
         .from(senderPolicies)
         .where(
           and(
@@ -181,10 +181,10 @@ export class ActionsService {
           ),
         )
         .limit(1);
-      if (policy && (policy.isProtected || policy.isVip) && !override) {
+      if (policy?.isProtected && !override) {
         throw new ConflictException({
           code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected or VIP. Confirm to archive anyway.',
+          message: 'This sender is Protected. Confirm to archive anyway.',
         });
       }
 
@@ -308,7 +308,7 @@ export class ActionsService {
     }
 
     const [policy] = await this.db
-      .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+      .select({ isProtected: senderPolicies.isProtected })
       .from(senderPolicies)
       .where(
         and(
@@ -424,7 +424,7 @@ export class ActionsService {
         olderThan365d: counts?.recent365d ?? [],
       },
       unsubAvailable: sender.unsubscribeMethod !== null,
-      protected: Boolean(policy?.isProtected || policy?.isVip),
+      protected: Boolean(policy?.isProtected),
     };
   }
 
@@ -480,6 +480,12 @@ export class ActionsService {
 
     const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
     this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
+    if (primary.type === 'later' && selector.type !== 'sender') {
+      throw new BadRequestException({
+        code: 'LATER_SENDER_REQUIRED',
+        message: 'Later is scheduled per sender, not per message selection.',
+      });
+    }
 
     // D19/D77 free-cleanup cap — a composite (primary + optional
     // secondary on ONE sender, one click) is ONE unit. Fresh enqueues
@@ -503,7 +509,7 @@ export class ActionsService {
     if (selector.type === 'sender') {
       const senderKey = await this.resolveSenderKey(mailboxAccountId, selector.senderId);
       const [policy] = await this.db
-        .select({ isProtected: senderPolicies.isProtected, isVip: senderPolicies.isVip })
+        .select({ isProtected: senderPolicies.isProtected })
         .from(senderPolicies)
         .where(
           and(
@@ -512,10 +518,10 @@ export class ActionsService {
           ),
         )
         .limit(1);
-      if (policy && (policy.isProtected || policy.isVip) && !override) {
+      if (policy?.isProtected && !override) {
         throw new ConflictException({
           code: 'PROTECTED_SENDER',
-          message: 'This sender is Protected or VIP. Confirm to apply the action anyway.',
+          message: 'This sender is Protected. Confirm to apply the action anyway.',
         });
       }
       primaryCount = await this.countSenderInboxWithWindow(
@@ -628,7 +634,7 @@ export class ActionsService {
    *
    * Ownership: ids are resolved against the current mailbox; unknown /
    * cross-mailbox ids drop silently (the forged-id-drop convention).
-   * `totals` excludes Protected/VIP senders because `enqueueBulkComposite`
+   * `totals` excludes Protected senders because `enqueueBulkComposite`
    * skips them — the preview must equal what the mutation will do. The
    * per-sender rows keep protected senders (flagged) so the modal can
    * show WHY a sender is excluded.
@@ -740,7 +746,7 @@ export class ActionsService {
    * `getBatchStatus` aggregates it with one query.
    *
    * Per-sender failure isolation at the ENQUEUE boundary: a sender that
-   * is Protected/VIP or no longer resolvable is SKIPPED (reported in
+   * is Protected or no longer resolvable is SKIPPED (reported in
    * `skipped`), never a batch-wide 409 — the single-sender override
    * affordance does not exist on the bulk surface, and one stale row in
    * the selection must not block the other N-1 decisions. When the
@@ -802,7 +808,7 @@ export class ActionsService {
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
-        message: 'Every selected sender is Protected/VIP or no longer exists.',
+        message: 'Every selected sender is Protected or no longer exists.',
       });
     }
 
@@ -938,7 +944,7 @@ export class ActionsService {
   }
 
   /**
-   * The Protected/VIP `sender_key`s among `senderKeys` for this mailbox
+   * The Protected `sender_key`s among `senderKeys` for this mailbox
    * (D42 defense-in-depth, read-only per D204). One query for the whole
    * selection — shared by the bulk preview + bulk enqueue so the two
    * can never disagree on who is skipped.
@@ -952,7 +958,6 @@ export class ActionsService {
       .select({
         senderKey: senderPolicies.senderKey,
         isProtected: senderPolicies.isProtected,
-        isVip: senderPolicies.isVip,
       })
       .from(senderPolicies)
       .where(
@@ -961,7 +966,7 @@ export class ActionsService {
           inArray(senderPolicies.senderKey, senderKeys),
         ),
       );
-    return new Set(rows.filter((r) => r.isProtected || r.isVip).map((r) => r.senderKey));
+    return new Set(rows.filter((r) => r.isProtected).map((r) => r.senderKey));
   }
 
   /**

@@ -133,7 +133,7 @@ export class ActionsController {
    * Errors:
    *   - 400 INVALID_REQUEST / IDEMPOTENCY_KEY_REQUIRED
    *   - 404 SENDER_NOT_FOUND (sender selector, ownership mismatch)
-   *   - 409 PROTECTED_SENDER (sender is Protected/VIP, `override:false`)
+   *   - 409 PROTECTED_SENDER (sender is Protected, `override:false`)
    *   - 409 IDEMPOTENCY_KEY_CONFLICT (key reused across mailboxes)
    *   - 503 QUEUE_UNAVAILABLE (REDIS_URL unset)
    */

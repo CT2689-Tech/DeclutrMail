@@ -5,12 +5,12 @@ import { GLOSSARY_TERMS } from './glossary-content';
 import { ProductGlossary } from './product-glossary';
 
 describe('ProductGlossary — D245', () => {
-  it('defines the nine canonical terms in a semantic glossary', () => {
+  it('defines the eight canonical terms in a semantic glossary', () => {
     const { container } = render(<ProductGlossary />);
 
     expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
-    expect(container.querySelectorAll('section dl dt')).toHaveLength(9);
-    expect(container.querySelectorAll('section dl dd')).toHaveLength(9);
+    expect(container.querySelectorAll('section dl dt')).toHaveLength(8);
+    expect(container.querySelectorAll('section dl dd')).toHaveLength(8);
 
     for (const entry of Object.values(GLOSSARY_TERMS)) {
       expect(screen.getAllByText(entry.term).length).toBeGreaterThan(0);
@@ -38,9 +38,7 @@ describe('ProductGlossary — D245', () => {
       'href',
       '#observe',
     );
-    expect(screen.getByText('Protected or VIP — which should I use?').closest('details')).not.toBe(
-      null,
-    );
+    expect(screen.getByText('What does Protected prevent?').closest('details')).not.toBe(null);
     expect(screen.getByRole('link', { name: 'Back to Settings' })).toHaveAttribute(
       'href',
       '/settings',

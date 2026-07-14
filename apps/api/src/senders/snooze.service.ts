@@ -23,7 +23,7 @@ import { SNOOZE_WAKE_QUEUE_TOKEN } from './snoozed.tokens.js';
  * the senders feature (D204) — same boundary rationale as
  * `SendersPolicyService`. Touches ONLY the three snooze columns
  * (`snoozed_until` / `snoozed_at` / `snoozed_reason`); the standing
- * verdict and the VIP/Protect modifiers are never read or written
+ * verdict and Protect state are never read or written
  * here, so a concurrent policy patch cannot be clobbered.
  *
  * Setting or extending a timer moves NO mail (D79 — the

@@ -37,7 +37,7 @@ export type ArchiveSelector = z.infer<typeof archiveSelectorSchema>;
 export const archiveRequestSchema = z
   .object({
     selector: archiveSelectorSchema,
-    /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
+    /** Required to act on a Protected sender (defense-in-depth, D42). */
     override: z.boolean().optional(),
   })
   .strict();
@@ -309,12 +309,19 @@ export const compositeActionRequestSchema = z
       })
       .strict()
       .optional(),
-    /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
+    /** Required to act on a Protected sender (defense-in-depth, D42). */
     override: z.boolean().optional(),
   })
   .strict()
   .superRefine((body, ctx) => {
     if (body.primary.type === 'later') {
+      if (body.selector.type === 'messages') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['selector'],
+          message: 'Later is scheduled per sender, not per message selection.',
+        });
+      }
       if (body.primary.wakeAt === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -365,7 +372,7 @@ export interface CompositeActionEnqueueResult {
  * token) cascade-reverts the batch.
  *
  * `skipped` reports senders the fan-out did NOT enqueue — per-sender
- * failure isolation at the enqueue boundary: a Protected/VIP or
+ * failure isolation at the enqueue boundary: a Protected or
  * unknown sender never poisons the rest of the selection.
  */
 export interface BulkActionEnqueueResult {
@@ -405,7 +412,7 @@ export interface BulkPreviewBuckets {
 /**
  * Bulk preview response (D52): per-sender breakdown + aggregate counts
  * across the selection so the D226 preview states REAL numbers, never a
- * client estimate. `totals` excludes Protected/VIP senders — the
+ * client estimate. `totals` excludes Protected senders — the
  * enqueue skips them, so the preview must match what will actually
  * move. Unknown / cross-mailbox ids are dropped (ownership), mirroring
  * the messages-selector forged-id drop.

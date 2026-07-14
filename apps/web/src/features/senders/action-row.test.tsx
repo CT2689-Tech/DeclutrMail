@@ -55,12 +55,6 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     );
   });
 
-  it('VIP wins over unsub-ready — VIP rides the same standing-protect input', () => {
-    expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', isVip: true }))).toBe(
-      'keep',
-    );
-  });
-
   it("one-click in group 'primary' never derives Unsubscribe — the primary CTA must agree with the popover's canUnsubscribe gate", () => {
     expect(derivePrimaryVerbId(sender({ unsubscribeMethod: 'one_click', group: 'primary' }))).toBe(
       'keep',

@@ -11,7 +11,7 @@ import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 
 // ── D80 wake-time buckets ─────────────────────────────────────────────
 
-export const WAKE_BUCKETS = ['today', 'tomorrow', 'week', 'eventually', 'none'] as const;
+export const WAKE_BUCKETS = ['today', 'tomorrow', 'week', 'eventually'] as const;
 export type WakeBucket = (typeof WAKE_BUCKETS)[number];
 
 export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
@@ -19,8 +19,6 @@ export const WAKE_BUCKET_LABELS: Record<WakeBucket, string> = {
   tomorrow: 'Tomorrow',
   week: 'This week',
   eventually: 'Eventually',
-  // Legacy mirror-only rows created before Later required a wake time.
-  none: 'Needs scheduling',
 };
 
 function startOfDay(d: Date): Date {
@@ -36,10 +34,11 @@ function addDays(d: Date, days: number): Date {
 }
 
 /** D80 — bucket a wake time relative to `now` (local calendar days). */
-export function wakeBucket(snoozedUntil: string | null, now: Date): WakeBucket {
-  if (snoozedUntil === null) return 'none';
+export function wakeBucket(snoozedUntil: string, now: Date): WakeBucket {
   const wake = new Date(snoozedUntil);
-  if (Number.isNaN(wake.getTime())) return 'none';
+  if (Number.isNaN(wake.getTime())) {
+    throw new RangeError('Invalid Later wake time.');
+  }
   const tomorrowStart = startOfDay(addDays(now, 1));
   if (wake < tomorrowStart) return 'today';
   if (wake < startOfDay(addDays(now, 2))) return 'tomorrow';
@@ -50,7 +49,7 @@ export function wakeBucket(snoozedUntil: string | null, now: Date): WakeBucket {
 export type GroupedSnoozed = Record<WakeBucket, SnoozedSenderRow[]>;
 
 export function groupByWakeTime(rows: readonly SnoozedSenderRow[], now: Date): GroupedSnoozed {
-  const grouped: GroupedSnoozed = { today: [], tomorrow: [], week: [], eventually: [], none: [] };
+  const grouped: GroupedSnoozed = { today: [], tomorrow: [], week: [], eventually: [] };
   for (const row of rows) {
     grouped[wakeBucket(row.snoozedUntil, now)].push(row);
   }
@@ -60,7 +59,9 @@ export function groupByWakeTime(rows: readonly SnoozedSenderRow[], now: Date): G
 /** "Tomorrow 9:00 AM" / "Fri 7:00 AM" / "May 23" — D80 row format. */
 export function formatWakeTime(iso: string, now: Date): string {
   const wake = new Date(iso);
-  if (Number.isNaN(wake.getTime())) return '';
+  if (Number.isNaN(wake.getTime())) {
+    throw new RangeError('Invalid Later wake time.');
+  }
   const time = wake.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const bucket = wakeBucket(iso, now);
   if (bucket === 'today') return `Today ${time}`;

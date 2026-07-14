@@ -34,7 +34,6 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  COMPATIBILITY_REDIRECT_ROUTES,
   EDGE_STATE_INVENTORY,
   EDGE_STATES,
   SCREEN_ROUTES,
@@ -176,9 +175,7 @@ describe('D211 — edge-state inventory contract', () => {
     // route ships without an inventory row (add the ScreenId, an
     // EDGE_STATE_INVENTORY row, and a SCREEN_ROUTES entry), or an
     // inventory row outlives its deleted route (remove all three).
-    const onDisk = collectRouteDirs().filter(
-      (route) => !COMPATIBILITY_REDIRECT_ROUTES.includes(route as 'snoozed'),
-    );
+    const onDisk = collectRouteDirs();
     const declared = (Object.values(SCREEN_ROUTES).filter((r) => r !== null) as string[]).sort();
     expect(declared, 'SCREEN_ROUTES must exactly mirror (app)/**/page.tsx route dirs').toEqual(
       onDisk,

@@ -483,6 +483,13 @@ describe('LabelActionWorker', () => {
       expect(m!.labelIds).not.toContain('DeclutrMail/Later');
       expect(m!.labelIds).not.toContain('INBOX');
       expect(m!.labelIds).toContain('CATEGORY_PROMOTIONS');
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policy!.senderKey).toBe(SENDER_KEY);
+      expect(policy!.snoozedUntil?.toISOString()).toBe('2099-07-21T09:00:00.000Z');
+      expect(policy!.snoozedAt).not.toBeNull();
       const [evt] = await db
         .select()
         .from(outboxEvents)
@@ -561,9 +568,10 @@ describe('LabelActionWorker', () => {
           mailboxAccountId: mailboxId,
           verb: 'later',
           direction: 'forward',
-          selector: { type: 'messages' },
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
           resolvedMessageIds: ['l1'],
           idempotencyKey: 'idem-400',
+          wakeAt: new Date('2099-07-21T09:00:00Z'),
         })
         .returning();
 

@@ -5,7 +5,6 @@
  *   - D211 / D212 edge branches: loading, error, 404-not-yet, populated,
  *     D70 quiet-inbox.
  *   - D63 — 3 sections render with correct headings + counts.
- *   - D67 — VIP star renders inline on a Reply row.
  *   - D62 — `via template` provenance marker shown when fallback ran;
  *     happy-path Haiku case stays silent.
  *   - D61 — mark-opened mutation fires exactly once when `openedAt` is
@@ -42,7 +41,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Boss',
         senderEmail: 'boss@example.com',
         subject: 'Q4 plan review',
-        isVip: true,
         messageIds: ['m-boss-1'],
       },
       {
@@ -50,7 +48,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Vendor Co',
         senderEmail: 'billing@vendor.com',
         subject: 'Invoice attached',
-        isVip: false,
         messageIds: ['m-vendor-1'],
       },
     ],
@@ -60,7 +57,6 @@ const BASE_BRIEF: BriefWire = {
         senderName: 'Bank',
         senderEmail: 'noreply@bank.com',
         subject: 'Statement ready',
-        isVip: false,
         messageIds: ['m-bank-1'],
       },
     ],
@@ -185,19 +181,6 @@ describe('BriefScreen — populated', () => {
     );
     expect(screen.getByRole('heading', { name: /fyi · 1 of 4/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
-  });
-
-  it('D67 — VIP star renders on the Reply row marked isVip', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/briefs/today',
-        respond: () => jsonOk({ data: BASE_BRIEF }),
-      },
-    ]);
-
-    renderScreen();
-    await waitFor(() => expect(screen.getByLabelText('VIP sender')).toBeInTheDocument());
   });
 
   it('renders the narrative pre-amble when non-empty', async () => {

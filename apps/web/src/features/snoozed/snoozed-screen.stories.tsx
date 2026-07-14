@@ -78,16 +78,6 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedAt: isoInHours(-1),
     reason: null,
   },
-  {
-    senderId: '6f1f2f3a-0000-4000-8000-000000000005',
-    displayName: '',
-    email: 'noreply@tools.example.com',
-    domain: 'tools.example.com',
-    laterCount: 9,
-    snoozedUntil: null,
-    snoozedAt: null,
-    reason: null,
-  },
 ];
 
 function makeClient(rows?: SnoozedSenderRow[]): QueryClient {
@@ -135,7 +125,7 @@ const meta: StoryMeta<typeof SnoozedScreen> = {
 
 export default meta;
 
-/** Populated — every D80 wake bucket plus a timer-less Later row. */
+/** Populated — every D80 wake bucket, each with a required return time. */
 export const Populated: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient(FIXTURES)),
 };

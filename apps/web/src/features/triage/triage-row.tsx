@@ -31,7 +31,7 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  */
 function whyLine(row: TriageDecisionRow): string {
   const pct = Math.round(row.readRate * 100);
-  if (row.protectionReason === 'vip') return 'VIP — always kept';
+  if (row.protectionReason === 'user-marked') return 'Protected — always kept';
   if (row.protectionReason === 'engagement') return `${pct}% read · engagement-protected`;
   if (row.protectionReason === 'auto-receipts') return 'Auto-protected receipts sender';
   if (row.protectionReason === 'auto-financial') return 'Auto-protected financial sender';
@@ -227,7 +227,7 @@ export function TriageRow({
                   flexShrink: 0,
                 }}
               >
-                {row.protectionReason === 'vip' ? 'VIP' : 'Protected'}
+                Protected
               </span>
             )}
           </div>

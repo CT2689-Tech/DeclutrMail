@@ -10,7 +10,6 @@ import {
   mailMessages,
   mailboxAccounts,
   schema,
-  senderPolicies,
   senders,
   triageDecisions,
   users,
@@ -24,10 +23,10 @@ import { scheduledAtMinute as briefSnapshotScheduledAtMinute } from './brief-sna
 import type { WorkerContext } from './worker-context.js';
 
 /**
- * BriefSnapshotWorker integration tests (D61, D62, D63, D67, D69, D70).
+ * BriefSnapshotWorker integration tests (D61, D62, D63, D69, D70).
  *
  * Runs the real worker against an in-process PGlite database with every
- * migration applied. Covers the D63 categorization, D67 VIP elevation,
+ * migration applied. Covers D63 categorization and observed priority,
  * D69 frozen-once invariant, D70 empty-day branch, and idempotency.
  */
 
@@ -85,7 +84,8 @@ interface SeedSenderInput {
   email: string;
   senderKey: string;
   displayName?: string;
-  isVip?: boolean;
+  gmailCategory?: 'primary' | 'promotions';
+  repliedCount?: number;
   verdict?: 'keep' | 'archive' | 'unsubscribe' | 'later';
 }
 
@@ -96,18 +96,11 @@ async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInp
     displayName: input.displayName ?? input.email,
     email: input.email,
     domain: input.email.split('@')[1] ?? '',
-    gmailCategory: 'promotions',
+    gmailCategory: input.gmailCategory ?? 'promotions',
+    repliedCount: input.repliedCount ?? 0,
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: NOW,
   });
-  if (input.isVip) {
-    await db.insert(senderPolicies).values({
-      mailboxAccountId,
-      senderKey: input.senderKey,
-      policyType: 'keep',
-      isVip: true,
-    });
-  }
   if (input.verdict) {
     await db.insert(triageDecisions).values({
       mailboxAccountId,
@@ -130,6 +123,7 @@ interface SeedMessageInput {
   internalDate: Date;
   isOutbound?: boolean;
   idSuffix?: string;
+  labelIds?: string[];
 }
 
 async function seedMessage(db: Db, input: SeedMessageInput): Promise<void> {
@@ -142,7 +136,7 @@ async function seedMessage(db: Db, input: SeedMessageInput): Promise<void> {
     subject: input.subject ?? '',
     snippet: input.snippet ?? '',
     internalDate: input.internalDate,
-    labelIds: input.isOutbound ? ['SENT'] : ['INBOX'],
+    labelIds: input.labelIds ?? (input.isOutbound ? ['SENT'] : ['INBOX']),
     isUnread: !input.isOutbound,
     isOutbound: input.isOutbound ?? false,
   });
@@ -257,16 +251,14 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.noise.map((r) => r.senderName).sort()).toEqual(['News', 'Promo']);
   });
 
-  it('D67 — VIP auto-elevates to Reply regardless of engine verdict', async () => {
+  it('Gmail importance does not override the engine section', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
 
-    // VIP with verdict=archive — should still land in Reply.
     await seedSender(db, mailboxAccountId, {
-      email: 'vip@example.com',
+      email: 'important@example.com',
       senderKey: KEY_BOSS,
-      displayName: 'VIP Person',
-      isVip: true,
+      displayName: 'Important Sender',
       verdict: 'archive',
     });
     await seedMessage(db, {
@@ -274,6 +266,7 @@ describe('BriefSnapshotWorker', () => {
       senderKey: KEY_BOSS,
       subject: 'Important',
       internalDate: YESTERDAY_AT(10),
+      labelIds: ['INBOX', 'IMPORTANT'],
     });
 
     const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
@@ -283,25 +276,23 @@ describe('BriefSnapshotWorker', () => {
       .select({ briefPayload: briefRuns.briefPayload })
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
-    expect(row!.briefPayload.reply).toHaveLength(1);
-    expect(row!.briefPayload.reply[0]!.isVip).toBe(true);
-    expect(row!.briefPayload.reply[0]!.senderName).toBe('VIP Person');
-    expect(row!.briefPayload.noise).toHaveLength(0);
+    expect(row!.briefPayload.reply).toHaveLength(0);
+    expect(row!.briefPayload.noise[0]!.senderName).toBe('Important Sender');
   });
 
-  it('D63 — reply section caps at 6, VIPs win the cap (sortVipFirst)', async () => {
+  it('D63 — observed Gmail importance and engagement win the reply cap', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
 
-    // 8 reply candidates — 2 VIPs (will lead) + 6 normals (only 4 fit).
+    // 8 reply candidates — two have observed importance/engagement.
     for (let i = 0; i < 8; i += 1) {
       const key = `${i}`.repeat(64).slice(0, 64);
-      const isVip = i < 2;
       await seedSender(db, mailboxAccountId, {
         email: `s${i}@example.com`,
         senderKey: key,
-        displayName: isVip ? `VIP${i}` : `Normal${i}`,
-        isVip,
+        displayName: i < 2 ? `Priority${i}` : `Normal${i}`,
+        gmailCategory: i === 0 ? 'primary' : 'promotions',
+        repliedCount: i === 1 ? 3 : 0,
         verdict: 'keep',
       });
       await seedMessage(db, {
@@ -309,6 +300,7 @@ describe('BriefSnapshotWorker', () => {
         senderKey: key,
         subject: `subj-${i}`,
         internalDate: YESTERDAY_AT(10 + i),
+        labelIds: i === 0 ? ['INBOX', 'IMPORTANT'] : i === 1 ? ['INBOX', 'STARRED'] : ['INBOX'],
       });
     }
 
@@ -320,14 +312,12 @@ describe('BriefSnapshotWorker', () => {
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
     expect(row!.briefPayload.reply).toHaveLength(6);
-    // VIPs lead.
-    expect(row!.briefPayload.reply.slice(0, 2).map((r) => r.isVip)).toEqual([true, true]);
     expect(
       row!.briefPayload.reply
         .slice(0, 2)
         .map((r) => r.senderName)
         .sort(),
-    ).toEqual(['VIP0', 'VIP1']);
+    ).toEqual(['Priority0', 'Priority1']);
   });
 
   it('D63 — fyi section caps at 4', async () => {
@@ -769,7 +759,6 @@ describe('BriefSnapshotWorker', () => {
       senderEmail: 'boss@example.com',
       subject: 'Q4 plans',
       snippet: 'Can we move the Q4 sync to Thursday?',
-      isVip: false,
     });
     // Defense-in-depth: no `senderKey`, no `messageIds`, no `body`
     // smuggled through the input.

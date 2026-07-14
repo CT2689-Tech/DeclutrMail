@@ -127,11 +127,23 @@ export class BriefReadService {
 }
 
 function projectBrief(row: typeof briefRuns.$inferSelect): Brief {
+  const projectItem = (item: (typeof row.briefPayload.reply)[number]) => ({
+    senderKey: item.senderKey,
+    senderName: item.senderName,
+    senderEmail: item.senderEmail,
+    subject: item.subject,
+    messageIds: item.messageIds,
+  });
   return {
     id: row.id,
     runDateLocal: row.runDateLocal,
     generatedBy: row.generatedBy,
-    briefPayload: row.briefPayload,
+    briefPayload: {
+      reply: row.briefPayload.reply.map(projectItem),
+      fyi: row.briefPayload.fyi.map(projectItem),
+      noise: row.briefPayload.noise,
+      narrative: row.briefPayload.narrative,
+    },
     generatedAt: row.generatedAt.toISOString(),
     openedAt: row.openedAt?.toISOString() ?? null,
     emailSentAt: row.emailSentAt?.toISOString() ?? null,

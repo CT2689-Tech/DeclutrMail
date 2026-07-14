@@ -150,6 +150,7 @@ async function seedJob(
       affectedCount: input.affectedCount ?? 1,
       status: input.status ?? 'done',
       idempotencyKey: input.key,
+      ...(input.verb === 'later' ? { wakeAt: new Date('2099-07-21T09:00:00Z') } : {}),
       ...(input.compositeId ? { compositeId: input.compositeId } : {}),
     })
     .returning({ id: actionJobs.id });

@@ -243,7 +243,7 @@ export function SettingsScreen() {
         <SectionLabel id="senders">Senders</SectionLabel>
         <LinkCard
           title="Standing policies"
-          description="VIP and Protected sender lists — review or remove standing rules, jump to any sender's detail page."
+          description="Review Protected senders and manage their standing safety rule from each sender's detail page."
           href="/settings/senders"
           cta="Open sender policies"
         />

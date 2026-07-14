@@ -105,10 +105,7 @@ export function ProductGlossary() {
           Common distinctions
         </h2>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <GlossaryContextualHelp
-            question="Protected or VIP — which should I use?"
-            termIds={['protected', 'vip']}
-          />
+          <GlossaryContextualHelp question="What does Protected prevent?" termIds={['protected']} />
           <GlossaryContextualHelp
             question="Observe or Active — is Gmail changing?"
             termIds={['observe', 'active']}

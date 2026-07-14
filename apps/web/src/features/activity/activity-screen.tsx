@@ -1700,11 +1700,9 @@ const VERB_DOT: Record<ActivityActionWire, string> = {
   later: color.dashboard.accent,
   keep: color.emerald,
   'followup-dismiss': color.fgMuted,
-  // D43 VIP/Protect toggle audit rows — quiet (muted) accents: these
+  // Protect toggle audit rows — quiet (muted) accents: these
   // are standing-policy flips, not mail-moving verbs, so they read as
   // secondary entries alongside the K/A/U/L/D rows.
-  marked_vip: color.fgMuted,
-  unmarked_vip: color.fgMuted,
   marked_protected: color.fgMuted,
   unmarked_protected: color.fgMuted,
 };
@@ -2386,9 +2384,7 @@ const ACTION_LABEL: Record<ActivityActionWire, string> = {
   // "Archived"; spec L312 confirms "Delete" is the user-facing verb.
   delete: getActionSemantics('delete').resultLabel,
   'followup-dismiss': 'Followup resolved',
-  // D43 VIP/Protect toggle audit rows (senders policy write path).
-  marked_vip: 'Marked VIP',
-  unmarked_vip: 'VIP removed',
+  // Protect toggle audit rows (senders policy write path).
   marked_protected: 'Protected',
   unmarked_protected: 'Unprotected',
 };

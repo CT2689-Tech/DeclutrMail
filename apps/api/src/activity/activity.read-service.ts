@@ -74,7 +74,7 @@ export const ACTIVITY_LIMIT = { def: 25, min: 1, max: 100 };
  * summary counts. Derived from `CANONICAL_SHORTCUTS` (the verb
  * registry's letter map) so a future verb addition propagates here
  * without a parallel literal list. Feature-specific `activity_action`
- * values (`followup-dismiss`, VIP/Protect toggles) are intentionally
+ * values (`followup-dismiss`, Protect toggles) are intentionally
  * outside this set — they are not cleanup decisions.
  */
 const SUMMARY_VERBS = Object.keys(CANONICAL_SHORTCUTS) as CanonicalVerb[];

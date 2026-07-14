@@ -28,7 +28,6 @@ function listRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
     unsubscribeMethod: 'one_click',
     lastReview: null,
     protectionFlags: {
-      isVip: false,
       isProtected: false,
       protectionReason: null,
       protectionSetAt: null,
@@ -75,25 +74,22 @@ describe('adaptDecisionHistoryRow — provenance label (generatedBy)', () => {
 });
 
 describe('adaptSenderListRow — protection flags (D42/D43)', () => {
-  it('surfaces isProtected → Sender.protected and isVip → Sender.isVip', () => {
+  it('surfaces isProtected → Sender.protected', () => {
     const s = adaptSenderListRow(
       listRow({
         protectionFlags: {
-          isVip: true,
           isProtected: true,
-          protectionReason: 'vip',
+          protectionReason: 'user_defined',
           protectionSetAt: '2026-04-01T00:00:00.000Z',
         },
       }),
     );
     expect(s.protected).toBe(true);
-    expect(s.isVip).toBe(true);
   });
 
-  it('defaults protected/isVip to false when the policy is empty', () => {
+  it('defaults protected to false when the policy is empty', () => {
     const s = adaptSenderListRow(listRow());
     expect(s.protected).toBe(false);
-    expect(s.isVip).toBe(false);
   });
 
   it('carries unsubscribeMethod through so the row can derive unsub-ready (ADR-0019)', () => {
@@ -117,28 +113,22 @@ describe('adaptSenderListRow — protection flags (D42/D43)', () => {
     expect(s.total).toBe(144);
   });
 
-  it('shields a VIP-only sender (isVip && !isProtected) from every destructive action', () => {
-    // The real BE sends VIP and Protect independently (D42/D43). A VIP
-    // that is not also `isProtected` must STILL be untouchable by bulk
-    // actions and derive Keep — the gap the design gate caught: the
-    // surfaces must agree on one `isStandingProtected` predicate.
-    const vipOnly = adaptSenderListRow(
+  it('shields a Protected sender from every destructive action', () => {
+    const protectedSender = adaptSenderListRow(
       listRow({
         protectionFlags: {
-          isVip: true,
-          isProtected: false,
-          protectionReason: 'vip',
+          isProtected: true,
+          protectionReason: 'user_defined',
           protectionSetAt: '2026-04-01T00:00:00.000Z',
         },
       }),
     );
-    expect(vipOnly.isVip).toBe(true);
-    expect(vipOnly.protected).toBe(false);
-    expect(isStandingProtected(vipOnly)).toBe(true);
-    expect(canArchive(vipOnly)).toBe(false);
-    expect(canLater(vipOnly)).toBe(false);
-    expect(canUnsubscribe(vipOnly)).toBe(false);
-    expect(derivePrimaryVerbId(vipOnly)).toBe('keep');
+    expect(protectedSender.protected).toBe(true);
+    expect(isStandingProtected(protectedSender)).toBe(true);
+    expect(canArchive(protectedSender)).toBe(false);
+    expect(canLater(protectedSender)).toBe(false);
+    expect(canUnsubscribe(protectedSender)).toBe(false);
+    expect(derivePrimaryVerbId(protectedSender)).toBe('keep');
   });
 
   it('retains confidence as review metadata without using it for the primary action', () => {

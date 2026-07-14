@@ -14,7 +14,7 @@ function row(overrides: Partial<SnoozedSenderRow>): SnoozedSenderRow {
     email: 's@x.example',
     domain: 'x.example',
     laterCount: 1,
-    snoozedUntil: null,
+    snoozedUntil: new Date(2026, 5, 11, 17, 0).toISOString(),
     snoozedAt: null,
     reason: null,
     ...overrides,
@@ -22,12 +22,15 @@ function row(overrides: Partial<SnoozedSenderRow>): SnoozedSenderRow {
 }
 
 describe('wakeBucket (D80)', () => {
-  it('buckets today / tomorrow / week / eventually / none', () => {
+  it('buckets every required wake time', () => {
     expect(wakeBucket(new Date(2026, 5, 11, 17, 0).toISOString(), NOW)).toBe('today');
     expect(wakeBucket(new Date(2026, 5, 12, 9, 0).toISOString(), NOW)).toBe('tomorrow');
     expect(wakeBucket(new Date(2026, 5, 15, 9, 0).toISOString(), NOW)).toBe('week');
     expect(wakeBucket(new Date(2026, 6, 1, 9, 0).toISOString(), NOW)).toBe('eventually');
-    expect(wakeBucket(null, NOW)).toBe('none');
+  });
+
+  it('rejects an invalid server wake time instead of inventing a repair bucket', () => {
+    expect(() => wakeBucket('not-a-time', NOW)).toThrow('Invalid Later wake time.');
   });
 
   it('day 7 boundary belongs to eventually', () => {
@@ -40,12 +43,11 @@ describe('groupByWakeTime', () => {
   it('routes every row into exactly one bucket', () => {
     const rows = [
       row({ senderId: '1', snoozedUntil: new Date(2026, 5, 11, 17, 0).toISOString() }),
-      row({ senderId: '2', snoozedUntil: null }),
+      row({ senderId: '2', snoozedUntil: new Date(2026, 5, 12, 9, 0).toISOString() }),
     ];
     const grouped = groupByWakeTime(rows, NOW);
     expect(grouped.today.map((r) => r.senderId)).toEqual(['1']);
-    expect(grouped.none.map((r) => r.senderId)).toEqual(['2']);
-    expect(grouped.tomorrow).toEqual([]);
+    expect(grouped.tomorrow.map((r) => r.senderId)).toEqual(['2']);
   });
 });
 

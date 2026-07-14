@@ -66,7 +66,7 @@ const ARROW = (
  */
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
-    protected: sender.protected === true || sender.isVip === true,
+    protected: sender.protected === true,
     unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });

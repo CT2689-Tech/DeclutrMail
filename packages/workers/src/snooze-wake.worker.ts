@@ -392,7 +392,7 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
       }
 
       // D79 — "the sender_policies row clears": timer + reason null.
-      // Standing verdict / VIP / Protect flags are NOT touched.
+      // Standing verdict / Protect state is NOT touched.
       await tx
         .update(senderPolicies)
         .set({

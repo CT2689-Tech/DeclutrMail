@@ -39,7 +39,7 @@ import type { GmailCategory } from '@declutrmail/shared/contracts';
 export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
 /** Why a sender's verdict is locked to Keep — surfaces in the row. */
-export type ProtectionReason = 'vip' | 'engagement' | 'auto-receipts' | 'auto-financial';
+export type ProtectionReason = 'user-marked' | 'engagement' | 'auto-receipts' | 'auto-financial';
 
 /**
  * One row in the triage queue — sender identity + engine verdict +
@@ -79,7 +79,7 @@ export interface TriageDecisionRow {
 
   /**
    * Why the verdict is locked to Keep. Non-null means the engine's
-   * Phase A protection ran (VIP, engagement, auto-receipts, etc.) —
+   * Phase A protection ran (user-marked, engagement, auto-receipts, etc.) —
    * destructive verbs are disabled for these rows.
    */
   protectionReason: ProtectionReason | null;
@@ -158,7 +158,7 @@ export type TriageScreenState =
  * Deterministic fixture — 9 rows that cover the edge cases the
  * Storybook variants and tests reason about:
  *
- *   • 2 Keep   — one VIP-protected, one engagement-protected
+ *   • 2 Keep   — one user-protected, one engagement-protected
  *   • 3 Archive — varied confidence (0.94 / 0.88 / 0.66)
  *   • 3 Unsubscribe — one one-click (D9), one mailto (D230 deferred),
  *     one with NO channel (`unsubscribeMethod: 'none'`) — the live
@@ -331,7 +331,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     totalAllTime: 96,
   },
 
-  // ── Keep · VIP-protected ─────────────────────────────────────────
+  // ── Keep · user-protected ────────────────────────────────────────
   {
     id: 't-sarah',
     senderId: 'sid-sarah',
@@ -343,13 +343,13 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'none',
     verdict: 'keep',
     confidence: 0.95,
-    reasoning: 'VIP — every message from Sarah stays in the inbox.',
+    reasoning: 'Protected — every message from Sarah stays in the inbox.',
     signals: [
-      'VIP since 2024-02-11 (you marked them)',
+      'Protected since 2024-02-11 (you marked them)',
       'Read rate: 100% over the last 90 days',
       'Volume: 17 messages/month',
     ],
-    protectionReason: 'vip',
+    protectionReason: 'user-marked',
     monthlyVolume: 17,
     last90dMessages: 51,
     readRate: 1,

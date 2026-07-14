@@ -69,7 +69,7 @@ const { color, font, radius, shadow, space } = tokens;
  *
  * Action lifecycle (D226): every destructive action routes through
  * `requestAction` → `<ConfirmActionModal>` (mandatory preview) →
- * `performAction` mutation → undo receipt strip. Keep / VIP / Protect
+ * `performAction` mutation → undo receipt strip. Keep / Protect
  * are non-destructive and fire immediately.
  *
  * Canonical verbs (D227): K/A/U/L only.
@@ -212,7 +212,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
 }
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
-  // VIP/Protect/Keep are real mutations (D40, D42, D43): the chip flips
+  // Protect/Keep are real mutations: the chip flips
   // optimistically (standard non-destructive mutation UX, not the D226
   // lifecycle), `useSetSenderPolicy` persists the set-state patch +
   // invalidates senders/activity caches, and `onError` rolls the local
@@ -761,45 +761,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     );
   }, [receipt, revert, qc]);
 
-  /**
-   * VIP / Protect toggles (D42, D43) — real `sender_policies` writes.
-   *
-   * Optimistic flip + rollback on failure: a standing-policy toggle is
-   * non-destructive (no Gmail mutation, no undo token; toggling back IS
-   * the undo), so standard mutation UX applies — NOT the D226
-   * destructive lifecycle. The wire carries the explicit TARGET state
-   * (`isVip: next`), so a network-retried request is idempotent
-   * server-side. `setPolicy.isPending` latches both chips while either
-   * write (or a Keep) is in flight so optimistic states can't interleave.
-   */
-  const toggleVip = useCallback(() => {
-    if (setPolicy.isPending) return;
-    const next = !detail.isVip;
-    setDetail((d) => ({ ...d, isVip: next }));
-    setPolicy.mutate(
-      { senderId: sender.id, patch: { isVip: next } },
-      {
-        onSuccess: (res) => {
-          // Reconcile from the server result — the persisted row is
-          // authoritative (the optimistic flip matches it today, but
-          // `protectionReason` is derived server-side).
-          setDetail((d) => ({
-            ...d,
-            isVip: res.isVip,
-            isProtected: res.isProtected,
-            protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
-          }));
-          toast(next ? 'Marked VIP' : 'Removed VIP mark', 'success');
-        },
-        onError: (err) => {
-          setDetail((d) => ({ ...d, isVip: !next }));
-          captureFeatureException(err, { surface: 'senders', reason: 'policy_vip' });
-          toast(next ? "Couldn't mark VIP — try again" : "Couldn't remove VIP — try again", 'warn');
-        },
-      },
-    );
-  }, [detail.isVip, sender.id, setPolicy]);
-
+  /** Protect is the sole standing safety state. */
   const toggleProtect = useCallback(() => {
     if (setPolicy.isPending) return;
     const next = !detail.isProtected;
@@ -813,10 +775,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       { senderId: sender.id, patch: { isProtected: next } },
       {
         onSuccess: (res) => {
-          // Reconcile from the server result (see toggleVip).
+          // Reconcile from the server result.
           setDetail((d) => ({
             ...d,
-            isVip: res.isVip,
             isProtected: res.isProtected,
             protectionReason: adaptProtectionReason(res.isProtected, res.protectionReason),
           }));
@@ -1014,15 +975,6 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               Open all in Gmail
               <ExternalLinkIcon />
             </a>
-            <Button
-              tone={detail.isVip ? 'primary' : 'default'}
-              size="sm"
-              onClick={toggleVip}
-              ariaPressed={detail.isVip}
-              disabled={setPolicy.isPending}
-            >
-              {detail.isVip ? '★ VIP' : 'VIP'}
-            </Button>
             <Button
               tone={detail.isProtected ? 'primary' : 'default'}
               size="sm"
@@ -1338,8 +1290,8 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
  * a recorded intent with no tracked execution — mailto manual per D230,
  * or method-none).
  *
- * Visual: pale-amber wash so it reads alongside the VIP (warm) chip
- * without competing with the deep-teal primary actions. Uses the
+ * Visual: pale-amber wash so it does not compete with the deep-teal
+ * primary actions. Uses the
  * canonical `color.amberBg` token (no hand-rolled rgba).
  */
 function UnsubStatusPill({

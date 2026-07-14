@@ -107,7 +107,6 @@ function rowToSignals(row: Record<string, string>): SenderSignals {
   return {
     // No sender_policies seeded in the eval DB — defaults match cold-start.
     isProtected: false,
-    isVip: false,
     hasReplied: Number(row.replies_sent) > 0,
     gmailCategory: row.gmail_category as SenderSignals['gmailCategory'],
     starredInLastYear: Number(row.starred_year) > 0,

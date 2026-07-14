@@ -360,7 +360,7 @@ describe('pickFirstTriageCandidates', () => {
   it('fills the trust slot with a keep/protected sender instead of excluding them', () => {
     const picked = pickFirstTriageCandidates([
       row({ senderKey: 'keep', verdict: 'keep', confidence: 0.99, readRate: 0.9 }),
-      row({ senderKey: 'prot', protectionReason: 'vip', confidence: 0.98, readRate: 0.4 }),
+      row({ senderKey: 'prot', protectionReason: 'engagement', confidence: 0.98, readRate: 0.4 }),
       row({ senderKey: 'ok', confidence: 0.6 }),
     ]);
     // Highest read-rate keep wins the trust slot; keeps/protected never

@@ -30,7 +30,7 @@ export type ActivitySourceWire = 'triage' | 'manual' | 'autopilot' | 'screener';
 export type ActivitySourceFilterWire = 'all' | ActivitySourceWire;
 
 /** Canonical verbs (D227 → K/A/U/L/D after ADR-0019) plus the D88
- *  followup-dismiss row variant and the D43 VIP/Protect toggle audit
+ *  followup-dismiss row variant and the Protect toggle audit
  *  entries (written by the senders policy write path; snake_case
  *  spelling follows D43's literal enum strings). */
 export type ActivityActionWire =
@@ -53,8 +53,6 @@ export type ActivityActionWire =
   | 'later'
   | 'delete'
   | 'followup-dismiss'
-  | 'marked_vip'
-  | 'unmarked_vip'
   | 'marked_protected'
   | 'unmarked_protected';
 

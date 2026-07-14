@@ -34,6 +34,15 @@ describe('compositeActionRequestSchema — D245 Later schedule', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('rejects a message selection because Later returns mail per sender', () => {
+    expect(
+      compositeActionRequestSchema.safeParse({
+        selector: { type: 'messages', messageIds: ['message-1'] },
+        primary: { type: 'later', wakeAt: '2099-07-21T09:00:00.000Z' },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('unsubscribeManualStatusRequestSchema', () => {

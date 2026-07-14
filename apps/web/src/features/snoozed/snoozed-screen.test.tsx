@@ -54,17 +54,6 @@ const ROW_EVENTUALLY: SnoozedSenderRow = {
   reason: null,
 };
 
-const ROW_NO_TIMER: SnoozedSenderRow = {
-  senderId: '6f1f2f3a-0000-4000-8000-000000000003',
-  displayName: '',
-  email: 'noreply@tools.example.com',
-  domain: 'tools.example.com',
-  laterCount: 9,
-  snoozedUntil: null,
-  snoozedAt: null,
-  reason: null,
-};
-
 function listHandler(rows: SnoozedSenderRow[]): FetchStubHandler {
   return {
     method: 'GET',
@@ -128,7 +117,7 @@ describe('SnoozedScreen — edge states', () => {
 });
 
 describe('SnoozedScreen — populated (D80 grouping)', () => {
-  beforeEach(() => installFetchStub([listHandler([ROW_TODAY, ROW_EVENTUALLY, ROW_NO_TIMER])]));
+  beforeEach(() => installFetchStub([listHandler([ROW_TODAY, ROW_EVENTUALLY])]));
   afterEach(() => resetFetchStub());
 
   it('groups rows into wake-time buckets with real counts', async () => {
@@ -137,13 +126,9 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
 
     expect(screen.getByRole('heading', { name: /later today/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /needs scheduling/i })).toBeInTheDocument();
-
     expect(screen.getByText('12 in Later')).toBeInTheDocument();
     expect(screen.getByText('“after launch week”')).toBeInTheDocument();
-    // Display-name-less sender falls back to its email.
-    expect(screen.getByText('noreply@tools.example.com')).toBeInTheDocument();
-    expect(screen.getByText('Needs a wake time')).toBeInTheDocument();
+    expect(screen.queryByText(/needs (scheduling|a wake time)/i)).not.toBeInTheDocument();
   });
 
   it('renders honest copy when the mirror count is unknown', async () => {
@@ -222,16 +207,16 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
   it('PATCHes the picked preset with the note attached', async () => {
     const bodies: unknown[] = [];
     installFetchStub([
-      listHandler([ROW_NO_TIMER]),
+      listHandler([ROW_EVENTUALLY]),
       {
         method: 'PATCH',
-        path: new RegExp(`^/api/snoozed/${ROW_NO_TIMER.senderId}$`),
+        path: new RegExp(`^/api/snoozed/${ROW_EVENTUALLY.senderId}$`),
         respond: async (req) => {
           bodies.push(await req.json());
           return new Response(
             JSON.stringify({
               data: {
-                senderId: ROW_NO_TIMER.senderId,
+                senderId: ROW_EVENTUALLY.senderId,
                 snoozedUntil: IN_30_DAYS,
                 snoozedAt: new Date().toISOString(),
                 reason: 'travel',
@@ -245,12 +230,12 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     ]);
     const user = userEvent.setup();
     renderScreen();
-    await screen.findByText('noreply@tools.example.com');
+    await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Choose wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
     expect(
       screen.getByRole('button', {
-        name: 'Cancel wake-time changes for noreply@tools.example.com',
+        name: 'Cancel wake-time changes for Quarterly Newsletter',
       }),
     ).toHaveTextContent('Cancel');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');

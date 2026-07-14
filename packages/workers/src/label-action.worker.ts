@@ -274,6 +274,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // event payload. `labelChangeForVerb` already assumes this.
     const labelVerb = job.verb as 'archive' | 'later' | 'delete';
 
+    if (labelVerb === 'later' && (job.selector.type !== 'sender' || job.wakeAt === null)) {
+      throw new ValidationError('Later action requires a sender selector and wake time');
+    }
+
     // Resolve the durable execution set (sender selector resolves "in
     // INBOX now"; messages selector was frozen by the API). Persist it
     // BEFORE the mutation so a post-mutation retry reuses it.
@@ -409,6 +413,30 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             inArray(mailMessages.providerMessageId, ids),
           ),
         );
+
+      // A successful Later mutation and its return timer are one
+      // terminal state. Persist them in the same transaction so the
+      // Later page and wake sweep cannot lose a Gmail-applied action.
+      if (labelVerb === 'later' && job.selector.type === 'sender' && job.wakeAt !== null) {
+        const snoozedAt = new Date(appliedAt);
+        await tx
+          .insert(senderPolicies)
+          .values({
+            mailboxAccountId,
+            senderKey: job.selector.senderKey,
+            snoozedUntil: job.wakeAt,
+            snoozedAt,
+          })
+          .onConflictDoUpdate({
+            target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+            set: {
+              snoozedUntil: job.wakeAt,
+              snoozedAt,
+              snoozedReason: null,
+              updatedAt: sql`now()`,
+            },
+          });
+      }
 
       await this.deps.outbox.publish(tx, {
         topic: TOPICS.ACTION_LABEL_APPLIED,

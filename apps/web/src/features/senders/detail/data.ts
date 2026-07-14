@@ -153,8 +153,8 @@ function seedFor(id: string): number {
 }
 
 /** Fixture-only suggestion derivation for stories and mock handlers. */
-function inferVerdict(s: Sender, isVip: boolean, isProtected: boolean): Verdict {
-  if (isVip || isProtected) return 'keep';
+function inferVerdict(s: Sender, isProtected: boolean): Verdict {
+  if (isProtected) return 'keep';
   if (s.group === 'primary') return 'keep';
   const { read, monthly, spike } = s;
   if (read === 0 && monthly >= 25) return 'archive';
@@ -193,13 +193,9 @@ function buildSignals(s: Sender): string[] {
   return out;
 }
 
-function buildRecommendation(
-  s: Sender,
-  isVip: boolean,
-  isProtected: boolean,
-): Recommendation | null {
-  if (isVip || isProtected) return null;
-  const verdict = inferVerdict(s, isVip, isProtected);
+function buildRecommendation(s: Sender, isProtected: boolean): Recommendation | null {
+  if (isProtected) return null;
+  const verdict = inferVerdict(s, isProtected);
   if (verdict === 'keep' && s.group !== 'primary') {
     // For non-Primary senders with no strong signal, Keep may appear only
     // inside the collapsed optional-suggestion disclosure.
@@ -296,7 +292,7 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
   } else if (s.read < 0.2 && s.monthly >= 6) {
     candidates.push({ source: 'Autopilot', action: 'Moved to Later', count: s.monthly });
   } else if (s.group === 'primary') {
-    candidates.push({ source: 'Manual', action: 'Marked VIP' });
+    candidates.push({ source: 'You', action: 'Kept' });
   } else {
     candidates.push({ source: 'You', action: 'Kept' });
   }
@@ -307,8 +303,7 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
     { source: 'Autopilot', action: 'Moved to Later', count: s.monthly },
     { source: 'Screener', action: 'Kept' },
     { source: 'Manual', action: 'Restored' },
-    { source: 'System', action: 'Marked VIP' },
-    { source: 'You', action: 'Unmarked VIP' },
+    { source: 'System', action: 'Protected' },
     { source: 'Manual', action: 'Unprotected' },
     { source: 'Triage', action: 'Archived', count: Math.round(s.monthly * 3) },
   ];
@@ -335,14 +330,12 @@ function buildHistory(s: Sender): DecisionHistoryRow[] {
 export function buildSenderDetail(
   sender: Sender,
   overrides: Partial<{
-    isVip: boolean;
     isProtected: boolean;
     protectionReason: ProtectionReason;
     recentMessages: RecentMessage[];
     history: DecisionHistoryRow[];
   }> = {},
 ): SenderDetail {
-  const isVip = overrides.isVip ?? false;
   const isProtected = overrides.isProtected ?? sender.protected === true;
   const protectionReason: ProtectionReason | null = isProtected
     ? (overrides.protectionReason ?? (sender.protected ? 'auto-receipts' : 'user-marked'))
@@ -363,10 +356,9 @@ export function buildSenderDetail(
     unsubscribeMethod: null,
     unsubscribeMailtoUrl: null,
     gmailCategory: GMAIL_CATEGORY[sender.group],
-    isVip,
     isProtected,
     protectionReason,
-    recommendation: buildRecommendation(sender, isVip, isProtected),
+    recommendation: buildRecommendation(sender, isProtected),
     recentMessages: overrides.recentMessages ?? buildRecentMessages(sender),
     stats: buildStats(sender),
     timeseries: buildTimeseries(sender),

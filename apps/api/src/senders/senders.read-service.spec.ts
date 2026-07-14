@@ -327,54 +327,6 @@ describe('SendersReadService', () => {
       expect(rows[0]!.protectionFlags.isProtected).toBe(true);
     });
 
-    it('filters to VIP senders when isVip=true (U23 settings VIP list)', async () => {
-      // Mirrors the protected-filter fixture: one VIP, one explicit
-      // non-VIP, one with no policy row (left-joined NULL excluded).
-      const vip = await seedSender(db, {
-        mailboxAccountId: mailboxId,
-        email: 'vip@x.com',
-        lastSeenAt: new Date('2026-03-01T00:00:00Z'),
-      });
-      const notVip = await seedSender(db, {
-        mailboxAccountId: mailboxId,
-        email: 'not-vip@x.com',
-        lastSeenAt: new Date('2026-02-01T00:00:00Z'),
-      });
-      await seedSender(db, {
-        mailboxAccountId: mailboxId,
-        email: 'no-policy-vip@x.com',
-        lastSeenAt: new Date('2026-01-01T00:00:00Z'),
-      });
-      await db.insert(senderPolicies).values({
-        mailboxAccountId: mailboxId,
-        senderKey: vip.senderKey,
-        isVip: true,
-      });
-      await db.insert(senderPolicies).values({
-        mailboxAccountId: mailboxId,
-        senderKey: notVip.senderKey,
-        isVip: false,
-      });
-
-      const rows = await svc.listSenders({
-        mailboxAccountId: mailboxId,
-        category: null,
-        isVip: true,
-        cursor: null,
-        limit: 25,
-      });
-      expect(rows.map((r) => r.id)).toEqual([vip.id]);
-      expect(rows[0]!.protectionFlags.isVip).toBe(true);
-
-      // The meta count mirrors the same predicate.
-      const meta = await svc.getSenderListQueryMeta({
-        mailboxAccountId: mailboxId,
-        category: null,
-        isVip: true,
-      });
-      expect(meta.totalMatching).toBe(1);
-    });
-
     describe('q search (#145)', () => {
       async function seedSearchFixture() {
         await seedSender(db, {
@@ -688,7 +640,6 @@ describe('SendersReadService', () => {
           mailboxAccountId: mailboxId,
           senderKey: protect.senderKey,
           policyType: 'keep',
-          isVip: false,
           isProtected: true,
           protectionReason: 'user_defined',
         });
@@ -1244,10 +1195,10 @@ describe('SendersReadService', () => {
     });
 
     describe('protectionFlags (D42/D43 — now on the list row)', () => {
-      it('surfaces VIP / Protect policy flags on list rows', async () => {
+      it('surfaces Protect policy state on list rows', async () => {
         const a = await seedSender(db, {
           mailboxAccountId: mailboxId,
-          email: 'vip@x.com',
+          email: 'protected@x.com',
           lastSeenAt: new Date('2026-05-01T00:00:00Z'),
         });
         const protectedAt = new Date('2026-04-10T00:00:00Z');
@@ -1255,9 +1206,8 @@ describe('SendersReadService', () => {
           mailboxAccountId: mailboxId,
           senderKey: a.senderKey,
           policyType: 'keep',
-          isVip: true,
           isProtected: true,
-          protectionReason: 'vip',
+          protectionReason: 'user_defined',
           protectionSetAt: protectedAt,
         });
 
@@ -1268,9 +1218,8 @@ describe('SendersReadService', () => {
           limit: 10,
         });
         expect(rows.find((r) => r.id === a.id)!.protectionFlags).toEqual({
-          isVip: true,
           isProtected: true,
-          protectionReason: 'vip',
+          protectionReason: 'user_defined',
           protectionSetAt: protectedAt.toISOString(),
         });
       });
@@ -1288,7 +1237,6 @@ describe('SendersReadService', () => {
           limit: 10,
         });
         expect(rows.find((r) => r.id === a.id)!.protectionFlags).toEqual({
-          isVip: false,
           isProtected: false,
           protectionReason: null,
           protectionSetAt: null,
@@ -1308,14 +1256,13 @@ describe('SendersReadService', () => {
           lastSeenAt: new Date('2026-05-01T00:00:00Z'),
         });
         expect(here.senderKey).toBe(there.senderKey);
-        // Only the OTHER mailbox pins the sender as VIP.
+        // Only the OTHER mailbox protects the sender.
         await db.insert(senderPolicies).values({
           mailboxAccountId: otherMailbox,
           senderKey: there.senderKey,
           policyType: 'keep',
-          isVip: true,
           isProtected: true,
-          protectionReason: 'vip',
+          protectionReason: 'user_defined',
         });
 
         const rowsHere = await svc.listSenders({
@@ -1325,7 +1272,6 @@ describe('SendersReadService', () => {
           limit: 10,
         });
         expect(rowsHere.find((r) => r.id === here.id)!.protectionFlags).toEqual({
-          isVip: false,
           isProtected: false,
           protectionReason: null,
           protectionSetAt: null,
@@ -1482,7 +1428,6 @@ describe('SendersReadService', () => {
         mailboxAccountId: mailboxId,
         senderKey: a.senderKey,
         policyType: 'keep',
-        isVip: true,
         isProtected: true,
         protectionReason: 'user_defined',
         protectionSetAt: protectedAt,
@@ -1494,7 +1439,6 @@ describe('SendersReadService', () => {
       expect(detail!.gmailCategory).toBe('promotions');
       expect(detail!.firstSeenAt).toBe('2024-01-01T00:00:00.000Z');
       expect(detail!.protectionFlags).toEqual({
-        isVip: true,
         isProtected: true,
         protectionReason: 'user_defined',
         protectionSetAt: protectedAt.toISOString(),
@@ -1509,7 +1453,6 @@ describe('SendersReadService', () => {
       });
       const detail = await svc.getSenderDetail(mailboxId, a.id);
       expect(detail!.protectionFlags).toEqual({
-        isVip: false,
         isProtected: false,
         protectionReason: null,
         protectionSetAt: null,
@@ -2626,20 +2569,18 @@ describe('SendersReadService', () => {
         readCount: 1,
       });
 
-      // s2 — Protect via VIP only (no `is_protected`). isVip alone must
-      // route the sender into `protect`, matching the FE's
-      // `isStandingProtected` predicate.
+      // s2 — explicit protection routes the sender into `protect`.
       const s2 = await seedSender(db, {
         mailboxAccountId: targetMailbox,
-        displayName: 'VIP Friend',
-        email: 'vip@friend.com',
+        displayName: 'Protected Friend',
+        email: 'protected@friend.com',
         lastSeenAt: new Date('2026-05-01T00:00:00Z'),
       });
       await db.insert(senderPolicies).values({
         mailboxAccountId: targetMailbox,
         senderKey: s2.senderKey,
-        isVip: true,
-        isProtected: false,
+        isProtected: true,
+        protectionReason: 'user_defined',
       });
       await seedTimeseries(db, {
         mailboxAccountId: targetMailbox,

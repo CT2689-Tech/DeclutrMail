@@ -788,7 +788,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // User-agency-wins guard — see InitialSyncWorker for full
       // rationale. A manually demoted row (`is_protected=false` with
       // the prior `protection_reason` preserved as the memory pin —
-      // ANY provenance: engagement_based, user_defined, or vip) stays
+      // either provenance: engagement_based or user_defined) stays
       // demoted on this incremental pass — the user's decision
       // survives the next webhook. Only `protection_reason IS NULL`
       // rows may be auto-protected.

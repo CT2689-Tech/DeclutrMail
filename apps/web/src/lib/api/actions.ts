@@ -88,7 +88,7 @@ interface ActionRequestOptions {
  * resolves the sender's current INBOX ids server-side (the `sender`
  * selector), so the client sends only the sender id.
  *
- * `override` is required to act on a Protected / VIP sender (D42).
+ * `override` is required to act on a Protected sender.
  */
 export async function enqueueArchiveSender(
   senderId: string,
@@ -355,7 +355,7 @@ export interface BulkPreviewBuckets {
 /**
  * Returned by `POST /api/actions/preview/bulk` — per-sender breakdown +
  * aggregate bucket counts across the selection (D52: the action sheet
- * shows AGGREGATED impact). `totals` excludes Protected/VIP senders
+ * shows AGGREGATED impact). `totals` excludes Protected senders
  * because the bulk enqueue skips them — the preview equals what will
  * actually move.
  */

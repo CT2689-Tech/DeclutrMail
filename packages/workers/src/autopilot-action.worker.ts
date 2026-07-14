@@ -101,10 +101,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *   2. RULE STATE: matches whose rule is now disabled or paused are
  *      skipped (left pending) — D105's pause must stop execution even
  *      for already-approved matches.
- *   3. PROTECT RE-CHECK: `sender_policies.is_protected` / `is_vip` is
+ *   3. PROTECT RE-CHECK: `sender_policies.is_protected` is
  *      re-read at EXECUTION time (the apply worker filtered at match
  *      time, but the user may have protected the sender since). A
- *      protected/VIP sender's match resolves to `dismissed` — a rule
+ *      protected sender's match resolves to `dismissed` — a rule
  *      must NEVER act on a protected sender (D43, defense-in-depth).
  *   4. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
  *      the `sender_policies.policy_type='unsubscribe'` projection
@@ -158,7 +158,7 @@ export interface AutopilotActionResult {
   unsubscribeIntentsRecorded: number;
   /** Subset of intents that enqueued an RFC 8058 execution job. */
   unsubscribeExecutionsEnqueued: number;
-  /** Matches dismissed because the sender is now Protected/VIP. */
+  /** Matches dismissed because the sender is now Protected. */
   skippedProtected: number;
   /** Unsub matches no-opped because the sender is already unsubscribed. */
   skippedAlreadyUnsubscribed: number;
@@ -400,7 +400,6 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         senderKey: senderPolicies.senderKey,
         policyType: senderPolicies.policyType,
         isProtected: senderPolicies.isProtected,
-        isVip: senderPolicies.isVip,
       })
       .from(senderPolicies)
       .where(
@@ -409,7 +408,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           inArray(senderPolicies.senderKey, senderKeys),
         ),
       );
-    const shieldedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected || r.isVip]));
+    const shieldedBy = new Map(policyRows.map((r) => [r.senderKey, r.isProtected]));
     const alreadyUnsubscribed = new Set(
       policyRows.filter((r) => r.policyType === 'unsubscribe').map((r) => r.senderKey),
     );
@@ -591,7 +590,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * A sender that became Protected/VIP after the match was logged:
+   * A sender that became Protected after the match was logged:
    * never act (D43). The match resolves to `dismissed` — terminal,
    * auditable, and out of the pending sweep.
    */

@@ -14,7 +14,7 @@
 //
 // Variants:
 //   • Default        — 4 same-domain senders, all eligible
-//   • WithProtected  — one member is VIP-protected → stays untouched
+//   • WithProtected  — one member is protected → stays untouched
 //   • Busy           — this batch's decision is confirming server-side
 //   • Disabled       — another decision is confirming (single-slot latch)
 //   • MinimumRun     — the 3-row floor (`MIN_BATCH_RUN`)
@@ -61,7 +61,7 @@ type Args = Parameters<typeof DomainBatchCard>[0];
 /**
  * Fabricate a same-domain run from the shared fixture rows: clone base
  * rows onto one registrable domain so `DomainBatchCard` has a realistic
- * batch to render. `protection` marks a member VIP-protected.
+ * batch to render. `protection` marks a protected member.
  */
 function mkBatch(
   domain: string,
@@ -100,13 +100,13 @@ export const Default: Story<typeof DomainBatchCard> = {
 };
 
 /**
- * With a protected member — the VIP sender is counted separately and
+ * With a protected member — the protected sender is counted separately and
  * stays untouched by the batch ("N protected senders stay untouched").
  */
 export const WithProtected: Story<typeof DomainBatchCard> = {
   args: {
     batch: mkBatch('substack.com', [
-      { name: 'The Pragmatic Engineer', protection: 'vip' },
+      { name: 'The Pragmatic Engineer', protection: 'user-marked' },
       { name: 'Lenny’s Newsletter' },
       { name: 'Money Stuff' },
       { name: 'Stratechery' },

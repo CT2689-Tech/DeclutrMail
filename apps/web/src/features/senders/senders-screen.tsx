@@ -119,7 +119,7 @@ const TABLE_VERB_TO_ACTION: Record<SenderTableVerb, ActionVerb> = {
  * The Senders screen — lean power-surface composition (spec v1.2).
  *
  * Composition:
- *   1. Brand header + search (Add-VIP CTA hidden until the flow ships)
+ *   1. Brand header + search
  *   2. Hero number (`meta.query.totalMatching`, BE-honest) + ComposeStrip
  *      — multi-axis fact filters + sort (D38); state is URL-backed
  *   3. Grid of SenderCards (D49 — the single adaptive surface; the
@@ -1577,9 +1577,6 @@ function SendersScreenContent({
           {/* The Grid/Table toggle was retired (founder-approved,
               2026-07-08 senders suite) — the grid is the single adaptive
               surface; sorting lives on the ComposeStrip sort chip. */}
-          {/* "+ Add VIP" header CTA is hidden until the real Add-VIP flow
-              ships (2026-07-07 audit, founder call: hide now, build later)
-              — a toast stub as a primary CTA violates §10 no-fake-completion. */}
         </div>
       </div>
 

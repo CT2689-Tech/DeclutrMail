@@ -14,7 +14,7 @@
 //     malformed response. No throws. The worker treats `null` as "use
 //     the template" and records `brief_runs.generated_by = 'template'`.
 //   - Input is the worker's pre-computed bounded payload: per-section
-//     sender name + email + subject + Gmail snippet + VIP marker, plus
+//     sender name + email + subject + Gmail snippet, plus
 //     the noise sender counts. The adapter NEVER sees message bodies,
 //     attachments, non-allowlisted headers, or anything outside D7's
 //     storage + read allowlist.
@@ -174,12 +174,11 @@ export function renderBriefUserPrompt(input: BriefNarrativeInput): string {
 }
 
 function formatItem(item: BriefNarrativeItem): string {
-  const vipPrefix = item.isVip ? '[VIP] ' : '';
   const senderLabel = item.senderName.trim() || item.senderEmail || '(unknown sender)';
   const subject = item.subject.trim() || '(no subject)';
   const snippet = truncateSnippet(item.snippet);
   const snippetSegment = snippet ? ` — "${snippet}"` : '';
-  return `  - ${vipPrefix}${senderLabel}: ${subject}${snippetSegment}`;
+  return `  - ${senderLabel}: ${subject}${snippetSegment}`;
 }
 
 function formatNoise(group: BriefNarrativeNoiseGroup): string {
