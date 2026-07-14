@@ -47,6 +47,8 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     // verb + sender. That label is the load-bearing signal the sheet
     // can't silently strip.
     expect(html).toContain(`aria-label="Preview · Archive ${row.senderName}"`);
+    expect(html).toContain('Why do I review this before confirming?');
+    expect(html).toContain('Cancel changes nothing');
   });
 
   it('renders nothing when open=false', () => {
@@ -91,6 +93,22 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     );
 
     expect(html).toContain('Retry preview');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
+
+  it('blocks confirmation while the live preview is still loading', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount="loading"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Counting the inbox');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
   });
 });

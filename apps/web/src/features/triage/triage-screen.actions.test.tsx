@@ -21,7 +21,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
 
 import {
@@ -35,6 +35,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
 // decisions never success-toast), so failure tests must assert the
@@ -87,6 +88,13 @@ function renderScreen(client: QueryClient) {
 
 function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
+}
+
+async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe' | 'Later') {
+  const dialog = await screen.findByRole('dialog');
+  const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
+  await waitFor(() => expect(confirm).not.toBeDisabled());
+  fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
 
 describe('TriageScreen — D226 mutation wiring', () => {
@@ -228,8 +236,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     // The row renders busy until the server confirms; the queue is NOT
     // invalidated while in flight (no optimistic removal — D226).
@@ -328,9 +335,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     // The backlog toggle defaults ON for Unsubscribe; ⌘⏎ confirms.
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Unsubscribe');
 
     // Intent first, then the archive enqueue (the toggle's promise is
     // kept via the real pipeline, not a tracer).
@@ -358,8 +364,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     // The failure leaves the queue untouched: no busy latch, no
     // invalidation, row still present.
@@ -411,13 +416,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     // The failure is toasted (warn) — there is no other failure surface.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't archive ${GROUPON.senderName} — see Activity`,
+        getActionFailureCopy('terminal', {
+          action: `archive ${GROUPON.senderName}`,
+        }).message,
         'warn',
       ),
     );
@@ -462,12 +468,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't confirm ${GROUPON.senderName} — see Activity`,
+        getActionFailureCopy('status', {
+          action: `archive ${GROUPON.senderName}`,
+        }).message,
         'warn',
       ),
     );
@@ -495,7 +502,10 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't keep ${GROUPON.senderName} — try again`,
+        getActionFailureCopy('enqueue', {
+          action: `keep ${GROUPON.senderName}`,
+          whatDidNotChange: 'The Keep policy was not saved.',
+        }).message,
         'warn',
       ),
     );
@@ -533,14 +543,18 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Unsubscribe');
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
     // only the backlog archive did not (recoverable from Senders).
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe queued, but couldn't archive the backlog from ${LINKEDIN.senderName}`,
+        getActionFailureCopy('enqueue', {
+          action: `archive the backlog from ${LINKEDIN.senderName}`,
+          whatChanged: 'The unsubscribe request was queued.',
+          whatDidNotChange: 'The backlog was not archived.',
+          nextStep: 'Archive the backlog from Senders if you still want to move it.',
+        }).message,
         'warn',
       ),
     );
@@ -607,8 +621,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // First decision: Archive GROUPON — stays in flight.
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Archive');
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
 
     // Second decision on a DIFFERENT row while the first confirms:
@@ -653,11 +666,11 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
   async function confirmUnsubWithoutBacklog() {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await screen.findByRole('dialog');
     // Untoggle "also archive the backlog" so ONLY the unsub fires —
     // these tests isolate the execution states.
     fireEvent.click(screen.getByText(/Also archive the/));
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await confirmOpenSheet('Unsubscribe');
   }
 
   function intentHandler(data: Record<string, unknown>) {

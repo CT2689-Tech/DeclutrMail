@@ -2,6 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
@@ -233,11 +234,7 @@ function ImpactFigure({
     return <span style={captionStyle}>Counting the inbox…</span>;
   }
   if (inboxCount === 'unavailable') {
-    return (
-      <span style={captionStyle}>
-        Couldn't load the live count — nothing changes until you confirm.
-      </span>
-    );
+    return <span style={captionStyle}>{getActionFailureCopy('preview').message}</span>;
   }
   return (
     <>

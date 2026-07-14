@@ -721,7 +721,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/archive mail from 1 sender/i);
 
     // Count check failed → explicit no-change state and a blocked confirm.
-    await screen.findByText(/couldn't load the live preview/i);
+    await screen.findByText(/preview unavailable/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
@@ -1270,7 +1270,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/delete mail from 2 senders/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load the live preview/i);
+    await screen.findByText(/preview unavailable/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();

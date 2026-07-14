@@ -141,6 +141,20 @@ describe('ActivityScreen — edge states', () => {
 });
 
 describe('ActivityScreen — populated', () => {
+  it('explains the difference between Activity Undo and provider recovery', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+
+    expect(await screen.findByText('Which Undo or recovery option applies?')).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash recovery is a separate fallback/i)).toBeInTheDocument();
+  });
+
   it('renders the D59 stats line with verb counts', async () => {
     installFetchStub([
       {
@@ -855,11 +869,11 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
 
     await userEvent.click(trigger);
 
-    // Drawer is a modal dialog holding the bands + a Done button.
+    // Drawer is a modal dialog holding the bands + an explicit results button.
     const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
     expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /^done$/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
   });
 
   it('a source chip inside the drawer drives the filter URL', async () => {

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import type { DomainBatch } from './domain-batch';
@@ -32,6 +33,7 @@ export function BatchActionSheet({
   wakeAt = null,
   onCancel,
   onConfirm,
+  onRetryPreview,
 }: {
   open: boolean;
   verb: BatchVerb;
@@ -42,21 +44,23 @@ export function BatchActionSheet({
   wakeAt?: string | null;
   onCancel: () => void;
   onConfirm: () => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
+  const previewReady = typeof preview === 'object';
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && previewReady) {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel, onConfirm]);
+  }, [open, previewReady, onCancel, onConfirm]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
@@ -151,7 +155,7 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                Couldn&rsquo;t load the live count — nothing changes until you confirm.
+                {getActionFailureCopy('preview').message}
               </span>
             ) : (
               <>
@@ -244,11 +248,17 @@ export function BatchActionSheet({
             {presentation.primary.activityUndo.summary}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {preview === 'unavailable' && onRetryPreview && (
+              <Button tone="default" onClick={onRetryPreview}>
+                Retry preview
+              </Button>
+            )}
             <Button tone="default" onClick={onCancel}>
               Cancel
             </Button>
             <Button
               tone="primary"
+              disabled={!previewReady}
               onClick={onConfirm}
               iconRight={
                 <Kbd

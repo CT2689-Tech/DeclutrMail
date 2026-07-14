@@ -17,13 +17,16 @@ import {
   Button,
   EmptyState,
   ScreenIntro,
+  TechnicalDetails,
   tokens,
   useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
 import { getActionSemantics } from '@declutrmail/shared/actions';
 
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { ApiError } from '@/lib/api/client';
+import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
   ActivityActionWire,
   ActivityFilters,
@@ -257,6 +260,13 @@ export function ActivityScreen() {
         body="Every decision taken on your mail — by you, by Autopilot, by your rules. Filter by source, verb, sender, or date. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery for Delete is separate and normally lasts up to 30 days."
         tip="An empty list within a short window is fine — it means nothing changed. Widen the window to see history."
       />
+
+      <ContextualHelp question="Which Undo or recovery option applies?">
+        Activity Undo uses your DeclutrMail plan&apos;s window for Archive, Later, and Delete. Gmail
+        Trash recovery is a separate fallback for Delete and normally lasts up to 30 days. A
+        delivered unsubscribe request cannot be recalled; only an associated archive may have
+        Activity Undo.
+      </ContextualHelp>
 
       <MetricsHeader
         windowLabel={windowToLabel(
@@ -1092,7 +1102,7 @@ function FilterDrawer({
         </div>
         <FilterBands {...bands} />
         <Button tone="primary" onClick={onClose}>
-          Done
+          View results
         </Button>
       </div>
     </>
@@ -1355,7 +1365,11 @@ function BulkActionBar({
     });
     if (failedTokenList.length > 0) {
       onSetBulkError(
-        `${failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} failed. Failed rows show "Try again".`,
+        getActionFailureCopy('revert-terminal', {
+          whatChanged: `${targets.length - failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} completed.`,
+          whatDidNotChange: `${failedTokenList.length} original action${failedTokenList.length === 1 ? ' was' : 's were'} not reversed.`,
+          nextStep: 'Use Try again on each failed row.',
+        }).message,
       );
       // Persist failed tokens to ActivityScreen state so per-row
       // UndoCell renders the "Try again" pill on each failed row
@@ -2150,7 +2164,9 @@ function UndoCell({
         disabled={isPendingHere}
         title={
           failed
-            ? `Last attempt failed: ${revert.error?.message ?? 'click failed in a bulk undo'}. Click to retry.`
+            ? getActionFailureCopy('revert-enqueue', {
+                nextStep: 'Click to try again.',
+              }).message
             : 'Revert this action.'
         }
         style={{
@@ -2261,10 +2277,8 @@ function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void })
     ? 'Your filters returned an invalid query'
     : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Check the date range (From must be earlier than To) and the source/verb filters, then try again.'
-    : error instanceof ApiError
-      ? `We couldn't load your activity (${error.status}). Try again in a moment.`
-      : "We couldn't load your activity right now. Try again in a moment.";
+    ? 'Nothing changed. Activity could not load this filter. Check the date range (From must be earlier than To) and the source/verb filters, then try again.'
+    : 'Your mailbox and actions are unchanged. Activity could not load. Try again in a moment.';
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState
@@ -2276,6 +2290,10 @@ function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void })
           </Button>
         }
       />
+      <TechnicalDetails summary="Show support details" style={{ marginTop: 12 }}>
+        {error instanceof ApiError ? `HTTP ${error.status}: ` : ''}
+        {technicalErrorDetails(error)}
+      </TechnicalDetails>
     </div>
   );
 }

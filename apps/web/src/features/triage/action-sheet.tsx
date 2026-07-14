@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import type { SheetableVerb } from './store';
@@ -73,6 +74,8 @@ export function ActionSheet({
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
   const previewUnavailable = inboxCount === 'unavailable';
+  const previewPending = inboxCount === 'loading';
+  const confirmBlocked = wakeAtInvalid || previewUnavailable || previewPending;
 
   useEffect(() => {
     if (!open) return;
@@ -80,12 +83,7 @@ export function ActionSheet({
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (
-        e.key === 'Enter' &&
-        (e.metaKey || e.ctrlKey) &&
-        !wakeAtInvalid &&
-        !previewUnavailable
-      ) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmBlocked) {
         e.preventDefault();
         onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt });
       }
@@ -97,8 +95,7 @@ export function ActionSheet({
     archiveHistoric,
     rememberPreference,
     selectedWakeAt,
-    wakeAtInvalid,
-    previewUnavailable,
+    confirmBlocked,
     onCancel,
     onConfirm,
   ]);
@@ -172,6 +169,12 @@ export function ActionSheet({
             wakeAt={selectedWakeAt}
             mode="modal"
           />
+
+          <ContextualHelp question="Why do I review this before confirming?">
+            The preview uses the current mailbox count and separates what will change from what will
+            stay unchanged. DeclutrMail sends the action only after this preview loads and you
+            confirm; Cancel changes nothing.
+          </ContextualHelp>
 
           {verb === 'Later' && selectedWakeAt !== null && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
@@ -290,7 +293,7 @@ export function ActionSheet({
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
-              disabled={wakeAtInvalid || previewUnavailable}
+              disabled={confirmBlocked}
               onClick={() =>
                 onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt })
               }

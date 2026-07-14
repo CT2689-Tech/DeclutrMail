@@ -8,6 +8,7 @@ import {
   type PresentedAction,
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
@@ -272,6 +273,7 @@ export function ConfirmActionModal({
     : Boolean(compositePreviewError || archivePreview?.error);
   const previewRequired = primaryActsOnInbox || isLaterVerb || hasSecondaryAction;
   const requiredPreviewUnavailable = previewRequired && previewUnavailable;
+  const previewFailure = getActionFailureCopy('preview');
   const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
   const confirmDisabled =
     (previewRequired && previewLoading) ||
@@ -959,8 +961,7 @@ export function ConfirmActionModal({
                 ) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
-                      this sender.
+                      Live inbox count unavailable.
                     </span>
                   );
                 }
@@ -1104,9 +1105,7 @@ export function ConfirmActionModal({
               fontWeight: requiredPreviewUnavailable ? 600 : 400,
             }}
           >
-            {requiredPreviewUnavailable
-              ? "Couldn't load the live preview. Nothing has changed; retry before confirming."
-              : (recoveryCopy ?? '')}
+            {requiredPreviewUnavailable ? previewFailure.message : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {requiredPreviewUnavailable && onRetryPreview && (

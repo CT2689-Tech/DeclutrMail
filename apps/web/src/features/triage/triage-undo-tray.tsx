@@ -12,6 +12,7 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
@@ -133,7 +134,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
-            : "Couldn't undo — see Activity",
+            : getActionFailureCopy('revert-enqueue').message,
           'warn',
         );
         setInFlight(null);
@@ -150,7 +151,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
   useEffect(() => {
     if (!inFlight?.actionId) return;
     if (revertStatus.isError) {
-      toast("Couldn't confirm undo — see Activity", 'warn');
+      toast(getActionFailureCopy('revert-status').message, 'warn');
       setInFlight(null);
       void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
       return;
@@ -161,7 +162,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
       toast('Restored to your inbox', 'success');
       invalidateAfterUndo(qc);
     } else {
-      toast("Couldn't undo — see Activity", 'warn');
+      toast(getActionFailureCopy('revert-terminal').message, 'warn');
       void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
     }
     setInFlight(null);
