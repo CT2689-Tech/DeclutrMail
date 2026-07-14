@@ -703,7 +703,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
       screen.getByText(
-        "The unsubscribe itself can't be undone — an archived backlog is reversible for 7 days from Activity.",
+        "The unsubscribe itself can't be undone — an archived backlog uses your plan's Activity Undo window.",
       ),
     ).toBeDefined();
   });

@@ -7,7 +7,9 @@
 export { ACTION_REGISTRY, getActionDescriptor, listActionDescriptors } from './manifest-entries';
 export {
   ACTION_SEMANTICS,
+  DEFAULT_LATER_WAKE_DAYS,
   actionHasRecovery,
+  defaultLaterWakeAtIso,
   getActionSemantics,
   staticActionPreviewCopy,
 } from './action-semantics';

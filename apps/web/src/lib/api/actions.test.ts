@@ -9,6 +9,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  defaultLaterWakeAt,
+  enqueueCompositeAction,
   enqueueArchiveSender,
   getActionStatus,
   isTerminalStatus,
@@ -141,6 +143,44 @@ describe('newIdempotencyKey', () => {
     const b = newIdempotencyKey();
     expect(a.length).toBeGreaterThanOrEqual(8);
     expect(a).not.toBe(b);
+  });
+});
+
+describe('Later scheduling', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it('selects the one-week wake preset when the caller does not override it', async () => {
+    let observedBody: { primary?: { wakeAt?: string } } = {};
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          observedBody = (await req.json()) as typeof observedBody;
+          return jsonOk({
+            data: {
+              actionId: 'a-later',
+              compositeId: 'a-later',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 3,
+              secondaryCount: null,
+              wakeAt: observedBody.primary?.wakeAt ?? null,
+            },
+          });
+        },
+      },
+    ]);
+
+    await enqueueCompositeAction({
+      senderId: 'sender-1',
+      primary: { type: 'later' },
+      idempotencyKey: 'later-key-123',
+    });
+
+    expect(Date.parse(observedBody.primary!.wakeAt!)).toBeGreaterThan(Date.now());
+    expect(defaultLaterWakeAt(new Date('2026-07-14T09:00:00Z'))).toBe('2026-07-21T09:00:00.000Z');
   });
 });
 

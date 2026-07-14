@@ -18,10 +18,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import {
+  ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotActionIntentEmittedPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -655,6 +657,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           requestedCount: 0,
           status: 'queued',
           idempotencyKey,
+          ...(verb === 'later' ? { wakeAt: new Date(defaultLaterWakeAtIso(now)) } : {}),
         })
         .onConflictDoNothing({ target: actionJobs.idempotencyKey });
       [job] = await db
@@ -773,6 +776,25 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           undoToken: issued.token,
         },
         schema: AutopilotActionIntentEmittedPayloadSchema,
+      });
+
+      // The sender-owned Later timer is projected only after Gmail has
+      // confirmed the move, matching the manual action pipeline (D245).
+      await this.deps.outbox.publish(tx, {
+        topic: TOPICS.ACTION_LABEL_APPLIED,
+        aggregateId: job.id,
+        payload: {
+          mailboxAccountId,
+          actionId: job.id,
+          verb,
+          senderKey: match.senderKey,
+          undoToken: issued.token,
+          affectedCount: ids.length,
+          compositeId: job.compositeId,
+          wakeAt: verb === 'later' ? (job.wakeAt?.toISOString() ?? null) : null,
+          appliedAt: now.toISOString(),
+        },
+        schema: ActionLabelAppliedPayloadSchema,
       });
 
       await tx

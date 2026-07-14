@@ -20,7 +20,7 @@ const VERB_ROWS: ReadonlyArray<{
   {
     wire: 'later',
     verb: 'Later',
-    detail: 'Moves current inbox mail to the DeclutrMail/Later label.',
+    detail: 'Moves current inbox mail to DeclutrMail/Later and schedules a one-week return.',
   },
 ];
 

@@ -65,8 +65,8 @@ export function BatchActionSheet({
       : `Move ${eligible.length} senders to Later`;
   const lead =
     verb === 'Archive'
-      ? `Every inbox message from these ${batch.domain} senders moves into Gmail's archive. Nothing is deleted, and one undo reverses the whole batch for 7 days.`
-      : `Inbox mail from these ${batch.domain} senders moves into the DeclutrMail/Later label — out of your way, one click away. One undo reverses the whole batch for 7 days.`;
+      ? `Every inbox message from these ${batch.domain} senders moves into Gmail's archive. Nothing is deleted, and one undo reverses the whole batch during your plan's Activity window.`
+      : `Inbox mail from these ${batch.domain} senders moves into the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged; change individual wake times on Later or use the batch Activity Undo during your plan's window.`;
 
   return (
     <>
@@ -233,7 +233,7 @@ export function BatchActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            One undo reverses the whole batch — 7 days, from Activity.
+            One undo reverses the whole batch during your plan&apos;s Activity window.
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button tone="default" onClick={onCancel}>

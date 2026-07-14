@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -447,7 +448,11 @@ export class ActionsService {
   async enqueueComposite(input: {
     mailboxAccountId: string;
     selector: ArchiveSelector;
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null | undefined;
+      wakeAt?: Date | null | undefined;
+    };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
@@ -461,6 +466,7 @@ export class ActionsService {
     }
 
     const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
 
     // D19/D77 free-cleanup cap — a composite (primary + optional
     // secondary on ONE sender, one click) is ONE unit. Fresh enqueues
@@ -534,6 +540,7 @@ export class ActionsService {
       requestedCount: primaryCount,
       idempotencyKey: primaryStorageKey,
       olderThanDays: primary.olderThanDays ?? null,
+      wakeAt: primary.wakeAt ?? null,
     });
 
     if (!primaryRow.existing) {
@@ -551,6 +558,7 @@ export class ActionsService {
         status: primaryRow.row.status,
         primaryCount: primaryRow.row.requestedCount,
         secondaryCount: null,
+        wakeAt: primaryRow.row.wakeAt?.toISOString() ?? null,
       };
     }
 
@@ -596,6 +604,7 @@ export class ActionsService {
       status: primaryRow.row.status,
       primaryCount: primaryRow.row.requestedCount,
       secondaryCount: secondaryRow.row.requestedCount,
+      wakeAt: primaryRow.row.wakeAt?.toISOString() ?? null,
     };
   }
 
@@ -734,7 +743,11 @@ export class ActionsService {
   async enqueueBulkComposite(input: {
     mailboxAccountId: string;
     senderIds: string[];
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null | undefined };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null | undefined;
+      wakeAt?: Date | null | undefined;
+    };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
@@ -746,6 +759,7 @@ export class ActionsService {
       });
     }
     const { mailboxAccountId, primary, secondary, idempotencyKey } = input;
+    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
 
     // Sorted + deduped — the anchor must be deterministic across a
     // network-retried POST with the same Idempotency-Key.
@@ -807,6 +821,7 @@ export class ActionsService {
     let anchorId: string | null = null;
     let status: ActionJobStatus = 'queued';
     let requestedTotal = 0;
+    let persistedWakeAt: Date | null = null;
 
     for (const sender of actionable) {
       const primaryKey = `${primary.type}-${safeKey}-${sender.id}`;
@@ -819,11 +834,13 @@ export class ActionsService {
         requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
         idempotencyKey: primaryKey,
         olderThanDays: primary.olderThanDays ?? null,
+        wakeAt: primary.wakeAt ?? null,
         compositeId: anchorId, // null only for the anchor itself
       });
       if (anchorId === null) {
         anchorId = primaryRow.row.id;
         status = primaryRow.row.status;
+        persistedWakeAt = primaryRow.row.wakeAt;
       }
       if (!primaryRow.existing) {
         await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryKey);
@@ -854,6 +871,7 @@ export class ActionsService {
       status,
       senderCount: actionable.length,
       requestedTotal,
+      wakeAt: persistedWakeAt?.toISOString() ?? null,
       skipped,
     };
   }
@@ -1613,6 +1631,8 @@ export class ActionsService {
         token: sibling.undoToken,
         verb: sibling.verb,
         messageIds: sibling.resolvedMessageIds,
+        selector: sibling.selector,
+        wakeAt: sibling.wakeAt,
       });
       results.push({
         token: sibling.undoToken,
@@ -1629,6 +1649,10 @@ export class ActionsService {
     token: string;
     verb: 'archive' | 'later' | 'delete';
     messageIds: string[];
+    /** Preserve sender scope so Later Undo can cancel its matching timer. */
+    selector?: LabelActionSelector;
+    /** Original forward Later schedule; null for legacy/other verbs. */
+    wakeAt?: Date | null;
   }): Promise<{ actionId: string; status: ActionJobStatus }> {
     if (!this.queue) {
       throw new ServiceUnavailableException({
@@ -1640,12 +1664,13 @@ export class ActionsService {
     const inserted = await this.insertJob({
       mailboxAccountId: input.mailboxAccountId,
       direction: 'reverse',
-      selector: { type: 'messages' },
+      selector: input.selector ?? { type: 'messages' },
       resolvedMessageIds: input.messageIds,
       requestedCount: input.messageIds.length,
       idempotencyKey,
       verb: input.verb,
       undoToken: input.token,
+      wakeAt: input.wakeAt ?? null,
     });
     if (inserted.existing) {
       // Existing revert row found. Dispatch by status:
@@ -1780,6 +1805,8 @@ export class ActionsService {
     undoToken?: string;
     /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
     olderThanDays?: number | null;
+    /** D245 required schedule for new forward Later actions. */
+    wakeAt?: Date | null;
     /**
      * ADR-0020 composite linkage — set on a secondary row to the
      * primary's `id`. NULL for single-verb actions + primary of a
@@ -1801,6 +1828,7 @@ export class ActionsService {
         ...(input.olderThanDays !== undefined && input.olderThanDays !== null
           ? { olderThanDays: input.olderThanDays }
           : {}),
+        ...(input.wakeAt ? { wakeAt: input.wakeAt } : {}),
         ...(input.compositeId ? { compositeId: input.compositeId } : {}),
       })
       .onConflictDoNothing({ target: actionJobs.idempotencyKey })
@@ -1827,6 +1855,31 @@ export class ActionsService {
       });
     }
     return { existing: true, row: existing };
+  }
+
+  /** Enforce the D245 action contract at every service entry point. */
+  private assertValidWakeAt(verb: CompositePrimaryVerb, wakeAt: Date | null): void {
+    if (verb === 'later') {
+      if (wakeAt === null || Number.isNaN(wakeAt.getTime())) {
+        throw new BadRequestException({
+          code: 'LATER_WAKE_TIME_REQUIRED',
+          message: 'Later requires a wake time.',
+        });
+      }
+      if (wakeAt.getTime() <= Date.now()) {
+        throw new BadRequestException({
+          code: 'LATER_WAKE_TIME_INVALID',
+          message: 'Wake time must be in the future.',
+        });
+      }
+      return;
+    }
+    if (wakeAt !== null) {
+      throw new BadRequestException({
+        code: 'WAKE_TIME_NOT_APPLICABLE',
+        message: 'wakeAt is only valid for Later.',
+      });
+    }
   }
 
   /** Enqueue the job; mark the row failed + surface 503 if Redis rejects. */

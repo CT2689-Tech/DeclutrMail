@@ -314,6 +314,28 @@ describe('AutopilotActionWorker', () => {
     expect((emitted[0]!.payload as { matchId: string }).matchId).toBe(matchId);
   });
 
+  it('captures the one-week wake time for an approved Later match (D245)', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders');
+    const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 1 });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+
+    const [job] = await db
+      .select()
+      .from(actionJobs)
+      .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
+    expect(job!.verb).toBe('later');
+    expect(job!.wakeAt?.toISOString()).toBe('2026-06-17T08:00:00.000Z');
+
+    const events = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.topic, TOPICS.ACTION_LABEL_APPLIED));
+    expect(events).toHaveLength(1);
+    expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
+  });
+
   it('is idempotent — a replayed sweep does not duplicate mutations or audit rows', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
     const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', { inboxMessages: 2 });

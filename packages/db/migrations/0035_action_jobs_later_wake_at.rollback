@@ -1,0 +1,5 @@
+-- Rollback for 0035_action_jobs_later_wake_at.sql
+
+ALTER TABLE "action_jobs" DROP CONSTRAINT "action_jobs_wake_at_verb_check";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN "wake_at";

@@ -165,7 +165,11 @@ export class ActionsController {
       const result = await this.actions.enqueueBulkComposite({
         mailboxAccountId: mailbox.id,
         senderIds: req.selector.senderIds,
-        primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+        primary: {
+          type: req.primary.type,
+          olderThanDays: req.primary.olderThanDays ?? null,
+          wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
+        },
         secondary: req.secondary
           ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
           : undefined,
@@ -176,7 +180,11 @@ export class ActionsController {
     const result = await this.actions.enqueueComposite({
       mailboxAccountId: mailbox.id,
       selector: req.selector,
-      primary: { type: req.primary.type, olderThanDays: req.primary.olderThanDays ?? null },
+      primary: {
+        type: req.primary.type,
+        olderThanDays: req.primary.olderThanDays ?? null,
+        wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
+      },
       secondary: req.secondary
         ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
         : undefined,

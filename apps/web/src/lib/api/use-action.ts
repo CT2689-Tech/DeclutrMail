@@ -128,7 +128,7 @@ export function useEnqueueComposite() {
     Error,
     {
       senderId: string;
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
       override?: boolean;
     }
@@ -173,7 +173,7 @@ export function useEnqueueBulkAction() {
     Error,
     {
       senderIds: string[];
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     }
   >({

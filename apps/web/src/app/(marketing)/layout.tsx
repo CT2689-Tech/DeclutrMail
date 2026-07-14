@@ -78,7 +78,7 @@ const SITE_JSON_LD = {
       '@type': 'SoftwareApplication',
       name: 'DeclutrMail',
       url: siteUrl(),
-      description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
+      description: 'Gmail cleanup — clear previews and plan-based Activity Undo.',
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       offers: tierOffers(),

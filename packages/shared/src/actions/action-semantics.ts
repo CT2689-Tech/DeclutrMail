@@ -254,3 +254,10 @@ export function actionHasRecovery(verb: ActionVerb): boolean {
     semantics.providerRecovery.kind !== 'none'
   );
 }
+
+/** D245 default Later preset used by every producer unless the user picks another time. */
+export const DEFAULT_LATER_WAKE_DAYS = 7;
+
+export function defaultLaterWakeAtIso(now = new Date()): string {
+  return new Date(now.getTime() + DEFAULT_LATER_WAKE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}

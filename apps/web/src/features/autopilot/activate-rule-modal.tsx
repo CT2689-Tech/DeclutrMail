@@ -125,6 +125,6 @@ function goingForwardCopy(rule: AutopilotRuleDto): string {
     case 'unsubscribe':
       return 'New matches are unsubscribed automatically where the sender supports one-click unsubscribe. Senders that only take unsubscribes by email are queued for you to send manually — DeclutrMail never auto-sends from a no-reply address. Unsubscribe requests cannot be recalled once sent.';
     case 'later':
-      return 'New matches have their inbox mail moved to the DeclutrMail/Later label automatically — out of your way, one click away, undoable from the Activity feed.';
+      return "New matches have their current inbox mail moved to the DeclutrMail/Later label and scheduled to return in one week. Future mail is unchanged; change the wake time on Later or undo during your plan's Activity window.";
   }
 }

@@ -246,6 +246,58 @@ describe('OutboxConsumerRouter — D204 senders projection', () => {
     expect(row!.decidedAt).not.toBeNull();
   });
 
+  it('projects a successful Later wake time only after the applied event (D245)', async () => {
+    const appliedAt = '2026-07-14T18:00:00.000Z';
+    const wakeAt = '2026-07-21T09:00:00.000Z';
+    await consume({
+      id: 'evt-label-later-1',
+      topic: TOPICS.ACTION_LABEL_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000079',
+      payload: {
+        mailboxAccountId: mailboxId,
+        actionId: '00000000-0000-4000-8000-000000000079',
+        verb: 'later',
+        senderKey: SENDER_KEY_A,
+        undoToken: '00000000-0000-4000-8000-0000000000a9',
+        affectedCount: 3,
+        compositeId: null,
+        wakeAt,
+        appliedAt,
+      },
+      attempts: 1,
+      createdAt: new Date(appliedAt),
+    });
+
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozedUntil?.toISOString()).toBe(wakeAt);
+    expect(policy!.snoozedAt?.toISOString()).toBe(appliedAt);
+  });
+
+  it('does not schedule a zero-message Later decision', async () => {
+    await consume({
+      id: 'evt-label-later-empty',
+      topic: TOPICS.ACTION_LABEL_APPLIED,
+      aggregateId: '00000000-0000-4000-8000-000000000078',
+      payload: {
+        mailboxAccountId: mailboxId,
+        actionId: '00000000-0000-4000-8000-000000000078',
+        verb: 'later',
+        senderKey: SENDER_KEY_A,
+        undoToken: null,
+        affectedCount: 0,
+        compositeId: null,
+        wakeAt: null,
+        appliedAt: '2026-07-14T18:00:00.000Z',
+      },
+      attempts: 1,
+      createdAt: new Date('2026-07-14T18:00:00.000Z'),
+    });
+    expect(await db.select().from(senderPolicies)).toHaveLength(0);
+  });
+
   it('label_action_applied with a null senderKey (message selector) resolves nothing', async () => {
     await db
       .insert(screenerQuarantine)

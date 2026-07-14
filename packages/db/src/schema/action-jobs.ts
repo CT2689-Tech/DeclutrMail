@@ -180,6 +180,14 @@ export const actionJobs = pgTable(
      * 1–3650 days enforced by DB CHECK constraint (0020 migration).
      */
     olderThanDays: integer('older_than_days'),
+    /**
+     * D245 Later schedule, captured with the action intent. Required by
+     * the API for new forward Later jobs; copied onto reverse Later rows
+     * so Undo can cancel only its matching timer. Nullable for legacy
+     * rows and every other verb. The successful worker event projects
+     * this onto sender_policies only after Gmail confirms the move.
+     */
+    wakeAt: timestamp('wake_at', { withTimezone: true, mode: 'date' }),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),

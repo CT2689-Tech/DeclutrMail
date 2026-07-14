@@ -224,8 +224,8 @@ export function ActionSheet({
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
             {verb === 'Unsubscribe'
-              ? "The unsubscribe itself can't be undone — an archived backlog is reversible for 7 days from Activity."
-              : 'Reversible for 7 days from Activity.'}
+              ? "The unsubscribe itself can't be undone — an archived backlog uses your plan's Activity Undo window."
+              : "Undo from Activity during your plan's window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button tone="default" onClick={onCancel}>

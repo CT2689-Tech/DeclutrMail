@@ -482,6 +482,28 @@ describe('ActionsService', () => {
   });
 
   describe('enqueueComposite (ADR-0020)', () => {
+    it('rejects Later without a future wake time before writing a job (D245)', async () => {
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'later' },
+          idempotencyKey: 'click-later-no-wake',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'LATER_WAKE_TIME_REQUIRED' } });
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'later', wakeAt: new Date('2020-01-01T00:00:00Z') },
+          idempotencyKey: 'click-later-past',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'LATER_WAKE_TIME_INVALID' } });
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+    });
+
     it('single-verb Archive: ONE row, composite_id null, namespaced idempotency key', async () => {
       await seedMessage(db, mailboxId, 'm1', ['INBOX'], daysAgo(5));
       const res = await svc.enqueueComposite({
@@ -529,7 +551,7 @@ describe('ActionsService', () => {
       const res = await svc.enqueueComposite({
         mailboxAccountId: mailboxId,
         selector: { type: 'sender', senderId },
-        primary: { type: 'later' },
+        primary: { type: 'later', wakeAt: new Date('2099-07-21T09:00:00Z') },
         secondary: { type: 'delete', olderThanDays: 365 },
         idempotencyKey: 'click-later-del',
         override: false,
@@ -547,6 +569,8 @@ describe('ActionsService', () => {
       const primary = rows.find((r) => r.id === res.actionId);
       const secondary = rows.find((r) => r.id === res.secondaryId);
       expect(primary!.verb).toBe('later');
+      expect(primary!.wakeAt?.toISOString()).toBe('2099-07-21T09:00:00.000Z');
+      expect(res.wakeAt).toBe('2099-07-21T09:00:00.000Z');
       expect(primary!.compositeId).toBeNull(); // primary is self-implicit
       expect(secondary!.verb).toBe('delete');
       expect(secondary!.compositeId).toBe(primary!.id); // secondary points up
@@ -564,7 +588,7 @@ describe('ActionsService', () => {
         svc.enqueueComposite({
           mailboxAccountId: mailboxId,
           selector: { type: 'sender', senderId },
-          primary: { type: 'later' },
+          primary: { type: 'later', wakeAt: new Date('2099-07-21T09:00:00Z') },
           secondary: { type: 'delete', olderThanDays: 90 },
           idempotencyKey: 'click-prot-comp',
           override: false,
@@ -928,7 +952,7 @@ describe('ActionsService', () => {
       const res = await svc.enqueueBulkComposite({
         mailboxAccountId: mailboxId,
         senderIds: [senderId, sender2Id],
-        primary: { type: 'later' },
+        primary: { type: 'later', wakeAt: new Date('2099-07-21T09:00:00Z') },
         secondary: { type: 'delete', olderThanDays: 365 },
         idempotencyKey: 'bulk-comp-1',
       });
@@ -942,6 +966,7 @@ describe('ActionsService', () => {
       // so ONE undo token cascades the whole batch (ADR-0020).
       const anchor = rows.find((r) => r.id === res.batchId)!;
       expect(anchor.compositeId).toBeNull();
+      expect(res.wakeAt).toBe('2099-07-21T09:00:00.000Z');
       for (const row of rows.filter((r) => r.id !== anchor.id)) {
         expect(row.compositeId).toBe(anchor.id);
       }

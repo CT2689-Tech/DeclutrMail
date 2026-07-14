@@ -16,6 +16,7 @@
  */
 
 import type { ActionJobStatus, UndoActionKind } from '@declutrmail/shared/contracts';
+import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 import { apiGet, apiPost } from './client';
 
@@ -166,6 +167,7 @@ export interface CompositeActionEnqueueResult {
   status: ActionJobStatus;
   primaryCount: number;
   secondaryCount: number | null;
+  wakeAt: string | null;
 }
 
 /** Returned by `GET /api/actions/preview` — composite preview shape. */
@@ -213,7 +215,7 @@ export interface CompositeActionPreviewResult {
 export async function enqueueCompositeAction(
   input: {
     senderId: string;
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     override?: boolean;
     idempotencyKey: string;
@@ -223,7 +225,7 @@ export async function enqueueCompositeAction(
     '/api/actions',
     {
       selector: { type: 'sender', senderId: input.senderId },
-      primary: input.primary,
+      primary: withRequiredLaterWakeAt(input.primary),
       ...(input.secondary ? { secondary: input.secondary } : {}),
       override: input.override ?? false,
     },
@@ -355,6 +357,7 @@ export interface BulkActionEnqueueResult {
   status: ActionJobStatus;
   senderCount: number;
   requestedTotal: number;
+  wakeAt: string | null;
   skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
 }
 
@@ -402,7 +405,7 @@ export async function getBulkActionPreview(
 export async function enqueueBulkAction(
   input: {
     senderIds: string[];
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null };
+    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     idempotencyKey: string;
   } & ActionRequestOptions,
@@ -411,7 +414,7 @@ export async function enqueueBulkAction(
     '/api/actions',
     {
       selector: { type: 'senders', senderIds: input.senderIds },
-      primary: input.primary,
+      primary: withRequiredLaterWakeAt(input.primary),
       ...(input.secondary ? { secondary: input.secondary } : {}),
     },
     {
@@ -420,6 +423,19 @@ export async function enqueueBulkAction(
     },
   );
   return env.data;
+}
+
+/** Public web-client alias for the canonical D245 one-week preset. */
+export const defaultLaterWakeAt = defaultLaterWakeAtIso;
+
+function withRequiredLaterWakeAt(primary: {
+  type: CompositePrimaryVerb;
+  olderThanDays?: number | null;
+  wakeAt?: string;
+}): typeof primary {
+  return primary.type === 'later' && primary.wakeAt === undefined
+    ? { ...primary, wakeAt: defaultLaterWakeAt() }
+    : primary;
 }
 
 /** Poll a batch's aggregate status. Mailbox-scoped → 404 if not owned. */

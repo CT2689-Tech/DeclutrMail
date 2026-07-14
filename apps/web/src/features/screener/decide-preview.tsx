@@ -62,16 +62,16 @@ export function DecidePreview({
     verb === 'keep'
       ? `${name} stays exactly where it is — nothing in Gmail changes. We just remember your decision and stop asking about this sender.`
       : verb === 'archive'
-        ? `Every message from ${name} now in the inbox moves into Gmail's archive. Nothing is deleted, and you can undo for 7 days.`
+        ? `Every message from ${name} now in the inbox moves into Gmail's archive. Nothing is deleted; undo from Activity during your plan's window.`
         : verb === 'later'
-          ? `Mail from ${name} now in the inbox moves into the DeclutrMail/Later label — out of your way, one click away. You can undo for 7 days.`
+          ? `Mail from ${name} now in the inbox moves into the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged; change the wake time on Later or undo from Activity during your plan's window.`
           : verb === 'unsubscribe'
             ? row.unsubscribeMethod === 'one_click'
               ? `DeclutrMail sends ${name}'s one-click unsubscribe and confirms the result. The request itself can't be undone. Nothing already in your inbox moves.`
               : row.unsubscribeMethod === 'mailto'
                 ? `Their list takes unsubscribes by email, so you send the final request from your mailbox — after you confirm, a button opens a prefilled Gmail compose and you hit Send. DeclutrMail never auto-sends from a no-reply address.`
                 : `${name} advertises no unsubscribe channel. We record your decision; Archive is the reliable fallback if mail keeps coming.`
-            : `Every message from ${name} now in the inbox moves to Gmail's Trash. Gmail keeps trashed mail recoverable for 30 days, and you can undo from Activity.`;
+            : `Every message from ${name} now in the inbox moves to Gmail Trash. DeclutrMail Undo follows your plan's Activity window; Gmail's separate Trash recovery is normally available for up to 30 days.`;
 
   // What actually moves — only the label-modify verbs touch the inbox.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';

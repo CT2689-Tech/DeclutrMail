@@ -127,8 +127,8 @@ export const senderPolicies = pgTable(
     unsubStatus: unsubStatus('unsub_status'),
     /**
      * Sender snooze wake time (D78/D79 — sender-level only at launch).
-     * Non-null = the sender is actively snoozed: new arrivals route to
-     * the snooze label instead of INBOX, and the hourly
+     * Non-null = current Later-labeled mail has a scheduled return.
+     * Future arrivals are unchanged (D245); the hourly
      * `SnoozeRestoreWorker` wake-scan (`WHERE snoozed_until <= now()`)
      * restores the label's messages and nulls all three snooze columns.
      */

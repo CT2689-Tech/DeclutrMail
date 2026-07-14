@@ -330,7 +330,7 @@ export function ConfirmActionModal({
     : isArchiveVerb
       ? `Matching mail now in your inbox from ${subject} moves to Gmail's archive. Nothing is deleted.`
       : isLaterVerb
-        ? `Mail now in your inbox from ${subject} moves to the DeclutrMail/Later label. Future mail is unchanged. Nothing is unsubscribed or deleted.`
+        ? `Mail now in your inbox from ${subject} moves to the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged. Nothing is unsubscribed or deleted; change the wake time on Later.`
         : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
 
   const numberStyle: CSSProperties = {
@@ -368,7 +368,7 @@ export function ConfirmActionModal({
     : isArchiveVerb || isLaterVerb
       ? 'Reversible for 7 days from Activity.'
       : verb === 'Unsubscribe'
-        ? "The unsubscribe itself can't be undone — only an archived backlog is reversible (7 days, from Activity)."
+        ? "The unsubscribe itself can't be undone — only an archived backlog uses your plan's Activity Undo window."
         : null;
 
   // Subjects for the "Show what will move" panel (spec v1.3 — recent

@@ -1,12 +1,10 @@
-// Per-route error boundary for `/snoozed` (D167 + D170 + D211).
-// 2026-07-04 launch audit: this route previously fell through to the
-// global boundary. Copy + capture live in the shared screen.
+// Per-route error boundary for canonical `/later` (D167, D170, D211, D245).
 
 'use client';
 
 import { RouteErrorScreen } from '@/components/route-error-screen';
 
-export default function SnoozedError({
+export default function LaterError({
   error,
   reset,
 }: {

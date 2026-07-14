@@ -32,7 +32,7 @@ each completed slice.
       finality, and result labels.
 - [ ] Migrate every preview, receipt, Activity row, mobile surface, and return
       state to generated action semantics instead of local consequence copy.
-- [ ] Make Later require a wake time end to end; rename the visible Snoozed
+- [x] Make Later require a wake time end to end; rename the visible Snoozed
       destination to Later and retain route compatibility.
 - [ ] Use one shared action receipt/undo model across Senders, Triage, bulk
       actions, Activity, mobile surfaces, and return states.
@@ -109,11 +109,13 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: canonical typed action-semantics registry wired into
-  the execution manifest and Senders verb registry; Later requires `wakeAt`,
-  Unsubscribe is irreversible after delivery, and Delete carries distinct
-  Activity Undo and Gmail Trash recovery contracts.
-- Last green checks: shared tests (29 files / 270 tests) and shared/web
-  typechecks.
-- Next slice: make `wakeAt` required for Later through API persistence,
-  execution events, sender-policy projection, and wake/undo cleanup.
+- Last completed slice: Later is canonical at `/later` (`/snoozed` redirects),
+  every manual/Screener/bulk/Autopilot Later action carries the canonical
+  one-week wake preset, action jobs persist it, and the sender timer projects
+  only after Gmail success. Later Undo cancels only its matching timer. Delete
+  now uses plan-based Activity Undo while Gmail Trash recovery remains separate.
+- Last green checks: action schema/service/outbox tests, label-action and
+  Autopilot worker tests, Later route/sidebar/screen tests, shared tests, and
+  shared/API/workers/web typechecks.
+- Next slice: commit the completed fact-first Senders work, then build the
+  shared action receipt/Activity recovery model.

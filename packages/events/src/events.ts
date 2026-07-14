@@ -156,6 +156,13 @@ export const ActionLabelAppliedPayloadSchema = z
      * single-verb actions and for the primary row of a composite.
      */
     compositeId: UuidSchema.nullable(),
+    /**
+     * D245 Later schedule. Present only when a non-empty Later action
+     * succeeded; optional so events written before D245 still parse.
+     */
+    wakeAt: z.string().datetime({ offset: true }).nullable().optional(),
+    /** Stable projection timestamp; optional for pre-D245 events. */
+    appliedAt: z.string().datetime({ offset: true }).optional(),
   })
   .strict();
 export type ActionLabelAppliedPayload = z.infer<typeof ActionLabelAppliedPayloadSchema>;

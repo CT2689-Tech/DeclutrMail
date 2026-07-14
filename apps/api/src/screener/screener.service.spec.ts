@@ -109,6 +109,7 @@ function makeActionsMock() {
       status: 'queued' as const,
       primaryCount: 3,
       secondaryCount: null,
+      wakeAt: null,
     })),
   };
 }
@@ -191,7 +192,7 @@ describe('ScreenerService.decide (D72, D226)', () => {
     expect(actions.enqueueComposite).toHaveBeenCalledWith({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
-      primary: { type: 'archive', olderThanDays: null },
+      primary: { type: 'archive', olderThanDays: null, wakeAt: null },
       idempotencyKey: 'key-arch-1',
       override: false,
     });
@@ -217,6 +218,7 @@ describe('ScreenerService.decide (D72, D226)', () => {
       status: 'queued' as const,
       primaryCount: 0,
       secondaryCount: null,
+      wakeAt: null,
     });
     const res = await svc.decide({
       mailboxAccountId: mailboxId,
@@ -237,16 +239,21 @@ describe('ScreenerService.decide (D72, D226)', () => {
         senderId,
         verb,
         olderThanDays: 180,
+        ...(verb === 'later' ? { wakeAt: new Date('2099-07-21T09:00:00Z') } : {}),
         idempotencyKey: `key-${verb}-1`,
       });
     }
     const verbs = actions.enqueueComposite.mock.calls.map(
       (c) =>
-        (c as unknown as [{ primary: { type: string; olderThanDays: number | null } }])[0].primary,
+        (
+          c as unknown as [
+            { primary: { type: string; olderThanDays: number | null; wakeAt: Date | null } },
+          ]
+        )[0].primary,
     );
     expect(verbs).toEqual([
-      { type: 'later', olderThanDays: 180 },
-      { type: 'delete', olderThanDays: 180 },
+      { type: 'later', olderThanDays: 180, wakeAt: new Date('2099-07-21T09:00:00Z') },
+      { type: 'delete', olderThanDays: 180, wakeAt: null },
     ]);
   });
 

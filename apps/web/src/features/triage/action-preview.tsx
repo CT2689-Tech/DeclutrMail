@@ -77,9 +77,9 @@ export function ActionPreview({
 
   const lead =
     verb === 'Archive'
-      ? `Every message from ${subject} now in the inbox moves into Gmail's archive. Nothing is deleted, and you can undo for 7 days.`
+      ? `Every message from ${subject} now in the inbox moves into Gmail's archive. Nothing is deleted; undo from Activity during your plan's window.`
       : verb === 'Later'
-        ? `Mail from ${subject} now in the inbox moves into the DeclutrMail/Later label — out of your way, one click away. Nothing is unsubscribed or deleted, and you can undo for 7 days.`
+        ? `Mail from ${subject} now in the inbox moves into the DeclutrMail/Later label and is scheduled to return to Inbox in one week. Future mail is unchanged. Nothing is unsubscribed or deleted; change the wake time on Later or undo from Activity during your plan's window.`
         : verb === 'Unsubscribe'
           ? row.unsubscribeMethod === 'one_click'
             ? // Locked-copy ban per spec v1.2 Decision 15: "RFC 8058

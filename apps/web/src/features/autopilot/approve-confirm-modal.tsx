@@ -89,7 +89,7 @@ function approveLead(rule: AutopilotRuleDto, n: number): string {
     case 'unsubscribe':
       return `DeclutrMail unsubscribes from ${senders} — one-click where the sender supports it; senders that only take unsubscribes by email are queued for you to send manually.`;
     case 'later':
-      return `DeclutrMail moves the inbox mail from ${senders} into the DeclutrMail/Later label — out of your way, one click away.`;
+      return `DeclutrMail moves current inbox mail from ${senders} into the DeclutrMail/Later label and schedules it to return in one week. Future mail is unchanged.`;
   }
 }
 

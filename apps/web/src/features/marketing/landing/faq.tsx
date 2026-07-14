@@ -31,7 +31,7 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'Can it mess up my inbox?',
-    a: 'Mail-changing actions show a preview before they run. Archive and Later can be undone from Activity for 7 days. Delete moves mail to Gmail Trash, where Gmail keeps it for up to 30 days. A completed unsubscribe request cannot be recalled.',
+    a: "Mail-changing actions show a preview before they run. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled.",
   },
   {
     q: 'How is this different from Gmail filters?',

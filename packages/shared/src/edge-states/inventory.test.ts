@@ -34,6 +34,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  COMPATIBILITY_REDIRECT_ROUTES,
   EDGE_STATE_INVENTORY,
   EDGE_STATES,
   SCREEN_ROUTES,
@@ -175,7 +176,9 @@ describe('D211 — edge-state inventory contract', () => {
     // route ships without an inventory row (add the ScreenId, an
     // EDGE_STATE_INVENTORY row, and a SCREEN_ROUTES entry), or an
     // inventory row outlives its deleted route (remove all three).
-    const onDisk = collectRouteDirs();
+    const onDisk = collectRouteDirs().filter(
+      (route) => !COMPATIBILITY_REDIRECT_ROUTES.includes(route as 'snoozed'),
+    );
     const declared = (Object.values(SCREEN_ROUTES).filter((r) => r !== null) as string[]).sort();
     expect(declared, 'SCREEN_ROUTES must exactly mirror (app)/**/page.tsx route dirs').toEqual(
       onDisk,
@@ -196,7 +199,7 @@ describe('D211 — edge-state inventory contract', () => {
   it('records no remaining RoutePlaceholder stubs — every route is a real screen', () => {
     // The last 2 stubs graduated: billing in #219 (D119/D120),
     // screener in #220 (D71–D77) — after `quiet` (U18 — D92/D95),
-    // `snoozed` (U19 — D78) and `settings-index` (U23 — D34/D116/
+    // `later` (U19/D78, renamed by D245) and `settings-index` (U23 — D34/D116/
     // D216). A graduated screen must declare real loading + error
     // coverage and drop its placeholder claim; a NEW placeholder
     // route would legitimately flip this test and gets re-asserted

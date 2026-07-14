@@ -13,7 +13,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { apiGet, apiPost } from '@/lib/api/client';
-import { newIdempotencyKey } from '@/lib/api/actions';
+import { defaultLaterWakeAt, newIdempotencyKey } from '@/lib/api/actions';
 
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
 
@@ -72,7 +72,12 @@ export function useScreenerDecide() {
     mutationFn: async ({ senderId, verb, olderThanDays }) => {
       const envelope = await apiPost<ScreenerDecideResult>(
         '/api/screener/decide',
-        { senderId, verb, ...(olderThanDays != null ? { olderThanDays } : {}) },
+        {
+          senderId,
+          verb,
+          ...(olderThanDays != null ? { olderThanDays } : {}),
+          ...(verb === 'later' ? { wakeAt: defaultLaterWakeAt() } : {}),
+        },
         { headers: { 'Idempotency-Key': newIdempotencyKey() } },
       );
       return envelope.data;

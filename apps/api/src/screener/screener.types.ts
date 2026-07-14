@@ -48,8 +48,32 @@ export const screenerDecideRequestSchema = z
     senderId: z.string().uuid(),
     verb: z.enum(SCREENER_DECIDE_VERBS),
     olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+    wakeAt: z.string().datetime({ offset: true }).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((body, ctx) => {
+    if (body.verb === 'later') {
+      if (body.wakeAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['wakeAt'],
+          message: 'Later requires a wake time.',
+        });
+      } else if (Date.parse(body.wakeAt) <= Date.now()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['wakeAt'],
+          message: 'Wake time must be in the future.',
+        });
+      }
+    } else if (body.wakeAt !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['wakeAt'],
+        message: 'wakeAt is only valid for Later.',
+      });
+    }
+  });
 export type ScreenerDecideRequest = z.infer<typeof screenerDecideRequestSchema>;
 
 /**

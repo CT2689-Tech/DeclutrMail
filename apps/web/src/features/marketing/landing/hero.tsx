@@ -109,7 +109,7 @@ function LedgerCard() {
         <span>
           <b>Archived — LinkedIn Notifications</b> · 412 messages
         </span>
-        <span className="dm-mkt-undo">Undo · 7 days</span>
+        <span className="dm-mkt-undo">Undo · plan window</span>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import {
   activityLog,
   mailboxAccounts,
   mailMessages,
+  senderPolicies,
   undoJournal,
   workspaces,
 } from '@declutrmail/db';
@@ -219,14 +220,6 @@ export function labelActionJobOptions(idempotencyKey: string): JobsOptions {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Delete's undo window is pinned to Gmail's physical Trash retention
- * (30 days) regardless of tier — a shorter window would falsely show
- * "expired" while the mail is still trivially recoverable in Gmail.
- * Spec v1.2 Decision 1.
- */
-const DELETE_UNDO_WINDOW_DAYS = 30;
-
 export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, LabelActionResult> {
   readonly workerName = 'LabelActionWorker';
   readonly policy = 'perMailboxPolicy' as const;
@@ -353,6 +346,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             undoToken: null,
             affectedCount: 0,
             compositeId: job.compositeId,
+            wakeAt: null,
+            appliedAt: new Date().toISOString(),
           },
           schema: ActionLabelAppliedPayloadSchema,
         });
@@ -367,8 +362,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     const resolved = await resolveLabelChange(client, change);
     await client.batchModify(ids, resolved);
 
-    const expiresAt = await this.undoExpiresAt(mailboxAccountId, job.verb);
+    const expiresAt = await this.undoExpiresAt(mailboxAccountId);
     const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
+    const appliedAt = new Date().toISOString();
 
     const undoToken = await db.transaction(async (tx) => {
       const [issued] = await tx
@@ -425,6 +421,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           undoToken: issued.token,
           affectedCount: ids.length,
           compositeId: job.compositeId,
+          wakeAt: labelVerb === 'later' ? (job.wakeAt?.toISOString() ?? null) : null,
+          appliedAt,
         },
         schema: ActionLabelAppliedPayloadSchema,
       });
@@ -505,6 +503,27 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           );
       }
 
+      // Undoing a Later action cancels only THAT action's projected
+      // schedule. If the user has since picked a newer wake time, the
+      // timestamp guard preserves it instead of an old Undo clearing it.
+      if (job.verb === 'later' && job.selector.type === 'sender' && job.wakeAt !== null) {
+        await tx
+          .update(senderPolicies)
+          .set({
+            snoozedUntil: null,
+            snoozedAt: null,
+            snoozedReason: null,
+            updatedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              eq(senderPolicies.senderKey, job.selector.senderKey),
+              eq(senderPolicies.snoozedUntil, job.wakeAt),
+            ),
+          );
+      }
+
       await tx
         .update(actionJobs)
         .set({ status: 'done', affectedCount: ids.length, updatedAt: sql`now()` })
@@ -569,13 +588,11 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   }
 
   /**
-   * Undo window per verb + tier (D19/D81).
+   * Activity Undo window per tier (D19/D81/D245).
    *
-   * - `delete` always returns 30 days regardless of tier (see
-   *   `DELETE_UNDO_WINDOW_DAYS`).
-   * - `archive` / `later` resolve through the SINGLE tier source —
-   *   `undoWindowDaysFor` on the D19 manifest (Free/Plus 7d; Pro/team/
-   *   enterprise 30d) — never a hardcoded per-tier branch here.
+   * Every reversible DeclutrMail action resolves through the SINGLE
+   * tier source (`undoWindowDaysFor`). Delete's separate Gmail Trash
+   * recovery period is provider behavior, not a longer Activity Undo.
    *
    * DOWNGRADE SEMANTICS: the window is resolved AT ACTION TIME and
    * snapshotted onto `undo_journal.expires_at` (the insert always sets
@@ -583,10 +600,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
    * already-issued token — the expiry sweep (`UndoExpiryWorker`) reads
    * only the stored `expires_at`.
    */
-  private async undoExpiresAt(mailboxAccountId: string, verb: ActionVerb): Promise<Date> {
-    if (verb === 'delete') {
-      return new Date(Date.now() + DELETE_UNDO_WINDOW_DAYS * DAY_MS);
-    }
+  private async undoExpiresAt(mailboxAccountId: string): Promise<Date> {
     const [row] = await this.deps.db
       .select({ tier: workspaces.tier })
       .from(mailboxAccounts)

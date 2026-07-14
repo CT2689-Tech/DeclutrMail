@@ -112,7 +112,10 @@ function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { me } = useAuth();
-  const active = pathname.split('/')[1] || 'senders';
+  // D245: `snoozed` remains the internal capability/nav key, while
+  // `/later` is the canonical user-facing route.
+  const routeSegment = pathname.split('/')[1] || 'senders';
+  const active = routeSegment === 'later' ? 'snoozed' : routeSegment;
   const hasActiveMailbox = me.activeMailboxId != null;
   const userScopedRoute = isUserScopedRoute(pathname);
 
@@ -207,7 +210,7 @@ function AppChrome({ children }: { children: ReactNode }) {
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
-            onNavigate={(id) => router.push(`/${id}`)}
+            onNavigate={(id) => router.push(id === 'snoozed' ? '/later' : `/${id}`)}
             counts={{
               ...proChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),

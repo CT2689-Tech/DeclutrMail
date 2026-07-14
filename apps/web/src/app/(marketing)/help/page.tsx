@@ -66,7 +66,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: 'Every mail-changing action shows a preview before it runs. Archive and Later can be undone from Activity for 7 days. Delete moves mail to Gmail Trash, where Gmail keeps it for up to 30 days. A completed unsubscribe request cannot be recalled.',
+    a: "Every mail-changing action shows a preview before it runs. Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled.",
   },
   {
     id: 'disconnect-mailbox',

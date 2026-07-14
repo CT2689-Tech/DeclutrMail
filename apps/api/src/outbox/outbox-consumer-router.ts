@@ -276,6 +276,32 @@ async function handleActionLabelApplied(
   payload: ActionLabelAppliedPayload,
 ): Promise<void> {
   if (payload.senderKey === null) return;
+
+  // D245: a Later timer becomes active only after the Gmail mutation
+  // succeeded. Redelivery writes the same wake/applied timestamps, and
+  // other verbs never touch an existing schedule.
+  if (payload.verb === 'later' && payload.wakeAt && payload.affectedCount > 0) {
+    const snoozedUntil = new Date(payload.wakeAt);
+    const snoozedAt = payload.appliedAt ? new Date(payload.appliedAt) : new Date();
+    await db
+      .insert(senderPolicies)
+      .values({
+        mailboxAccountId: payload.mailboxAccountId,
+        senderKey: payload.senderKey,
+        snoozedUntil,
+        snoozedAt,
+      })
+      .onConflictDoUpdate({
+        target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+        set: {
+          snoozedUntil,
+          snoozedAt,
+          snoozedReason: null,
+          updatedAt: sql`now()`,
+        },
+      });
+  }
+
   await db
     .update(screenerQuarantine)
     .set({ decidedAt: sql`now()`, updatedAt: sql`now()` })

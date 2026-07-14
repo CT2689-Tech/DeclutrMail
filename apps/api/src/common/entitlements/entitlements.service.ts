@@ -230,7 +230,7 @@ const CAPABILITY_UPGRADE_MESSAGES: Partial<Record<Capability, string>> = {
   brief: 'The Daily Brief is part of the Pro plan. Upgrade to get your morning inbox summary.',
   quiet: 'Quiet hours are part of the Pro plan. Upgrade to schedule when Autopilot acts.',
   snoozed:
-    'The Snoozed list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
+    'The Later list is part of the Pro plan. Upgrade to manage every Later sender in one place.',
   followups:
     'Follow-ups are part of the Pro plan. Upgrade to track threads still waiting on a reply.',
 };

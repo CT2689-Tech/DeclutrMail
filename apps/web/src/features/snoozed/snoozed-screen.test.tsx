@@ -99,7 +99,7 @@ describe('SnoozedScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    expect(screen.getByText('Loading snoozed senders')).toBeInTheDocument();
+    expect(screen.getByText('Loading Later senders')).toBeInTheDocument();
   });
 
   it('shows the error state with a retry affordance on a 500', async () => {
@@ -115,15 +115,15 @@ describe('SnoozedScreen — edge states', () => {
       },
     ]);
     renderScreen();
-    expect(await screen.findByText(/couldn't load Snoozed/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn't load Later/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
   it('shows the empty state pointing at the Later verb', async () => {
     installFetchStub([listHandler([])]);
     renderScreen();
-    expect(await screen.findByText('Nothing snoozed.')).toBeInTheDocument();
-    expect(screen.getByText('Later')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing in Later.')).toBeInTheDocument();
+    expect(screen.getAllByText('Later').length).toBeGreaterThan(0);
   });
 });
 
@@ -246,7 +246,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('noreply@tools.example.com');
 
-    await user.click(screen.getByRole('button', { name: 'Snooze ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Set wake time ▾' }));
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
     await user.click(screen.getByRole('button', { name: 'Tomorrow (9:00 AM)' }));
 
@@ -256,7 +256,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     expect(new Date(body.until).getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('offers Cancel snooze only when a timer exists, and clears it', async () => {
+  it('offers Clear wake time only when a timer exists, and clears it', async () => {
     const bodies: unknown[] = [];
     installFetchStub([
       listHandler([ROW_TODAY]),
@@ -284,8 +284,8 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Snooze ▾' }));
-    await user.click(screen.getByRole('button', { name: 'Cancel snooze' }));
+    await user.click(screen.getByRole('button', { name: 'Set wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Clear wake time' }));
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ until: null });

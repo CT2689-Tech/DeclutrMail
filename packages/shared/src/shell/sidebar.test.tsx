@@ -19,7 +19,7 @@ const KEPT_LABELS = [
   'Triage',
   'Brief',
   'Follow-ups',
-  'Snoozed',
+  'Later',
   'Screener',
   'Quiet',
   'Activity',

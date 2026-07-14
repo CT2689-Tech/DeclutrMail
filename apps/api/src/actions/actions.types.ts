@@ -275,6 +275,8 @@ export const compositeActionRequestSchema = z
       .object({
         type: compositePrimaryVerbSchema,
         olderThanDays: z.number().int().min(1).max(3650).nullable().optional(),
+        /** D245: Later is always scheduled; other verbs cannot carry a wake time. */
+        wakeAt: z.string().datetime({ offset: true }).optional(),
       })
       .strict(),
     secondary: z
@@ -287,7 +289,30 @@ export const compositeActionRequestSchema = z
     /** Required to act on a Protected / VIP sender (defense-in-depth, D42). */
     override: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((body, ctx) => {
+    if (body.primary.type === 'later') {
+      if (body.primary.wakeAt === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'wakeAt'],
+          message: 'Later requires a wake time.',
+        });
+      } else if (Date.parse(body.primary.wakeAt) <= Date.now()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['primary', 'wakeAt'],
+          message: 'Wake time must be in the future.',
+        });
+      }
+    } else if (body.primary.wakeAt !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['primary', 'wakeAt'],
+        message: 'wakeAt is only valid for Later.',
+      });
+    }
+  });
 export type CompositeActionRequest = z.infer<typeof compositeActionRequestSchema>;
 
 /**
@@ -305,6 +330,8 @@ export interface CompositeActionEnqueueResult {
   primaryCount: number;
   /** Resolved secondary count, or null when no secondary fired. */
   secondaryCount: number | null;
+  /** Selected Later wake time; null for Archive/Delete. */
+  wakeAt: string | null;
 }
 
 /**
@@ -325,6 +352,8 @@ export interface BulkActionEnqueueResult {
   senderCount: number;
   /** Sum of per-sender primary `requestedCount`s. */
   requestedTotal: number;
+  /** Shared Later wake time for every sender in this batch. */
+  wakeAt: string | null;
   skipped: Array<{ senderId: string; reason: 'protected' | 'not_found' }>;
 }
 

@@ -119,14 +119,14 @@ function frame(client: QueryClient) {
 }
 
 const meta: StoryMeta<typeof SnoozedScreen> = {
-  title: 'Features/Snoozed/SnoozedScreen',
+  title: 'Features/Later/LaterScreen',
   component: SnoozedScreen,
   parameters: {
     layout: 'fullscreen',
     docs: {
       description: {
         component:
-          'Snoozed screen (D78–D80). Senders sent to Later, grouped by wake-time bucket, with Wake-now and D82 snooze presets. Canonical verb is "Later" (D227); "Snoozed" is the feature name.',
+          'Later screen (D78–D80, D245). Senders sent to Later, grouped by wake-time bucket, with Wake-now and scheduling presets.',
       },
     },
   },
@@ -140,7 +140,7 @@ export const Populated: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient(FIXTURES)),
 };
 
-/** Empty — nothing snoozed; points the user at the Later verb. */
+/** Empty — nothing in Later; points the user at the Later verb. */
 export const Empty: Story<typeof SnoozedScreen> = {
   render: (_args: ComponentProps<typeof SnoozedScreen>) => frame(makeClient([])),
 };

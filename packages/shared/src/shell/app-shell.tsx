@@ -14,7 +14,7 @@ const TRUST_CLAIMS = [
   {
     label: 'Undo windows',
     title:
-      "Archive and Later: undo from Activity for 7 days. Delete: recover from Gmail Trash for 30 days. Unsubscribe requests can't be undone.",
+      "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled.",
   },
   {
     label: 'Stored Gmail data',

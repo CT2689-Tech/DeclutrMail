@@ -22,6 +22,7 @@ export const AUTHED_APP_PATHS = [
   '/billing',
   '/brief',
   '/followups',
+  '/later',
   '/onboarding',
   '/quiet',
   '/screener',

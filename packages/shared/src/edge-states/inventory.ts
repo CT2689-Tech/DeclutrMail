@@ -93,7 +93,7 @@ export type ScreenId =
   | 'autopilot'
   | 'brief'
   | 'followups'
-  | 'snoozed'
+  | 'later'
   | 'settings-senders'
   | 'settings-index'
   | 'settings-privacy'
@@ -131,7 +131,7 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   billing: 'billing',
   quiet: 'quiet',
   screener: 'screener',
-  snoozed: 'snoozed',
+  later: 'later',
   'app-error-boundary': null,
   'app-not-found': null,
   'app-global-error': null,
@@ -792,9 +792,9 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
-  // Snoozed/Later review surface (D78–D80) — real loading/empty/error
+  // Later review surface (D78–D80, renamed by D245) — real loading/empty/error
   // variants; no placeholder phase.
-  snoozed: {
+  later: {
     loading: {
       required: true,
       storybook: 'apps/web/src/features/snoozed/snoozed-screen.stories.tsx',
@@ -898,5 +898,8 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 };
+
+/** Physical routes retained only to redirect old bookmarks. */
+export const COMPATIBILITY_REDIRECT_ROUTES = ['snoozed'] as const;
 
 export type EdgeStateInventory = typeof EDGE_STATE_INVENTORY;

@@ -127,7 +127,7 @@ describe('/help content — D219 + D137', () => {
   it('states the undo windows and the 7-day account-deletion grace', () => {
     const { container } = render(<HelpPage />);
     expect(container.textContent).toMatch(
-      /Archive and Later can be undone from Activity for 7 days/,
+      /Archive, Later, and Delete use your plan's Activity Undo window/,
     );
     expect(container.textContent).toMatch(/7-day grace period/);
   });

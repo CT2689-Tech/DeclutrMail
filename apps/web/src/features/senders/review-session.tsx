@@ -46,7 +46,7 @@ const UNSUB: Option = { id: 'unsub', label: 'Unsubscribe', tone: 'warn' };
 
 const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
   promo: {
-    eyebrow: 'Promotional sweep · reversible for 7 days',
+    eyebrow: 'Promotional sweep · plan-based Activity Undo',
     tag: 'warn',
     headline: 'Unsubscribe these marketers?',
     sub: "These senders rarely get opened. The default is Unsubscribe — downgrade any row to Later or Keep if you'd rather hang on to it.",
@@ -56,7 +56,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     historicToggle: 'Also archive historic mail from unsubscribed senders',
   },
   quiet: {
-    eyebrow: 'Newsletter pulse · reversible for 7 days',
+    eyebrow: 'Newsletter pulse · plan-based Activity Undo',
     tag: null,
     headline: 'Decide what stays in the inbox.',
     sub: 'Low-volume senders you sometimes read. Keep the ones worth it, move the rest to Later, or unsubscribe entirely.',

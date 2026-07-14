@@ -25,7 +25,7 @@ const { color, font } = tokens;
 type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
 
 /**
- * Snoozed screen (D78–D80, D82).
+ * Later screen (D78–D80, D82, D245).
  *
  * Lists every sender in the Later bucket — mail currently sitting in
  * the `DeclutrMail/Later` Gmail label and/or an active wake timer —
@@ -41,11 +41,12 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  *     exactly what will happen before anything mutates). The restore
  *     runs in the snooze-wake worker; the row shows "Waking…" and the
  *     list polls until it drops off.
- *   - **Snooze ▾** — D82 presets + custom date/time + optional note +
- *     "Cancel snooze" (clears the timer; the Later'd mail stays put).
+ *   - **Set wake time ▾** — D82 presets + custom date/time +
+ *     optional note + "Clear wake time" (clears the timer; the
+ *     Later'd mail stays put).
  *
- * Canonical verb language (D227/ADR-0019): "Later" is the verb shown
- * to users; "Snoozed" is the feature/screen name (like "Screener").
+ * Canonical product language (D245): "Later" is both the verb and the
+ * feature/screen name. Internal snooze identifiers remain stable.
  *
  * Honesty notes (no fake data, CLAUDE.md §10): the count shown is the
  * REAL number of messages currently in the Later label (from the local
@@ -108,14 +109,14 @@ export function SnoozedScreen() {
     >
       <ScreenIntro
         id="snoozed"
-        title="Snoozed"
+        title="Later"
         body="Senders you sent to Later. Their mail sits in the DeclutrMail/Later label in Gmail — out of your inbox, one click away — and comes back at the wake time you choose."
         tip="Wake now brings everything back immediately. Nothing is unsubscribed or deleted from here."
       />
 
       {rows.length === 0 ? (
         <EmptyState
-          title="Nothing snoozed."
+          title="Nothing in Later."
           description={
             <>
               Send a sender to <strong>Later</strong> from Triage or Senders and it lands here, with
@@ -334,7 +335,7 @@ export function SnoozedRow({
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
-            Snooze ▾
+            Set wake time ▾
           </Button>
           <Button
             tone="primary"
@@ -420,7 +421,7 @@ function WakeConfirm({
   );
 }
 
-/** D82 — preset durations + custom date/time + note + cancel snooze. */
+/** D82 — preset durations + custom date/time + note + clear wake time. */
 function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => void }) {
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
@@ -532,7 +533,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
         />
         {row.snoozedUntil ? (
           <Button tone="default" disabled={setSnooze.isPending} onClick={() => submit(null, null)}>
-            Cancel snooze
+            Clear wake time
           </Button>
         ) : null}
         <Button tone="default" onClick={onClose} disabled={setSnooze.isPending}>
@@ -542,7 +543,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
 
       {setSnooze.isError ? (
         <span role="alert" style={{ fontSize: 12, color: color.red }}>
-          Couldn&rsquo;t update the snooze. Try again in a moment.
+          Couldn&rsquo;t update the wake time. Try again in a moment.
         </span>
       ) : null}
     </div>
@@ -576,7 +577,7 @@ function LoadingState() {
           }}
         />
       ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading snoozed senders</span>
+      <span style={{ position: 'absolute', left: -9999 }}>Loading Later senders</span>
     </div>
   );
 }
@@ -584,12 +585,12 @@ function LoadingState() {
 function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   const message =
     error instanceof ApiError
-      ? `We couldn't load your snoozed senders (${error.status}). Try again in a moment.`
-      : "We couldn't load your snoozed senders right now. Try again in a moment.";
+      ? `We couldn't load your Later senders (${error.status}). Try again in a moment.`
+      : "We couldn't load your Later senders right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <EmptyState
-        title="We couldn't load Snoozed"
+        title="We couldn't load Later"
         description={message}
         action={
           <Button tone="primary" onClick={onRetry}>

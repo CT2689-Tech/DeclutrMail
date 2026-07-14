@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   // resolve against the canonical origin (D128 — declutrmail.com).
   metadataBase: new URL(siteUrl()),
   title: 'DeclutrMail',
-  description: 'Gmail cleanup — decided once per sender, reversible for 7 days.',
+  description: 'Gmail cleanup — clear previews and plan-based Activity Undo.',
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {

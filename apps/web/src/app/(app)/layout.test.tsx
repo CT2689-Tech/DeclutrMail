@@ -29,6 +29,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
@@ -228,6 +229,26 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(screen.getByText('Autopilot')).toBeInTheDocument();
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
+  });
+
+  it('maps the internal snoozed nav key to canonical /later and keeps it active', async () => {
+    pathnameRef.current = '/later';
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderLayout();
+
+    const laterNav = await screen.findByRole('button', { name: 'Later' });
+    expect(laterNav).toHaveAttribute('aria-current', 'page');
+    await user.click(laterNav);
+    expect(pushSpy).toHaveBeenCalledWith('/later');
   });
 
   it('mounts the grace-period banner above the shell while a deletion is pending (D216)', async () => {

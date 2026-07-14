@@ -10,6 +10,7 @@ import {
   mailboxAccounts,
   outboxEvents,
   schema,
+  senderPolicies,
   senders,
   undoJournal,
   users,
@@ -453,6 +454,7 @@ describe('LabelActionWorker', () => {
           direction: 'forward',
           selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
           idempotencyKey: 'idem-later-1',
+          wakeAt: new Date('2099-07-21T09:00:00Z'),
         })
         .returning();
 
@@ -481,6 +483,11 @@ describe('LabelActionWorker', () => {
       expect(m!.labelIds).not.toContain('DeclutrMail/Later');
       expect(m!.labelIds).not.toContain('INBOX');
       expect(m!.labelIds).toContain('CATEGORY_PROMOTIONS');
+      const [evt] = await db
+        .select()
+        .from(outboxEvents)
+        .where(eq(outboxEvents.aggregateId, job!.id));
+      expect((evt!.payload as { wakeAt: string }).wakeAt).toBe('2099-07-21T09:00:00.000Z');
     });
 
     it('reverse (undo later) removes the resolved id from Gmail and the mirror', async () => {
@@ -502,12 +509,19 @@ describe('LabelActionWorker', () => {
           mailboxAccountId: mailboxId,
           verb: 'later',
           direction: 'reverse',
-          selector: { type: 'messages' },
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
           resolvedMessageIds: ['l1'],
           undoToken: undo!.token,
           idempotencyKey: `revert:${undo!.token}`,
+          wakeAt: new Date('2099-07-21T09:00:00Z'),
         })
         .returning();
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        snoozedUntil: new Date('2099-07-21T09:00:00Z'),
+        snoozedAt: new Date('2026-07-14T18:00:00Z'),
+      });
 
       await worker.processJob(
         { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: `revert:${undo!.token}` },
@@ -529,6 +543,11 @@ describe('LabelActionWorker', () => {
       expect(m!.labelIds).not.toContain('Label_77');
       const [u] = await db.select().from(undoJournal).where(eq(undoJournal.token, undo!.token));
       expect(u!.revertedAt).not.toBeNull();
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policy!.snoozedUntil).toBeNull();
     });
 
     it('fails permanently on attempt 1 for a Gmail 400 (no retry storm)', async () => {
@@ -613,10 +632,10 @@ describe('LabelActionWorker', () => {
     // restoration step (no `priorLabels` lookup needed by the worker).
     const payload = undo!.payload as { kind: string; messageIds: string[] };
     expect(payload).toEqual({ kind: 'delete', messageIds: expect.arrayContaining(['d1', 'd2']) });
-    // Delete undo window = 30 days regardless of tier (Gmail Trash physical
-    // window; tier-shorter would falsely show "expired" while the mail is
-    // still trivially recoverable in Gmail).
-    expect(undo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 25 * 24 * 60 * 60 * 1000);
+    // Activity Undo follows the Free plan's 7-day window. Gmail Trash's
+    // separate recovery period remains available in Gmail after that.
+    expect(undo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
+    expect(undo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * 24 * 60 * 60 * 1000);
 
     // Local label mirror: INBOX gone from d1/d2; TRASH added; d3 untouched.
     const msgs = await db
