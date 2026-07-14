@@ -18,6 +18,15 @@ export function hasCapability(id: TierId, capability: Capability): boolean {
   return TIER_MANIFEST[id].capabilities.includes(capability);
 }
 
+/** Lowest purchasable tier that grants a feature capability. */
+export function minimumTierForCapability(capability: Capability): TierId {
+  const tier = (Object.keys(TIER_MANIFEST) as TierId[]).find(
+    (id) => TIER_MANIFEST[id].purchasable && hasCapability(id, capability),
+  );
+  if (!tier) throw new Error(`No purchasable tier grants capability: ${capability}`);
+  return tier;
+}
+
 /** Connected-Gmail-account limit (D19: Free 1 / Plus 1 / Pro 2). */
 export function inboxLimitFor(id: TierId): number {
   return TIER_MANIFEST[id].inboxLimit;

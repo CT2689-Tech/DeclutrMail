@@ -225,6 +225,7 @@ export class EntitlementsService {
  * with — extracting the gate must not reword it.
  */
 const CAPABILITY_UPGRADE_MESSAGES: Partial<Record<Capability, string>> = {
+  triage: 'Triage is part of the Plus plan. Upgrade to review a focused sender queue.',
   screener: 'The Screener is part of the Pro plan. Upgrade to review new senders in one place.',
   autopilot: 'Autopilot is part of the Pro plan. Upgrade to automate your inbox rules.',
   brief: 'The Daily Brief is part of the Pro plan. Upgrade to get your morning inbox summary.',

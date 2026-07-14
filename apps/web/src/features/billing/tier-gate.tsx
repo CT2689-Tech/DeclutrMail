@@ -4,7 +4,12 @@ import { useEffect, type ReactNode } from 'react';
 import Link from 'next/link';
 
 import { Eyebrow, tokens } from '@declutrmail/shared';
-import { hasCapability, TIER_MANIFEST, type Capability } from '@declutrmail/shared/entitlements';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+  type Capability,
+} from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
@@ -54,13 +59,14 @@ export function TierGate({
 
   useEffect(() => {
     if (granted) return;
-    void track('upgrade_prompt_shown', { reason: 'pro_feature', source: 'tier_gate' });
+    void track('upgrade_prompt_shown', { reason: 'feature_tier_required', source: 'tier_gate' });
   }, [granted]);
 
   if (granted) return <>{children}</>;
 
-  const proMonthly = planPriceLabel('pro', 'monthly');
-  const requiredTier = TIER_MANIFEST.pro.name;
+  const requiredTierId = minimumTierForCapability(capability);
+  const requiredMonthly = planPriceLabel(requiredTierId, 'monthly');
+  const requiredTier = TIER_MANIFEST[requiredTierId].name;
 
   return (
     <div
@@ -152,7 +158,7 @@ export function TierGate({
               whiteSpace: 'nowrap',
             }}
           >
-            Upgrade to {requiredTier} → {proMonthly}
+            Upgrade to {requiredTier} → {requiredMonthly}
           </Link>
           <Link
             href="/pricing"

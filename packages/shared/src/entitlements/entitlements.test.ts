@@ -6,6 +6,7 @@ import { TIER_MANIFEST } from './manifest';
 import {
   cleanupActionsLifetimeFor,
   hasCapability,
+  minimumTierForCapability,
   inboxLimitFor,
   satisfiesActionTier,
   tierById,
@@ -186,6 +187,12 @@ describe('Entitlement resolvers (D19)', () => {
         expect(hasCapability(id, cap), `${id} has ${cap}`).toBe(true);
       }
     }
+  });
+
+  it('resolves the minimum granting tier from the manifest', () => {
+    expect(minimumTierForCapability('senders')).toBe('free');
+    expect(minimumTierForCapability('triage')).toBe('plus');
+    expect(minimumTierForCapability('autopilot')).toBe('pro');
   });
 
   // The full 5-tiers × 3-action-tiers seam matrix: team/enterprise rank

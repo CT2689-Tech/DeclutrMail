@@ -8,6 +8,7 @@ import { BriefController } from '../../briefs/brief.controller.js';
 import { FollowupController } from '../../followups/followup.controller.js';
 import { MailboxesController } from '../../mailboxes/mailboxes.controller.js';
 import { SnoozedController } from '../../senders/snoozed.controller.js';
+import { TriageController } from '../../triage/triage.controller.js';
 import { AppException } from '../app-exception.js';
 import { CapabilityGuard, CAPABILITY_METADATA } from './capability.guard.js';
 import { assertTierCapability, type EntitlementsService } from './entitlements.service.js';
@@ -312,5 +313,38 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       ).resolves.toBe(true);
       expect(tierForWorkspace).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('CapabilityGuard (D19) — Triage Plus gate', () => {
+  const routes = ['scoreSender', 'queueSize', 'queue', 'stats', 'todaySummary'] as const;
+
+  it('gates every Triage route at class level', () => {
+    expect(Reflect.getMetadata(CAPABILITY_METADATA, TriageController)).toBe('triage');
+    expect(Reflect.getMetadata(GUARDS_METADATA, TriageController)).toContain(CapabilityGuard);
+    expect(
+      Object.getOwnPropertyNames(TriageController.prototype).filter(
+        (name) => name !== 'constructor',
+      ),
+    ).toEqual(routes);
+  });
+
+  it('denies Free and grants Plus and above', async () => {
+    for (const handlerName of routes) {
+      const free = makeGuard('free').guard;
+      const err = await caught(
+        free.canActivate(makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL })),
+      );
+      expect(err).toBeInstanceOf(AppException);
+      expect((err as AppException).details).toEqual({ capability: 'triage', tier: 'free' });
+
+      for (const tier of ['plus', 'pro', 'team', 'enterprise'] as const) {
+        await expect(
+          makeGuard(tier).guard.canActivate(
+            makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
+          ),
+        ).resolves.toBe(true);
+      }
+    }
   });
 });

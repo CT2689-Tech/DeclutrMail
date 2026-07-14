@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
 import { useAuth } from '@/features/auth/auth-provider';
+import { TierGate } from '@/features/billing/tier-gate';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
@@ -24,6 +25,23 @@ import { track } from '@/lib/posthog';
  * strips the query param so a refresh doesn't re-fire it.
  */
 export default function TriagePage() {
+  return (
+    <TierGate
+      capability="triage"
+      title="Triage"
+      pitch="Review a short queue of sender decisions with an exact action preview before Gmail changes."
+      bullets={[
+        'A focused daily sender queue',
+        'Keep, Archive, Unsubscribe, Later, and Delete previews',
+        'Activity records and eligible Undo controls',
+      ]}
+    >
+      <TriageRoute />
+    </TierGate>
+  );
+}
+
+function TriageRoute() {
   useConnectResultToast();
 
   const { me } = useAuth();

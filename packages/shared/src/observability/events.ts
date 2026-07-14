@@ -172,7 +172,7 @@ export interface EventPayloads {
   };
   upgrade_prompt_shown: {
     /** Which entitlement gate triggered the prompt (D19/D77/D81). */
-    reason: 'free_cap' | 'inbox_limit' | 'pro_feature';
+    reason: 'free_cap' | 'inbox_limit' | 'feature_tier_required';
     /** The surface that rendered it. */
     source: 'actions_402' | 'account_menu' | 'triage_empty_state' | 'upgrade_modal' | 'tier_gate';
   };
