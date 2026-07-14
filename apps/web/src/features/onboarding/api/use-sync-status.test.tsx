@@ -2,20 +2,23 @@
  * Tests for `useSyncStatus` — the sync-gate polling hook (D109, D224).
  *
  * Verifies the success branch resolves the SyncStatus payload and the
- * `refetchInterval` policy: keep polling while syncing, stop on a
- * terminal state (ready or failed). We assert the policy function
- * directly off `query.state` rather than racing real timers — the
- * cadence value is the contract, not wall-clock behaviour.
+ * `refetchInterval` policy: poll quickly while syncing, more slowly on
+ * failed/ready states, and heal a paused tab immediately on focus. We
+ * assert the policy function directly off `query.state` rather than
+ * racing real timers — the cadence value is the contract, not wall-clock
+ * behaviour.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { focusManager } from '@tanstack/react-query';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import {
   useSyncStatus,
   syncRefetchInterval,
   SYNC_POLL_MS,
   SYNC_FAILED_POLL_MS,
+  SYNC_READY_POLL_MS,
 } from './use-sync-status';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -36,7 +39,10 @@ const READY: SyncStatus = {
 
 describe('useSyncStatus', () => {
   beforeEach(() => installFetchStub([]));
-  afterEach(() => resetFetchStub());
+  afterEach(() => {
+    focusManager.setFocused(undefined);
+    resetFetchStub();
+  });
 
   it('resolves the SyncStatus payload from /api/v1/sync/status', async () => {
     installFetchStub([
@@ -72,13 +78,14 @@ describe('useSyncStatus', () => {
     expect(seenHeader).toBe('mailbox-b');
   });
 
-  it('polls while syncing, stops only on success, keeps polling (slower) on failed', () => {
+  it('uses fast syncing, slower failed, and low-frequency ready cadences', () => {
     // While syncing → keep the cadence.
     expect(syncRefetchInterval(SYNCING)).toBe(SYNC_POLL_MS);
     // No data yet (first paint) → still poll.
     expect(syncRefetchInterval(undefined)).toBe(SYNC_POLL_MS);
-    // Ready → stop (the only terminal state for polling).
-    expect(syncRefetchInterval(READY)).toBe(false);
+    // Ready → retain a low-frequency health poll so freshness/error
+    // state cannot freeze for the rest of a long-lived app session.
+    expect(syncRefetchInterval(READY)).toBe(SYNC_READY_POLL_MS);
     // Failed → keep polling at the slower cadence so a transient/superseded
     // failure recovers instead of trapping the gate (2026-05-28).
     expect(
@@ -90,5 +97,35 @@ describe('useSyncStatus', () => {
         error_code: 'GMAIL_QUOTA_EXCEEDED',
       }),
     ).toBe(SYNC_FAILED_POLL_MS);
+  });
+
+  it('refetches ready status immediately when a backgrounded tab regains focus', async () => {
+    let requests = 0;
+    focusManager.setFocused(false);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: READY });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const { result, unmount } = renderHook(() => useSyncStatus(), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requests).toBe(1);
+
+    act(() => focusManager.setFocused(true));
+    await waitFor(() => {
+      expect(requests).toBe(2);
+      expect(result.current.isFetching).toBe(false);
+    });
+    unmount();
+    client.clear();
   });
 });

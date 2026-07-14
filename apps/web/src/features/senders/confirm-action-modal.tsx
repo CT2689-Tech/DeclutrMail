@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { BulkActionPreviewResult, CompositeActionPreviewResult } from '@/lib/api/use-action';
 import { verbDisplay, type ActionRequest, type ActionVerb } from './data';
 
@@ -103,7 +104,7 @@ function pickBucketCount(
 }
 
 /**
- * Mirror of `pickBucketCount` for the "Show what will move" recent-
+ * Mirror of `pickBucketCount` for the "Show what currently matches" recent-
  * subjects panel (spec v1.3 — recent beats oldest for 3-sec sender
  * recognition). Returns the BE-returned top-5 subjects for the chip
  * the user has selected; `undefined` while the preview is in flight
@@ -141,10 +142,10 @@ const VERB_GLYPH: Partial<Record<ActionVerb, string>> = {
 
 /**
  * The mandatory action preview (D226). No bulk mutation runs without
- * this confirm — it states exactly what changes and how much mail it
- * touches before anything happens. PR-FE3 (spec v1.2 Decision 15)
+ * this confirm — it states the current match count before anything
+ * happens. Gmail is resolved again by the worker at execution. PR-FE3
  * adds: Delete primary (red tone + 30-day recovery banner), composite
- * secondary chip row on Unsub/Later, "Show what will move" expand
+ * secondary chip row on Unsub/Later, "Show what currently matches" expand
  * panel, and per-bucket count preview via the composite endpoint.
  */
 export function ConfirmActionModal({
@@ -155,6 +156,7 @@ export function ConfirmActionModal({
   compositePreview,
   compositePreviewError,
   bulkPreview,
+  mailboxEmail,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -184,6 +186,8 @@ export function ConfirmActionModal({
    * headline figure, and the per-sender breakdown list.
    */
   bulkPreview?: BulkPreviewState | undefined;
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
 }) {
   const verb = request?.verb;
   // Composite secondary (chip row) — applies only on Unsubscribe + Later
@@ -193,7 +197,7 @@ export function ConfirmActionModal({
   // Time-window filter for the historic-scope verb (archive/delete
   // primary OR the active secondary).
   const [olderThanDays, setOlderThanDays] = useState<number | null>(null);
-  // "Show what will move" expand panel state (spec v1.2 Decision 15).
+  // "Show what currently matches" expand panel state (spec v1.2 Decision 15).
   const [showSubjects, setShowSubjects] = useState(false);
   // Per-sender breakdown expand state (D52 — "Per-sender breakdown"
   // expandable list for verification on bulk flows).
@@ -208,15 +212,15 @@ export function ConfirmActionModal({
   }, [request]);
 
   // The historic-bucket count for the current chip selection — used by
-  // the summary line + confirm button + "Show what will move" header.
+  // the summary line + "Show what currently matches" header.
   const isArchiveVerb = verb === 'Archive';
   const isDeleteVerb = verb === 'Delete';
   const isUnsubVerb = verb === 'Unsubscribe';
   const isLaterVerb = verb === 'Later';
-  // Primary verbs that act on existing inbox mail in a time-window. The
-  // chip row is visible only for these; Unsub/Later primaries delegate
-  // the "how far back" decision to the secondary chip row instead.
-  const primaryActsOnInbox = isArchiveVerb || isDeleteVerb;
+  // Every A/L/D primary moves current inbox mail. Archive/Delete expose a
+  // primary time-window; Later keeps its existing all-current-mail shape.
+  const primaryActsOnInbox = isArchiveVerb || isLaterVerb || isDeleteVerb;
+  const primaryUsesWindow = isArchiveVerb || isDeleteVerb;
   // Whether the secondary chip row is shown (Unsub or Later primary).
   const showSecondaryRow = isUnsubVerb || isLaterVerb;
   const hasSecondaryAction = showSecondaryRow && secondaryVerb !== null;
@@ -224,13 +228,32 @@ export function ConfirmActionModal({
   // For Archive/Delete primary the time-window applies to the primary
   // verb itself. For Unsub/Later with a non-null secondary, the
   // time-window applies to the secondary's historic mail.
-  const showWindowRow = primaryActsOnInbox || hasSecondaryAction;
+  const showWindowRow = primaryUsesWindow || hasSecondaryAction;
 
   // Multi-sender bulk (D52) — the aggregated preview replaces the
   // single-sender composite preview as the bucket-count source. The
   // confirm-gating rules below are IDENTICAL across both shapes.
   const isBulk = (request?.senders.length ?? 0) > 1;
   const bucketCounts = isBulk ? bulkPreview?.data?.totals : compositePreview?.counts;
+
+  // Fail closed on every path that moves current mail. A count from the
+  // composite/bulk endpoint is the preview contract for the active time
+  // window; lifetime sender totals and a legacy all-inbox count are not a
+  // substitute. Pure Unsubscribe (Leave alone) is the one exception because
+  // it does not move existing inbox mail.
+  const requiresLivePreview = isArchiveVerb || isLaterVerb || isDeleteVerb || hasSecondaryAction;
+  const livePreviewUnavailable =
+    requiresLivePreview &&
+    (isBulk
+      ? bulkPreview == null || (bulkPreview.error ?? false)
+      : (compositePreviewError ?? false));
+  const livePreviewReady =
+    requiresLivePreview &&
+    !livePreviewUnavailable &&
+    (isBulk ? bulkPreview?.data !== undefined : compositePreview !== undefined);
+  const livePreviewLoading = requiresLivePreview && !livePreviewUnavailable && !livePreviewReady;
+  const livePreviewBlocksConfirm =
+    requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
 
   // Preview bucket count under the current chip selection.
   const compositeCount = pickBucketCount(bucketCounts, olderThanDays);
@@ -249,13 +272,8 @@ export function ConfirmActionModal({
   const nothingToActOn =
     (isArchiveVerb && inboxNow === 0) ||
     (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
-  // Block confirm on Delete primary when the preview failed — D226
-  // requires the preview to inform the destructive choice (bulk reads
-  // the aggregated preview's error, single the composite preview's).
-  const previewBlocksDelete =
-    isDeleteVerb && (isBulk ? (bulkPreview?.error ?? false) : (compositePreviewError ?? false));
   const confirmDisabled =
-    ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) || previewBlocksDelete;
+    livePreviewBlocksConfirm || ((isArchiveVerb || isDeleteVerb) && nothingToActOn);
 
   // Derived ConfirmOptions for onConfirm — packages secondary into the
   // shape the BE composite endpoint expects.
@@ -326,12 +344,12 @@ export function ConfirmActionModal({
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
   const lead = isDeleteVerb
-    ? `Mail from ${subject} moves to Gmail Trash. Gmail recovers from Trash for 30 days; after that Gmail permanently deletes it.`
+    ? `Matching mail from ${subject} moves to Gmail Trash when the action runs. Activity can undo while Gmail retains the messages, up to 30 days; permanently deleting them or emptying Trash can end recovery sooner.`
     : isArchiveVerb
-      ? `Every message from ${subject} moves out of the inbox into Gmail's archive. Nothing is deleted.`
+      ? `Matching inbox mail from ${subject} moves into Gmail's archive when the action runs. Nothing is deleted.`
       : isLaterVerb
-        ? `Future mail from ${subject} skips the inbox and lands in a DeclutrMail/Later label. Nothing is unsubscribed or deleted.`
-        : `Future mail from ${subject} stops arriving. Nothing already in your inbox moves unless you ask.`;
+        ? `Matching inbox mail from ${subject} moves into DeclutrMail/Later when the action runs. This does not create a future-mail rule.`
+        : `DeclutrMail asks ${subject} to stop future mail. The sender controls whether and when delivery stops; existing inbox mail moves only if you choose a separate backlog action.`;
 
   const numberStyle: CSSProperties = {
     fontFamily: font.display,
@@ -342,36 +360,33 @@ export function ConfirmActionModal({
     fontVariantNumeric: 'tabular-nums',
   };
 
-  // Confirm-button label — spec v1.2 Decision 15 always names the action.
+  // Name the requested action but omit the preview count: Gmail is
+  // re-checked at execution, so the affected count can change.
   const confirmLabel = (() => {
     const primaryGlyph = VERB_GLYPH[verb!] ?? '';
-    const cnt = compositeCount ?? inboxNow;
-    const primaryPart =
-      isArchiveVerb || isDeleteVerb
-        ? `${primaryGlyph} ${verbDisplay(verb!).label}${cnt !== undefined ? ` ${cnt.toLocaleString()}` : ''}`
-        : `${primaryGlyph} ${verbDisplay(verb!).label}`;
+    const primaryPart = `${primaryGlyph} ${verbDisplay(verb!).label}`;
     if (!hasSecondaryAction) return primaryPart;
     const secVerb = secondaryVerb === 'archive' ? 'Archive' : 'Delete';
     const secGlyph = VERB_GLYPH[secVerb] ?? '';
-    const secCnt = compositeCount;
-    const secondaryPart = `${secGlyph} ${secVerb}${secCnt !== undefined ? ` ${secCnt.toLocaleString()}` : ''}`;
+    const secondaryPart = `${secGlyph} ${secVerb}`;
     return `${primaryPart} + ${secondaryPart}`;
   })();
 
   // Recovery-window banner (spec v1.2 Decision 15 — top of the modal).
-  // Delete = 30 days (Gmail Trash physical guarantee); Archive/Later = 7d.
+  // Delete gets an up-to-30-day token while Gmail retains Trash;
+  // Archive/Later use the plan-defined Activity window.
   // Unsubscribe = NOT undoable (D58): a delivered opt-out can't be
   // recalled, so the banner says so where the undo promise would
   // normally sit — only a paired archive keeps its own undo.
   const recoveryCopy = isDeleteVerb
-    ? 'Recoverable for 30 days in Gmail Trash.'
+    ? 'Activity undo: up to 30 days while Gmail retains the messages.'
     : isArchiveVerb || isLaterVerb
-      ? 'Reversible for 7 days from Activity.'
+      ? "Reversible for your plan's undo window from Activity."
       : verb === 'Unsubscribe'
-        ? "The unsubscribe itself can't be undone — only an archived backlog is reversible (7 days, from Activity)."
+        ? "The unsubscribe itself can't be undone — only a backlog move has its own Activity recovery window."
         : null;
 
-  // Subjects for the "Show what will move" panel (spec v1.3 — recent
+  // Subjects for the "Show what currently matches" panel (spec v1.3 — recent
   // beats oldest for 3-sec sender recognition). Single-sender single-
   // verb path reads top-5 from `compositePreview.recentSubjects[bucket]`;
   // falls back to the fixture pool ONLY while the preview is in flight
@@ -391,7 +406,7 @@ export function ConfirmActionModal({
       : undefined;
   // Wire subjects ONLY — no fixture fallback. Before the composite
   // preview resolves, `compositeCount` is undefined so the disclosure
-  // button below never renders; a fabricated "what will move" list on
+  // button below never renders; a fabricated current-match list on
   // the D226 trust surface is worse than none (§10 no-fake-data).
   const subjectsPreview =
     senders.length === 1 ? (subjectsFromWire ?? []).slice(0, Math.min(5, compositeCount ?? 5)) : [];
@@ -560,6 +575,7 @@ export function ConfirmActionModal({
         )}
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <MailboxActionContext mailboxEmail={mailboxEmail} />
           {/* Per-sender breakdown (D52) — each lozenge carries the REAL
               count for the active time-window from the aggregated
               preview; protected senders are flagged (the BE skips them).
@@ -788,10 +804,15 @@ export function ConfirmActionModal({
                   );
                 })}
               </div>
+              {isUnsubVerb && (
+                <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+                  On Free, Archive or Delete backlog is a second cleanup action.
+                </span>
+              )}
             </div>
           )}
 
-          {/* Summary line + "Show what will move" expand (spec v1.2 Decision 15). */}
+          {/* Current-match summary + subject sample (spec v1.2 Decision 15). */}
           <div
             style={{
               display: 'flex',
@@ -805,6 +826,21 @@ export function ConfirmActionModal({
           >
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
               {(() => {
+                if (livePreviewUnavailable) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Couldn’t load a live preview. Close and retry — no inbox mail can move without
+                      one.
+                    </span>
+                  );
+                }
+                if (livePreviewLoading) {
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Loading the live preview… Confirm unlocks when it is ready.
+                    </span>
+                  );
+                }
                 // Headline figure resolution order:
                 //   1. composite per-bucket count (most accurate)
                 //   2. legacy archivePreview (single-sender archive path)
@@ -816,12 +852,15 @@ export function ConfirmActionModal({
                       <>
                         <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                          email{compositeCount === 1 ? '' : 's'}{' '}
-                          {isDeleteVerb ? 'will move to Trash' : 'will move to Archive'}
+                          email{compositeCount === 1 ? '' : 's'} currently match
                           {olderThanDays !== null
                             ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
                             : ''}
-                          .
+                          {isDeleteVerb
+                            ? ' for Trash.'
+                            : isLaterVerb
+                              ? ' for Later.'
+                              : ' for Archive.'}
                         </span>
                       </>
                     );
@@ -831,8 +870,8 @@ export function ConfirmActionModal({
                       <>
                         <strong style={numberStyle}>{compositeCount.toLocaleString()}</strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                          email{compositeCount === 1 ? '' : 's'} will{' '}
-                          {secondaryVerb === 'delete' ? 'move to Trash' : 'archive'}
+                          email{compositeCount === 1 ? '' : 's'} currently match the backlog{' '}
+                          {secondaryVerb === 'delete' ? 'Trash' : 'Archive'} action
                           {olderThanDays !== null
                             ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
                             : ''}
@@ -876,8 +915,8 @@ export function ConfirmActionModal({
                 ) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Couldn’t check how much is in your inbox — we’ll archive whatever’s there from
-                      this sender.
+                      Couldn’t load a live preview. Close and retry — no inbox mail can move without
+                      one.
                     </span>
                   );
                 }
@@ -906,7 +945,14 @@ export function ConfirmActionModal({
               })()}
             </div>
 
-            {/* Show what will move (5 of N) ▾ — privacy-safe subjects panel.
+            {livePreviewReady && (
+              <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+                Gmail is checked again when this runs. If your inbox changes, the final moved count
+                can differ from this preview.
+              </span>
+            )}
+
+            {/* Current matches (5 of N) ▾ — privacy-safe subjects panel.
                 Only shown for single-sender flows where the "subjects pool"
                 stub is meaningful; bulk flows would need a per-sender
                 drilldown that lands separately. */}
@@ -928,8 +974,8 @@ export function ConfirmActionModal({
                 }}
               >
                 {showSubjects
-                  ? 'Hide what will move ▴'
-                  : `Show what will move (${subjectsPreview.length.toLocaleString()} of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
+                  ? 'Hide current matches ▴'
+                  : `Show what currently matches (${subjectsPreview.length.toLocaleString()} of ${(compositeCount ?? 0).toLocaleString()}) ▾`}
               </button>
             )}
             {showSubjects && subjectsPreview.length > 0 && (
@@ -994,13 +1040,15 @@ export function ConfirmActionModal({
           <span
             style={{
               fontSize: 11.5,
-              color: previewBlocksDelete ? color.amber : color.fgMuted,
-              fontWeight: previewBlocksDelete ? 600 : 400,
+              color: livePreviewBlocksConfirm ? color.amber : color.fgMuted,
+              fontWeight: livePreviewBlocksConfirm ? 600 : 400,
             }}
           >
-            {previewBlocksDelete
-              ? "Couldn't load preview — refresh and try again before confirming."
-              : (recoveryCopy ?? '')}
+            {livePreviewUnavailable
+              ? "Couldn't load the live preview — close and retry before confirming."
+              : livePreviewLoading
+                ? 'Loading the live preview — confirm stays locked until it is ready.'
+                : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button

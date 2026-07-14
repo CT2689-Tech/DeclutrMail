@@ -10,8 +10,9 @@
 // userinfo.email — the only scopes requested). Encryption claims match
 // apps/api/src/auth/token-crypto.service.ts (D14 envelope encryption).
 // Metadata-only fetching matches apps/api/src/gmail/gmail-client.service.ts
-// (`format=metadata`, never `full`/`raw`). CASA Tier 2 is verified for
-// the production OAuth client. Do not add a claim without checking it.
+// (`format=metadata`, never `full`/`raw`). The current CASA evidence is
+// still an operations dependency; do not claim a passed/current cycle
+// until the issued assessment letter is available.
 
 import type { Metadata } from 'next';
 import {
@@ -28,17 +29,17 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Security — DeclutrMail',
   description:
-    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, CASA Tier 2 verified.',
+    'How DeclutrMail protects your Gmail: metadata-only storage (full bodies fetched: 0), one narrowly used OAuth scope, envelope-encrypted tokens, and independent-assessment readiness.',
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = '2026-07-13';
 
 const TOC = [
   { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
   { id: 'oauth-scopes', label: 'OAuth scopes, and why' },
   { id: 'encryption', label: 'Encryption' },
-  { id: 'verification', label: 'Independent verification (CASA Tier 2)' },
+  { id: 'verification', label: 'Independent assessment (CASA Tier 2)' },
   { id: 'no-prediction', label: 'No ML category prediction' },
   { id: 'deletion', label: 'Leaving cleanly' },
   { id: 'report', label: 'Report a vulnerability' },
@@ -71,8 +72,10 @@ export default function SecurityPage() {
           ))}
         </ul>
         <p>
-          Because bodies and attachments are never in our systems, the most sensitive content in
-          your mailbox cannot leak from us — it was never there.
+          Because full message bodies and attachments are never in our systems, that content cannot
+          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
+          information; we store those bounded fields as disclosed above and protect them
+          accordingly.
         </p>
       </LegalSection>
 
@@ -105,11 +108,13 @@ export default function SecurityPage() {
         </p>
       </LegalSection>
 
-      <LegalSection id="verification" title="Independent verification (CASA Tier 2)">
+      <LegalSection id="verification" title="Independent assessment (CASA Tier 2)">
         <p>
-          As an app using a restricted Gmail scope, DeclutrMail has passed Google&rsquo;s
-          independent CASA (Cloud Application Security Assessment) <strong>Tier 2</strong> security
-          verification, which is renewed annually.
+          Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
+          Application Security Assessment) process. DeclutrMail&rsquo;s current{' '}
+          <strong>Tier 2</strong> assessment cycle is in progress. We will publish the issued
+          evidence here after it is available; this page does not claim a current verification
+          letter before then.
         </p>
       </LegalSection>
 
@@ -124,11 +129,12 @@ export default function SecurityPage() {
 
       <LegalSection id="deletion" title="Leaving cleanly">
         <p>
-          You can disconnect an inbox (revokes our Google access and stops all syncing), delete an
-          inbox&rsquo;s data, or delete your whole account — all from Settings. Account deletion has
-          a 7-day grace period, and if you have actions still inside a longer undo window, deletion
-          is scheduled after the latest window expires so undo keeps working for its full window.
-          Details are in the <a href="/privacy">Privacy Policy</a>.
+          You can disconnect an inbox (which revokes our Google access, stops syncing, and preserves
+          its historical DeclutrMail record for reconnection) or schedule deletion of your whole
+          account from Settings. Account deletion has a 7-day grace period, and if you have actions
+          still inside a longer undo window, deletion is scheduled after the latest window expires
+          so undo keeps working for its full window. Details are in the{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

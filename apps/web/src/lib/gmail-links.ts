@@ -12,30 +12,33 @@
  * from message data, just composes a navigation target. Gmail itself
  * sees the same address whenever the user types it.
  *
- * Future: D231's `GmailOpenLinkService` will own this; today the
- * helpers are the FE source of truth so each call site doesn't roll
- * its own template.
+ * D231's `GmailOpenLinkService` owns URL construction. These wrappers
+ * retain the surface-specific API while requiring callers to supply
+ * the mailbox that Gmail must open.
  */
 
-/** Open one Gmail thread (inbox view) by thread id. */
-export function gmailThreadDeepLink(threadId: string): string {
-  return `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(threadId)}`;
+import { GmailOpenLinkService } from './gmail/open-link';
+
+/** Open one Gmail thread (all-mail view) by thread id. */
+export function gmailThreadDeepLink(mailboxEmail: string, threadId: string): string | null {
+  return GmailOpenLinkService.buildOpenLink({
+    mailboxEmail,
+    gmailMessageId: threadId,
+  });
 }
 
 /**
  * Open ALL Gmail messages from one sender — drives the "Open all in
- * Gmail" button on Sender Detail. `from:` is Gmail's quoted-search
- * operator; quoting the address with single quotes keeps `+`-tagged
+ * Gmail" button on Sender Detail. `from:` is Gmail's search operator;
+ * quoting the address keeps `+`-tagged
  * addresses (e.g. `noreply+tag@…`) from being misinterpreted by Gmail's
  * search parser.
  */
-export function gmailAllFromSenderDeepLink(email: string): string {
-  // Gmail's URL fragment is NOT URL-decoded server-side, but the
-  // `+` and `:` characters survive the hash without further encoding.
-  // We trim defensively so a malformed BE response can't blank out the
-  // search.
-  const trimmed = email.trim();
-  return `https://mail.google.com/mail/u/0/#search/from%3A${encodeURIComponent(trimmed)}`;
+export function gmailAllFromSenderDeepLink(mailboxEmail: string, email: string): string | null {
+  return GmailOpenLinkService.buildFromSearchLink({
+    mailboxEmail,
+    from: email,
+  });
 }
 
 /**
@@ -43,8 +46,8 @@ export function gmailAllFromSenderDeepLink(email: string): string {
  * encode a richer query (subject + date window, etc.). Keep callers
  * thin so they don't construct URL fragments by hand.
  */
-export function gmailSearchDeepLink(rawQuery: string): string {
-  return `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(rawQuery)}`;
+export function gmailSearchDeepLink(mailboxEmail: string, rawQuery: string): string | null {
+  return GmailOpenLinkService.buildSearchLink({ mailboxEmail, query: rawQuery });
 }
 
 /**
@@ -63,7 +66,7 @@ export function gmailSearchDeepLink(rawQuery: string): string {
  * `mailto:` with a non-empty address — callers skip the affordance
  * rather than emit a broken compose link.
  */
-export function gmailComposeUrlFromMailto(mailtoUrl: string): string | null {
+export function gmailComposeUrlFromMailto(mailboxEmail: string, mailtoUrl: string): string | null {
   let parsed: URL;
   try {
     parsed = new URL(mailtoUrl);
@@ -95,10 +98,10 @@ export function gmailComposeUrlFromMailto(mailtoUrl: string): string | null {
     if (k === 'body' && body === null) body = value;
   }
 
-  // URLSearchParams re-encodes every value, so addresses with `+` tags
-  // and subjects with spaces / unicode survive round-trip.
-  const params = new URLSearchParams({ view: 'cm', fs: '1', to: address });
-  if (subject !== null && subject.length > 0) params.set('su', subject);
-  if (body !== null && body.length > 0) params.set('body', body);
-  return `https://mail.google.com/mail/?${params.toString()}`;
+  return GmailOpenLinkService.buildComposeLink({
+    mailboxEmail,
+    to: address,
+    subject,
+    body,
+  });
 }

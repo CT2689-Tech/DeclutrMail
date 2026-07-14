@@ -2,7 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 
-import { compareRows, pricingTiers } from './pricing-model';
+import { comparablePricingTiers, compareRows } from './pricing-model';
 
 const { color, font, radius } = tokens;
 
@@ -12,15 +12,20 @@ const { color, font, radius } = tokens;
  * the manifest changes. Scrolls horizontally on narrow viewports.
  */
 export function CompareTable() {
-  const tiers = pricingTiers();
+  const tiers = comparablePricingTiers();
   const rows = compareRows();
 
   return (
-    <div style={{ overflowX: 'auto', borderRadius: radius.lg, border: `1px solid ${color.line}` }}>
+    <div
+      role="region"
+      aria-label="Scrollable plan comparison"
+      tabIndex={0}
+      style={{ overflowX: 'auto', borderRadius: radius.lg, border: `1px solid ${color.line}` }}
+    >
       <table
         style={{
           width: '100%',
-          minWidth: 760,
+          minWidth: 600,
           borderCollapse: 'collapse',
           background: color.card,
           fontFamily: font.sans,

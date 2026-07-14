@@ -12,6 +12,7 @@ import { formatUsd, priceLineFor, TIER_JOBS } from '@/features/marketing/pricing
 import { track } from '@/lib/posthog';
 
 import { apiErrorCode } from './api/use-billing-subscription';
+import type { BillingIntent } from './billing-intent';
 import { useCheckout } from './api/use-checkout';
 import {
   formatBillingDate,
@@ -50,6 +51,7 @@ type PaidTier = 'plus' | 'pro';
  */
 export function PlanChangeModal({
   open,
+  initialIntent = null,
   currentTier,
   hasActiveSubscription,
   currentPeriodEnd,
@@ -57,6 +59,8 @@ export function PlanChangeModal({
   onRequestCancel,
 }: {
   open: boolean;
+  /** Validated pricing-page choice carried through auth/onboarding. */
+  initialIntent?: BillingIntent | null;
   currentTier: TierId;
   hasActiveSubscription: boolean;
   /** ISO period end of the active subscription (downgrade copy). */
@@ -65,18 +69,20 @@ export function PlanChangeModal({
   /** Route to the cancel confirm (the downgrade-to-free path, D120). */
   onRequestCancel: () => void;
 }) {
-  const [cycle, setCycle] = useState<BillingCycle>('annual');
-  const [selected, setSelected] = useState<StripTierId | null>(null);
+  const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
+  const [selected, setSelected] = useState<StripTierId | null>(initialIntent?.plan ?? null);
   const [provider, setProvider] = useState<BillingProviderId>('paddle');
-  const [claimFounding, setClaimFounding] = useState(true);
+  const [claimFounding, setClaimFounding] = useState(
+    initialIntent ? initialIntent.promo === 'foundingPro' : true,
+  );
   const checkout = useCheckout();
 
   useEffect(() => {
     if (!open) return;
-    setSelected(null);
-    setCycle('annual');
+    setSelected(initialIntent?.plan ?? null);
+    setCycle(initialIntent?.cycle ?? 'annual');
     setProvider('paddle');
-    setClaimFounding(true);
+    setClaimFounding(initialIntent ? initialIntent.promo === 'foundingPro' : true);
     checkout.reset();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -85,7 +91,7 @@ export function PlanChangeModal({
     return () => window.removeEventListener('keydown', onKey);
     // Deliberately keyed on open/close only — `checkout.reset` is
     // stable across renders (TanStack result identity churns).
-  }, [open, onClose]);
+  }, [initialIntent, open, onClose]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 

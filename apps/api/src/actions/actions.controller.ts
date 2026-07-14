@@ -235,6 +235,7 @@ export class ActionsController {
       mailboxAccountId: mailbox.id,
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
+      includesBacklogAction: parsed.data.includesBacklogAction,
     });
     return ok(result);
   }

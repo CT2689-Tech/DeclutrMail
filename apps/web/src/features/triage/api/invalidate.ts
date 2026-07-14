@@ -13,9 +13,9 @@ import type { QueryClient } from '@tanstack/react-query';
 // after a mutation. Only the keys cross the boundary — never behavior.
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY, TODAY_SUMMARY_KEY } from './use-triage-queue';
-import { UNDO_TRAY_QUERY_KEY } from '../triage-undo-tray';
 
 /**
  * Mark every surface a confirmed decision touches as stale (D200):
@@ -32,5 +32,5 @@ export function invalidateAfterDecision(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
-  void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
+  void qc.invalidateQueries({ queryKey: undoKeys.all });
 }

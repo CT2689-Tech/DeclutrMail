@@ -4,5 +4,10 @@
 // See `docs/observability/event-taxonomy.md` for the full list of events
 // and their payload shapes. See `scrubber.ts` for the D7/D228 guarantees.
 
-export { scrubObject, scrubTelemetryPayload } from './scrubber.js';
+export {
+  scrubObject,
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+  scrubTelemetryPayload,
+} from './scrubber.js';
 export type { EventName, EventPayloads, EventProps, OnboardingFunnelStep, Verb } from './events.js';

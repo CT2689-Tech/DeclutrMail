@@ -5,9 +5,17 @@
  * One `GET /api/v1/sync/status` query per ACTIVE mailbox (stamped with
  * `X-Active-Mailbox-Id` via the apiGet `mailboxId` option), sharing the
  * cache keys + poll policy of `useSyncStatus` so the settings card and
- * the sync gate never disagree. Disconnected mailboxes are not queried
- * — `CurrentMailboxGuard` only resolves active ones, and their health
- * ("Disconnected") already rides on `me.mailboxes[].status`.
+ * the sync gate never disagree. Ready mailboxes refresh at the shared
+ * low-frequency cadence and immediately on tab focus. Disconnected
+ * mailboxes are not queried — `CurrentMailboxGuard` only resolves active
+ * ones, and their health ("Disconnected") already rides on
+ * `me.mailboxes[].status`.
+ *
+ * `opts.enabled` lets disclosure surfaces defer these per-mailbox reads
+ * while hidden. It defaults true so Settings retains continuous health;
+ * AccountMenu enables only while its dialog is open. Existing cache data
+ * remains readable while disabled, and the selected mailbox's open-state
+ * observer dedupes with app-shell status consumers by query key.
  *
  * `needsReconnect` derivation: the Gmail OAuth grant is gone when the
  * worker's classified error is `InvalidGrantError` (see
@@ -30,9 +38,7 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { apiGet } from '@/lib/api/client';
 import { SYNC_STATUS_KEY, syncRefetchInterval } from '@/features/onboarding/api/use-sync-status';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-
-/** The classified worker error that means "reconnect required". */
-const INVALID_GRANT_CODE = 'InvalidGrantError';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 
 export interface MailboxHealth {
   /** ISO stamp of the last completed sync run; null before the first. */
@@ -44,15 +50,9 @@ export interface MailboxHealth {
 /** Project a SyncStatus payload into the card's health shape. */
 export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const syncedAt = status.last_synced_at ?? null;
-  const errorAt = status.last_sync_error_at ?? null;
-  const incrementalAuthError =
-    status.last_sync_error_code === INVALID_GRANT_CODE &&
-    errorAt !== null &&
-    (syncedAt === null || new Date(errorAt).getTime() > new Date(syncedAt).getTime());
-  const initialAuthError = status.error_code === INVALID_GRANT_CODE;
   return {
     lastSyncedAt: syncedAt,
-    needsReconnect: incrementalAuthError || initialAuthError,
+    needsReconnect: syncStatusNeedsReconnect(status),
   };
 }
 
@@ -63,6 +63,7 @@ export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
  */
 export function useMailboxesHealth(
   mailboxes: MeMailbox[],
+  opts: { enabled?: boolean } = {},
 ): Record<string, MailboxHealth | undefined> {
   const active = mailboxes.filter((m) => m.status === 'active');
   const results = useQueries({
@@ -79,7 +80,12 @@ export function useMailboxesHealth(
       },
       refetchInterval: (query: { state: { data: SyncStatus | undefined } }) =>
         syncRefetchInterval(query.state.data),
+      refetchOnWindowFocus: true,
       staleTime: 0,
+      // AccountMenu keeps its panel closed most of the time; callers can
+      // defer non-selected mailbox observers until the health UI is visible.
+      // Settings omits this option and remains continuously enabled.
+      enabled: opts.enabled ?? true,
     })),
   });
 

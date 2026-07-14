@@ -66,14 +66,16 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         <li>
           <strong style={{ fontWeight: 600 }}>We still never fetch bodies.</strong>{' '}
           <span style={{ color: color.fgMuted }}>
-            The step-1 storage list is the whole list. Full bodies fetched: 0.
+            Full bodies fetched: 0. The Privacy Policy describes the Gmail metadata and operational
+            records needed to run the service.
           </span>
         </li>
         <li>
           <strong style={{ fontWeight: 600 }}>Nothing changes without you.</strong>{' '}
           <span style={{ color: color.fgMuted }}>
-            Connecting only scans. Every Archive, Unsubscribe, Later or Delete shows a preview first
-            and is undoable.
+            Connecting only scans. Manual mail-moving actions require a current preview. Archive and
+            Later have plan-based Activity undo, Delete is recoverable while Gmail retains Trash,
+            and a delivered unsubscribe request cannot be recalled.
           </span>
         </li>
       </ul>

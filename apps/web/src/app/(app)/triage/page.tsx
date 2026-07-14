@@ -1,12 +1,13 @@
 'use client';
 
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
 import { useAuth } from '@/features/auth/auth-provider';
+import { TierGate } from '@/features/billing/tier-gate';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { composeTriageState } from '@/features/triage/compose-state';
 import { TriageScreen } from '@/features/triage/triage-screen';
-import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import { track } from '@/lib/posthog';
 
 /**
@@ -27,6 +28,23 @@ import { track } from '@/lib/posthog';
 export default function TriagePage() {
   useConnectResultToast();
 
+  return (
+    <TierGate
+      capability="triage"
+      title="Triage"
+      pitch="Work through a focused sender queue with recommendations, previews, and a durable Activity receipt."
+      bullets={[
+        'Review one sender at a time',
+        'Preview every manual mail-moving action',
+        'Keep Gmail as the place you read and reply',
+      ]}
+    >
+      <TriageExperience />
+    </TierGate>
+  );
+}
+
+function TriageExperience() {
   const { me } = useAuth();
   const queue = useTriageQueue();
   const stats = useTriageStats();
@@ -50,21 +68,16 @@ export default function TriagePage() {
       void stats.refetch();
     },
   });
-  return (
-    <>
-      <TriageScreen state={state} />
-      {/* D35 — the persistent undo tray lives on the triage surface
-          across EVERY state (it must survive the queue emptying). The
-          (app) layout guarantees an active mailbox on this route. */}
-      {me.activeMailboxId != null && <TriageUndoTray />}
-    </>
-  );
+  return <TriageScreen state={state} />;
 }
 
 /** Human copy for each `connect_error` code the BE can redirect with. */
 const CONNECT_ERROR_COPY: Record<string, string> = {
-  MAILBOX_OWNED_BY_OTHER_WORKSPACE:
-    'That Gmail account is already connected to a different DeclutrMail workspace.',
+  MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
+  reconnect_account_mismatch:
+    'Google returned a different Gmail account. In Settings → Mailboxes, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
+  reconnect_target_invalid:
+    'That reconnect request is no longer valid. Try again from the reconnect banner or Settings.',
   connect_failed: 'Could not connect that Gmail account. Try again.',
 };
 

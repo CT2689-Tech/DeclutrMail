@@ -29,4 +29,9 @@ describe('llms.txt — marketing surface reconciliation', () => {
     const needle = route === '/' ? 'https://declutrmail.com/#' : `https://declutrmail.com${route}`;
     expect(LLMS_TXT).toContain(needle);
   });
+
+  it('states the in-progress CASA posture without claiming completed verification', () => {
+    expect(LLMS_TXT).toContain('CASA Tier 2 assessment cycle in progress');
+    expect(LLMS_TXT).not.toContain('CASA Tier 2 verification');
+  });
 });

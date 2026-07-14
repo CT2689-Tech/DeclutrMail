@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import type { DomainBatch } from './domain-batch';
@@ -28,6 +29,7 @@ export function BatchActionSheet({
   verb,
   batch,
   preview,
+  mailboxEmail,
   onCancel,
   onConfirm,
 }: {
@@ -36,23 +38,27 @@ export function BatchActionSheet({
   batch: DomainBatch | null;
   /** Aggregated preview — `null` while loading, `'unavailable'` on failure. */
   preview: BulkActionPreviewResult | 'loading' | 'unavailable';
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const confirmDisabled = preview === 'loading' || preview === 'unavailable';
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel, onConfirm]);
+  }, [open, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
@@ -65,8 +71,8 @@ export function BatchActionSheet({
       : `Move ${eligible.length} senders to Later`;
   const lead =
     verb === 'Archive'
-      ? `Every inbox message from these ${batch.domain} senders moves into Gmail's archive. Nothing is deleted, and one undo reverses the whole batch for 7 days.`
-      : `Inbox mail from these ${batch.domain} senders moves into the DeclutrMail/Later label — out of your way, one click away. One undo reverses the whole batch for 7 days.`;
+      ? `Matching inbox mail from these ${batch.domain} senders moves into Gmail's archive when the batch runs. Nothing is deleted, and one Activity undo reverses the whole batch during your plan's window.`
+      : `Matching inbox mail from these ${batch.domain} senders moves into DeclutrMail/Later when the batch runs. One Activity undo reverses the whole batch during your plan's window.`;
 
   return (
     <>
@@ -117,6 +123,7 @@ export function BatchActionSheet({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <MailboxActionContext mailboxEmail={mailboxEmail} />
           <div role="region" aria-label={`Preview · ${verb} ${batch.domain} batch`}>
             <h3 style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
               {title}
@@ -126,8 +133,8 @@ export function BatchActionSheet({
             </p>
           </div>
 
-          {/* Impact figure — the REAL aggregated count (D226), never a
-              client estimate. All four states rendered (D211). */}
+          {/* Current aggregated match count (D226), never a client
+              estimate. All four states rendered (D211). */}
           <div
             style={{
               display: 'flex',
@@ -143,7 +150,8 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                Couldn&rsquo;t load the live count — nothing changes until you confirm.
+                Couldn&rsquo;t load a live preview. Close and retry — no inbox mail can move without
+                one.
               </span>
             ) : (
               <>
@@ -160,10 +168,8 @@ export function BatchActionSheet({
                   {preview.totals.all.toLocaleString()}
                 </strong>
                 <span style={{ fontSize: 12, color: color.fgSoft }}>
-                  email{preview.totals.all === 1 ? '' : 's'} now in the inbox
-                  {preview.totals.all === 0
-                    ? ' — nothing to move.'
-                    : ' will move out of the inbox.'}
+                  email{preview.totals.all === 1 ? '' : 's'} currently match in Inbox. Gmail is
+                  checked again at execution, so the final moved count can change.
                 </span>
               </>
             )}
@@ -173,7 +179,7 @@ export function BatchActionSheet({
           {typeof preview === 'object' && (
             <div
               role="list"
-              aria-label="Per-sender impact"
+              aria-label="Current per-sender matches"
               style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
             >
               {preview.senders.map((s) => (
@@ -233,7 +239,11 @@ export function BatchActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            One undo reverses the whole batch — 7 days, from Activity.
+            {confirmDisabled
+              ? preview === 'unavailable'
+                ? 'Preview unavailable — close and retry before confirming.'
+                : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button tone="default" onClick={onCancel}>
@@ -241,6 +251,7 @@ export function BatchActionSheet({
             </Button>
             <Button
               tone="primary"
+              disabled={confirmDisabled}
               onClick={onConfirm}
               iconRight={
                 <Kbd

@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
@@ -10,7 +11,7 @@ import type { SyncService } from '../sync/sync.service.js';
 import type { TokenCryptoService } from './token-crypto.service.js';
 import type { SessionsService } from './sessions.service.js';
 import type { CsrfService } from './csrf.service.js';
-import type { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { EmailRaceLostError } from '../users/users.service.js';
 
 /**
  * AuthSignupOrchestrator.connect — identity resolution (Option 1,
@@ -40,8 +41,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
   let tokenCrypto: { encrypt: ReturnType<typeof vi.fn> };
   let sessions: { issue: ReturnType<typeof vi.fn> };
   let csrf: { issue: ReturnType<typeof vi.fn> };
-  let entitlements: { assertCanConnectMailbox: ReturnType<typeof vi.fn> };
-  let db: { transaction: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn> };
+  let db: { transaction: ReturnType<typeof vi.fn> };
   let orchestrator: AuthSignupOrchestrator;
 
   beforeEach(() => {
@@ -70,15 +70,11 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       issue: vi.fn().mockResolvedValue({ tokens: { accessToken: 'a' }, sessionId: 's' }),
     };
     csrf = { issue: vi.fn().mockReturnValue('csrf-token') };
-    entitlements = { assertCanConnectMailbox: vi.fn().mockResolvedValue(undefined) };
-    // `transaction(cb)` just runs the callback with a stub tx. `select`
-    // backs addMailbox's cross-workspace ownership probe — defaults to
-    // "no existing row" (no conflict); individual tests override it.
+    // `transaction(cb)` just runs the callback with a stub tx. The mailbox
+    // service mock backs both identity resolution and addMailbox's early
+    // ownership/status fast-fail.
     db = {
       transaction: vi.fn(async (cb: (tx: unknown) => unknown) => cb({})),
-      select: vi.fn(() => ({
-        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
-      })),
     };
 
     orchestrator = new AuthSignupOrchestrator(
@@ -90,7 +86,6 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       tokenCrypto as unknown as TokenCryptoService,
       sessions as unknown as SessionsService,
       csrf as unknown as CsrfService,
-      entitlements as unknown as EntitlementsService,
     );
   });
 
@@ -114,10 +109,29 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w1', userId: 'u1' }),
     );
+    expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+      freshCredentials: true,
+    });
     // Active mailbox set to the just-connected mailbox.
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
     // `users.watch` fires on connect/reconnect (D8/D225/D229).
     expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
+  });
+
+  it('canonicalizes the Gmail identity before any connect lookup or persistence', async () => {
+    users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+
+    const result = await orchestrator.connect({
+      ...INPUT,
+      email: '  Me@Example.COM  ',
+    });
+
+    expect(users.findByEmail).toHaveBeenCalledWith('me@example.com');
+    expect(mailboxes.upsertConnect).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ email: 'me@example.com' }),
+    );
+    expect(result.user.email).toBe('me@example.com');
   });
 
   it('resolves into the home workspace when the email was connected as a secondary mailbox', async () => {
@@ -159,6 +173,112 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     expect(mailboxes.upsertConnect).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w-new', userId: 'u-new' }),
+    );
+  });
+
+  it('rolls back a losing bootstrap with its mailbox write and follows the provider winner', async () => {
+    const bootstrapTx = { name: 'bootstrap-tx' };
+    const winnerTx = { name: 'winner-tx' };
+    users.findByEmail.mockResolvedValue(null);
+    mailboxes.findByProviderEmail.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      mailboxId: 'mailbox-winner',
+      workspaceId: 'w-winner',
+      userId: 'u-winner',
+    });
+    users.insertWorkspaceAndUser.mockResolvedValue({
+      userId: 'u-provisional',
+      workspaceId: 'w-provisional',
+    });
+    db.transaction
+      .mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(bootstrapTx))
+      .mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(winnerTx));
+    mailboxes.upsertConnect
+      .mockRejectedValueOnce(new ConflictException({ code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' }))
+      .mockResolvedValueOnce({ id: 'mailbox-winner' });
+
+    const result = await orchestrator.connect(INPUT);
+
+    // The provisional workspace/user and its mailbox attempt share one
+    // transaction. A provider-identity loss therefore rolls all three
+    // records back instead of committing an orphan login workspace.
+    expect(users.insertWorkspaceAndUser).toHaveBeenCalledWith(bootstrapTx, INPUT.email);
+    expect(mailboxes.upsertConnect).toHaveBeenNthCalledWith(
+      1,
+      bootstrapTx,
+      expect.objectContaining({
+        workspaceId: 'w-provisional',
+        userId: 'u-provisional',
+      }),
+    );
+    expect(mailboxes.upsertConnect).toHaveBeenNthCalledWith(
+      2,
+      winnerTx,
+      expect.objectContaining({ workspaceId: 'w-winner', userId: 'u-winner' }),
+    );
+    expect(result).toMatchObject({
+      isNewSignup: false,
+      user: { id: 'u-winner', workspaceId: 'w-winner' },
+      mailbox: { id: 'mailbox-winner' },
+    });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u-winner', {
+      activeMailboxId: 'mailbox-winner',
+    });
+    expect(sessions.issue).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'u-winner', workspaceId: 'w-winner' }),
+    );
+  });
+
+  it('keeps users.email race recovery atomic and persists into the winning signup', async () => {
+    const losingTx = { name: 'losing-user-tx' };
+    const winnerTx = { name: 'winning-user-tx' };
+    users.findByEmail.mockResolvedValueOnce(null);
+    mailboxes.findByProviderEmail.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      mailboxId: 'mailbox-winner',
+      workspaceId: 'w-winner',
+      userId: 'u-winner',
+    });
+    users.insertWorkspaceAndUser.mockRejectedValueOnce(new EmailRaceLostError());
+    db.transaction
+      .mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(losingTx))
+      .mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(winnerTx));
+
+    const result = await orchestrator.connect(INPUT);
+
+    expect(users.insertWorkspaceAndUser).toHaveBeenCalledWith(losingTx, INPUT.email);
+    expect(mailboxes.upsertConnect).toHaveBeenCalledWith(
+      winnerTx,
+      expect.objectContaining({ workspaceId: 'w-winner', userId: 'u-winner' }),
+    );
+    expect(result).toMatchObject({
+      isNewSignup: true,
+      user: { id: 'u-winner', workspaceId: 'w-winner' },
+    });
+  });
+
+  it('recovers a historical orphan user by following the provider-owned workspace on login', async () => {
+    users.findByEmail.mockResolvedValue({ userId: 'u-orphan', workspaceId: 'w-orphan' });
+    mailboxes.findByProviderEmail.mockResolvedValue({
+      mailboxId: 'mailbox-winner',
+      workspaceId: 'w-winner',
+      userId: 'u-winner',
+    });
+    mailboxes.upsertConnect
+      .mockRejectedValueOnce(new ConflictException({ code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' }))
+      .mockResolvedValueOnce({ id: 'mailbox-winner' });
+
+    const result = await orchestrator.connect(INPUT);
+
+    expect(mailboxes.findByProviderEmail).toHaveBeenCalledWith(INPUT.email);
+    expect(mailboxes.upsertConnect).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workspaceId: 'w-winner', userId: 'u-winner' }),
+    );
+    expect(result).toMatchObject({
+      isNewSignup: false,
+      user: { id: 'u-winner', workspaceId: 'w-winner' },
+    });
+    expect(sessions.issue).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'u-winner', workspaceId: 'w-winner' }),
     );
   });
 
@@ -256,7 +376,9 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
         expect.anything(),
         expect.objectContaining({ workspaceId: 'w-home', userId: 'u-owner' }),
       );
-      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new');
+      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        freshCredentials: true,
+      });
       // force-replace any stale pre-reconnect job (fresh token just stored).
       expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
       // The keystone fix: the new mailbox becomes the active preference,
@@ -270,13 +392,21 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
     });
 
+    it('canonicalizes the Gmail identity before add-mailbox lookup and persistence', async () => {
+      await orchestrator.addMailbox({ ...ADD_INPUT, email: '  Second@Example.COM  ' });
+
+      expect(mailboxes.upsertConnect).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ email: 'second@example.com' }),
+      );
+    });
+
     it('rejects a Gmail already owned by a different workspace without touching preferences', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve([{ id: 'mailbox-x', workspaceId: 'w-other' }]),
-          }),
-        }),
+      mailboxes.findByProviderEmail.mockResolvedValueOnce({
+        mailboxId: 'mailbox-x',
+        workspaceId: 'w-other',
+        userId: 'u-other',
+        status: 'active',
       });
 
       await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow();
@@ -284,34 +414,22 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(users.patchPreferences).not.toHaveBeenCalled();
     });
 
-    it('enforces the inbox limit at the activation boundary for a NEW connection', async () => {
-      // Default select → no existing row → a brand-new account that
-      // transitions a row to active, so the limit MUST be checked.
-      await orchestrator.addMailbox(ADD_INPUT);
-      expect(entitlements.assertCanConnectMailbox).toHaveBeenCalledWith('w-home');
-    });
+    it.each(['active', 'disconnected'] as const)(
+      'delegates a same-workspace %s callback to the transactional activation gate',
+      async (status) => {
+        mailboxes.findByProviderEmail.mockResolvedValueOnce({
+          mailboxId: 'mailbox-b',
+          workspaceId: 'w-home',
+          userId: 'u-owner',
+          status,
+        });
 
-    it('402s at the limit — no token encryption, no upsert, no preference write', async () => {
-      entitlements.assertCanConnectMailbox.mockRejectedValueOnce(new Error('INBOX_LIMIT_REACHED'));
-      await expect(orchestrator.addMailbox(ADD_INPUT)).rejects.toThrow('INBOX_LIMIT_REACHED');
-      expect(tokenCrypto.encrypt).not.toHaveBeenCalled();
-      expect(mailboxes.upsertConnect).not.toHaveBeenCalled();
-      expect(users.patchPreferences).not.toHaveBeenCalled();
-    });
-
-    it('skips the limit check for an already-active reconnect (no new slot consumed)', async () => {
-      db.select.mockReturnValueOnce({
-        from: () => ({
-          where: () => ({
-            limit: () =>
-              Promise.resolve([{ id: 'mailbox-b', workspaceId: 'w-home', status: 'active' }]),
-          }),
-        }),
-      });
-      const result = await orchestrator.addMailbox(ADD_INPUT);
-      expect(result).toEqual({ mailboxId: 'mailbox-new' });
-      expect(entitlements.assertCanConnectMailbox).not.toHaveBeenCalled();
-      expect(mailboxes.upsertConnect).toHaveBeenCalled();
-    });
+        await expect(orchestrator.addMailbox(ADD_INPUT)).resolves.toEqual({
+          mailboxId: 'mailbox-new',
+        });
+        expect(tokenCrypto.encrypt).toHaveBeenCalled();
+        expect(mailboxes.upsertConnect).toHaveBeenCalled();
+      },
+    );
   });
 });

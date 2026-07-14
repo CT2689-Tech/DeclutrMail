@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   ConflictException,
   Inject,
@@ -28,7 +30,10 @@ import {
   TriageVerdictAppliedPayloadSchema,
 } from '@declutrmail/events';
 
-import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import {
+  EntitlementsService,
+  type EntitlementsExecutor,
+} from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
@@ -79,6 +84,16 @@ export const OUTBOX_PUBLISHER_TOKEN = 'OUTBOX_PUBLISHER';
  * not Gmail, and runs a tighter retry budget.
  */
 export const UNSUB_QUEUE_TOKEN = 'UNSUB_QUEUE';
+
+/**
+ * Stable BullMQ identity for an undo capability. The UUID remains in
+ * the DB rows that execute the revert, but never appears in Redis job
+ * metadata or operational logs. UUID entropy makes this SHA-256
+ * projection non-reversible while preserving cross-restart dedup.
+ */
+export function reverseQueueJobId(token: string): string {
+  return `revert-${createHash('sha256').update(`declutrmail:undo:v1:${token}`).digest('hex')}`;
+}
 
 @Injectable()
 export class ActionsService {
@@ -131,6 +146,14 @@ export class ActionsService {
     idempotencyKey: string;
     override: boolean;
   }): Promise<ActionEnqueueResult> {
+    const { mailboxAccountId, selector, idempotencyKey, override } = input;
+    if (selector.type === 'messages') {
+      // An explicit message-id set is a bulk invocation even when it
+      // happens to contain one id. Treat it as the registry's
+      // multi-sender selector before resolving ownership so Free cannot
+      // bypass the Plus workflow with a handcrafted payload.
+      await this.entitlements.assertActionSelectorTier(mailboxAccountId, 'archive', 'multi-sender');
+    }
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -138,17 +161,10 @@ export class ActionsService {
       });
     }
 
-    const { mailboxAccountId, selector, idempotencyKey, override } = input;
-
     // D19/D77 free-cleanup cap — ONE unit (one sender / one frozen
-    // message set, one click). Checked only for a FRESH enqueue: a
-    // network-retried click whose key row already exists replays the
-    // prior action (its unit was already consumed) and must not 402.
-    // The counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    // message set, one click). The storage key is resolved before the
+    // target set, then replay/capacity/insert are serialized below.
     const archiveStorageKey = `archive-${idempotencyKey.replace(/:/g, '-')}`;
-    if (!(await this.hasJobWithKey(archiveStorageKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
-    }
 
     let storedSelector: LabelActionSelector;
     let resolvedMessageIds: string[];
@@ -210,13 +226,26 @@ export class ActionsService {
     // client-supplied key is normalized out. (Computed above for the
     // free-cap replay check.)
     const storageKey = archiveStorageKey;
-    const inserted = await this.insertJob({
-      mailboxAccountId,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds,
-      requestedCount,
-      idempotencyKey: storageKey,
+    const inserted = await this.db.transaction(async (tx) => {
+      // Serialize every finite-tier cleanup request on the WORKSPACE row,
+      // then recheck the globally-unique key after waiting for the lock.
+      // A same-key retry projects the existing action before quota; a
+      // foreign-mailbox reuse still reaches insertJob's structured 409.
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(storageKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+      }
+      return this.insertJob(
+        {
+          mailboxAccountId,
+          direction: 'forward',
+          selector: storedSelector,
+          resolvedMessageIds,
+          requestedCount,
+          idempotencyKey: storageKey,
+        },
+        tx,
+      );
     });
     // Idempotent repeat — the row already existed; return it as-is.
     if (inserted.existing) {
@@ -409,7 +438,8 @@ export class ActionsService {
         olderThan180d: counts?.recent180d ?? [],
         olderThan365d: counts?.recent365d ?? [],
       },
-      unsubAvailable: sender.unsubscribeMethod !== null,
+      unsubAvailable:
+        sender.unsubscribeMethod === 'one_click' || sender.unsubscribeMethod === 'mailto',
       protected: Boolean(policy?.isProtected || policy?.isVip),
     };
   }
@@ -453,6 +483,24 @@ export class ActionsService {
     idempotencyKey: string;
     override: boolean;
   }): Promise<CompositeActionEnqueueResult> {
+    const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+    if (selector.type === 'messages') {
+      // Message-id selectors are bulk capability, not a Free
+      // single-sender action. Enforce every verb before resolving ids or
+      // writing either half of a composite.
+      await this.entitlements.assertActionSelectorTier(
+        mailboxAccountId,
+        primary.type,
+        'multi-sender',
+      );
+      if (secondary) {
+        await this.entitlements.assertActionSelectorTier(
+          mailboxAccountId,
+          secondary.type,
+          'multi-sender',
+        );
+      }
+    }
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
@@ -460,18 +508,14 @@ export class ActionsService {
       });
     }
 
-    const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
-
     // D19/D77 free-cleanup cap — a composite (primary + optional
-    // secondary on ONE sender, one click) is ONE unit. Fresh enqueues
-    // only: when the primary's key row already exists this is an
-    // idempotent replay whose unit was already consumed. The counting
-    // rule lives on `EntitlementsService.cleanupUnitsUsed`.
+    // secondary on ONE sender, one click) is ONE unit. Resolve its keys
+    // and target counts before opening the short write transaction; the
+    // transaction below serializes replay/capacity/insert on the workspace
+    // row. The counting rule lives on
+    // `EntitlementsService.cleanupUnitsUsed`.
     const safeKey = idempotencyKey.replace(/:/g, '-');
     const primaryStorageKey = `${primary.type}-${safeKey}`;
-    if (!(await this.hasJobWithKey(primaryStorageKey))) {
-      await this.entitlements.assertCleanupCapacity(mailboxAccountId, 1);
-    }
 
     // Resolve target set + ownership ONCE for the sender selector — both
     // primary and secondary act on the same sender / same selector. The
@@ -525,42 +569,13 @@ export class ActionsService {
       storedSelector = { type: 'messages' };
     }
 
-    const primaryRow = await this.insertJob({
-      mailboxAccountId,
-      verb: primary.type,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds,
-      requestedCount: primaryCount,
-      idempotencyKey: primaryStorageKey,
-      olderThanDays: primary.olderThanDays ?? null,
-    });
-
-    if (!primaryRow.existing) {
-      await this.enqueueJob(primaryRow.row.id, mailboxAccountId, primaryStorageKey);
-    }
-
-    if (!secondary) {
-      return {
-        actionId: primaryRow.row.id,
-        // Single-verb: per the wire contract, `compositeId` mirrors
-        // `actionId` so the FE can carry it uniformly through undo
-        // (cascade-undo on a single-row composite is a no-op join).
-        compositeId: primaryRow.row.id,
-        secondaryId: null,
-        status: primaryRow.row.status,
-        primaryCount: primaryRow.row.requestedCount,
-        secondaryCount: null,
-      };
-    }
-
     // Secondary acts on the SAME sender / messages selector but with its
     // own time-window. Re-resolve the count for the secondary's window;
     // resolved ids stay empty for sender selector (worker handles), and
     // for messages selector the secondary shares the primary's frozen set.
-    const secondaryStorageKey = `${secondary.type}-${safeKey}-sec`;
-    let secondaryCount: number;
-    if (selector.type === 'sender') {
+    const secondaryStorageKey = secondary ? `${secondary.type}-${safeKey}-sec` : null;
+    let secondaryCount: number | null = null;
+    if (secondary && selector.type === 'sender') {
       // The sender selector already resolved the senderKey above; reuse it
       // via the stored selector.
       const senderSel = storedSelector as Extract<LabelActionSelector, { type: 'sender' }>;
@@ -569,33 +584,94 @@ export class ActionsService {
         senderSel.senderKey,
         secondary.olderThanDays ?? null,
       );
-    } else {
+    } else if (secondary) {
       secondaryCount = resolvedMessageIds.length;
     }
 
-    const secondaryRow = await this.insertJob({
-      mailboxAccountId,
-      verb: secondary.type,
-      direction: 'forward',
-      selector: storedSelector,
-      resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
-      requestedCount: secondaryCount,
-      idempotencyKey: secondaryStorageKey,
-      olderThanDays: secondary.olderThanDays ?? null,
-      compositeId: primaryRow.row.id,
+    // The workspace lock remains held through BOTH inserts. That makes a
+    // fresh composite one atomic quota-consuming write: no concurrent
+    // request can claim the same final Free slot, and a secondary insert
+    // failure rolls the primary back with it. Queueing is deliberately
+    // outside the transaction so workers never observe an uncommitted
+    // sibling.
+    const persisted = await this.db.transaction(async (tx) => {
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
+        await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+      }
+
+      const primaryRow = await this.insertJob(
+        {
+          mailboxAccountId,
+          verb: primary.type,
+          direction: 'forward',
+          selector: storedSelector,
+          resolvedMessageIds,
+          requestedCount: primaryCount,
+          idempotencyKey: primaryStorageKey,
+          olderThanDays: primary.olderThanDays ?? null,
+        },
+        tx,
+      );
+
+      const secondaryRow =
+        secondary && secondaryStorageKey && secondaryCount !== null
+          ? await this.insertJob(
+              {
+                mailboxAccountId,
+                verb: secondary.type,
+                direction: 'forward',
+                selector: storedSelector,
+                resolvedMessageIds: selector.type === 'messages' ? resolvedMessageIds : [],
+                requestedCount: secondaryCount,
+                idempotencyKey: secondaryStorageKey,
+                olderThanDays: secondary.olderThanDays ?? null,
+                compositeId: primaryRow.row.id,
+              },
+              tx,
+            )
+          : null;
+
+      return { primaryRow, secondaryRow };
     });
 
-    if (!secondaryRow.existing) {
-      await this.enqueueJob(secondaryRow.row.id, mailboxAccountId, secondaryStorageKey);
+    // Start every fresh enqueue even if a sibling enqueue rejects. Waiting
+    // with allSettled prevents an early failure from stranding a committed
+    // fresh row without an enqueue attempt.
+    const freshRows = [
+      !persisted.primaryRow.existing
+        ? {
+            actionId: persisted.primaryRow.row.id,
+            idempotencyKey: primaryStorageKey,
+          }
+        : null,
+      persisted.secondaryRow && !persisted.secondaryRow.existing && secondaryStorageKey
+        ? {
+            actionId: persisted.secondaryRow.row.id,
+            idempotencyKey: secondaryStorageKey,
+          }
+        : null,
+    ].filter((row): row is { actionId: string; idempotencyKey: string } => row !== null);
+    const enqueueResults = await Promise.allSettled(
+      freshRows.map((row) => this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey)),
+    );
+    const enqueueFailure = enqueueResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (enqueueFailure) {
+      throw enqueueFailure.reason;
     }
 
     return {
-      actionId: primaryRow.row.id,
-      compositeId: primaryRow.row.id,
-      secondaryId: secondaryRow.row.id,
-      status: primaryRow.row.status,
-      primaryCount: primaryRow.row.requestedCount,
-      secondaryCount: secondaryRow.row.requestedCount,
+      actionId: persisted.primaryRow.row.id,
+      // Single-verb: per the wire contract, `compositeId` mirrors
+      // `actionId` so the FE can carry it uniformly through undo
+      // (cascade-undo on a single-row composite is a no-op join).
+      compositeId: persisted.primaryRow.row.id,
+      secondaryId: persisted.secondaryRow?.row.id ?? null,
+      status: persisted.primaryRow.row.status,
+      primaryCount: persisted.primaryRow.row.requestedCount,
+      secondaryCount: persisted.secondaryRow?.row.requestedCount ?? null,
     };
   }
 
@@ -619,6 +695,11 @@ export class ActionsService {
     senderIds: string[];
   }): Promise<BulkActionPreviewResult> {
     const { mailboxAccountId } = input;
+    // The preview is verb-agnostic on the existing strict wire contract.
+    // A registry invariant pins every current composite primary's
+    // multi-sender tier to Archive's tier (Plus); enqueue below still
+    // enforces the exact primary + secondary verbs independently.
+    await this.entitlements.assertActionSelectorTier(mailboxAccountId, 'archive', 'multi-sender');
     const uniqueIds = [...new Set(input.senderIds)];
     const rows = await this.db
       .select({
@@ -739,13 +820,25 @@ export class ActionsService {
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
   }): Promise<BulkActionEnqueueResult> {
+    const { mailboxAccountId, primary, secondary, idempotencyKey } = input;
+    await this.entitlements.assertActionSelectorTier(
+      mailboxAccountId,
+      primary.type,
+      'multi-sender',
+    );
+    if (secondary) {
+      await this.entitlements.assertActionSelectorTier(
+        mailboxAccountId,
+        secondary.type,
+        'multi-sender',
+      );
+    }
     if (!this.queue) {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
         message: 'Action queue unavailable — REDIS_URL is not set.',
       });
     }
-    const { mailboxAccountId, primary, secondary, idempotencyKey } = input;
 
     // Sorted + deduped — the anchor must be deterministic across a
     // network-retried POST with the same Idempotency-Key.
@@ -1033,8 +1126,10 @@ export class ActionsService {
     mailboxAccountId: string;
     senderId: string;
     idempotencyKey: string;
+    /** Separate backlog Archive/Delete will follow this same confirmation. */
+    includesBacklogAction?: boolean;
   }): Promise<UnsubscribeIntentResult> {
-    const { mailboxAccountId, senderId, idempotencyKey } = input;
+    const { mailboxAccountId, senderId, idempotencyKey, includesBacklogAction = false } = input;
     const [senderRow] = await this.db
       .select({
         senderKey: senders.senderKey,
@@ -1061,6 +1156,62 @@ export class ActionsService {
           ? 'mailto'
           : 'none';
     const mailtoUrl = method === 'mailto' ? senderRow.unsubscribeUrl : null;
+
+    // The intent and its optional execution each have a globally-unique
+    // storage key. Before projecting a cached response, bind BOTH rows
+    // to the authenticated mailbox + resolved sender. A key used by a
+    // different mailbox/sender is a conflict, never a cache miss: the
+    // latter would write a local policy/activity/outbox row and could
+    // leak the foreign action ids/timestamps back to this caller.
+    const namespacedKey = `unsub:${idempotencyKey}`;
+    // `-` separator because the execution key doubles as the BullMQ
+    // jobId (BullMQ rejects ':' in custom ids).
+    const executionKey = `unsubexec-${idempotencyKey.replace(/:/g, '-')}`;
+    type UnsubscribeKeyOwner = {
+      idempotencyKey: string;
+      mailboxAccountId: string;
+      selector: LabelActionSelector;
+      verb: (typeof actionJobs.$inferSelect)['verb'];
+    };
+    const idempotencyConflict = (): ConflictException =>
+      new ConflictException({
+        code: 'IDEMPOTENCY_KEY_CONFLICT',
+        message: 'Idempotency-Key already used by a different request.',
+      });
+    const belongsToThisRequest = (row: UnsubscribeKeyOwner): boolean =>
+      row.mailboxAccountId === mailboxAccountId &&
+      row.verb === 'unsubscribe' &&
+      row.selector.type === 'sender' &&
+      row.selector.senderId === senderId &&
+      row.selector.senderKey === senderKey;
+    const assertKeyOwners = (rows: UnsubscribeKeyOwner[]): void => {
+      const intentOwner = rows.find((row) => row.idempotencyKey === namespacedKey);
+      const executionOwner = rows.find((row) => row.idempotencyKey === executionKey);
+      if (intentOwner && !belongsToThisRequest(intentOwner)) {
+        throw idempotencyConflict();
+      }
+      // An execution without this intent belongs to another raw client
+      // key (the colon-to-dash transform is intentionally defensive but
+      // not injective). Never attach that handle to a fresh intent.
+      if (executionOwner && (!belongsToThisRequest(executionOwner) || intentOwner === undefined)) {
+        throw idempotencyConflict();
+      }
+    };
+
+    // This deliberately-global probe selects ownership/selector only —
+    // never response ids/timestamps. The actual cached projections
+    // below are mailbox-scoped. Repeating the check inside the write
+    // transaction closes the race between this probe and reservation.
+    const occupiedKeys = await this.db
+      .select({
+        idempotencyKey: actionJobs.idempotencyKey,
+        mailboxAccountId: actionJobs.mailboxAccountId,
+        selector: actionJobs.selector,
+        verb: actionJobs.verb,
+      })
+      .from(actionJobs)
+      .where(inArray(actionJobs.idempotencyKey, [namespacedKey, executionKey]));
+    assertKeyOwners(occupiedKeys);
 
     // Fail BEFORE any write when the execution can't be enqueued —
     // recording a 'pending' status with no job behind it would be the
@@ -1093,22 +1244,27 @@ export class ActionsService {
     //   - selector={type:'sender', senderId, senderKey} — same shape as
     //     the worker-driven verbs use, so /api/actions/:id readers don't
     //     need a special case.
-    const namespacedKey = `unsub:${idempotencyKey}`;
-    // The execution row's key derives from the SAME client key — a
-    // retried POST resolves to the same execution (one per intent).
-    // `-` separator because the key doubles as the BullMQ jobId
-    // (BullMQ rejects ':' in custom ids).
-    const executionKey = `unsubexec-${idempotencyKey.replace(/:/g, '-')}`;
     const cachedRows = await this.db
       .select({
         resolvedMessageIds: actionJobs.resolvedMessageIds,
         createdAt: actionJobs.createdAt,
       })
       .from(actionJobs)
-      .where(eq(actionJobs.idempotencyKey, namespacedKey))
+      .where(
+        and(
+          eq(actionJobs.idempotencyKey, namespacedKey),
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+        ),
+      )
       .limit(1);
-    if (cachedRows.length > 0 && cachedRows[0]!.resolvedMessageIds.length > 0) {
+    if (cachedRows.length > 0) {
       const cached = cachedRows[0]!;
+      // A committed intent is populated in the same transaction as its
+      // activity row. Empty means corrupt/incomplete state; fail closed
+      // rather than treating an occupied key as a fresh request.
+      if (cached.resolvedMessageIds.length === 0) {
+        throw idempotencyConflict();
+      }
       // Project the cached activity_log id back into the response shape.
       // The replay path keeps the original `recordedAt` so the FE timeline
       // doesn't drift if a slow retry lands days later.
@@ -1118,7 +1274,12 @@ export class ActionsService {
       const [execution] = await this.db
         .select({ id: actionJobs.id, status: actionJobs.status })
         .from(actionJobs)
-        .where(eq(actionJobs.idempotencyKey, executionKey))
+        .where(
+          and(
+            eq(actionJobs.idempotencyKey, executionKey),
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          ),
+        )
         .limit(1);
       if (method === 'one_click' && execution && execution.status === 'queued') {
         // Crash-window self-heal: the original request can commit the
@@ -1142,6 +1303,173 @@ export class ActionsService {
     }
 
     const txResult = await this.db.transaction(async (tx) => {
+      // Finite cleanup quotas are serialized per workspace. Re-check
+      // both deterministic keys after acquiring the lock so a request
+      // that waited behind the original commit replays before quota is
+      // evaluated. Keep the lock through the consuming intent insert.
+      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      const lockedOwners = await tx
+        .select({
+          idempotencyKey: actionJobs.idempotencyKey,
+          mailboxAccountId: actionJobs.mailboxAccountId,
+          selector: actionJobs.selector,
+          verb: actionJobs.verb,
+        })
+        .from(actionJobs)
+        .where(inArray(actionJobs.idempotencyKey, [namespacedKey, executionKey]));
+      assertKeyOwners(lockedOwners);
+
+      const [lockedCachedIntent] = await tx
+        .select({
+          resolvedMessageIds: actionJobs.resolvedMessageIds,
+          createdAt: actionJobs.createdAt,
+        })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.idempotencyKey, namespacedKey),
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          ),
+        )
+        .limit(1);
+      if (lockedCachedIntent) {
+        if (lockedCachedIntent.resolvedMessageIds.length === 0) {
+          throw idempotencyConflict();
+        }
+        const [lockedCachedExecution] = await tx
+          .select({ id: actionJobs.id, status: actionJobs.status })
+          .from(actionJobs)
+          .where(
+            and(
+              eq(actionJobs.idempotencyKey, executionKey),
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            ),
+          )
+          .limit(1);
+        return {
+          kind: 'replay' as const,
+          recordedAt: lockedCachedIntent.createdAt.toISOString(),
+          activityLogId: lockedCachedIntent.resolvedMessageIds[0]!,
+          executionActionId: lockedCachedExecution?.id ?? null,
+          executionStatus: lockedCachedExecution?.status ?? null,
+        };
+      }
+
+      // D19 Free taste: an actionable Unsubscribe is one cleanup
+      // decision. No-channel preferences consume no unit. The optional
+      // backlog hint preflights two available units under this lock, but
+      // it does not reserve the second unit for the later Archive/Delete
+      // request; a durable guarantee would require a reservation ledger.
+      // Only the `unsub:*` intent row counts — not `unsubexec-*`.
+      if (method !== 'none') {
+        await this.entitlements.assertCleanupCapacityForWorkspace(
+          workspace,
+          includesBacklogAction ? 2 : 1,
+          tx,
+        );
+      }
+
+      // Reserve the globally-unique intent key BEFORE any policy,
+      // activity, outbox, or execution write. If another request won
+      // the race after the ownership probe above, the unique-index
+      // conflict becomes either a same-request replay or a 409; the
+      // losing request never creates local side effects.
+      const [intentReservation] = await tx
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey },
+          resolvedMessageIds: [],
+          requestedCount: 0,
+          affectedCount: 0,
+          // No-channel is a durable, replayable preference but not a
+          // successful cleanup unit; the entitlement counter excludes
+          // failed rows. Normal one-click/mailto intent rows are done.
+          status: method === 'none' ? 'failed' : 'done',
+          idempotencyKey: namespacedKey,
+        })
+        .onConflictDoNothing({ target: actionJobs.idempotencyKey })
+        .returning({ id: actionJobs.id });
+
+      if (!intentReservation) {
+        // The outer probe raced another transaction. Re-check only key
+        // ownership globally, then project cached ids/timestamps through
+        // mailbox-scoped reads. A foreign mailbox/sender fails before
+        // this transaction has written anything.
+        const racedOwners = await tx
+          .select({
+            idempotencyKey: actionJobs.idempotencyKey,
+            mailboxAccountId: actionJobs.mailboxAccountId,
+            selector: actionJobs.selector,
+            verb: actionJobs.verb,
+          })
+          .from(actionJobs)
+          .where(inArray(actionJobs.idempotencyKey, [namespacedKey, executionKey]));
+        assertKeyOwners(racedOwners);
+
+        const [cachedIntent] = await tx
+          .select({
+            resolvedMessageIds: actionJobs.resolvedMessageIds,
+            createdAt: actionJobs.createdAt,
+          })
+          .from(actionJobs)
+          .where(
+            and(
+              eq(actionJobs.idempotencyKey, namespacedKey),
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            ),
+          )
+          .limit(1);
+        if (!cachedIntent || cachedIntent.resolvedMessageIds.length === 0) {
+          throw idempotencyConflict();
+        }
+        const [cachedExecution] = await tx
+          .select({ id: actionJobs.id, status: actionJobs.status })
+          .from(actionJobs)
+          .where(
+            and(
+              eq(actionJobs.idempotencyKey, executionKey),
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            ),
+          )
+          .limit(1);
+        return {
+          kind: 'replay' as const,
+          recordedAt: cachedIntent.createdAt.toISOString(),
+          activityLogId: cachedIntent.resolvedMessageIds[0]!,
+          executionActionId: cachedExecution?.id ?? null,
+          executionStatus: cachedExecution?.status ?? null,
+        };
+      }
+
+      // Reserve the optional execution key in the same transaction and
+      // before user-visible writes. Because this transaction owns a new
+      // intent reservation, an execution-key conflict can only belong to
+      // another raw request (including a colon-to-dash key collision).
+      let executionActionId: string | null = null;
+      if (method === 'one_click') {
+        const [executionReservation] = await tx
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId,
+            verb: 'unsubscribe',
+            direction: 'forward',
+            selector: { type: 'sender', senderId, senderKey },
+            resolvedMessageIds: [],
+            requestedCount: 1,
+            status: 'queued',
+            idempotencyKey: executionKey,
+          })
+          .onConflictDoNothing({ target: actionJobs.idempotencyKey })
+          .returning({ id: actionJobs.id });
+        if (!executionReservation) {
+          throw idempotencyConflict();
+        }
+        executionActionId = executionReservation.id;
+      }
+
       // D204 boundary fix (2026-06-06). `sender_policies` is owned by
       // the senders feature, so ActionsService MUST NOT write it
       // directly. We emit an outbox event inside this same transaction;
@@ -1203,58 +1531,18 @@ export class ActionsService {
         throw new Error('activity_log insert returned no row');
       }
 
-      // Persist the dedup partner — `idempotency_key=namespacedKey,
-      // verb='unsubscribe', status='done'`, with the activity_log id
-      // cached on `resolved_message_ids` so a replay can project it
-      // back into the response without re-writing the audit row.
-      //
-      // ON CONFLICT (idempotency_key) DO NOTHING handles the race where
-      // two concurrent requests with the same key both pass the
-      // cache-miss read above; the second insert is a no-op and the
-      // second caller's response is computed from the just-inserted
-      // activity_log row (their tx already committed it). Two rows in
-      // activity_log is the small, accepted cost of a true race; the
-      // common case (sequential retry) sees one row total.
+      // Complete the reserved dedup row with the activity id. The row is
+      // uncommitted until this whole transaction succeeds, so a racing
+      // replay can never observe an empty cached projection.
       await tx
-        .insert(actionJobs)
-        .values({
-          mailboxAccountId,
-          verb: 'unsubscribe',
-          direction: 'forward',
-          selector: { type: 'sender', senderId, senderKey },
-          resolvedMessageIds: [inserted.id],
-          requestedCount: 0,
-          affectedCount: 0,
-          status: 'done',
-          idempotencyKey: namespacedKey,
-        })
-        .onConflictDoNothing({ target: actionJobs.idempotencyKey });
-
-      // D9 Wave 2 — the EXECUTION row (one_click only). Distinct from
-      // the dedup row above: this one has a worker behind it.
-      // `status='queued'`; `UnsubExecutionWorker` flips it terminal.
-      // `requested_count=1` — an unsub acts on ONE sender, not on
-      // messages. Same-tx as the intent so the audit row and the job
-      // commit or roll back together; the BullMQ enqueue happens after
-      // commit (below) like every other producer path.
-      let executionActionId: string | null = null;
-      if (method === 'one_click') {
-        const [executionRow] = await tx
-          .insert(actionJobs)
-          .values({
-            mailboxAccountId,
-            verb: 'unsubscribe',
-            direction: 'forward',
-            selector: { type: 'sender', senderId, senderKey },
-            resolvedMessageIds: [],
-            requestedCount: 1,
-            status: 'queued',
-            idempotencyKey: executionKey,
-          })
-          .onConflictDoNothing({ target: actionJobs.idempotencyKey })
-          .returning({ id: actionJobs.id });
-        executionActionId = executionRow?.id ?? null;
-      }
+        .update(actionJobs)
+        .set({ resolvedMessageIds: [inserted.id] })
+        .where(
+          and(
+            eq(actionJobs.id, intentReservation.id),
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          ),
+        );
 
       // D204 boundary fix — emit the cross-feature signal. The senders-
       // owned consumer reads this and upserts sender_policies. Inside
@@ -1277,25 +1565,24 @@ export class ActionsService {
       });
 
       return {
+        kind: 'fresh' as const,
         recordedAt: inserted.occurredAt.toISOString(),
         activityLogId: inserted.id,
         executionActionId,
+        executionStatus: method === 'one_click' ? ('queued' as const) : null,
       };
     });
 
-    let executionActionId = txResult.executionActionId;
-    if (method === 'one_click' && executionActionId === null) {
-      // True concurrent race: another request with the same key won the
-      // execution-row insert (`onConflictDoNothing` returned no row).
-      // Re-project the winner's handle; its enqueue (BullMQ jobId
-      // dedup) covers ours.
-      const [winner] = await this.db
-        .select({ id: actionJobs.id })
-        .from(actionJobs)
-        .where(eq(actionJobs.idempotencyKey, executionKey))
-        .limit(1);
-      executionActionId = winner?.id ?? null;
-    } else if (executionActionId) {
+    const executionActionId = txResult.executionActionId;
+    if (
+      method === 'one_click' &&
+      executionActionId !== null &&
+      txResult.executionStatus === 'queued'
+    ) {
+      // Fresh requests enqueue once after commit. A transaction-race
+      // replay also re-adds a still-queued execution to heal the same
+      // commit-before-Redis crash window as the fast replay path above;
+      // BullMQ jobId dedup keeps the happy path single-execution.
       await this.enqueueUnsubExecution(
         executionActionId,
         mailboxAccountId,
@@ -1636,7 +1923,11 @@ export class ActionsService {
         message: 'Action queue unavailable — REDIS_URL is not set.',
       });
     }
+    // Keep the historical DB key for idempotent compatibility with rows
+    // created before this privacy hardening. Redis gets only the stable,
+    // non-reversible projection below.
     const idempotencyKey = `revert-${input.token}`;
+    const queueJobId = reverseQueueJobId(input.token);
     const inserted = await this.insertJob({
       mailboxAccountId: input.mailboxAccountId,
       direction: 'reverse',
@@ -1697,32 +1988,40 @@ export class ActionsService {
             message: 'Action queue is unavailable.',
           });
         }
-        try {
-          const stale = await this.queue.getJob(idempotencyKey);
-          if (stale) {
-            await stale.remove();
+        // Reap both the safe current id and a possible legacy raw-token
+        // id. Each lookup/removal is isolated so a locked/broken current
+        // entry cannot prevent cleanup of its legacy sibling (or vice
+        // versa). The raw legacy id is lookup-only and never emitted.
+        for (const [staleId, legacy] of [
+          [queueJobId, false],
+          [idempotencyKey, true],
+        ] as const) {
+          try {
+            const stale = await this.queue.getJob(staleId);
+            if (stale) {
+              await stale.remove();
+            }
+          } catch (err) {
+            // Don't block retry on a stale-hash cleanup failure; if
+            // the prior job is active (locked), the next call recovers
+            // after the worker finishes / dead-letters.
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                kind: 'action.stale_cleanup_failed',
+                queueJobId,
+                legacy,
+                error: safeQueueErrorKind(err),
+              }),
+            );
           }
-        } catch (err) {
-          // Don't block retry on a stale-hash cleanup failure; if
-          // the prior job is active (locked), the next call recovers
-          // after the worker finishes / dead-letters. Surface the
-          // reason so a persistent Redis fault is observable rather
-          // than a pure empty catch (CLAUDE.md §10).
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: 'action.stale_cleanup_failed',
-              idempotencyKey,
-              reason: err instanceof Error ? err.message : String(err),
-            }),
-          );
         }
-        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
         return { actionId: inserted.row.id, status: 'queued' };
       }
       return { actionId: inserted.row.id, status: inserted.row.status };
     }
-    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey);
+    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
     return { actionId: inserted.row.id, status: 'queued' };
   }
 
@@ -1754,8 +2053,11 @@ export class ActionsService {
    * `action_jobs_idempotency_key_uniq`. Cross-mailbox key reuse is
    * still rejected downstream by `insertJob`.
    */
-  private async hasJobWithKey(idempotencyKey: string): Promise<boolean> {
-    const [row] = await this.db
+  private async hasJobWithKey(
+    idempotencyKey: string,
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<boolean> {
+    const [row] = await executor
       .select({ id: actionJobs.id })
       .from(actionJobs)
       .where(eq(actionJobs.idempotencyKey, idempotencyKey))
@@ -1764,30 +2066,33 @@ export class ActionsService {
   }
 
   /** Insert (or find existing on idempotency-key conflict) an action_jobs row. */
-  private async insertJob(input: {
-    mailboxAccountId: string;
-    direction: 'forward' | 'reverse';
-    selector: LabelActionSelector;
-    resolvedMessageIds: string[];
-    requestedCount: number;
-    idempotencyKey: string;
-    /**
-     * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
-     * keep `enqueueArchive` source-compatible; composite + delete paths
-     * pass the verb explicitly.
-     */
-    verb?: 'archive' | 'later' | 'delete';
-    undoToken?: string;
-    /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
-    olderThanDays?: number | null;
-    /**
-     * ADR-0020 composite linkage — set on a secondary row to the
-     * primary's `id`. NULL for single-verb actions + primary of a
-     * composite (per the schema's "primary is self-implicit" convention).
-     */
-    compositeId?: string | null;
-  }): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
-    const [inserted] = await this.db
+  private async insertJob(
+    input: {
+      mailboxAccountId: string;
+      direction: 'forward' | 'reverse';
+      selector: LabelActionSelector;
+      resolvedMessageIds: string[];
+      requestedCount: number;
+      idempotencyKey: string;
+      /**
+       * Label-modify verb (action_verb pg_enum). Defaults to `archive` to
+       * keep `enqueueArchive` source-compatible; composite + delete paths
+       * pass the verb explicitly.
+       */
+      verb?: 'archive' | 'later' | 'delete';
+      undoToken?: string;
+      /** ADR-0020 time-window filter (1..3650 days; null = un-windowed). */
+      olderThanDays?: number | null;
+      /**
+       * ADR-0020 composite linkage — set on a secondary row to the
+       * primary's `id`. NULL for single-verb actions + primary of a
+       * composite (per the schema's "primary is self-implicit" convention).
+       */
+      compositeId?: string | null;
+    },
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<{ existing: boolean; row: typeof actionJobs.$inferSelect }> {
+    const [inserted] = await executor
       .insert(actionJobs)
       .values({
         mailboxAccountId: input.mailboxAccountId,
@@ -1810,7 +2115,7 @@ export class ActionsService {
     }
     // Conflict — the key already exists. Return it ONLY if it belongs to
     // this mailbox (a cross-mailbox key reuse is rejected).
-    const [existing] = await this.db
+    const [existing] = await executor
       .select()
       .from(actionJobs)
       .where(
@@ -1834,6 +2139,7 @@ export class ActionsService {
     actionId: string,
     mailboxAccountId: string,
     idempotencyKey: string,
+    queueJobId: string = idempotencyKey,
   ): Promise<void> {
     if (!this.queue) {
       // Re-coupled to the fail-open `Queue | null` contract — every
@@ -1849,8 +2155,11 @@ export class ActionsService {
     try {
       await this.queue.add(
         LABEL_ACTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey },
-        labelActionJobOptions(idempotencyKey),
+        // The worker loads execution state by actionId; carrying the
+        // queue-safe id here preserves its lifecycle correlation without
+        // placing a capability token in BullMQ job data.
+        { actionId, mailboxAccountId, idempotencyKey: queueJobId },
+        labelActionJobOptions(queueJobId),
       );
     } catch (err) {
       // Defense in depth: scope the failure UPDATE by mailbox even
@@ -1875,4 +2184,25 @@ export class ActionsService {
 function toCount(raw: number | string | undefined): number {
   if (raw === undefined) return 0;
   return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+}
+
+/** Closed operational projection for Redis/BullMQ cleanup failures. */
+function safeQueueErrorKind(error: unknown): string {
+  if (!(error instanceof Error)) return 'QueueError';
+  try {
+    switch (error.name) {
+      case 'AbortError':
+        return 'QueueAbortError';
+      case 'ConnectionTimeoutError':
+        return 'QueueConnectionTimeoutError';
+      case 'MaxRetriesPerRequestError':
+        return 'QueueMaxRetriesError';
+      case 'ReplyError':
+        return 'QueueReplyError';
+      default:
+        return 'QueueError';
+    }
+  } catch {
+    return 'QueueError';
+  }
 }

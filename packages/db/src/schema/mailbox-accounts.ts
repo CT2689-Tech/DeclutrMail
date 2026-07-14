@@ -5,13 +5,12 @@ import {
   jsonb,
   pgEnum,
   pgTable,
-  text,
   timestamp,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { bytea } from './_custom-types';
+import { bytea, citext } from './_custom-types';
 import { users } from './users';
 import { workspaces } from './workspaces';
 
@@ -26,10 +25,11 @@ import { workspaces } from './workspaces';
  * `quiet_state` (jsonb) — current quiet-mode state per D92/D93:
  *   { enabled, started_at, until_at, source, preview_mode_until }
  *
- * `(provider, provider_account_id)` is unique — prevents the same
- * Google account from being re-connected to two workspaces under one
- * billing relationship. Multi-account users land per workspace, not
- * per provider account.
+ * `(provider, provider_account_id)` is unique and the provider identity
+ * uses citext — Gmail casing variants cannot be connected to different
+ * workspaces. Connect paths also trim/lower before persistence so the
+ * displayed value remains canonical. Multi-account users land per
+ * workspace, not per provider account.
  *
  * OAuth-token columns (D14 envelope encryption) — all nullable, written
  * at OAuth-connect time; rows that predate a connect have none:
@@ -60,7 +60,7 @@ export const mailboxAccounts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     provider: mailboxProvider('provider').notNull(),
-    providerAccountId: text('provider_account_id').notNull(),
+    providerAccountId: citext('provider_account_id').notNull(),
     status: mailboxStatus('status').notNull().default('active'),
     quietState: jsonb('quiet_state')
       .notNull()

@@ -213,3 +213,54 @@ export function StepPresetPick({
     </StepShell>
   );
 }
+
+/**
+ * Step 4 for tiers without the Pro Autopilot capability.
+ *
+ * Persisting an explicit empty pick advances the same server-owned
+ * onboarding machine as the Pro picker, but this component deliberately
+ * never mounts the Autopilot rules query. Free and Plus users reach their
+ * first real sender review before being introduced to automation.
+ */
+export function StepFirstSenderReview({
+  onSubmitted,
+  corner,
+}: {
+  onSubmitted: () => void;
+  corner?: ReactNode;
+}) {
+  const submit = useSubmitPresetPicks();
+
+  const onContinue = () => {
+    if (submit.isPending) return;
+    submit.mutate([], {
+      onSuccess: () => {
+        toast("Ready — let's review your first sender.", 'success');
+        onSubmitted();
+      },
+      onError: (err) => {
+        captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
+        toast("Couldn't continue — try again.", 'warn');
+      },
+    });
+  };
+
+  return (
+    <StepShell
+      eyebrow="Step 4 of 5 · First review"
+      title="Your first sender review is ready."
+      sub="We'll start with no automated rules so you can see exactly how DeclutrMail organizes your inbox. Next, review a real sender and choose what should happen."
+      maxWidth={560}
+      corner={corner}
+    >
+      <Button
+        tone="primary"
+        onClick={onContinue}
+        disabled={submit.isPending}
+        style={{ minWidth: 220 }}
+      >
+        {submit.isPending ? 'Getting it ready…' : 'Review my first sender'}
+      </Button>
+    </StepShell>
+  );
+}

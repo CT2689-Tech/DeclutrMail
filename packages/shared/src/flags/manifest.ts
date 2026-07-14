@@ -45,6 +45,14 @@ export const FLAG_MANIFEST = {
       'mailboxes). Off: the manual "Load more senders" button is the ' +
       'only pagination affordance (it stays rendered either way).',
   },
+  gmailDeeplinkSearchFallback: {
+    default: false,
+    description:
+      'Use Gmail search links instead of direct #all resource links ' +
+      '(D231 operational fallback). Off: fresh Gmail resource ids open ' +
+      'directly; on: sufficiently-described messages use sender, subject, ' +
+      'and date search without storing Message-ID headers.',
+  },
 } as const satisfies Record<string, FlagDefinition>;
 
 export type FeatureFlag = keyof typeof FLAG_MANIFEST;

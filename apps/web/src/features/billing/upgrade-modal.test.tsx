@@ -76,6 +76,26 @@ describe('UpgradeModal', () => {
     ).toBeInTheDocument();
   });
 
+  it('action_tier: explains Free single-sender access and offers the Plus path', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'action_tier',
+      details: {
+        tier: 'free',
+        requiredTier: 'plus',
+        selector: 'multi-sender',
+        verb: 'archive',
+      },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByText('Multi-sender actions are part of Plus')).toBeInTheDocument();
+    expect(
+      screen.getByText(/five lifetime cleanup actions, one sender at a time/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Plus unlocks multi-sender cleanup for \$9\/mo/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
+  });
+
   it('inbox_limit on Plus: upgrade nudge toward Pro', () => {
     mockTier = 'plus';
     useUpgradeGateStore

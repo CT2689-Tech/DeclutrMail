@@ -11,13 +11,21 @@ const VERB_ROWS: ReadonlyArray<{
   verb: 'Archive' | 'Unsubscribe' | 'Later';
   detail: string;
 }> = [
-  { wire: 'archive', verb: 'Archive', detail: 'Moves the sender’s inbox mail to the archive.' },
+  {
+    wire: 'archive',
+    verb: 'Archive',
+    detail: 'Moves matching inbox mail to Gmail All Mail, where it stays searchable.',
+  },
   {
     wire: 'unsubscribe',
     verb: 'Unsubscribe',
-    detail: 'Stops future mail; optionally clears the backlog.',
+    detail: 'Asks the sender to stop future mail; the sender controls the outcome and timing.',
   },
-  { wire: 'later', verb: 'Later', detail: 'Snoozes the sender out of the inbox for now.' },
+  {
+    wire: 'later',
+    verb: 'Later',
+    detail: 'Moves matching inbox mail to the untimed DeclutrMail/Later label.',
+  },
 ];
 
 export type ActionSheetPrefsCardState =

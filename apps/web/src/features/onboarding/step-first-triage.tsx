@@ -16,7 +16,8 @@ const { color, font } = tokens;
 /**
  * Step 5 — First Triage (D112).
  *
- * A guided ≤3-decision practice run that embeds the REAL
+ * A guided 3-decision preview (up to three when fewer candidates exist)
+ * that embeds the REAL
  * `<TriageScreen/>` — same row component, same K/A/U/L toolbar, same
  * D226 lifecycle (sheet → mandatory preview → mutation → undo), same
  * undo tray. Nothing here is a sandbox: every decision creates a real
@@ -71,7 +72,7 @@ export function StepFirstTriage({
     return (
       <PanelShell corner={corner}>
         <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
-          Picking your first three senders…
+          Preparing your guided 3-decision preview…
         </p>
       </PanelShell>
     );
@@ -83,7 +84,7 @@ export function StepFirstTriage({
   if (done) {
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · First triage</Eyebrow>
+        <Eyebrow>Step 5 of 5 · Guided 3-decision preview</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
@@ -98,7 +99,11 @@ export function StepFirstTriage({
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
             ? "We didn't find practice candidates right now — head straight in and meet your senders."
-            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Each one applies to that sender's past and future mail — and every destructive one is undoable below. Welcome aboard.`}
+            : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their token is live. Welcome aboard.`}
+        </p>
+        <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
+          Senders stays available after onboarding. On Free, any cleanup actions you have left
+          remain available there; ongoing Triage queues require Plus.
         </p>
         <Button tone="primary" onClick={onComplete} disabled={completing} style={{ minWidth: 220 }}>
           {completing ? 'Finishing…' : 'Open your senders →'}
@@ -133,12 +138,12 @@ export function StepFirstTriage({
         }}
       >
         <div>
-          <Eyebrow>Step 5 of 5 · First triage</Eyebrow>
+          <Eyebrow>Step 5 of 5 · Guided 3-decision preview</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            Practice on your{' '}
+            We&rsquo;ll guide you through up to three real sender decisions. Start with your{' '}
             {meta.pinned === 1 ? 'noisiest sender' : `${meta.pinned} noisiest senders`} — decision{' '}
             {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real actions with
-            a real preview and undo.
+            a current-scope preview and Activity undo wherever an inverse exists.
           </p>
         </div>
         {corner}

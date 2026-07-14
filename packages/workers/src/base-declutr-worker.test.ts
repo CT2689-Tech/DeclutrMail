@@ -2,7 +2,7 @@ import { UnrecoverableError } from 'bullmq';
 import type { Job } from 'bullmq';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import { InvalidGrantError, TransientError, ValidationError } from './worker-errors.js';
 import type {
@@ -128,6 +128,23 @@ describe('BaseDeclutrWorker', () => {
     );
   }
 
+  it('derives a stable cross-instance telemetry reference from a fixed vector', () => {
+    const previousSecret = process.env.JWT_ACCESS_SECRET;
+    process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret-with-32-bytes-minimum';
+    try {
+      const expected = 'ref_a76264bc162021430f841684';
+      expect(telemetryReference('job-1')).toBe(expected);
+      expect(telemetryReference('job-1')).toBe(expected);
+      expect(expected).toMatch(/^ref_[0-9a-f]{24}$/);
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.JWT_ACCESS_SECRET;
+      } else {
+        process.env.JWT_ACCESS_SECRET = previousSecret;
+      }
+    }
+  });
+
   describe('success path', () => {
     it('emits worker.started then worker.succeeded with the result metric', async () => {
       const worker = new TestWorker(async () => ({ ok: true }));
@@ -144,10 +161,12 @@ describe('BaseDeclutrWorker', () => {
       expect(lines[1]).toMatchObject({
         kind: 'worker.succeeded',
         worker: 'TestWorker',
-        jobId: 'job-1',
-        mailboxAccountId: 'mb-1',
+        jobRef: telemetryReference('job-1'),
+        mailboxRef: telemetryReference('mb-1'),
         attempt: 1,
-        result: { ok: true },
+        // `ok` is test-only, not part of the audited production result
+        // union, so the operational projection fails closed.
+        result: {},
       });
       // Success path: observer NEVER invoked.
       expect(obs.captures).toHaveLength(0);
@@ -166,7 +185,50 @@ describe('BaseDeclutrWorker', () => {
       await worker.run(fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-7' } }));
 
       const startLine = lifecycleLines().find((l) => l.kind === 'worker.started');
-      expect(startLine?.idempotencyKey).toBe('mb:mb-7');
+      expect(startLine?.idempotencyRef).toBe(telemetryReference('mb:mb-7'));
+    });
+
+    it('never serializes raw capability, job, mailbox, or idempotency values', async () => {
+      const leakMarker = 'LEAK_MARKER_undo_8e4516f1';
+      const leakKeyMarker = 'LEAK_MARKER_AS_OBJECT_KEY_746ea5cf';
+      const resultStringLeak = 'secretvalue746ea5cf';
+      class SensitiveResultWorker extends BaseDeclutrWorker<
+        { mailboxAccountId: string },
+        { affectedCount: number; undoToken: string; alreadyDone: boolean }
+      > {
+        override readonly workerName = 'SensitiveResultWorker';
+        override readonly policy = 'perMailboxPolicy' as const;
+        protected override getIdempotencyKey(): string {
+          return leakMarker;
+        }
+        override async processJob() {
+          return {
+            affectedCount: 3,
+            undoToken: leakMarker,
+            alreadyDone: false,
+            [leakKeyMarker]: 1,
+            kind: resultStringLeak,
+            outcome: resultStringLeak,
+          };
+        }
+      }
+      const worker = new SensitiveResultWorker();
+
+      const returned = await worker.run(
+        fakeJob({
+          id: leakMarker,
+          data: { mailboxAccountId: leakMarker },
+        }),
+      );
+
+      // Runtime behavior is unchanged; only the log projection is minimized.
+      expect(returned.undoToken).toBe(leakMarker);
+      const serialized = consoleLogSpy.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(serialized).not.toContain(leakMarker);
+      expect(serialized).not.toContain(leakKeyMarker);
+      expect(serialized).not.toContain(resultStringLeak);
+      const success = lifecycleLines().find((line) => line.kind === 'worker.succeeded');
+      expect(success?.result).toEqual({ affectedCount: 3, alreadyDone: false });
     });
   });
 
@@ -234,20 +296,25 @@ describe('BaseDeclutrWorker', () => {
       // Exactly ONE observer invocation (D203 "Sentry once per failure").
       expect(obs.captures).toHaveLength(1);
       expect(obs.captures[0]).toMatchObject({
-        error: err,
+        error: {
+          name: 'TransientError',
+          message: 'Worker job failed',
+        },
         ctx: {
           workerName: 'TestWorker',
-          jobId: 'job-final',
-          mailboxAccountId: 'mb-9',
+          jobId: telemetryReference('job-final'),
+          mailboxAccountId: telemetryReference('mb-9'),
           attempt: WORKER_POLICIES.perMailboxPolicy.maxAttempts,
           policy: 'perMailboxPolicy',
         },
       });
+      expect(obs.captures[0]?.error).not.toBe(err);
+      expect(obs.captures[0]?.error.stack).not.toContain('still 503');
       // The structured failure-capture log line also fires.
       const captureLine = errorLines().find((l) => l.kind === 'worker.failure_capture');
       expect(captureLine).toMatchObject({
         worker: 'TestWorker',
-        jobId: 'job-final',
+        jobRef: telemetryReference('job-final'),
         error: 'TransientError',
       });
       // onTerminalFailure runs BEFORE captureFailure (documented order).
@@ -295,8 +362,49 @@ describe('BaseDeclutrWorker', () => {
 
       expect(callOrder).toEqual(['onTerminalFailure', 'captureFailure']);
       expect(obs.captures).toHaveLength(1);
-      expect(obs.captures[0]?.error).toBe(invalid);
+      expect(obs.captures[0]?.error).not.toBe(invalid);
+      expect(obs.captures[0]?.error).toMatchObject({
+        name: 'InvalidGrantError',
+        message: 'Worker job failed',
+      });
       expect(worker.onTerminalSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('never forwards a raw error name, message, or stack to logs or the observer', async () => {
+      const leakMarker = 'secretvalueobserver746ea5cf';
+      const leaked = new ValidationError(leakMarker);
+      let nameGetterCalls = 0;
+      Object.defineProperty(leaked, 'name', {
+        get() {
+          nameGetterCalls += 1;
+          throw new Error(leakMarker);
+        },
+      });
+      leaked.stack = `Error: ${leakMarker}\n    at ${leakMarker}`;
+      const worker = new TestWorker(async () => {
+        throw leaked;
+      });
+      const obs = recordingObserver();
+      worker.setObserver(obs);
+
+      await expect(worker.run(fakeJob({ data: {} }))).rejects.toBeInstanceOf(UnrecoverableError);
+
+      const serialized = JSON.stringify({
+        logs: [...consoleLogSpy.mock.calls, ...consoleErrorSpy.mock.calls],
+        observer: obs.captures.map(({ error, ctx }) => ({
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+          ctx,
+        })),
+      });
+      expect(serialized).not.toContain(leakMarker);
+      expect(nameGetterCalls).toBeGreaterThan(0);
+      expect(worker.onTerminalSpy).toHaveBeenCalledTimes(1);
+      expect(obs.captures[0]?.error).toMatchObject({
+        name: 'WorkerError',
+        message: 'Worker job failed',
+      });
     });
 
     it('ValidationError → terminal on first attempt, dead-lettered immediately', async () => {
@@ -346,7 +454,7 @@ describe('BaseDeclutrWorker', () => {
       const observerFailureLine = errorLines().find((l) => l.kind === 'worker.observer_failed');
       expect(observerFailureLine).toMatchObject({
         worker: 'TestWorker',
-        message: 'Sentry transport down',
+        error: 'Error',
       });
     });
   });
@@ -439,14 +547,14 @@ describe('BaseDeclutrWorker', () => {
       expect(recordFailedLines).toHaveLength(1);
       expect(recordFailedLines[0]).toMatchObject({
         worker: 'TestWorker',
-        jobId: 'job-1',
-        message: 'insert failed: connection refused',
+        jobRef: telemetryReference('job-1'),
+        error: 'Error',
       });
       // The recorder failure is also Sentry'd via the background seam.
       expect(obs.bgCaptures).toHaveLength(1);
       expect(obs.bgCaptures[0]?.ctx).toMatchObject({
         kind: 'dead_letter.record_failed',
-        tags: { worker: 'TestWorker', job_id: 'job-1' },
+        tags: { worker: 'TestWorker', job_ref: telemetryReference('job-1') },
       });
       // The job's own terminal capture still fired exactly once.
       expect(obs.captures).toHaveLength(1);
@@ -512,15 +620,15 @@ describe('BaseDeclutrWorker', () => {
       // it ever changes shape, downstream parsers (Cloud Logging filters,
       // PostHog ingest) break. This snapshot is the contract.
       // Worker did NOT override `getIdempotencyKey` so the `started`
-      // line carries `idempotencyKey: undefined` — JSON.stringify drops
+      // line carries no idempotency ref when the worker provides no key.
       // undefined values, so the key is absent from the parsed line.
       const startKeys = Object.keys(lines[0]!).sort();
       const successKeys = Object.keys(lines[1]!).sort();
       expect(startKeys).toEqual(
-        ['attempt', 'jobId', 'kind', 'level', 'mailboxAccountId', 'worker'].sort(),
+        ['attempt', 'jobRef', 'kind', 'level', 'mailboxRef', 'worker'].sort(),
       );
       expect(successKeys).toEqual(
-        ['attempt', 'jobId', 'kind', 'level', 'mailboxAccountId', 'result', 'worker'].sort(),
+        ['attempt', 'jobRef', 'kind', 'level', 'mailboxRef', 'result', 'worker'].sort(),
       );
       // None of the forbidden fields (D203 forbidden-fields list).
       for (const line of lines) {

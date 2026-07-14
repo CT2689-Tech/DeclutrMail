@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   actionJobs,
+  activityLog,
   mailboxAccounts,
   mailMessages,
   schema,
@@ -14,7 +15,7 @@ import {
 } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
@@ -44,7 +45,7 @@ const MIGRATIONS_DIR = join(
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 
-async function freshDb(): Promise<Db> {
+async function freshDb(queryLog?: string[]): Promise<Db> {
   const pg = new PGlite({ extensions: { citext } });
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
@@ -56,7 +57,18 @@ async function freshDb(): Promise<Db> {
       if (trimmed) await pg.query(trimmed);
     }
   }
-  return drizzle(pg, { schema });
+  return drizzle(pg, {
+    schema,
+    ...(queryLog
+      ? {
+          logger: {
+            logQuery(query: string): void {
+              queryLog.push(query);
+            },
+          },
+        }
+      : {}),
+  });
 }
 
 async function seedWorkspace(
@@ -95,6 +107,8 @@ async function seedSender(db: Db, mailboxAccountId: string): Promise<{ id: strin
       email: `news-${senderSeq}@shop.example`,
       domain: 'shop.example',
       gmailCategory: 'promotions',
+      unsubscribeMethod: 'mailto',
+      unsubscribeUrl: `mailto:unsubscribe-${senderSeq}@shop.example`,
       firstSeenAt: new Date('2026-01-01'),
       lastSeenAt: new Date('2026-05-01'),
     })
@@ -172,9 +186,11 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
   let workspaceId: string;
   let mailboxId: string;
   let svc: EntitlementsService;
+  let queryLog: string[];
 
   beforeEach(async () => {
-    db = await freshDb();
+    queryLog = [];
+    db = await freshDb(queryLog);
     ({ workspaceId, mailboxId } = await seedWorkspace(db, 'free'));
     svc = new EntitlementsService(db as never);
   });
@@ -243,14 +259,26 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
   });
 
-  it('unsubscribe-intent rows, reverse rows, and failed rows are exempt; undo never refunds', async () => {
+  it('counts unsubscribe intent rows but excludes execution, reverse, and failed rows; undo never refunds', async () => {
     const sender = await seedSender(db, mailboxId);
-    // Intent dedup row (policy write — not a label-pipeline verb).
+    // Intent dedup row — one user cleanup decision, even though the
+    // durable intent itself moves zero messages.
     await seedJob(db, mailboxId, {
       verb: 'unsubscribe',
       key: 'unsub:click1',
       senderId: sender.id,
       senderKey: sender.key,
+      affectedCount: 0,
+    });
+    // One-click execution bookkeeping for that SAME intent must not
+    // consume a second unit.
+    await seedJob(db, mailboxId, {
+      verb: 'unsubscribe',
+      key: 'unsubexec-click1',
+      senderId: sender.id,
+      senderKey: sender.key,
+      status: 'queued',
+      affectedCount: 0,
     });
     // A counted forward archive…
     await seedJob(db, mailboxId, {
@@ -273,7 +301,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       senderKey: sender.key,
       status: 'failed',
     });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
   });
 
   it('a no-op cleanup (done, 0 messages moved) consumes NO unit; in-flight still counts', async () => {
@@ -363,6 +391,107 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     const plus = await seedWorkspace(db, 'plus');
     await expect(svc.assertCleanupCapacity(plus.mailboxId, 1000)).resolves.toBeUndefined();
   });
+
+  it('lockCleanupWorkspace: paid tiers use the lookup fast path without FOR UPDATE', async () => {
+    const plus = await seedWorkspace(db, 'plus');
+    queryLog.length = 0;
+
+    await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
+      workspaceId: plus.workspaceId,
+      tier: 'plus',
+    });
+    expect(queryLog.join('\n')).not.toMatch(/for update/i);
+  });
+
+  it('lockCleanupWorkspace: a finite-tier observation locks the row and returns its re-read tier', async () => {
+    const plus = await seedWorkspace(db, 'plus');
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox').mockResolvedValueOnce({
+      workspaceId: plus.workspaceId,
+      // Simulate the tier observed before waiting for the row lock. The
+      // locking query must return the current persisted tier instead.
+      tier: 'free',
+    });
+    queryLog.length = 0;
+
+    await expect(svc.lockCleanupWorkspace(plus.mailboxId)).resolves.toEqual({
+      workspaceId: plus.workspaceId,
+      tier: 'plus',
+    });
+    expect(queryLog.join('\n')).toMatch(/for update/i);
+    lookup.mockRestore();
+  });
+
+  it('assertCleanupCapacity threads a supplied transaction through lookup and count', async () => {
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-executor-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox');
+    const countUsed = vi.spyOn(svc, 'cleanupUnitsUsed');
+
+    await db.transaction(async (tx) => {
+      await expect(svc.assertCleanupCapacity(mailboxId, 1, tx as never)).resolves.toBeUndefined();
+      expect(lookup).toHaveBeenCalledWith(mailboxId, tx);
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+    });
+    lookup.mockRestore();
+    countUsed.mockRestore();
+  });
+
+  it('assertCleanupCapacityForWorkspace reuses a locked workspace without another lock query', async () => {
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-locked-executor-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+    const lookup = vi.spyOn(svc, 'workspaceForMailbox');
+    const countUsed = vi.spyOn(svc, 'cleanupUnitsUsed');
+    queryLog.length = 0;
+
+    await db.transaction(async (tx) => {
+      await expect(
+        svc.assertCleanupCapacityForWorkspace({ workspaceId, tier: 'free' }, 1, tx as never),
+      ).resolves.toBeUndefined();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(countUsed).toHaveBeenCalledWith(workspaceId, tx);
+    });
+    expect(queryLog.join('\n')).not.toMatch(/for update/i);
+    lookup.mockRestore();
+    countUsed.mockRestore();
+  });
+
+  it('enforces the Action Registry tier per selector without taking away Free single-sender actions', async () => {
+    await expect(
+      svc.assertActionSelectorTier(mailboxId, 'archive', 'sender'),
+    ).resolves.toBeUndefined();
+
+    const err = await svc
+      .assertActionSelectorTier(mailboxId, 'archive', 'multi-sender')
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('ACTION_TIER_REQUIRED');
+    expect((err as AppException).getStatus()).toBe(402);
+    expect((err as AppException).details).toEqual({
+      tier: 'free',
+      requiredTier: 'plus',
+      selector: 'multi-sender',
+      verb: 'archive',
+    });
+
+    const plus = await seedWorkspace(db, 'plus');
+    await expect(
+      svc.assertActionSelectorTier(plus.mailboxId, 'archive', 'multi-sender'),
+    ).resolves.toBeUndefined();
+  });
 });
 
 describe('EntitlementsService — inbox limit (D19/D81)', () => {
@@ -405,15 +534,34 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
   });
+
+  it('locks the workspace tier and checks capacity on the caller transaction', async () => {
+    const queryLog: string[] = [];
+    db = await freshDb(queryLog);
+    svc = new EntitlementsService(db as never);
+    const { workspaceId } = await seedWorkspace(db, 'pro');
+    queryLog.length = 0;
+
+    await db.transaction(async (tx) => {
+      const workspace = await svc.lockInboxWorkspace(workspaceId, tx as never);
+      expect(workspace).toEqual({ workspaceId, tier: 'pro' });
+      await expect(
+        svc.assertInboxCapacityForWorkspace(workspace!, tx as never),
+      ).resolves.toBeUndefined();
+    });
+
+    expect(queryLog.join('\n')).toMatch(/for update/i);
+  });
 });
 
 describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
   let db: Db;
+  let workspaceId: string;
   let mailboxId: string;
 
   beforeEach(async () => {
     db = await freshDb();
-    ({ mailboxId } = await seedWorkspace(db, 'free'));
+    ({ workspaceId, mailboxId } = await seedWorkspace(db, 'free'));
   });
 
   function service(): ActionsService {
@@ -482,7 +630,7 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     expect(keep.activityLogId).toBeTruthy();
   });
 
-  it('bulk needing more units than remain 402s BEFORE writing any row', async () => {
+  it('multi-sender bulk requires Plus BEFORE quota accounting or writing any row', async () => {
     const svc = service();
     const filler = await seedSender(db, mailboxId);
     for (let i = 0; i < 4; i++) {
@@ -508,8 +656,88 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
       })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
-    expect((err as AppException).code).toBe('FREE_CAP_REACHED');
+    expect((err as AppException).code).toBe('ACTION_TIER_REQUIRED');
+    expect((err as AppException).details).toMatchObject({
+      tier: 'free',
+      requiredTier: 'plus',
+      selector: 'multi-sender',
+      verb: 'archive',
+    });
     const after = await db.select({ id: actionJobs.id }).from(actionJobs);
     expect(after.length).toBe(before.length); // nothing was written
+  });
+
+  it('a fresh unsubscribe consumes one Free unit; replay at the cap succeeds; a new intent 402s', async () => {
+    const svc = service();
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-fill-unsub-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+
+    const first = await svc.recordUnsubscribeIntent({
+      mailboxAccountId: mailboxId,
+      senderId: sender.id,
+      idempotencyKey: 'free-unsub-fifth',
+    });
+    expect(await new EntitlementsService(db as never).cleanupSummary(workspaceId)).toMatchObject({
+      used: 5,
+      remaining: 0,
+    });
+
+    // Same Idempotency-Key is a projection of the existing decision,
+    // not a sixth cleanup-cap check.
+    const replay = await svc.recordUnsubscribeIntent({
+      mailboxAccountId: mailboxId,
+      senderId: sender.id,
+      idempotencyKey: 'free-unsub-fifth',
+      // Even a replay that now advertises a backlog action must project
+      // the cached decision without a new two-unit capacity check.
+      includesBacklogAction: true,
+    });
+    expect(replay.activityLogId).toBe(first.activityLogId);
+
+    const beforeJobs = await db.select().from(actionJobs);
+    const beforeActivity = await db.select().from(activityLog);
+    await expect(
+      svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId: sender.id,
+        idempotencyKey: 'free-unsub-sixth',
+      }),
+    ).rejects.toMatchObject({ code: 'FREE_CAP_REACHED' });
+    expect(await db.select().from(actionJobs)).toHaveLength(beforeJobs.length);
+    expect(await db.select().from(activityLog)).toHaveLength(beforeActivity.length);
+  });
+
+  it('unsubscribe with a backlog action preflights two units and writes nothing when only one remains', async () => {
+    const svc = service();
+    const sender = await seedSender(db, mailboxId);
+    for (let i = 0; i < 4; i++) {
+      await seedJob(db, mailboxId, {
+        verb: 'archive',
+        key: `archive-fill-backlog-${i}`,
+        senderId: sender.id,
+        senderKey: sender.key,
+      });
+    }
+
+    await expect(
+      svc.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId: sender.id,
+        idempotencyKey: 'free-unsub-plus-backlog',
+        includesBacklogAction: true,
+      }),
+    ).rejects.toMatchObject({
+      code: 'FREE_CAP_REACHED',
+      details: { remaining: 1, requiredUnits: 2 },
+    });
+    expect(await db.select().from(actionJobs)).toHaveLength(4);
+    expect(await db.select().from(activityLog)).toHaveLength(0);
   });
 });

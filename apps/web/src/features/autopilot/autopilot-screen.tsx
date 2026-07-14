@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   EmptyState,
+  ErrorState,
   Eyebrow,
   ScreenIntro,
   Skeleton,
@@ -81,6 +82,11 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
 export function AutopilotRoute() {
   const rulesQuery = useAutopilotRules();
   const suggestionsQuery = usePendingSuggestions();
+  const refetchRules = rulesQuery.refetch;
+  const refetchSuggestions = suggestionsQuery.refetch;
+  const retry = useCallback(() => {
+    void Promise.allSettled([refetchRules(), refetchSuggestions()]);
+  }, [refetchRules, refetchSuggestions]);
 
   const state: AutopilotScreenState = useMemo(() => {
     if (rulesQuery.isLoading || suggestionsQuery.isLoading) {
@@ -92,7 +98,7 @@ export function AutopilotRoute() {
         err instanceof ApiError
           ? `We couldn't load Autopilot (HTTP ${err.status}).`
           : "We couldn't load Autopilot right now.";
-      return { kind: 'error', message };
+      return { kind: 'error', message, retry };
     }
     const rules = rulesQuery.data ?? [];
     const matches = suggestionsQuery.data ?? [];
@@ -115,6 +121,7 @@ export function AutopilotRoute() {
     suggestionsQuery.isError,
     suggestionsQuery.error,
     suggestionsQuery.data,
+    retry,
   ]);
 
   return <AutopilotScreen state={state} />;
@@ -554,8 +561,14 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       )}
 
       {/* Whole-surface failure — one designed error block, not one per
-          section (the two reads share a fate; guard 4xx never retries). */}
-      {state.kind === 'error' && <SuggestionsErrorState message={state.message} />}
+          section. The two reads share a fate and retry explicitly. */}
+      {state.kind === 'error' && (
+        <ErrorState
+          title="We couldn't load your Autopilot"
+          description={state.message}
+          onRetry={state.retry}
+        />
+      )}
 
       {state.kind !== 'error' && (
         <>
@@ -793,11 +806,6 @@ function SuggestionsSkeleton() {
       <span style={{ position: 'absolute', left: -9999 }}>Loading Autopilot suggestions</span>
     </div>
   );
-}
-
-/** Error branch — both the rules and suggestions query share this. */
-function SuggestionsErrorState({ message }: { message: string }) {
-  return <EmptyState title="We couldn't load your Autopilot" description={message} />;
 }
 
 /** Empty branch — distinguish "no rules yet" from "no pending matches". */

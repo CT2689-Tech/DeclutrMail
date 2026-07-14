@@ -6,6 +6,7 @@
 // the D146 validation threshold.
 
 import type { Metadata } from 'next';
+import { ACTION_SAFETY_SUMMARY } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -17,7 +18,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/terms',
 });
 
-const LAST_UPDATED = '2026-07-08';
+const LAST_UPDATED = '2026-07-12';
 
 const TOC = [
   { id: 'service', label: 'The service' },
@@ -43,9 +44,10 @@ export default function TermsOfServicePage() {
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
           cleanup service. It shows you your inbox organized by sender, recommends cleanup
           decisions, and — when you approve them — performs actions on your Gmail on your behalf:
-          keep, archive, unsubscribe, later, or delete. Actions are previewed before they run,
-          recorded in an activity log, and reversible during your plan&rsquo;s undo window. By
-          creating an account or using DeclutrMail you agree to these terms and to our{' '}
+          Keep, Archive, Unsubscribe, Later, or Delete. Manual mail-moving actions are previewed
+          before they run and recorded in an activity log. Archive and Later use your plan&rsquo;s
+          undo window; Delete has a separate up-to-30-day recovery boundary while Gmail retains the
+          message. By creating an account or using DeclutrMail you agree to these terms and to our{' '}
           <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
@@ -67,15 +69,17 @@ export default function TermsOfServicePage() {
       <LegalSection id="your-instructions" title="3. Actions run on your instructions">
         <p>
           DeclutrMail modifies your mailbox only at your instruction — either an action you approve
-          directly, or a rule you explicitly enabled. Before any destructive action runs,
-          DeclutrMail shows you a preview of exactly what will change. You are responsible for
-          reviewing previews before approving actions. Every action is reversible during your
-          plan&rsquo;s undo window (7 days on Free and Plus, 30 days on Pro); after the undo window
-          expires, an action&rsquo;s effects are permanent.
+          directly, or a rule you explicitly enabled. Before a manual sender-cleanup action moves
+          mail in Triage or Senders, DeclutrMail shows the current matching count, an available
+          sample, and the planned Gmail changes. The worker re-checks Gmail at execution, so the
+          final affected count can change if the inbox changes in between. Autopilot rules show a
+          dry run before activation; once enabled, matching future mail can run without a new
+          per-message approval. You are responsible for reviewing previews and rule scope before
+          approval. {ACTION_SAFETY_SUMMARY}
         </p>
         <p>
-          Unsubscribe actions use the unsubscribe mechanisms senders publish. We cannot guarantee a
-          sender honors its own unsubscribe process.
+          Unsubscribe actions use the mechanisms senders publish. We cannot guarantee a sender
+          honors its own unsubscribe process, and a delivered request cannot be withdrawn.
         </p>
       </LegalSection>
 
@@ -132,8 +136,8 @@ export default function TermsOfServicePage() {
           Your mailbox is yours. What we store, what we never store, and how to export or delete
           your data are described in the <a href="/privacy">Privacy Policy</a> — in short: we store
           sender, subject, Gmail&rsquo;s short preview, dates, labels and read/unread state, and we
-          never fetch or store message bodies or attachments. You grant us only the limited license
-          needed to operate the service on that data for you.
+          never fetch or store full message bodies or attachments. You grant us only the limited
+          license needed to operate the service on that data for you.
         </p>
       </LegalSection>
 
@@ -141,8 +145,9 @@ export default function TermsOfServicePage() {
         <p>
           To the maximum extent permitted by law, DeclutrMail is provided &ldquo;as is&rdquo; and
           &ldquo;as available&rdquo;, without warranties of any kind, express or implied. We do not
-          warrant that the service will be uninterrupted, error-free, or that every action will be
-          reversible after its undo window.
+          warrant that the service will be uninterrupted or error-free, or that a reversible action
+          remains recoverable after its documented window. A delivered unsubscribe request is
+          one-way from the time it is accepted by the sender.
         </p>
         <p>
           To the maximum extent permitted by law: (a) neither party is liable for indirect,

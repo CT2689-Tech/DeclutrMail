@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { tokens } from '@declutrmail/shared';
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
-import { navigateToCheckout, oauthStartUrl } from './cta';
+import { track } from '@/lib/posthog';
+import { navigateToCheckout, navigateToFreeApp } from './cta';
 import {
   cardBullets,
   formatUsd,
@@ -22,9 +23,10 @@ const { color, font, radius, shadow } = tokens;
  * the manifest via the pricing model — no literals here.
  *
  * CTA semantics (per the D17 pricing leg):
- *   - Free   → OAuth start (signup IS login; no checkout exists for $0).
- *   - Plus/Pro → lazy auth probe: authed lands on /billing, unauthed on
- *     OAuth start (see cta.ts).
+ *   - Free → lazy auth probe: existing users return to /senders;
+ *     signed-out visitors start OAuth.
+ *   - Plus/Pro → the same probe, preserving plan/cycle/promo intent
+ *     through /billing or OAuth (see cta.ts).
  */
 export function TierCard({
   tier,
@@ -44,13 +46,29 @@ export function TierCard({
 
   async function onCta() {
     if (busy) return;
-    if (isFree) {
-      window.location.assign(oauthStartUrl());
-      return;
-    }
     setBusy(true);
     try {
-      await navigateToCheckout((path) => router.push(path));
+      const selectedTier = isFree
+        ? 'free'
+        : tier.id === 'plus' || tier.id === 'pro'
+          ? tier.id
+          : null;
+      if (selectedTier === null) return;
+      void track('pricing_plan_selected', {
+        tier: selectedTier,
+        cycle: interval,
+        promo: promoActive && tier.id === 'pro' ? 'foundingPro' : null,
+      });
+      if (isFree) {
+        await navigateToFreeApp((path) => router.push(path));
+        return;
+      }
+      if (tier.id !== 'plus' && tier.id !== 'pro') return;
+      await navigateToCheckout((path) => router.push(path), {
+        plan: tier.id,
+        cycle: interval,
+        ...(promoActive && tier.id === 'pro' ? { promo: 'foundingPro' as const } : {}),
+      });
     } finally {
       setBusy(false);
     }
@@ -141,7 +159,7 @@ export function TierCard({
                 fontWeight: 600,
               }}
             >
-              {tier.promo.name} — first {tier.promo.maxRedemptions}, price locked
+              Limited launch price · availability confirmed at checkout
             </p>
           </>
         ) : price ? (
@@ -184,7 +202,7 @@ export function TierCard({
                   color: color.fgMuted,
                 }}
               >
-                No card required
+                {isFree ? 'No card required' : 'Billed monthly · cancel anytime'}
               </p>
             )}
           </>

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { hasAnalyticsConsent, readStoredConsent, storeConsent } from '@/lib/cookie-consent';
-import { __resetForTests } from '@/lib/posthog';
+import { __resetForTests, track } from '@/lib/posthog';
 import { CookiePreferences } from './cookie-preferences';
 
 /**
@@ -82,6 +82,9 @@ describe('CookiePreferences (D147 withdrawal surface)', () => {
 
   it('downgrade all→essential withdraws: both stores flip and the SDK identity resets', async () => {
     storeConsent('all');
+    // Consent alone intentionally does not download analytics. Exercise
+    // one explicit event so there is a loaded identity-bearing SDK to reset.
+    await track('page_viewed', { page: 'settings', mailbox_id: null });
     render(<CookiePreferences />);
     await waitFor(() => expect(allRadio()).toBeChecked());
 

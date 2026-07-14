@@ -24,6 +24,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import HelpPage from './help/page';
 import ContactPage from './contact/page';
@@ -41,10 +42,15 @@ const PAGES = [
 ] as const;
 
 beforeEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
+  storeConsent('all');
   trackSpy.mockClear();
 });
 
 afterEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   vi.restoreAllMocks();
 });
 
@@ -126,7 +132,7 @@ describe('/help content — D219 + D137', () => {
 
   it('states the undo windows and the 7-day account-deletion grace', () => {
     const { container } = render(<HelpPage />);
-    expect(container.textContent).toMatch(/7 days on Free and Plus, 30 days on Pro/);
+    expect(container.textContent).toMatch(/7 days on Free and Plus and 30 days on Pro/);
     expect(container.textContent).toMatch(/7-day grace period/);
   });
 
@@ -179,6 +185,19 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/metadata/i);
   });
 
+  it('scopes the non-leak claim to content DeclutrMail never holds', () => {
+    const { container } = render(<SecurityPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain(
+      'full message bodies and attachments are never in our systems, that content cannot leak from DeclutrMail',
+    );
+    expect(text).toContain(
+      'Subjects and Gmail Preview snippets can still contain sensitive information',
+    );
+    expect(text).not.toMatch(/most sensitive content.*cannot leak/i);
+  });
+
   it('describes token envelope encryption and TLS accurately', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/envelope-encrypted/i);
@@ -186,10 +205,12 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/TLS/);
   });
 
-  it('states the CASA Tier 2 verification', () => {
+  it('states the honest in-progress CASA Tier 2 assessment posture', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/CASA/);
     expect(container.textContent).toMatch(/Tier 2/);
+    expect(container.textContent).toMatch(/in progress/i);
+    expect(container.textContent).not.toMatch(/has passed|renewed annually/i);
   });
 
   it('states the D222 no-ML-category-prediction posture', () => {

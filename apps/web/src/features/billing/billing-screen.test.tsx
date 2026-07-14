@@ -45,6 +45,7 @@ import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/tes
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { launchCheckout } from './checkout';
+import type { BillingIntent } from './billing-intent';
 import { BillingScreen } from './billing-screen';
 
 const FREE_BODY: BillingSubscription = { tier: 'free', foundingMember: false, subscription: null };
@@ -81,11 +82,11 @@ function stubSubscription(respond: () => Response | Promise<Response>) {
   installFetchStub([{ method: 'GET', path: '/api/billing/subscription', respond }]);
 }
 
-function renderScreen() {
+function renderScreen(initialIntent: BillingIntent | null = null) {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <BillingScreen />
+      <BillingScreen initialIntent={initialIntent} />
     </QueryWrapper>,
   );
 }
@@ -107,7 +108,7 @@ describe('BillingScreen — designed states', () => {
 
   it('503 BILLING_DISABLED renders the honest dark-state, not an error', async () => {
     stubSubscription(billingDisabled503);
-    renderScreen();
+    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
 
     expect(await screen.findByTestId('billing-disabled-notice')).toBeInTheDocument();
     // Plan card still renders from the `me` tier…
@@ -122,17 +123,62 @@ describe('BillingScreen — designed states', () => {
       '/pricing',
     );
     expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('plan-change-modal')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('renders the error branch with retry on a 500', async () => {
-    stubSubscription(() => jsonServerError());
+  it('renders an alert on 500 and recovers billing details when Retry succeeds', async () => {
+    let attempts = 0;
+    stubSubscription(() => {
+      attempts += 1;
+      return attempts === 1 ? jsonServerError() : jsonOk({ data: FREE_BODY });
+    });
     renderScreen();
-    expect(await screen.findByText("We couldn't load your billing details")).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: "We couldn't load your billing details" }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByText(/no charge or plan change was made/i)).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Free')).toBeInTheDocument();
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
 describe('BillingScreen — free tier (billing live)', () => {
+  it('opens a pricing-page Pro monthly choice with the exact plan and cycle selected', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen({ plan: 'pro', cycle: 'monthly' });
+
+    const modal = await screen.findByTestId('plan-change-modal');
+    expect(within(modal).getByTestId('plan-option-pro')).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modal).getByRole('button', { name: 'Monthly' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(modal).getByTestId('checkout-panel')).toBeInTheDocument();
+    expect(within(modal).queryByText(/Founding Pro/)).not.toBeInTheDocument();
+  });
+
+  it('preserves an explicit Founding Pro annual claim from pricing', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
+
+    const modal = await screen.findByTestId('plan-change-modal');
+    expect(within(modal).getByTestId('plan-option-pro')).toHaveAttribute('aria-pressed', 'true');
+    expect(within(modal).getByRole('button', { name: 'Annual' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(modal).getByRole('checkbox')).toBeChecked();
+    expect(within(modal).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
+  });
+
   it('plan card: Free, $0, lifetime cleanup actions left, change-plan CTA', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();

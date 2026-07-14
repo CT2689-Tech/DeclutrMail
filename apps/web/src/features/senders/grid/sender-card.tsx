@@ -78,8 +78,8 @@ export const UNSUB_PILL: Record<
     title: "Unsubscribe requested — confirming with the sender's list",
   },
   done: {
-    label: 'Unsubscribed',
-    title: 'Unsubscribed — new mail should stop',
+    label: 'Request accepted',
+    title: 'The sender endpoint accepted the request; watch for new mail to confirm compliance',
   },
   failed: {
     label: 'Unsub failed',

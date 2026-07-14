@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Card, tokens } from '@declutrmail/shared';
+import { ANALYTICS_PRIVACY_CLAIM, Card, tokens } from '@declutrmail/shared';
 import {
   CONSENT_CHANGE_EVENT,
   readStoredConsent,
@@ -84,7 +84,7 @@ export function CookiePreferences() {
           checked={selected === 'all'}
           onSelect={select}
           title="Accept all"
-          detail="Also allow PostHog analytics so we can see which features matter. We never see your inbox content."
+          detail={`Also allow PostHog analytics so we can see which features matter. ${ANALYTICS_PRIVACY_CLAIM}`}
         />
         <ConsentRadio
           value="essential"

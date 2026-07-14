@@ -1,20 +1,59 @@
 # DeclutrMail
 
-> DeclutrMail is a Gmail cleanup service. You decide once per sender — Keep, Archive, Unsubscribe, Later, or Delete — and every action shows a preview before it runs and stays reversible for your plan's undo window (7 days on Free and Plus, 30 on Pro).
+> DeclutrMail is a Gmail sender-control companion. Manual Archive, Later, and Delete actions show the current matching count, an available sample, and the planned Gmail changes before approval; the worker re-checks Gmail at execution, so the final affected count can change if the inbox changes in between. These actions do not create future-mail rules. Pro Autopilot applies explicitly enabled presets to future matches without per-message approval. Archive and Later can be reversed from Activity for the plan's undo window. Delete has an up-to-30-day Activity token while Gmail retains Trash; emptying Trash can end recovery sooner. A delivered unsubscribe request cannot be recalled.
 
 Privacy is the product's boundary, stated literally: Full bodies fetched: 0.
-DeclutrMail stores only: Sender (name + email), Subject, Gmail Preview (the short snippet shown in your inbox list), Dates (received), Gmail labels, Read/unread state.
-It never fetches or stores: Full message body, HTML, Attachments, Inline images, Raw MIME, Headers other than the ones above.
+DeclutrMail persists bounded Gmail metadata plus the account, preference, action, processor, and billing records described in its privacy policy.
+It never fetches or stores a full message body, HTML, attachments, inline images, or raw MIME.
+Recommendation explanations may send Anthropic bounded sender identity, deterministic verdict, confidence, rule and numerical engagement facts; no subject, Gmail Preview, or body. Pro Brief may send sender identity, subject, and Gmail Preview to Anthropic for narration; never a full body.
 
-## Pages
+## Product and trust
 
-- [How it works](https://declutrmail.com/#how-it-works): the per-sender cleanup ritual — connect Gmail, review senders by volume, decide once per sender
-- [Open beta](https://declutrmail.com/beta): DeclutrMail is in open beta — sign in with Google and start cleaning up, no invite or waitlist needed
+- [Overview](https://declutrmail.com/#how-it-works): the landing-page summary of the sender-first workflow
+- [How it works](https://declutrmail.com/how-it-works): Gmail remains the reading/reply surface; manual actions affect the previewed messages; enabled Pro presets handle future matches
+- [Interactive inbox simulator](https://declutrmail.com/inbox-simulator): production Triage row and preview components on synthetic, browser-local sender metadata
+- [Methodology](https://declutrmail.com/methodology): data boundary, deterministic recommendation cascade, action lifecycle, automation boundary, and bounded Anthropic processing
 - [Pricing](https://declutrmail.com/pricing): Free, Plus, and Pro plans; paid plans carry a 30-day money-back guarantee — see the refund policy for terms
+- [Sign in](https://declutrmail.com/sign-in): Google OAuth scope, metadata boundary, sync expectations, and the connect action
+- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
+- [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
 - [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on paid plans), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
-- [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 verification, vulnerability reporting
+- [Security](https://declutrmail.com/security): metadata-only storage boundary, the single gmail.modify OAuth scope, envelope-encrypted tokens, CASA Tier 2 assessment cycle in progress, vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
-- [Privacy policy](https://declutrmail.com/privacy): the exact list of what is stored and what is never stored, Google Limited Use disclosure, retention and deletion
+- [Privacy policy](https://declutrmail.com/privacy): Gmail message-field disclosure, operational records, Google Limited Use disclosure, processors, retention, and deletion
+
+## Comparisons
+
+- [Comparison hub](https://declutrmail.com/compare): source-backed buyer guidance with visible unknown states and July 2026 verification dates
+- [DeclutrMail vs Clean Email](https://declutrmail.com/vs/clean-email)
+- [DeclutrMail vs Trimbox](https://declutrmail.com/vs/trimbox)
+- [DeclutrMail vs SaneBox](https://declutrmail.com/vs/sanebox)
+- [DeclutrMail vs Leave Me Alone](https://declutrmail.com/vs/leave-me-alone)
+- [DeclutrMail vs Gmail filters](https://declutrmail.com/vs/gmail-filters)
+
+## Gmail how-to guides
+
+- [Clean Gmail by sender](https://declutrmail.com/how-to/clean-gmail-by-sender)
+- [Bulk delete email from one sender](https://declutrmail.com/how-to/bulk-delete-emails-from-one-sender)
+- [Auto-archive future Gmail messages](https://declutrmail.com/how-to/auto-archive-future-emails-in-gmail)
+- [Stop promotional email in Gmail](https://declutrmail.com/how-to/stop-promotional-emails-gmail)
+- [Unsubscribe from email in Gmail](https://declutrmail.com/how-to/unsubscribe-from-emails-gmail)
+
+## Direct answers
+
+- [Is it safe to connect a Gmail app?](https://declutrmail.com/answers/is-it-safe-to-connect-gmail-app)
+- [What is metadata-only email analysis?](https://declutrmail.com/answers/what-is-metadata-only-email-analysis)
+- [How undo works for Gmail cleanup](https://declutrmail.com/answers/how-undo-works-for-gmail-cleanup)
+- [Best way to clean Gmail in 2026](https://declutrmail.com/answers/best-way-to-clean-gmail-2026)
+- [Sender-level versus message-level cleanup](https://declutrmail.com/answers/sender-level-vs-message-level-cleanup)
+
+## Journal and build log
+
+- [Journal](https://declutrmail.com/blog): first-party product essays, no sponsored posts
+- [Why cleanup starts with senders](https://declutrmail.com/blog/why-cleanup-starts-with-senders)
+- [Metadata-only is a design constraint](https://declutrmail.com/blog/metadata-only-is-a-design-constraint)
+- [Reversible does not mean risk-free](https://declutrmail.com/blog/reversible-does-not-mean-risk-free)
+- [Changelog](https://declutrmail.com/changelog): evidence-linked user-facing changes derived from repository history
 
 ## Legal
 
