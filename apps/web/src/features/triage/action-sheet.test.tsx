@@ -76,6 +76,23 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     );
     expect(html).toBe('');
   });
+
+  it('blocks confirmation and offers retry when the live preview is unavailable', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount="unavailable"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        onRetryPreview={() => {}}
+      />,
+    );
+
+    expect(html).toContain('Retry preview');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Archive/);
+  });
 });
 
 describe('ActionSheet — D34 remember-preference toggle copy', () => {

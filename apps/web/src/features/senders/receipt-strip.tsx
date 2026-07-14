@@ -6,7 +6,14 @@ import { getActionSemantics, type ActionReceiptResult } from '@declutrmail/share
 const { color, font } = tokens;
 
 /** Product-wide D245 result contract plus sender scope for this surface. */
-export type ActionReceipt = ActionReceiptResult & { senderCount: number };
+export type ActionReceipt = ActionReceiptResult & {
+  /** Senders accepted into the action pipeline. */
+  senderCount: number;
+  /** Original bulk selection, when different from accepted scope. */
+  selectedCount?: number;
+  /** Protected or no-longer-present senders skipped at enqueue time. */
+  skippedCount?: number;
+};
 
 /**
  * Persistent action result. Unlike the old strip, it does not assume every
@@ -87,6 +94,12 @@ export function ReceiptStrip({
         {(wakeCopy || providerCopy) && (
           <span style={{ display: 'block', color: color.fgMuted, fontSize: 11.5, marginTop: 2 }}>
             {[wakeCopy, providerCopy].filter(Boolean).join(' ')}
+          </span>
+        )}
+        {receipt.selectedCount !== undefined && (
+          <span style={{ display: 'block', color: color.fgMuted, fontSize: 11.5, marginTop: 2 }}>
+            {receipt.selectedCount} selected · {receipt.senderCount} accepted ·{' '}
+            {receipt.skippedCount ?? 0} skipped
           </span>
         )}
       </span>

@@ -290,6 +290,109 @@ describe('SendersScreen — edge states', () => {
     expect(lastQ).toBe('dealskhoj');
   });
 
+  it('shows the server snapshot time and mailbox scope beside sender counts', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/matching count and rows for me@example\.com/i);
+    expect(freshness).toHaveTextContent(/snapshot/i);
+    expect(
+      freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
+    ).toBeInTheDocument();
+    // One responsive line serves both desktop and mobile; it wraps instead
+    // of being hidden behind either view's layout breakpoint.
+    expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
+  });
+
+  it('makes placeholder rows read-only and announces the query transition', async () => {
+    const FILTERED_ROW = {
+      ...ROW,
+      id: 'filtered',
+      displayName: 'Filtered Sender',
+      email: 'filtered@example.com',
+    };
+    let resolveFiltered: ((response: Response) => void) | null = null;
+    const filteredResponse = new Promise<Response>((resolve) => {
+      resolveFiltered = resolve;
+    });
+
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('q') === 'filtered') return filteredResponse;
+          return jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: 1,
+                globalMaxTotal: 120,
+                asOf: '2026-05-29T12:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+      sendersSummaryHandler(),
+    ]);
+
+    renderScreen();
+    const oldCheckbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(oldCheckbox);
+    expect(screen.getByText(/sender selected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'filtered' },
+    });
+
+    expect(await screen.findByText('Updating results…', {}, { timeout: 2000 })).toBeInTheDocument();
+    const region = screen.getByTestId('sender-results-region');
+    expect(region).toHaveAttribute('aria-busy', 'true');
+    expect(region).toHaveAttribute('aria-disabled', 'true');
+    expect(region).toHaveAttribute('inert');
+    expect(region).toHaveStyle({ opacity: '0.55', pointerEvents: 'none' });
+    expect(oldCheckbox).toBeDisabled();
+    await waitFor(() => expect(oldCheckbox).not.toBeChecked());
+    await waitFor(() => expect(screen.queryByText(/sender selected/i)).not.toBeInTheDocument());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // Even a synthetic shortcut cannot act on the retained prior rows.
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveFiltered?.(
+        jsonOk({
+          data: [FILTERED_ROW],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 50 },
+            query: {
+              totalMatching: 1,
+              globalMaxTotal: 120,
+              asOf: '2026-06-02T09:30:00.000Z',
+            },
+          },
+        }),
+      );
+    });
+
+    expect(await screen.findAllByText(/Filtered Sender/)).not.toHaveLength(0);
+    await waitFor(() => expect(region).toHaveAttribute('aria-busy', 'false'));
+    const freshCheckbox = screen.getByRole('checkbox', { name: /select filtered sender/i });
+    expect(freshCheckbox).not.toBeDisabled();
+    expect(screen.queryByText('Updating results…')).not.toBeInTheDocument();
+    expect(
+      screen
+        .getByTestId('sender-results-freshness')
+        .querySelector('time[datetime="2026-06-02T09:30:00.000Z"]'),
+    ).toBeInTheDocument();
+  });
+
   it('narrows the list server-side when the "you replied" chip is toggled (D38)', async () => {
     // Regression: the chip wrote URL state and the BE accepted ?replied=,
     // but the FE never sent it — a silent no-op. The stub returns the
@@ -567,10 +670,11 @@ describe('SendersScreen — edge states', () => {
     expect(archivePosted).toBe(false);
   });
 
-  it('degrades gracefully when the preview count fetch fails (confirm still works)', async () => {
-    // A failed count check must say so honestly — never a fabricated number —
-    // and still let the user proceed (the worker resolves the real set).
+  it('blocks Archive and offers retry when the live preview fails', async () => {
+    // A failed count check must say so honestly, never fall back to a
+    // historic estimate, and never let a mail-changing action proceed.
     let archivePosted = false;
+    let previewRequests = 0;
     installFetchStub([
       {
         method: 'GET',
@@ -587,7 +691,10 @@ describe('SendersScreen — edge states', () => {
       {
         method: 'GET',
         path: '/api/actions/archive/preview',
-        respond: () => jsonServerError(),
+        respond: () => {
+          previewRequests++;
+          return jsonServerError();
+        },
       },
       {
         method: 'POST',
@@ -613,16 +720,18 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByText(/archive mail from 1 sender/i);
 
-    // Count check failed → honest fallback copy, confirm NOT gated.
-    await screen.findByText(/check how much is in your inbox/i);
+    // Count check failed → explicit no-change state and a blocked confirm.
+    await screen.findByText(/couldn't load the live preview/i);
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('button', { name: /archive/i })).not.toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
+    await waitFor(() => expect(previewRequests).toBeGreaterThan(1));
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    const receipt = await screen.findByRole('status');
-    expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived/i);
-    expect(receipt).toHaveTextContent(/1 sender/i);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(archivePosted).toBe(false);
   });
 
   it('Unsubscribe with 0 inbox mail hides the "also archive" toggle but still confirms (D226)', async () => {
@@ -949,6 +1058,15 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key });
   }
 
+  it('qualifies bulk selection as the currently loaded rows', async () => {
+    installFetchStub([TWO_SENDER_LIST]);
+    renderScreen();
+
+    const selectLoaded = await screen.findByRole('button', { name: /select loaded 2/i });
+    fireEvent.click(selectLoaded);
+    expect(screen.getByRole('button', { name: /deselect loaded 2/i })).toBeInTheDocument();
+  });
+
   it('bulk-archives a selection for real (aggregated preview → enqueue → batch poll → receipt → undo)', async () => {
     let bulkBody: unknown = null;
     let undoPosted = false;
@@ -1045,6 +1163,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(receipt).toHaveTextContent(/archived/i);
     expect(receipt).toHaveTextContent(/30 emails/i);
     expect(receipt).toHaveTextContent(/2 senders/i);
+    expect(receipt).toHaveTextContent(/2 selected · 2 accepted · 0 skipped/i);
     // Wire shape — ONE bulk POST carrying the senders selector.
     expect(bulkBody).toMatchObject({
       selector: { type: 'senders', senderIds: ['a', 'b'] },
@@ -1151,7 +1270,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/delete mail from 2 senders/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load preview/i);
+    await screen.findByText(/couldn't load the live preview/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();
@@ -1192,9 +1311,47 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
           }),
       },
       {
-        method: 'GET',
-        path: '/api/actions/archive/preview',
-        respond: () => jsonOk({ data: { senderId: 'a', inboxCount: 12 } }),
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                {
+                  senderId: 'a',
+                  name: 'Sender A',
+                  counts: {
+                    all: 12,
+                    olderThan30d: 8,
+                    olderThan90d: 5,
+                    olderThan180d: 3,
+                    olderThan365d: 1,
+                  },
+                  protected: false,
+                },
+                {
+                  senderId: 'b',
+                  name: 'Protected Co',
+                  counts: {
+                    all: 0,
+                    olderThan30d: 0,
+                    olderThan90d: 0,
+                    olderThan180d: 0,
+                    olderThan365d: 0,
+                  },
+                  protected: true,
+                },
+              ],
+              totals: {
+                all: 12,
+                olderThan30d: 8,
+                olderThan90d: 5,
+                olderThan180d: 3,
+                olderThan365d: 1,
+              },
+              protectedCount: 1,
+            },
+          }),
       },
     ]);
 
@@ -1209,6 +1366,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(
       screen.getByText(/1 protected sender skipped — unprotect to include it/i),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('Bulk action scope')).toHaveTextContent(
+      '2 selected · 1 eligible · 1 skipped',
+    );
   });
 
   it('toasts instead of opening a preview when the whole selection is protected', async () => {

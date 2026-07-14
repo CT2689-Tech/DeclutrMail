@@ -211,16 +211,22 @@ export function SendersScreen() {
   // authoritative for the duration of a scroll: subsequent pages
   // recompute server-side but the client preserves the page-1 number
   // so bars do not animate / replace counts as the user pages.
-  const globalMaxTotal = sendersQuery.data?.pages[0]?.meta.query?.globalMaxTotal ?? 0;
+  const queryMeta = sendersQuery.data?.pages[0]?.meta.query;
+  const globalMaxTotal = queryMeta?.globalMaxTotal ?? 0;
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
   // and is preserved across the scroll (subsequent pages recompute on
   // the server but the FE caches the page-1 snapshot so chip counts
   // don't shift mid-scroll).
-  const filterCounts = sendersQuery.data?.pages[0]?.meta.query?.filterCounts;
+  const filterCounts = queryMeta?.filterCounts;
   // D38 — total mailbox-wide matching count for the active compose
   // (the BE-honest "X senders match"). Falls back to the loaded length
   // while page 1 is in flight.
-  const totalMatching = sendersQuery.data?.pages[0]?.meta.query?.totalMatching ?? undefined;
+  const totalMatching = queryMeta?.totalMatching ?? undefined;
+  // D245 — the server computes counts + rows against one observational
+  // snapshot. Surface that scope and make keepPreviousData transitions
+  // explicitly read-only so prior-query rows cannot receive actions.
+  const asOf = queryMeta?.asOf;
+  const showingStaleRows = sendersQuery.isPlaceholderData;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -266,6 +272,8 @@ export function SendersScreen() {
       onQueryChange={setQuery}
       summaryFailed={summaryFailed}
       totalMatching={totalMatching}
+      asOf={asOf}
+      showingStaleRows={showingStaleRows}
       filterCounts={filterCounts}
       compose={compose}
       setCompose={setCompose}
@@ -292,6 +300,8 @@ function SendersScreenContent({
   onQueryChange: setQuery,
   summaryFailed,
   totalMatching,
+  asOf,
+  showingStaleRows,
   filterCounts,
   compose,
   setCompose,
@@ -318,6 +328,10 @@ function SendersScreenContent({
   summaryFailed: boolean;
   /** D38 — BE-honest count for the active compose (page-1 snapshot). */
   totalMatching: number | undefined;
+  /** D245 — server time for the count + row snapshot currently rendered. */
+  asOf: string | undefined;
+  /** Prior query's pages retained while the active search/filter resolves. */
+  showingStaleRows: boolean;
   /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
   filterCounts:
     | {
@@ -381,6 +395,8 @@ function SendersScreenContent({
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
     senderCount: number;
+    selectedCount: number;
+    skippedCount: number;
     wakeAt: string | null;
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
@@ -516,8 +532,18 @@ function SendersScreenContent({
   // the 2026-06-11 smoke). Updaters must stay pure; the closure over
   // `selected` is safe because each call rides a discrete user click.
   const selectionAnchorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showingStaleRows) return;
+    // The active URL/search scope has changed. Any selection or preview
+    // belongs to the previous query and must not survive under the new
+    // scope, even though keepPreviousData still paints those old rows.
+    selectionAnchorRef.current = null;
+    setSelected(new Set());
+    setPendingAction(null);
+  }, [showingStaleRows]);
   const toggleWithRange = useCallback(
     (orderedIds: readonly string[], id: string, shiftKey: boolean) => {
+      if (showingStaleRows) return;
       const next = new Set(selected);
       const checked = !selected.has(id);
       const anchor = selectionAnchorRef.current;
@@ -544,7 +570,7 @@ function SendersScreenContent({
       selectionAnchorRef.current = id;
       setSelected(next);
     },
-    [selected],
+    [selected, showingStaleRows],
   );
 
   // D51 brand rollup — group loaded senders by registrable domain
@@ -878,6 +904,8 @@ function SendersScreenContent({
                   batchId: res.batchId,
                   verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                   senderCount: res.senderCount,
+                  selectedCount: succeededIds.length,
+                  skippedCount: res.skipped.length,
                   wakeAt: null,
                 }),
               onError: (err) => {
@@ -1004,6 +1032,8 @@ function SendersScreenContent({
                 batchId: res.batchId,
                 verb,
                 senderCount: res.senderCount,
+                selectedCount: senders.length,
+                skippedCount: res.skipped.length,
                 wakeAt: verb === 'Later' ? (opts?.wakeAt ?? null) : null,
               });
             },
@@ -1183,6 +1213,8 @@ function SendersScreenContent({
         errorCode: data.status === 'failed' ? 'BATCH_FAILED' : null,
       }),
       senderCount: activeBatch.senderCount,
+      selectedCount: activeBatch.selectedCount,
+      skippedCount: activeBatch.skippedCount,
     });
     const verbPast = VERB_PAST[activeBatch.verb];
     const verbLowercase = activeBatch.verb.toLowerCase();
@@ -1302,6 +1334,7 @@ function SendersScreenContent({
   // Protect change nothing and fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
+      if (showingStaleRows) return;
       if (req.senders.length === 0) return;
       if (
         req.verb === 'Archive' ||
@@ -1314,7 +1347,7 @@ function SendersScreenContent({
         performAction(req.verb, req.senders);
       }
     },
-    [performAction],
+    [performAction, showingStaleRows],
   );
 
   // Bulk verbs (SelectionBar buttons + the selection-scoped shortcuts)
@@ -1325,6 +1358,7 @@ function SendersScreenContent({
   // opening an empty preview.
   const requestBulkAction = useCallback(
     (verb: 'Keep' | keyof typeof ELIGIBLE) => {
+      if (showingStaleRows) return;
       // Keep (D40) — a standing-policy write, non-destructive: no
       // eligibility gate (protected senders can be Kept) and no D226
       // preview; `performAction`'s Keep branch fans the policy PATCHes.
@@ -1355,7 +1389,7 @@ function SendersScreenContent({
       }
       const skippedTotal = selectedSenders.length - eligible.length;
       if (skippedTotal === 0) {
-        requestAction({ verb, senders: eligible });
+        requestAction({ verb, senders: eligible, selectedCount: selectedSenders.length });
         return;
       }
       const protectedCount = selectedSenders.filter(
@@ -1363,19 +1397,25 @@ function SendersScreenContent({
       ).length;
       requestAction({
         verb,
-        senders: eligible,
+        // A/L/D keep the original selection so preview and receipt can
+        // report protected/raced rows individually. Unsubscribe fans
+        // intent requests and therefore remains client-narrowed.
+        senders: verb === 'Unsubscribe' ? eligible : selectedSenders,
+        selectedCount: selectedSenders.length,
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },
-    [selectedSenders, requestAction],
+    [selectedSenders, requestAction, showingStaleRows],
   );
 
   const closePending = useCallback(() => setPendingAction(null), []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
-      if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
+      if (pendingAction && !showingStaleRows) {
+        performAction(pendingAction.verb, pendingAction.senders, opts);
+      }
     },
-    [pendingAction, performAction],
+    [pendingAction, performAction, showingStaleRows],
   );
 
   // D51 saved views — apply / save-current / delete. The contract's
@@ -1442,6 +1482,7 @@ function SendersScreenContent({
   // is open, and only when at least one sender is selected.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (showingStaleRows) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (selectedSenders.length === 0) return;
@@ -1461,7 +1502,7 @@ function SendersScreenContent({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedSenders, requestBulkAction]);
+  }, [selectedSenders, requestBulkAction, showingStaleRows]);
 
   return (
     <div
@@ -1595,6 +1636,14 @@ function SendersScreenContent({
         </div>
       )}
 
+      {asOf && (
+        <SenderResultsFreshness
+          asOf={asOf}
+          mailboxEmail={activeEmail}
+          updating={showingStaleRows}
+        />
+      )}
+
       {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
           Counts on chips are mailbox-wide absolutes (filterCounts),
           NOT loaded-page derivations. URL state via useComposeState
@@ -1673,7 +1722,7 @@ function SendersScreenContent({
               alignItems: 'baseline',
             }}
           >
-            {senders.length > 0 && (
+            {senders.length > 0 && !showingStaleRows && (
               <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
             )}
             {/* D49 — segmented [Grid | Table] switch. Per-session,
@@ -1688,68 +1737,88 @@ function SendersScreenContent({
           not "not synced yet". (The no-match branch was unreachable
           before this split: the not-synced branch keyed on the same
           `senders.length === 0` and always won.) */}
-      {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
-        <EmptyState
-          title={query ? `No senders match "${query}"` : 'No senders match these filters'}
-          body="Try a different search or clear the filters."
-          action={
-            <Button
-              onClick={() => {
-                setQuery('');
-                clearCompose();
-              }}
-            >
-              Clear search & filters
-            </Button>
-          }
-        />
-      ) : senders.length === 0 ? (
-        <EmptyState
-          title="No senders yet"
-          body="Once your mailbox finishes syncing, the senders who mail you will appear here."
-        />
-      ) : view === 'grid' ? (
-        // D49 default — grid of cards. `senders` arrives already
-        // BE-filtered for the active compose (D38); D51 brand rollup
-        // groups ≥3 senders sharing a registrable domain into one
-        // expandable group row.
-        <SenderGrid
-          entries={gridEntries}
-          selectedIds={selected}
-          onToggleSelect={(id, shiftKey) => toggleWithRange(gridOrderedIds, id, shiftKey ?? false)}
-          onAction={requestAction}
-          globalMaxTotal={globalMaxTotal}
-        />
-      ) : (
-        // D49 Table — flat, sortable list over the wire rows (ADR-0014).
-        // BE sort order (sort + direction) is the canonical row order;
-        // the table does NOT intent-bucket. Row verbs bridge into the
-        // shared `requestAction` shape so ConfirmActionModal / receipt /
-        // undo stay identical to Grid mode (D226).
-        <SenderTable
-          rows={wireRows}
-          globalMaxTotal={globalMaxTotal}
-          sort={sortCol}
-          direction={sortDirection}
-          onSortChange={(next) => setSortState(next)}
-          selectedIds={selected}
-          onSelectionChange={(next) => setSelected(new Set(next))}
-          onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
-          onAction={({ verb, sender }) => {
-            const adapted = adaptSenderListRow(sender);
-            requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
-          }}
-          emptyKind={
-            query.trim() !== ''
-              ? 'no-search-match'
-              : hasAnyFilter(compose)
-                ? 'no-filter-match'
-                : 'no-senders'
-          }
-        />
-      )}
+      <fieldset
+        data-testid="sender-results-region"
+        disabled={showingStaleRows}
+        inert={showingStaleRows ? true : undefined}
+        aria-busy={showingStaleRows}
+        aria-disabled={showingStaleRows}
+        style={{
+          border: 0,
+          margin: 0,
+          minWidth: 0,
+          padding: 0,
+          opacity: showingStaleRows ? 0.55 : 1,
+          pointerEvents: showingStaleRows ? 'none' : undefined,
+          transition: 'opacity 120ms ease',
+        }}
+      >
+        {senders.length === 0 && (query || hasAnyFilter(compose)) ? (
+          <EmptyState
+            title={query ? `No senders match "${query}"` : 'No senders match these filters'}
+            body="Try a different search or clear the filters."
+            action={
+              <Button
+                onClick={() => {
+                  setQuery('');
+                  clearCompose();
+                }}
+              >
+                Clear search & filters
+              </Button>
+            }
+          />
+        ) : senders.length === 0 ? (
+          <EmptyState
+            title="No senders yet"
+            body="Once your mailbox finishes syncing, the senders who mail you will appear here."
+          />
+        ) : view === 'grid' ? (
+          // D49 default — grid of cards. `senders` arrives already
+          // BE-filtered for the active compose (D38); D51 brand rollup
+          // groups ≥3 senders sharing a registrable domain into one
+          // expandable group row.
+          <SenderGrid
+            entries={gridEntries}
+            selectedIds={selected}
+            onToggleSelect={(id, shiftKey) =>
+              toggleWithRange(gridOrderedIds, id, shiftKey ?? false)
+            }
+            onAction={requestAction}
+            globalMaxTotal={globalMaxTotal}
+          />
+        ) : (
+          // D49 Table — flat, sortable list over the wire rows (ADR-0014).
+          // BE sort order (sort + direction) is the canonical row order;
+          // the table does NOT intent-bucket. Row verbs bridge into the
+          // shared `requestAction` shape so ConfirmActionModal / receipt /
+          // undo stay identical to Grid mode (D226).
+          <SenderTable
+            rows={wireRows}
+            globalMaxTotal={globalMaxTotal}
+            sort={sortCol}
+            direction={sortDirection}
+            onSortChange={(next) => setSortState(next)}
+            selectedIds={selected}
+            onSelectionChange={(next) => {
+              if (!showingStaleRows) setSelected(new Set(next));
+            }}
+            onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
+            onAction={({ verb, sender }) => {
+              const adapted = adaptSenderListRow(sender);
+              requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
+            }}
+            emptyKind={
+              query.trim() !== ''
+                ? 'no-search-match'
+                : hasAnyFilter(compose)
+                  ? 'no-filter-match'
+                  : 'no-senders'
+            }
+          />
+        )}
 
-      {/*
+        {/*
         Load more (D202 cursor pagination). The list endpoint returns one
         page at a time; without this control a mailbox with more senders
         than a page silently truncated at the first page. Shown only when
@@ -1762,26 +1831,27 @@ function SendersScreenContent({
         the keyboard/AT affordance and the no-IntersectionObserver
         fallback.
       */}
-      {hasNextPage && senders.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 0 4px',
-          }}
-        >
-          {infiniteScrollEnabled && (
-            <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
-          )}
-          <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
-            {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
-          </Button>
-        </div>
-      )}
+        {hasNextPage && senders.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 0 4px',
+            }}
+          >
+            {infiniteScrollEnabled && (
+              <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
+            )}
+            <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
+            </Button>
+          </div>
+        )}
+      </fieldset>
 
-      {selectedSenders.length > 0 && (
+      {selectedSenders.length > 0 && !showingStaleRows && (
         <SelectionBar
           senders={selectedSenders}
           onClear={() => setSelected(new Set())}
@@ -1791,11 +1861,12 @@ function SendersScreenContent({
       )}
 
       <ConfirmActionModal
-        request={pendingAction}
+        request={showingStaleRows ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
         archivePreview={archivePreview}
         compositePreview={compositePreviewQuery.data}
+        compositePreviewLoading={compositePreviewQuery.isLoading}
         compositePreviewError={compositePreviewQuery.isError}
         bulkPreview={
           bulkPreviewSenderIds != null
@@ -1806,6 +1877,11 @@ function SendersScreenContent({
               }
             : undefined
         }
+        onRetryPreview={() => {
+          void archivePreviewQuery.refetch();
+          void compositePreviewQuery.refetch();
+          if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
+        }}
       />
 
       {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
@@ -1815,6 +1891,70 @@ function SendersScreenContent({
 }
 
 /* ────────────────── HELPERS ────────────────── */
+
+/** D245 — query scope + server snapshot time beside the matching count. */
+function SenderResultsFreshness({
+  asOf,
+  mailboxEmail,
+  updating,
+}: {
+  asOf: string;
+  mailboxEmail: string;
+  updating: boolean;
+}) {
+  const label = formatSenderSnapshotTime(asOf);
+  return (
+    <div
+      data-testid="sender-results-freshness"
+      role={updating ? 'status' : undefined}
+      aria-live={updating ? 'polite' : undefined}
+      aria-atomic={updating ? 'true' : undefined}
+      style={{
+        alignItems: 'baseline',
+        color: updating ? color.amber : color.fgMuted,
+        display: 'flex',
+        flexWrap: 'wrap',
+        fontFamily: font.mono,
+        fontSize: 11,
+        gap: 5,
+        lineHeight: 1.5,
+        margin: '-2px 0 2px',
+      }}
+    >
+      {updating ? (
+        <>
+          <strong style={{ fontWeight: 600 }}>Updating results…</strong>
+          <span>Previous count and rows are read-only.</span>
+          <span>
+            Previous snapshot <time dateTime={asOf}>{label}</time>.
+          </span>
+        </>
+      ) : (
+        <>
+          <span>Matching count and rows for {mailboxEmail}</span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Snapshot <time dateTime={asOf}>{label}</time>
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatSenderSnapshotTime(iso: string): string {
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return 'time unavailable';
+  return new Intl.DateTimeFormat('en-US', {
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+    year: 'numeric',
+  }).format(date);
+}
 
 /**
  * D38 — derive the top-N domain suggestions for the ComposeStrip's
@@ -1838,7 +1978,8 @@ function topDomains(senders: readonly Sender[]): string[] {
 /**
  * D38 — bulk-select toggle on the compose summary line. Acts on the
  * currently loaded senders (BE-filtered, so the set already matches
- * the active compose). `select all N` ↔ `deselect all N`.
+ * the active compose). The visible "loaded" qualifier prevents this
+ * from being mistaken for filter-wide selection across unloaded pages.
  */
 function BulkSelectButton({
   senders,
@@ -1881,7 +2022,9 @@ function BulkSelectButton({
         letterSpacing: '0.04em',
       }}
     >
-      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
+      {allSelected
+        ? `deselect loaded ${senders.length} [⌫]`
+        : `select loaded ${senders.length} [+]`}
     </button>
   );
 }

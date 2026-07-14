@@ -946,6 +946,7 @@ export function TriageScreen({ state = DEFAULT_TRIAGE_STATE }: { state?: TriageS
         wakeAt={pendingAction?.wakeAt ?? null}
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
+        onRetryPreview={() => void compositePreview.refetch()}
       />
 
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}

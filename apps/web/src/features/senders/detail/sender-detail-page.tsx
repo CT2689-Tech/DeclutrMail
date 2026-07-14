@@ -1166,7 +1166,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         onCancel={closePending}
         onConfirm={confirmPending}
         compositePreview={compositePreviewQuery.data}
+        compositePreviewLoading={compositePreviewQuery.isLoading}
         compositePreviewError={compositePreviewQuery.isError}
+        onRetryPreview={() => void compositePreviewQuery.refetch()}
       />
     </div>
   );

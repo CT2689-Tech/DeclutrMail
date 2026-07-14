@@ -791,6 +791,8 @@ export function verbDisplay(verb: ActionVerb): { label: string; shortcut: string
 export interface ActionRequest {
   verb: ActionVerb;
   senders: Sender[];
+  /** Original user selection before any eligibility narrowing. */
+  selectedCount?: number;
   /**
    * Senders the eligibility gate dropped from the user's selection
    * before this request was built (D226 honesty — the preview must say

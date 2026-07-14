@@ -161,8 +161,10 @@ export function ConfirmActionModal({
   onConfirm,
   archivePreview,
   compositePreview,
+  compositePreviewLoading,
   compositePreviewError,
   bulkPreview,
+  onRetryPreview,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -178,10 +180,12 @@ export function ConfirmActionModal({
    * row displays. Single-sender path only — absent for bulk flows.
    */
   compositePreview?: CompositeActionPreviewResult | undefined;
+  /** Composite preview is still resolving; confirmation remains unavailable. */
+  compositePreviewLoading?: boolean | undefined;
   /**
    * Composite-preview fetch error — surfaces when the BE preview call
-   * failed. For Delete primary this MUST disable confirm so the user
-   * cannot proceed past D226's preview mandate (silent-failure-hunter
+   * failed. Any action that moves existing mail MUST disable confirm so
+   * the user cannot proceed past D226's preview mandate (silent-failure-hunter
    * 2026-06-05: a sustained 5xx during composite preview left confirm
    * enabled with `compositeCount === undefined`).
    */
@@ -192,6 +196,8 @@ export function ConfirmActionModal({
    * headline figure, and the per-sender breakdown list.
    */
   bulkPreview?: BulkPreviewState | undefined;
+  /** Re-run the live preview after a failed read. */
+  onRetryPreview?: (() => void) | undefined;
 }) {
   const verb = request?.verb;
   // Composite secondary (chip row) — applies only on Unsubscribe + Later
@@ -246,7 +252,7 @@ export function ConfirmActionModal({
   const compositeCount = pickBucketCount(bucketCounts, olderThanDays);
   const previewLoading = isBulk
     ? (bulkPreview?.loading ?? false)
-    : (archivePreview?.loading ?? false);
+    : Boolean(compositePreviewLoading || archivePreview?.loading);
   const inboxNow = isBulk
     ? bulkPreview?.data?.totals.all
     : archivePreview != null && !previewLoading && !archivePreview.error
@@ -259,15 +265,18 @@ export function ConfirmActionModal({
   const nothingToActOn =
     (isArchiveVerb && inboxNow === 0) ||
     (isDeleteVerb && (compositeCount === 0 || (compositeCount === undefined && inboxNow === 0)));
-  // Block confirm on Delete primary when the preview failed — D226
-  // requires the preview to inform the destructive choice (bulk reads
-  // the aggregated preview's error, single the composite preview's).
-  const previewBlocksDelete =
-    isDeleteVerb && (isBulk ? (bulkPreview?.error ?? false) : (compositePreviewError ?? false));
+  // Every mail-changing action requires a successful live preview.
+  // Never fall back to historic/fixture estimates after a read fails.
+  const previewUnavailable = isBulk
+    ? (bulkPreview?.error ?? false)
+    : Boolean(compositePreviewError || archivePreview?.error);
+  const previewRequired = primaryActsOnInbox || isLaterVerb || hasSecondaryAction;
+  const requiredPreviewUnavailable = previewRequired && previewUnavailable;
   const wakeAtInvalid = isLaterVerb && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
   const confirmDisabled =
-    ((isArchiveVerb || isDeleteVerb) && (previewLoading || nothingToActOn)) ||
-    previewBlocksDelete ||
+    (previewRequired && previewLoading) ||
+    nothingToActOn ||
+    requiredPreviewUnavailable ||
     wakeAtInvalid;
 
   // Derived ConfirmOptions for onConfirm — packages secondary into the
@@ -325,7 +334,11 @@ export function ConfirmActionModal({
   const historic = senderTotals.every((t) => t != null)
     ? senderTotals.reduce((sum, t) => sum + (t as number), 0)
     : null;
-  const n = senders.length;
+  const requestedSenderCount = senders.length;
+  const selectedCount = request.selectedCount ?? requestedSenderCount;
+  const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
+  const eligibleCount = Math.max(0, selectedCount - skippedCount);
+  const n = eligibleCount;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
   // Tone: Delete is the strongest destructive — red eyebrow + amber-red
@@ -554,6 +567,20 @@ export function ConfirmActionModal({
               }}
             >
               {skippedNote}
+            </p>
+          )}
+          {request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0) && (
+            <p
+              aria-label="Bulk action scope"
+              style={{
+                fontFamily: font.mono,
+                fontSize: 10.5,
+                color: color.fgMuted,
+                letterSpacing: '0.04em',
+                margin: '8px 0 0',
+              }}
+            >
+              {selectedCount} selected · {eligibleCount} eligible · {skippedCount} skipped
             </p>
           )}
         </div>
@@ -1073,15 +1100,20 @@ export function ConfirmActionModal({
           <span
             style={{
               fontSize: 11.5,
-              color: previewBlocksDelete ? color.amber : color.fgMuted,
-              fontWeight: previewBlocksDelete ? 600 : 400,
+              color: requiredPreviewUnavailable ? color.amber : color.fgMuted,
+              fontWeight: requiredPreviewUnavailable ? 600 : 400,
             }}
           >
-            {previewBlocksDelete
-              ? "Couldn't load preview — refresh and try again before confirming."
+            {requiredPreviewUnavailable
+              ? "Couldn't load the live preview. Nothing has changed; retry before confirming."
               : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {requiredPreviewUnavailable && onRetryPreview && (
+              <Button tone="default" onClick={onRetryPreview}>
+                Retry preview
+              </Button>
+            )}
             <Button
               tone="default"
               onClick={onCancel}

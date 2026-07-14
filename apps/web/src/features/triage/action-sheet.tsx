@@ -41,6 +41,7 @@ export function ActionSheet({
   wakeAt = null,
   onCancel,
   onConfirm,
+  onRetryPreview,
 }: {
   open: boolean;
   /** Sheetable verbs only — Keep is never previewed. */
@@ -51,6 +52,7 @@ export function ActionSheet({
   wakeAt?: string | null;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
+  onRetryPreview?: (() => void) | undefined;
 }) {
   // Unsubscribe defaults to clearing the backlog (the common intent
   // when cutting a sender off). Archive and Later ignore the toggle —
@@ -70,6 +72,7 @@ export function ActionSheet({
 
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
+  const previewUnavailable = inboxCount === 'unavailable';
 
   useEffect(() => {
     if (!open) return;
@@ -77,7 +80,12 @@ export function ActionSheet({
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !wakeAtInvalid) {
+      } else if (
+        e.key === 'Enter' &&
+        (e.metaKey || e.ctrlKey) &&
+        !wakeAtInvalid &&
+        !previewUnavailable
+      ) {
         e.preventDefault();
         onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt });
       }
@@ -90,6 +98,7 @@ export function ActionSheet({
     rememberPreference,
     selectedWakeAt,
     wakeAtInvalid,
+    previewUnavailable,
     onCancel,
     onConfirm,
   ]);
@@ -271,12 +280,17 @@ export function ActionSheet({
               : "Undo from Activity during your plan's window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {previewUnavailable && onRetryPreview && (
+              <Button tone="default" onClick={onRetryPreview}>
+                Retry preview
+              </Button>
+            )}
             <Button tone="default" onClick={onCancel}>
               Cancel
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
-              disabled={wakeAtInvalid}
+              disabled={wakeAtInvalid || previewUnavailable}
               onClick={() =>
                 onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt })
               }
