@@ -10,6 +10,10 @@
   rule-matched, never ML-predicted), D44 (Stats strip), D227
   (canonical verbs K/A/U/L)
 
+> **D245 amendment (2026-07-14):** VIP was removed before launch. Protected
+> is the sole visible safety state, so every grouping rule below keys only on
+> `is_protected`.
+
 ## Context
 
 The current Senders surface (`apps/web/src/features/senders/senders-screen.tsx`)
@@ -39,9 +43,9 @@ require new ML, new schema, or new headers:
 
 - **Clean up** = engine recommendation = `unsubscribe`
 - **Move later** = engine recommendation = `archive`
-- **Protect** = `sender_policies.is_vip` OR `sender_policies.is_protected`
-- **People** = senders with no recommendation, not VIP, not
-  protected (the "still figuring out" middle)
+- **Protect** = `sender_policies.is_protected`
+- **People** = senders with no recommendation and not protected (the
+  "still figuring out" middle)
 
 This is **not** ML category prediction (D222) — the engine
 recommendation already exists per D26 (`triage_decisions.verdict`).
@@ -57,12 +61,12 @@ primary grouping axis on the Senders surface.
 The Senders surface (`apps/web/src/features/senders/senders-screen.tsx`)
 **groups senders by user-intent disposition**, not by Gmail category:
 
-| Group      | Membership                                             | Default state | Action affordance   |
-| ---------- | ------------------------------------------------------ | ------------- | ------------------- |
-| Clean up   | `triage_decisions.verdict = 'unsubscribe'`             | Auto-expanded | Single primary verb |
-| Move later | `triage_decisions.verdict = 'archive'`                 | Collapsed     | Single primary verb |
-| Protect    | `sender_policies.is_vip OR is_protected`               | Collapsed     | Status display only |
-| People     | All others (no recommendation, not VIP, not protected) | Collapsed     | Default to Keep     |
+| Group      | Membership                                       | Default state | Action affordance   |
+| ---------- | ------------------------------------------------ | ------------- | ------------------- |
+| Clean up   | `triage_decisions.verdict = 'unsubscribe'`       | Auto-expanded | Single primary verb |
+| Move later | `triage_decisions.verdict = 'archive'`           | Collapsed     | Single primary verb |
+| Protect    | `sender_policies.is_protected`                   | Collapsed     | Status display only |
+| People     | All others (no recommendation and not protected) | Collapsed     | Default to Keep     |
 
 Group ordering is fixed: **Clean up → Move later → Protect → People**.
 The top-priority action group (Clean up) auto-expands; the rest start
@@ -110,7 +114,7 @@ from the Senders surface — those filters move to a secondary
   - the secondary advanced-filter drawer) so power users can still
     navigate by where Gmail filed mail.
 - Derivation uses existing fields (`triage_decisions.verdict`,
-  `sender_policies.is_vip`, `is_protected`) — no schema migration,
+  `sender_policies.is_protected`) — no schema migration,
   no new wire field, no new endpoint.
 
 ### Negative
@@ -149,7 +153,7 @@ export type SenderIntent = 'cleanup' | 'later' | 'protect' | 'people';
 export function intentOf(s: SenderListRow): SenderIntent {
   if (s.lastReview?.verdict === 'unsubscribe') return 'cleanup';
   if (s.lastReview?.verdict === 'archive') return 'later';
-  if (s.protectionFlags?.isVip || s.protectionFlags?.isProtected) return 'protect';
+  if (s.protectionFlags?.isProtected) return 'protect';
   return 'people';
 }
 
@@ -158,12 +162,12 @@ export const INTENT_ORDER: SenderIntent[] = ['cleanup', 'later', 'protect', 'peo
 
 **Group descriptions** (per Variant D copy audit, all D209-compliant):
 
-| Intent  | Description                                     |
-| ------- | ----------------------------------------------- |
-| cleanup | Senders we think you can let go                 |
-| later   | Out of inbox, still here when you need them     |
-| protect | Always-keep · receipts, VIPs, important threads |
-| people  | Folks and tools you stay in touch with          |
+| Intent  | Description                                           |
+| ------- | ----------------------------------------------------- |
+| cleanup | Senders we think you can let go                       |
+| later   | Out of inbox, still here when you need them           |
+| protect | Always-keep · protected senders and important threads |
+| people  | Folks and tools you stay in touch with                |
 
 **Migration path.** The current Gmail-category `SenderGroup`
 component is preserved (do not delete) — it becomes the rendering

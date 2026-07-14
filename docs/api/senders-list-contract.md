@@ -25,7 +25,7 @@ state**, not an error to retry — FE renders the gate; reads do not retry 4xx).
 | `protected` | bool         | —       | **Slice 0.** `true` → only `is_protected` senders                                                                             |
 | `category`  | enum         | —       | existing Gmail-category filter (kept)                                                                                         |
 | `search`    | string       | —       | **Slice 2.** sender name/domain prefix + DSL (`vol:>500 read:never`); bad query degrades to plain text, never errors the list |
-| `filters`   | repeated     | —       | **Slice 3.** predicate chips (`unopened`, `dormant`, `has_mailto`, `vip`, …); compose with `search` + `sort`                  |
+| `filters`   | repeated     | —       | **Slice 3.** predicate chips (`unopened`, `dormant`, `has_mailto`, …); compose with `search` + `sort`                         |
 
 Cursor is **bound to `(sort, direction, filters, search)`** — changing any of them
 **resets to page 1** (cursor must be discarded client-side on any criteria change).
@@ -64,7 +64,7 @@ scroll** and does **not** animate/replace counts on subsequent pages. The
 **`SenderListRow` (Slice 1 shape)** — allowlisted fields only:
 `id, displayName, email, domain, gmailCategory, totalReceived, monthlyVolume,
 readRate (→ bucketed client-side), volumeTrend, lastSeenAt, firstSeenAt,
-unsubscribeMethod, isVip, isProtected, lastReview{at,verdict,generatedBy,confidence}`.
+unsubscribeMethod, isProtected, lastReview{at,verdict,generatedBy,confidence}`.
 
 `totalReceived` and `monthlyVolume` are stored as `bigint` and serialized as JSON
 **numbers** (safe integers — well below `Number.MAX_SAFE_INTEGER`); the API layer

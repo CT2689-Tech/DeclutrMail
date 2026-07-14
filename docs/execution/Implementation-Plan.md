@@ -1527,9 +1527,9 @@ mobile, education. Ready for Topic 3 (Sender Detail).
 ```
 ┌─ Header ─────────────────────────────────────────────┐
 │  [Avatar] LinkedIn  ·  linkedin.com  ·  Gmail: Social │
-│           ⭐ VIP   🔒 Protect                          │
+│           ◆ Protect                                   │
 └──────────────────────────────────────────────────────┘
-┌─ Recommendation banner (slim, only when not VIP) ─────┐
+┌─ Recommendation banner (slim, only when not Protected)┐
 │  ▼ Archive recommended · confidence 92%               │
 │    "You open 2% of LinkedIn's 47/mo. They send daily." │
 │                                            [Why? →]    │
@@ -1564,7 +1564,7 @@ the Recommendation banner between header and actions.
 - API endpoint: `GET /api/senders/:sender_key/detail?mailbox_account_id=`
   returns one DTO with all sections (header, recommendation, recent
   messages paginated, stats, charts data, history paginated).
-- Recommendation banner is hidden when sender is VIP (VIP locks to Keep;
+- Recommendation banner is hidden when sender is Protected (Protected locks to Keep;
   no recommendation to surface).
 - Recent messages paginates with page-size 10. "Jump to page N" affordance
   for large senders (bundle calls this out).
@@ -1576,9 +1576,9 @@ the Recommendation banner between header and actions.
 Action toolbar contains exactly the 4 verbs from D20: Keep, Archive,
 Unsubscribe, Screen. Same 4 buttons that Triage uses.
 
-VIP and Protect are NOT in the action toolbar — they live in the header
-(D43). Rationale: action toolbar = *immediate verdicts* (decisions on
-the current state). VIP/Protect = *standing policies* (long-term flags).
+Protect is NOT in the action toolbar — it lives in the header (D43).
+Rationale: action toolbar = *immediate verdicts* (decisions on the current
+state). Protect = *standing policy* (long-term safety state).
 Mixing them confuses the mental model.
 
 **Implications:**
@@ -1608,60 +1608,19 @@ trust artifact in onboarding (`screens/onboarding.jsx:275`).
 - Privacy copy on the screen explicitly: "We don't render emails.
   Clicking a subject opens the message in Gmail."
 
-### D42 — VIP and Protect: **Two distinct standing policies, both visible in header**
+### D42 — **SUPERSEDED by D245: Protected is the sole visible safety state**
 
-**VIP** (elevational — "this sender is important"):
-- Locks engine verdict to Keep (never auto-suggest changes)
-- Includes sender in every Morning Brief regardless of read-rate
-- Shows ⭐ badge next to sender name throughout the app (Triage, Senders,
-  Activity)
-- Optional push notification on new message (Pro-tier feature, post-launch)
+The prelaunch VIP concept, column, ranking behavior, and badge are removed.
+Protected remains the visible safety state and excludes a sender from bulk
+and automatic mail-changing actions. Whether protection may also be applied
+automatically remains an explicit product Q&A; D245 does not decide it.
 
-**Protect** (defensive — "let me handle this sender"):
-- Locks engine verdict to Keep (never auto-suggest changes)
-- Does NOT surface in Brief
-- Does NOT show ⭐ badge
-- Silent guard. The "I have this under control" toggle.
+### D43 — **SUPERSEDED by D245: one Protect control**
 
-A sender can be:
-- *Neither* — default; engine recommends normally
-- *VIP only* — elevated + locked Keep
-- *Protect only* — silent locked Keep
-- *Both* — your accountant case (rare but valid)
-
-**Schema:**
-- `sender_policies.is_vip bool default false`
-- `sender_policies.is_protected bool default false`
-- (these are *modifiers* on top of policy_type; both override verdict to
-  Keep when true)
-
-**Engine integration:** Phase A cascade in D21 rule list updated:
-- Rule 1 (was: user-defined Always-Keep toggle) → "is_protected = true
-  OR is_vip = true → Keep, locked"
-
-### D43 — VIP and Protect location: **Both as small icons in header, next to sender name**
-
-```
-[Avatar] LinkedIn  ·  linkedin.com  ·  Gmail: Social
-         ⭐ VIP   🔒 Protect
-```
-
-Both rendered as small toggleable chips beneath the sender name. Filled
-state = active; outlined state = inactive. Click toggles.
-
-**Implications:**
-- ⭐ icon (Lucide `Star`) for VIP — Gmail-star metaphor.
-- 🔒 icon (Lucide `Shield`) for Protect — defensive metaphor.
-- Tooltip on each explains the difference: VIP = "elevated in Brief and
-  notifications"; Protect = "never re-suggested, silent guard."
-- VIP badge ⭐ also appears next to sender name in Triage rows, Senders
-  list, Activity rows. Protect badge does *not* appear elsewhere (it's
-  meant to be invisible until the user revisits Sender Detail).
-- Activity records VIP and Protect toggles as separate audit entries:
-  `activity_log(action_type='marked_vip' | 'unmarked_vip' |
-  'marked_protected' | 'unmarked_protected')`.
-- Settings has "VIPs" and "Protected senders" list views for
-  management at scale.
+Sender Detail exposes one Protect control. Activity records only
+`marked_protected` and `unmarked_protected`; Settings exposes one Protected
+senders view. Brief priority is based on observed engagement and Gmail
+importance, not this safety control.
 
 ### D44 — Stats strip: **5 stats, single reflow row**
 
@@ -1714,8 +1673,8 @@ pre-filtered).
 Each row shows:
 - Date (relative for ≤7d, absolute for older)
 - Source (You / Triage / Manual / Autopilot / Screener / System)
-- Action (Archived / Kept / Unsubscribed / Screened / Marked VIP /
-  Unmarked VIP / Protected / Unprotected / Restored / etc.)
+- Action (Archived / Kept / Unsubscribed / Screened / Protected /
+  Unprotected / Restored / etc.)
 - Count if applicable (e.g., "47 emails")
 - Operation ID in monospace (small, tooltip on hover)
 - Undo link if still in window (D9 unsub window, archive's 7-day window)
@@ -1723,7 +1682,7 @@ Each row shows:
 **Implications:**
 - API: `GET /api/senders/:sender_key/history?limit=10&mailbox_account_id=`
   returns the 10 most recent `activity_log` rows for that sender.
-- All action types make the list — including VIP/Protect toggles (per
+- All action types make the list — including Protect toggles (per
   user preference for the "hybrid" answer).
 - Each row links to the full Activity entry detail.
 
@@ -1732,7 +1691,7 @@ Each row shows:
 ### Topic 3 complete: **Sender Detail decisions D39–D46 captured.**
 
 8 decisions covering layout order, action toolbar, message-click
-behavior, VIP and Protect concepts, header placement, stats strip,
+behavior, the Protect safety state, header placement, stats strip,
 charts, decision history. Ready for Topic 4.
 
 ---
@@ -1825,7 +1784,7 @@ hook from `packages/shared/hooks/`. Rendering feature-owned in
 
 Each sender card starts *collapsed* showing critical info:
 - Avatar / initials
-- Sender name + ⭐ if VIP
+- Sender name + Protected indicator when applicable
 - Recommendation badge (verdict + confidence pip)
 - 4 verb buttons (K/A/U/S)
 
@@ -1844,13 +1803,13 @@ expandable detail row beneath (same content as the expanded card).
 ### D51 — Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer**
 
 **Quick-filter chips** (always visible at top of grid):
-1. **VIPs** — filters to senders where `is_vip = true`
+1. **Protected** — filters to senders where `is_protected = true`
 2. **Recommended Archive** — filters to engine verdict = Archive
 3. **Recommended Unsubscribe** — filters to engine verdict = Unsubscribe
 4. **New senders** — filters to senders with `total_messages < 5 OR first_seen_days < 14`
 
 Each chip click adds/removes from active filter set. Multi-select
-allowed. Each chip displays its count: e.g., `⭐ VIPs · 12`.
+allowed. Each chip displays its count: e.g., `Protected · 12`.
 
 **"More filters →" button** opens a right-slide drawer with:
 - Gmail category checkboxes (Primary / Promotions / Social / Updates / Forums)
@@ -1861,7 +1820,6 @@ allowed. Each chip displays its count: e.g., `⭐ VIPs · 12`.
 - Relationship length slider (<1mo / 1-6mo / 6mo-1y / 1y+ / 5y+)
 - Has unsubscribe header toggle
 - Has reply history toggle
-- Protected toggle
 
 Drawer footer: `[Apply filters]` + `[Clear all]`. Active filter count
 shown as badge on the "More filters →" button.
@@ -1965,7 +1923,7 @@ days**. Options: Last 7 days / Last 30 days / Last 90 days / All time.
 - All / Triage / Senders / Autopilot / Brief / Screener / Manual
 
 **Right-rail filter panel (collapsible, "More filters →"):**
-- Action: Archive / Unsubscribe / Keep / Screen / VIP / Protect / Undo
+- Action: Archive / Unsubscribe / Keep / Screen / Protect / Undo
 - Sender: search input or pick from common senders
 - Status: In progress / Completed / Needs attention / Failed / Undone
 - Undo available: toggle (on = show only entries where undo is still
@@ -2144,14 +2102,11 @@ work weekdays. Pro users can enable weekend Briefs in Settings →
 Notifications → "Generate Brief on weekends too." Coordinates with
 Quiet Hours (Topic 10).
 
-### D67 — VIP in Brief: **Inline ⭐ star on Reply rows**
+### D67 — **SUPERSEDED by D245: Brief priority uses observed facts**
 
-VIPs who emailed yesterday appear in Reply (or FYI/Noise) as normal,
-with a small ⭐ icon next to their name. No separate VIP section.
-
-**Auto-elevation rule:** If a VIP sent yesterday and the engine *would
-have* put them in FYI or Noise, they're promoted to Reply automatically
-(because by definition VIPs are people you'd want to respond to).
+Brief has no VIP marker or manual safety-state elevation. Reply priority is
+based on observed engagement and Gmail importance. A future manual ranking
+control, if needed, must be a distinct **Pin in Brief** concept.
 
 ### D68 — Free/Plus tier preview: **Placeholder + upgrade CTA**
 
@@ -2194,7 +2149,7 @@ Your inbox was quiet yesterday.
 Enjoy the morning — we'll be back tomorrow.
 ```
 
-If yesterday only had VIPs/Reply candidates (no Noise to archive):
+If yesterday only had Reply candidates (no Noise to archive):
 hide the Noise section entirely.
 
 ---
@@ -2202,7 +2157,7 @@ hide the Noise section entirely.
 ### Topic 6 complete: **Brief decisions D61–D70 captured.**
 
 10 decisions covering channel, AI, categories, timing, bulk archive
-pattern, schedule, VIP integration, Free/Plus preview, snapshot
+pattern, schedule, observed-priority integration, Free/Plus preview, snapshot
 behavior, empty state. Ready for Topic 7 (Screener).
 
 ---
@@ -2519,14 +2474,11 @@ for ad-hoc usage. Settings has scheduled windows (e.g., "Mon-Fri
   Mon-Sun), start_time_local time, end_time_local time, timezone text,
   enabled bool
 
-### D93 — Non-essential rule: **Non-VIP AND not active correspondent (smart)**
+### D93 — **AMENDED by D245: active correspondents pass through**
 
-A message gets held during quiet mode if:
-- Sender is NOT marked VIP (`sender_policies.is_vip = false`), AND
-- User has NOT replied to this sender within last 30 days
-
-VIPs and active correspondents always pass through quiet mode and
-land in inbox normally.
+A message gets held during quiet mode when the user has not replied to the
+sender within the last 30 days. The removed VIP state provides no exemption.
+Active correspondents pass through quiet mode and land in Inbox normally.
 
 **"Active correspondent" computation:**
 - Query: any message in `mail_messages` where
@@ -2564,7 +2516,7 @@ personal stays normal.
 Quiet screen shows when quiet is active:
 - Big quiet-active state at top (countdown, schedule context)
 - "Currently held" list: senders + counts (e.g., "LinkedIn × 3 · 9:14am")
-- "Always-exempt VIPs" reference list
+- "Always-exempt active correspondents" reference list
 - Schedule editor (presets + custom windows) below
 
 When quiet inactive: shows the schedule editor + an enable-now CTA.
@@ -2587,7 +2539,7 @@ CTA.
 ### Topic 10 complete: **Quiet Mode decisions D92–D98 captured.**
 
 7 decisions covering trigger (manual + scheduled), non-essential rule
-(non-VIP + not active correspondent), restoration (trickle), per-inbox
+(not active correspondent), restoration (trickle), per-inbox
 scope, screen content, Brief interaction, Pro gating. Ready for Topic 11
 (Autopilot rule format).
 
@@ -2628,8 +2580,8 @@ split: 16-A presets only, 16-B custom builder).
 prediction (Gmail category is Gmail's own classification — we surface it
 as observed metadata).
 
-**Actions:** Archive / Unsubscribe / Keep / Screen / Mark VIP / Mark
-Protected / Pause sender (snooze for N days).
+**Actions:** Archive / Unsubscribe / Keep / Screen / Mark Protected /
+Pause sender (snooze for N days).
 
 **Trigger types:**
 - On new message arrival (real-time eval per Pub/Sub notification)
@@ -2647,8 +2599,8 @@ Protected / Pause sender (snooze for N days).
    < 3 → Screen (D23 system rule, now exposed as a toggleable preset)
 4. **Newsletter graveyard** — Read rate < 5% AND last seen > 90 days →
    Unsubscribe (Observe mode for 7 days)
-5. **VIP Brief priority** — Is VIP = true → always elevated in Brief
-   (system rule, can't disable; matches D67)
+5. **Long-dormant unsubscribe** — Read rate < 5% AND last seen > 180 days →
+   Unsubscribe (Observe mode for 7 days; superseded definition from D124)
 
 Each preset has:
 - Single toggle (enable/disable)
@@ -2853,7 +2805,7 @@ surfaced that "3 highest-confidence non-Keep" yields three near-identical
 rows (3× "Unsubscribe · 95%") — teaching one verb and zero judgment.
 Amended: the 3 slots are picked for CONTRAST — (1) highest-confidence
 `unsubscribe` (payoff), (2) an obvious KEEP — `keep` verdict or
-engagement/vip-protected, highest read-rate — (trust: the engine can
+engagement/protected, highest read-rate — (trust: the engine can
 tell senders apart), (3) highest-confidence `archive`/`later` (judgment).
 Empty slots backfill from the eligible pool by confidence; the
 uniformly-low-confidence fallback above is unchanged. The "non-Keep"
@@ -2923,8 +2875,8 @@ Left sidebar of categories, content panel on right.
 | **Notifications** | Brief email opt-in, browser push, completion alerts ("Your inbox is ready"), new-sender summary email frequency |
 | **Triage & Brief** | "Apply last preference by default for Archive/Unsubscribe" toggle (D34), Brief time + weekend toggle, Brief email opt-in |
 | **Autopilot** | Master pause, list of all rules (preset + custom), per-rule status (active/observe/paused), link to "+ New custom rule" form |
-| **Quiet schedules** | Per-inbox quiet schedules (weekday/weekend/custom windows per D92), VIP/active-correspondent exemption explanation |
-| **Sender lists** | Sub-tabs: VIPs / Protected / Snoozed — list views with quick toggle/remove actions |
+| **Quiet schedules** | Per-inbox quiet schedules (weekday/weekend/custom windows per D92), active-correspondent exemption explanation |
+| **Sender lists** | Sub-tabs: Protected / Later — list views with quick remove/wake actions |
 | **Privacy & Data** | What we store + what we don't (mirroring Step 1 promise), Export all my data (download JSON), Disconnect inbox / Delete inbox data / Delete DeclutrMail account (3 distinct actions), CASA letter + privacy/terms links |
 | **Plan & Billing** | Current plan summary + "Manage plan & billing →" link to standalone /billing screen |
 
@@ -3231,12 +3183,9 @@ Estimated impact: ~840 future emails will skip your inbox.
 (no upgrade nudge for Pro users)
 ```
 
-### D124 — VIP elevation in Brief is hard-coded engine behavior; preset #5 replaced
+### D124 — **PARTIALLY SUPERSEDED by D245; preset #5 replacement retained**
 
-**Updates D67 (confirms hard-coded) + D101 (replaces preset #5).**
-
-VIPs are always elevated in Brief by the engine — not a user-toggleable
-rule. Removed from Autopilot preset list. Preset #5 replaced with:
+The old VIP elevation clause is removed. D101 preset #5 remains replaced with:
 
 **5. Long-dormant unsubscribe** — Read rate < 5% AND last seen > 180
 days → Unsubscribe (Observe mode 7 days). Catches old promo
@@ -3282,8 +3231,8 @@ Several decisions held up under the stress test and don't need revision:
 - **D20 (4 verdicts: Keep/Archive/Unsubscribe/Screen→Later)** — clean,
   sustainable, no ambiguity.
 - **D22 (no category prediction)** — wedge-aligned, validated by user.
-- **D42 (VIP + Protect as separate)** — both have clear use cases,
-  user confirmed.
+- **D245 (one visible Protected state)** — the overlapping prelaunch VIP
+  concept is removed.
 - **D116 (rich Privacy & Data section)** — load-bearing trust artifact.
 - **D6 (strict sync gate)** — kept; instrumentation post-launch will
   catch activation cratering early.
@@ -3444,7 +3393,7 @@ Five anchor adjectives + concrete copy rules:
 
 **Concrete copy rules:**
 - No exclamation marks except in error states.
-- No emoji in product UI (rare exception: ⭐ for VIP, 🔒 for Protect).
+- No emoji in product UI. Product icons must be accessible SVGs with labels.
 - Numbers always specific ("47 senders", not "many senders").
 - Avoid: "amazing", "powerful", "revolutionary", "AI-powered".
 - Embrace: "calm", "exact", "audited", "reversible", "your".
@@ -3689,7 +3638,7 @@ in HTML for SEO; JS only collapses sections by default.
    - Visual: layered ladder showing respect → engagement → scoring →
      verdict.
    - Annotated with the 5 verdicts: Keep / Archive / Unsubscribe /
-     Decide later / (locked: VIP, Protect).
+     Decide later / (locked: Protected).
 
 All diagrams in calm Geist-typed Vercel-style minimalism. SVG so they
 scale on retina. Alt text for accessibility.
@@ -4239,8 +4188,8 @@ friendly DX. Covers transactional + re-engagement sequences.
 ### D163 — Browser push: **Web Push standard via `web-push` library + VAPID keys**
 
 Service worker manages subscription. `browser_push_subscriptions` table
-stores per-device subscription. Push events: sync complete, VIP arrival
-(Pro), critical-trust events.
+stores per-device subscription. Push events: sync complete and
+critical-trust events.
 
 ### D164 — Mobile push: **Deferred to V2.1+**
 
@@ -4780,8 +4729,8 @@ This week DeclutrMail:
   now() - interval '7 days')` plus `count(quiet_held_messages WHERE
   held_during_week)`.
 - **"important surfaced"**: `count(brief_runs.brief_payload.reply +
-  brief_runs.brief_payload.fyi WHERE week)` scoped to VIPs + reply-
-  needed senders.
+  brief_runs.brief_payload.fyi WHERE week)` scoped to reply-needed senders
+  selected from observed engagement and Gmail importance.
 - **"Quiet held"**: `sum(quiet_release_events.message_count WHERE week)`.
 - **"minutes saved"**: `(triage_decisions × 30s) + (autopilot_actions ×
   5s)` rounded to nearest minute.
@@ -4834,7 +4783,7 @@ any messages.
 - Messages arrive in INBOX normally — **nothing is held**.
 - A counter logs which messages **would have been held** with reason
   (sender_key, subject_hash, received_at, would_hold_reason: e.g.,
-  "non-VIP and no recent reply").
+  "no recent reply").
 - Quiet screen shows banner during the window: *"Preview mode · 23
   messages would have been held this week · 6 days remaining"*.
 - After 7 days (or earlier if user clicks "Review now"), in-app prompt:
@@ -5752,7 +5701,7 @@ with the feature**. No global state coupling between features.
 |---|---|
 | `<FollowupRow>` | D90 |
 | `<SnoozedRow>` | D80 |
-| `<SettingsListRow>` | D114 (VIP/Protected/Inboxes lists) |
+| `<SettingsListRow>` | D114 (Protected/Inboxes lists) |
 | `<PendingAutopilotSuggestionRow>` | D10/D104 (Observe Mode tray) |
 
 Each consumes `useExpandableRow` from day 1. No exceptions without an
@@ -7724,7 +7673,7 @@ const sender = senderProfileFactory.create({
 });
 
 // Batch creation
-const senders = senderProfileFactory.createMany(5, { is_vip: true });
+const senders = senderProfileFactory.createMany(5, { is_protected: true });
 
 // DB-inserting variant
 await senderProfileFactory.createInDb({ mailbox_account_id });
@@ -7948,7 +7897,7 @@ Required content of the preview:
 4. **Reversibility statement** — explicit yes/no.
 
 Applies to: every verdict (Keep / Archive / Unsubscribe / Decide-later
-from D20), Autopilot enabling/disabling, Protect/VIP toggling,
+from D20), Autopilot enabling/disabling, Protect toggling,
 account-level mutations, billing changes.
 
 **Why.** Trust is the moat against bulk-delete competitors. Mailstrom/
@@ -8165,7 +8114,7 @@ route may be added.
 
 1. **Typeahead search** in the header — searches sender display name +
    email + domain
-2. **Filter chips** — Protected / VIP / Decide-later / Has Active Rule /
+2. **Filter chips** — Protected / Decide-later / Has Active Rule /
    Unsubscribe Pending / All
 3. **URL state** — filters reflected in query string for shareable
    deep links (`?protect=true&q=bank`)
@@ -9443,7 +9392,7 @@ user-intent grouping derived from existing fields:
 
 - **Clean up** = `triage_decisions.verdict = 'unsubscribe'` (auto-expanded)
 - **Move later** = `triage_decisions.verdict = 'archive'`
-- **Protect** = `sender_policies.is_vip OR is_protected`
+- **Protect** = `sender_policies.is_protected`
 - **People** = everything else
 
 Group ordering is fixed; the Clean up group auto-expands. Gmail
@@ -9479,7 +9428,7 @@ markers across 5 phases.
 
 **Status:** Accepted — founder-approved 2026-07-14.
 
-The user-facing language audit exposed five cases where copy could not be
+The user-facing language audit exposed six cases where copy could not be
 made accurate without first choosing the underlying product behavior. The
 following choices are now canonical and supersede older conflicting copy or
 surface-level descriptions:
@@ -9493,9 +9442,9 @@ surface-level descriptions:
 2. **Later is a timed current-mail action.** Later moves the selected sender's
    current Inbox mail to `DeclutrMail/Later` and requires an explicit wake
    time. Future mail is unchanged. The user-facing Snoozed destination is
-   renamed **Later**; `/snoozed` may remain as a compatibility route, but it
-   must render or redirect to the Later surface. A standing future-mail rule
-   is a separate policy and must not be called Later.
+   renamed **Later** and the obsolete `/snoozed` compatibility route is removed
+   before launch. A standing future-mail rule is a separate policy and must not
+   be called Later.
 3. **Senders is fact-first.** Observed facts and exact action consequences are
    primary. An optional suggestion may be shown only as secondary progressive
    disclosure, clearly labelled as a suggestion with its factual basis. A
@@ -9513,6 +9462,17 @@ surface-level descriptions:
    available. **Disconnect and delete data** additionally purges that
    mailbox's indexed Gmail data. Both choices identify affected and retained
    datasets before confirmation; neither deletes mail in Gmail.
+6. **Protected is the sole visible safety state.** The overlapping VIP state is
+   removed from the UI, API, persistence, fixtures, and docs. Protected senders
+   are excluded from bulk and automatic mail-changing actions. Brief priority
+   is based on observed engagement and Gmail importance; a future manual
+   ranking control, if needed, must be a separate **Pin in Brief** concept.
+
+**Prelaunch reset rule:** DeclutrMail is not live and has no production users or
+production data. Superseded routes, columns, contracts, and docs are removed
+directly rather than retained as compatibility paths for hypothetical users.
+This rule supersedes the separate VIP/Protect decisions D42/D43 and the VIP
+ranking clauses in D67/D93/D124.
 
 The complete P0–P3 product-clarity backlog is approved as one implementation
 program. Work ships as small, independently validated commits on one branch.

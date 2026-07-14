@@ -83,7 +83,7 @@ External API takes `senderId` (the uuid Sender Detail has), never the sha256 `se
    `pg_advisory_lock(hashtext(mailbox))` (reserved connection) spanning resolve→mutate→commit.
 6. **Local label mirror.** The terminal tx updates `mail_messages.label_ids` so the UI +
    the next sender-selector resolve don't see stale INBOX membership via webhook lag.
-7. **Backend protection gate.** A Protected/VIP sender → 409 `PROTECTED_SENDER` unless the
+7. **Backend protection gate.** A Protected sender → 409 `PROTECTED_SENDER` unless the
    request carries `override:true` (defense-in-depth, not FE-hide-only).
 8. **Retry config.** Enqueue sets `attempts`/`backoff`/`removeOnComplete`/`removeOnFail`
    (`BaseDeclutrWorker` only _interprets_ attempts; the enqueue must set them).

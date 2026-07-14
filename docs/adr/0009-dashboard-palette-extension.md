@@ -22,7 +22,7 @@ see `apps/web/prototypes/senders-uplift.html`) introduces two element
 classes that the current palette can't cleanly express:
 
 1. **"Live / active" affordances** that need to be visually distinct
-   from teal (which carries Keep / VIP semantics) and from amber
+   from teal (which carries Keep / Protect semantics) and from amber
    (which carries Unsubscribe / decline semantics). Examples:
    "Active in last 24h" indicators, a future activity-pulse dot on
    rows, "live" status on dashboard KPI cells.
@@ -79,7 +79,7 @@ The violet **must not** be used for:
 
 - **Stay on D2 strictly (no new accent):** rejected because the active
   filter chip + live-status indicator both end up using teal, which
-  the user already reads as "Keep / VIP." Visual ambiguity defeats
+  the user already reads as "Keep / Protect." Visual ambiguity defeats
   the calm-premium feel D2 was trying to protect.
 - **Promote a different hue (cyan / indigo / rose):** rejected because
   violet is already present in `avatarColors[]` — users may have seen
@@ -87,7 +87,7 @@ The violet **must not** be used for:
   visual vocabulary. Adding a brand-new hue is a bigger leap.
 - **Use opacity / saturation variants of teal for "live"
   indicators:** rejected because the live indicator needs to read at
-  a glance against a row that may already have teal accents (VIP, Keep
+  a glance against a row that may already have teal accents (Protect, Keep
   recommendation). Same hue, different opacity, is not legible at the
   6px-dot scale.
 - **Per-surface custom palette (Senders gets its own tokens, Activity

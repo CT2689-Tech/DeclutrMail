@@ -15,7 +15,7 @@ ADR-0009 (2026-05-25) introduced a violet accent (`#7C3AED`) for the dashboard s
 1. "Live / active" affordances (last-24h indicators, live KPI dots)
 2. Filter-chip active state on dashboard surfaces
 
-The justification at the time: teal carries Keep / VIP semantics and amber carries Unsubscribe semantics, so a third hue was needed for navigation-state vs action-semantics on dashboard surfaces.
+The justification at the time: teal carries Keep / Protect semantics and amber carries Unsubscribe semantics, so a third hue was needed for navigation-state vs action-semantics on dashboard surfaces.
 
 Founder review on 2026-06-03 (senders-v2 spec v1.2 Decision 7) pushed back: every additional hue dilutes the D2 restraint that the trust wedge depends on. Both ADR-0009 use cases can render in the existing K/A/U/L palette:
 
@@ -60,13 +60,13 @@ CSS variable equivalents in `packages/shared/src/styles/tokens.css` removed in t
 
 ### Accent semantic map (post-retire)
 
-| Hue     | Token                           | Semantic                                                       |
-| ------- | ------------------------------- | -------------------------------------------------------------- |
-| Teal    | `color.primary`                 | Keep verb tone, Protect status, VIP active, filter-chip active |
-| Amber   | `color.amber`                   | Unsubscribe verb tone, recommendation-action-available         |
-| Emerald | `color.emerald`                 | Privacy / trust, success toast, live/active dot                |
-| Dark    | `color.fg`                      | Archive verb tone, neutral primary, chip-active fill           |
-| Red     | `color.danger` (NEW — ADR-0019) | Delete verb tone, irrecoverable-action warnings                |
+| Hue     | Token                           | Semantic                                               |
+| ------- | ------------------------------- | ------------------------------------------------------ |
+| Teal    | `color.primary`                 | Keep verb tone, Protect status, filter-chip active     |
+| Amber   | `color.amber`                   | Unsubscribe verb tone, recommendation-action-available |
+| Emerald | `color.emerald`                 | Privacy / trust, success toast, live/active dot        |
+| Dark    | `color.fg`                      | Archive verb tone, neutral primary, chip-active fill   |
+| Red     | `color.danger` (NEW — ADR-0019) | Delete verb tone, irrecoverable-action warnings        |
 
 No fourth navigation-state hue. Active chip = palette inversion, not a new color.
 

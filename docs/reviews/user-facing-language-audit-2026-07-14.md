@@ -152,7 +152,7 @@ The implementation pass should correct high-confidence P0–P2 copy without chan
 | Keep | Standing protection/keep policy; no mail moves now | Everyday | “Keep this sender’s mail in the inbox. No existing mail moves.” | Keep | Yes |
 | Archive | Remove matching current messages from Inbox; retain in Gmail | Everyday | “Move … out of Inbox. Nothing is deleted.” | Archive | Yes |
 | Unsubscribe | Request that a sender stop future mail; does not move past mail unless separately selected | All | State one-click/manual path and that the request cannot be recalled | Unsubscribe | Yes |
-| Later | Conflicting: label move, decision deferral, future policy, timed snooze | All | Founder decision required | Later | Verb locked; meaning not stable |
+| Later | Timed move of a sender's current Inbox mail to `DeclutrMail/Later`; future mail is unchanged | All | Always show or request the exact return time | Later | D245 |
 | Delete | Move matching mail to Gmail Trash; Gmail permanently deletes after 30 days | Everyday | Always pair with “moves to Gmail Trash” and the recovery limit | Delete | Yes |
 | Undo | DeclutrMail reverses Archive/Later/backlog action during its journal window | Everyday | Reserve “Undo” for Activity/undo journal | Undo | Yes |
 | Recover | Restore Delete from Gmail Trash | Everyday | Do not call this unlimited undo | Recover from Gmail Trash | Behavior locked |
@@ -163,10 +163,10 @@ The implementation pass should correct high-confidence P0–P2 copy without chan
 | One-click unsubscribe | Supported automated unsubscribe path | Everyday | Keep technical RFC/header names out of default UI | One-click unsubscribe | senders-v2 locked |
 | Manual via Gmail | Prefilled unsubscribe email the user sends | Everyday | Say “Opens a prefilled draft in Gmail; you press Send” | Manual via Gmail | D230 |
 | Protected | Sender excluded from bulk and automated actions | Everyday | Explain exclusions at first use | Protected sender | Existing feature term |
-| VIP | Priority marker distinct from Protected | Everyday | Avoid implying VIP automatically means Protected unless behavior does | VIP | D42 |
+| VIP | Retired prelaunch priority/safety concept | Everyday | Do not use; Protected is safety, and any future manual ranking is Pin in Brief | — | Removed by D245 |
 | Filter | Temporary narrowing of the current list | Everyday | “Filter” | Filter | Existing |
 | Saved view | Named saved filter/sort/search state | Everyday | Never call it a recommendation | Saved view | Existing |
-| Recommendation / confidence | Inferred action and score | Everyday | Remove from Senders if v2 fact-first decision wins; otherwise disclose behind “Why this is suggested” | Product decision | Conflicting docs |
+| Recommendation / confidence | Optional suggestion based on observed facts | Everyday | Keep facts and consequences primary; disclose a suggestion and basis only on request | Suggestion | D245 fact-first |
 | Autopilot Observe | Rule records suggestions but does not act | Everyday | “Observe: creates suggestions for you to approve” | Observe | D10 |
 | Autopilot Active | Rule applies future matches automatically | Everyday | Always state action, scope, undo, and manual-unsubscribe exception | Active | D10 |
 | Quiet hours | Window that delays Autopilot actions only | Everyday | State that user actions still run and delayed actions run later | Quiet hours | Existing |
@@ -226,7 +226,7 @@ Never use a lifetime sender total as the affected count when the preview count i
 - `Show technical details`: protocol names, raw unsubscribe URL/header keys, status/correlation IDs, exact timestamps.
 - Never expose internal hashes, endpoint names, worker stages, race conditions, or implementation provenance as fallback user copy.
 
-## Product decisions required
+## Original product decisions (resolved in D245)
 
 1. **Cumulative privacy allowlist.** Reconcile CLAUDE.md §2.1, ADR-0004, ADR-0021, D217, schema/export behavior, and the badge before changing the “exact list.” Recommended decision: a typed shared inventory generated from the implemented storage contract, with field-level purpose and retention.
 2. **Meaning of Later.** Decide whether Later moves current messages, routes future mail, postpones a sender decision, or sets a timed snooze. Recommended decision: current-mail move plus an explicit wake time; future routing, if wanted, should be a separate standing policy.
@@ -234,9 +234,148 @@ Never use a lifetime sender total as the affected count when the preview count i
 4. **Delete recovery by tier.** Product copy alternates between Gmail’s fixed 30-day Trash recovery and plan-specific undo retention. Recommended decision: distinguish DeclutrMail Undo from Gmail Trash recovery everywhere; never imply the plan shortens Gmail’s recovery.
 5. **Disconnect retention.** Confirm whether disconnect retains only Activity or the complete sender/message index. Current public privacy copy and UI imply different scopes. Recommended decision: show the exact retained datasets and a separate `Delete this mailbox’s data` action if supported.
 
+## Founder decisions recorded for implementation
+
+The founder resolved the five original blockers and the duplicate safety-state
+question during the implementation Q&A:
+
+1. Generate every Gmail-data explanation from one cumulative typed inventory.
+2. Later moves current Inbox mail to `DeclutrMail/Later`, always has a return
+   time, and leaves future mail unchanged. The visible page is **Later**; the
+   prelaunch `/snoozed` compatibility route and timerless repair state are
+   removed.
+3. Senders is fact-first. Suggestions are secondary disclosure, never the
+   primary fact or action authority.
+4. Activity Undo and Gmail Trash recovery remain separate concepts and copy.
+5. Disconnect and Disconnect-and-delete-data are separate explicit choices.
+6. **Protected** is the one visible safety state and excludes a sender from bulk
+   and automatic mail-changing actions. VIP is removed rather than aliased.
+7. Brief priority comes from observed engagement and Gmail importance. If a
+   manual ranking control is needed later, it will be a separate **Pin in
+   Brief** feature, not a second safety label.
+8. DeclutrMail is prelaunch with no production users or production data. Remove
+   superseded routes, schema, contracts, fixtures, and docs directly instead of
+   carrying hypothetical legacy compatibility.
+
+These decisions are canonical in D245 and supersede the conflicting VIP,
+Snoozed-compatibility, and Later descriptions cited in the original audit.
+
+## Post-implementation result
+
+The P0–P3 clarity program now has one coherent product model in code and
+canonical documentation. Privacy explanations are generated from the storage
+inventory; action consequences come from the shared semantics registry; Later
+always has a return time; Senders is fact-first; Activity and errors state what
+did and did not change; and Protected is the only visible safety state. The
+prelaunch VIP schema/contracts and `/snoozed` route were removed rather than
+preserved as compatibility behavior.
+
+The Later terminal path also received a correctness fix discovered during the
+cleanup: a successful Gmail label mutation now stores its return timer in the
+same worker transaction as the local mirror and action result. Without that
+projection, the item could have been absent from Later and never returned
+automatically.
+
+### Before and after
+
+| Area | Before | After |
+| --- | --- | --- |
+| Privacy | Several hand-maintained “exact” lists drifted from storage. | One typed inventory generates access, fetched, stored, purpose, retention, export, and deletion explanations. |
+| Action scope | Copy varied by surface and sometimes implied every choice affected past and future mail. | One K/A/U/L/D registry generates scope, destination, unchanged data, recovery, and result language. |
+| Later | Could mean deferral, future routing, a label move, or an indefinite/timerless state. | Moves current Inbox mail per sender, requires a future return time, leaves future mail unchanged, and appears only on Later. |
+| Safety | Protected and VIP overlapped; both appeared in policy, ranking, filters, Brief, and Activity. | Protected is the sole visible safety state and the sole bulk/automation gate; Brief ranking uses observed signals. |
+| Senders | Recommendations and confidence could dominate observed facts. | Observed facts and exact consequences are primary; suggestions are optional disclosure. |
+| Recovery | Product-level Undo and Gmail Trash recovery were conflated. | Activity Undo, Gmail Trash recovery, and irreversible unsubscribe outcomes are separate. |
+| Failures | Generic errors could leave users unsure whether Gmail changed. | Errors distinguish not started, accepted but unconfirmed, partial, terminal, and retryable outcomes. |
+| Navigation and search | Snoozed/Later routes and transient list state were inconsistent. | `/later` is canonical; search/filter/sort state is shareable and restores through browser navigation. |
+| Contextual labels | Generic Close, Dismiss, and mode labels depended on visual context. | Controls name their target; privacy, previews, Activity, Autopilot, billing, and mailbox exits explain the decision in place. |
+
+## Product decisions still required
+
+### 1. May observed engagement set Protected automatically?
+
+- **A — Conservative automatic protection (recommended):** protect only on
+  strong, explainable signals such as replies/starred correspondence; show the
+  reason and provide a one-click override. This is safest against accidental
+  automation and preserves the current engagement-based protection model.
+- **B — Suggest, then confirm:** show “Suggested Protected” and require the
+  user to accept it. This maximizes agency but creates more setup work and
+  leaves users exposed until they review suggestions.
+- **C — Manual only:** never set Protected automatically. This is simplest to
+  explain but puts all safety discovery on the user.
+
+### 2. What is the standard Pro annual price?
+
+- **A — $190/year (recommended):** matches the current $19 monthly price with
+  roughly two months free and keeps the $129 Founding offer meaningfully
+  differentiated.
+- **B — $149/year:** lowers the adoption barrier but compresses the Founding
+  discount and creates a much larger annual-versus-monthly discount.
+- **C — Reprice monthly and annual together:** useful only if the product's
+  willingness-to-pay assumptions have changed; this broadens the decision
+  beyond the current consistency fix.
+
+## Highest-value product opportunity map
+
+These are improvements to evaluate after the two remaining decisions. They are
+not silently approved behavior in D245.
+
+| Surface | Improvement or feature | User benefit | Recommendation |
+| --- | --- | --- | --- |
+| Marketing and trust | Interactive “what DeclutrMail accesses, stores, and can change” explainer using the live inventory | Makes OAuth consent understandable before connection | Add after legal review; keep it generated, not duplicated copy. |
+| Onboarding | Measure time-to-first-useful-decision and offer a permission-free sample walkthrough | Lets cautious users understand value before OAuth and reveals activation drop-off | High priority; sample data must remain unmistakably labelled. |
+| Triage | Pattern review after several similar decisions, with an explicit rule preview | Converts repetitive work into safe leverage without surprising automation | Offer Observe first; require a consequence preview before Active. |
+| Senders | Cross-mailbox sender search and a side-by-side consequence comparison | Helps multi-account users understand and act on one sender globally | Add only with clear mailbox scope and per-mailbox counts. |
+| Senders | Optional “Pin in Brief” | Gives users manual ranking without corrupting the safety model | Defer until Brief feedback proves demand. |
+| Activity | Retry a failed action directly from its row using a fresh preview | Turns Activity into the recovery center instead of a passive log | High priority; never replay an unknown/possibly-applied mutation blindly. |
+| Activity | Exportable action timeline with human-readable support bundle | Helps users and support diagnose provider or automation issues | Keep IDs/status codes behind technical details. |
+| Brief | “Useful / not useful / wrong reason” feedback on each item | Improves recurring value and exposes poor ranking signals | Start with local/product analytics; do not imply model training without consent. |
+| Brief | Explain why an item ranked highly using observed facts | Builds confidence in prioritization | Show Gmail importance, reply history, recency, and volume—not an opaque score. |
+| Autopilot | Pre-activation change report: current matches, projected weekly volume, protected skips, and undo window | Makes automation consequences concrete before enabling Active | High priority and generated from the same preview contracts. |
+| Autopilot | Weekly automation digest with successes, skips, failures, and saved inbox volume | Helps users verify continuing value and catch drift | Link every count to Activity. |
+| Later | Missed-wake/failure state plus optional notification when mail returns | Prevents scheduled mail from silently remaining out of Inbox | High priority; expose retry and last-attempt truth. |
+| Later | Reschedule history on the row | Helps users remember why and when a sender was deferred | Keep the default row compact; disclose history on demand. |
+| Followups | Accuracy feedback and flexible reminder timing per thread/sender | Reduces false positives and makes follow-up timing fit real work | Preserve “observed sent mail,” not a promise that a reply is owed. |
+| Screener | Preview sender history and “allow once / always allow” distinctions | Reduces accidental standing rules from one unusual message | Keep current-message and future-policy choices visibly separate. |
+| Quiet | “What will run when Quiet ends?” queue preview | Prevents delayed automation from feeling hidden | Show counts and allow per-item cancellation before release. |
+| Mailboxes | Connection-health timeline: last successful sync, partial scope, reauth, quota, and next retry | Gives users a single answer to “is my Gmail current?” | Build from existing freshness and lifecycle states. |
+| Privacy and data | Export/deletion job progress, completion receipt, and exact dataset manifest | Makes high-trust account operations verifiable | High priority for launch readiness. |
+| Billing | Usage meter, projected limit date, and one canonical plan comparison | Prevents surprise caps and contradictory upgrade prompts | Resolve annual pricing first, then generate every surface from entitlements. |
+| Global navigation | Command palette for sender search, recent Activity, and primary destinations | Speeds up expert workflows without crowding every page | Add keyboard-first with full screen-reader labels. |
+| Accessibility | Authenticated 375px, keyboard, reduced-motion, and screen-reader smoke suite | Catches interaction problems static copy/unit tests cannot | Make this a release gate rather than a one-time audit. |
+| Support/admin | User-visible incident banner and provider-status context | Separates a Gmail/service outage from a user-specific failure | Show only actionable, scoped status; avoid leaking internal systems. |
+
+## Post-implementation scorecard
+
+| Dimension | Score | Evidence / path to 5 |
+| --- | ---: | --- |
+| Consent and privacy truth | 5/5 | Generated cumulative inventory, purpose, retention, and export/deletion descriptions. |
+| Action consequence clarity | 5/5 | Shared semantics drive preview, receipt, Activity, mobile, and return-state copy. |
+| Recovery and failure truth | 5/5 | Activity Undo, Gmail recovery, irreversible unsubscribe, and uncertain/partial failures are distinct. |
+| Terminology consistency | 5/5 | Later, Protected, Observe/Active, Gmail Preview, and contextual labels are canonical. |
+| Onboarding activation | 4/5 | First useful decision exists; add sample walkthrough and time-to-value measurement. |
+| Recurring user value | 4/5 | Brief/Activity/Autopilot are actionable; add feedback loops and weekly value reporting. |
+| Automation control | 4/5 | Observe, Active, previews, and Protected gates are clear; add the pre-activation change report. |
+| Accessibility and mobile confidence | 4/5 | Unit/a11y labels and responsive treatments are strong; authenticated assistive-tech/mobile smoke remains. |
+| Billing clarity | 3/5 | Entitlements are canonical, but standard annual Pro pricing is unresolved. |
+| Operational trust | 4/5 | Freshness and recoverable errors are visible; add connection health and export/deletion progress. |
+
+## Implementation and verification summary
+
+- Removed the prelaunch VIP database fields/enums, migrations, API fields,
+  filters, audit actions, Brief markers, UI controls, fixtures, and active docs.
+- Removed the `/snoozed` compatibility route and timerless Later response/UI
+  state; database and API contracts require a wake time.
+- Preserved manual and engagement-based protection provenance without exposing
+  a second safety label.
+- Updated canonical planning, ADR, API, Senders, and language-audit docs.
+- Static validation covers TypeScript, focused API/worker/web/shared tests,
+  migration checks, and diff/format checks. Authenticated live Playwright and
+  assistive-technology smoke remain release verification work.
+
 ## Remaining verification risks
 
 - No `check-microcopy.sh` or `copy-tokens.md` exists in the repository despite D209, D221, D227, D228, and ADR-0011 referring to them.
-- Several UI files still implement pre-v2 recommendation/intent behavior; a copy-only pass cannot make those semantics consistent.
+- The implemented recommendation surfaces now lead with observed facts; authenticated usability testing is still needed to validate whether users understand the resulting choices without assistance.
 - Mobile gesture behavior is documented as proposed in ADR-0018; the copy was reviewed statically, not through a 375×812 interactive smoke.
-- Legal/privacy claims require founder/legal confirmation after the cumulative storage inventory is settled.
+- Legal/privacy claims require founder/legal confirmation against the now-settled cumulative storage inventory.

@@ -150,6 +150,16 @@ Enforced by `webhook-security-auditor` subagent.
 - **Custom Autopilot rules API rejects `is_preset=false`** at V2 (D234).
 - **Account deletion respects undo windows** (D232) — `max(now+7d, latest_undo_expires_at)`.
 - **Postgres partitioning deferred** (D235) until 25M rows OR 2M/mailbox OR p95 > 150ms.
+- **Protected is the sole visible safety state** (D245) — Protected senders are
+  excluded from bulk and automatic mail-changing actions. VIP is retired; do
+  not add it back as a ranking or safety alias. Brief priority uses observed
+  engagement and Gmail importance. A future manual ranking control must be a
+  separate **Pin in Brief** concept. Whether engagement signals may set
+  protection automatically remains an explicit product decision.
+- **Prelaunch means no hypothetical compatibility** (D245) — DeclutrMail is not
+  live and has no production users or production data. Remove superseded
+  routes, columns, contracts, fixtures, and docs directly unless a current
+  technical invariant—not an imagined legacy user—requires them.
 
 ---
 

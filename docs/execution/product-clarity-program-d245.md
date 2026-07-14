@@ -9,13 +9,28 @@ each completed slice.
 - Privacy: one typed cumulative Gmail-data inventory, including purpose and
   retention, drives every public and in-product explanation.
 - Later: current Inbox mail moves to `DeclutrMail/Later`, a wake time is
-  required, future mail is unchanged, and the Snoozed page becomes Later.
+  required, future mail is unchanged, and the visible destination is Later.
 - Senders: observed facts and consequences are primary; any suggestion is
   optional secondary disclosure.
+- Safety: **Protected** is the sole visible safety state. Protected
+  senders are excluded from bulk and automatic mail-changing actions. The
+  overlapping VIP state is removed from the UI, contracts, and persistence.
+  Whether observed engagement may set Protected automatically remains open.
+- Priority: Brief priority comes from observed engagement and Gmail importance.
+  If manual priority is needed later, add a clearly named **Pin in Brief**
+  control; never reuse Protected for ranking.
 - Recovery: plan-based Activity Undo is distinct from Gmail Trash recovery;
   unsubscribe is irreversible after delivery.
 - Disconnect: offer **Disconnect** and **Disconnect and delete data**, with an
   exact preview of retained and deleted datasets.
+
+## Prelaunch reset rule
+
+DeclutrMail is not live and has no production users or production data. Product
+decisions in this program should therefore update the current schema, routes,
+contracts, fixtures, and canonical docs directly. Do not retain obsolete
+behavior as a compatibility or migration path unless it is required by a
+current technical invariant rather than by hypothetical existing users.
 
 ## Delivery backlog
 
@@ -32,8 +47,8 @@ each completed slice.
       finality, and result labels.
 - [x] Migrate every preview, receipt, Activity row, mobile surface, and return
       state to generated action semantics instead of local consequence copy.
-- [x] Make Later require a wake time end to end; rename the visible Snoozed
-      destination to Later and retain route compatibility.
+- [x] Make Later require a wake time end to end and rename the visible Snoozed
+      destination to Later.
 - [x] Use one shared action receipt/undo model across Senders, Triage, bulk
       actions, Activity, mobile surfaces, and return states.
 - [x] Distinguish one-click, manual-in-Gmail, requested, delivered, failed, and
@@ -69,11 +84,11 @@ each completed slice.
       actions could otherwise look complete.
 - [x] Improve bulk selection with explicit selected/matched/skipped counts,
       protected-sender reasons, and a trustworthy preview fallback.
-- [ ] Unify search, temporary filters, sorting, and saved views, including
+- [x] Unify search, temporary filters, sorting, and saved views, including
       stable zero-result recovery and shareable/restorable state where safe.
 - [x] Replace generic Close/Dismiss/icon-only accessible names with
       contextual labels; verify focus, announcements, and reduced-motion paths.
-- [ ] Standardize errors around what changed, what did not change, and the next
+- [x] Standardize errors around what changed, what did not change, and the next
       recovery step, with support details disclosed separately.
 - [x] Make demo/sample states unmistakable and prevent sample counts or actions
       from being confused with connected Gmail data.
@@ -85,10 +100,10 @@ each completed slice.
 ### P3 — learnability and polish
 
 - [x] Add a compact in-product glossary for Sender, Gmail Preview, Protected,
-      VIP, Observe, Active, Activity Undo, Gmail Trash recovery, and Later.
-- [ ] Add contextual help at the privacy, action, Activity, Autopilot, and
+      Observe, Active, Activity Undo, Gmail Trash recovery, and Later.
+- [x] Add contextual help at the privacy, action, Activity, Autopilot, and
       mailbox-management decision points instead of a generic help dump.
-- [ ] Complete terminology, empty/loading/success text, contextual labels, and
+- [x] Complete terminology, empty/loading/success text, contextual labels, and
       mobile microcopy cleanup left after the shared-system migrations.
 
 ## Commit and handoff protocol
@@ -109,16 +124,16 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: P0 and P1 are complete. P2 now has reusable technical
-  disclosures, scoped sender snapshot times with read-only stale rows, explicit
-  bulk selected/eligible/accepted/skipped counts, blocked-and-retryable failed
-  live previews, accessible feedback, truthful demo/live data boundaries, and
-  precise Followups language. Later is scheduled end to end: its API rejects an
-  indefinite state, the UI cannot clear a wake time, and legacy rows are called
-  out as needing scheduling.
-- Last green checks: focused shared technical-disclosure tests (2), focused web
-  disclosure tests (86), sender/triage live-preview tests (70), entitlement tests
-  across shared/web/API (58), shared/web/API typechecks, and `git diff --check`.
-- Next slice: unify Senders search/filter/sort/saved-view state, standardize
-  recovery errors, finish entitlement-copy reconciliation, then complete P3
-  contextual help and terminology polish.
+- Last completed slice: VIP is removed from schema through UI and canonical
+  docs; Protected is the sole visible safety state. Later is timer-backed only,
+  `/later` is the sole route, and the successful Gmail mutation stores its wake
+  timer atomically. The language audit now includes the post-implementation
+  scorecard and product-opportunity map.
+- Last green checks: all-workspace typecheck; full web suite (960); API action
+  contract/service (62) and Later service (13); label-action worker (17);
+  shared edge-state inventory (9); focused DB protection (5); plus the DB/E2E
+  migration, schema, constraint, and discovery checks recorded by the DB slice.
+- Current slice: implementation is complete for every decided P0–P3 item.
+  Remaining Q&A decisions are engagement-based automatic protection and the
+  standard annual Pro price; pricing reconciliation stays unchecked until the
+  founder chooses.
