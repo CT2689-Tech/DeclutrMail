@@ -25,6 +25,7 @@ import {
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
+  TechnicalDetails,
 } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -91,14 +92,21 @@ export default function PrivacyPolicyPage() {
           <strong>{PRIVACY_NEVER_LABEL}</strong>
         </p>
         <ul>
-          {PRIVACY_NEVER_ITEMS.map((item) => (
+          {PRIVACY_NEVER_ITEMS.slice(0, 4).map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
+        <TechnicalDetails summary="Show message-format and header exclusions">
+          <ul>
+            {PRIVACY_NEVER_ITEMS.slice(4).map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </TechnicalDetails>
         <p>
           The &ldquo;Gmail Preview&rdquo; above is the short snippet Gmail itself computes and shows
-          in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
-          metadata form — we never download or parse the message body to produce it.
+          in your inbox list (roughly 160 characters). We receive it directly from Gmail — we never
+          download or parse the message body to produce it.
         </p>
         <p>The complete lifecycle inventory also includes connection and product-derived data:</p>
         <ul>
@@ -125,22 +133,14 @@ export default function PrivacyPolicyPage() {
       <LegalSection id="how-we-access-gmail" title="3. How we access your Gmail">
         <p>
           DeclutrMail connects to your Gmail account through Google&rsquo;s official API, using
-          OAuth consent you grant explicitly. We request the <code>gmail.modify</code> scope — a
-          restricted scope — because the product&rsquo;s job is to act on your mail at your
-          instruction: archive, label, delete, and unsubscribe.
+          consent you grant explicitly. Google asks permission to read Gmail data, change Gmail
+          labels, and identify the account you connect. Google classifies the Gmail permission as
+          restricted. DeclutrMail uses it to fetch the listed fields and run actions you approve.
         </p>
         <ul>
-          {GMAIL_OAUTH_ACCESS.map((access) => (
-            <li key={access.scope}>
-              <code>{access.scope}</code> — {access.label}. {access.usedFor}
-            </li>
-          ))}
-        </ul>
-        <ul>
           <li>
-            Message data is fetched in <strong>metadata format only</strong>. The generated Gmail
-            metadata header allowlist is <code>{GMAIL_METADATA_HEADERS.join(', ')}</code>. Other
-            Gmail headers, message bodies, and attachments are not requested by the message adapter.
+            DeclutrMail fetches only the sender and message fields listed in Section 2. It does not
+            request message bodies or attachments.
           </li>
           <li>
             Every destructive action shows you a preview of exactly what will change before it runs,
@@ -148,8 +148,8 @@ export default function PrivacyPolicyPage() {
             depend on the action.
           </li>
           <li>
-            OAuth tokens are encrypted at rest and are never included in data exports or sent to
-            your browser.
+            Saved Google credentials are encrypted while stored and are never included in data
+            exports or sent to your browser.
           </li>
           <li>
             As an app using a restricted Gmail scope, DeclutrMail undergoes Google&rsquo;s
@@ -157,6 +157,21 @@ export default function PrivacyPolicyPage() {
             renewed annually.
           </li>
         </ul>
+        <TechnicalDetails summary="Show Google permission and field details">
+          <ul>
+            {GMAIL_OAUTH_ACCESS.map((access) => (
+              <li key={access.scope}>
+                <code>{access.scope}</code> — {access.label}. {access.usedFor}
+              </li>
+            ))}
+          </ul>
+          <p>
+            Gmail message requests use <code>format=metadata</code>. The generated metadata-header
+            allowlist is <code>{GMAIL_METADATA_HEADERS.join(', ')}</code>. The message adapter does
+            not request other Gmail headers or the <code>full</code> and <code>raw</code> message
+            formats.
+          </p>
+        </TechnicalDetails>
         <p>
           You can revoke DeclutrMail&rsquo;s access at any time from DeclutrMail&rsquo;s settings or
           directly from your{' '}
@@ -364,12 +379,16 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection id="security" title="10. Security">
         <p>
-          All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
-          envelope-encrypted with a managed key service. Access to production systems is limited and
-          logged. Not storing message bodies or attachments reduces the amount of sensitive Gmail
-          data in our systems; subjects and Gmail Preview snippets may still be sensitive and are
-          protected by the controls described here.
+          Data is encrypted while moving between systems and while stored. Saved Google credentials
+          receive an additional layer of encryption managed separately from the application. Access
+          to production systems is limited and logged. Not storing message bodies or attachments
+          reduces the amount of sensitive Gmail data in our systems; subjects and Gmail Preview
+          snippets may still be sensitive and are protected by these controls.
         </p>
+        <TechnicalDetails summary="Show encryption details">
+          Data in transit uses TLS. Google OAuth tokens are envelope-encrypted with a managed key
+          service before storage.
+        </TechnicalDetails>
       </LegalSection>
 
       <LegalSection id="changes" title="11. Changes to this policy">

@@ -11,8 +11,7 @@
  *     surface must own a heading per D211 edge-state inventory).
  *   - The primary CTA is a real link (not a button) so Next.js can
  *     own client-side routing.
- *   - Plan-ref D-numbers render so the trace back to the plan is
- *     visible without opening dev-tools.
+ *   - Internal plan references never render in product UI.
  *   - The forbidden empty-state words ("Nothing here", "0 results",
  *     "Error") are NOT in the rendered output — the component is the
  *     guard rail for those, not just the routes that consume it.
@@ -46,9 +45,10 @@ describe('RoutePlaceholder', () => {
     expect(cta).toHaveAttribute('href', '/triage');
   });
 
-  it('renders plan-ref D-numbers in a single line', () => {
+  it('does not render internal plan references', () => {
     render(<RoutePlaceholder {...BASE_PROPS} />);
-    expect(screen.getByText(/Plan refs:.*D61.*D62.*D63/)).toBeInTheDocument();
+    expect(screen.queryByText(/Plan refs:/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/\bD(?:61|62|63)\b/);
   });
 
   it('renders a secondary CTA when supplied', () => {
@@ -79,10 +79,5 @@ describe('RoutePlaceholder', () => {
     // "Error" can appear in legitimate copy ("Error code 500…"), so
     // we only forbid the bare-word usage as a heading-shaped string.
     expect(screen.queryByRole('heading', { name: /^Error$/ })).not.toBeInTheDocument();
-  });
-
-  it('omits the plan-refs line when no decisions are supplied', () => {
-    render(<RoutePlaceholder {...BASE_PROPS} decisions={[]} />);
-    expect(screen.queryByText(/^Plan refs:/)).not.toBeInTheDocument();
   });
 });

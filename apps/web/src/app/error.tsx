@@ -31,7 +31,7 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { TechnicalDetails, tokens } from '@declutrmail/shared';
 import { initSentryBrowser } from '@/lib/sentry';
 import { captureErrorBoundaryException } from '@/lib/error-capture';
 
@@ -126,20 +126,11 @@ export default function AppError({
         </p>
 
         {error.digest != null && (
-          <code
-            // Surfacing the digest gives support a stable handle to
-            // grep Sentry without exposing the raw error message.
-            style={{
-              fontFamily: font.mono,
-              fontSize: text.xs,
-              color: color.fgMuted,
-              background: color.mutedBg,
-              padding: '4px 8px',
-              borderRadius: 6,
-            }}
-          >
-            Reference: {error.digest}
-          </code>
+          <TechnicalDetails summary="Show support reference">
+            <code style={{ fontFamily: font.mono, fontSize: text.xs }}>
+              Reference: {error.digest}
+            </code>
+          </TechnicalDetails>
         )}
 
         <div

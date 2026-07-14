@@ -14,7 +14,11 @@
 // the answer states it and links /refunds for the full terms.
 
 import type { Metadata } from 'next';
-import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import {
+  PRIVACY_BADGE_HEADLINE,
+  PRIVACY_STORAGE_ITEMS,
+  TechnicalDetails,
+} from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -40,22 +44,33 @@ const FAQS: ReadonlyArray<{
   q: string;
   a: string;
   link?: { href: string; label: string };
+  technical?: { summary: string; details: string };
 }> = [
   {
     id: 'what-we-store',
     q: 'What does DeclutrMail store from my Gmail?',
-    a: `The complete per-message storage list is: ${PRIVACY_STORAGE_ITEMS.join('; ')}. It is generated from the Gmail fields the adapter requests. The complete lifecycle inventory in the Privacy Policy also lists connection data, derived product data, and retained audit records. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, inline images, and raw MIME are never fetched or stored.`,
+    a: `The complete per-message storage list is: ${PRIVACY_STORAGE_ITEMS.join('; ')}. It is generated from the Gmail data DeclutrMail requests. The complete lifecycle inventory in the Privacy Policy also lists connection data, derived product data, and retained audit records. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, and inline images are never fetched or stored.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
+    technical: {
+      summary: 'Show message-format details',
+      details:
+        'DeclutrMail does not request Gmail’s full or raw message formats and does not fetch or store raw MIME.',
+    },
   },
   {
     id: 'unsubscribe-flow',
     q: 'How does Unsubscribe work?',
-    a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. Unsubscribe stops future mail; nothing already in your inbox moves.',
+    a: 'Where a sender supports automatic unsubscribe, DeclutrMail sends the request and tracks whether the sender accepted it. Where the sender requires an email, we prepare a Gmail draft and you send it yourself — nothing is auto-sent on your behalf. Unsubscribe affects future mail; nothing already in your inbox moves.',
+    technical: {
+      summary: 'Show unsubscribe protocol details',
+      details:
+        'Automatic requests use the List-Unsubscribe and List-Unsubscribe-Post headers defined by RFC 8058. Email-based requests use the sender’s mailto: List-Unsubscribe value.',
+    },
   },
   {
     id: 'bulk-unsubscribe',
     q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can handle the noisiest first, deciding once per sender. Paid plans add bulk actions: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. Where a sender supports one-click unsubscribe, we send the request for you. Where a sender requires an email, we prepare it for you to send from Gmail — nothing is auto-sent on your behalf.',
+    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can handle the noisiest first, deciding once per sender. Paid plans add bulk actions: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. Where a sender supports automatic unsubscribe, we send the request for you. Where a sender requires an email, we prepare it for you to send from Gmail — nothing is auto-sent on your behalf.',
     link: { href: '/pricing', label: 'Compare plans →' },
   },
   {
@@ -129,7 +144,7 @@ export default function HelpPage() {
     <LegalPageLayout title="Help & FAQ" label="Help" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="help" />
       <JsonLd data={FAQ_JSON_LD} />
-      {FAQS.map(({ id, q, a, link }) => (
+      {FAQS.map(({ id, q, a, link, technical }) => (
         <LegalSection key={id} id={id} title={q}>
           <p>
             {a}
@@ -140,6 +155,9 @@ export default function HelpPage() {
               </>
             ) : null}
           </p>
+          {technical ? (
+            <TechnicalDetails summary={technical.summary}>{technical.details}</TechnicalDetails>
+          ) : null}
         </LegalSection>
       ))}
       <p>

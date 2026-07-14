@@ -178,6 +178,14 @@ describe('/privacy content — D7 + D228 posture', () => {
     for (const item of GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY) {
       expect(text).toContain(item.label);
     }
+    const details = screen.getByText('Show Google permission and field details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent(GMAIL_METADATA_HEADERS.join(', '));
+    const primary = container.cloneNode(true) as HTMLElement;
+    primary.querySelectorAll('[data-dm-technical-details]').forEach((node) => node.remove());
+    expect(primary.textContent).not.toMatch(
+      /gmail\.modify|format=metadata|Raw MIME|List-Unsubscribe/,
+    );
     expect(text).not.toMatch(/exact list|whole list/i);
   });
 

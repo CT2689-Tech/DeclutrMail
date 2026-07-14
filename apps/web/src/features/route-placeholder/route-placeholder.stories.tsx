@@ -106,7 +106,7 @@ export const NoDecisions: Story<typeof RoutePlaceholder> = {
   args: {
     status: 'Coming soon',
     title: 'A view that is not yet wired to the plan',
-    description: 'Trace footer is omitted when no D-numbers are supplied.',
+    description: 'Internal decision metadata is omitted and never appears in product UI.',
     decisions: [],
     primaryCta: { href: '/triage', label: 'Open Triage' },
   },

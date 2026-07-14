@@ -71,13 +71,17 @@ describe('GlobalError boundary — D167', () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the digest reference when supplied', () => {
+  it('keeps the digest reference behind a support disclosure', () => {
     render(
       <GlobalError
         error={Object.assign(new Error('Layout crashed'), { digest: 'g-7f2a' })}
         reset={() => undefined}
       />,
     );
+    const disclosure = screen.getByText('Show support reference');
+    expect(disclosure.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(disclosure);
+    expect(disclosure.closest('details')).toHaveAttribute('open');
     expect(screen.getByText(/Reference: g-7f2a/i)).toBeInTheDocument();
   });
 

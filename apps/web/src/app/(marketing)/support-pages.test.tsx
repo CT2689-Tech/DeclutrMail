@@ -104,11 +104,17 @@ describe('/help content — D219 + D137', () => {
     ).toBe(true);
   });
 
-  it('covers unsubscribe honestly: one-click where available, manual mailto (D230)', () => {
+  it('uses plain unsubscribe copy and discloses protocol terms separately', () => {
     const { container } = render(<HelpPage />);
-    expect(container.textContent).toMatch(/one-click unsubscribe/i);
+    expect(container.textContent).toMatch(/automatic unsubscribe/i);
     expect(container.textContent).toMatch(/you send it yourself/i);
     expect(container.textContent).toMatch(/nothing is auto-sent/i);
+    const details = screen.getByText('Show unsubscribe protocol details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent(/List-Unsubscribe/);
+    expect(details).toHaveTextContent(/RFC 8058/);
+    expect(details).toHaveTextContent(/mailto:/);
+    expect(primaryText(container)).not.toMatch(/List-Unsubscribe|RFC 8058|raw MIME/);
   });
 
   it('deep-links each question with a stable slug (D219)', () => {
@@ -190,6 +196,11 @@ describe('/security content — verified claims only', () => {
     for (const header of GMAIL_METADATA_HEADERS) {
       expect(text).toContain(header);
     }
+    const details = screen.getByText('Show Google permission and field details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent('gmail.modify');
+    expect(details).toHaveTextContent(GMAIL_METADATA_HEADERS.join(', '));
+    expect(primaryText(container)).not.toMatch(/gmail\.modify|format=metadata|\bfull\b.*\braw\b/i);
   });
 
   it('describes token envelope encryption and TLS accurately', () => {
@@ -197,6 +208,9 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/envelope-encrypted/i);
     expect(container.textContent).toMatch(/AES-256-GCM/);
     expect(container.textContent).toMatch(/TLS/);
+    const details = screen.getByText('Show encryption details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toHaveTextContent(/AES-256-GCM/);
   });
 
   it('states the CASA Tier 2 verification', () => {
@@ -228,3 +242,9 @@ describe('/security content — verified claims only', () => {
     expect(container.querySelector('a[href="mailto:privacy@declutrmail.com"]')).toBeInTheDocument();
   });
 });
+
+function primaryText(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[data-dm-technical-details]').forEach((node) => node.remove());
+  return clone.textContent ?? '';
+}

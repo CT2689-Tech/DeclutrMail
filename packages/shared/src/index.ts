@@ -44,6 +44,7 @@ export { Pill } from './components/pill';
 export type { PillTone } from './components/pill';
 export { PrivacyBadge } from './components/privacy-badge';
 export type { PrivacyBadgeVariant } from './components/privacy-badge';
+export { TechnicalDetails } from './components/technical-details';
 export { Card } from './components/card';
 export { Spark } from './components/spark';
 export { Avatar } from './components/avatar';
