@@ -99,6 +99,7 @@ export function SenderActionRow({
   };
 
   const primaryLegacy = legacyVerbFromId(primaryVerbId);
+  const senderLabel = sender.name.trim() || sender.domain;
 
   return (
     <div
@@ -129,10 +130,14 @@ export function SenderActionRow({
           onClick re-opens). Open-only + ESC/click-outside close is the
           standard menu-button affordance (silent-failure-hunter
           2026-06-03 advisory). */}
-      <ActionPopoverTrigger onClick={() => setPopoverOpen(true)} />
+      <ActionPopoverTrigger
+        onClick={() => setPopoverOpen(true)}
+        ariaLabel={`More actions for ${senderLabel}`}
+      />
       {popoverOpen && (
         <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 50 }}>
           <ActionPopover
+            ariaLabel={`Actions for ${senderLabel}`}
             capabilities={capabilities}
             dimmedVerb={primaryVerbId}
             onPick={(verbId) => {

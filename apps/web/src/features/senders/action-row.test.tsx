@@ -106,8 +106,8 @@ describe('SenderActionRow — one-click unsub-ready row', () => {
     expect(onAction).toHaveBeenCalledWith({ verb: 'Unsubscribe', senders: [row] });
 
     // The ⋯ popover still renders the full canonical verb set (D227).
-    fireEvent.click(screen.getByRole('button', { name: /more actions/i }));
-    const menu = screen.getByRole('menu');
+    fireEvent.click(screen.getByRole('button', { name: 'More actions for Acme Deals' }));
+    const menu = screen.getByRole('menu', { name: 'Actions for Acme Deals' });
     for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(within(menu).getByRole('menuitem', { name: label })).toBeInTheDocument();
     }

@@ -75,28 +75,46 @@ export function ToastHost() {
       }}
     >
       {items.map((t) => (
-        <div
-          key={t.id}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 9,
-            padding: '10px 16px',
-            background: TONE_BG[t.tone],
-            color: color.fgInverse,
-            borderRadius: radius.pill,
-            fontFamily: font.sans,
-            fontSize: 13,
-            fontWeight: 500,
-            boxShadow: shadow.pop,
-            pointerEvents: 'auto',
-            animation: 'dm-toast-in 0.22s cubic-bezier(0.2,0.7,0.3,1)',
-          }}
-        >
-          {t.msg}
-        </div>
+        <ToastAnnouncement key={t.id} msg={t.msg} tone={t.tone} />
       ))}
     </div>,
     document.body,
+  );
+}
+
+/**
+ * One independently announced toast. Informational and successful
+ * updates do not interrupt the user's current task; warnings and
+ * failures are announced immediately because they may require action.
+ *
+ * Exported from this module (but not the package barrel) so the ARIA
+ * contract can be tested without mounting the module-level toast bus.
+ */
+export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone }) {
+  const assertive = tone === 'warn' || tone === 'danger';
+
+  return (
+    <div
+      role={assertive ? 'alert' : 'status'}
+      aria-live={assertive ? 'assertive' : 'polite'}
+      aria-atomic="true"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        padding: '10px 16px',
+        background: TONE_BG[tone],
+        color: color.fgInverse,
+        borderRadius: radius.pill,
+        fontFamily: font.sans,
+        fontSize: 13,
+        fontWeight: 500,
+        boxShadow: shadow.pop,
+        pointerEvents: 'auto',
+        animation: 'dm-toast-in 0.22s cubic-bezier(0.2,0.7,0.3,1)',
+      }}
+    >
+      {msg}
+    </div>
   );
 }

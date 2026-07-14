@@ -241,7 +241,7 @@ export function PlanChangeModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <Button tone="default" onClick={onClose}>
+          <Button tone="default" onClick={onClose} ariaLabel="Close plan change dialog">
             Close
           </Button>
         </div>

@@ -545,7 +545,12 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
             Clear wake time
           </Button>
         ) : null}
-        <Button tone="default" onClick={onClose} disabled={setSnooze.isPending}>
+        <Button
+          tone="default"
+          onClick={onClose}
+          disabled={setSnooze.isPending}
+          ariaLabel={`Close wake-time options for ${row.displayName || row.email}`}
+        >
           Close
         </Button>
       </div>

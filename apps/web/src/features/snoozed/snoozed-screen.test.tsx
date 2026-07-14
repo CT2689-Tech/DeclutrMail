@@ -247,6 +247,11 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     await screen.findByText('noreply@tools.example.com');
 
     await user.click(screen.getByRole('button', { name: 'Set wake time ▾' }));
+    expect(
+      screen.getByRole('button', {
+        name: 'Close wake-time options for noreply@tools.example.com',
+      }),
+    ).toHaveTextContent('Close');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
     await user.click(screen.getByRole('button', { name: 'Tomorrow (9:00 AM)' }));
 

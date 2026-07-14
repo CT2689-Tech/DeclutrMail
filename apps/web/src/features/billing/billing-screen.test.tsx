@@ -180,6 +180,9 @@ describe('BillingScreen — free tier (billing live)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
     const modal = screen.getByTestId('plan-change-modal');
+    expect(
+      within(modal).getByRole('button', { name: 'Close plan change dialog' }),
+    ).toHaveTextContent('Close');
     fireEvent.click(within(modal).getByTestId('plan-option-pro'));
 
     const panel = within(modal).getByTestId('checkout-panel');

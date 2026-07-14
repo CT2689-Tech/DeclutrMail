@@ -71,7 +71,7 @@ each completed slice.
       protected-sender reasons, and a trustworthy preview fallback.
 - [ ] Unify search, temporary filters, sorting, and saved views, including
       stable zero-result recovery and shareable/restorable state where safe.
-- [ ] Replace generic Close/Dismiss/icon-only accessible names with
+- [x] Replace generic Close/Dismiss/icon-only accessible names with
       contextual labels; verify focus, announcements, and reduced-motion paths.
 - [ ] Standardize errors around what changed, what did not change, and the next
       recovery step, with support details disclosed separately.

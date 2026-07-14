@@ -86,11 +86,11 @@ export interface ActionPopoverProps {
   onClose: () => void;
 
   /**
-   * Aria-label for the popover container; defaults to "Sender actions".
-   * Override when the popover represents a different context
-   * (e.g. "Bulk actions" for SelectionBar).
+   * Contextual aria-label for the popover container, such as
+   * "Actions for Acme Deals" or "Bulk actions for 4 selected senders".
+   * Required so repeated sender menus never share a generic name.
    */
-  ariaLabel?: string;
+  ariaLabel: string;
 
   /** Optional style overrides for positioning. */
   style?: CSSProperties;
@@ -111,7 +111,7 @@ export function ActionPopover({
   dimmedVerb,
   onPick,
   onClose,
-  ariaLabel = 'Sender actions',
+  ariaLabel,
   style,
 }: ActionPopoverProps) {
   const ref = useFocusTrap<HTMLDivElement>(true);
@@ -293,8 +293,8 @@ function Kbd({ shortcut }: { shortcut: string }) {
 
 interface ActionPopoverTriggerProps {
   onClick: () => void;
-  /** Override label/title for accessibility. Default: "More actions". */
-  ariaLabel?: string;
+  /** Contextual label/title, such as "More actions for Acme Deals". */
+  ariaLabel: string;
   /** Optional style overrides for positioning. */
   style?: CSSProperties;
   /** Optional child content; defaults to the `⋯` glyph. */
@@ -308,7 +308,7 @@ interface ActionPopoverTriggerProps {
  */
 export function ActionPopoverTrigger({
   onClick,
-  ariaLabel = 'More actions',
+  ariaLabel,
   style,
   children = '⋯',
 }: ActionPopoverTriggerProps) {
