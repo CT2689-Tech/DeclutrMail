@@ -127,8 +127,13 @@ export function StepFirstTriage({
             : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their token is live. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
-          Senders stays available after onboarding. On Free, any cleanup actions you have left
-          remain available there; ongoing Triage queues require Plus.
+          {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
+              tier (stats hiccup) gets the tier-free sentence only. */}
+          {stats.data?.tier === 'free'
+            ? 'Senders stays available after onboarding. On Free, any cleanup actions you have left remain available there; ongoing Triage queues require Plus.'
+            : stats.data
+              ? 'Senders stays available after onboarding, and Triage keeps a queue ready whenever you want it.'
+              : 'Senders stays available after onboarding.'}
         </p>
         <Button
           tone="primary"

@@ -16,12 +16,17 @@ const onboarding = vi.hoisted(() => ({
   },
 }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const triageStats = vi.hoisted(() => ({
+  isError: false,
+  isLoading: false,
+  data: null as { tier: 'free' | 'plus' | 'pro' } | null,
+}));
 
 vi.mock('./api/use-onboarding', () => ({
   useFirstTriage: () => onboarding.firstTriage,
 }));
 vi.mock('@/features/triage/api/use-triage-queue', () => ({
-  useTriageStats: () => ({ isError: false, isLoading: false, data: null }),
+  useTriageStats: () => triageStats,
 }));
 vi.mock('@/features/triage/triage-screen', () => ({
   TriageScreen: ({ journey }: { journey?: string }) => (
@@ -39,6 +44,7 @@ beforeEach(() => {
     rows: [] as typeof TRIAGE_QUEUE,
     meta: { pinned: 3, decided: 3 },
   };
+  triageStats.data = null;
   analytics.track.mockReset();
 });
 
@@ -63,6 +69,8 @@ describe('StepFirstTriage', () => {
   });
 
   it('hands Free users to Senders and reserves ongoing Triage for Plus', () => {
+    triageStats.data = { tier: 'free' };
+
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
     expect(screen.getByText(/Senders stays available after onboarding/i)).toBeInTheDocument();
@@ -71,6 +79,26 @@ describe('StepFirstTriage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/ongoing Triage queues require Plus/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+  });
+
+  it('spares Plus/Pro users the Free-tier caveat', () => {
+    triageStats.data = { tier: 'pro' };
+
+    render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
+
+    expect(screen.getByText(/Triage keeps a queue ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/ongoing Triage queues require Plus/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/On Free/i)).not.toBeInTheDocument();
+  });
+
+  it('claims no tier capability while the tier is unknown', () => {
+    triageStats.data = null;
+
+    render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
+
+    expect(screen.getByText(/Senders stays available after onboarding\./i)).toBeInTheDocument();
+    expect(screen.queryByText(/ongoing Triage queues require Plus/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });
 
   it('lets the user stop without manufacturing completion', () => {
