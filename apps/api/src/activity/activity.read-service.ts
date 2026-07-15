@@ -1164,19 +1164,14 @@ function projectExecutionRows(
  *
  * A user-reverted (Undo) action no longer stands, so it belongs to no
  * outcome bucket — counting it as completed/recovered would claim mail
- * the review's own recovery path put back. The journal outlives every
- * 7-day weekly-review window (expiry >= issue + 7d, pruned 1d later);
- * custom date ranges older than that lose undo provenance when the
- * journal is pruned, by design (D232 — no read path after expiry).
+ * the review's own recovery path put back. `activity_log.reverted_at`
+ * is the durable reversal fact (stamped in the same transaction as the
+ * journal flip, backfilled by migration 0044), so the guard holds for
+ * every date range — including ones older than journal pruning.
  */
 function persistedReviewOutcomeExpression() {
   return sql<ActivityReviewOutcome | null>`case
-    when ${activityLog.undoToken} is not null and exists (
-      select 1 from undo_journal undone
-      where undone.token = ${activityLog.undoToken}
-        and undone.mailbox_account_id = ${activityLog.mailboxAccountId}
-        and undone.reverted_at is not null
-    ) then null
+    when ${activityLog.revertedAt} is not null then null
     when ${activityLog.actionJobId} is not null and exists (
       select 1 from action_jobs recovery
       where recovery.id = ${activityLog.actionJobId}
