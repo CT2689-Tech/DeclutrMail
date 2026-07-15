@@ -90,7 +90,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 
 ## Implementation checklist
 
-- [ ] Reconcile D163/D171 user-facing behavior and stale Brief documentation.
+- [x] Reconcile D163/D171 user-facing behavior and stale Brief documentation.
 - [x] Generate Briefs at the user's local 08:00 boundary with UTC fallback.
 - [ ] Add the privacy-bounded D246 analytics contract and taxonomy.
 - [ ] Persist the selected activation goal in the existing preferences bag.
@@ -109,11 +109,10 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: `BriefSnapshotWorker` now selects each owner's timezone,
-  waits until local 08:00, applies the local weekend, and reads exactly the
-  previous local calendar day across DST boundaries.
-- Last green checks: Brief timezone tests (5); Brief worker integration suite;
-  workers typecheck.
+- Last completed slice: onboarding no longer requests browser notification
+  permission without a delivery path. Sync-ready email copy remains the beta
+  notification contract; D163/D171 and stale Brief claims are superseded.
+- Last green checks: sync-gate tests (13); web typecheck.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
 - Next slice: capture the browser timezone through an authenticated user
-  preference mutation, then commit the browser-push deferral regression.
+  preference mutation, including automatic healing for existing accounts.

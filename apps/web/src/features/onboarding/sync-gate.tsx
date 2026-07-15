@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
@@ -193,7 +193,6 @@ function SyncProgress({
       </ol>
 
       <PrivacyBadge style={PRIVACY_BADGE_STYLE} />
-      <PushPermissionAsk />
       {escape && <SyncEscapeHatch escape={escape} />}
     </Shell>
   );
@@ -327,49 +326,6 @@ function StageDot({ state }: { state: 'done' | 'active' | 'pending' }) {
         animation: state === 'active' ? 'dm-pulse 1.4s ease-in-out infinite' : undefined,
       }}
     />
-  );
-}
-
-/**
- * Subtle browser-push opt-in (D109). Renders only when the Notification
- * API exists and permission is still `default`. Clicking requests
- * permission; we don't register a push subscription here (that lands
- * with the notification-delivery feature) — this just captures consent
- * so the later "we'll email/notify you when ready" promise can be kept.
- */
-function PushPermissionAsk() {
-  const [supported, setSupported] = useState(false);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setSupported(true);
-      setPermission(Notification.permission);
-    }
-  }, []);
-
-  if (!supported || permission !== 'default') return null;
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void Notification.requestPermission().then(setPermission);
-      }}
-      style={{
-        marginTop: 14,
-        background: 'transparent',
-        border: `1px solid ${color.border}`,
-        borderRadius: 9999,
-        padding: '6px 14px',
-        fontFamily: font.sans,
-        fontSize: 13,
-        color: color.fg,
-        cursor: 'pointer',
-      }}
-    >
-      🔔 Get notified when ready
-    </button>
   );
 }
 
