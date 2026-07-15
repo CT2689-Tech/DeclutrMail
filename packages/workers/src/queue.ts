@@ -149,10 +149,15 @@ export function createRedisConnection(redisUrl: string): Redis {
 
 /**
  * Idle-poll ceiling for user-facing queues — env tuning can lower the
- * re-poll below this but never raise it past 10s, so pickup stays
- * snappy even on a fat-fingered env value.
+ * re-poll below this but never raise it past this many seconds, so a
+ * fat-fingered env can't strand pickup. Set to 60s: job pickup is
+ * marker-driven (see `workerTuningOptions`), NOT drainDelay-bound, so a
+ * longer idle re-poll costs Redis commands but not latency — the ceiling
+ * only guards the pathological "marker missed" fallback path, which 60s
+ * still covers acceptably. Raised from 10s in the 2026-07-15 Upstash
+ * cost cut (prod Redis budget-suspended by idle polling from 17 workers).
  */
-const USER_FACING_DRAIN_DELAY_MAX_SEC = 10;
+const USER_FACING_DRAIN_DELAY_MAX_SEC = 60;
 
 /** Parse a positive number from env; fall back on unset/garbage. */
 function envNumber(raw: string | undefined, fallback: number): number {
@@ -162,19 +167,26 @@ function envNumber(raw: string | undefined, fallback: number): number {
 
 /**
  * Env-tunable polling opts shared by every BullMQ `Worker` (2026-06-10
- * Upstash command-volume audit). An idle Worker burns 2 Redis commands
- * per `drainDelay` — at bullmq's 5s default the 7 always-on workers
- * cost ~242K idle commands/day, ~91% of the Upstash bill.
+ * Upstash command-volume audit; retuned 2026-07-15 after a prod Redis
+ * budget-suspension). An idle Worker burns ~2 Redis commands per
+ * `drainDelay`. The composition root runs 17 always-on Workers (not the
+ * 7 this comment first assumed) — at a 10s user-facing drainDelay that
+ * is the dominant Upstash cost, and it suspended the pre-launch $20
+ * budget with zero real traffic.
  *
  * Job pickup latency is NOT drainDelay-bound: `Queue.add` writes the
  * `{queue}:marker` zset, which immediately unblocks the worker's
  * blocking pop — `drainDelay` is only the idle re-poll safety net.
  * `stalledInterval` only affects crash-recovery latency (re-queue of a
- * job whose worker died mid-run), never healthy-path latency.
+ * job whose worker died mid-run), never healthy-path latency. So the
+ * pre-launch prod env sets a slow re-poll (60s user-facing / 300s cron)
+ * for a ~6× idle-command cut at no felt latency — see the DEV-PHASE
+ * override in deploy-cloud-run.yml (revert toward the D193 tighter
+ * values when real traffic warrants snappier crash recovery).
  *
  * Two profiles:
  *   - `user-facing` (initial-sync, incremental-sync, score,
- *     label-action): drainDelay clamped ≤10s; stalled check kept tight.
+ *     label-action): drainDelay clamped ≤60s; stalled check env-tuned.
  *   - `cron` (brief-snapshot, undo-expiry, senders-counter-
  *     reconciliation): scheduler-driven, slow polling costs nothing.
  *

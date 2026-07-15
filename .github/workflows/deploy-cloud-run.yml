@@ -261,9 +261,17 @@ jobs:
           # max 3 when real users arrive.
           #
           # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
-          # tuning (2026-06-10 Upstash command-volume audit): user-facing
-          # queues poll at 10s/60s, cron queues at 60s/5min. See
-          # `workerTuningOptions` in `packages/workers/src/queue.ts`.
+          # tuning (2026-06-10 Upstash command-volume audit). DEV-PHASE
+          # override 2026-07-15: this single worker process runs 17
+          # always-on BullMQ Workers; at 10s user-facing drainDelay their
+          # idle re-poll was the dominant Upstash cost and suspended the
+          # pre-launch $20 budget with zero real traffic. Slowed to 60s/
+          # 300s (user-facing) and 300s/900s (cron) for a ~6× idle-command
+          # cut — job pickup is marker-driven, NOT drainDelay-bound, so
+          # there is no felt latency (see `workerTuningOptions` in
+          # `packages/workers/src/queue.ts`). REVERT toward 10s/60s at
+          # launch when real traffic warrants snappier crash recovery
+          # (pairs with the D193 --min-instances revert above).
           gcloud run deploy declutrmail-worker \
             --image="$IMAGE" \
             --region="$REGION" \
@@ -279,7 +287,7 @@ jobs:
             --no-allow-unauthenticated \
             --command="node" \
             --args="src/worker.ts" \
-            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|WEB_URL=https://app.declutrmail.com|REASONING_RATE_PER_MIN=400|REASONING_TIMEOUT_MS=12000|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=10|WORKER_STALLED_INTERVAL_MS=60000|WORKER_CRON_DRAIN_DELAY_SEC=60|WORKER_CRON_STALLED_INTERVAL_MS=300000" \
+            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|RATE_LIMIT_ENABLED=false|SENTRY_RELEASE=$GITHUB_SHA|WEB_URL=https://app.declutrmail.com|REASONING_RATE_PER_MIN=400|REASONING_TIMEOUT_MS=12000|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=60|WORKER_STALLED_INTERVAL_MS=300000|WORKER_CRON_DRAIN_DELAY_SEC=300|WORKER_CRON_STALLED_INTERVAL_MS=900000" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest" \
             --quiet
 
