@@ -10,7 +10,7 @@
 //
 // Variants covered (D210 + D211/D212 + Storybook contract):
 //   • Default          — populated queue, 9 rows
-//   • Empty            — D33 stats summary + come back tomorrow
+//   • Empty            — factual stats summary + calm re-entry
 //   • EmptyFreeTier    — D33 with the upgrade nudge visible
 //   • EmptyQuiet       — D212 resting state (nothing decided today)
 //   • Loading          — skeleton stack
@@ -118,7 +118,7 @@ export const ErrorState: Story<typeof TriageScreen> = {
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
 };
 
-/** Empty — D33 stats summary + "come back tomorrow". */
+/** Empty — factual stats summary + calm re-entry. */
 export const Empty: Story<typeof TriageScreen> = {
   args: {
     state: { kind: 'empty', stats: TRIAGE_SESSION_STATS },
@@ -150,9 +150,8 @@ export const EmptyProTier: Story<typeof TriageScreen> = {
 /**
  * Empty (quiet) — the D212 resting state: queue empty AND nothing
  * decided today (fresh morning visit / new mailbox). Renders the
- * shared `<EmptyState>` ("Nothing needs a decision.") instead of the
- * D33 celebration, which would otherwise claim "You cleared today's
- * queue." over four zero tiles.
+ * shared `<EmptyState>` ("Nothing needs a decision right now.")
+ * instead of a completion panel over four zero tiles.
  */
 export const EmptyQuiet: Story<typeof TriageScreen> = {
   args: {

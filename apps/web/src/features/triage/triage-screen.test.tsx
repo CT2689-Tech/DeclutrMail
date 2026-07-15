@@ -85,8 +85,8 @@ describe('TriageScreen — populated queue', () => {
 describe('TriageScreen — empty / loading branches', () => {
   it('renders the empty state with stats summary when state.kind=empty', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    // D33 copy markers
-    expect(html).toContain('cleared today');
+    // Calm completion copy markers
+    expect(html).toContain('You’re done for now.');
     expect(html).toContain('New decisions appear after a sync');
     // Stats tile labels
     expect(html).toContain('Decided');
@@ -143,10 +143,7 @@ describe('TriageScreen — empty / loading branches', () => {
       archivedToday: 0,
       unsubscribedToday: 0,
       laterToday: 0,
-      streakDays: 0,
       freeRemaining: null,
-      futureEmailsSkipped: 0,
-      minutesSavedPerWeek: 0,
       tier: 'plus' as const,
     };
     const html = renderState({ kind: 'empty', stats: empty });
@@ -156,17 +153,18 @@ describe('TriageScreen — empty / loading branches', () => {
   it('renders the D212 resting state when the queue is empty and nothing was decided today (W5)', () => {
     // The inbox-zero moment for a user who cleared nothing today —
     // a fresh morning visit or a new mailbox. The D33 celebration
-    // ("You cleared today's queue." over four zero tiles) would be a
-    // false claim here, so the shared EmptyState renders instead.
+    // A completion panel over four zero tiles would be a false claim
+    // here, so the shared EmptyState renders instead.
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
-    expect(html).toContain('No decisions today.');
-    expect(html).toContain('repeated noise');
+    expect(html).toContain('Nothing needs a decision right now.');
+    expect(html).toContain('Come back whenever it’s useful.');
     // Next-step framing (D212): a real link to Senders.
     expect(html).toContain('href="/senders"');
     expect(html).toContain('Browse senders');
     // Never the false celebration, never its zero tiles.
     expect(html).not.toContain('cleared today');
-    expect(html).not.toContain('Come back tomorrow');
+    expect(html).not.toContain('tomorrow');
+    expect(html).not.toContain('consecutive');
     expect(html).not.toContain('Decided');
     // Must not look like an error state (D212).
     expect(html).not.toContain('Try again');
@@ -175,13 +173,14 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the resting state for kind=ready with [] rows and no decisions today (W5)', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS_QUIET });
-    expect(html).toContain('No decisions today.');
+    expect(html).toContain('Nothing needs a decision right now.');
   });
 
   it('keeps the D33 celebration when the user DID decide today', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('cleared today');
-    expect(html).not.toContain('Nothing needs a decision.');
+    expect(html).toContain('You’re done for now.');
+    expect(html).toContain('Come back whenever it’s useful.');
+    expect(html).not.toContain('consecutive');
   });
 
   it('renders the skeleton when state.kind=loading', () => {

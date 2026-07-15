@@ -223,10 +223,7 @@ const EMPTY_STATS: TriageSessionStats = {
   archivedToday: 0,
   unsubscribedToday: 0,
   laterToday: 0,
-  streakDays: 0,
   freeRemaining: null,
-  futureEmailsSkipped: null,
-  minutesSavedPerWeek: null,
   tier: 'free',
 };
 

@@ -84,10 +84,7 @@ export interface TriageSessionStats {
   archivedToday: number;
   unsubscribedToday: number;
   laterToday: number;
-  streakDays: number;
   freeRemaining: number | null;
-  futureEmailsSkipped: number | null;
-  minutesSavedPerWeek: number | null;
   tier: 'free' | 'plus' | 'pro';
 }
 
@@ -101,9 +98,6 @@ export interface TriageSessionStats {
  * decided" means the same thing on both the read and the write side.
  */
 export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
-
-/** Average seconds saved per inbox message deflected — D33 worked example. */
-const SECONDS_SAVED_PER_DEFLECTED_EMAIL = 6;
 
 /**
  * TriageReadService (D20, D29, D33, D204).
@@ -379,15 +373,6 @@ export class TriageReadService {
       }
     }
 
-    // Streak: how many consecutive UTC dates ending today have at
-    // least one K/A/U/L row. Bounded scan (90 days max).
-    const streakDays = await this.computeStreak(input.mailboxAccountId, todayStartUtc);
-
-    // Future-emails-skipped: rough projection of today's deflected
-    // verbs × monthly_volume × 12. Aggregated from the underlying
-    // mail_messages for the touched senders.
-    const projection = await this.projectImpact(input.mailboxAccountId, todayStartUtc);
-
     // D19 free-cap position — LIFETIME cleanup units left (manifest
     // limit − units consumed), not a daily decision counter. The
     // counting rule lives on `EntitlementsService.cleanupUnitsUsed`.
@@ -405,10 +390,7 @@ export class TriageReadService {
       archivedToday,
       unsubscribedToday,
       laterToday,
-      streakDays,
       freeRemaining,
-      futureEmailsSkipped: projection.futureEmailsSkipped,
-      minutesSavedPerWeek: projection.minutesSavedPerWeek,
       tier,
     };
   }
@@ -498,81 +480,6 @@ export class TriageReadService {
       noiseReductionPct,
     };
   }
-
-  private async computeStreak(mailboxAccountId: string, todayStartUtc: Date): Promise<number> {
-    const ninetyDaysAgo = new Date(todayStartUtc.getTime() - 90 * 86_400_000);
-    const rows = await this.db
-      .select({
-        day: sql<string>`DATE(${activityLog.occurredAt} AT TIME ZONE 'UTC')`,
-      })
-      .from(activityLog)
-      .where(
-        and(
-          eq(activityLog.mailboxAccountId, mailboxAccountId),
-          gte(activityLog.occurredAt, ninetyDaysAgo),
-          sql`${activityLog.action} IN ('archive','unsubscribe','later','keep')`,
-        ),
-      )
-      .groupBy(sql`1`);
-    const activeDays = new Set(rows.map((r) => r.day));
-    let streak = 0;
-    const cursor = new Date(todayStartUtc);
-    while (streak < 90 && activeDays.has(toUtcDateString(cursor))) {
-      streak += 1;
-      cursor.setUTCDate(cursor.getUTCDate() - 1);
-    }
-    return streak;
-  }
-
-  private async projectImpact(
-    mailboxAccountId: string,
-    todayStartUtc: Date,
-  ): Promise<{
-    futureEmailsSkipped: number | null;
-    minutesSavedPerWeek: number | null;
-  }> {
-    // ISO string + ::timestamptz cast — postgres.js rejects raw Date
-    // params in `sql` fragments (Codex smoke 2026-05-27).
-    const ninetyDaysAgoIso = new Date(todayStartUtc.getTime() - 90 * 86_400_000).toISOString();
-    // Total inbound messages over 90d for senders this user
-    // archived/unsubscribed/later'd TODAY → monthly volume × 12.
-    const [agg] = await this.db
-      .select({
-        deflectedSenders: sql<number>`COUNT(DISTINCT ${activityLog.senderKey})`,
-        last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END), 0)`,
-      })
-      .from(activityLog)
-      .leftJoin(
-        mailMessages,
-        and(
-          eq(mailMessages.mailboxAccountId, activityLog.mailboxAccountId),
-          eq(mailMessages.senderKey, activityLog.senderKey),
-        ),
-      )
-      .where(
-        and(
-          eq(activityLog.mailboxAccountId, mailboxAccountId),
-          gte(activityLog.occurredAt, todayStartUtc),
-          sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
-        ),
-      );
-    const deflectedSenders = Number(agg?.deflectedSenders ?? 0);
-    if (deflectedSenders === 0) {
-      return { futureEmailsSkipped: null, minutesSavedPerWeek: null };
-    }
-    const last90Total = Number(agg?.last90Total ?? 0);
-    const annualVolume = Math.round((last90Total / 3) * 12);
-    const minutesSaved = Math.round((annualVolume * SECONDS_SAVED_PER_DEFLECTED_EMAIL) / 60 / 52);
-    return {
-      futureEmailsSkipped: annualVolume,
-      minutesSavedPerWeek: minutesSaved,
-    };
-  }
-}
-
-/** UTC ISO date (YYYY-MM-DD) for streak day-key comparison. */
-function toUtcDateString(d: Date): string {
-  return d.toISOString().slice(0, 10);
 }
 
 /**

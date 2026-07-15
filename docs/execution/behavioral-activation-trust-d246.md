@@ -96,6 +96,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Persist the selected activation goal in the existing preferences bag.
 - [x] Implement a finite first-relief session and calm completion state.
 - [x] Add expected/surprising feedback for automatic Activity outcomes.
+- [x] Remove streak/speculative-impact claims and make re-entry voluntary.
 - [ ] Add the Observe-first repeated-pattern suggestion and decision telemetry.
 - [ ] Add the factual in-app weekly review with Activity evidence links.
 - [x] Add focused unit/integration/accessibility coverage for completed slices.
@@ -109,13 +110,12 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: Activity automatic outcomes, each frozen Brief, and
-  each observed Followup now restore and accept bounded first-party feedback.
-  The control is accessible, confirms only after persistence succeeds, and
-  sends analytics only after success without target ids or mail metadata.
-- Last green checks: feedback/read-model API tests (3 targeted); feedback and
-  Activity/Brief/Followups web tests (78); API/web typechecks; formatting and
-  diff checks.
+- Last completed slice: Triage now reports only factual decision counts and
+  entitlement state. Resting and completion surfaces remove streaks,
+  speculative impact, daily pressure, and false inbox-zero claims in favor of
+  voluntary re-entry after a sync finds another repeated sender pattern.
+- Last green checks: Triage/first-relief web tests (20); API/web typechecks;
+  formatting and diff checks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: remove the streak and speculative impact contract and add calm,
-  factual re-entry copy before expanding the Autopilot trust ladder.
+- Next slice: add the Observe-first repeated-pattern suggestion and bounded
+  decision telemetry.
