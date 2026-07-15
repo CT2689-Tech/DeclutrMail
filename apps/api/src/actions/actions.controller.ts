@@ -15,8 +15,10 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { ActionRecoveryService } from './action-recovery.service.js';
 import { ActionsService } from './actions.service.js';
 import {
+  actionRecoveryConfirmRequestSchema,
   archiveRequestSchema,
   bulkPreviewRequestSchema,
   compositeActionRequestSchema,
@@ -24,6 +26,8 @@ import {
   unsubscribeIntentRequestSchema,
   unsubscribeManualStatusRequestSchema,
   type ActionEnqueueResult,
+  type ActionRecoveryEnqueueResult,
+  type ActionRecoveryPreviewResult,
   type ActionStatusResult,
   type ArchivePreviewResult,
   type BatchStatusResult,
@@ -57,7 +61,10 @@ import {
 @Controller('actions')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class ActionsController {
-  constructor(private readonly actions: ActionsService) {}
+  constructor(
+    private readonly actions: ActionsService,
+    private readonly recovery: ActionRecoveryService,
+  ) {}
 
   /**
    * POST /api/actions/archive — resolve the target set, enqueue, return
@@ -337,6 +344,78 @@ export class ActionsController {
       senderId,
     });
     return ok(result);
+  }
+
+  /**
+   * Start a metadata-only Gmail verification for a failed forward
+   * Archive/Later/Delete attempt. Verification is asynchronous because
+   * an ambiguous batch outcome can require one messages.get per frozen
+   * target. It never mutates mail.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post(':id/recovery-preview')
+  @UseGuards(CsrfGuard)
+  async createRecoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+  ): Promise<Envelope<ActionRecoveryPreviewResult>> {
+    if (!isUuid(id)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'id must be a UUID.' });
+    }
+    return ok(await this.recovery.createPreview({ mailboxAccountId: mailbox.id, actionId: id }));
+  }
+
+  /** Poll one durable recovery verification. */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Get('recovery-previews/:previewId')
+  async recoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('previewId') previewId: string,
+  ): Promise<Envelope<ActionRecoveryPreviewResult>> {
+    if (!isUuid(previewId)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'previewId must be a UUID.' });
+    }
+    return ok(await this.recovery.getPreview(mailbox.id, previewId));
+  }
+
+  /**
+   * Confirm a ready preview. A fresh recovery action is linked to the
+   * failed lineage and freezes the verified target set. The caller's
+   * Idempotency-Key dedups double-clicks, two tabs, and network retries.
+   */
+  @RateLimit({ bucket: 'gmail-action' })
+  @Post('recovery-previews/:previewId/retry')
+  @UseGuards(CsrfGuard)
+  async retryRecoveryPreview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('previewId') previewId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: unknown,
+  ): Promise<Envelope<ActionRecoveryEnqueueResult>> {
+    if (!isUuid(previewId)) {
+      throw new BadRequestException({ code: 'INVALID_ID', message: 'previewId must be a UUID.' });
+    }
+    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_REQUIRED',
+        message: 'An Idempotency-Key header (≥8 chars) is required for recovery.',
+      });
+    }
+    const parsed = actionRecoveryConfirmRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid recovery request.',
+      });
+    }
+    return ok(
+      await this.recovery.confirmPreview({
+        mailboxAccountId: mailbox.id,
+        previewId,
+        idempotencyKey: idempotencyKey.trim(),
+        wakeAt: parsed.data.wakeAt ? new Date(parsed.data.wakeAt) : null,
+      }),
+    );
   }
 
   /**

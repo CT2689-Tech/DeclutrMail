@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
+  actionJobs,
   activityLog,
   automationRules,
   mailMessages,
@@ -85,19 +86,23 @@ async function seedSender(
   senderKey: string,
   email: string,
   displayName: string,
-) {
+): Promise<string> {
   const at = email.lastIndexOf('@');
   const domain = at === -1 ? email : email.slice(at + 1);
-  await db.insert(senders).values({
-    mailboxAccountId,
-    senderKey,
-    email,
-    displayName,
-    domain,
-    gmailCategory: 'primary',
-    firstSeenAt: new Date(NOW_MS - 30 * ONE_DAY_MS),
-    lastSeenAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
-  });
+  const [sender] = await db
+    .insert(senders)
+    .values({
+      mailboxAccountId,
+      senderKey,
+      email,
+      displayName,
+      domain,
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(NOW_MS - 30 * ONE_DAY_MS),
+      lastSeenAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+    })
+    .returning({ id: senders.id });
+  return sender!.id;
 }
 
 async function seedUndoToken(
@@ -176,6 +181,50 @@ async function seedRule(db: Db, mailboxAccountId: string, name: string): Promise
   return row!.id;
 }
 
+let actionKeySequence = 0;
+
+async function seedExecutionAttempt(
+  db: Db,
+  args: {
+    mailboxAccountId: string;
+    senderId: string;
+    senderKey: string;
+    verb?: 'archive' | 'later' | 'delete';
+    status: 'queued' | 'executing' | 'done' | 'failed';
+    requestedCount?: number;
+    errorCode?: string | null;
+    createdAt: Date;
+    rootActionId?: string | null;
+    retryOfActionId?: string | null;
+    recoveryAttempt?: number;
+  },
+): Promise<string> {
+  actionKeySequence += 1;
+  const verb = args.verb ?? 'archive';
+  const [row] = await db
+    .insert(actionJobs)
+    .values({
+      mailboxAccountId: args.mailboxAccountId,
+      verb,
+      direction: 'forward',
+      selector: { type: 'sender', senderId: args.senderId, senderKey: args.senderKey },
+      resolvedMessageIds: [`message-${actionKeySequence}`],
+      requestedCount: args.requestedCount ?? 1,
+      status: args.status,
+      idempotencyKey: `activity-execution-${actionKeySequence}`,
+      errorCode: args.errorCode ?? null,
+      createdAt: args.createdAt,
+      updatedAt: args.createdAt,
+      rootActionId: args.rootActionId ?? null,
+      retryOfActionId: args.retryOfActionId ?? null,
+      recoveryAttempt: args.recoveryAttempt ?? 0,
+      ...((args.recoveryAttempt ?? 0) > 0 ? { selectionFrozenAt: args.createdAt } : {}),
+      ...(verb === 'later' ? { wakeAt: new Date(NOW_MS + 7 * ONE_DAY_MS) } : {}),
+    })
+    .returning({ id: actionJobs.id });
+  return row!.id;
+}
+
 describe('ActivityReadService', () => {
   let db: Db;
   let svc: ActivityReadService;
@@ -183,6 +232,7 @@ describe('ActivityReadService', () => {
   let mailboxB: { workspaceId: string; mailboxAccountId: string };
 
   beforeEach(async () => {
+    actionKeySequence = 0;
     db = await freshDb();
     svc = new ActivityReadService(db as never);
     mailboxA = await seedMailbox(db, 'a@example.com');
@@ -212,6 +262,286 @@ describe('ActivityReadService', () => {
       nowMs: NOW_MS,
     });
     expect(rows).toHaveLength(1);
+    expect(rows[0]!.executionState).toBeNull();
+  });
+
+  describe('action execution projection', () => {
+    it('merges an unresolved root action into chronological Activity with current sender facts', async () => {
+      const senderKey = 'execution-sender-a';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'news@example.com',
+        'Daily News',
+      );
+      const activityId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 4 * 60 * 60 * 1000),
+        source: 'manual',
+        action: 'keep',
+        senderKey,
+      });
+      const actionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'queued',
+        requestedCount: 8,
+        createdAt: new Date(NOW_MS - 2 * 60 * 60 * 1000),
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows.map((row) => row.id)).toEqual([actionId, activityId]);
+      expect(rows[0]).toMatchObject({
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 0,
+        sender: { senderKey, displayName: 'Daily News', email: 'news@example.com' },
+        undoState: { kind: 'unavailable' },
+        executionState: {
+          kind: 'in_progress',
+          actionId,
+          requestedCount: 8,
+          isRecovery: false,
+          status: 'queued',
+        },
+      });
+      expect(rows[1]!.executionState).toBeNull();
+    });
+
+    it('uses the latest recovery attempt and removes a lineage after any recovery succeeds', async () => {
+      const senderKey = 'execution-recovery';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'retry@example.com',
+        'Retry Sender',
+      );
+      const rootActionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        verb: 'delete',
+        status: 'failed',
+        errorCode: 'TransientError',
+        requestedCount: 5,
+        createdAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+      });
+      const firstRecoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        verb: 'delete',
+        status: 'failed',
+        errorCode: 'PermanentError',
+        requestedCount: 4,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId,
+        retryOfActionId: rootActionId,
+        recoveryAttempt: 1,
+      });
+      const currentActionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        verb: 'delete',
+        status: 'executing',
+        requestedCount: 3,
+        // Attempt number, not wall-clock ordering, chooses current state.
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        rootActionId,
+        retryOfActionId: firstRecoveryId,
+        recoveryAttempt: 2,
+      });
+
+      const active = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(active.rows).toHaveLength(1);
+      expect(active.rows[0]!.executionState).toEqual({
+        kind: 'in_progress',
+        actionId: currentActionId,
+        requestedCount: 3,
+        isRecovery: true,
+        status: 'executing',
+      });
+      expect(active.stats.needsAttention).toBe(0);
+
+      await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, currentActionId));
+      const resolved = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(resolved.rows).toHaveLength(0);
+      expect(resolved.stats.needsAttention).toBe(0);
+    });
+
+    it('counts each failed lineage once and derives its recovery resolution from the latest error', async () => {
+      const senderKey = 'execution-failed';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'failure@example.com',
+        'Failure Sender',
+      );
+      const rootActionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'InvalidGrantError',
+        requestedCount: 9,
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      const recoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'TransientError',
+        requestedCount: 6,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId,
+        retryOfActionId: rootActionId,
+        recoveryAttempt: 1,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_failed',
+        senderKey,
+      });
+
+      const result = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      const execution = result.rows.find((row) => row.id === recoveryId);
+      expect(execution?.executionState).toEqual({
+        kind: 'failed',
+        actionId: recoveryId,
+        rootActionId,
+        requestedCount: 6,
+        errorCode: 'TransientError',
+        resolution: 'review',
+      });
+      expect(result.stats.needsAttention).toBe(2);
+      expect(result.allTimeStats.needsAttention).toBe(2);
+    });
+
+    it('preserves tenant, source, verb, sender, window, and cursor semantics', async () => {
+      const senderKey = 'execution-filtered';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'filters@example.com',
+        'Filter Target',
+      );
+      const foreignSenderId = await seedSender(
+        db,
+        mailboxB.mailboxAccountId,
+        senderKey,
+        'filters@example.com',
+        'Filter Target',
+      );
+      const actionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'InvalidGrantError',
+        createdAt: new Date(NOW_MS - 2 * 60 * 60 * 1000),
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        senderId: foreignSenderId,
+        senderKey,
+        status: 'failed',
+        errorCode: 'TransientError',
+        createdAt: new Date(NOW_MS - 60 * 60 * 1000),
+      });
+      const activityId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 4 * 60 * 60 * 1000),
+        source: 'manual',
+        action: 'keep',
+        senderKey,
+      });
+
+      const matching = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: 'manual',
+        verbs: ['archive'],
+        senderQuery: 'FILTER TARGET',
+        cursor: null,
+        limit: 1,
+        nowMs: NOW_MS,
+      });
+      expect(matching.rows.map((row) => row.id)).toEqual([actionId]);
+      expect(matching.rows[0]!.executionState).toMatchObject({
+        kind: 'failed',
+        resolution: 'review',
+      });
+
+      const wrongSource = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: 'autopilot',
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(wrongSource.rows).toHaveLength(0);
+
+      const afterAction = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: { occurredAt: new Date(NOW_MS - 2 * 60 * 60 * 1000), id: actionId },
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(afterAction.rows.map((row) => row.id)).toEqual([activityId]);
+
+      const outsideWindow = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        dateFrom: new Date(NOW_MS - 60 * 60 * 1000),
+        dateTo: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(outsideWindow.rows).toHaveLength(0);
+    });
   });
 
   it('D55 — window filter excludes rows older than 30 days for window=30d', async () => {

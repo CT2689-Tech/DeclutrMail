@@ -182,6 +182,67 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
+/* ───────────────────── Outcome-aware Activity recovery ───────────────────── */
+
+/** A durable verification pass over one failed label-action attempt. */
+export type ActionRecoveryPreviewStatus = 'verifying' | 'ready' | 'failed' | 'consumed';
+
+/** Provider-state conclusion produced by the metadata-only verifier. */
+export type ActionRecoveryOutcome =
+  | 'not_applied'
+  | 'partial'
+  | 'already_applied'
+  | 'no_change_needed'
+  | 'uncertain'
+  | 'reconnect_required'
+  | 'blocked';
+
+export interface ActionRecoveryPreviewResult {
+  previewId: string;
+  /** Current failed attempt being reviewed. */
+  actionId: string;
+  /** First action in the logical recovery lineage. */
+  rootActionId: string;
+  verb: 'archive' | 'later' | 'delete';
+  status: ActionRecoveryPreviewStatus;
+  outcome: ActionRecoveryOutcome | null;
+  /** Exact frozen set this confirmation will reconcile. */
+  targetCount: number;
+  /** Targets that do not yet have the intended Gmail label state. */
+  remainingCount: number;
+  /** Targets already in the intended Gmail label state. */
+  alreadyAppliedCount: number;
+  /** Targets no longer present in Gmail. */
+  unavailableCount: number;
+  verifiedCount: number;
+  errorCode: string | null;
+  /** Existing Later schedule; null for Archive/Delete. */
+  wakeAt: string | null;
+  /** A failed Later whose old time passed requires a new explicit schedule. */
+  requiresNewWakeAt: boolean;
+  expiresAt: string;
+  recoveryActionId: string | null;
+}
+
+export const actionRecoveryConfirmRequestSchema = z
+  .object({
+    /** Required only when a failed Later schedule is no longer in the future. */
+    wakeAt: z.string().datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export type ActionRecoveryConfirmRequest = z.infer<typeof actionRecoveryConfirmRequestSchema>;
+
+export interface ActionRecoveryEnqueueResult {
+  previewId: string;
+  rootActionId: string;
+  actionId: string;
+  attempt: number;
+  status: ActionJobStatus;
+  /** True for an HTTP/network replay of the same confirmation key. */
+  replayed: boolean;
+}
+
 /**
  * Poll result shared with the web client. The original fields remain intact;
  * verb/schedule/Undo timing are additive facts used to derive the canonical
@@ -506,11 +567,9 @@ export interface CompositeActionPreviewResult {
  */
 import type { ActionJobStatus as SharedActionJobStatus } from '@declutrmail/shared/contracts';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _ACTION_JOB_STATUS_API_EXTENDS_SHARED: ActionJobStatus extends SharedActionJobStatus
   ? true
   : false = true;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _ACTION_JOB_STATUS_SHARED_EXTENDS_API: SharedActionJobStatus extends ActionJobStatus
   ? true
   : false = true;

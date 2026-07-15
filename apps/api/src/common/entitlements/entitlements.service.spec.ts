@@ -132,6 +132,9 @@ async function seedJob(
     direction?: 'forward' | 'reverse';
     status?: 'queued' | 'executing' | 'done' | 'failed';
     affectedCount?: number;
+    rootActionId?: string;
+    retryOfActionId?: string;
+    recoveryAttempt?: number;
   },
 ): Promise<string> {
   const [row] = await db
@@ -152,6 +155,14 @@ async function seedJob(
       idempotencyKey: input.key,
       ...(input.verb === 'later' ? { wakeAt: new Date('2099-07-21T09:00:00Z') } : {}),
       ...(input.compositeId ? { compositeId: input.compositeId } : {}),
+      ...(input.rootActionId
+        ? {
+            rootActionId: input.rootActionId,
+            retryOfActionId: input.retryOfActionId,
+            recoveryAttempt: input.recoveryAttempt,
+            selectionFrozenAt: new Date('2026-05-02T00:00:00Z'),
+          }
+        : {}),
     })
     .returning({ id: actionJobs.id });
   return row!.id;
@@ -274,6 +285,30 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       senderKey: sender.key,
       status: 'failed',
     });
+    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
+  });
+
+  it('a recovery attempt shares the failed original lineage and consumes ONE unit', async () => {
+    const sender = await seedSender(db, mailboxId);
+    const failedId = await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-failed-for-recovery',
+      senderId: sender.id,
+      senderKey: sender.key,
+      status: 'failed',
+    });
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'recovery-click-1',
+      senderId: sender.id,
+      senderKey: sender.key,
+      rootActionId: failedId,
+      retryOfActionId: failedId,
+      recoveryAttempt: 1,
+      status: 'queued',
+      affectedCount: 0,
+    });
+
     expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
   });
 

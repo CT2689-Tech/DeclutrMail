@@ -61,7 +61,35 @@ export interface ActivityRow {
   rule: ActivityRuleRef | null;
   /** D58 undo affordance state — see {@link UndoState}. */
   undoState: UndoState;
+  /**
+   * Durable execution truth for an action that has not produced an
+   * `activity_log` completion row yet. Null for the append-only audit rows
+   * that represent confirmed outcomes.
+   */
+  executionState: ActivityExecutionState | null;
 }
+
+/**
+ * Current state of one root action lineage. Recovery attempts remain linked
+ * to the original failed action, while `actionId` always names the attempt
+ * whose state is currently rendered.
+ */
+export type ActivityExecutionState =
+  | {
+      kind: 'in_progress';
+      actionId: string;
+      requestedCount: number;
+      isRecovery: boolean;
+      status: 'queued' | 'executing';
+    }
+  | {
+      kind: 'failed';
+      actionId: string;
+      rootActionId: string;
+      requestedCount: number;
+      errorCode: string | null;
+      resolution: 'review' | 'reconnect' | 'support';
+    };
 
 export interface ActivitySender {
   /** sha256(...) of the normalized email; matches `senders.sender_key`. */
