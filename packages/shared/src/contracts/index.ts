@@ -65,8 +65,10 @@ export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {
   ONBOARDING_PRESET_KEYS,
+  ONBOARDING_GOALS,
   OnboardingCompleteRequestSchema,
   OnboardingFirstTriageMetaSchema,
+  OnboardingGoalSchema,
   OnboardingPresetCatalogItemSchema,
   OnboardingPresetKeySchema,
   OnboardingPresetPicksRequestSchema,
@@ -76,6 +78,7 @@ export {
 export type {
   OnboardingCompleteRequest,
   OnboardingFirstTriageMeta,
+  OnboardingGoal,
   OnboardingPresetCatalogItem,
   OnboardingPresetKey,
   OnboardingPresetPicksRequest,

@@ -65,7 +65,12 @@ export class OnboardingController {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Invalid preset picks.');
     }
     return ok(
-      await this.onboarding.submitPresetPicks(principal.userId, mailbox.id, parsed.data.presetKeys),
+      await this.onboarding.submitPresetPicks(
+        principal.userId,
+        mailbox.id,
+        parsed.data.goal,
+        parsed.data.presetKeys,
+      ),
     );
   }
 

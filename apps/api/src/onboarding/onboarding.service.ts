@@ -2,9 +2,10 @@ import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common
 
 import { users } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
-import { OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
+import { OnboardingGoalSchema, OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
 import type {
   OnboardingFirstTriageMeta,
+  OnboardingGoal,
   OnboardingPresetKey,
   OnboardingPresetPicksResult,
   OnboardingState,
@@ -30,6 +31,7 @@ import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
  * - `onboardingSkipped` — D106 skip affordance flag.
  */
 const PREF_PRESET_PICKS = 'onboardingPresetPicks';
+const PREF_GOAL = 'onboardingGoal';
 const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
 const PREF_SKIPPED = 'onboardingSkipped';
 
@@ -82,6 +84,7 @@ export class OnboardingService {
     return {
       onboardedAt: user.onboardedAt ? user.onboardedAt.toISOString() : null,
       skipped: prefs[PREF_SKIPPED] === true,
+      goal: readGoal(prefs),
       presetPicks: readPresetPicks(prefs),
       presets: ONBOARDING_PRESET_CATALOG,
     };
@@ -106,9 +109,13 @@ export class OnboardingService {
   async submitPresetPicks(
     userId: string,
     mailboxAccountId: string,
+    goal: OnboardingGoal,
     presetKeys: OnboardingPresetKey[],
   ): Promise<OnboardingPresetPicksResult> {
-    await this.patchPreferences(userId, { [PREF_PRESET_PICKS]: presetKeys });
+    await this.patchPreferences(userId, {
+      [PREF_GOAL]: goal,
+      [PREF_PRESET_PICKS]: presetKeys,
+    });
 
     const rules = await this.autopilotReads.listRules(mailboxAccountId);
     const presetRules = rules.filter((r) => r.isPreset && r.presetKey !== null);
@@ -126,6 +133,7 @@ export class OnboardingService {
     }
 
     return {
+      goal,
       presetKeys,
       rulesReconciled: reconciled,
       rulesSeeded: presetRules.length > 0,
@@ -281,6 +289,11 @@ function readPresetPicks(prefs: Record<string, unknown>): OnboardingPresetKey[] 
   return raw.filter(
     (k): k is OnboardingPresetKey => OnboardingPresetKeySchema.safeParse(k).success,
   );
+}
+
+function readGoal(prefs: Record<string, unknown>): OnboardingGoal | null {
+  const parsed = OnboardingGoalSchema.safeParse(prefs[PREF_GOAL]);
+  return parsed.success ? parsed.data : null;
 }
 
 function readStringArray(value: unknown): string[] | null {

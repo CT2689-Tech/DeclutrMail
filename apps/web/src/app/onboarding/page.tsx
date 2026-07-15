@@ -257,11 +257,16 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       return hasCapability(me.tier, 'autopilot') ? (
         <StepPresetPick
           presets={state.data?.presets ?? []}
+          initialGoal={state.data?.goal ?? null}
           onSubmitted={() => void state.refetch()}
           corner={skipCorner}
         />
       ) : (
-        <StepFirstSenderReview onSubmitted={() => void state.refetch()} corner={skipCorner} />
+        <StepFirstSenderReview
+          initialGoal={state.data?.goal ?? null}
+          onSubmitted={() => void state.refetch()}
+          corner={skipCorner}
+        />
       );
     case 'first-triage':
       return (

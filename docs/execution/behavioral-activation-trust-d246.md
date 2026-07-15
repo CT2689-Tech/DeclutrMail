@@ -93,7 +93,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Reconcile D163/D171 user-facing behavior and stale Brief documentation.
 - [x] Generate Briefs at the user's local 08:00 boundary with UTC fallback.
 - [x] Add the privacy-bounded D246 analytics contract and taxonomy.
-- [ ] Persist the selected activation goal in the existing preferences bag.
+- [x] Persist the selected activation goal in the existing preferences bag.
 - [ ] Implement a finite first-relief session and calm completion state.
 - [ ] Add expected/surprising feedback for automatic Activity outcomes.
 - [ ] Add the Observe-first repeated-pattern suggestion and decision telemetry.
@@ -109,10 +109,11 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: closed analytics names and surface-specific payloads now
-  cover activation goals, preview/confirmation, finite-session completion,
-  calibrated feedback, weekly review, and Observe-first pattern suggestions.
-- Last green checks: D246 observability contract tests (2); shared typecheck.
+- Last completed slice: every tier now chooses one of three relief goals before
+  starting the real sender review. Goal and preset choices persist atomically;
+  legacy partial onboarding returns to this choice instead of guessing intent.
+- Last green checks: onboarding service tests (19); onboarding web/derivation
+  tests (26); shared/API/web typechecks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: persist the activation goal and expand the existing server-owned
-  onboarding session from three to five goal-ranked sender decisions.
+- Next slice: expand the existing server-owned onboarding session from three to
+  five goal-ranked sender decisions with a first-relief-only Triage variant.

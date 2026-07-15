@@ -35,7 +35,9 @@ export type AuthedOnboardingStep =
 export interface DeriveAuthedStepInput {
   /** `GET /api/onboarding/state` result projection. */
   state: {
-    data: { onboardedAt: string | null; presetPicks: readonly string[] | null } | undefined;
+    data:
+      | { onboardedAt: string | null; goal: string | null; presetPicks: readonly string[] | null }
+      | undefined;
     isLoading: boolean;
     isError: boolean;
     error: unknown;
@@ -67,7 +69,7 @@ export function deriveAuthedStep(input: DeriveAuthedStepInput): AuthedOnboarding
   if (!input.syncReady) {
     return { kind: 'sync-gate' };
   }
-  if (state.data.presetPicks === null) {
+  if (state.data.goal === null || state.data.presetPicks === null) {
     return { kind: 'preset-pick' };
   }
   return { kind: 'first-triage' };

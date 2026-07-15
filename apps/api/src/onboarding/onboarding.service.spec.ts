@@ -176,6 +176,7 @@ describe('OnboardingService', () => {
     it('fresh user: null onboardedAt, null picks, not skipped, 5-item catalog', async () => {
       const state = await service.getState(userId);
       expect(state.onboardedAt).toBeNull();
+      expect(state.goal).toBeNull();
       expect(state.presetPicks).toBeNull();
       expect(state.skipped).toBe(false);
       expect(state.presets).toHaveLength(5);
@@ -193,7 +194,7 @@ describe('OnboardingService', () => {
   describe('submitPresetPicks', () => {
     it('persists picks and reconciles seeded rules (enable picked, leave rest off)', async () => {
       await seedPresets(db, mailboxId);
-      const result = await service.submitPresetPicks(userId, mailboxId, [
+      const result = await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
         'auto_archive_low_engagement',
         'newsletter_graveyard',
       ]);
@@ -201,6 +202,7 @@ describe('OnboardingService', () => {
       expect(result.rulesReconciled).toBe(2);
 
       const state = await service.getState(userId);
+      expect(state.goal).toBe('reduce_newsletters');
       expect(state.presetPicks).toEqual(['auto_archive_low_engagement', 'newsletter_graveyard']);
 
       const enabled = await enabledByKey(db, mailboxId);
@@ -215,8 +217,12 @@ describe('OnboardingService', () => {
 
     it('re-submission reconciles deterministically (disables un-picked)', async () => {
       await seedPresets(db, mailboxId);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_archive_low_engagement']);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_unsubscribe_noisy']);
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'auto_archive_low_engagement',
+      ]);
+      await service.submitPresetPicks(userId, mailboxId, 'clear_old_promotions', [
+        'auto_unsubscribe_noisy',
+      ]);
 
       const enabled = await enabledByKey(db, mailboxId);
       expect(enabled['auto_archive_low_engagement']).toBe(false);
@@ -224,7 +230,9 @@ describe('OnboardingService', () => {
     });
 
     it('pre-seed mailbox: picks persist durably, rulesSeeded=false', async () => {
-      const result = await service.submitPresetPicks(userId, mailboxId, ['newsletter_graveyard']);
+      const result = await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'newsletter_graveyard',
+      ]);
       expect(result.rulesSeeded).toBe(false);
       expect(result.rulesReconciled).toBe(0);
 
@@ -234,7 +242,7 @@ describe('OnboardingService', () => {
 
     it('empty picks is a valid submission (advances the machine, enables nothing)', async () => {
       await seedPresets(db, mailboxId);
-      const result = await service.submitPresetPicks(userId, mailboxId, []);
+      const result = await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
       expect(result.presetKeys).toEqual([]);
 
       const state = await service.getState(userId);
@@ -245,7 +253,9 @@ describe('OnboardingService', () => {
 
     it('mode stays observe after enabling (D10 observe-first)', async () => {
       await seedPresets(db, mailboxId);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_archive_low_engagement']);
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'auto_archive_low_engagement',
+      ]);
       const [rule] = await db
         .select({ mode: automationRules.mode })
         .from(automationRules)
