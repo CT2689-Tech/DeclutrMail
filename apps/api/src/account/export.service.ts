@@ -5,6 +5,7 @@ import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  productFeedback,
   senderPolicies,
   senders,
 } from '@declutrmail/db';
@@ -146,6 +147,23 @@ export class DataExportService {
       .limit(DataExportService.BATCH_SIZE);
   }
 
+  /** User-authored bounded ratings; target ids stay internal. */
+  private async feedbackBatch(mailboxId: string, afterId: string | null) {
+    const conditions = [eq(productFeedback.mailboxAccountId, mailboxId)];
+    if (afterId) conditions.push(gt(productFeedback.id, afterId));
+    return this.db
+      .select({
+        id: productFeedback.id,
+        surface: productFeedback.surface,
+        rating: productFeedback.rating,
+        createdAt: productFeedback.createdAt,
+      })
+      .from(productFeedback)
+      .where(and(...conditions))
+      .orderBy(asc(productFeedback.id))
+      .limit(DataExportService.BATCH_SIZE);
+  }
+
   /**
    * JSON subset export. Yields a valid JSON document chunk-by-chunk:
    * `{ exportedAt, format, mailboxes: [ { …, senders, messages,
@@ -211,6 +229,18 @@ export class DataExportService {
             action: row.action,
             affectedCount: row.affectedCount,
             senderEmail: row.senderEmail ?? null,
+          }),
+      );
+      yield ']';
+
+      yield ',"productFeedback":[';
+      yield* this.streamJsonArray(
+        (after) => this.feedbackBatch(mb.id, after),
+        (row) =>
+          JSON.stringify({
+            surface: row.surface,
+            rating: row.rating,
+            createdAt: row.createdAt.toISOString(),
           }),
       );
       yield ']}';

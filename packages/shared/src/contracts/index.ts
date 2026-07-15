@@ -5,6 +5,14 @@
 
 export type { KmsProvider } from './kms-provider';
 
+export { ProductFeedbackRequestSchema } from './product-feedback';
+export type {
+  ProductFeedbackRating,
+  ProductFeedbackRequest,
+  ProductFeedbackResult,
+  ProductFeedbackSurface,
+} from './product-feedback';
+
 // D245 cumulative Gmail-data lifecycle registry. This contract generates
 // privacy copy and the Gmail metadata-header allowlist.
 export {

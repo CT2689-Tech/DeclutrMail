@@ -18,6 +18,7 @@ import {
   mailMessages,
   outboxEvents,
   providerSyncState,
+  productFeedback,
   ruleMatchLog,
   schema,
   screenerQuarantine,
@@ -322,14 +323,25 @@ async function seedMailboxGraph(
     reason: 'Fixture match',
     intentToken: journal!.token,
   });
-  await db.insert(activityLog).values({
+  const [activity] = await db
+    .insert(activityLog)
+    .values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 1,
+      undoToken: journal!.token,
+      ruleId: rule!.id,
+    })
+    .returning({ id: activityLog.id });
+  await db.insert(productFeedback).values({
+    workspaceId,
+    userId,
     mailboxAccountId: mailboxId,
-    senderKey,
-    source: 'manual',
-    action: 'archive',
-    affectedCount: 1,
-    undoToken: journal!.token,
-    ruleId: rule!.id,
+    surface: 'activity',
+    rating: 'expected',
+    activityLogId: activity!.id,
   });
   const [action] = await db
     .insert(actionJobs)

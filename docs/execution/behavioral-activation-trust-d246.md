@@ -109,13 +109,13 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: onboarding now pins at most five candidates in stable,
-  goal-ranked order and presents them as a finite first-relief session. The
-  session removes batching and daily chrome, permits an honest early stop,
-  ends calmly, and attributes preview/confirmation/completion without sender
-  identifiers.
-- Last green checks: onboarding service tests (24); first-relief/Triage
-  analytics tests (12); API/web typechecks; formatting and diff checks.
+- Last completed slice: first-party product feedback now has a closed,
+  target-owned Activity/Brief/Followups contract, tenant-safe idempotent API,
+  typed persistence, RLS, export coverage, and indexed-data deletion coverage.
+  Analytics receives only bounded surface/rating values, never target ids.
+- Last green checks: feedback contract tests (8); DB migration round-trip (3);
+  feedback/export/inventory API tests (23); deletion worker tests (15);
+  shared/DB/API/workers typechecks; formatting and diff checks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: add first-party expected/surprising feedback to automatic
-  outcomes in Activity, Brief, and Followups.
+- Next slice: join current ratings into the three existing reads and add the
+  accessible inline feedback control to Activity, Brief, and Followups.

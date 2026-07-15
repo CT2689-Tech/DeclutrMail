@@ -60,7 +60,7 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     buttonLabel: 'Download JSON subset',
     pendingLabel: 'Preparing JSON…',
     description:
-      'Mailbox addresses and status, sender profiles with selected policy fields, selected message metadata, and Activity rows.',
+      'Mailbox addresses and status, sender profiles with selected policy fields, selected message metadata, Activity rows, and bounded product feedback.',
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },

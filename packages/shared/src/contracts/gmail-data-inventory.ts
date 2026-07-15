@@ -390,6 +390,20 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
+  {
+    id: 'product-feedback',
+    category: 'derived',
+    label: 'Your bounded feedback on Activity, Briefs, and Followups',
+    fetchedFrom: ['choices-rules-and-suggestions'],
+    storageRefs: ['product_feedback.*'],
+    derived: true,
+    purpose: 'Remember whether a specific automatic outcome or summary matched your expectations.',
+    retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: ['json'],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
 ] as const satisfies readonly GmailDataInventoryItem[];
 
 export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [

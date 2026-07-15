@@ -58,6 +58,13 @@ const ACTIVITY_ROW = {
   senderEmail: 'news@acme.com',
 };
 
+const FEEDBACK_ROW = {
+  id: 'f-1',
+  surface: 'activity' as const,
+  rating: 'expected' as const,
+  createdAt: new Date('2026-06-02T10:05:00.000Z'),
+};
+
 type AnyBatch = (mailboxId: string, afterId: string | null) => Promise<unknown[]>;
 
 function makeService(opts: {
@@ -65,6 +72,7 @@ function makeService(opts: {
   senders?: (typeof SENDER_ROW)[];
   messages?: (typeof MESSAGE_ROW)[];
   activity?: (typeof ACTIVITY_ROW)[];
+  feedback?: (typeof FEEDBACK_ROW)[];
 }) {
   const service = new DataExportService({} as DrizzleDb);
   const svc = service as unknown as {
@@ -72,6 +80,7 @@ function makeService(opts: {
     senderBatch: AnyBatch;
     messageBatch: AnyBatch;
     activityBatch: AnyBatch;
+    feedbackBatch: AnyBatch;
   };
   svc.listMailboxes = vi.fn().mockResolvedValue(opts.mailboxes ?? [MAILBOX]);
   // Batch stubs: return all rows after the cursor, honoring keyset
@@ -85,6 +94,7 @@ function makeService(opts: {
   svc.senderBatch = vi.fn(batched(opts.senders ?? []));
   svc.messageBatch = vi.fn(batched(opts.messages ?? []));
   svc.activityBatch = vi.fn(batched(opts.activity ?? []));
+  svc.feedbackBatch = vi.fn(batched(opts.feedback ?? []));
   return service;
 }
 
@@ -100,6 +110,7 @@ describe('DataExportService.streamJson', () => {
       senders: [SENDER_ROW],
       messages: [MESSAGE_ROW],
       activity: [ACTIVITY_ROW],
+      feedback: [FEEDBACK_ROW],
     });
     const doc = JSON.parse(await collect(service.streamJson('ws-1')));
     expect(doc.format).toBe('declutrmail-export-v1');
@@ -111,6 +122,7 @@ describe('DataExportService.streamJson', () => {
     expect(mb.senders).toHaveLength(1);
     expect(mb.messages).toHaveLength(1);
     expect(mb.activity).toHaveLength(1);
+    expect(mb.productFeedback).toHaveLength(1);
   });
 
   it('exports EXACTLY the allowlisted keys per dataset (privacy pin, D228)', async () => {
@@ -118,6 +130,7 @@ describe('DataExportService.streamJson', () => {
       senders: [SENDER_ROW],
       messages: [MESSAGE_ROW],
       activity: [ACTIVITY_ROW],
+      feedback: [FEEDBACK_ROW],
     });
     const doc = JSON.parse(await collect(service.streamJson('ws-1')));
     const mb = doc.mailboxes[0];
@@ -126,6 +139,7 @@ describe('DataExportService.streamJson', () => {
       'connectedAt',
       'email',
       'messages',
+      'productFeedback',
       'senders',
       'status',
     ]);
@@ -157,6 +171,7 @@ describe('DataExportService.streamJson', () => {
       'senderEmail',
       'source',
     ]);
+    expect(Object.keys(mb.productFeedback[0]).sort()).toEqual(['createdAt', 'rating', 'surface']);
   });
 
   it('stays valid JSON with zero mailboxes and with empty datasets', async () => {
@@ -167,6 +182,7 @@ describe('DataExportService.streamJson', () => {
     expect(noData.mailboxes[0].senders).toEqual([]);
     expect(noData.mailboxes[0].messages).toEqual([]);
     expect(noData.mailboxes[0].activity).toEqual([]);
+    expect(noData.mailboxes[0].productFeedback).toEqual([]);
   });
 
   it('comma-joins correctly across batch boundaries', async () => {
