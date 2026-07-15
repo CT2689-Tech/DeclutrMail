@@ -99,7 +99,8 @@ export function ActivityScreen() {
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
 
   const dateFilters = readDateFiltersFromUrl(params);
-  const filters = readFiltersFromUrl(params, dateFilters);
+  const outcomeFilters = readOutcomeFiltersFromUrl(params);
+  const filters = readFiltersFromUrl(params, dateFilters, outcomeFilters);
   const groupMode = readGroupMode(params.get('group'));
 
   // Layout breakpoint resolved ONCE at the screen root and threaded down
@@ -115,15 +116,17 @@ export function ActivityScreen() {
   const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
   const query = useActivity(filters, {
     hasInFlightAction: inFlightActionPolls > 0,
-    enabled: !dateFilters.isInvalid,
+    enabled: !dateFilters.isInvalid && !outcomeFilters.isInvalid,
   });
   const weeklyQuery = useActivityWeeklyReview();
-  const weeklyTracked = useRef(false);
+  const weeklyTrackedKey = useRef<string | null>(null);
 
   useEffect(() => {
     const review = weeklyQuery.data;
-    if (!review || weeklyTracked.current) return;
-    weeklyTracked.current = true;
+    if (!review) return;
+    const trackingKey = `${activeMailboxId ?? 'unknown'}:${review.from}:${review.to}`;
+    if (weeklyTrackedKey.current === trackingKey) return;
+    weeklyTrackedKey.current = trackingKey;
     void track('weekly_review_viewed', {
       completed: review.completed,
       skipped: review.skipped,
@@ -131,7 +134,7 @@ export function ActivityScreen() {
       recovered: review.recovered,
       protected: review.protected,
     });
-  }, [weeklyQuery.data]);
+  }, [activeMailboxId, weeklyQuery.data]);
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -218,6 +221,7 @@ export function ActivityScreen() {
         filters.dateTo,
         filters.outcomes,
         dateFilters.isInvalid,
+        outcomeFilters.isInvalid,
       ]),
     [
       filters.window,
@@ -228,6 +232,7 @@ export function ActivityScreen() {
       filters.dateTo,
       filters.outcomes,
       dateFilters.isInvalid,
+      outcomeFilters.isInvalid,
     ],
   );
   useEffect(() => {
@@ -251,6 +256,7 @@ export function ActivityScreen() {
 
   const invalidActiveFilters =
     dateFilters.isInvalid ||
+    outcomeFilters.isInvalid ||
     (isActivityFilterValidationError(query.error) && !query.isFetchNextPageError);
   if (query.isLoading && !invalidActiveFilters) return <LoadingState />;
   // A known Activity date-validation 400 means the CURRENT filters are
@@ -364,7 +370,7 @@ export function ActivityScreen() {
       {invalidActiveFilters ? (
         <ActivityErrorState
           error={query.error}
-          onRecover={() => writeUrl({ date_from: null, date_to: null })}
+          onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
           recoveryLabel="Reset filters"
           isFilterError
           embedded
@@ -2285,6 +2291,7 @@ function ActivityRow({
           />
         </div>
         {!isSyntheticReviewEvidence &&
+          row.reviewOutcome !== null &&
           row.source === 'autopilot' &&
           row.executionState === null && (
             <InlineFeedback
@@ -2500,6 +2507,7 @@ function RowActions({
         <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
       </div>
       {includeFeedback &&
+        row.reviewOutcome !== null &&
         row.reviewOutcome !== 'skipped' &&
         row.reviewOutcome !== 'protected' &&
         row.source === 'autopilot' &&
@@ -3334,14 +3342,14 @@ function ActivityErrorState({
   isFilterError?: boolean;
   embedded?: boolean;
 }) {
-  // Distinguish the Activity controller's known date validation from
+  // Distinguish the Activity controller's known filter validation from
   // transport/domain failures. A generic "Try again in a moment" on
   // `dateFrom > dateTo` would loop the user back into the same broken
   // filter forever — flow-completeness-auditor 2026-06-05.
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Nothing changed. Activity could not load this filter. Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
+    ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
     : error instanceof ApiError
       ? `Your mailbox and actions are unchanged. Activity could not load (${error.status}). Try again in a moment.`
       : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
@@ -3485,6 +3493,11 @@ interface ActivityDateFilters {
   isInvalid: boolean;
 }
 
+interface ActivityOutcomeFilters {
+  outcomes: readonly ActivityReviewOutcomeWire[];
+  isInvalid: boolean;
+}
+
 function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
   const rawDateFrom = params.get('date_from');
   const rawDateTo = params.get('date_to');
@@ -3501,6 +3514,7 @@ function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
 function readFiltersFromUrl(
   params: URLSearchParams,
   dates: ActivityDateFilters = readDateFiltersFromUrl(params),
+  outcomeFilter: ActivityOutcomeFilters = readOutcomeFiltersFromUrl(params),
 ): ActivityFilters {
   return {
     window: readWindow(params.get('window')),
@@ -3509,12 +3523,13 @@ function readFiltersFromUrl(
     senderQuery: (params.get('sender_q') ?? '').trim(),
     dateFrom: dates.dateFrom,
     dateTo: dates.dateTo,
-    outcomes: readOutcomes(params.get('outcome')),
+    outcomes: outcomeFilter.outcomes,
   };
 }
 
-function readOutcomes(raw: string | null): readonly ActivityReviewOutcomeWire[] {
-  if (!raw) return [];
+function readOutcomeFiltersFromUrl(params: URLSearchParams): ActivityOutcomeFilters {
+  const raw = params.get('outcome');
+  if (!raw) return { outcomes: [], isInvalid: false };
   const allowed = new Set<ActivityReviewOutcomeWire>([
     'completed',
     'skipped',
@@ -3523,11 +3538,16 @@ function readOutcomes(raw: string | null): readonly ActivityReviewOutcomeWire[] 
     'protected',
   ]);
   const seen = new Set<ActivityReviewOutcomeWire>();
+  let isInvalid = false;
   for (const token of raw.split(',')) {
     const value = token.trim() as ActivityReviewOutcomeWire;
-    if (allowed.has(value)) seen.add(value);
+    if (!value || !allowed.has(value)) {
+      isInvalid = true;
+    } else {
+      seen.add(value);
+    }
   }
-  return [...seen];
+  return { outcomes: [...seen], isInvalid };
 }
 
 function readWindow(raw: string | null): ActivityWindowWire {

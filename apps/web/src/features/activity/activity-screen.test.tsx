@@ -28,12 +28,15 @@ import { ActivityScreen, relativeTime } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
-const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }));
+const { trackMock, authState } = vi.hoisted(() => ({
+  trackMock: vi.fn(),
+  authState: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+}));
 vi.mock('@/lib/posthog', () => ({ track: trackMock }));
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({
-    me: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    me: { activeMailboxId: authState.activeMailboxId },
   }),
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
@@ -119,6 +122,7 @@ beforeEach(() => {
   installFetchStub([]);
   replaceMock.mockReset();
   trackMock.mockReset();
+  authState.activeMailboxId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   currentSearch = '';
 });
 afterEach(() => {
@@ -301,6 +305,30 @@ describe('ActivityScreen — edge states', () => {
       within(alert).getByRole('heading', { name: /check your activity filters/i }),
     ).toBeInTheDocument();
     expect(requests).toBe(0);
+  });
+
+  it('fails closed on unknown or mixed outcome deep links', async () => {
+    currentSearch = 'outcome=completed,unknown&source=autopilot';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: [], meta: {} });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requests).toBe(0);
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reset filters' }));
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=autopilot');
   });
 
   it('hides cached rows, export data, and bulk actions when a raw date becomes malformed', async () => {
@@ -495,6 +523,34 @@ describe('ActivityScreen — weekly review (D246)', () => {
     expect(
       await screen.findByRole('link', { name: /clear protected filter/i }),
     ).toBeInTheDocument();
+  });
+
+  it('tracks each mailbox review once when the active mailbox changes', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    const view = renderScreen();
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        1,
+      ),
+    );
+
+    authState.activeMailboxId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        2,
+      ),
+    );
   });
 });
 
@@ -1490,7 +1546,17 @@ describe('ActivityScreen — D57 rule attribution', () => {
         respond: () =>
           jsonOk({
             data: [
-              row({ source: 'autopilot', feedbackRating: 'expected' }),
+              row({
+                source: 'autopilot',
+                feedbackRating: 'expected',
+                reviewOutcome: 'completed',
+              }),
+              row({
+                id: 'unsubscribe-intent-1',
+                source: 'autopilot',
+                action: 'unsubscribe',
+                reviewOutcome: null,
+              }),
               row({
                 id: 'skipped-2',
                 source: 'autopilot',

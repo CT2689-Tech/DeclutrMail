@@ -15,7 +15,8 @@ export function PatternSuggestionCard({
   onDismiss: () => void;
 }) {
   const action = suggestion.actionKind === 'archive' ? 'Archive' : 'Unsubscribe';
-  const pastAction = suggestion.actionKind === 'archive' ? 'archived' : 'unsubscribed from';
+  const pastAction =
+    suggestion.actionKind === 'archive' ? 'archived' : 'requested unsubscribe from';
   return (
     <section
       aria-labelledby="pattern-suggestion-heading"

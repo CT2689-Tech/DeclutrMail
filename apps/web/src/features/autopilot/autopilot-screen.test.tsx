@@ -218,6 +218,24 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(card.textContent).not.toContain('@');
   });
 
+  it('describes unsubscribe evidence as requests, not confirmed outcomes', () => {
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: {
+        ...PATTERN_SUGGESTION,
+        ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+        presetKey: 'auto_unsubscribe_noisy',
+        actionKind: 'unsubscribe',
+      },
+    });
+    expect(
+      screen.getByRole('region', { name: /you requested unsubscribe from 4 matching senders/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/you unsubscribed from/i)).toBeNull();
+  });
+
   it('accepts a current pattern only into Observe through the dedicated endpoint (D246)', async () => {
     const observed: string[] = [];
     installFetchStub([
