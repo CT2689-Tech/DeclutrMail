@@ -32,12 +32,19 @@ import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import {
+  assertTierCapability,
+  EntitlementsService,
+} from '../common/entitlements/entitlements.service.js';
 import { OnboardingService } from './onboarding.service.js';
 import type { TriageQueueRow } from '../triage/triage.read-service.js';
 
 @Controller('onboarding')
 export class OnboardingController {
-  constructor(private readonly onboarding: OnboardingService) {}
+  constructor(
+    private readonly onboarding: OnboardingService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   /** GET /api/onboarding/state — flags the step machine derives from. */
   @Get('state')
@@ -63,6 +70,13 @@ export class OnboardingController {
     const parsed = OnboardingPresetPicksRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Invalid preset picks.');
+    }
+    // Selecting no automation is part of onboarding for every tier. Enabling
+    // any Autopilot preset is a Pro capability and must be enforced here, not
+    // only by the client-side tier gate.
+    if (parsed.data.presetKeys.length > 0) {
+      const tier = await this.entitlements.tierForWorkspace(principal.workspaceId);
+      assertTierCapability(tier, 'autopilot');
     }
     return ok(
       await this.onboarding.submitPresetPicks(

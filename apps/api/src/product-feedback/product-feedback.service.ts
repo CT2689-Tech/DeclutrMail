@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, notInArray } from 'drizzle-orm';
 
 import { activityLog, briefRuns, followupTracker, productFeedback } from '@declutrmail/db';
 import type { ProductFeedbackRequest, ProductFeedbackResult } from '@declutrmail/shared/contracts';
@@ -84,6 +84,13 @@ export class ProductFeedbackService {
                 eq(activityLog.id, request.referenceId),
                 eq(activityLog.mailboxAccountId, mailboxAccountId),
                 eq(activityLog.source, 'autopilot'),
+                // Intent/progress rows are not outcomes. Accepting feedback
+                // for them would pollute the expected/surprising trust signal.
+                notInArray(activityLog.action, [
+                  'unsubscribe',
+                  'unsubscribe_action_required',
+                  'unsubscribe_draft_opened',
+                ]),
               ),
             )
             .limit(1)

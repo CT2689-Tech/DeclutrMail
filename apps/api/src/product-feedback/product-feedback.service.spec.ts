@@ -137,6 +137,36 @@ describe('ProductFeedbackService', () => {
     expect(await db.select().from(productFeedback)).toHaveLength(0);
   });
 
+  it('rejects automatic unsubscribe intent and progress rows that are not outcomes', async () => {
+    const owner = await seedPrincipal(db, 'owner@example.com');
+    const activities = await db
+      .insert(activityLog)
+      .values([
+        {
+          mailboxAccountId: owner.mailboxId,
+          source: 'autopilot',
+          action: 'unsubscribe',
+        },
+        {
+          mailboxAccountId: owner.mailboxId,
+          source: 'autopilot',
+          action: 'unsubscribe_draft_opened',
+        },
+      ])
+      .returning({ id: activityLog.id });
+
+    for (const activity of activities) {
+      await expect(
+        service.submit(owner.principal, owner.mailboxId, {
+          surface: 'activity',
+          referenceId: activity.id,
+          rating: 'expected',
+        }),
+      ).rejects.toMatchObject({ status: 404 });
+    }
+    expect(await db.select().from(productFeedback)).toHaveLength(0);
+  });
+
   it('persists only typed references for owned Brief and Followup rows', async () => {
     const owner = await seedPrincipal(db, 'owner@example.com');
     const [brief] = await db
