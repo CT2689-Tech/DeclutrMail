@@ -136,6 +136,61 @@ describe('ActivitySupportBundleService', () => {
     expect(files['summary.txt']).not.toContain('private-search@example.com');
   });
 
+  it('labels skipped/protected review rows without claiming execution', async () => {
+    const reviewRows: ActivityRow[] = [
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        occurredAt: '2026-07-14T05:00:00.000Z',
+        source: 'autopilot',
+        action: 'later',
+        affectedCount: 0,
+        sender: {
+          senderKey: 'skip-sender-key',
+          displayName: 'Skip Sender',
+          email: 'skip@example.com',
+          domain: 'example.com',
+        },
+        rule: { id: '55555555-5555-5555-5555-555555555555', name: 'Later for new senders' },
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: 'skipped',
+      },
+      {
+        id: '66666666-6666-6666-6666-666666666666',
+        occurredAt: '2026-07-13T05:00:00.000Z',
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 0,
+        sender: null,
+        rule: { id: '55555555-5555-5555-5555-555555555555', name: 'Later for new senders' },
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: 'protected',
+      },
+    ];
+    const files = await unzipBundle(
+      await makeService(undefined, reviewRows).service.createBundle({
+        workspaceId: 'workspace-1',
+        mailboxAccountId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        filters: { ...FILTERS, outcomes: ['skipped', 'protected'] },
+        includeFullSenderAddresses: false,
+        includeTechnicalDetails: false,
+        generatedAt: GENERATED_AT,
+      }),
+    );
+
+    const csv = files['activity.csv']!;
+    const [, skippedLine, protectedLine] = csv.trim().split('\n');
+    expect(skippedLine).toContain('Skipped');
+    expect(protectedLine).toContain('Protected');
+    // A dismissal that never touched mail must not read as an executed action.
+    expect(csv).not.toContain('Completed');
+    expect(csv).not.toContain('Moved to Later');
+    expect(csv).not.toContain('Archived');
+  });
+
   it('adds independently opted-in full addresses and exact technical fields', async () => {
     const files = await unzipBundle(
       await makeService().service.createBundle({

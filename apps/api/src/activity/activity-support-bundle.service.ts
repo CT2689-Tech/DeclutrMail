@@ -275,14 +275,22 @@ function activityCsvLine(row: ActivityRow, includeFullSenderAddresses: boolean):
       ? row.sender.email
       : maskSenderAddress(row.sender.email)
     : '';
+  // Skipped/protected Observe dismissals never executed anything — mirror
+  // the Activity screen's wording instead of the execution 'Completed'.
+  const reviewLabel =
+    row.reviewOutcome === 'skipped'
+      ? 'Skipped'
+      : row.reviewOutcome === 'protected'
+        ? 'Protected'
+        : null;
   return [
     row.occurredAt,
-    activityActionLabel(row.action, execution),
+    reviewLabel ?? activityActionLabel(row.action, execution),
     activitySourceLabel(row.source),
     senderName,
     senderAddress,
     String(row.affectedCount),
-    activityExecutionLabel(execution),
+    reviewLabel ?? activityExecutionLabel(execution),
     activityUndoLabel(row.undoState.kind),
   ]
     .map(csvField)
