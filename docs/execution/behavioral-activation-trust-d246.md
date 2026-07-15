@@ -100,7 +100,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Add the Observe-first repeated-pattern suggestion and decision telemetry.
 - [x] Add the factual in-app weekly review with Activity evidence links.
 - [x] Add focused unit/integration/accessibility coverage for completed slices.
-- [ ] Run repository-wide validation and independent diff review.
+- [x] Run repository-wide validation and independent diff review.
 
 ## Commit and handoff protocol
 
@@ -110,13 +110,22 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: the in-app seven-day review reports completed,
-  skipped, failed, recovered, and protected outcomes from canonical Activity
-  evidence. Each exact count links to its pinned evidence window; synthetic
-  skipped/protected rows are labelled honestly and cannot submit outcome
-  feedback.
-- Last green checks: Activity API tests (61); Activity web tests (48); API/web
-  typechecks; formatting and diff checks. Earlier checkpoints cover Autopilot
-  API integration tests (42), Autopilot web tests (34), and DB tests (72).
+- Last completed slice: independent backend/UI review is fully addressed.
+  Entitlements fail closed, pattern and review evidence survive journal
+  pruning, zero-message recoveries retain provenance, exports preserve the
+  exact outcome filter, late failures use terminal time, onboarding retrieval
+  is goal-aware before its cap, and Brief reads share the persisted timezone
+  authority used by generation.
+- Last green checks: repository typecheck; lint (0 errors, 12 existing
+  warnings); tracked-file formatting; production build (64 pages); DB tests
+  (73). Current focused suites: Activity API (62), Activity web (50),
+  Autopilot API (44), Autopilot web (36), onboarding (25), Triage (14), Brief
+  API (25), Brief web (18), label worker (17), and support contracts (3).
+  Earlier serial full suites: API (1,134 passed, 12 skipped; the one discovered
+  entitlement-classification gap was fixed and rerun), web (1,273), workers
+  (553 passed, 1 skipped), shared (327), and events (75).
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: run repository-wide validation and independent diff review.
+- Last commit: `f8e556d9` (`fix(brief): use persisted timezone authority
+(D246)`).
+- Next slice: two-account dev-environment smoke, then move draft PR #334 to
+  ready if the smoke is clean.
