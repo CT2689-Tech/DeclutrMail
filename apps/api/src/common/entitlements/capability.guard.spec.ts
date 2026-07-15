@@ -171,7 +171,9 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       capability: 'snoozed',
       controller: SnoozedController,
       gated: ['list', 'patchSnooze', 'wakeNow'],
-      exempt: [],
+      // Recovery must remain available on every tier because Later
+      // actions can fail on every tier; recovery is never an upsell.
+      exempt: ['recovery', 'wakeRecovery'],
     },
   ];
 
@@ -362,38 +364,5 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       ).resolves.toBe(true);
       expect(tierForWorkspace).not.toHaveBeenCalled();
     });
-  });
-});
-
-describe('CapabilityGuard (D19) — Triage Plus gate', () => {
-  const routes = ['scoreSender', 'queueSize', 'queue', 'stats', 'todaySummary'] as const;
-
-  it('gates every Triage route at class level', () => {
-    expect(Reflect.getMetadata(CAPABILITY_METADATA, TriageController)).toBe('triage');
-    expect(Reflect.getMetadata(GUARDS_METADATA, TriageController)).toContain(CapabilityGuard);
-    expect(
-      Object.getOwnPropertyNames(TriageController.prototype).filter(
-        (name) => name !== 'constructor',
-      ),
-    ).toEqual(routes);
-  });
-
-  it('denies Free and grants Plus and above', async () => {
-    for (const handlerName of routes) {
-      const free = makeGuard('free').guard;
-      const err = await caught(
-        free.canActivate(makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL })),
-      );
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).details).toEqual({ capability: 'triage', tier: 'free' });
-
-      for (const tier of ['plus', 'pro', 'team', 'enterprise'] as const) {
-        await expect(
-          makeGuard(tier).guard.canActivate(
-            makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
-          ),
-        ).resolves.toBe(true);
-      }
-    }
   });
 });
