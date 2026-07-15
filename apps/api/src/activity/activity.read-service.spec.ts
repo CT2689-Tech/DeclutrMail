@@ -1771,6 +1771,102 @@ describe('ActivityReadService', () => {
       });
     });
 
+    it('excludes user-reverted actions from completed/recovered counts and evidence', async () => {
+      const senderKey = 'weekly-undone';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'undone@example.com',
+        'Undone Sender',
+      );
+      const revertedToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS + 60_000),
+      });
+      const standingToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+      });
+      const undoneRowId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: revertedToken,
+      });
+      const standingRowId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: standingToken,
+      });
+      // Recovered-then-undone: the reverted guard must win over the
+      // recovery lineage branch (SQL case = first match).
+      const rootId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+      });
+      const recoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'done',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        rootActionId: rootId,
+        retryOfActionId: rootId,
+        recoveryAttempt: 1,
+      });
+      const recoveredRevertedToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: recoveredRevertedToken,
+        actionJobId: recoveryId,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 1,
+        recovered: 0,
+      });
+
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['completed'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows.map((row) => row.id)).toEqual([standingRowId]);
+
+      const unfiltered = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(unfiltered.rows.find((row) => row.id === undoneRowId)).toMatchObject({
+        reviewOutcome: null,
+      });
+    });
+
     it('classifies a zero-message recovery by action provenance without an undo token', async () => {
       const senderKey = 'weekly-recovery';
       const senderId = await seedSender(
