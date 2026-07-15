@@ -259,6 +259,9 @@ export class AutopilotReadService {
   ): Promise<AutopilotPatternSuggestionDecision | null> {
     const current = await this.getPatternSuggestion(mailboxAccountId);
     if (!current || current.ruleId !== ruleId) return null;
+    const dismissedCutoff = new Date(
+      Date.now() - PATTERN_EVIDENCE_WINDOW_DAYS * 86_400_000,
+    ).toISOString();
 
     const set: Record<string, unknown> = { updatedAt: sql`now()` };
     if (decision === 'observe') {
@@ -279,6 +282,9 @@ export class AutopilotReadService {
           eq(automationRules.mailboxAccountId, mailboxAccountId),
           eq(automationRules.isPreset, true),
           eq(automationRules.enabled, false),
+          eq(automationRules.scope, 'account'),
+          inArray(automationRules.presetKey, [...PATTERN_PRESET_KEYS]),
+          sql`(${automationRules.patternSuggestionDismissedAt} is null or ${automationRules.patternSuggestionDismissedAt} <= ${dismissedCutoff}::timestamptz)`,
         ),
       )
       .returning({ id: automationRules.id });
