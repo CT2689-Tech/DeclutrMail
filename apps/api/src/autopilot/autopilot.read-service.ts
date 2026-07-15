@@ -37,13 +37,17 @@ import type { Queue } from 'bullmq';
 
 import {
   AUTOPILOT_PRESET_KEYS,
+  activityLog,
   type AutopilotPresetKey,
   type AutopilotRuleMode,
   type AutopilotRuleScope,
   automationRules,
   mailMessages,
   ruleMatchLog,
+  senderPolicies,
   senders,
+  triageDecisions,
+  undoJournal,
 } from '@declutrmail/db';
 import {
   AUTOPILOT_ACTION_JOB,
@@ -65,6 +69,8 @@ import type {
   AutopilotMatchDismissResult,
   AutopilotObserveDigest,
   AutopilotPauseAllResult,
+  AutopilotPatternSuggestion,
+  AutopilotPatternSuggestionDecision,
   AutopilotRule,
   AutopilotRulePatch,
 } from './autopilot.types.js';
@@ -83,6 +89,11 @@ const OBSERVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Preview sample size — D103's "10-row sample list". */
 const PREVIEW_SAMPLE_SIZE = 10;
+
+/** D246 repeated-decision evidence and dismissal windows. */
+const PATTERN_EVIDENCE_WINDOW_DAYS = 30;
+const PATTERN_EVIDENCE_MIN_SENDERS = 3;
+const PATTERN_PRESET_KEYS = ['auto_archive_low_engagement', 'auto_unsubscribe_noisy'] as const;
 
 @Injectable()
 export class AutopilotReadService {
@@ -121,6 +132,165 @@ export class AutopilotReadService {
     if (!row) return null;
     const digests = await this.observeDigests(mailboxAccountId, id);
     return projectRule(row, digests.get(row.id) ?? null);
+  }
+
+  /**
+   * D246 — derive at most one repeated manual-decision opportunity.
+   *
+   * Evidence is bounded to 30 days and distinct senders. The current
+   * triage verdict must satisfy the exact threshold-bearing preset,
+   * protected senders and reverted decisions are excluded, and only a
+   * disabled account-scoped rule can be proposed. No sender identity
+   * leaves this aggregate query.
+   */
+  async getPatternSuggestion(mailboxAccountId: string): Promise<AutopilotPatternSuggestion | null> {
+    const cutoff = new Date(Date.now() - PATTERN_EVIDENCE_WINDOW_DAYS * 86_400_000).toISOString();
+    const dismissedCutoff = cutoff;
+    const evidenceCount = sql<number>`count(distinct ${activityLog.senderKey})::int`;
+    const [row] = await this.db
+      .select({
+        ruleId: automationRules.id,
+        presetKey: automationRules.presetKey,
+        ruleName: automationRules.name,
+        actionKind: automationRules.actionKind,
+        evidenceCount,
+      })
+      .from(automationRules)
+      .innerJoin(
+        activityLog,
+        and(
+          eq(activityLog.mailboxAccountId, automationRules.mailboxAccountId),
+          sql`${activityLog.action}::text = ${automationRules.actionKind}::text`,
+        ),
+      )
+      .innerJoin(
+        triageDecisions,
+        and(
+          eq(triageDecisions.mailboxAccountId, activityLog.mailboxAccountId),
+          eq(triageDecisions.senderKey, activityLog.senderKey),
+          sql`${triageDecisions.verdict}::text = ${automationRules.actionKind}::text`,
+          sql`${triageDecisions.confidence} > ${automationRules.confidenceThreshold}`,
+        ),
+      )
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, activityLog.mailboxAccountId),
+          eq(senderPolicies.senderKey, activityLog.senderKey),
+        ),
+      )
+      .leftJoin(
+        undoJournal,
+        and(
+          eq(undoJournal.token, activityLog.undoToken),
+          eq(undoJournal.mailboxAccountId, activityLog.mailboxAccountId),
+        ),
+      )
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.isPreset, true),
+          eq(automationRules.enabled, false),
+          eq(automationRules.scope, 'account'),
+          inArray(automationRules.presetKey, [...PATTERN_PRESET_KEYS]),
+          sql`(${automationRules.patternSuggestionDismissedAt} is null or ${automationRules.patternSuggestionDismissedAt} <= ${dismissedCutoff}::timestamptz)`,
+          ne(activityLog.source, 'autopilot'),
+          sql`${activityLog.senderKey} is not null`,
+          sql`${activityLog.occurredAt} >= ${cutoff}::timestamptz`,
+          sql`${activityLog.occurredAt} <= now()`,
+          sql`coalesce(${senderPolicies.isProtected}, false) = false`,
+          sql`(${activityLog.undoToken} is null or ${undoJournal.revertedAt} is null)`,
+          // Count only the sender's latest valid user-directed canonical
+          // decision. An older Archive must not remain evidence after a
+          // later Keep/Delete or another changed decision.
+          sql`${activityLog.id} = (
+            select latest.id
+            from activity_log latest
+            left join undo_journal latest_undo
+              on latest_undo.token = latest.undo_token
+             and latest_undo.mailbox_account_id = latest.mailbox_account_id
+            where latest.mailbox_account_id = ${mailboxAccountId}
+              and latest.sender_key = ${activityLog.senderKey}
+              and latest.occurred_at >= ${cutoff}::timestamptz
+              and latest.occurred_at <= now()
+              and latest.source <> 'autopilot'
+              and latest.action in ('keep','archive','unsubscribe','later','delete')
+              and (latest.undo_token is null or latest_undo.reverted_at is null)
+            order by latest.occurred_at desc, latest.id desc
+            limit 1
+          )`,
+        ),
+      )
+      .groupBy(
+        automationRules.id,
+        automationRules.presetKey,
+        automationRules.name,
+        automationRules.actionKind,
+      )
+      .having(sql`${evidenceCount} >= ${PATTERN_EVIDENCE_MIN_SENDERS}`)
+      .orderBy(sql`${evidenceCount} desc`, automationRules.presetKey)
+      .limit(1);
+
+    if (
+      !row ||
+      (row.presetKey !== 'auto_archive_low_engagement' &&
+        row.presetKey !== 'auto_unsubscribe_noisy') ||
+      (row.actionKind !== 'archive' && row.actionKind !== 'unsubscribe')
+    ) {
+      return null;
+    }
+    return {
+      ruleId: row.ruleId,
+      presetKey: row.presetKey,
+      ruleName: row.ruleName,
+      actionKind: row.actionKind,
+      scope: 'account',
+      evidenceCount: row.evidenceCount,
+      evidenceWindowDays: PATTERN_EVIDENCE_WINDOW_DAYS,
+      dailyActionCap: AUTOPILOT_PRESETS[row.presetKey].dailyActionCap,
+    };
+  }
+
+  /** Accept into Observe or dismiss the one currently eligible suggestion. */
+  async decidePatternSuggestion(
+    mailboxAccountId: string,
+    ruleId: string,
+    decision: 'observe' | 'dismissed',
+  ): Promise<AutopilotPatternSuggestionDecision | null> {
+    const current = await this.getPatternSuggestion(mailboxAccountId);
+    if (!current || current.ruleId !== ruleId) return null;
+
+    const set: Record<string, unknown> = { updatedAt: sql`now()` };
+    if (decision === 'observe') {
+      set.enabled = true;
+      set.mode = 'observe';
+      set.modeChangedAt = sql`now()`;
+      set.observePromptDismissedAt = null;
+      set.patternSuggestionDismissedAt = null;
+    } else {
+      set.patternSuggestionDismissedAt = sql`now()`;
+    }
+    const [updated] = await this.db
+      .update(automationRules)
+      .set(set)
+      .where(
+        and(
+          eq(automationRules.id, ruleId),
+          eq(automationRules.mailboxAccountId, mailboxAccountId),
+          eq(automationRules.isPreset, true),
+          eq(automationRules.enabled, false),
+        ),
+      )
+      .returning({ id: automationRules.id });
+    return updated
+      ? {
+          ruleId: updated.id,
+          presetKey: current.presetKey,
+          decision,
+          evidenceCount: current.evidenceCount,
+          decidedAt: new Date().toISOString(),
+        }
+      : null;
   }
 
   /**

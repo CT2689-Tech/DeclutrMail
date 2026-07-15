@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   AUTOPILOT_PRESET_KEYS,
+  activityLog,
   automationRules,
   mailboxAccounts,
   mailMessages,
@@ -13,6 +14,7 @@ import {
   senderPolicies,
   senders,
   triageDecisions,
+  undoJournal,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -98,7 +100,12 @@ async function seedPresets(db: Db, mailboxAccountId: string): Promise<void> {
       mode: 'observe' as const,
       scope: 'account' as const,
       conditions: {},
-      actionKind: idx === 2 ? ('later' as const) : ('archive' as const),
+      actionKind:
+        idx === 1
+          ? ('unsubscribe' as const)
+          : idx === 2
+            ? ('later' as const)
+            : ('archive' as const),
       actionPayload: {},
       confidenceThreshold: idx < 2 ? (idx === 0 ? '0.85' : '0.90') : null,
     })),
@@ -173,6 +180,141 @@ describe('AutopilotReadService', () => {
       const ruleId = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
       const rule = await service.getRule(mailboxA, ruleId);
       expect(rule).toBeNull();
+    });
+  });
+
+  describe('pattern suggestion (D246)', () => {
+    async function seedArchiveDecision(
+      mailboxAccountId: string,
+      senderKey: string,
+      options: {
+        confidence?: string;
+        source?: 'triage' | 'manual' | 'autopilot';
+        protected?: boolean;
+        reverted?: boolean;
+      } = {},
+    ) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'archive',
+        confidence: options.confidence ?? '0.95',
+        reasoning: 'Archive pattern evidence',
+        generatedBy: 'template',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      if (options.protected) {
+        await db.insert(senderPolicies).values({
+          mailboxAccountId,
+          senderKey,
+          policyType: 'keep',
+          isProtected: true,
+          protectionReason: 'user_defined',
+        });
+      }
+      let undoToken: string | undefined;
+      if (options.reverted) {
+        const [undo] = await db
+          .insert(undoJournal)
+          .values({
+            mailboxAccountId,
+            actionKind: 'archive',
+            payload: {},
+            revertedAt: new Date(),
+          })
+          .returning({ token: undoJournal.token });
+        undoToken = undo!.token;
+      }
+      await db.insert(activityLog).values({
+        mailboxAccountId,
+        senderKey,
+        source: options.source ?? 'triage',
+        action: 'archive',
+        affectedCount: 1,
+        ...(undoToken ? { undoToken } : {}),
+      });
+    }
+
+    it('requires three distinct eligible senders and returns only aggregate evidence', async () => {
+      await seedArchiveDecision(mailboxA, 'eligible-1');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      await seedArchiveDecision(mailboxA, 'below-threshold', { confidence: '0.85' });
+      await seedArchiveDecision(mailboxA, 'protected', { protected: true });
+      await seedArchiveDecision(mailboxA, 'reverted', { reverted: true });
+      await seedArchiveDecision(mailboxA, 'automatic', { source: 'autopilot' });
+
+      const suggestion = await service.getPatternSuggestion(mailboxA);
+      expect(suggestion).toMatchObject({
+        presetKey: 'auto_archive_low_engagement',
+        actionKind: 'archive',
+        scope: 'account',
+        evidenceCount: 3,
+        evidenceWindowDays: 30,
+        dailyActionCap: 100,
+      });
+      expect(Object.keys(suggestion!)).not.toContain('senderKey');
+    });
+
+    it('uses each sender’s latest canonical decision and counts a sender only once', async () => {
+      await seedArchiveDecision(mailboxA, 'changed-mind');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxA,
+        senderKey: 'eligible-2',
+        source: 'manual',
+        action: 'archive',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxA,
+        senderKey: 'changed-mind',
+        source: 'manual',
+        action: 'keep',
+      });
+
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+      await seedArchiveDecision(mailboxA, 'eligible-4');
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({ evidenceCount: 3 });
+    });
+
+    it('accepts only the current mailbox suggestion into Observe mode', async () => {
+      for (const key of ['one', 'two', 'three']) await seedArchiveDecision(mailboxA, key);
+      const suggestion = await service.getPatternSuggestion(mailboxA);
+      expect(suggestion).not.toBeNull();
+      expect(
+        await service.decidePatternSuggestion(mailboxB, suggestion!.ruleId, 'observe'),
+      ).toBeNull();
+
+      await expect(
+        service.decidePatternSuggestion(mailboxA, suggestion!.ruleId, 'observe'),
+      ).resolves.toMatchObject({
+        ruleId: suggestion!.ruleId,
+        presetKey: 'auto_archive_low_engagement',
+        decision: 'observe',
+        evidenceCount: 3,
+      });
+      const rule = await service.getRule(mailboxA, suggestion!.ruleId);
+      expect(rule).toMatchObject({ enabled: true, mode: 'observe' });
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+    });
+
+    it('dismisses the current suggestion without enabling its rule', async () => {
+      for (const key of ['one', 'two', 'three']) await seedArchiveDecision(mailboxA, key);
+      const suggestion = await service.getPatternSuggestion(mailboxA);
+      await expect(
+        service.decidePatternSuggestion(mailboxA, suggestion!.ruleId, 'dismissed'),
+      ).resolves.toMatchObject({
+        ruleId: suggestion!.ruleId,
+        presetKey: 'auto_archive_low_engagement',
+        decision: 'dismissed',
+        evidenceCount: 3,
+      });
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+      expect(await service.getRule(mailboxA, suggestion!.ruleId)).toMatchObject({ enabled: false });
     });
   });
 
