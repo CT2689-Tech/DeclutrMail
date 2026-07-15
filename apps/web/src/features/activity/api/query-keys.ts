@@ -23,6 +23,7 @@ export interface ActivityFilterKey {
   senderQuery: string;
   dateFrom: string | null;
   dateTo: string | null;
+  outcomes: readonly string[];
 }
 
 export function normalizeFilters(filters: ActivityFilters): ActivityFilterKey {
@@ -33,6 +34,7 @@ export function normalizeFilters(filters: ActivityFilters): ActivityFilterKey {
     senderQuery: filters.senderQuery ?? '',
     dateFrom: filters.dateFrom ?? null,
     dateTo: filters.dateTo ?? null,
+    outcomes: [...(filters.outcomes ?? [])].sort(),
   };
 }
 
@@ -40,4 +42,5 @@ export const activityKeys = {
   all: ['activity'] as const,
   list: (filters: ActivityFilters) => ['activity', 'list', normalizeFilters(filters)] as const,
   recoveryPreview: (previewId: string) => ['activity', 'recovery-preview', previewId] as const,
+  weeklyReview: () => ['activity', 'weekly-review'] as const,
 };

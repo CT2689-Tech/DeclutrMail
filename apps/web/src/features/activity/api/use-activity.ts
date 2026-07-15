@@ -22,7 +22,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/api/activity';
+import {
+  fetchActivity,
+  fetchActivityWeeklyReview,
+  revertActivityUndo,
+  type ActivityFilters,
+} from '@/lib/api/activity';
 import {
   confirmActionRecovery,
   createActionRecoveryPreview,
@@ -69,6 +74,14 @@ export function useActivity(
     // data), so a server-side validation ErrorState is preserved. Local
     // raw-date validation disables this query before any request starts.
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Independent so a review failure never blocks the Activity feed. */
+export function useActivityWeeklyReview() {
+  return useQuery({
+    queryKey: activityKeys.weeklyReview(),
+    queryFn: ({ signal }) => fetchActivityWeeklyReview(signal).then((env) => env.data),
   });
 }
 

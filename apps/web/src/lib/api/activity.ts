@@ -29,6 +29,9 @@ export type ActivitySourceWire = 'triage' | 'manual' | 'autopilot' | 'screener';
 
 export type ActivitySourceFilterWire = 'all' | ActivitySourceWire;
 
+export type ActivityReviewOutcomeWire =
+  'completed' | 'skipped' | 'failed' | 'recovered' | 'protected';
+
 /** Canonical verbs (D227 → K/A/U/L/D after ADR-0019) plus the D88
  *  followup-dismiss row variant and the Protect toggle audit
  *  entries (written by the senders policy write path; snake_case
@@ -115,6 +118,18 @@ export interface ActivityRowWire {
   undoState: ActivityUndoStateWire;
   /** Null for confirmed append-only Activity rows. */
   executionState: ActivityExecutionStateWire | null;
+  reviewOutcome: ActivityReviewOutcomeWire | null;
+}
+
+export interface ActivityWeeklyReviewWire {
+  window: '7d';
+  from: string;
+  to: string;
+  completed: number;
+  skipped: number;
+  failed: number;
+  recovered: number;
+  protected: number;
 }
 
 export interface ActivityStatsWire {
@@ -151,6 +166,7 @@ export interface ActivityListMetaWire {
   /** Echo of the resolved custom date range (ISO); null when unset. */
   dateFrom: string | null;
   dateTo: string | null;
+  outcomes: ActivityReviewOutcomeWire[];
 }
 
 /**
@@ -170,6 +186,7 @@ export interface ActivityFilters {
   /** Custom date range — overrides the window-derived lower bound. */
   dateFrom?: string | null;
   dateTo?: string | null;
+  outcomes?: readonly ActivityReviewOutcomeWire[];
 }
 
 /**
@@ -193,9 +210,16 @@ export function fetchActivity(
       ...(args.senderQuery ? { sender_q: args.senderQuery } : {}),
       ...(args.dateFrom ? { date_from: args.dateFrom } : {}),
       ...(args.dateTo ? { date_to: args.dateTo } : {}),
+      ...(args.outcomes && args.outcomes.length > 0 ? { outcome: args.outcomes.join(',') } : {}),
       ...(args.cursor ? { cursor: args.cursor } : {}),
     },
   }) as Promise<Envelope<ActivityRowWire[], ActivityListMetaWire>>;
+}
+
+export function fetchActivityWeeklyReview(
+  signal?: AbortSignal,
+): Promise<Envelope<ActivityWeeklyReviewWire, unknown>> {
+  return apiGet<ActivityWeeklyReviewWire>('/api/activity/weekly-review', { signal });
 }
 
 /**

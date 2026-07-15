@@ -35,6 +35,7 @@ import type {
   ActivityExecutionStateWire,
   ActivityFilters,
   ActivityRowWire,
+  ActivityReviewOutcomeWire,
   ActivitySourceFilterWire,
   ActivityStatsWire,
   ActivityVerbFilterWire,
@@ -48,6 +49,7 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import {
   useActionRecoveryPreview,
   useActivity,
+  useActivityWeeklyReview,
   useConfirmActionRecovery,
   useCreateActionRecoveryPreview,
   useRevertActivity,
@@ -55,6 +57,7 @@ import {
 import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
+import { WeeklyReviewCard } from './weekly-review-card';
 
 const { color, font, shadow } = tokens;
 
@@ -114,6 +117,21 @@ export function ActivityScreen() {
     hasInFlightAction: inFlightActionPolls > 0,
     enabled: !dateFilters.isInvalid,
   });
+  const weeklyQuery = useActivityWeeklyReview();
+  const weeklyTracked = useRef(false);
+
+  useEffect(() => {
+    const review = weeklyQuery.data;
+    if (!review || weeklyTracked.current) return;
+    weeklyTracked.current = true;
+    void track('weekly_review_viewed', {
+      completed: review.completed,
+      skipped: review.skipped,
+      failed: review.failed,
+      recovered: review.recovered,
+      protected: review.protected,
+    });
+  }, [weeklyQuery.data]);
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -198,6 +216,7 @@ export function ActivityScreen() {
         filters.senderQuery,
         filters.dateFrom,
         filters.dateTo,
+        filters.outcomes,
         dateFilters.isInvalid,
       ]),
     [
@@ -207,6 +226,7 @@ export function ActivityScreen() {
       filters.senderQuery,
       filters.dateFrom,
       filters.dateTo,
+      filters.outcomes,
       dateFilters.isInvalid,
     ],
   );
@@ -295,6 +315,14 @@ export function ActivityScreen() {
         delivered unsubscribe request cannot be recalled; only an associated archive may have
         Activity Undo.
       </ContextualHelp>
+
+      <WeeklyReviewCard
+        review={weeklyQuery.data ?? null}
+        loading={weeklyQuery.isLoading}
+        error={weeklyQuery.isError}
+        onRetry={() => void weeklyQuery.refetch()}
+        activeOutcome={filters.outcomes?.[0] ?? null}
+      />
 
       {!invalidActiveFilters && (
         <MetricsHeader
@@ -2108,7 +2136,14 @@ function ActivityRow({
   const verbLabel = activityRowActionLabel(row);
   const sourceLabel = SOURCE_LABEL[row.source];
   const relative = relativeTime(row.occurredAt);
-  const dotColor = VERB_DOT[row.action];
+  const isSyntheticReviewEvidence =
+    row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
+  const dotColor =
+    row.reviewOutcome === 'protected'
+      ? color.emerald
+      : row.reviewOutcome === 'skipped'
+        ? color.fgMuted
+        : VERB_DOT[row.action];
   const [hovered, setHovered] = useState(false);
 
   const sourceAttribution =
@@ -2249,13 +2284,15 @@ function ActivityRow({
             mailboxId={mailboxId}
           />
         </div>
-        {row.source === 'autopilot' && row.executionState === null && (
-          <InlineFeedback
-            surface="activity"
-            referenceId={row.id}
-            initialRating={row.feedbackRating}
-          />
-        )}
+        {!isSyntheticReviewEvidence &&
+          row.source === 'autopilot' &&
+          row.executionState === null && (
+            <InlineFeedback
+              surface="activity"
+              referenceId={row.id}
+              initialRating={row.feedbackRating}
+            />
+          )}
       </li>
     );
   }
@@ -2462,13 +2499,17 @@ function RowActions({
         <UndoCell row={row} bulkFailedTokens={failedTokens} />
         <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
       </div>
-      {includeFeedback && row.source === 'autopilot' && row.executionState === null && (
-        <InlineFeedback
-          surface="activity"
-          referenceId={row.id}
-          initialRating={row.feedbackRating}
-        />
-      )}
+      {includeFeedback &&
+        row.reviewOutcome !== 'skipped' &&
+        row.reviewOutcome !== 'protected' &&
+        row.source === 'autopilot' &&
+        row.executionState === null && (
+          <InlineFeedback
+            surface="activity"
+            referenceId={row.id}
+            initialRating={row.feedbackRating}
+          />
+        )}
     </div>
   );
 }
@@ -3417,6 +3458,8 @@ function Chip({
 // ── Helpers ───────────────────────────────────────────────────────────
 
 function activityRowActionLabel(row: ActivityRowWire): string {
+  if (row.reviewOutcome === 'skipped') return 'Skipped';
+  if (row.reviewOutcome === 'protected') return 'Protected';
   return sharedActivityActionLabel(row.action, row.executionState);
 }
 
@@ -3466,7 +3509,25 @@ function readFiltersFromUrl(
     senderQuery: (params.get('sender_q') ?? '').trim(),
     dateFrom: dates.dateFrom,
     dateTo: dates.dateTo,
+    outcomes: readOutcomes(params.get('outcome')),
   };
+}
+
+function readOutcomes(raw: string | null): readonly ActivityReviewOutcomeWire[] {
+  if (!raw) return [];
+  const allowed = new Set<ActivityReviewOutcomeWire>([
+    'completed',
+    'skipped',
+    'failed',
+    'recovered',
+    'protected',
+  ]);
+  const seen = new Set<ActivityReviewOutcomeWire>();
+  for (const token of raw.split(',')) {
+    const value = token.trim() as ActivityReviewOutcomeWire;
+    if (allowed.has(value)) seen.add(value);
+  }
+  return [...seen];
 }
 
 function readWindow(raw: string | null): ActivityWindowWire {

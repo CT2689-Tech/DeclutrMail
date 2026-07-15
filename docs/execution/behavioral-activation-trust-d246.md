@@ -98,7 +98,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Add expected/surprising feedback for automatic Activity outcomes.
 - [x] Remove streak/speculative-impact claims and make re-entry voluntary.
 - [x] Add the Observe-first repeated-pattern suggestion and decision telemetry.
-- [ ] Add the factual in-app weekly review with Activity evidence links.
+- [x] Add the factual in-app weekly review with Activity evidence links.
 - [x] Add focused unit/integration/accessibility coverage for completed slices.
 - [ ] Run repository-wide validation and independent diff review.
 
@@ -110,14 +110,13 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: one privacy-bounded pattern suggestion appears after
-  three distinct, current, non-protected and non-reverted sender decisions.
-  It explains scope, evidence, cap, exclusions, and recovery; accepting starts
-  the existing preset in Observe only, while dismissal has its own 30-day
-  cooldown. Decision analytics fire only after durable success.
-- Last green checks: Autopilot API integration tests (42); Autopilot web tests
-  (34); DB tests (72); DB/API/web typechecks; migration, formatting, and diff
-  checks.
+- Last completed slice: the in-app seven-day review reports completed,
+  skipped, failed, recovered, and protected outcomes from canonical Activity
+  evidence. Each exact count links to its pinned evidence window; synthetic
+  skipped/protected rows are labelled honestly and cannot submit outcome
+  feedback.
+- Last green checks: Activity API tests (61); Activity web tests (48); API/web
+  typechecks; formatting and diff checks. Earlier checkpoints cover Autopilot
+  API integration tests (42), Autopilot web tests (34), and DB tests (72).
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: add the factual in-app weekly review with Activity evidence
-  links.
+- Next slice: run repository-wide validation and independent diff review.

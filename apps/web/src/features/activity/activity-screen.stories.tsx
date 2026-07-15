@@ -73,6 +73,7 @@ const ROWS: ActivityRowWire[] = [
       expiresAt: new Date(NOW + 6 * 24 * 60 * 60 * 1000).toISOString(),
     },
     executionState: null,
+    reviewOutcome: null,
   },
   {
     id: 'r-2',
@@ -90,6 +91,7 @@ const ROWS: ActivityRowWire[] = [
     feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
+    reviewOutcome: null,
   },
   {
     // D56 — the confirmed OUTCOME for the r-2 click: the brand's RFC 8058
@@ -110,6 +112,7 @@ const ROWS: ActivityRowWire[] = [
     feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
+    reviewOutcome: null,
   },
   {
     id: 'r-3',
@@ -127,6 +130,7 @@ const ROWS: ActivityRowWire[] = [
     feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
+    reviewOutcome: null,
   },
   {
     id: 'r-4',
@@ -145,6 +149,7 @@ const ROWS: ActivityRowWire[] = [
     feedbackRating: null,
     undoState: { kind: 'executed', executedAt: isoHoursAgo(70) },
     executionState: null,
+    reviewOutcome: null,
   },
   {
     id: 'r-5',
@@ -165,6 +170,7 @@ const ROWS: ActivityRowWire[] = [
       expiredAt: new Date(NOW - 5 * 24 * 60 * 60 * 1000).toISOString(),
     },
     executionState: null,
+    reviewOutcome: null,
   },
 ];
 

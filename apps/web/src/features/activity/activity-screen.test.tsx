@@ -15,12 +15,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import {
+  addFetchHandlers,
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { ActivityScreen, relativeTime } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
+
+const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }));
+vi.mock('@/lib/posthog', () => ({ track: trackMock }));
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({
@@ -71,10 +80,30 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
     feedbackRating: partial.feedbackRating ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
     executionState: partial.executionState ?? null,
+    reviewOutcome: partial.reviewOutcome ?? null,
   };
 }
 
 function renderScreen() {
+  addFetchHandlers([
+    {
+      method: 'GET',
+      path: '/api/activity/weekly-review',
+      respond: () =>
+        jsonOk({
+          data: {
+            window: '7d',
+            from: '2026-05-18T08:00:00.000Z',
+            to: '2026-05-25T08:00:00.000Z',
+            completed: 0,
+            skipped: 0,
+            failed: 0,
+            recovered: 0,
+            protected: 0,
+          },
+        }),
+    },
+  ]);
   const client = createTestQueryClient();
   const utils = render(
     <QueryWrapper client={client}>
@@ -89,6 +118,7 @@ function renderScreen() {
 beforeEach(() => {
   installFetchStub([]);
   replaceMock.mockReset();
+  trackMock.mockReset();
   currentSearch = '';
 });
 afterEach(() => {
@@ -368,6 +398,103 @@ describe('ActivityScreen — edge states', () => {
         screen.getByRole('heading', { name: /no activity in this window/i }),
       ).toBeInTheDocument(),
     );
+  });
+});
+
+describe('ActivityScreen — weekly review (D246)', () => {
+  it('shows five exact evidence links and tracks factual counts once', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ reviewOutcome: 'completed' })],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'all',
+              verbs: [],
+              senderQuery: '',
+              dateFrom: null,
+              dateTo: null,
+              outcomes: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () =>
+          jsonOk({
+            data: {
+              window: '7d',
+              from: '2026-05-18T08:00:00.000Z',
+              to: '2026-05-25T08:00:00.000Z',
+              completed: 9,
+              skipped: 2,
+              failed: 1,
+              recovered: 3,
+              protected: 4,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const card = await screen.findByRole('region', { name: /your last 7 days/i });
+    expect(within(card).getAllByRole('link')).toHaveLength(5);
+    const failed = within(card).getByRole('link', { name: /1 failed/i });
+    expect(failed).toHaveAttribute('href', expect.stringContaining('outcome=failed'));
+    expect(failed).toHaveAttribute('href', expect.stringContaining('date_from='));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith('weekly_review_viewed', {
+        completed: 9,
+        skipped: 2,
+        failed: 1,
+        recovered: 3,
+        protected: 4,
+      }),
+    );
+    expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+      1,
+    );
+  });
+
+  it('passes the outcome evidence filter to the Activity API', async () => {
+    currentSearch = 'window=7d&outcome=protected';
+    let requested = '';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requested = url.search;
+          return jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '7d',
+              source: 'all',
+              verbs: [],
+              senderQuery: '',
+              dateFrom: null,
+              dateTo: null,
+              outcomes: ['protected'],
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(requested).toContain('outcome=protected'));
+    expect(
+      await screen.findByRole('link', { name: /clear protected filter/i }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1364,6 +1491,16 @@ describe('ActivityScreen — D57 rule attribution', () => {
           jsonOk({
             data: [
               row({ source: 'autopilot', feedbackRating: 'expected' }),
+              row({
+                id: 'skipped-2',
+                source: 'autopilot',
+                reviewOutcome: 'skipped',
+              }),
+              row({
+                id: 'protected-3',
+                source: 'autopilot',
+                reviewOutcome: 'protected',
+              }),
               row({ id: 'manual-2', source: 'manual' }),
             ],
             meta: META_BASE,
@@ -1378,6 +1515,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       'aria-pressed',
       'true',
     );
+    expect(screen.getAllByText('Skipped').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Protected').length).toBeGreaterThan(0);
   });
 
   it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
