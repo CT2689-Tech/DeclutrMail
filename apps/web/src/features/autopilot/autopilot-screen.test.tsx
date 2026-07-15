@@ -39,6 +39,7 @@ import {
   RULE_PREVIEW_RESULT,
 } from './fixtures';
 import type { AutopilotScreenState, SuggestionWithRule } from './types';
+import type { AutopilotPatternSuggestionDto } from '@/lib/api/autopilot';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
@@ -71,6 +72,17 @@ function renderRoute() {
     </QueryClientProvider>,
   );
 }
+
+const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
+  ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
+  presetKey: 'auto_archive_low_engagement',
+  ruleName: 'Auto-archive low-engagement',
+  actionKind: 'archive',
+  scope: 'account',
+  evidenceCount: 4,
+  evidenceWindowDays: 30,
+  dailyActionCap: 100,
+};
 
 describe('AutopilotScreen — edge states', () => {
   beforeEach(() => installFetchStub([]));
@@ -188,6 +200,86 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // D227 — the screen-new-senders preset surfaces as Later, never "Screen".
     expect(within(rulesList).getByText(/later for new senders/i)).toBeInTheDocument();
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
+  });
+
+  it('explains one repeated-decision suggestion without exposing sender identity (D246)', () => {
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+    const card = screen.getByRole('region', { name: /you archived 4 matching senders/i });
+    expect(within(card).getByText(/starts in observe: gmail does not change/i)).toBeInTheDocument();
+    expect(within(card).getByText(/this gmail account only/i)).toBeInTheDocument();
+    expect(within(card).getByText(/protected senders are always skipped/i)).toBeInTheDocument();
+    expect(within(card).getByText(/100 actions; extra matches wait/i)).toBeInTheDocument();
+    expect(within(card).getByText(/can be undone from activity/i)).toBeInTheDocument();
+    expect(card.textContent).not.toContain('@');
+  });
+
+  it('accepts a current pattern only into Observe through the dedicated endpoint (D246)', async () => {
+    const observed: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: `/api/autopilot/pattern-suggestion/${PATTERN_SUGGESTION.ruleId}/observe`,
+        respond: (_req, url) => {
+          observed.push(url.pathname);
+          return jsonOk({
+            data: {
+              ruleId: PATTERN_SUGGESTION.ruleId,
+              presetKey: PATTERN_SUGGESTION.presetKey,
+              decision: 'observe',
+              evidenceCount: PATTERN_SUGGESTION.evidenceCount,
+              decidedAt: '2026-07-15T00:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /use in observe/i }));
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).not.toContain('preview');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('persists Not now separately from the activation prompt (D246)', async () => {
+    const observed: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: `/api/autopilot/pattern-suggestion/${PATTERN_SUGGESTION.ruleId}/dismiss`,
+        respond: (_req, url) => {
+          observed.push(url.pathname);
+          return jsonOk({
+            data: {
+              ruleId: PATTERN_SUGGESTION.ruleId,
+              presetKey: PATTERN_SUGGESTION.presetKey,
+              decision: 'dismissed',
+              evidenceCount: PATTERN_SUGGESTION.evidenceCount,
+              decidedAt: '2026-07-15T00:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }));
+    await waitFor(() => expect(observed).toEqual([expect.stringMatching(/\/dismiss$/)]));
   });
 
   it('explains Observe, Active, Paused, and Off consequences at rule level', () => {

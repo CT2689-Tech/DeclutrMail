@@ -8,6 +8,7 @@
 
 import type {
   AutopilotMatchDto,
+  AutopilotPatternSuggestionDto,
   AutopilotRuleDto,
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
@@ -39,9 +40,14 @@ export type RulePreviewState =
 export type AutopilotScreenState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string; retry: () => void }
-  | { kind: 'empty'; rules: AutopilotRuleDto[] }
+  | {
+      kind: 'empty';
+      rules: AutopilotRuleDto[];
+      patternSuggestion?: AutopilotPatternSuggestionDto | null;
+    }
   | {
       kind: 'ready';
       rules: AutopilotRuleDto[];
       suggestions: SuggestionWithRule[];
+      patternSuggestion?: AutopilotPatternSuggestionDto | null;
     };

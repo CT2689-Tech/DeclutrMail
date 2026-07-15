@@ -97,7 +97,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Implement a finite first-relief session and calm completion state.
 - [x] Add expected/surprising feedback for automatic Activity outcomes.
 - [x] Remove streak/speculative-impact claims and make re-entry voluntary.
-- [ ] Add the Observe-first repeated-pattern suggestion and decision telemetry.
+- [x] Add the Observe-first repeated-pattern suggestion and decision telemetry.
 - [ ] Add the factual in-app weekly review with Activity evidence links.
 - [x] Add focused unit/integration/accessibility coverage for completed slices.
 - [ ] Run repository-wide validation and independent diff review.
@@ -110,12 +110,14 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: Triage now reports only factual decision counts and
-  entitlement state. Resting and completion surfaces remove streaks,
-  speculative impact, daily pressure, and false inbox-zero claims in favor of
-  voluntary re-entry after a sync finds another repeated sender pattern.
-- Last green checks: Triage/first-relief web tests (20); API/web typechecks;
-  formatting and diff checks.
+- Last completed slice: one privacy-bounded pattern suggestion appears after
+  three distinct, current, non-protected and non-reverted sender decisions.
+  It explains scope, evidence, cap, exclusions, and recovery; accepting starts
+  the existing preset in Observe only, while dismissal has its own 30-day
+  cooldown. Decision analytics fire only after durable success.
+- Last green checks: Autopilot API integration tests (42); Autopilot web tests
+  (34); DB tests (72); DB/API/web typechecks; migration, formatting, and diff
+  checks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: add the Observe-first repeated-pattern suggestion and bounded
-  decision telemetry.
+- Next slice: add the factual in-app weekly review with Activity evidence
+  links.
