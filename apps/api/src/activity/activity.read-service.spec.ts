@@ -1108,6 +1108,140 @@ describe('ActivityReadService', () => {
     ]);
   });
 
+  it('iterates every matching row across keyset pages without crossing mailbox scope', async () => {
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      expectedIds.push(
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - index * 60_000),
+          source: 'manual',
+          action: index % 2 === 0 ? 'archive' : 'delete',
+        }),
+      );
+    }
+    await seedActivity(db, {
+      mailboxAccountId: mailboxB.mailboxAccountId,
+      occurredAt: new Date(NOW_MS + 60_000),
+      source: 'manual',
+      action: 'archive',
+    });
+
+    const actualIds: string[] = [];
+    for await (const row of svc.iterateActivity(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        verbs: ['archive'],
+        senderQuery: '',
+        dateFrom: null,
+        dateTo: null,
+        nowMs: NOW_MS,
+      },
+      2,
+    )) {
+      actualIds.push(row.id);
+    }
+
+    expect(actualIds).toEqual(expectedIds.filter((_, index) => index % 2 === 0));
+  });
+
+  it('paginates unresolved action lineages in bounded batches', async () => {
+    const senderKey = 'many-failures';
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'failures@example.com',
+      'Many Failures',
+    );
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 7; index += 1) {
+      expectedIds.push(
+        await seedExecutionAttempt(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderId,
+          senderKey,
+          status: 'failed',
+          createdAt: new Date(NOW_MS - index * 60_000),
+        }),
+      );
+    }
+
+    const actualIds: string[] = [];
+    for await (const row of svc.iterateActivity(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: 'manual',
+        nowMs: NOW_MS,
+      },
+      2,
+    )) {
+      actualIds.push(row.id);
+    }
+
+    expect(actualIds).toEqual(expectedIds);
+  });
+
+  it('freezes newly inserted rows and the bounded merge lookahead', async () => {
+    const senderKey = 'snapshot-sender';
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'snapshot@example.com',
+      'Snapshot Sender',
+    );
+    const newestId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS),
+      source: 'manual',
+      action: 'archive',
+    });
+    const actionId = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'queued',
+      createdAt: new Date(NOW_MS - 60_000),
+    });
+    const oldestId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 120_000),
+      source: 'manual',
+      action: 'delete',
+    });
+
+    const iterator = svc.iterateActivity(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        nowMs: NOW_MS,
+      },
+      1,
+    );
+    expect((await iterator.next()).value?.id).toBe(newestId);
+
+    await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, actionId));
+    const lateId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 90_000),
+      source: 'manual',
+      action: 'archive',
+    });
+    await db
+      .update(activityLog)
+      .set({ createdAt: new Date(Date.now() + ONE_DAY_MS) })
+      .where(eq(activityLog.id, lateId));
+
+    const remainingIds: string[] = [];
+    for await (const row of iterator) remainingIds.push(row.id);
+    expect(remainingIds).toEqual([actionId, oldestId]);
+  });
+
   // ── B-track Activity power-options ───────────────────────────────────
 
   describe('verb filter (multi-select)', () => {

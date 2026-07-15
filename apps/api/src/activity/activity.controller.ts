@@ -7,7 +7,15 @@
 //
 // AUTH (D155 + D205): `JwtGuard` + `CurrentMailboxGuard` + `CsrfGuard`.
 
-import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Header,
+  Query,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import {
   type Envelope,
   type PaginationMeta,
@@ -17,10 +25,11 @@ import {
 } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { ACTIVITY_LIMIT, ActivityReadService } from './activity.read-service.js';
+import { ActivitySupportBundleService } from './activity-support-bundle.service.js';
 import type {
   ActivityListMeta,
   ActivityRow,
@@ -78,10 +87,62 @@ export type ActivityListEnvelope = Envelope<
   { pagination: PaginationMeta } & ActivityListMeta
 >;
 
+interface Principal {
+  userId: string;
+  workspaceId: string;
+}
+
 @Controller('activity')
 @UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard)
 export class ActivityController {
-  constructor(private readonly reads: ActivityReadService) {}
+  constructor(
+    private readonly reads: ActivityReadService,
+    private readonly bundles: ActivitySupportBundleService,
+  ) {}
+
+  @Get('export')
+  @Header('Cache-Control', 'private, no-store')
+  @RateLimit({ bucket: 'default', limit: 5, windowSec: 300 })
+  async exportBundle(
+    @CurrentUser() principal: Principal,
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('window') rawWindow: string | undefined,
+    @Query('source') rawSource: string | undefined,
+    @Query('verb') rawVerb: string | string[] | undefined,
+    @Query('sender_q') rawSenderQuery: string | undefined,
+    @Query('date_from') rawDateFrom: string | undefined,
+    @Query('date_to') rawDateTo: string | undefined,
+    @Query('sender_addresses') rawSenderAddresses: string | undefined,
+    @Query('include_technical') rawIncludeTechnical: string | undefined,
+  ): Promise<StreamableFile> {
+    const filters = resolveActivityFilters({
+      rawWindow,
+      rawSource,
+      rawVerb,
+      rawSenderQuery,
+      rawDateFrom,
+      rawDateTo,
+    });
+    const stream = await this.bundles.createBundle({
+      workspaceId: principal.workspaceId,
+      mailboxAccountId: mailbox.id,
+      filters: {
+        window: filters.window,
+        source: filters.source,
+        verbs: filters.verbs,
+        senderQuery: filters.senderQuery,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+      },
+      includeFullSenderAddresses: resolveSenderAddressMode(rawSenderAddresses),
+      includeTechnicalDetails: resolveTechnicalDetails(rawIncludeTechnical),
+    });
+    const date = new Date().toISOString().slice(0, 10);
+    return new StreamableFile(stream, {
+      type: 'application/zip',
+      disposition: `attachment; filename="declutrmail-activity-support-${date}.zip"`,
+    });
+  }
 
   /**
    * GET /api/activity — paginated activity feed for the caller's
@@ -113,16 +174,14 @@ export class ActivityController {
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<ActivityListEnvelope> {
     const accountId = mailbox.id;
-    const window = resolveWindow(rawWindow);
-    const sourceFilter = resolveSource(rawSource);
-    const sourceForQuery = sourceFilter === 'all' ? null : sourceFilter;
-    const verbs = resolveVerbs(rawVerb);
-    const senderQuery = resolveSenderQuery(rawSenderQuery);
-    const dateFrom = resolveDate(rawDateFrom, 'date_from');
-    const dateTo = resolveDate(rawDateTo, 'date_to');
-    if (dateFrom && dateTo && dateFrom >= dateTo) {
-      throw new BadRequestException('date_from must be earlier than date_to.');
-    }
+    const filters = resolveActivityFilters({
+      rawWindow,
+      rawSource,
+      rawVerb,
+      rawSenderQuery,
+      rawDateFrom,
+      rawDateTo,
+    });
     const limit = clampLimit(rawLimit, ACTIVITY_LIMIT);
 
     const cursorRaw = decodeCursor(rawCursor);
@@ -136,12 +195,12 @@ export class ActivityController {
 
     const { rows, stats, allTimeStats } = await this.reads.listActivity({
       mailboxAccountId: accountId,
-      window,
-      source: sourceForQuery,
-      verbs,
-      senderQuery,
-      dateFrom,
-      dateTo,
+      window: filters.window,
+      source: filters.source,
+      verbs: filters.verbs,
+      senderQuery: filters.senderQuery,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
       cursor,
       limit,
       nowMs: Date.now(),
@@ -167,12 +226,12 @@ export class ActivityController {
         pagination,
         stats,
         allTimeStats,
-        window,
-        source: sourceFilter,
-        verbs,
-        senderQuery,
-        dateFrom: dateFrom ? dateFrom.toISOString() : null,
-        dateTo: dateTo ? dateTo.toISOString() : null,
+        window: filters.window,
+        source: filters.sourceFilter,
+        verbs: filters.verbs,
+        senderQuery: filters.senderQuery,
+        dateFrom: filters.dateFrom ? filters.dateFrom.toISOString() : null,
+        dateTo: filters.dateTo ? filters.dateTo.toISOString() : null,
       },
     };
   }
@@ -273,4 +332,42 @@ function resolveDate(raw: string | undefined, paramName: string): Date | null {
     throw new BadRequestException(`${paramName} must be a valid ISO-8601 date.`);
   }
   return date;
+}
+
+function resolveActivityFilters(raw: {
+  rawWindow: string | undefined;
+  rawSource: string | undefined;
+  rawVerb: string | string[] | undefined;
+  rawSenderQuery: string | undefined;
+  rawDateFrom: string | undefined;
+  rawDateTo: string | undefined;
+}) {
+  const window = resolveWindow(raw.rawWindow);
+  const sourceFilter = resolveSource(raw.rawSource);
+  const dateFrom = resolveDate(raw.rawDateFrom, 'date_from');
+  const dateTo = resolveDate(raw.rawDateTo, 'date_to');
+  if (dateFrom && dateTo && dateFrom >= dateTo) {
+    throw new BadRequestException('date_from must be earlier than date_to.');
+  }
+  return {
+    window,
+    sourceFilter,
+    source: sourceFilter === 'all' ? null : sourceFilter,
+    verbs: resolveVerbs(raw.rawVerb),
+    senderQuery: resolveSenderQuery(raw.rawSenderQuery),
+    dateFrom,
+    dateTo,
+  };
+}
+
+function resolveSenderAddressMode(raw: string | undefined): boolean {
+  if (raw === undefined || raw === 'masked') return false;
+  if (raw === 'full') return true;
+  throw new BadRequestException("sender_addresses must be 'masked' or 'full'.");
+}
+
+function resolveTechnicalDetails(raw: string | undefined): boolean {
+  if (raw === undefined || raw === 'false') return false;
+  if (raw === 'true') return true;
+  throw new BadRequestException("include_technical must be 'true' or 'false'.");
 }

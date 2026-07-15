@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { csvField, DataExportService } from './export.service.js';
+import { csvField } from '../common/csv.js';
+import { DataExportService } from './export.service.js';
 import type { DrizzleDb } from '../db/db.module.js';
 
 /**

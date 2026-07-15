@@ -33,6 +33,16 @@ export type {
 
 export { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from './data-export';
 
+export {
+  ACTIVITY_SUPPORT_BUNDLE_FILES,
+  ACTIVITY_SUPPORT_BUNDLE_FORMAT,
+  ACTIVITY_SUPPORT_CSV_COLUMNS,
+  ACTIVITY_SUPPORT_INCLUDED_INVENTORY_IDS,
+  ACTIVITY_SUPPORT_TECHNICAL_FILTER_KEYS,
+  ACTIVITY_SUPPORT_TECHNICAL_RECORD_KEYS,
+  ACTIVITY_SUPPORT_TECHNICAL_ROOT_KEYS,
+} from './activity-support-bundle';
+
 // D202 API response envelope — shared between NestJS controllers and
 // FE TanStack Query hooks so the wire shape is typed end-to-end.
 export type { DecodedCursor, Envelope, PaginatedEnvelope, PaginationMeta } from './envelope';

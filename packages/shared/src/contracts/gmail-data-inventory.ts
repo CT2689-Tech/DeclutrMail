@@ -21,7 +21,8 @@ export const GMAIL_DATA_RETENTION = {
 } as const;
 
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
-export type GmailDataExportFormat = 'json' | 'csv' | 'senders-csv' | 'decisions-csv';
+export type GmailDataExportFormat =
+  'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle';
 export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic';
 export type GmailDataRemovalTrigger =
   'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
@@ -114,7 +115,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Group email by sender and show who sent it.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv'],
+    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
   },
@@ -261,7 +262,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     purpose: 'Identify, switch, disconnect, and reconnect a mailbox.',
     retention: GMAIL_DATA_RETENTION.mailboxIdentity,
     removalTrigger: 'delete-account',
-    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv'],
+    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
@@ -349,7 +350,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose: 'Run approved changes, show what happened, and reverse eligible actions.',
     retention: `${GMAIL_DATA_RETENTION.derivedMailboxData} Undo payloads use the shorter Undo-journal retention rule.`,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'decisions-csv'],
+    exportedIn: ['json', 'decisions-csv', 'activity-support-bundle'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
