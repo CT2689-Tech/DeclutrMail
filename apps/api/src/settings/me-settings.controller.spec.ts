@@ -20,12 +20,44 @@ const USER = {
 
 function makeController(preferences: Record<string, unknown> = {}) {
   const users = {
-    findById: vi.fn().mockResolvedValue({ id: 'u1', preferences }),
+    findById: vi.fn().mockResolvedValue({ id: 'u1', preferences, timezone: null }),
     patchPreferences: vi.fn().mockResolvedValue(undefined),
+    setTimezone: vi.fn().mockResolvedValue(undefined),
   };
   const controller = new MeSettingsController(users as unknown as UsersService);
   return { controller, users };
 }
+
+describe('MeSettingsController — PATCH /api/me/timezone (D246)', () => {
+  it('persists a validated IANA timezone', async () => {
+    const { controller, users } = makeController();
+    const result = await controller.patchTimezone(USER, { timezone: 'Asia/Kolkata' });
+
+    expect(result.data).toEqual({ timezone: 'Asia/Kolkata' });
+    expect(users.setTimezone).toHaveBeenCalledWith('u1', 'Asia/Kolkata');
+  });
+
+  it('does not rewrite an unchanged timezone', async () => {
+    const { controller, users } = makeController();
+    users.findById.mockResolvedValue({ id: 'u1', preferences: {}, timezone: 'UTC' });
+
+    await controller.patchTimezone(USER, { timezone: 'UTC' });
+
+    expect(users.setTimezone).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid timezones and unknown keys', async () => {
+    const { controller, users } = makeController();
+
+    await expect(controller.patchTimezone(USER, { timezone: 'not/a-zone' })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(controller.patchTimezone(USER, { timezone: 'UTC', extra: true })).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(users.setTimezone).not.toHaveBeenCalled();
+  });
+});
 
 describe('MeSettingsController — GET /api/me/settings', () => {
   it('returns defaults when the preference bag is empty', async () => {

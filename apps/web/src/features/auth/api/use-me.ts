@@ -7,14 +7,15 @@
  * login redirect).
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   MailboxDataDeletionView,
   MailboxIndexedDataState,
   SyncReadiness,
 } from '@declutrmail/shared/contracts';
 import type { TierId } from '@declutrmail/shared/entitlements';
-import { apiGet, ApiError } from '@/lib/api/client';
+import { apiGet, apiPatch, ApiError } from '@/lib/api/client';
 
 /**
  * Workspace billing tier as served by `/api/auth/me` (D19). The full
@@ -27,6 +28,8 @@ export interface MeUser {
   id: string;
   email: string;
   workspaceId: string;
+  /** IANA timezone used for local Brief generation; null until captured. */
+  timezone: string | null;
 }
 
 export interface MeMailbox {
@@ -96,7 +99,8 @@ export function meHasDataDeletionInFlight(data: Me | undefined): boolean {
  * manual refresh (D116). Polling stops once every mailbox is terminal.
  */
 export function useMe() {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: ME_QUERY_KEY,
     queryFn: async ({ signal }) => {
       const envelope = await apiGet<Me>('/api/auth/me', { signal });
@@ -112,4 +116,30 @@ export function useMe() {
         ? ME_SYNC_POLL_MS
         : false,
   });
+
+  useEffect(() => {
+    const timezone = browserTimeZone();
+    if (!timezone || !query.data || query.data.user.timezone === timezone) return;
+
+    // Best-effort preference healing. A failed request retries naturally on
+    // the next auth refetch; it never blocks the app or the UTC fallback.
+    void apiPatch<{ timezone: string }>('/api/me/timezone', { timezone })
+      .then(() => {
+        queryClient.setQueryData<Me>(ME_QUERY_KEY, (current) =>
+          current ? { ...current, user: { ...current.user, timezone } } : current,
+        );
+      })
+      .catch(() => undefined);
+  }, [query.data, queryClient]);
+
+  return query;
+}
+
+export function browserTimeZone(): string | null {
+  if (typeof Intl === 'undefined') return null;
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }

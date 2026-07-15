@@ -73,7 +73,12 @@ const mailbox = (id: string, email: string): Me['mailboxes'][number] => ({
 
 function makeMe(mailboxes: Me['mailboxes']): Me {
   return {
-    user: { id: 'u-1', email: 'chintan.a.thakkar@gmail.com', workspaceId: 'ws-1' },
+    user: {
+      id: 'u-1',
+      email: 'chintan.a.thakkar@gmail.com',
+      workspaceId: 'ws-1',
+      timezone: null,
+    },
     mailboxes,
     activeMailboxId: mailboxes[0]?.id ?? null,
     tier: 'pro',

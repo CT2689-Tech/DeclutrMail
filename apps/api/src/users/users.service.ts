@@ -51,6 +51,18 @@ export class UsersService {
     await this.db.update(users).set({ preferences: merged }).where(eq(users.id, userId));
   }
 
+  /** Persist the browser's validated IANA zone for local-time features. */
+  async setTimezone(userId: string, timezone: string): Promise<void> {
+    const updated = await this.db
+      .update(users)
+      .set({ timezone })
+      .where(eq(users.id, userId))
+      .returning({ id: users.id });
+    if (updated.length === 0) {
+      throw new InternalServerErrorException(`User ${userId} not found.`);
+    }
+  }
+
   /**
    * Insert a workspace + user pair as the first step of a new signup.
    * MUST be called inside a transaction provided by the orchestrator

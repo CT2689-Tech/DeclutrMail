@@ -33,7 +33,7 @@ type Story<C extends (props: never) => unknown> = {
 const { color, font } = tokens;
 
 const ME: Me = {
-  user: { id: 'u-1', email: 'me@example.com', workspaceId: 'w-1' },
+  user: { id: 'u-1', email: 'me@example.com', workspaceId: 'w-1', timezone: null },
   activeMailboxId: 'mb-1',
   mailboxes: [
     {

@@ -11,6 +11,7 @@ import {
   parseEmailPrefs,
   parseSenderViews,
   SenderViewsPutSchema,
+  TimeZonePatchSchema,
   type ActionSheetPrefs,
   type BriefPrefs,
   type Envelope,
@@ -118,6 +119,28 @@ export class MeSettingsController {
     };
     await this.users.patchPreferences(user.userId, { briefPrefs: merged });
     return ok({ briefPrefs: merged });
+  }
+
+  /** PATCH /api/me/timezone — idempotent browser-zone synchronization. */
+  @Patch('timezone')
+  @UseGuards(CsrfGuard)
+  @RateLimit('default')
+  async patchTimezone(
+    @CurrentUser() user: SessionPrincipal,
+    @Body() body: unknown,
+  ): Promise<Envelope<{ timezone: string }>> {
+    const parsed = TimeZonePatchSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid timezone patch.',
+      });
+    }
+    const current = await this.users.findById(user.userId);
+    if (current?.timezone !== parsed.data.timezone) {
+      await this.users.setTimezone(user.userId, parsed.data.timezone);
+    }
+    return ok({ timezone: parsed.data.timezone });
   }
 
   /**

@@ -6,7 +6,12 @@ import { AuthProvider, getActiveMailboxEmail } from './auth-provider';
 import { MailboxActionContext } from './mailbox-action-context';
 
 const me: Me = {
-  user: { id: 'user-1', email: 'owner@example.com', workspaceId: 'workspace-1' },
+  user: {
+    id: 'user-1',
+    email: 'owner@example.com',
+    workspaceId: 'workspace-1',
+    timezone: 'UTC',
+  },
   mailboxes: [
     {
       id: 'mailbox-a',

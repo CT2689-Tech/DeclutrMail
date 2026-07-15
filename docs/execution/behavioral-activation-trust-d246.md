@@ -110,9 +110,10 @@ below with the last commit, green checks, and exact next unchecked slice.
 ## Current checkpoint
 
 - Last completed slice: onboarding no longer requests browser notification
-  permission without a delivery path. Sync-ready email copy remains the beta
-  notification contract; D163/D171 and stale Brief claims are superseded.
-- Last green checks: sync-gate tests (13); web typecheck.
+  permission without a delivery path. The authenticated app also synchronizes
+  a changed, strictly validated browser IANA timezone and heals existing users.
+- Last green checks: timezone contract tests (2); settings controller tests
+  (19); auth tests (9); shared/API/web typechecks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: capture the browser timezone through an authenticated user
-  preference mutation, including automatic healing for existing accounts.
+- Next slice: add the closed D246 activation/trust event contract and taxonomy
+  before the first-relief UI emits any new telemetry.

@@ -76,7 +76,12 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(async () => undefined) }));
 
 function makeMe(mailboxes: MeMailbox[] = [MAILBOX_A, MAILBOX_B]): Me {
   return {
-    user: { id: 'u-1', email: 'owner@example.com', workspaceId: 'ws-1' },
+    user: {
+      id: 'u-1',
+      email: 'owner@example.com',
+      workspaceId: 'ws-1',
+      timezone: null,
+    },
     mailboxes,
     activeMailboxId: MAILBOX_A.id,
     tier: 'pro',

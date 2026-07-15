@@ -209,6 +209,10 @@ export {
 } from './brief-prefs';
 export type { BriefPrefs, BriefPrefsPatch } from './brief-prefs';
 
+// D64/D246 authenticated browser timezone synchronization.
+export { TimeZonePatchSchema } from './timezone';
+export type { TimeZonePatch } from './timezone';
+
 // D34 + D226 action-sheet skip preferences — shared between the
 // PATCH /api/me/action-sheet-prefs route and the FE triage store
 // hydration (the sheet is skippable per verb; the preview never is).
