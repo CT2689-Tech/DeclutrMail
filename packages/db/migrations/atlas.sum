@@ -1,4 +1,4 @@
-h1:UPEanSVXNiOuVnUHEUxgKJB+rf/lzDhLX48gwhIq8K4=
+h1:yeZC5HZLm6/f10Fv/yF0skwd4ldPRSI2TLKWLz6lNa8=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -44,4 +44,5 @@ h1:UPEanSVXNiOuVnUHEUxgKJB+rf/lzDhLX48gwhIq8K4=
 0042_automation_rules_pattern_suggestion_dismissal.sql h1:CgTjbMqPe9BgTQ4AeNzXG7zG/KsSxzwsN3b8FXnyeQM=
 0043_rule_match_log_dismiss_reason.sql h1:qOWQ8AmuZpDlm0W4iJXSasp1u4+UhtF+YaA/JEaSnKw=
 0044_activity_outcome_provenance.sql h1:Ny/q2y7ci4eQIctzevlOjaaJgTJgvgcZVm6oJSmcyqY=
-0045_demote_unqualified_auto_protections.sql h1:qEdWveXiZt0+gY8nbM1t26dkKV2S7vGbMGv3SZbG1IE=
+0045_demote_unqualified_auto_protections.sql h1:d3nHla2rxhvcaeok5rg0quUA299L8d3EKgYHEHkOXAc=
+0046_demote_unqualified_auto_protections.sql h1:c1V4ulgJ8axLqtr55aAzfy64uSGFDzTdLUj+S/T3hB0=

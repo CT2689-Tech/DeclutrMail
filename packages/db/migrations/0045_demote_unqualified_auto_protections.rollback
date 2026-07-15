@@ -1,9 +1,12 @@
 -- Rollback for 0045_demote_unqualified_auto_protections.sql
 --
--- Data-only demotion; the prior protection state is not preserved, so
--- there is nothing mechanical to restore. Senders that qualify under
--- the current signals are re-protected by the next sync sweep
--- (applyAutomaticProtection); the demoted promotions/updates and
--- banned-signal rows are intentionally gone.
+-- Postgres has no `ALTER TYPE ... DROP VALUE`, and this repo's live
+-- database has an uncertain historical `protection_reason` label set
+-- (see the migration header), so a DROP TYPE + recreate here risks
+-- silently discarding a still-valid label instead of reversing this
+-- migration. If the added values must be removed: verify the current
+-- label set and any rows depending on 'replied'/'starred'/
+-- 'gmail_important' by hand, then recreate the type manually with the
+-- confirmed prior set.
 
 SELECT 1;
