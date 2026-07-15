@@ -192,6 +192,7 @@ describe('AutopilotReadService', () => {
         source?: 'triage' | 'manual' | 'autopilot';
         protected?: boolean;
         reverted?: boolean;
+        pruned?: boolean;
       } = {},
     ) {
       await db.insert(triageDecisions).values({
@@ -231,8 +232,12 @@ describe('AutopilotReadService', () => {
         source: options.source ?? 'triage',
         action: 'archive',
         affectedCount: 1,
+        ...(options.reverted ? { revertedAt: new Date() } : {}),
         ...(undoToken ? { undoToken } : {}),
       });
+      if (options.pruned && undoToken) {
+        await db.delete(undoJournal).where(eq(undoJournal.token, undoToken));
+      }
     }
 
     it('requires three distinct eligible senders and returns only aggregate evidence', async () => {
@@ -256,6 +261,42 @@ describe('AutopilotReadService', () => {
         dailyActionCap: 100,
       });
       expect(Object.keys(suggestion!)).not.toContain('senderKey');
+    });
+
+    it('keeps reverted evidence excluded after undo-journal pruning clears its token', async () => {
+      await seedArchiveDecision(mailboxA, 'eligible-1');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      await seedArchiveDecision(mailboxA, 'reverted-and-pruned', {
+        reverted: true,
+        pruned: true,
+      });
+
+      const [pruned] = await db
+        .select({ undoToken: activityLog.undoToken, revertedAt: activityLog.revertedAt })
+        .from(activityLog)
+        .where(eq(activityLog.senderKey, 'reverted-and-pruned'));
+      expect(pruned).toMatchObject({ undoToken: null });
+      expect(pruned!.revertedAt).not.toBeNull();
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({ evidenceCount: 3 });
+    });
+
+    it('uses the preset default confidence after the stored threshold is reset', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, ruleId, { confidenceThreshold: null });
+
+      for (const key of ['at-default-1', 'at-default-2', 'at-default-3']) {
+        await seedArchiveDecision(mailboxA, key, { confidence: '0.85' });
+      }
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+
+      for (const key of ['above-default-1', 'above-default-2', 'above-default-3']) {
+        await seedArchiveDecision(mailboxA, key, { confidence: '0.86' });
+      }
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({
+        ruleId,
+        evidenceCount: 3,
+      });
     });
 
     it('uses each sender’s latest canonical decision and counts a sender only once', async () => {

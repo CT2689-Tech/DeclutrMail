@@ -20,6 +20,7 @@ import type {
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
 import { ContextualHelp } from '@/features/help/contextual-help';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -145,6 +146,8 @@ interface ApproveTarget {
 }
 
 export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
+  const auth = useOptionalAuth();
+  const activeMailboxId = auth?.me.activeMailboxId ?? null;
   const dismissMatch = useDismissMatch();
   const pauseAll = usePauseAll();
   const patchRule = usePatchRule();
@@ -162,11 +165,11 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
   const [activateTarget, setActivateTarget] = useState<AutopilotRuleDto | null>(null);
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
-  const shownPatternKey = useRef<string | null>(null);
+  const shownPatternKeys = useRef<Set<string>>(new Set());
 
-  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
-  // its Storybook stories mount without an auth shim; PostHog
-  // `identify` ties the event to the user regardless.
+  // `mailbox_id: null` preserves the page-view event contract. Optional
+  // auth above is used only to scope suggestion-impression dedupe and
+  // keeps Storybook stories mountable without an auth shim.
   useEffect(() => {
     void track('page_viewed', { page: 'autopilot', mailbox_id: null });
   }, []);
@@ -180,14 +183,15 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const hasRunningRules = rules.some((r) => r.mode !== 'paused');
 
   useEffect(() => {
-    if (patternSuggestion == null || shownPatternKey.current === patternSuggestion.presetKey)
-      return;
-    shownPatternKey.current = patternSuggestion.presetKey;
+    if (patternSuggestion == null) return;
+    const impressionKey = `${activeMailboxId ?? 'unknown'}:${patternSuggestion.ruleId}`;
+    if (shownPatternKeys.current.has(impressionKey)) return;
+    shownPatternKeys.current.add(impressionKey);
     void track('autopilot_pattern_suggestion_shown', {
       preset_key: patternSuggestion.presetKey,
       evidence_count: patternSuggestion.evidenceCount,
     });
-  }, [patternSuggestion]);
+  }, [activeMailboxId, patternSuggestion]);
 
   // ── Derivations ────────────────────────────────────────────────────
 

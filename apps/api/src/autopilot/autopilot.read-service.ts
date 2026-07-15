@@ -169,7 +169,19 @@ export class AutopilotReadService {
           eq(triageDecisions.mailboxAccountId, activityLog.mailboxAccountId),
           eq(triageDecisions.senderKey, activityLog.senderKey),
           sql`${triageDecisions.verdict}::text = ${automationRules.actionKind}::text`,
-          sql`${triageDecisions.confidence} > ${automationRules.confidenceThreshold}`,
+          // A NULL stored threshold means "use the preset default" at
+          // runtime. Keep pattern evidence aligned with the apply worker's
+          // effective threshold so resetting a rule cannot accidentally
+          // make every confidence eligible (SQL comparisons with NULL are
+          // otherwise unknown).
+          sql`${triageDecisions.confidence} > coalesce(
+            ${automationRules.confidenceThreshold},
+            case ${automationRules.presetKey}
+              when 'auto_archive_low_engagement' then cast(${AUTOPILOT_PRESETS.auto_archive_low_engagement.defaultThreshold} as numeric)
+              when 'auto_unsubscribe_noisy' then cast(${AUTOPILOT_PRESETS.auto_unsubscribe_noisy.defaultThreshold} as numeric)
+              else null
+            end
+          )`,
         ),
       )
       .leftJoin(
@@ -199,6 +211,7 @@ export class AutopilotReadService {
           sql`${activityLog.occurredAt} >= ${cutoff}::timestamptz`,
           sql`${activityLog.occurredAt} <= now()`,
           sql`coalesce(${senderPolicies.isProtected}, false) = false`,
+          sql`${activityLog.revertedAt} is null`,
           sql`(${activityLog.undoToken} is null or ${undoJournal.revertedAt} is null)`,
           // Count only the sender's latest valid user-directed canonical
           // decision. An older Archive must not remain evidence after a
@@ -215,6 +228,7 @@ export class AutopilotReadService {
               and latest.occurred_at <= now()
               and latest.source <> 'autopilot'
               and latest.action in ('keep','archive','unsubscribe','later','delete')
+              and latest.reverted_at is null
               and (latest.undo_token is null or latest_undo.reverted_at is null)
             order by latest.occurred_at desc, latest.id desc
             limit 1

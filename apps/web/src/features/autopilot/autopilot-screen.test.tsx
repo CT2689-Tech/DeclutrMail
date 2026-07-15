@@ -43,6 +43,16 @@ import type { AutopilotPatternSuggestionDto } from '@/lib/api/autopilot';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
+const { trackMock, authState } = vi.hoisted(() => ({
+  trackMock: vi.fn(),
+  authState: { activeMailboxId: 'mailbox-a' as string | null },
+}));
+vi.mock('@/lib/posthog', () => ({ track: trackMock }));
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: { activeMailboxId: authState.activeMailboxId } }),
+  getActiveMailboxEmail: () => 'active@example.com',
+}));
+
 function ready(rules = PRESET_RULES_OBSERVE): AutopilotScreenState {
   const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.map((match) => ({
     match,
@@ -83,6 +93,11 @@ const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
   evidenceWindowDays: 30,
   dailyActionCap: 100,
 };
+
+beforeEach(() => {
+  trackMock.mockReset();
+  authState.activeMailboxId = 'mailbox-a';
+});
 
 describe('AutopilotScreen — edge states', () => {
   beforeEach(() => installFetchStub([]));
@@ -216,6 +231,47 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(card).getByText(/100 actions; extra matches wait/i)).toBeInTheDocument();
     expect(within(card).getByText(/can be undone from activity/i)).toBeInTheDocument();
     expect(card.textContent).not.toContain('@');
+  });
+
+  it('deduplicates pattern impressions per mailbox and rule across mailbox switches', async () => {
+    const state: AutopilotScreenState = {
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    };
+    const { rerender } = renderScreen(state);
+
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'autopilot_pattern_suggestion_shown',
+        expect.objectContaining({ preset_key: PATTERN_SUGGESTION.presetKey }),
+      ),
+    );
+    expect(
+      trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+    ).toHaveLength(1);
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotScreen state={{ ...state }} />
+      </QueryClientProvider>,
+    );
+    expect(
+      trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+    ).toHaveLength(1);
+
+    authState.activeMailboxId = 'mailbox-b';
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotScreen state={{ ...state }} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+      ).toHaveLength(2),
+    );
   });
 
   it('describes unsubscribe evidence as requests, not confirmed outcomes', () => {
