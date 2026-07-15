@@ -152,6 +152,8 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
   label-action race/state tests (34); API Later contract/entitlement tests (21);
   web app-shell/Later recovery tests (33); plus the earlier authenticated
   accessibility live smoke (12).
-- Current slice: Later recovery is implemented with timer-version pinning,
-  mailbox mutation locking, failure-state constraints, and an all-tier retry
-  endpoint that rejects healthy timers. Final diff review precedes commit/push.
+- Last pushed checkpoint: `daa439a1` on `feat/d245-product-clarity`; the draft
+  PR contains the complete P0–P3 program plus the approved Later recovery slice.
+- Next proposed opportunity: let Activity retry a failed action only after a
+  fresh consequence preview; never replay an old or possibly-applied mutation
+  blindly. Founder decision precedes implementation.
