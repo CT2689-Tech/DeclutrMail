@@ -57,6 +57,7 @@ async function freshDb(): Promise<Db> {
 async function seedMailbox(
   db: Db,
   email = 'owner@example.com',
+  timezone: string | null = null,
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
@@ -66,7 +67,7 @@ async function seedMailbox(
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email })
+    .values({ workspaceId: ws!.id, email, timezone })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)
@@ -157,6 +158,93 @@ const KEY_PROMO = 'c'.repeat(64);
 const KEY_NEWS = 'd'.repeat(64);
 
 describe('BriefSnapshotWorker', () => {
+  it('D64 — waits for local 08:00 before materializing the Brief', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db, 'la@example.com', 'America/Los_Angeles');
+
+    const before = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T14:59:59Z'),
+    });
+    const beforeResult = await before.processJob(
+      { scheduledAtMinute: '2026-05-25T14:59' },
+      FAKE_CTX,
+    );
+    expect(beforeResult.briefsGenerated).toBe(0);
+    expect(await db.select().from(briefRuns)).toHaveLength(0);
+
+    const atEight = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    const readyResult = await atEight.processJob(
+      { scheduledAtMinute: '2026-05-25T15:00' },
+      FAKE_CTX,
+    );
+    expect(readyResult.briefsGenerated).toBe(1);
+    const [row] = await db
+      .select({ runDateLocal: briefRuns.runDateLocal })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.runDateLocal).toBe('2026-05-25');
+  });
+
+  it('D64 — reads exactly the previous local calendar day', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(
+      db,
+      'la-window@example.com',
+      'America/Los_Angeles',
+    );
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Outside local yesterday',
+      internalDate: new Date('2026-05-24T06:59:59Z'),
+      idSuffix: 'outside-local-day',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Inside local yesterday',
+      internalDate: new Date('2026-05-24T07:00:00Z'),
+      idSuffix: 'inside-local-day',
+    });
+
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    await worker.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.briefPayload.reply).toHaveLength(1);
+    expect(row!.briefPayload.reply[0]!.subject).toBe('Inside local yesterday');
+  });
+
+  it('D66 — applies the weekend preference using the mailbox local date', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, 'friday@example.com', 'America/Los_Angeles');
+
+    // UTC Saturday, but still Friday after 08:00 in Los Angeles.
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-30T01:00:00Z'),
+    });
+    const result = await worker.processJob({ scheduledAtMinute: '2026-05-30T01:00' }, FAKE_CTX);
+
+    expect(result.weekendSkips).toBe(0);
+    expect(result.briefsGenerated).toBe(1);
+  });
+
   it('D70 — empty day produces an empty-section brief with calm narrative', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

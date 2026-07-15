@@ -30,6 +30,7 @@ import {
   type BriefSenderGroup,
 } from './brief-narrative.js';
 import { createLimiter, runWithTimeout } from './reasoning.js';
+import { resolveBriefLocalWindow, type BriefLocalWindow } from './brief-timezone.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -132,7 +133,7 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *
  * What the worker DOES:
  *   - Iterates every mailbox in `mailbox_accounts` (joined to the
- *     owning user's `preferences` for the D66 schedule gate).
+ *     owning user's preferences + timezone for the D64/D66 gates).
  *   - D66 schedule: on Saturday/Sunday run dates, skips mailboxes
  *     whose user has not opted in (`preferences.briefPrefs.weekends`)
  *     — Mon–Fri is the default schedule; weekends are opt-in.
@@ -147,9 +148,8 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *                Capped at 6 (D63). VIPs win cap ties.
  *       fyi    — engine verdict 'later'. Capped at 4 (D63).
  *       noise  — engine verdict 'archive' or 'unsubscribe'. Uncapped.
- *   - Renders the deterministic D62 template narrative (Haiku adapter
- *     deferred to a follow-up PR; today every brief is `generated_by =
- *     'template'`).
+ *   - Uses the D62 Haiku adapter when configured and falls back to the
+ *     deterministic template on absence, timeout, or provider failure.
  *   - Empty-day handling per D70: if yesterday had zero inbound
  *     messages, writes an empty-section brief with the D70 calm copy.
  *     The empty run is NOT frozen — later ticks rebuild it and replace
@@ -160,14 +160,8 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     empty.
  *
  * What the worker does NOT do (deferred):
- *   - Haiku LLM narrative (D62) — needs the Anthropic adapter the
- *     ReasoningLlmPort foreshadowed but doesn't yet implement. Falls
- *     back to the deterministic template per D62 until then.
- *   - User-timezone routing (D64 "8am in user's local timezone") —
- *     `users.timezone` doesn't exist yet. V2 assumes UTC; the 1-hour
- *     cron cadence + D69 UNIQUE means the worst case is an early UTC
- *     Brief that re-tries (and no-ops) once the user's true 8am
- *     arrives.
+ *   - User-configurable delivery minutes; D246 fixes generation at
+ *     08:00 local and falls back to UTC for absent/invalid timezones.
  *   - D61 email digest delivery — separate worker that watches for
  *     `email_sent_at IS NULL` rows from users opted in.
  * Privacy (D7, D228): every read is metadata. The worker touches
@@ -234,11 +228,6 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     const startedAt = Date.now();
     const now = (this.deps.now ?? (() => new Date()))();
 
-    // D66 — the run date's weekday gates generation, so resolve it once
-    // per pass. V2 simplification: the run date is the UTC date (same
-    // boundary `snapshotForMailbox` uses).
-    const runDateIsWeekend = isWeekendUtc(now);
-
     const mailboxes = await this.deps.db
       .select({
         id: mailboxAccounts.id,
@@ -246,6 +235,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         // D66 — the owning user's preference bag; `parseBriefPrefs`
         // extracts the weekend opt-in with a safe default (false).
         preferences: users.preferences,
+        timezone: users.timezone,
       })
       .from(mailboxAccounts)
       .innerJoin(users, eq(users.id, mailboxAccounts.userId));
@@ -272,16 +262,26 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     await Promise.all(
       mailboxes.map((mb) =>
         limiter(async () => {
+          const localWindow = resolveBriefLocalWindow(now, mb.timezone);
+          // The hourly cron is catch-up-safe: before local 08:00 it writes
+          // nothing; any later tick can materialize the same local day's row.
+          if (!localWindow.ready) return;
+
           // D66 weekend gate — Mon–Fri default; Sat/Sun generate only
           // for opted-in users. Skipping writes NO row, so an opt-in
           // flipped later the same day self-heals on the next hourly
           // tick (the D69 existence check finds nothing to freeze).
-          if (runDateIsWeekend && !parseBriefPrefs(mb.preferences).weekends) {
+          if (localWindow.weekend && !parseBriefPrefs(mb.preferences).weekends) {
             weekendSkips += 1;
             return;
           }
           try {
-            const generated = await this.snapshotForMailbox(mb.id, mb.workspaceId, now);
+            const generated = await this.snapshotForMailbox(
+              mb.id,
+              mb.workspaceId,
+              now,
+              localWindow,
+            );
             if (generated) {
               briefsGenerated += 1;
               if (generated.isEmpty) emptyBriefs += 1;
@@ -316,17 +316,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     mailboxAccountId: string,
     workspaceId: string,
     now: Date,
+    localWindow: BriefLocalWindow,
   ): Promise<{ isEmpty: boolean } | null> {
-    // D64 V2 simplification — every mailbox treated as UTC. Yesterday
-    // is the UTC date that ended at 00:00 UTC today; today is the
-    // current UTC date. When `users.timezone` lands the worker swaps
-    // these for tz-aware boundaries.
-    const todayLocal = utcDateString(now);
-    const yesterdayStart = new Date(now);
-    yesterdayStart.setUTCHours(0, 0, 0, 0);
-    yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
-    const todayStart = new Date(yesterdayStart);
-    todayStart.setUTCDate(todayStart.getUTCDate() + 1);
+    const { runDateLocal: todayLocal, previousDayStart: yesterdayStart, todayStart } = localWindow;
 
     // D69 frozen-once — but ONLY once the frozen brief is NON-empty.
     // An empty brief can be the zero-count race, not a quiet day: the
@@ -746,15 +738,4 @@ function sortObservedPriority<T extends { senderKey: string }>(
     (a, b) =>
       (priorityBySenderKey.get(b.senderKey) ?? 0) - (priorityBySenderKey.get(a.senderKey) ?? 0),
   );
-}
-
-/** Render `YYYY-MM-DD` from a Date treating it as UTC. */
-function utcDateString(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-/** D66 — true when the (UTC) run date is a Saturday or Sunday. */
-function isWeekendUtc(d: Date): boolean {
-  const day = d.getUTCDay();
-  return day === 0 || day === 6;
 }
