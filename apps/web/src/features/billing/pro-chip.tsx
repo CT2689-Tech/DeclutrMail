@@ -26,7 +26,9 @@ export function PlanChip({ plan }: { plan: 'Plus' | 'Pro' }) {
         borderRadius: 999,
         border: `1px solid ${color.lineSoft}`,
         background: 'transparent',
-        color: color.fgMuted,
+        // This chip can sit on the active nav item's tinted background.
+        // `fgMuted` falls just below WCAG AA there at this small type size.
+        color: color.fgSoft,
         fontFamily: font.mono,
         fontSize: 9,
         fontWeight: 600,
