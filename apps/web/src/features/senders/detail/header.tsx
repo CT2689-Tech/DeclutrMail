@@ -73,7 +73,7 @@ export function SenderDetailHeader({
       : protectionReason === 'starred'
         ? 'Automatically protected because you starred a message this year. Select to remove protection.'
         : protectionReason === 'gmail-important'
-          ? 'Automatically protected because Gmail marked at least three messages important this year. Select to remove protection.'
+          ? 'Automatically protected because Gmail marked at least three messages from this Primary-inbox sender important this year. Select to remove protection.'
           : isProtected
             ? 'Protected by you. Select to remove protection.'
             : 'Protect this sender from bulk and automatic mail-changing actions.';

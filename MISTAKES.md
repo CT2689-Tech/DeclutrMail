@@ -622,3 +622,11 @@ collision case").
 **Correct approach:** Use the column ref when one exists (encoder handles Dates); when the expression must stay raw (CASE), bind `value.toISOString()` with a `::timestamptz` cast. For the test gap: intercept the driver in specs and assert no raw `Date` instance is ever handed to it.
 **Rule:** Never bind a JS Date next to a raw `sql` expression — column ref or ISO-string + `::timestamptz`, always. A streaming 200 is not success: exports must be verified by UNZIPPING the bytes, not by status code.
 **Enforcement update:** Driver-parity spec in `activity.read-service.spec.ts` (wraps PGlite `query`, fails on any raw Date param); truthful CSV labels pinned in `activity-support-bundle.service.spec.ts`. Third recurrence of the drizzle raw-sql param class — distillation candidate for CLAUDE.md §2/§8.
+
+## 2026-07-15 — Data-cleanup UPDATE dropped the guard its sibling had, nearly wiping user-agency pins
+**PR:** #335
+**Caught by:** schema-migration-reviewer (local gate run) — [BLOCKING]
+**What happened:** Migration 0045 demotes two classes of stale auto-protections with two UPDATEs. The first (gmail_important, non-primary) carried `is_protected = true`; the second (legacy engagement_based/vip) did not, so it also matched manual-unprotect memory pins (`is_protected = false` with reason kept) and would have NULLed their reason — converting the user's sticky override into a fresh row the sweep may re-protect. The header comment simultaneously promised pins were untouched, and mislabelled manual protections as `reason IS NULL` (they carry `'user_defined'`; the 0023 CHECK makes protected+NULL impossible).
+**Correct approach:** Every statement in a multi-statement cleanup must re-state the full invariant guard — copying the WHERE shape from the sibling statement, not just the target predicate. State-machine columns like `(is_protected, protection_reason)` encode user agency in the COMBINATION; filtering on reason alone selects both machine rows and user pins.
+**Rule:** In any UPDATE/DELETE touching `sender_policies.protection_*`, require the explicit `is_protected` state alongside the reason — and verify comments against the schema CHECKs, not memory.
+**Enforcement update:** none (schema-migration-reviewer caught it; keep running it locally on migration PRs before push).

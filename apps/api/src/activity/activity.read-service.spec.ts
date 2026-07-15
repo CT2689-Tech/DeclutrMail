@@ -164,6 +164,8 @@ async function seedActivity(
     undoToken?: string;
     actionJobId?: string;
     ruleId?: string;
+    /** Durable reversal fact — stamped by the reverter alongside the journal flip. */
+    revertedAt?: Date;
   },
 ): Promise<string> {
   const [row] = await db
@@ -178,6 +180,7 @@ async function seedActivity(
       ...(args.undoToken ? { undoToken: args.undoToken } : {}),
       ...(args.actionJobId ? { actionJobId: args.actionJobId } : {}),
       ...(args.ruleId ? { ruleId: args.ruleId } : {}),
+      ...(args.revertedAt ? { revertedAt: args.revertedAt } : {}),
     })
     .returning({ id: activityLog.id });
   return row!.id;
@@ -1795,6 +1798,17 @@ describe('ActivityReadService', () => {
         action: 'archive',
         senderKey,
         undoToken: revertedToken,
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS + 60_000),
+      });
+      // Journal already pruned (undo_token nulled by the FK) — the durable
+      // activity-side reversal fact must still exclude the row.
+      const prunedUndoneRowId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        revertedAt: new Date(NOW_MS - 3 * ONE_DAY_MS + 60_000),
       });
       const standingRowId = await seedActivity(db, {
         mailboxAccountId: mailboxA.mailboxAccountId,
@@ -1836,6 +1850,7 @@ describe('ActivityReadService', () => {
         senderKey,
         undoToken: recoveredRevertedToken,
         actionJobId: recoveryId,
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS),
       });
 
       expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
@@ -1863,6 +1878,9 @@ describe('ActivityReadService', () => {
         nowMs: NOW_MS,
       });
       expect(unfiltered.rows.find((row) => row.id === undoneRowId)).toMatchObject({
+        reviewOutcome: null,
+      });
+      expect(unfiltered.rows.find((row) => row.id === prunedUndoneRowId)).toMatchObject({
         reviewOutcome: null,
       });
     });
