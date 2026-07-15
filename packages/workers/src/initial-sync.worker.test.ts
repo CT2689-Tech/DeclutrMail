@@ -18,6 +18,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { applyAutomaticProtection } from './automatic-protection.js';
 import { InitialSyncWorker } from './initial-sync.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
@@ -941,6 +942,115 @@ describe('InitialSyncWorker', () => {
       expect(reasons.get(deriveSenderKey('sender10@example.com'))).toBe('starred');
       expect(reasons.get(deriveSenderKey('sender11@example.com'))).toBe('gmail_important');
       expect(reasons.has(deriveSenderKey('sender12@example.com'))).toBe(false);
+    });
+
+    it('gmail importance only protects Primary-category senders', async () => {
+      // Gmail hands IMPORTANT out liberally to promotions/updates, so
+      // repeated importance outside Primary must NOT protect (founder
+      // mailbox 2026-07-15: 176/187 importance-only protections were
+      // non-primary). Same signal inside Primary still protects.
+      const importantIn = (category: string) => ['INBOX', 'IMPORTANT', category];
+      const fixture = [
+        ...makeLabeledSender(20, [
+          importantIn('CATEGORY_PROMOTIONS'),
+          importantIn('CATEGORY_PROMOTIONS'),
+          importantIn('CATEGORY_PROMOTIONS'),
+        ]),
+        ...makeLabeledSender(21, [
+          importantIn('CATEGORY_UPDATES'),
+          importantIn('CATEGORY_UPDATES'),
+          importantIn('CATEGORY_UPDATES'),
+        ]),
+        ...makeLabeledSender(22, [
+          importantIn('CATEGORY_PERSONAL'),
+          importantIn('CATEGORY_PERSONAL'),
+          importantIn('CATEGORY_PERSONAL'),
+        ]),
+      ];
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const rows = await db
+        .select({
+          senderKey: schema.senderPolicies.senderKey,
+          reason: schema.senderPolicies.protectionReason,
+        })
+        .from(schema.senderPolicies);
+      const reasons = new Map(rows.map((row) => [row.senderKey, row.reason]));
+
+      expect(reasons.has(deriveSenderKey('sender20@example.com'))).toBe(false);
+      expect(reasons.has(deriveSenderKey('sender21@example.com'))).toBe(false);
+      expect(reasons.get(deriveSenderKey('sender22@example.com'))).toBe('gmail_important');
+    });
+
+    it('sweep withdraws importance-only protection from non-Primary senders (self-heals stale rows)', async () => {
+      // A stale worker (or the pre-gate rule) may have protected a
+      // promotions sender on importance alone. The sweep reconciles:
+      // sweep-authored importance protection without Primary is
+      // withdrawn, while a manual-unprotect memory pin (is_protected
+      // false, reason kept) is left alone.
+      const importantPromo = () => ['INBOX', 'IMPORTANT', 'CATEGORY_PROMOTIONS'];
+      const fixture = [
+        ...makeLabeledSender(30, [importantPromo(), importantPromo(), importantPromo()]),
+        ...makeLabeledSender(31, [importantPromo(), importantPromo(), importantPromo()]),
+      ];
+      const client = new FakeGmailClient(fixture);
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      // Simulate the stale-rule protection + a manual-unprotect pin.
+      await db
+        .insert(schema.senderPolicies)
+        .values([
+          {
+            mailboxAccountId,
+            senderKey: deriveSenderKey('sender30@example.com'),
+            policyType: 'keep',
+            isProtected: true,
+            protectionReason: 'gmail_important',
+            protectionSetAt: new Date(),
+          },
+          {
+            mailboxAccountId,
+            senderKey: deriveSenderKey('sender31@example.com'),
+            policyType: 'keep',
+            isProtected: false,
+            protectionReason: 'gmail_important',
+            protectionSetAt: new Date(),
+          },
+        ])
+        .onConflictDoNothing();
+
+      // A completed initial sync short-circuits on re-run
+      // (`skipped_already_ready`), so exercise the sweep directly — the
+      // same call every sync makes.
+      await db.transaction(async (tx) => {
+        await applyAutomaticProtection(tx, mailboxAccountId);
+      });
+
+      const rows = await db
+        .select({
+          senderKey: schema.senderPolicies.senderKey,
+          isProtected: schema.senderPolicies.isProtected,
+          reason: schema.senderPolicies.protectionReason,
+        })
+        .from(schema.senderPolicies);
+      const bySender = new Map(rows.map((r) => [r.senderKey, r]));
+
+      expect(bySender.get(deriveSenderKey('sender30@example.com'))).toMatchObject({
+        isProtected: false,
+        reason: null,
+      });
+      // Manual-unprotect memory pin keeps its reason — never rewritten.
+      expect(bySender.get(deriveSenderKey('sender31@example.com'))).toMatchObject({
+        isProtected: false,
+        reason: 'gmail_important',
+      });
     });
 
     it('user-agency-wins — manually demoted automatic row stays demoted on re-run', async () => {
