@@ -110,22 +110,39 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: independent backend/UI review is fully addressed.
-  Entitlements fail closed, pattern and review evidence survive journal
-  pruning, zero-message recoveries retain provenance, exports preserve the
-  exact outcome filter, late failures use terminal time, onboarding retrieval
-  is goal-aware before its cap, and Brief reads share the persisted timezone
-  authority used by generation.
-- Last green checks: repository typecheck; lint (0 errors, 12 existing
-  warnings); tracked-file formatting; production build (64 pages); DB tests
-  (73). Current focused suites: Activity API (62), Activity web (50),
-  Autopilot API (44), Autopilot web (36), onboarding (25), Triage (14), Brief
-  API (25), Brief web (18), label worker (17), and support contracts (3).
-  Earlier serial full suites: API (1,134 passed, 12 skipped; the one discovered
-  entitlement-classification gap was fixed and rerun), web (1,273), workers
-  (553 passed, 1 skipped), shared (327), and events (75).
+- Last completed slice: two-account dev-environment smoke (2026-07-15,
+  both connected Gmail accounts). The smoke reproduced two regressions,
+  both fixed on this branch with red→green regression coverage:
+  - `4ccf55e2` — postgres.js rejects a JS Date bound next to a raw `sql`
+    expression (only column encoders map Dates). The skipped/protected
+    weekly-review evidence links returned 500 and every support-bundle
+    export truncated mid-stream (HTTP 200, corrupt zip). PGlite specs
+    accept Dates, so the suites stayed green — a driver-parity spec now
+    asserts no raw Date reaches the driver.
+  - `df8af6aa` — the support-bundle CSV labelled skipped/protected Observe
+    dismissals with execution fallbacks ("Moved to Later" / "Completed"),
+    claiming an action that never ran. The CSV now mirrors the Activity
+    screen wording ("Skipped" / "Protected").
+    All other checklist sections passed: account-switch isolation, weekly
+    review exact counts + fail-closed malformed filters, bundle privacy
+    (masked default, opt-in technical JSON, no tokens/bodies), feedback
+    truthfulness + mailbox scoping, pattern-suggestion mechanics (Observe
+    accept, independent Not-now, per-account impressions — organic evidence
+    did not exist, exercised via labelled reversible fixtures), goal-driven
+    onboarding (≤5 real decisions, calm completion), entitlement fail-closed
+    (Free/Plus 402 on nonempty preset picks, empty allowed, Pro permitted),
+    persisted-timezone Brief authority with UTC fallback, recovery evidence
+    (failed→recovered once, zero-message provenance, terminal failure time
+    incl. export), and a Gmail archive→Undo round trip.
+- Dev-environment repairs made during the smoke (local DB only): applied
+  migrations 0036–0044 (backfilled 84 legacy terminal `later` rows with
+  `wake_at = created_at + 3 days` before the 0036 CHECK, then
+  `atlas migrate set 0036`), and added the D245 `protection_reason` enum
+  values (`replied`, `starred`, `gmail_important`) that the in-place 0006
+  edit introduced after this dev DB had already applied the old 0006 —
+  this also cleared the failing auto-protect sweep / red sync banner.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Last commit: `f8e556d9` (`fix(brief): use persisted timezone authority
+- Last commit: `df8af6aa` (`fix(activity): export review rows truthfully
 (D246)`).
-- Next slice: two-account dev-environment smoke, then move draft PR #334 to
-  ready if the smoke is clean.
+- Next slice: founder review of the smoke report, then move draft PR #334
+  to ready.

@@ -26,6 +26,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-15 — Decide the `codex/*` branch-name exemption (hooks reject the Codex workflow)
+**Source:** session (PR #334 smoke — pushing the regression fixes)
+**Why:** Both the local pre-push hook and the authoritative `branch-name.yml` reject `codex/<slug>` branch names, but the Codex workflow now ships real PRs from them (#333 merged, #334 open). During the smoke, pushing fixes to `codex/d246-behavioral-activation-trust` required checking out a convention-compliant alias branch and pushing the refspec — workable but a fragile workaround for every future codex PR. This is CLAUDE.md §3 plan-drift: practice has outrun the §6 convention.
+**How:** Either (a) add `codex/` to the allowed prefixes in `.husky/pre-push` + `.github/workflows/branch-name.yml` (mirroring the dependabot exemption; commits on those branches already carry `(D###)` trailers), or (b) require future Codex work to branch as `<type>/d<NNN>-…`. One-line change either way; your call which.
+**Verifies by:** `git push` from a `codex/*` checkout passes the pre-push hook, and the "Branch follows CLAUDE.md §6 convention" check is green on the next codex PR.
+**Status:** Open
+
 ### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
 **Source:** PR #325 design-system gate review
 **Why:** The branch promotes a shared `ErrorState` component
