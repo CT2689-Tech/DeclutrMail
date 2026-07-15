@@ -76,6 +76,55 @@ after `POST /api/onboarding/complete` succeeds (D113).
 **Retention / aggregation.** PostHog default (7y). Built into the
 onboarding funnel insight. No per-user breakdown beyond `user_id`.
 
+### D246 activation and first-relief events
+
+`activation_goal_selected` fires after the goal preference is durably saved.
+`first_relief_session_started` fires once when the bounded real-sender session
+renders. `action_preview_viewed` fires once per sender/verb preview, and
+`action_confirmed` fires only after the corresponding intent is accepted.
+`first_relief_session_completed` fires once for a completed, voluntarily
+stopped, or empty session.
+
+| Event                            | Payload                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------- |
+| `activation_goal_selected`       | `goal: 'reduce_newsletters' \| 'protect_important' \| 'clear_old_promotions'` |
+| `first_relief_session_started`   | `goal`, `target: number`                                                      |
+| `action_preview_viewed`          | `journey: 'first_relief' \| 'daily'`, `verb`                                  |
+| `action_confirmed`               | `journey: 'first_relief' \| 'daily'`, `verb`                                  |
+| `first_relief_session_completed` | `goal`, `target`, `decided`, `outcome: 'completed' \| 'stopped' \| 'empty'`   |
+
+**Privacy and aggregation.** No sender, mailbox, provider, subject, or message
+identifier is present. The primary activation funnel is sync completion → first
+preview → first confirmed action → relief completion. Raw messages moved and
+time in app are explicitly excluded from the success definition.
+
+### D246 calibrated feedback
+
+`product_feedback_submitted` fires after the first-party feedback write
+succeeds. Its payload is a surface/rating discriminated union:
+
+- Activity: `expected | surprising`
+- Brief: `useful | not_useful | wrong_reason`
+- Followups: `useful | not_followup`
+
+The event contains no feedback prose or subject identifier. First-party storage
+is authoritative; PostHog remains optional and consent-gated.
+
+### D246 weekly review
+
+`weekly_review_viewed` fires once when the factual seven-day review first
+renders. Payload: numeric `completed`, `skipped`, `failed`, `recovered`, and
+`protected` counts. Counts come from canonical Activity outcomes; no time-saved
+or prevented-email estimate is permitted.
+
+### D246 Autopilot pattern suggestion
+
+`autopilot_pattern_suggestion_shown` fires once per rendered suggestion with a
+bounded `preset_key` and `evidence_count`. `autopilot_pattern_suggestion_decided`
+fires after Observe is enabled or the suggestion is dismissed, carrying the
+same evidence count and `decision: 'observe' | 'dismissed'`. Neither event may
+contain a rule condition blob, sender identity, or email-derived text.
+
 ### `sync_started`
 
 **When fired.** Client-side today: the FE sync gate (`useSyncGateFunnel`)

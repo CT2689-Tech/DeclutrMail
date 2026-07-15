@@ -15,6 +15,11 @@ export type EventName =
   // — Onboarding + sync —
   | 'onboarding_step_viewed'
   | 'onboarding_step_completed'
+  | 'activation_goal_selected'
+  | 'first_relief_session_started'
+  | 'action_preview_viewed'
+  | 'action_confirmed'
+  | 'first_relief_session_completed'
   | 'sync_started'
   | 'sync_completed'
   | 'sync_now_clicked'
@@ -56,6 +61,11 @@ export type EventName =
   | 'autopilot_resumed'
   | 'autopilot_suggestion_decided'
   | 'autopilot_preset_changed'
+  | 'autopilot_pattern_suggestion_shown'
+  | 'autopilot_pattern_suggestion_decided'
+  // — Calibrated feedback + review (D246) —
+  | 'product_feedback_submitted'
+  | 'weekly_review_viewed'
   // — Quiet hours (U18 — D92/D95) —
   | 'quiet_hours_updated'
   // — Marketing surface (D19 pricing) —
@@ -92,6 +102,10 @@ export type Verb = 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
 export type OnboardingFunnelStep =
   'promise' | 'connect_gmail' | 'sync_gate' | 'choose_preset' | 'first_triage' | 'finished';
 
+export type ActivationGoal = 'reduce_newsletters' | 'protect_important' | 'clear_old_promotions';
+
+export type DecisionJourney = 'first_relief' | 'daily';
+
 /**
  * Per-event payload shapes. Only includes scalars and small enums —
  * NEVER email content, addresses, or anything privacy-banned.
@@ -106,6 +120,27 @@ export interface EventPayloads {
   onboarding_step_completed: {
     step: OnboardingFunnelStep;
     duration_ms: number;
+  };
+  activation_goal_selected: {
+    goal: ActivationGoal;
+  };
+  first_relief_session_started: {
+    goal: ActivationGoal;
+    target: number;
+  };
+  action_preview_viewed: {
+    journey: DecisionJourney;
+    verb: Verb;
+  };
+  action_confirmed: {
+    journey: DecisionJourney;
+    verb: Verb;
+  };
+  first_relief_session_completed: {
+    goal: ActivationGoal;
+    target: number;
+    decided: number;
+    outcome: 'completed' | 'stopped' | 'empty';
   };
   sync_started: {
     /**
@@ -378,6 +413,28 @@ export interface EventPayloads {
     preset_id: string;
     /** `activated` = the explicit D104 Observe → Active switch (no auto-promote). */
     action: 'enabled' | 'disabled' | 'parameter_changed' | 'activated';
+  };
+  autopilot_pattern_suggestion_shown: {
+    preset_key: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
+    evidence_count: number;
+  };
+  autopilot_pattern_suggestion_decided: {
+    preset_key: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
+    decision: 'observe' | 'dismissed';
+    evidence_count: number;
+  };
+
+  // — Calibrated feedback + review (D246) —
+  product_feedback_submitted:
+    | { surface: 'activity'; rating: 'expected' | 'surprising' }
+    | { surface: 'brief'; rating: 'useful' | 'not_useful' | 'wrong_reason' }
+    | { surface: 'followups'; rating: 'useful' | 'not_followup' };
+  weekly_review_viewed: {
+    completed: number;
+    skipped: number;
+    failed: number;
+    recovered: number;
+    protected: number;
   };
 
   // — Quiet hours (U18 — D92/D95) —

@@ -92,7 +92,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 
 - [x] Reconcile D163/D171 user-facing behavior and stale Brief documentation.
 - [x] Generate Briefs at the user's local 08:00 boundary with UTC fallback.
-- [ ] Add the privacy-bounded D246 analytics contract and taxonomy.
+- [x] Add the privacy-bounded D246 analytics contract and taxonomy.
 - [ ] Persist the selected activation goal in the existing preferences bag.
 - [ ] Implement a finite first-relief session and calm completion state.
 - [ ] Add expected/surprising feedback for automatic Activity outcomes.
@@ -109,11 +109,10 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: onboarding no longer requests browser notification
-  permission without a delivery path. The authenticated app also synchronizes
-  a changed, strictly validated browser IANA timezone and heals existing users.
-- Last green checks: timezone contract tests (2); settings controller tests
-  (19); auth tests (9); shared/API/web typechecks.
+- Last completed slice: closed analytics names and surface-specific payloads now
+  cover activation goals, preview/confirmation, finite-session completion,
+  calibrated feedback, weekly review, and Observe-first pattern suggestions.
+- Last green checks: D246 observability contract tests (2); shared typecheck.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: add the closed D246 activation/trust event contract and taxonomy
-  before the first-relief UI emits any new telemetry.
+- Next slice: persist the activation goal and expand the existing server-owned
+  onboarding session from three to five goal-ranked sender decisions.
