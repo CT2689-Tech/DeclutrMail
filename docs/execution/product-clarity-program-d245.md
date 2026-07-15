@@ -145,15 +145,19 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Later return failures persist as safe product state;
-  the app shell and Later screen surface retrying/missed returns with automatic
-  and immediate recovery on every plan. Successful returns remain silent.
-- Last green checks: all-workspace typecheck; DB schema check; worker Later +
-  label-action race/state tests (34); API Later contract/entitlement tests (21);
-  web app-shell/Later recovery tests (33); plus the earlier authenticated
-  accessibility live smoke (12).
-- Last pushed checkpoint: `daa439a1` on `feat/d245-product-clarity`; the draft
-  PR contains the complete P0–P3 program plus the approved Later recovery slice.
-- Next proposed opportunity: let Activity retry a failed action only after a
-  fresh consequence preview; never replay an old or possibly-applied mutation
-  blindly. Founder decision precedes implementation.
+- Last completed slice: Activity is an outcome-aware recovery center for failed
+  Archive, Later, and Delete actions. It verifies current Gmail label state,
+  previews partial/already-applied/missing outcomes, and creates a new linked
+  attempt only after confirmation. Reconnect is actionable; unsubscribe never
+  exposes a generic retry.
+- Idempotency: exact confirmation fingerprints, database lineage constraints,
+  stable BullMQ job ids with enqueue-ack recovery, and convergent Gmail label
+  mutations prevent duplicate work and preserve the failed audit row. Recovery
+  attempts count once against the original cleanup intent.
+- Last green checks: all-workspace typecheck; DB recovery + migration round-trip
+  tests (8); worker verifier/queue tests (11); API recovery tests (9), Activity,
+  Gmail-minimal-read, and entitlement tests (92); web Activity/API tests (47).
+- Last pushed checkpoint before this slice: `dc2b1c9e` on
+  `feat/d245-product-clarity`. This recovery slice is the next commit/push.
+- Next proposed opportunity: exportable, human-readable Activity support bundles
+  with technical identifiers disclosed only on request.

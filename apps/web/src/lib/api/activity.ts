@@ -76,6 +76,28 @@ export type ActivityUndoStateWire =
   | { kind: 'executed'; executedAt: string }
   | { kind: 'unavailable' };
 
+/**
+ * Durable state for an action lineage that has not produced a confirmed
+ * Activity outcome. Failed label actions can be reviewed safely; an
+ * unsubscribe failure never exposes a blind retry.
+ */
+export type ActivityExecutionStateWire =
+  | {
+      kind: 'in_progress';
+      actionId: string;
+      requestedCount: number;
+      isRecovery: boolean;
+      status: 'queued' | 'executing';
+    }
+  | {
+      kind: 'failed';
+      actionId: string;
+      rootActionId: string;
+      requestedCount: number;
+      errorCode: string | null;
+      resolution: 'review' | 'reconnect' | 'support';
+    };
+
 export interface ActivityRowWire {
   id: string;
   occurredAt: string;
@@ -90,6 +112,8 @@ export interface ActivityRowWire {
    */
   rule: ActivityRuleRef | null;
   undoState: ActivityUndoStateWire;
+  /** Null for confirmed append-only Activity rows. */
+  executionState: ActivityExecutionStateWire | null;
 }
 
 export interface ActivityStatsWire {

@@ -41,6 +41,87 @@ export interface ActionEnqueueResult {
   status: ActionJobStatus;
 }
 
+/* ────────── Outcome-aware Activity recovery ────────── */
+
+export type ActionRecoveryPreviewStatus = 'verifying' | 'ready' | 'failed' | 'consumed';
+
+export type ActionRecoveryOutcome =
+  | 'not_applied'
+  | 'partial'
+  | 'already_applied'
+  | 'no_change_needed'
+  | 'uncertain'
+  | 'reconnect_required'
+  | 'blocked';
+
+/** Provider-verified consequence preview for one failed label action. */
+export interface ActionRecoveryPreviewResult {
+  previewId: string;
+  actionId: string;
+  rootActionId: string;
+  verb: 'archive' | 'later' | 'delete';
+  status: ActionRecoveryPreviewStatus;
+  outcome: ActionRecoveryOutcome | null;
+  targetCount: number;
+  remainingCount: number;
+  alreadyAppliedCount: number;
+  unavailableCount: number;
+  verifiedCount: number;
+  errorCode: string | null;
+  wakeAt: string | null;
+  requiresNewWakeAt: boolean;
+  expiresAt: string;
+  recoveryActionId: string | null;
+}
+
+export interface ActionRecoveryEnqueueResult {
+  previewId: string;
+  rootActionId: string;
+  actionId: string;
+  attempt: number;
+  status: ActionJobStatus;
+  replayed: boolean;
+}
+
+/** Begin metadata-only Gmail verification; this call never mutates mail. */
+export async function createActionRecoveryPreview(
+  actionId: string,
+): Promise<ActionRecoveryPreviewResult> {
+  const env = await apiPost<ActionRecoveryPreviewResult>(
+    `/api/actions/${encodeURIComponent(actionId)}/recovery-preview`,
+  );
+  return env.data;
+}
+
+/** Poll a durable recovery preview until verification reaches a terminal state. */
+export async function getActionRecoveryPreview(
+  previewId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ActionRecoveryPreviewResult> {
+  const env = await apiGet<ActionRecoveryPreviewResult>(
+    `/api/actions/recovery-previews/${encodeURIComponent(previewId)}`,
+    options.signal ? { signal: options.signal } : {},
+  );
+  return env.data;
+}
+
+/**
+ * Confirm the verified consequence preview. The same key is retained for
+ * every network replay of this confirmation so double-clicks enqueue one
+ * recovery attempt.
+ */
+export async function confirmActionRecovery(
+  previewId: string,
+  input: { idempotencyKey: string; wakeAt?: string },
+): Promise<ActionRecoveryEnqueueResult> {
+  const env = await apiPost<ActionRecoveryEnqueueResult>(
+    `/api/actions/recovery-previews/${encodeURIComponent(previewId)}/retry`,
+    input.wakeAt ? { wakeAt: input.wakeAt } : {},
+    { headers: { 'Idempotency-Key': input.idempotencyKey } },
+  );
+  return env.data;
+}
+
 /** Returned by `GET /api/actions/:id` — canonical shared poll snapshot. */
 export type ActionStatusResult = ActionStatusSnapshot;
 

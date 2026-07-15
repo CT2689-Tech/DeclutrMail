@@ -87,27 +87,40 @@ External API takes `senderId` (the uuid Sender Detail has), never the sha256 `se
    request carries `override:true` (defense-in-depth, not FE-hide-only).
 8. **Retry config.** Enqueue sets `attempts`/`backoff`/`removeOnComplete`/`removeOnFail`
    (`BaseDeclutrWorker` only _interprets_ attempts; the enqueue must set them).
+9. **User recovery is not a blind retry.** A failed Archive, Later, or Delete row
+   first creates an expiring, read-only provider-state preview. Confirmation appends
+   a new lineage attempt over the provider-existing frozen IDs; it never rewrites or
+   reuses the failed row. One-click unsubscribe has no generic retry because delivery
+   is not an idempotent Gmail label mutation.
+10. **Four idempotency boundaries.** The exact confirmation payload is fingerprinted;
+    database lineage allows one direct child per failed attempt; BullMQ uses a stable
+    job id and request replay heals an unconfirmed enqueue; Gmail label application
+    safely converges when the provider already reflects some or all of the target state.
 
 ## Failure-mode table
 
-| Failure point                         | Behavior                                                                                            |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Enqueue fails (Redis down)            | `action_jobs` row marked `failed`; POST 503. No orphan job.                                         |
-| `batchModify` chunk fails (transient) | worker throws → BullMQ retry → re-run uses persisted ids → idempotent re-mutate.                    |
-| Post-mutation tx fails                | retry reads persisted ids (not re-resolve) → issues correct undo token; Gmail re-mutate is a no-op. |
-| Worker crash mid-job                  | advisory lock auto-released on connection loss; BullMQ retry; persisted ids keep it consistent.     |
-| Attempts exhausted                    | `onTerminalFailure` → `status='failed', error_code`; FE shows failed.                               |
-| Duplicate POST (same Idempotency-Key) | `onConflictDoNothing` → existing `actionId`; BullMQ `jobId` dedups.                                 |
-| Undo enqueue fails                    | reverse row `failed`; POST 503; user retries.                                                       |
-| Double undo POST                      | reverse row keyed `revert:<token>` is idempotent; `reverted_at IS NULL` guard.                      |
+| Failure point                         | Behavior                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Enqueue fails (Redis down)            | `action_jobs` row marked `failed`; POST 503. No orphan job.                                               |
+| `batchModify` chunk fails (transient) | worker throws → BullMQ retry → re-run uses persisted ids → idempotent re-mutate.                          |
+| Post-mutation tx fails                | retry reads persisted ids (not re-resolve) → issues correct undo token; Gmail re-mutate is a no-op.       |
+| Worker crash mid-job                  | advisory lock auto-released on connection loss; BullMQ retry; persisted ids keep it consistent.           |
+| Attempts exhausted                    | `onTerminalFailure` → `status='failed', error_code`; FE shows failed.                                     |
+| Duplicate POST (same Idempotency-Key) | `onConflictDoNothing` → existing `actionId`; BullMQ `jobId` dedups.                                       |
+| Undo enqueue fails                    | reverse row `failed`; POST 503; user retries.                                                             |
+| Double undo POST                      | reverse row keyed `revert:<token>` is idempotent; `reverted_at IS NULL` guard.                            |
+| Activity recovery review              | label-only Gmail reads classify not-applied / partial / already-applied / missing before confirmation.    |
+| Recovery enqueue acknowledgement lost | child remains `queued`; the same confirmation key re-adds the stable BullMQ job id and returns one child. |
+| Recovery confirmation double-click    | request fingerprint + preview row lock + lineage unique indexes return the same child attempt.            |
 
 ## Privacy (D7 / D228)
 
 `action_jobs.selector` + `resolved_message_ids` + the undo payload + the outbox event carry
 ONLY ids + the sha256 `sender_key` — never body, snippet, subject, or any header. The
 `LabelActionSelector` `$type` union cannot represent a body field; `GmailMutationClient`
-mutates labels only; the outbox PII-key denylist is the third gate. `gmail-client.service.ts`
-is untouched.
+mutates labels only; the outbox PII-key denylist is the third gate. Recovery verification
+uses `format=minimal` with an `id,labelIds` field mask, and Later label lookup lists label
+metadata without creating a label during review.
 
 ## Consequences
 
