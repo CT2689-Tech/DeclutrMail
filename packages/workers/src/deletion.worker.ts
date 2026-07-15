@@ -5,6 +5,7 @@ import type { Queue } from 'bullmq';
 import {
   accountDeletionRequests,
   actionJobs,
+  actionRecoveryPreviews,
   activityLog,
   automationRules,
   briefRuns,
@@ -129,6 +130,7 @@ interface DueMailboxRequest {
  */
 export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'action_jobs',
+  'action_recovery_previews',
   'activity_log',
   'automation_rules',
   'brief_runs',
@@ -498,6 +500,9 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         await tx
           .delete(activityLog)
           .where(eq(activityLog.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(actionRecoveryPreviews)
+          .where(eq(actionRecoveryPreviews.mailboxAccountId, request.mailboxAccountId));
         await tx
           .delete(actionJobs)
           .where(eq(actionJobs.mailboxAccountId, request.mailboxAccountId));

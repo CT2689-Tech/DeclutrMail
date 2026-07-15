@@ -502,6 +502,16 @@ export class ActionsService {
     override: boolean;
   }): Promise<CompositeActionEnqueueResult> {
     const { mailboxAccountId, selector, primary, secondary, idempotencyKey, override } = input;
+    // Validate the action's domain shape before entitlement or infrastructure
+    // checks so an impossible Later request never presents as an upgrade or
+    // queue-availability problem.
+    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
+    if (primary.type === 'later' && selector.type !== 'sender') {
+      throw new BadRequestException({
+        code: 'LATER_SENDER_REQUIRED',
+        message: 'Later is scheduled per sender, not per message selection.',
+      });
+    }
     if (selector.type === 'messages') {
       // Message-id selectors are bulk capability, not a Free
       // single-sender action. Enforce every verb before resolving ids or
@@ -526,13 +536,6 @@ export class ActionsService {
       });
     }
 
-    this.assertValidWakeAt(primary.type, primary.wakeAt ?? null);
-    if (primary.type === 'later' && selector.type !== 'sender') {
-      throw new BadRequestException({
-        code: 'LATER_SENDER_REQUIRED',
-        message: 'Later is scheduled per sender, not per message selection.',
-      });
-    }
     // D19/D77 free-cleanup cap — a composite (primary + optional
     // secondary on ONE sender, one click) is ONE unit. Resolve its keys
     // and target counts before opening the short write transaction; the

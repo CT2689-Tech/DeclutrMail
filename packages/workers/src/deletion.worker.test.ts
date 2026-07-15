@@ -6,6 +6,7 @@ import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
   accountDeletionRequests,
   actionJobs,
+  actionRecoveryPreviews,
   activityLog,
   automationRules,
   briefRuns,
@@ -330,13 +331,22 @@ async function seedMailboxGraph(
     undoToken: journal!.token,
     ruleId: rule!.id,
   });
-  await db.insert(actionJobs).values({
+  const [action] = await db
+    .insert(actionJobs)
+    .values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      selector: { type: 'messages' },
+      resolvedMessageIds: [`message-${tag}`],
+      idempotencyKey: `fixture-${tag}`,
+      undoToken: journal!.token,
+    })
+    .returning({ id: actionJobs.id });
+  await db.insert(actionRecoveryPreviews).values({
     mailboxAccountId: mailboxId,
-    verb: 'archive',
-    selector: { type: 'messages' },
-    resolvedMessageIds: [`message-${tag}`],
-    idempotencyKey: `fixture-${tag}`,
-    undoToken: journal!.token,
+    rootActionId: action!.id,
+    currentActionId: action!.id,
+    expiresAt: new Date(Date.now() + 60_000),
   });
   await db.insert(briefRuns).values({
     workspaceId,

@@ -1736,7 +1736,7 @@ describe('ActionsService', () => {
       });
       expect(result.senderId).toBe(senderId);
       expect(result.activityLogId).toMatch(/^[0-9a-f-]{36}$/);
-      expect(result.lifecycleStatus).toBe('unavailable');
+      expect(result.lifecycleStatus).toBe('action_required');
       // sender_policies upsert: policy_type='unsubscribe'.
       const policies = await db
         .select()
@@ -1744,12 +1744,12 @@ describe('ActionsService', () => {
         .where(eq(senderPolicies.mailboxAccountId, mailboxId));
       expect(policies).toHaveLength(1);
       expect(policies[0]!.policyType).toBe('unsubscribe');
-      // Activity keeps the decision and the unavailable outcome distinct.
+      // Activity keeps the decision and the required manual step distinct.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_unavailable']);
+      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_action_required']);
       expect(acts.every((a) => a.source === 'manual')).toBe(true);
       expect(acts.every((a) => a.affectedCount === 0)).toBe(true);
       expect(acts.every((a) => a.undoToken === null)).toBe(true);
@@ -1773,14 +1773,14 @@ describe('ActionsService', () => {
       // Single policy row — upsert dedups.
       expect(policies).toHaveLength(1);
       expect(policies[0]!.policyType).toBe('unsubscribe');
-      // Two decisions + two explicit unavailable outcomes.
+      // Two decisions + two explicit manual-action outcomes.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
       expect(acts).toHaveLength(4);
       expect(acts.filter((a) => a.action === 'unsubscribe')).toHaveLength(2);
-      expect(acts.filter((a) => a.action === 'unsubscribe_unavailable')).toHaveLength(2);
+      expect(acts.filter((a) => a.action === 'unsubscribe_action_required')).toHaveLength(2);
     });
 
     it('DB-level idempotency dedup — same key twice → ONE activity_log row + ONE cached action_jobs row (mig 0024)', async () => {
@@ -1802,12 +1802,12 @@ describe('ActionsService', () => {
       expect(second.activityLogId).toBe(first.activityLogId);
       expect(second.recordedAt).toBe(first.recordedAt);
 
-      // One decision + one unavailable outcome; replay writes neither again.
+      // One decision + one manual-action outcome; replay writes neither again.
       const acts = await db
         .select()
         .from(activityLog)
         .where(eq(activityLog.mailboxAccountId, mailboxId));
-      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_unavailable']);
+      expect(acts.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_action_required']);
 
       // One cached action_jobs row, verb=unsubscribe, status=done.
       const jobs = await db
