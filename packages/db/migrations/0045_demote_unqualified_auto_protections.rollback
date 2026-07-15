@@ -1,0 +1,9 @@
+-- Rollback for 0045_demote_unqualified_auto_protections.sql
+--
+-- Data-only demotion; the prior protection state is not preserved, so
+-- there is nothing mechanical to restore. Senders that qualify under
+-- the current signals are re-protected by the next sync sweep
+-- (applyAutomaticProtection); the demoted promotions/updates and
+-- banned-signal rows are intentionally gone.
+
+SELECT 1;
