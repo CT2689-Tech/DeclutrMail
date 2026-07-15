@@ -100,34 +100,17 @@ export interface BriefMarkOpenedResultWire {
 }
 
 /**
- * The browser's IANA timezone, or `null` when the runtime can't say
- * (old ICU builds return undefined). Exported for the brief hooks/tests.
- */
-export function browserTimeZone(): string | null {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * GET /api/briefs/today?tz=<IANA> — the snapshot for today (D69
- * frozen). 404 if the snapshot worker hasn't fired yet (the FE renders
+ * GET /api/briefs/today — the snapshot for today (D69 frozen). 404 if
+ * the snapshot worker hasn't fired yet (the FE renders
  * an empty / "Brief lands soon" state in that case; the snapshot worker
  * ticks every hour per D69 so a refetch on focus picks it up).
  *
- * `tz` (D64 read-path): the server resolves "today" in the browser's
- * timezone so the Brief day boundary is the user's midnight, not
- * UTC's. Omitted when the runtime can't report a zone — the BE then
- * falls back to the UTC date (the original contract).
+ * The server resolves the day from persisted `users.timezone`, the
+ * same authority snapshot generation uses. Browser state cannot select
+ * a different Brief day.
  */
 export function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<BriefWire, unknown>> {
-  const tz = browserTimeZone();
-  return apiGet<BriefWire>('/api/briefs/today', {
-    signal,
-    ...(tz ? { query: { tz } } : {}),
-  });
+  return apiGet<BriefWire>('/api/briefs/today', { signal });
 }
 
 /**
