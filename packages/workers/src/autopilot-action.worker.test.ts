@@ -680,6 +680,7 @@ describe('AutopilotActionWorker', () => {
     expect(gmail.calls).toHaveLength(0);
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
     expect(match!.resolution).toBe('dismissed');
+    expect(match!.dismissReason).toBe('protected');
     expect(match!.intentApplied).toBe(false);
   });
 

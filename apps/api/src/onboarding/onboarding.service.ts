@@ -2,9 +2,10 @@ import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common
 
 import { users } from '@declutrmail/db';
 import { eq } from 'drizzle-orm';
-import { OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
+import { OnboardingGoalSchema, OnboardingPresetKeySchema } from '@declutrmail/shared/contracts';
 import type {
   OnboardingFirstTriageMeta,
+  OnboardingGoal,
   OnboardingPresetKey,
   OnboardingPresetPicksResult,
   OnboardingState,
@@ -12,7 +13,11 @@ import type {
 
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { TriageReadService, type TriageQueueRow } from '../triage/triage.read-service.js';
+import {
+  TriageReadService,
+  type TriageQueueOrdering,
+  type TriageQueueRow,
+} from '../triage/triage.read-service.js';
 import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
 
 /**
@@ -30,15 +35,16 @@ import { ONBOARDING_PRESET_CATALOG } from './onboarding.types.js';
  * - `onboardingSkipped` — D106 skip affordance flag.
  */
 const PREF_PRESET_PICKS = 'onboardingPresetPicks';
+const PREF_GOAL = 'onboardingGoal';
 const PREF_FIRST_TRIAGE_KEYS = 'onboardingFirstTriageKeys';
 const PREF_SKIPPED = 'onboardingSkipped';
 
-/** D112 — the guided practice run covers at most 3 senders. */
-const FIRST_TRIAGE_PINNED_COUNT = 3;
+/** D112/D246 — the finite first-relief run covers at most 5 senders. */
+const FIRST_TRIAGE_PINNED_COUNT = 5;
 
 /**
  * D112 — candidate pool size. Wide enough that the non-Keep +
- * unprotected filter still has material to pick 3 from.
+ * unprotected filter still has material to pick 5 from.
  */
 const FIRST_TRIAGE_POOL_LIMIT = 50;
 
@@ -82,6 +88,7 @@ export class OnboardingService {
     return {
       onboardedAt: user.onboardedAt ? user.onboardedAt.toISOString() : null,
       skipped: prefs[PREF_SKIPPED] === true,
+      goal: readGoal(prefs),
       presetPicks: readPresetPicks(prefs),
       presets: ONBOARDING_PRESET_CATALOG,
     };
@@ -106,9 +113,13 @@ export class OnboardingService {
   async submitPresetPicks(
     userId: string,
     mailboxAccountId: string,
+    goal: OnboardingGoal,
     presetKeys: OnboardingPresetKey[],
   ): Promise<OnboardingPresetPicksResult> {
-    await this.patchPreferences(userId, { [PREF_PRESET_PICKS]: presetKeys });
+    await this.patchPreferences(userId, {
+      [PREF_GOAL]: goal,
+      [PREF_PRESET_PICKS]: presetKeys,
+    });
 
     const rules = await this.autopilotReads.listRules(mailboxAccountId);
     const presetRules = rules.filter((r) => r.isPreset && r.presetKey !== null);
@@ -126,6 +137,7 @@ export class OnboardingService {
     }
 
     return {
+      goal,
       presetKeys,
       rulesReconciled: reconciled,
       rulesSeeded: presetRules.length > 0,
@@ -135,10 +147,9 @@ export class OnboardingService {
   /**
    * GET /api/onboarding/first-triage (D112).
    *
-   * First call PINS up to 3 candidates: the highest-confidence non-Keep,
-   * unprotected rows from the triage queue — or, when confidence is
-   * uniformly low, the 3 lowest-read-rate ones (small-mailbox edge
-   * case per the plan). The pinned sender keys persist in
+   * First call PINS up to 5 candidates, ordered for the user's persisted
+   * relief goal. When no goal is stored, the deterministic D112 contrast
+   * lineup remains the fallback. The pinned sender keys persist in
    * `users.preferences` so the practice set survives refreshes and
    * never shifts as decisions land.
    *
@@ -156,16 +167,20 @@ export class OnboardingService {
     const queue = await this.triageReads.listQueue({
       mailboxAccountId,
       limit: FIRST_TRIAGE_POOL_LIMIT,
+      ordering: firstTriageQueueOrdering(readGoal(prefs)),
     });
 
     let pinnedKeys = readStringArray(prefs[PREF_FIRST_TRIAGE_KEYS]);
     if (pinnedKeys === null) {
-      pinnedKeys = pickFirstTriageCandidates(queue).map((r) => r.senderKey);
+      pinnedKeys = pickFirstTriageCandidates(queue, readGoal(prefs)).map((r) => r.senderKey);
       await this.patchPreferences(userId, { [PREF_FIRST_TRIAGE_KEYS]: pinnedKeys });
     }
 
-    const pinnedSet = new Set(pinnedKeys);
-    const remaining = queue.filter((r) => pinnedSet.has(r.senderKey));
+    const queueBySender = new Map(queue.map((row) => [row.senderKey, row]));
+    const remaining = pinnedKeys.flatMap((senderKey) => {
+      const row = queueBySender.get(senderKey);
+      return row ? [row] : [];
+    });
     return {
       rows: remaining,
       meta: {
@@ -215,6 +230,19 @@ export class OnboardingService {
   }
 }
 
+function firstTriageQueueOrdering(goal: OnboardingGoal | null): TriageQueueOrdering {
+  switch (goal) {
+    case 'protect_important':
+      return 'important-first';
+    case 'reduce_newsletters':
+      return 'newsletter-first';
+    case 'clear_old_promotions':
+      return 'promotions-first';
+    case null:
+      return 'actionable';
+  }
+}
+
 /**
  * D112 candidate selection (contrast lineup — 2026-07-10 founder
  * amendment), pure for testability.
@@ -233,22 +261,87 @@ export class OnboardingService {
  *                 verbs exist)
  *
  * Empty slots backfill from the remaining eligible pool by confidence
- * so small mailboxes still get up to 3. The uniformly-low-confidence
- * fallback (3 lowest read-rate non-Keep) is unchanged from D112.
+ * so small mailboxes still get up to 5. The uniformly-low-confidence
+ * fallback (lowest read-rate non-Keep) is unchanged from D112.
+ *
+ * D246 adds goal-aware ordering for the initial immutable pin only:
+ * newsletter relief prioritizes Unsubscribe, Promotions, then low read
+ * rate; promotion cleanup prioritizes Promotions with Archive/Later;
+ * important-sender review prioritizes Keep/protected rows and high read
+ * rate. Sender key is the final tie-breaker so equal signals stay stable.
  */
-export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueRow[] {
+export function pickFirstTriageCandidates(
+  queue: TriageQueueRow[],
+  goal: OnboardingGoal | null = null,
+): TriageQueueRow[] {
   const eligible = queue.filter((r) => r.verdict !== 'keep' && r.protectionReason === null);
+  if (goal === 'protect_important') {
+    return [...queue]
+      .sort(
+        compareBy(
+          (row) => (row.verdict === 'keep' || row.protectionReason !== null ? 0 : 1),
+          (row) => -row.readRate,
+          (row) => -row.confidence,
+          (row) => row.senderKey,
+        ),
+      )
+      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  }
+
   if (eligible.length === 0) return [];
+
+  if (goal === 'reduce_newsletters') {
+    return [...eligible]
+      .sort(
+        compareBy(
+          (row) => (row.verdict === 'unsubscribe' ? 0 : 1),
+          (row) => (row.gmailCategory === 'promotions' ? 0 : 1),
+          (row) => row.readRate,
+          (row) => -row.confidence,
+          (row) => row.senderKey,
+        ),
+      )
+      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  }
+
+  if (goal === 'clear_old_promotions') {
+    return [...eligible]
+      .sort(
+        compareBy(
+          (row) => {
+            const promotion = row.gmailCategory === 'promotions';
+            const cleanup = row.verdict === 'archive' || row.verdict === 'later';
+            if (promotion && cleanup) return 0;
+            if (promotion) return 1;
+            if (cleanup) return 2;
+            return 3;
+          },
+          (row) => -row.confidence,
+          (row) => row.senderKey,
+        ),
+      )
+      .slice(0, FIRST_TRIAGE_PINNED_COUNT);
+  }
 
   const uniformlyLow = eligible.every((r) => r.confidence < FIRST_TRIAGE_LOW_CONFIDENCE_BAR);
   if (uniformlyLow) {
     return [...eligible]
-      .sort((a, b) => a.readRate - b.readRate)
+      .sort(
+        compareBy(
+          (row) => row.readRate,
+          (row) => row.senderKey,
+        ),
+      )
       .slice(0, FIRST_TRIAGE_PINNED_COUNT);
   }
 
   const byConfidence = (rows: TriageQueueRow[]): TriageQueueRow[] =>
-    [...rows].sort((a, b) => b.confidence - a.confidence);
+    [...rows].sort(
+      compareBy(
+        (row) => -row.confidence,
+        (row) => row.senderKey,
+      ),
+    );
   const picked: TriageQueueRow[] = [];
   const taken = new Set<string>();
   const take = (row: TriageQueueRow | undefined): void => {
@@ -260,7 +353,14 @@ export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueR
 
   take(byConfidence(eligible.filter((r) => r.verdict === 'unsubscribe'))[0]);
   const keeps = queue.filter((r) => r.verdict === 'keep' || r.protectionReason !== null);
-  take([...keeps].sort((a, b) => b.readRate - a.readRate)[0]);
+  take(
+    [...keeps].sort(
+      compareBy(
+        (row) => -row.readRate,
+        (row) => row.senderKey,
+      ),
+    )[0],
+  );
   take(byConfidence(eligible.filter((r) => r.verdict === 'archive' || r.verdict === 'later'))[0]);
 
   for (const row of byConfidence(eligible)) {
@@ -268,6 +368,25 @@ export function pickFirstTriageCandidates(queue: TriageQueueRow[]): TriageQueueR
     take(row);
   }
   return picked.slice(0, FIRST_TRIAGE_PINNED_COUNT);
+}
+
+type SortValue = number | string;
+
+function compareBy(
+  ...selectors: Array<(row: TriageQueueRow) => SortValue>
+): (a: TriageQueueRow, b: TriageQueueRow) => number {
+  return (a, b) => {
+    for (const select of selectors) {
+      const left = select(a);
+      const right = select(b);
+      const compared =
+        typeof left === 'number' && typeof right === 'number'
+          ? left - right
+          : String(left).localeCompare(String(right));
+      if (compared !== 0) return compared;
+    }
+    return 0;
+  };
 }
 
 /**
@@ -281,6 +400,11 @@ function readPresetPicks(prefs: Record<string, unknown>): OnboardingPresetKey[] 
   return raw.filter(
     (k): k is OnboardingPresetKey => OnboardingPresetKeySchema.safeParse(k).success,
   );
+}
+
+function readGoal(prefs: Record<string, unknown>): OnboardingGoal | null {
+  const parsed = OnboardingGoalSchema.safeParse(prefs[PREF_GOAL]);
+  return parsed.success ? parsed.data : null;
 }
 
 function readStringArray(value: unknown): string[] | null {

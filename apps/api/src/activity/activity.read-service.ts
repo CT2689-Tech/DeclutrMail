@@ -46,6 +46,8 @@ import {
   activityLog,
   automationRules,
   mailMessages,
+  productFeedback,
+  ruleMatchLog,
   senders,
   undoJournal,
 } from '@declutrmail/db';
@@ -54,10 +56,12 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityRow,
   ActivityExecutionState,
+  ActivityReviewOutcome,
   ActivityStats,
   ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
+  ActivityWeeklyReview,
   UndoState,
 } from './activity.types.js';
 import type { ActivityLogEntry } from '@declutrmail/db';
@@ -99,6 +103,7 @@ type ExecutionAttempt = Pick<
   | 'requestedCount'
   | 'errorCode'
   | 'createdAt'
+  | 'updatedAt'
   | 'recoveryAttempt'
 >;
 
@@ -117,6 +122,11 @@ export interface SummarizeActivityParams {
 
 export interface ListActivityParams {
   mailboxAccountId: string;
+  /**
+   * Current user whose Activity feedback should be projected. Null/omitted for
+   * support-bundle iteration, where user-specific feedback is intentionally absent.
+   */
+  userId?: string | null;
   window: ActivityWindow;
   source: ActivityLogEntry['source'] | null;
   /**
@@ -142,6 +152,8 @@ export interface ListActivityParams {
    */
   dateFrom?: Date | null;
   dateTo?: Date | null;
+  /** Optional D246 evidence-link outcome filter. Empty = all rows. */
+  outcomes?: ActivityReviewOutcome[];
   cursor: { occurredAt: Date; id: string } | null;
   limit: number;
   /**
@@ -325,7 +337,7 @@ export class ActivityReadService {
       for (const row of rows) yield row;
       if (attempts.length < batchSize) return;
       const last = attempts[attempts.length - 1]!;
-      cursor = { occurredAt: last.createdAt, id: last.id };
+      cursor = { occurredAt: executionOutcomeTime(last), id: last.id };
     }
   }
 
@@ -345,12 +357,16 @@ export class ActivityReadService {
   }): Promise<ExecutionAttempt[]> {
     const current = alias(actionJobs, 'activity_export_current');
     const later = alias(actionJobs, 'activity_export_later');
+    const outcomeTime = sql<Date>`case
+      when ${current.status} = 'failed' then ${current.updatedAt}
+      else ${current.createdAt}
+    end`;
     const whereParts = [
       eq(current.mailboxAccountId, args.mailboxAccountId),
       eq(current.direction, 'forward' as const),
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
-      lte(current.createdAt, args.snapshotCreatedAt),
+      lte(outcomeTime, timestamptzParam(args.snapshotCreatedAt)),
       notExists(
         this.db
           .select({ id: later.id })
@@ -373,13 +389,14 @@ export class ActivityReadService {
       if (executionVerbs.length === 0) return [];
       whereParts.push(inArray(current.verb, executionVerbs));
     }
-    if (args.lowerBound) whereParts.push(gte(current.createdAt, args.lowerBound));
-    if (args.upperBound) whereParts.push(lt(current.createdAt, args.upperBound));
+    if (args.lowerBound) whereParts.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
+    if (args.upperBound) whereParts.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
     if (args.cursor) {
+      const cursorTime = timestamptzParam(args.cursor.occurredAt);
       whereParts.push(
         or(
-          lt(current.createdAt, args.cursor.occurredAt),
-          and(eq(current.createdAt, args.cursor.occurredAt), lt(current.id, args.cursor.id)),
+          lt(outcomeTime, cursorTime),
+          and(eq(outcomeTime, cursorTime), lt(current.id, args.cursor.id)),
         )!,
       );
     }
@@ -393,11 +410,12 @@ export class ActivityReadService {
         requestedCount: current.requestedCount,
         errorCode: current.errorCode,
         createdAt: current.createdAt,
+        updatedAt: current.updatedAt,
         recoveryAttempt: current.recoveryAttempt,
       })
       .from(current)
       .where(and(...whereParts))
-      .orderBy(desc(current.createdAt), desc(current.id))
+      .orderBy(desc(outcomeTime), desc(current.id))
       .limit(args.limit);
   }
 
@@ -416,6 +434,7 @@ export class ActivityReadService {
         requestedCount: actionJobs.requestedCount,
         errorCode: actionJobs.errorCode,
         createdAt: actionJobs.createdAt,
+        updatedAt: actionJobs.updatedAt,
         recoveryAttempt: actionJobs.recoveryAttempt,
       })
       .from(actionJobs)
@@ -470,12 +489,14 @@ export class ActivityReadService {
   ): Promise<ActivityRow[]> {
     const {
       mailboxAccountId,
+      userId = null,
       window,
       source,
       verbs = [],
       senderQuery = '',
       dateFrom = null,
       dateTo = null,
+      outcomes = [],
       cursor,
       limit,
       nowMs,
@@ -483,12 +504,14 @@ export class ActivityReadService {
     const useCustomRange = dateFrom !== null || dateTo !== null;
     const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
     const whereParts = [eq(activityLog.mailboxAccountId, mailboxAccountId)];
+    const reviewOutcomeExpression = persistedReviewOutcomeExpression();
     if (windowStart) whereParts.push(gte(activityLog.occurredAt, windowStart));
     if (dateFrom) whereParts.push(gte(activityLog.occurredAt, dateFrom));
     if (dateTo) whereParts.push(lt(activityLog.occurredAt, dateTo));
     if (snapshotCreatedAt) whereParts.push(lte(activityLog.createdAt, snapshotCreatedAt));
     if (source) whereParts.push(eq(activityLog.source, source));
     if (verbs.length > 0) whereParts.push(inArray(activityLog.action, verbs));
+    if (outcomes.length > 0) whereParts.push(inArray(reviewOutcomeExpression, outcomes));
     if (senderQuery.length > 0) {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
@@ -511,6 +534,7 @@ export class ActivityReadService {
         affectedCount: activityLog.affectedCount,
         senderKey: activityLog.senderKey,
         undoToken: activityLog.undoToken,
+        actionJobId: activityLog.actionJobId,
         ruleId: activityLog.ruleId,
         ruleName: automationRules.name,
         senderDisplayName: senders.displayName,
@@ -518,6 +542,18 @@ export class ActivityReadService {
         undoExpiresAt: undoJournal.expiresAt,
         undoExecutedAt: undoJournal.executedAt,
         undoRevertedAt: undoJournal.revertedAt,
+        feedbackRating: userId
+          ? sql<'expected' | 'surprising' | null>`(
+              SELECT ${productFeedback.rating}
+              FROM ${productFeedback}
+              WHERE ${productFeedback.activityLogId} = ${activityLog.id}
+                AND ${productFeedback.mailboxAccountId} = ${activityLog.mailboxAccountId}
+                AND ${productFeedback.userId} = ${userId}
+                AND ${productFeedback.surface} = 'activity'
+              LIMIT 1
+            )`
+          : sql<'expected' | 'surprising' | null>`NULL`,
+        reviewOutcome: reviewOutcomeExpression,
       })
       .from(activityLog)
       .leftJoin(
@@ -528,7 +564,13 @@ export class ActivityReadService {
         ),
       )
       .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
-      .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
+      .leftJoin(
+        automationRules,
+        and(
+          eq(automationRules.id, activityLog.ruleId),
+          eq(automationRules.mailboxAccountId, activityLog.mailboxAccountId),
+        ),
+      )
       .where(and(...whereParts))
       .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
       .limit(limit + 1);
@@ -551,6 +593,10 @@ export class ActivityReadService {
         affectedCount: row.affectedCount,
         sender,
         rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
+        feedbackRating:
+          row.feedbackRating === 'expected' || row.feedbackRating === 'surprising'
+            ? row.feedbackRating
+            : null,
         undoState: resolveUndoState({
           token: row.undoToken,
           expiresAt: row.undoExpiresAt,
@@ -559,6 +605,7 @@ export class ActivityReadService {
           nowMs,
         }),
         executionState: null,
+        reviewOutcome: row.reviewOutcome,
       };
     });
     const executionRows = projectExecutionRows(executionLineages, {
@@ -568,10 +615,206 @@ export class ActivityReadService {
       lowerBound: dateFrom ?? windowStart,
       upperBound: dateTo,
       cursor,
+      outcomes,
     });
-    return [...projected, ...executionRows]
+    const ruleReviewRows = await this.loadRuleReviewRows(params);
+    return [...projected, ...executionRows, ...ruleReviewRows]
       .sort(compareActivityRowsNewestFirst)
       .slice(0, limit + 1);
+  }
+
+  /** Project resolved Observe skips/protection blocks as factual Activity evidence. */
+  private async loadRuleReviewRows(params: ListActivityParams): Promise<ActivityRow[]> {
+    const {
+      mailboxAccountId,
+      window,
+      source,
+      verbs = [],
+      senderQuery = '',
+      dateFrom = null,
+      dateTo = null,
+      outcomes = [],
+      cursor,
+      limit,
+      nowMs,
+    } = params;
+    if (source !== null && source !== 'autopilot') return [];
+    if (!outcomes.some((value) => value === 'skipped' || value === 'protected')) {
+      return [];
+    }
+    const actionVerbs = verbs.filter(
+      (verb): verb is 'archive' | 'unsubscribe' | 'later' =>
+        verb === 'archive' || verb === 'unsubscribe' || verb === 'later',
+    );
+    if (verbs.length > 0 && actionVerbs.length === 0) return [];
+    const useCustomRange = dateFrom !== null || dateTo !== null;
+    const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
+    // Column reference, not a raw `sql` wrapper: postgres.js only accepts
+    // Date params when drizzle can map them through a column's encoder.
+    const reviewTime = ruleMatchLog.resolvedAt;
+    const whereParts = [
+      eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+      eq(ruleMatchLog.resolution, 'dismissed' as const),
+      inArray(ruleMatchLog.dismissReason, ['user', 'protected'] as const),
+      isNotNull(ruleMatchLog.resolvedAt),
+    ];
+    if (windowStart) whereParts.push(gte(reviewTime, windowStart));
+    if (dateFrom) whereParts.push(gte(reviewTime, dateFrom));
+    if (dateTo) whereParts.push(lt(reviewTime, dateTo));
+    if (actionVerbs.length > 0) whereParts.push(inArray(automationRules.actionKind, actionVerbs));
+    if (outcomes.length > 0) {
+      const reasons = outcomes.flatMap((outcome) =>
+        outcome === 'skipped'
+          ? (['user'] as const)
+          : outcome === 'protected'
+            ? (['protected'] as const)
+            : [],
+      );
+      whereParts.push(inArray(ruleMatchLog.dismissReason, reasons));
+    }
+    if (senderQuery.length > 0) {
+      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
+    }
+    if (cursor) {
+      whereParts.push(
+        or(
+          lt(reviewTime, cursor.occurredAt),
+          and(eq(reviewTime, cursor.occurredAt), lt(ruleMatchLog.id, cursor.id)),
+        )!,
+      );
+    }
+    const rows = await this.db
+      .select({
+        id: ruleMatchLog.id,
+        occurredAt: reviewTime,
+        action: automationRules.actionKind,
+        ruleId: automationRules.id,
+        ruleName: automationRules.name,
+        senderKey: ruleMatchLog.senderKey,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+        dismissReason: ruleMatchLog.dismissReason,
+      })
+      .from(ruleMatchLog)
+      .innerJoin(
+        automationRules,
+        and(
+          eq(automationRules.id, ruleMatchLog.ruleId),
+          eq(automationRules.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+        ),
+      )
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+          eq(senders.senderKey, ruleMatchLog.senderKey),
+        ),
+      )
+      .where(and(...whereParts))
+      .orderBy(desc(reviewTime), desc(ruleMatchLog.id))
+      .limit(limit + 1);
+    return rows.map((row) => ({
+      id: row.id,
+      // `resolvedAt` is `isNotNull`-filtered above; the column type stays nullable.
+      occurredAt: new Date(row.occurredAt!).toISOString(),
+      source: 'autopilot',
+      action: row.action,
+      affectedCount: 0,
+      sender:
+        row.senderEmail === null
+          ? null
+          : {
+              senderKey: row.senderKey,
+              displayName: row.senderDisplayName ?? row.senderEmail,
+              email: row.senderEmail,
+              domain: domainOf(row.senderEmail),
+            },
+      rule: { id: row.ruleId, name: row.ruleName },
+      feedbackRating: null,
+      undoState: { kind: 'unavailable' },
+      executionState: null,
+      reviewOutcome: row.dismissReason === 'protected' ? 'protected' : 'skipped',
+    }));
+  }
+
+  /** Exact factual counts for the seven-day in-app review. */
+  async getWeeklyReview(mailboxAccountId: string, nowMs: number): Promise<ActivityWeeklyReview> {
+    const cutoff = new Date(nowMs - 7 * 86_400_000);
+    const upperBound = new Date(nowMs);
+    const reviewOutcome = persistedReviewOutcomeExpression();
+    const failedCurrent = alias(actionJobs, 'weekly_failed_current');
+    const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const [persisted, dismissed, unresolved] = await Promise.all([
+      this.db
+        .select({
+          completed: sql<number>`count(*) filter (where ${reviewOutcome} = 'completed')::int`,
+          failed: sql<number>`count(*) filter (where ${reviewOutcome} = 'failed')::int`,
+          recovered: sql<number>`count(*) filter (where ${reviewOutcome} = 'recovered')::int`,
+        })
+        .from(activityLog)
+        .where(
+          and(
+            eq(activityLog.mailboxAccountId, mailboxAccountId),
+            gte(activityLog.occurredAt, cutoff),
+            lt(activityLog.occurredAt, upperBound),
+          ),
+        ),
+      this.db
+        .select({ reason: ruleMatchLog.dismissReason, n: count(ruleMatchLog.id) })
+        .from(ruleMatchLog)
+        .where(
+          and(
+            eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+            eq(ruleMatchLog.resolution, 'dismissed'),
+            inArray(ruleMatchLog.dismissReason, ['user', 'protected'] as const),
+            isNotNull(ruleMatchLog.resolvedAt),
+            gte(ruleMatchLog.resolvedAt, cutoff),
+            lt(ruleMatchLog.resolvedAt, upperBound),
+          ),
+        )
+        .groupBy(ruleMatchLog.dismissReason),
+      this.db
+        .select({ n: count(failedCurrent.id) })
+        .from(failedCurrent)
+        .where(
+          and(
+            eq(failedCurrent.mailboxAccountId, mailboxAccountId),
+            eq(failedCurrent.direction, 'forward'),
+            inArray(failedCurrent.verb, EXECUTION_VERBS),
+            eq(failedCurrent.status, 'failed'),
+            gte(failedCurrent.updatedAt, cutoff),
+            lt(failedCurrent.updatedAt, upperBound),
+            notExists(
+              this.db
+                .select({ id: failedLater.id })
+                .from(failedLater)
+                .where(
+                  and(
+                    eq(failedLater.mailboxAccountId, mailboxAccountId),
+                    eq(failedLater.direction, 'forward'),
+                    sql`coalesce(${failedLater.rootActionId}, ${failedLater.id}) = coalesce(${failedCurrent.rootActionId}, ${failedCurrent.id})`,
+                    gt(failedLater.recoveryAttempt, failedCurrent.recoveryAttempt),
+                    lt(failedLater.createdAt, upperBound),
+                  ),
+                ),
+            ),
+          ),
+        ),
+    ]);
+    const persistedCounts = persisted[0];
+    const dismissCounts = new Map(dismissed.map((row) => [row.reason, Number(row.n)]));
+    const unresolvedFailures = Number(unresolved[0]?.n ?? 0);
+    return {
+      window: '7d',
+      from: cutoff.toISOString(),
+      to: upperBound.toISOString(),
+      completed: Number(persistedCounts?.completed ?? 0),
+      skipped: dismissCounts.get('user') ?? 0,
+      failed: Number(persistedCounts?.failed ?? 0) + unresolvedFailures,
+      recovered: Number(persistedCounts?.recovered ?? 0),
+      protected: dismissCounts.get('protected') ?? 0,
+    };
   }
 
   /**
@@ -591,6 +834,7 @@ export class ActivityReadService {
         requestedCount: actionJobs.requestedCount,
         errorCode: actionJobs.errorCode,
         createdAt: actionJobs.createdAt,
+        updatedAt: actionJobs.updatedAt,
         recoveryAttempt: actionJobs.recoveryAttempt,
       })
       .from(actionJobs)
@@ -620,6 +864,7 @@ export class ActivityReadService {
           requestedCount: actionJobs.requestedCount,
           errorCode: actionJobs.errorCode,
           createdAt: actionJobs.createdAt,
+          updatedAt: actionJobs.updatedAt,
           recoveryAttempt: actionJobs.recoveryAttempt,
         })
         .from(actionJobs)
@@ -715,7 +960,7 @@ export class ActivityReadService {
 
     // D33 payoff — summed last-90d volume of the window's deflected
     // senders, projected to per-month. Same join + formula as
-    // TriageReadService.projectImpact, windowed to THIS stats range.
+    // Historical message-volume context, windowed to THIS stats range.
     const ninetyDaysAgoIso = new Date(Date.now() - 90 * 86_400_000).toISOString();
     const deflectWhere = [
       eq(activityLog.mailboxAccountId, args.mailboxAccountId),
@@ -859,6 +1104,7 @@ function projectExecutionRows(
     lowerBound: Date | null;
     upperBound: Date | null;
     cursor: { occurredAt: Date; id: string } | null;
+    outcomes?: ActivityReviewOutcome[];
   },
 ): ActivityRow[] {
   if (filters.source !== null && filters.source !== 'manual') return [];
@@ -866,11 +1112,12 @@ function projectExecutionRows(
 
   return lineages.flatMap((lineage): ActivityRow[] => {
     const { root, current, sender } = lineage;
+    const outcomeTime = current.status === 'failed' ? current.updatedAt : current.createdAt;
     if (!EXECUTION_VERBS.includes(root.verb as ExecutionVerb)) return [];
     const action = root.verb as ExecutionVerb;
     if (filters.verbs.length > 0 && !filters.verbs.includes(action)) return [];
-    if (filters.lowerBound && current.createdAt < filters.lowerBound) return [];
-    if (filters.upperBound && current.createdAt >= filters.upperBound) return [];
+    if (filters.lowerBound && outcomeTime < filters.lowerBound) return [];
+    if (filters.upperBound && outcomeTime >= filters.upperBound) return [];
     if (senderNeedle.length > 0) {
       if (!sender) return [];
       const matchesSender =
@@ -878,22 +1125,102 @@ function projectExecutionRows(
         sender.email.toLocaleLowerCase().includes(senderNeedle);
       if (!matchesSender) return [];
     }
-    if (filters.cursor && !isStrictlyAfterCursor(current, filters.cursor)) return [];
+    if (
+      filters.cursor &&
+      !isStrictlyAfterCursor({ id: current.id, createdAt: outcomeTime }, filters.cursor)
+    )
+      return [];
+    const reviewOutcome: ActivityReviewOutcome | null =
+      current.status === 'failed' ? 'failed' : null;
+    if (
+      (filters.outcomes?.length ?? 0) > 0 &&
+      (!reviewOutcome || !filters.outcomes!.includes(reviewOutcome))
+    ) {
+      return [];
+    }
 
     return [
       {
         id: current.id,
-        occurredAt: current.createdAt.toISOString(),
+        occurredAt: outcomeTime.toISOString(),
         source: 'manual',
         action,
         affectedCount: 0,
         sender,
         rule: null,
+        feedbackRating: null,
         undoState: { kind: 'unavailable' },
         executionState: executionStateFor(lineage),
+        reviewOutcome,
       },
     ];
   });
+}
+
+/**
+ * Classify append-only Activity rows without inventing success. The
+ * unsubscribe intent/manual-progress rows remain null until a terminal
+ * outcome arrives. Successful linked recovery jobs are recovered.
+ *
+ * A user-reverted (Undo) action no longer stands, so it belongs to no
+ * outcome bucket — counting it as completed/recovered would claim mail
+ * the review's own recovery path put back. The journal outlives every
+ * 7-day weekly-review window (expiry >= issue + 7d, pruned 1d later);
+ * custom date ranges older than that lose undo provenance when the
+ * journal is pruned, by design (D232 — no read path after expiry).
+ */
+function persistedReviewOutcomeExpression() {
+  return sql<ActivityReviewOutcome | null>`case
+    when ${activityLog.undoToken} is not null and exists (
+      select 1 from undo_journal undone
+      where undone.token = ${activityLog.undoToken}
+        and undone.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and undone.reverted_at is not null
+    ) then null
+    when ${activityLog.actionJobId} is not null and exists (
+      select 1 from action_jobs recovery
+      where recovery.id = ${activityLog.actionJobId}
+        and recovery.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and recovery.root_action_id is not null
+        and recovery.recovery_attempt > 0
+        and recovery.status = 'done'
+    ) then 'recovered'
+    when ${activityLog.undoToken} is not null and exists (
+      select 1 from action_jobs recovery
+      where recovery.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and recovery.root_action_id is not null
+        and recovery.recovery_attempt > 0
+        and recovery.status = 'done'
+        and recovery.undo_token = ${activityLog.undoToken}
+    ) then 'recovered'
+    when ${activityLog.action} in (
+      'unsubscribe',
+      'unsubscribe_action_required',
+      'unsubscribe_draft_opened'
+    ) then null
+    when ${activityLog.action} in (
+      'unsubscribe_failed',
+      'unsubscribe_unconfirmed',
+      'unsubscribe_unavailable'
+    ) then 'failed'
+    when ${activityLog.action} in (
+      'keep',
+      'archive',
+      'later',
+      'delete',
+      'followup-dismiss',
+      'marked_protected',
+      'unmarked_protected',
+      'unsubscribe_confirmed',
+      'unsubscribe_endpoint_accepted',
+      'unsubscribe_user_marked_sent'
+    ) then 'completed'
+    else null
+  end`;
+}
+
+function executionOutcomeTime(attempt: ExecutionAttempt): Date {
+  return attempt.status === 'failed' ? attempt.updatedAt : attempt.createdAt;
 }
 
 function executionStateFor(lineage: ExecutionLineage): ActivityExecutionState {
@@ -929,8 +1256,8 @@ function countFailedExecutionLineages(
 ): number {
   return lineages.filter(({ current }) => {
     if (current.status !== 'failed') return false;
-    if (lowerBound && current.createdAt < lowerBound) return false;
-    if (upperBound && current.createdAt >= upperBound) return false;
+    if (lowerBound && current.updatedAt < lowerBound) return false;
+    if (upperBound && current.updatedAt >= upperBound) return false;
     return true;
   }).length;
 }
@@ -973,6 +1300,17 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
   if (window === 'all') return null;
   const days = WINDOW_DAYS[window];
   return new Date(nowMs - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Encode a Date for comparison against a raw `sql` expression. Drizzle
+ * only maps JS Dates through a column's encoder; a Date bound next to a
+ * raw expression reaches postgres.js untyped and throws at serialization
+ * ("argument must be of type string or Buffer"). PGlite (specs) accepts
+ * either shape, so only the ISO-string form is safe on both drivers.
+ */
+function timestamptzParam(value: Date) {
+  return sql`${value.toISOString()}::timestamptz`;
 }
 
 /**

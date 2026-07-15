@@ -155,7 +155,7 @@ describe('NoActiveMailbox container', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const me: Me = {
-      user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
+      user: { id: 'u', email: 'u@example.com', workspaceId: 'w', timezone: null },
       activeMailboxId: null,
       mailboxes: [
         {

@@ -12,4 +12,6 @@ export const autopilotKeys = {
   rules: () => ['autopilot', 'rules'] as const,
   /** D104 buffer — Observe-mode matches awaiting the user's decision. */
   pendingSuggestions: () => ['autopilot', 'pending-suggestions'] as const,
+  /** D246 singleton repeated-decision opportunity. */
+  patternSuggestion: () => ['autopilot', 'pattern-suggestion'] as const,
 };

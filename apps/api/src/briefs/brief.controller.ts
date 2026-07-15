@@ -25,11 +25,12 @@ import {
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
-import { resolveBriefTodayLocal } from './brief-dates.js';
+import { UsersService } from '../users/users.service.js';
+import { resolvePersistedBriefTodayLocal } from './brief-dates.js';
 import { BriefReadService } from './brief.read-service.js';
 import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
 
@@ -37,28 +38,31 @@ import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
 @UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
 @RequiresCapability('brief')
 export class BriefController {
-  constructor(private readonly reads: BriefReadService) {}
+  constructor(
+    private readonly reads: BriefReadService,
+    private readonly users: UsersService,
+  ) {}
 
   /**
-   * GET /api/briefs/today?tz=<IANA> — today's Brief for the caller's
-   * mailbox. Returns 404 if the snapshot worker hasn't fired yet (FE
-   * refetches after the cron tick).
+   * GET /api/briefs/today — today's Brief for the caller's mailbox.
+   * Returns 404 if the snapshot worker hasn't fired yet (FE refetches
+   * after the cron tick).
    *
-   * `tz` (optional) is the caller's IANA timezone — the server resolves
-   * "today" in that zone so the Brief day boundary is the USER's
-   * midnight, not UTC's (D64 read-path half). Absent `tz` → UTC date,
-   * the original contract (backward compatible). Invalid `tz` → 400
-   * INVALID_TIMEZONE.
+   * The day boundary comes from persisted `users.timezone`, exactly
+   * like snapshot generation. A browser query param cannot select a
+   * different Brief day. Missing or legacy-invalid stored zones fall
+   * back to UTC, matching the generation worker.
    */
   @Get('today')
   @RateLimit('triage-load')
   async today(
+    @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
-    @Query('tz') tz: string | undefined,
   ): Promise<Envelope<Brief>> {
     const accountId = mailbox.id;
-    const today = resolveBriefTodayLocal(new Date(), tz);
-    const brief = await this.reads.getForDate(accountId, today);
+    const user = await this.users.findById(principal.userId);
+    const today = resolvePersistedBriefTodayLocal(new Date(), user?.timezone);
+    const brief = await this.reads.getForDate(accountId, today, principal.userId);
     if (!brief) {
       throw notFound('Brief not found for today.');
     }
@@ -72,6 +76,7 @@ export class BriefController {
   @Get()
   @RateLimit('triage-load')
   async list(
+    @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
@@ -80,7 +85,7 @@ export class BriefController {
     if (!from || !to) {
       throw new BadRequestException('from and to query params are required (YYYY-MM-DD).');
     }
-    const briefs = await this.reads.listByRange(accountId, from, to);
+    const briefs = await this.reads.listByRange(accountId, from, to, principal.userId);
     return ok(briefs);
   }
 

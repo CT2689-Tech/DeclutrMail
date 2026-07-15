@@ -11,8 +11,12 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 #   dependabot/<ecosystem>/...     bot-named branches — mirrors the dependabot
 #                                  exemption in branch-name.yml (the bot picks
 #                                  its own names; no D-tie by design)
+#   codex/<kebab>                  Codex companion branches — sanctioned
+#                                  2026-07-15 (FOUNDER-FOLLOWUPS); commits
+#                                  still carry (D###) trailers and the PR
+#                                  body still needs Closes D###
 #   main
-if ! echo "$branch" | grep -qE '^(main|dependabot/|chore/(bootstrap|distill)-|(feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-)'; then
+if ! echo "$branch" | grep -qE '^(main|dependabot/|chore/(bootstrap|distill)-|codex/[a-z0-9][a-z0-9-]*$|(feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-)'; then
   echo "✗ pre-push: branch '$branch' does not match CLAUDE.md §6 naming convention." >&2
   echo "  Expected: <type>/d<NNN>-<kebab>, chore/bootstrap-<topic>, or chore/distill-<topic>" >&2
   echo "  Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2

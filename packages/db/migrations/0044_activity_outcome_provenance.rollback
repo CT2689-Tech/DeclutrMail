@@ -1,0 +1,9 @@
+-- Rollback for 0044_activity_outcome_provenance.sql
+
+DROP INDEX "activity_log_action_job_idx";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP CONSTRAINT "activity_log_action_job_id_action_jobs_id_fk";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP COLUMN "reverted_at";
+--> statement-breakpoint
+ALTER TABLE "activity_log" DROP COLUMN "action_job_id";

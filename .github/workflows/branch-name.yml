@@ -32,10 +32,16 @@ jobs:
           #   <type>/d<NNN>-<kebab>      e.g. feat/d011-drizzle-orm-setup
           #   chore/bootstrap-<topic>    e.g. chore/bootstrap-pr1b
           #   chore/distill-<topic>      e.g. chore/distill-smoke-test-rule
+          #   codex/<kebab>              e.g. codex/d246-behavioral-activation-trust
           # See CLAUDE.md §6 + §11; PR #58 added `distill-` to local hooks
           # for founder-owned CLAUDE.md distillation PRs — this workflow
           # mirrors that authoritatively.
-          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-)'; then
+          # `codex/` sanctioned 2026-07-15 (founder call, FOUNDER-FOLLOWUPS):
+          # the Codex companion ships real PRs from codex/<slug> branches
+          # (#333 merged, #334). D-traceability is preserved by the still-
+          # enforced commit `(D###)` trailers and the pr-body `Closes D###`
+          # check below — same reasoning as the dependabot exemption.
+          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|codex/[a-z0-9][a-z0-9-]*$)'; then
             echo "::error::Branch '${HEAD_REF}' does not match the CLAUDE.md §6 naming convention."
             echo "Expected: <type>/d<NNN>-<kebab>  OR  chore/bootstrap-<topic>  OR  chore/distill-<topic>"
             echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, security"

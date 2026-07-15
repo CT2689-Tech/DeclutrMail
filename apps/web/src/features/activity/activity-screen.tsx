@@ -27,6 +27,7 @@ import {
 import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
+import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { ApiError } from '@/lib/api/client';
 import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
@@ -34,6 +35,7 @@ import type {
   ActivityExecutionStateWire,
   ActivityFilters,
   ActivityRowWire,
+  ActivityReviewOutcomeWire,
   ActivitySourceFilterWire,
   ActivityStatsWire,
   ActivityVerbFilterWire,
@@ -47,6 +49,7 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import {
   useActionRecoveryPreview,
   useActivity,
+  useActivityWeeklyReview,
   useConfirmActionRecovery,
   useCreateActionRecoveryPreview,
   useRevertActivity,
@@ -54,6 +57,7 @@ import {
 import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
+import { WeeklyReviewCard } from './weekly-review-card';
 
 const { color, font, shadow } = tokens;
 
@@ -95,7 +99,8 @@ export function ActivityScreen() {
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
 
   const dateFilters = readDateFiltersFromUrl(params);
-  const filters = readFiltersFromUrl(params, dateFilters);
+  const outcomeFilters = readOutcomeFiltersFromUrl(params);
+  const filters = readFiltersFromUrl(params, dateFilters, outcomeFilters);
   const groupMode = readGroupMode(params.get('group'));
 
   // Layout breakpoint resolved ONCE at the screen root and threaded down
@@ -111,8 +116,25 @@ export function ActivityScreen() {
   const inFlightActionPolls = useIsFetching({ queryKey: ['action-status'] });
   const query = useActivity(filters, {
     hasInFlightAction: inFlightActionPolls > 0,
-    enabled: !dateFilters.isInvalid,
+    enabled: !dateFilters.isInvalid && !outcomeFilters.isInvalid,
   });
+  const weeklyQuery = useActivityWeeklyReview();
+  const weeklyTrackedKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const review = weeklyQuery.data;
+    if (!review) return;
+    const trackingKey = `${activeMailboxId ?? 'unknown'}:${review.from}:${review.to}`;
+    if (weeklyTrackedKey.current === trackingKey) return;
+    weeklyTrackedKey.current = trackingKey;
+    void track('weekly_review_viewed', {
+      completed: review.completed,
+      skipped: review.skipped,
+      failed: review.failed,
+      recovered: review.recovered,
+      protected: review.protected,
+    });
+  }, [activeMailboxId, weeklyQuery.data]);
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -197,7 +219,9 @@ export function ActivityScreen() {
         filters.senderQuery,
         filters.dateFrom,
         filters.dateTo,
+        filters.outcomes,
         dateFilters.isInvalid,
+        outcomeFilters.isInvalid,
       ]),
     [
       filters.window,
@@ -206,7 +230,9 @@ export function ActivityScreen() {
       filters.senderQuery,
       filters.dateFrom,
       filters.dateTo,
+      filters.outcomes,
       dateFilters.isInvalid,
+      outcomeFilters.isInvalid,
     ],
   );
   useEffect(() => {
@@ -230,6 +256,7 @@ export function ActivityScreen() {
 
   const invalidActiveFilters =
     dateFilters.isInvalid ||
+    outcomeFilters.isInvalid ||
     (isActivityFilterValidationError(query.error) && !query.isFetchNextPageError);
   if (query.isLoading && !invalidActiveFilters) return <LoadingState />;
   // A known Activity date-validation 400 means the CURRENT filters are
@@ -295,6 +322,14 @@ export function ActivityScreen() {
         Activity Undo.
       </ContextualHelp>
 
+      <WeeklyReviewCard
+        review={weeklyQuery.data ?? null}
+        loading={weeklyQuery.isLoading}
+        error={weeklyQuery.isError}
+        onRetry={() => void weeklyQuery.refetch()}
+        activeOutcome={filters.outcomes?.[0] ?? null}
+      />
+
       {!invalidActiveFilters && (
         <MetricsHeader
           windowLabel={windowToLabel(
@@ -335,7 +370,7 @@ export function ActivityScreen() {
       {invalidActiveFilters ? (
         <ActivityErrorState
           error={query.error}
-          onRecover={() => writeUrl({ date_from: null, date_to: null })}
+          onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
           recoveryLabel="Reset filters"
           isFilterError
           embedded
@@ -1348,6 +1383,7 @@ interface EditableActivityFilters {
   senderQuery: string;
   dateFrom: string | null;
   dateTo: string | null;
+  outcomes: ActivityReviewOutcomeWire[];
 }
 
 function ExportSupportBundleButton({
@@ -1418,6 +1454,7 @@ function ActivitySupportBundleDialog({
     senderQuery: initialFilters.senderQuery ?? '',
     dateFrom: initialFilters.dateFrom ?? null,
     dateTo: initialFilters.dateTo ?? null,
+    outcomes: [...(initialFilters.outcomes ?? [])],
   }));
   const [includeFullSenderAddresses, setIncludeFullSenderAddresses] = useState(false);
   const [includeTechnicalDetails, setIncludeTechnicalDetails] = useState(false);
@@ -1546,6 +1583,33 @@ function ActivitySupportBundleDialog({
                 }
                 senderSearchDebounceMs={0}
               />
+              {draft.outcomes.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    marginTop: 10,
+                    color: color.fgSoft,
+                    fontSize: 12,
+                  }}
+                >
+                  <span>Review outcome: {draft.outcomes.join(', ')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setDraft((current) => ({ ...current, outcomes: [] }))}
+                    style={{
+                      color: color.primary,
+                      background: 'none',
+                      border: 0,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Include all outcomes
+                  </button>
+                </div>
+              )}
             </div>
             {invalidRange && (
               <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: 12 }}>
@@ -2107,7 +2171,14 @@ function ActivityRow({
   const verbLabel = activityRowActionLabel(row);
   const sourceLabel = SOURCE_LABEL[row.source];
   const relative = relativeTime(row.occurredAt);
-  const dotColor = VERB_DOT[row.action];
+  const isSyntheticReviewEvidence =
+    row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
+  const dotColor =
+    row.reviewOutcome === 'protected'
+      ? color.emerald
+      : row.reviewOutcome === 'skipped'
+        ? color.fgMuted
+        : VERB_DOT[row.action];
   const [hovered, setHovered] = useState(false);
 
   const sourceAttribution =
@@ -2134,9 +2205,12 @@ function ActivityRow({
           background: variant === 'grouped' ? 'transparent' : color.card,
           // Flat rows are standalone cards (full border + radius); grouped
           // rows sit inside a group card, so only a bottom hairline divides
-          // them.
-          border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderBottom: variant === 'grouped' ? `1px solid ${color.lineSoft}` : undefined,
+          // them. Longhands only — mixing the `border` shorthand with
+          // `borderBottom` fires React's conflicting-style dev warning.
+          borderTop: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderRight: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderLeft: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderBottom: `1px solid ${color.lineSoft}`,
           borderRadius: variant === 'grouped' ? 0 : 10,
           fontFamily: font.sans,
         }}
@@ -2248,6 +2322,16 @@ function ActivityRow({
             mailboxId={mailboxId}
           />
         </div>
+        {!isSyntheticReviewEvidence &&
+          row.reviewOutcome !== null &&
+          row.source === 'autopilot' &&
+          row.executionState === null && (
+            <InlineFeedback
+              surface="activity"
+              referenceId={row.id}
+              initialRating={row.feedbackRating}
+            />
+          )}
       </li>
     );
   }
@@ -2399,6 +2483,7 @@ function ActivityRow({
         failedTokens={failedTokens}
         mailboxEmail={mailboxEmail}
         mailboxId={mailboxId}
+        includeFeedback
       />
       <div
         style={{
@@ -2425,30 +2510,46 @@ function RowActions({
   failedTokens,
   mailboxEmail,
   mailboxId,
+  includeFeedback = false,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
   mailboxEmail: string | null;
   mailboxId: string | null;
+  includeFeedback?: boolean;
 }) {
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
-        padding: '0 2px',
-        overflow: 'hidden',
-      }}
-    >
-      {row.executionState && (
-        <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
-      )}
-      <UndoCell row={row} bulkFailedTokens={failedTokens} />
-      <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0,
+          border: `1px solid ${color.lineSoft}`,
+          borderRadius: 999,
+          background: color.bg,
+          padding: '0 2px',
+          overflow: 'hidden',
+        }}
+      >
+        {row.executionState && (
+          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+        )}
+        <UndoCell row={row} bulkFailedTokens={failedTokens} />
+        <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
+      </div>
+      {includeFeedback &&
+        row.reviewOutcome !== null &&
+        row.reviewOutcome !== 'skipped' &&
+        row.reviewOutcome !== 'protected' &&
+        row.source === 'autopilot' &&
+        row.executionState === null && (
+          <InlineFeedback
+            surface="activity"
+            referenceId={row.id}
+            initialRating={row.feedbackRating}
+          />
+        )}
     </div>
   );
 }
@@ -3273,14 +3374,14 @@ function ActivityErrorState({
   isFilterError?: boolean;
   embedded?: boolean;
 }) {
-  // Distinguish the Activity controller's known date validation from
+  // Distinguish the Activity controller's known filter validation from
   // transport/domain failures. A generic "Try again in a moment" on
   // `dateFrom > dateTo` would loop the user back into the same broken
   // filter forever — flow-completeness-auditor 2026-06-05.
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Nothing changed. Activity could not load this filter. Use valid dates and make sure From is earlier than To, or reset the date range and try again.'
+    ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
     : error instanceof ApiError
       ? `Your mailbox and actions are unchanged. Activity could not load (${error.status}). Try again in a moment.`
       : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
@@ -3397,6 +3498,8 @@ function Chip({
 // ── Helpers ───────────────────────────────────────────────────────────
 
 function activityRowActionLabel(row: ActivityRowWire): string {
+  if (row.reviewOutcome === 'skipped') return 'Skipped';
+  if (row.reviewOutcome === 'protected') return 'Protected';
   return sharedActivityActionLabel(row.action, row.executionState);
 }
 
@@ -3422,6 +3525,11 @@ interface ActivityDateFilters {
   isInvalid: boolean;
 }
 
+interface ActivityOutcomeFilters {
+  outcomes: readonly ActivityReviewOutcomeWire[];
+  isInvalid: boolean;
+}
+
 function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
   const rawDateFrom = params.get('date_from');
   const rawDateTo = params.get('date_to');
@@ -3438,6 +3546,7 @@ function readDateFiltersFromUrl(params: URLSearchParams): ActivityDateFilters {
 function readFiltersFromUrl(
   params: URLSearchParams,
   dates: ActivityDateFilters = readDateFiltersFromUrl(params),
+  outcomeFilter: ActivityOutcomeFilters = readOutcomeFiltersFromUrl(params),
 ): ActivityFilters {
   return {
     window: readWindow(params.get('window')),
@@ -3446,7 +3555,31 @@ function readFiltersFromUrl(
     senderQuery: (params.get('sender_q') ?? '').trim(),
     dateFrom: dates.dateFrom,
     dateTo: dates.dateTo,
+    outcomes: outcomeFilter.outcomes,
   };
+}
+
+function readOutcomeFiltersFromUrl(params: URLSearchParams): ActivityOutcomeFilters {
+  const raw = params.get('outcome');
+  if (!raw) return { outcomes: [], isInvalid: false };
+  const allowed = new Set<ActivityReviewOutcomeWire>([
+    'completed',
+    'skipped',
+    'failed',
+    'recovered',
+    'protected',
+  ]);
+  const seen = new Set<ActivityReviewOutcomeWire>();
+  let isInvalid = false;
+  for (const token of raw.split(',')) {
+    const value = token.trim() as ActivityReviewOutcomeWire;
+    if (!value || !allowed.has(value)) {
+      isInvalid = true;
+    } else {
+      seen.add(value);
+    }
+  }
+  return { outcomes: [...seen], isInvalid };
 }
 
 function readWindow(raw: string | null): ActivityWindowWire {

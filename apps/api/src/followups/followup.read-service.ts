@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
-import { activityLog, followupTracker, senderPolicies } from '@declutrmail/db';
+import { activityLog, followupTracker, productFeedback, senderPolicies } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Followup, FollowupDismissResult, FollowupPriority } from './followup.types.js';
@@ -67,7 +67,15 @@ export class FollowupReadService {
    * cap we return what we have. The default cap covers a worst case of
    * 1000 awaiting rows scanned to surface 100 eligible.
    */
-  async listAwaiting(mailboxAccountId: string, nowMs: number = Date.now()): Promise<Followup[]> {
+  async listAwaiting(mailboxAccountId: string, nowMs?: number): Promise<Followup[]>;
+  async listAwaiting(mailboxAccountId: string, userId: string, nowMs?: number): Promise<Followup[]>;
+  async listAwaiting(
+    mailboxAccountId: string,
+    userIdOrNowMs?: string | number,
+    requestedNowMs: number = Date.now(),
+  ): Promise<Followup[]> {
+    const userId = typeof userIdOrNowMs === 'string' ? userIdOrNowMs : null;
+    const nowMs = typeof userIdOrNowMs === 'number' ? userIdOrNowMs : requestedNowMs;
     const PAGE_SIZE = 100;
     const MAX_PAGES = 10;
     const eligible: Followup[] = [];
@@ -75,8 +83,19 @@ export class FollowupReadService {
 
     for (let page = 0; page < MAX_PAGES && eligible.length < PAGE_SIZE; page += 1) {
       const rows = await this.db
-        .select()
+        .select({ followup: followupTracker, feedbackRating: productFeedback.rating })
         .from(followupTracker)
+        .leftJoin(
+          productFeedback,
+          userId
+            ? and(
+                eq(productFeedback.followupTrackerId, followupTracker.id),
+                eq(productFeedback.mailboxAccountId, mailboxAccountId),
+                eq(productFeedback.userId, userId),
+                eq(productFeedback.surface, 'followups'),
+              )
+            : sql<boolean>`false`,
+        )
         .where(
           and(
             eq(followupTracker.mailboxAccountId, mailboxAccountId),
@@ -101,7 +120,7 @@ export class FollowupReadService {
       // MISTAKES.md 2026-05-23). A round-trip-and-filter in TS is
       // structurally immune.
       const candidateSenderKeys = Array.from(
-        new Set(rows.map((r) => deriveSenderKey(r.recipientEmail))),
+        new Set(rows.map(({ followup }) => deriveSenderKey(followup.recipientEmail))),
       );
       const excludedPolicies = await this.db
         .select({ senderKey: senderPolicies.senderKey })
@@ -116,8 +135,8 @@ export class FollowupReadService {
       const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
 
       for (const row of rows) {
-        if (excluded.has(deriveSenderKey(row.recipientEmail))) continue;
-        eligible.push(projectFollowup(row, nowMs));
+        if (excluded.has(deriveSenderKey(row.followup.recipientEmail))) continue;
+        eligible.push(projectFollowup(row.followup, nowMs, row.feedbackRating));
         if (eligible.length >= PAGE_SIZE) break;
       }
 
@@ -249,7 +268,11 @@ function computePriority(sentAtMs: number, nowMs: number): FollowupPriority {
   return 'fresh';
 }
 
-function projectFollowup(row: typeof followupTracker.$inferSelect, nowMs: number): Followup {
+function projectFollowup(
+  row: typeof followupTracker.$inferSelect,
+  nowMs: number,
+  feedbackRating: (typeof productFeedback.$inferSelect)['rating'] | null,
+): Followup {
   return {
     id: row.id,
     providerThreadId: row.providerThreadId,
@@ -259,6 +282,8 @@ function projectFollowup(row: typeof followupTracker.$inferSelect, nowMs: number
     sentAt: row.sentAt.toISOString(),
     priority: computePriority(row.sentAt.getTime(), nowMs),
     status: row.status,
+    feedbackRating:
+      feedbackRating === 'useful' || feedbackRating === 'not_followup' ? feedbackRating : null,
     dismissedAt: row.dismissedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

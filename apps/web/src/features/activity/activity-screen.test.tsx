@@ -15,16 +15,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import {
+  addFetchHandlers,
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { ActivityScreen, relativeTime } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
+const { trackMock, authState } = vi.hoisted(() => ({
+  trackMock: vi.fn(),
+  authState: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+}));
+vi.mock('@/lib/posthog', () => ({ track: trackMock }));
+
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({
-    me: { activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    me: { activeMailboxId: authState.activeMailboxId },
   }),
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
@@ -68,12 +80,33 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
         domain: 'example.com',
       } as ActivityRowWire['sender']),
     rule: partial.rule ?? null,
+    feedbackRating: partial.feedbackRating ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
     executionState: partial.executionState ?? null,
+    reviewOutcome: partial.reviewOutcome ?? null,
   };
 }
 
 function renderScreen() {
+  addFetchHandlers([
+    {
+      method: 'GET',
+      path: '/api/activity/weekly-review',
+      respond: () =>
+        jsonOk({
+          data: {
+            window: '7d',
+            from: '2026-05-18T08:00:00.000Z',
+            to: '2026-05-25T08:00:00.000Z',
+            completed: 0,
+            skipped: 0,
+            failed: 0,
+            recovered: 0,
+            protected: 0,
+          },
+        }),
+    },
+  ]);
   const client = createTestQueryClient();
   const utils = render(
     <QueryWrapper client={client}>
@@ -88,6 +121,8 @@ function renderScreen() {
 beforeEach(() => {
   installFetchStub([]);
   replaceMock.mockReset();
+  trackMock.mockReset();
+  authState.activeMailboxId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   currentSearch = '';
 });
 afterEach(() => {
@@ -272,6 +307,30 @@ describe('ActivityScreen — edge states', () => {
     expect(requests).toBe(0);
   });
 
+  it('fails closed on unknown or mixed outcome deep links', async () => {
+    currentSearch = 'outcome=completed,unknown&source=autopilot';
+    let requests = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => {
+          requests += 1;
+          return jsonOk({ data: [], meta: {} });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /check your activity filters/i }),
+    ).toBeInTheDocument();
+    expect(requests).toBe(0);
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reset filters' }));
+    expect(replaceMock).toHaveBeenCalledWith('/activity?source=autopilot');
+  });
+
   it('hides cached rows, export data, and bulk actions when a raw date becomes malformed', async () => {
     currentSearch = 'source=manual';
     let requests = 0;
@@ -370,6 +429,131 @@ describe('ActivityScreen — edge states', () => {
   });
 });
 
+describe('ActivityScreen — weekly review (D246)', () => {
+  it('shows five exact evidence links and tracks factual counts once', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ reviewOutcome: 'completed' })],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '30d',
+              source: 'all',
+              verbs: [],
+              senderQuery: '',
+              dateFrom: null,
+              dateTo: null,
+              outcomes: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () =>
+          jsonOk({
+            data: {
+              window: '7d',
+              from: '2026-05-18T08:00:00.000Z',
+              to: '2026-05-25T08:00:00.000Z',
+              completed: 9,
+              skipped: 2,
+              failed: 1,
+              recovered: 3,
+              protected: 4,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const card = await screen.findByRole('region', { name: /your last 7 days/i });
+    expect(within(card).getAllByRole('link')).toHaveLength(5);
+    const failed = within(card).getByRole('link', { name: /1 failed/i });
+    expect(failed).toHaveAttribute('href', expect.stringContaining('outcome=failed'));
+    expect(failed).toHaveAttribute('href', expect.stringContaining('date_from='));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith('weekly_review_viewed', {
+        completed: 9,
+        skipped: 2,
+        failed: 1,
+        recovered: 3,
+        protected: 4,
+      }),
+    );
+    expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+      1,
+    );
+  });
+
+  it('passes the outcome evidence filter to the Activity API', async () => {
+    currentSearch = 'window=7d&outcome=protected';
+    let requested = '';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requested = url.search;
+          return jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              stats: STATS_BASE,
+              allTimeStats: STATS_BASE,
+              window: '7d',
+              source: 'all',
+              verbs: [],
+              senderQuery: '',
+              dateFrom: null,
+              dateTo: null,
+              outcomes: ['protected'],
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(requested).toContain('outcome=protected'));
+    expect(
+      await screen.findByRole('link', { name: /clear protected filter/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('tracks each mailbox review once when the active mailbox changes', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    const view = renderScreen();
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        1,
+      ),
+    );
+
+    authState.activeMailboxId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        2,
+      ),
+    );
+  });
+});
+
 describe('ActivityScreen — populated', () => {
   it('opens a review dialog prefilled from the current Activity filters with privacy opt-ins off', async () => {
     currentSearch = 'window=90d&source=manual&verb=archive%2Cdelete&sender_q=private%40example.com';
@@ -413,7 +597,7 @@ describe('ActivityScreen — populated', () => {
   });
 
   it('sends edited filters and independent privacy opt-ins, then shows a recoverable error', async () => {
-    currentSearch = 'verb=archive';
+    currentSearch = 'verb=archive&outcome=failed';
     let exportUrl: URL | null = null;
     let exportRequest: Request | null = null;
     installFetchStub([
@@ -436,6 +620,7 @@ describe('ActivityScreen — populated', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
     const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
     const senderSearch = within(dialog).getByRole('searchbox', { name: 'Search sender' });
@@ -455,6 +640,7 @@ describe('ActivityScreen — populated', () => {
     expect(exportUrl!.searchParams.get('source')).toBe('autopilot');
     expect(exportUrl!.searchParams.has('verb')).toBe(false);
     expect(exportUrl!.searchParams.get('sender_q')).toBe('edited@example.com');
+    expect(exportUrl!.searchParams.get('outcome')).toBe('failed');
     expect(exportUrl!.searchParams.get('sender_addresses')).toBe('full');
     expect(exportUrl!.searchParams.get('include_technical')).toBe('true');
     expect(exportRequest!.headers.get('x-active-mailbox-id')).toBe(
@@ -1354,6 +1540,53 @@ describe('ActivityScreen — B11 group by sender', () => {
 // ── U27 — D57 rule attribution + infinite scroll ─────────────────────
 
 describe('ActivityScreen — D57 rule attribution', () => {
+  it('offers bounded feedback only for confirmed Autopilot outcomes', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                source: 'autopilot',
+                feedbackRating: 'expected',
+                reviewOutcome: 'completed',
+              }),
+              row({
+                id: 'unsubscribe-intent-1',
+                source: 'autopilot',
+                action: 'unsubscribe',
+                reviewOutcome: null,
+              }),
+              row({
+                id: 'skipped-2',
+                source: 'autopilot',
+                reviewOutcome: 'skipped',
+              }),
+              row({
+                id: 'protected-3',
+                source: 'autopilot',
+                reviewOutcome: 'protected',
+              }),
+              row({ id: 'manual-2', source: 'manual' }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const group = await screen.findByRole('group', { name: /match what you expected/i });
+    expect(screen.getAllByRole('group', { name: /match what you expected/i })).toHaveLength(1);
+    expect(within(group).getByRole('button', { name: 'Expected' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getAllByText('Skipped').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Protected').length).toBeGreaterThan(0);
+  });
+
   it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
     installFetchStub([
       {

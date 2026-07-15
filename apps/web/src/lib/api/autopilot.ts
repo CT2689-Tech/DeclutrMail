@@ -139,6 +139,26 @@ export interface AutopilotRulePatchDto {
   observePromptDismissed?: boolean;
 }
 
+/** One privacy-bounded repeated-decision opportunity (D246). */
+export interface AutopilotPatternSuggestionDto {
+  ruleId: string;
+  presetKey: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
+  ruleName: string;
+  actionKind: 'archive' | 'unsubscribe';
+  scope: 'account';
+  evidenceCount: number;
+  evidenceWindowDays: 30;
+  dailyActionCap: number;
+}
+
+export interface AutopilotPatternSuggestionDecisionDto {
+  ruleId: string;
+  presetKey: AutopilotPatternSuggestionDto['presetKey'];
+  decision: 'observe' | 'dismissed';
+  evidenceCount: number;
+  decidedAt: string;
+}
+
 /** One match row, as the pending-suggestions endpoint returns it. */
 export interface AutopilotMatchDto {
   id: string;
@@ -190,6 +210,26 @@ export function fetchPendingSuggestions(
   signal?: AbortSignal,
 ): Promise<Envelope<AutopilotMatchDto[], unknown>> {
   return apiGet<AutopilotMatchDto[]>('/api/autopilot/pending-suggestions', { signal });
+}
+
+/** GET one aggregate repeated-decision opportunity, or null. */
+export function fetchPatternSuggestion(
+  signal?: AbortSignal,
+): Promise<Envelope<AutopilotPatternSuggestionDto | null, unknown>> {
+  return apiGet<AutopilotPatternSuggestionDto | null>('/api/autopilot/pattern-suggestion', {
+    signal,
+  });
+}
+
+/** Accept into Observe or dismiss the currently eligible suggestion. */
+export function postPatternSuggestionDecision(
+  ruleId: string,
+  decision: 'observe' | 'dismissed',
+): Promise<Envelope<AutopilotPatternSuggestionDecisionDto, unknown>> {
+  const action = decision === 'observe' ? 'observe' : 'dismiss';
+  return apiPost<AutopilotPatternSuggestionDecisionDto>(
+    `/api/autopilot/pattern-suggestion/${encodeURIComponent(ruleId)}/${action}`,
+  );
 }
 
 /** POST /api/autopilot/matches/:matchId/dismiss — D104 dismiss. */

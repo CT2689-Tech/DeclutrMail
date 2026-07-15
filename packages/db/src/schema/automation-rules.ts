@@ -145,6 +145,16 @@ export const automationRules = pgTable(
       mode: 'date',
     }),
     /**
+     * D246 — when the user dismissed this rule's latest pattern
+     * suggestion. NULL means no suggestion has been dismissed. The API
+     * owns eligibility/reset behavior; the rule row only persists the
+     * per-rule acknowledgement timestamp.
+     */
+    patternSuggestionDismissedAt: timestamp('pattern_suggestion_dismissed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /**
      * Confidence floor for threshold-bearing presets (#1, #2). NULL means
      * the rule does not gate on engine confidence. `numeric(3,2)` matches
      * `triage_decisions.confidence` so equality lines up.

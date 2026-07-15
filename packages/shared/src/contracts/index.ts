@@ -5,6 +5,14 @@
 
 export type { KmsProvider } from './kms-provider';
 
+export { ProductFeedbackRequestSchema } from './product-feedback';
+export type {
+  ProductFeedbackRating,
+  ProductFeedbackRequest,
+  ProductFeedbackResult,
+  ProductFeedbackSurface,
+} from './product-feedback';
+
 // D245 cumulative Gmail-data lifecycle registry. This contract generates
 // privacy copy and the Gmail metadata-header allowlist.
 export {
@@ -65,8 +73,10 @@ export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {
   ONBOARDING_PRESET_KEYS,
+  ONBOARDING_GOALS,
   OnboardingCompleteRequestSchema,
   OnboardingFirstTriageMetaSchema,
+  OnboardingGoalSchema,
   OnboardingPresetCatalogItemSchema,
   OnboardingPresetKeySchema,
   OnboardingPresetPicksRequestSchema,
@@ -76,6 +86,7 @@ export {
 export type {
   OnboardingCompleteRequest,
   OnboardingFirstTriageMeta,
+  OnboardingGoal,
   OnboardingPresetCatalogItem,
   OnboardingPresetKey,
   OnboardingPresetPicksRequest,
@@ -208,6 +219,10 @@ export {
   parseBriefPrefs,
 } from './brief-prefs';
 export type { BriefPrefs, BriefPrefsPatch } from './brief-prefs';
+
+// D64/D246 authenticated browser timezone synchronization.
+export { TimeZonePatchSchema } from './timezone';
+export type { TimeZonePatch } from './timezone';
 
 // D34 + D226 action-sheet skip preferences — shared between the
 // PATCH /api/me/action-sheet-prefs route and the FE triage store

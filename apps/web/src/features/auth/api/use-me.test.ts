@@ -13,7 +13,7 @@ function me(
   mailboxes: Array<{ status: 'active' | 'disconnected'; readiness: SyncReadiness | null }>,
 ): Me {
   return {
-    user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
+    user: { id: 'u', email: 'u@example.com', workspaceId: 'w', timezone: null },
     activeMailboxId: null,
     tier: 'free',
     cleanupRemaining: 5,

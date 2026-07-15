@@ -176,6 +176,7 @@ describe('OnboardingService', () => {
     it('fresh user: null onboardedAt, null picks, not skipped, 5-item catalog', async () => {
       const state = await service.getState(userId);
       expect(state.onboardedAt).toBeNull();
+      expect(state.goal).toBeNull();
       expect(state.presetPicks).toBeNull();
       expect(state.skipped).toBe(false);
       expect(state.presets).toHaveLength(5);
@@ -193,7 +194,7 @@ describe('OnboardingService', () => {
   describe('submitPresetPicks', () => {
     it('persists picks and reconciles seeded rules (enable picked, leave rest off)', async () => {
       await seedPresets(db, mailboxId);
-      const result = await service.submitPresetPicks(userId, mailboxId, [
+      const result = await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
         'auto_archive_low_engagement',
         'newsletter_graveyard',
       ]);
@@ -201,6 +202,7 @@ describe('OnboardingService', () => {
       expect(result.rulesReconciled).toBe(2);
 
       const state = await service.getState(userId);
+      expect(state.goal).toBe('reduce_newsletters');
       expect(state.presetPicks).toEqual(['auto_archive_low_engagement', 'newsletter_graveyard']);
 
       const enabled = await enabledByKey(db, mailboxId);
@@ -215,8 +217,12 @@ describe('OnboardingService', () => {
 
     it('re-submission reconciles deterministically (disables un-picked)', async () => {
       await seedPresets(db, mailboxId);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_archive_low_engagement']);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_unsubscribe_noisy']);
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'auto_archive_low_engagement',
+      ]);
+      await service.submitPresetPicks(userId, mailboxId, 'clear_old_promotions', [
+        'auto_unsubscribe_noisy',
+      ]);
 
       const enabled = await enabledByKey(db, mailboxId);
       expect(enabled['auto_archive_low_engagement']).toBe(false);
@@ -224,7 +230,9 @@ describe('OnboardingService', () => {
     });
 
     it('pre-seed mailbox: picks persist durably, rulesSeeded=false', async () => {
-      const result = await service.submitPresetPicks(userId, mailboxId, ['newsletter_graveyard']);
+      const result = await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'newsletter_graveyard',
+      ]);
       expect(result.rulesSeeded).toBe(false);
       expect(result.rulesReconciled).toBe(0);
 
@@ -234,7 +242,7 @@ describe('OnboardingService', () => {
 
     it('empty picks is a valid submission (advances the machine, enables nothing)', async () => {
       await seedPresets(db, mailboxId);
-      const result = await service.submitPresetPicks(userId, mailboxId, []);
+      const result = await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
       expect(result.presetKeys).toEqual([]);
 
       const state = await service.getState(userId);
@@ -245,7 +253,9 @@ describe('OnboardingService', () => {
 
     it('mode stays observe after enabling (D10 observe-first)', async () => {
       await seedPresets(db, mailboxId);
-      await service.submitPresetPicks(userId, mailboxId, ['auto_archive_low_engagement']);
+      await service.submitPresetPicks(userId, mailboxId, 'reduce_newsletters', [
+        'auto_archive_low_engagement',
+      ]);
       const [rule] = await db
         .select({ mode: automationRules.mode })
         .from(automationRules)
@@ -276,7 +286,7 @@ describe('OnboardingService', () => {
   });
 
   describe('getFirstTriage', () => {
-    it('pins a contrast lineup: one unsubscribe, one keep, one judgment call (2026-07-10 D112 amendment)', async () => {
+    it('pins a five-sender contrast lineup (2026-07-10 D112 amendment)', async () => {
       await seedDecision(db, mailboxId, { senderKey: 'k1', verdict: 'keep', confidence: 0.99 });
       await seedDecision(db, mailboxId, { senderKey: 'a1', verdict: 'archive', confidence: 0.9 });
       await seedDecision(db, mailboxId, { senderKey: 'a2', verdict: 'archive', confidence: 0.8 });
@@ -288,11 +298,44 @@ describe('OnboardingService', () => {
       await seedDecision(db, mailboxId, { senderKey: 'l1', verdict: 'later', confidence: 0.6 });
 
       const read = await service.getFirstTriage(userId, mailboxId);
-      expect(read.meta).toEqual({ pinned: 3, decided: 0 });
+      expect(read.meta).toEqual({ pinned: 5, decided: 0 });
       // Slot 1: the unsubscribe payoff; slot 2: the keep (trust); slot 3:
-      // the highest-confidence judgment call — NOT three near-identical
-      // top-confidence rows.
-      expect(read.rows.map((r) => r.senderKey).sort()).toEqual(['a1', 'k1', 'u1']);
+      // the highest-confidence judgment call. Remaining slots backfill by
+      // confidence to keep the finite first-relief session useful.
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['u1', 'k1', 'a1', 'a2', 'l1']);
+    });
+
+    it('uses the persisted onboarding goal when creating the first pin', async () => {
+      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
+      await seedDecision(db, mailboxId, {
+        senderKey: 'u1',
+        verdict: 'unsubscribe',
+        confidence: 0.99,
+      });
+      await seedDecision(db, mailboxId, { senderKey: 'k1', verdict: 'keep', confidence: 0.6 });
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.rows.map((r) => r.senderKey)).toEqual(['k1', 'u1']);
+    });
+
+    it('finds important senders beyond the default destructive-first queue window', async () => {
+      await service.submitPresetPicks(userId, mailboxId, 'protect_important', []);
+      for (let index = 0; index < 51; index += 1) {
+        await seedDecision(db, mailboxId, {
+          senderKey: `archive-${index.toString().padStart(2, '0')}`,
+          verdict: 'archive',
+          confidence: 0.99,
+        });
+      }
+      await seedDecision(db, mailboxId, {
+        senderKey: 'important-keep',
+        verdict: 'keep',
+        confidence: 0.4,
+      });
+
+      const read = await service.getFirstTriage(userId, mailboxId);
+      expect(read.rows[0]?.senderKey).toBe('important-keep');
+      expect(read.rows).toHaveLength(5);
     });
 
     it('the pinned set survives a new higher-confidence decision appearing', async () => {
@@ -382,9 +425,9 @@ describe('pickFirstTriageCandidates', () => {
       row({ senderKey: 'a1', verdict: 'archive', confidence: 0.9 }),
       row({ senderKey: 'l1', verdict: 'later', confidence: 0.85 }),
     ]);
-    // NOT [u-high, a1, l1] (the old top-3-by-confidence). One per slot:
-    // best unsubscribe, highest-read-rate keep, best archive/later.
-    expect(picked.map((r) => r.senderKey)).toEqual(['u-high', 'prot', 'a1']);
+    // The first three preserve the contrast lineup; the finite session
+    // then backfills the two strongest remaining eligible rows.
+    expect(picked.map((r) => r.senderKey)).toEqual(['u-high', 'prot', 'a1', 'l1', 'u-low']);
   });
 
   it('backfills empty slots from the eligible pool by confidence', () => {
@@ -393,7 +436,7 @@ describe('pickFirstTriageCandidates', () => {
       row({ senderKey: 'u2', verdict: 'unsubscribe', confidence: 0.8 }),
       row({ senderKey: 'u3', verdict: 'unsubscribe', confidence: 0.7 }),
     ]);
-    // No keep, no archive/later — still returns 3, not 1.
+    // No keep, no archive/later — still returns every available row.
     expect(picked.map((r) => r.senderKey)).toEqual(['u1', 'u2', 'u3']);
   });
 
@@ -404,7 +447,7 @@ describe('pickFirstTriageCandidates', () => {
       row({ senderKey: 'mid', confidence: 0.7 }),
       row({ senderKey: 'lowest', confidence: 0.55 }),
     ]);
-    expect(picked.map((r) => r.senderKey)).toEqual(['high', 'mid', 'low']);
+    expect(picked.map((r) => r.senderKey)).toEqual(['high', 'mid', 'low', 'lowest']);
   });
 
   it('falls back to read-rate ASC when confidence is uniformly low (D112)', () => {
@@ -414,5 +457,96 @@ describe('pickFirstTriageCandidates', () => {
       row({ senderKey: 'r2', confidence: 0.2, readRate: 0.2 }),
     ]);
     expect(picked.map((r) => r.senderKey)).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('caps the first-relief pin at five candidates', () => {
+    const picked = pickFirstTriageCandidates(
+      Array.from({ length: 6 }, (_, index) =>
+        row({ senderKey: `sender-${index}`, confidence: 0.9 - index / 100 }),
+      ),
+    );
+    expect(picked).toHaveLength(5);
+    expect(picked.map((r) => r.senderKey)).toEqual([
+      'sender-0',
+      'sender-1',
+      'sender-2',
+      'sender-3',
+      'sender-4',
+    ]);
+  });
+
+  it('orders newsletter relief by Unsubscribe, Promotions, then low read rate', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({
+          senderKey: 'unsubscribe-primary',
+          verdict: 'unsubscribe',
+          gmailCategory: 'primary',
+          readRate: 0.05,
+        }),
+        row({
+          senderKey: 'unsubscribe-promo-read',
+          verdict: 'unsubscribe',
+          gmailCategory: 'promotions',
+          readRate: 0.8,
+        }),
+        row({
+          senderKey: 'unsubscribe-promo-unread',
+          verdict: 'unsubscribe',
+          gmailCategory: 'promotions',
+          readRate: 0.1,
+        }),
+        row({ senderKey: 'archive-promo', gmailCategory: 'promotions', readRate: 0 }),
+      ],
+      'reduce_newsletters',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual([
+      'unsubscribe-promo-unread',
+      'unsubscribe-promo-read',
+      'unsubscribe-primary',
+      'archive-promo',
+    ]);
+  });
+
+  it('orders promotion cleanup by Promotions with Archive/Later first', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'other-unsubscribe', verdict: 'unsubscribe', gmailCategory: 'social' }),
+        row({ senderKey: 'other-archive', verdict: 'archive', gmailCategory: 'primary' }),
+        row({
+          senderKey: 'promo-unsubscribe',
+          verdict: 'unsubscribe',
+          gmailCategory: 'promotions',
+        }),
+        row({ senderKey: 'promo-later', verdict: 'later', gmailCategory: 'promotions' }),
+        row({ senderKey: 'promo-archive', verdict: 'archive', gmailCategory: 'promotions' }),
+      ],
+      'clear_old_promotions',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual([
+      'promo-archive',
+      'promo-later',
+      'promo-unsubscribe',
+      'other-archive',
+      'other-unsubscribe',
+    ]);
+  });
+
+  it('orders important-sender review by Keep/protected, then high read rate', () => {
+    const picked = pickFirstTriageCandidates(
+      [
+        row({ senderKey: 'archive-high', readRate: 0.99 }),
+        row({ senderKey: 'protected', protectionReason: 'replied', readRate: 0.7 }),
+        row({ senderKey: 'keep', verdict: 'keep', readRate: 0.9 }),
+        row({ senderKey: 'archive-low', readRate: 0.1 }),
+      ],
+      'protect_important',
+    );
+    expect(picked.map((r) => r.senderKey)).toEqual([
+      'keep',
+      'protected',
+      'archive-high',
+      'archive-low',
+    ]);
   });
 });

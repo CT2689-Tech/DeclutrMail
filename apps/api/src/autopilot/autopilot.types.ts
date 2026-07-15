@@ -107,6 +107,31 @@ export interface AutopilotRulePatch {
   observePromptDismissed?: boolean;
 }
 
+/**
+ * D246 — one evidence-backed opportunity to turn a repeated manual
+ * decision into an Observe-only preset. The endpoint returns at most
+ * one suggestion and never exposes sender identities.
+ */
+export interface AutopilotPatternSuggestion {
+  ruleId: string;
+  presetKey: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
+  ruleName: string;
+  actionKind: 'archive' | 'unsubscribe';
+  scope: 'account';
+  evidenceCount: number;
+  evidenceWindowDays: 30;
+  dailyActionCap: number;
+}
+
+/** Terminal result of accepting or dismissing the current pattern suggestion. */
+export interface AutopilotPatternSuggestionDecision {
+  ruleId: string;
+  presetKey: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
+  decision: 'observe' | 'dismissed';
+  evidenceCount: number;
+  decidedAt: string;
+}
+
 /** One match row, as the pending-suggestions endpoint returns it. */
 export interface AutopilotMatch {
   id: string;

@@ -17,6 +17,7 @@ import {
 import { ApiError } from '@/lib/api/client';
 import type { BriefItemWire, BriefSenderGroupWire, BriefWire } from '@/lib/api/brief';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useBriefToday } from './api/use-brief-today';
@@ -203,6 +204,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
           )}
         </>
       )}
+      <InlineFeedback surface="brief" referenceId={brief.id} initialRating={brief.feedbackRating} />
     </div>
   );
 }

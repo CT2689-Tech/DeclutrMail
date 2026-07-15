@@ -215,6 +215,7 @@ export class ActivitySupportBundleService {
       `Actions: ${actionFilter}`,
       `Date from: ${filters.dateFrom?.toISOString() ?? 'Not set'}`,
       `Date to: ${filters.dateTo?.toISOString() ?? 'Not set'}`,
+      `Outcomes: ${filters.outcomes?.length ? filters.outcomes.join(', ') : 'All'}`,
       `Sender search: ${filters.senderQuery ? 'Applied' : 'Not applied'}`,
       `Sender addresses: ${context.includeFullSenderAddresses ? 'Full (explicitly included)' : 'Masked'}`,
       `Technical details: ${context.includeTechnicalDetails ? 'Included' : 'Not included'}`,
@@ -274,14 +275,22 @@ function activityCsvLine(row: ActivityRow, includeFullSenderAddresses: boolean):
       ? row.sender.email
       : maskSenderAddress(row.sender.email)
     : '';
+  // Skipped/protected Observe dismissals never executed anything — mirror
+  // the Activity screen's wording instead of the execution 'Completed'.
+  const reviewLabel =
+    row.reviewOutcome === 'skipped'
+      ? 'Skipped'
+      : row.reviewOutcome === 'protected'
+        ? 'Protected'
+        : null;
   return [
     row.occurredAt,
-    activityActionLabel(row.action, execution),
+    reviewLabel ?? activityActionLabel(row.action, execution),
     activitySourceLabel(row.source),
     senderName,
     senderAddress,
     String(row.affectedCount),
-    activityExecutionLabel(execution),
+    reviewLabel ?? activityExecutionLabel(execution),
     activityUndoLabel(row.undoState.kind),
   ]
     .map(csvField)
@@ -300,6 +309,7 @@ function technicalHeader(context: {
     verbs: readParams.verbs ?? [],
     dateFrom: readParams.dateFrom?.toISOString() ?? null,
     dateTo: readParams.dateTo?.toISOString() ?? null,
+    outcomes: readParams.outcomes ?? [],
   };
   return `{"bundleFormat":${JSON.stringify(ACTIVITY_SUPPORT_BUNDLE_FORMAT)},"generatedAt":${JSON.stringify(context.generatedAt.toISOString())},"mailboxId":${JSON.stringify(context.mailbox.id)},"filters":${JSON.stringify(filters)},"records":[`;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   EmptyState,
@@ -20,11 +20,14 @@ import type {
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
 import { ContextualHelp } from '@/features/help/contextual-help';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
 import { useDismissMatch } from './api/use-dismiss-match';
 import { usePatchRule } from './api/use-patch-rule';
+import { usePatternSuggestion } from './api/use-pattern-suggestion';
+import { useDecidePatternSuggestion } from './api/use-decide-pattern-suggestion';
 import { usePauseAll } from './api/use-pause-all';
 import { usePendingSuggestions } from './api/use-pending-suggestions';
 import { useRulePreview } from './api/use-rule-preview';
@@ -33,6 +36,7 @@ import { ApproveConfirmModal } from './approve-confirm-modal';
 import { ObserveWindowBanner } from './observe-window-banner';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import { PausedBanner } from './paused-banner';
+import { PatternSuggestionCard } from './pattern-suggestion-card';
 import { RuleCard } from './rule-card';
 import { SuggestionGroup } from './suggestion-group';
 import { track } from '@/lib/posthog';
@@ -83,18 +87,20 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
 export function AutopilotRoute() {
   const rulesQuery = useAutopilotRules();
   const suggestionsQuery = usePendingSuggestions();
+  const patternQuery = usePatternSuggestion();
   const refetchRules = rulesQuery.refetch;
   const refetchSuggestions = suggestionsQuery.refetch;
+  const refetchPattern = patternQuery.refetch;
   const retry = useCallback(() => {
-    void Promise.allSettled([refetchRules(), refetchSuggestions()]);
-  }, [refetchRules, refetchSuggestions]);
+    void Promise.allSettled([refetchRules(), refetchSuggestions(), refetchPattern()]);
+  }, [refetchRules, refetchSuggestions, refetchPattern]);
 
   const state: AutopilotScreenState = useMemo(() => {
-    if (rulesQuery.isLoading || suggestionsQuery.isLoading) {
+    if (rulesQuery.isLoading || suggestionsQuery.isLoading || patternQuery.isLoading) {
       return { kind: 'loading' };
     }
-    if (rulesQuery.isError || suggestionsQuery.isError) {
-      const err = rulesQuery.error ?? suggestionsQuery.error;
+    if (rulesQuery.isError || suggestionsQuery.isError || patternQuery.isError) {
+      const err = rulesQuery.error ?? suggestionsQuery.error ?? patternQuery.error;
       const message =
         err instanceof ApiError
           ? `We couldn't load Autopilot (HTTP ${err.status}).`
@@ -104,7 +110,7 @@ export function AutopilotRoute() {
     const rules = rulesQuery.data ?? [];
     const matches = suggestionsQuery.data ?? [];
     if (rules.length === 0 && matches.length === 0) {
-      return { kind: 'empty', rules };
+      return { kind: 'empty', rules, patternSuggestion: patternQuery.data ?? null };
     }
     const ruleById = new Map<string, AutopilotRuleDto>();
     for (const r of rules) ruleById.set(r.id, r);
@@ -112,7 +118,7 @@ export function AutopilotRoute() {
       match: m,
       rule: ruleById.get(m.ruleId) ?? null,
     }));
-    return { kind: 'ready', rules, suggestions };
+    return { kind: 'ready', rules, suggestions, patternSuggestion: patternQuery.data ?? null };
   }, [
     rulesQuery.isLoading,
     rulesQuery.isError,
@@ -122,6 +128,10 @@ export function AutopilotRoute() {
     suggestionsQuery.isError,
     suggestionsQuery.error,
     suggestionsQuery.data,
+    patternQuery.isLoading,
+    patternQuery.isError,
+    patternQuery.error,
+    patternQuery.data,
     retry,
   ]);
 
@@ -136,6 +146,8 @@ interface ApproveTarget {
 }
 
 export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
+  const auth = useOptionalAuth();
+  const activeMailboxId = auth?.me.activeMailboxId ?? null;
   const dismissMatch = useDismissMatch();
   const pauseAll = usePauseAll();
   const patchRule = usePatchRule();
@@ -146,16 +158,18 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // preview (D226) — the rule card's inline panel and the modal must
   // not stomp each other's state.
   const activatePreview = useRulePreview();
+  const decidePattern = useDecidePatternSuggestion();
 
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
   const [activateTarget, setActivateTarget] = useState<AutopilotRuleDto | null>(null);
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
+  const shownPatternKeys = useRef<Set<string>>(new Set());
 
-  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
-  // its Storybook stories mount without an auth shim; PostHog
-  // `identify` ties the event to the user regardless.
+  // `mailbox_id: null` preserves the page-view event contract. Optional
+  // auth above is used only to scope suggestion-impression dedupe and
+  // keeps Storybook stories mountable without an auth shim.
   useEffect(() => {
     void track('page_viewed', { page: 'autopilot', mailbox_id: null });
   }, []);
@@ -163,8 +177,21 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const rules: AutopilotRuleDto[] =
     state.kind === 'ready' || state.kind === 'empty' ? state.rules : [];
   const suggestions: SuggestionWithRule[] = state.kind === 'ready' ? state.suggestions : [];
+  const patternSuggestion =
+    state.kind === 'ready' || state.kind === 'empty' ? (state.patternSuggestion ?? null) : null;
   const allPaused = rules.length > 0 && rules.every((r) => r.mode === 'paused');
   const hasRunningRules = rules.some((r) => r.mode !== 'paused');
+
+  useEffect(() => {
+    if (patternSuggestion == null) return;
+    const impressionKey = `${activeMailboxId ?? 'unknown'}:${patternSuggestion.ruleId}`;
+    if (shownPatternKeys.current.has(impressionKey)) return;
+    shownPatternKeys.current.add(impressionKey);
+    void track('autopilot_pattern_suggestion_shown', {
+      preset_key: patternSuggestion.presetKey,
+      evidence_count: patternSuggestion.evidenceCount,
+    });
+  }, [activeMailboxId, patternSuggestion]);
 
   // ── Derivations ────────────────────────────────────────────────────
 
@@ -492,6 +519,35 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 
   const pauseErrorMessage = pauseAll.error == null ? null : 'Pause failed. Please retry.';
 
+  const onPatternDecision = (decision: 'observe' | 'dismissed') => {
+    if (!patternSuggestion) return;
+    decidePattern.mutate(
+      { ruleId: patternSuggestion.ruleId, decision },
+      {
+        onSuccess: (result) => {
+          void track('autopilot_pattern_suggestion_decided', {
+            preset_key: result.presetKey,
+            decision: result.decision,
+            evidence_count: result.evidenceCount,
+          });
+          toast(
+            decision === 'observe'
+              ? 'Rule is observing — Gmail has not changed.'
+              : 'Suggestion dismissed — Gmail has not changed.',
+            'info',
+          );
+        },
+        onError: (err) => {
+          toast('That suggestion was not changed. Please retry.', 'warn');
+          captureFeatureException(err, {
+            surface: 'autopilot',
+            reason: 'pattern_suggestion_decision_failed',
+          });
+        },
+      },
+    );
+  };
+
   return (
     <div
       style={{
@@ -549,6 +605,15 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         Active applies future matches automatically after you review the first-sweep preview.
         Suggestions already collected in Observe stay pending for you to approve or skip.
       </ContextualHelp>
+
+      {patternSuggestion && (
+        <PatternSuggestionCard
+          suggestion={patternSuggestion}
+          pendingDecision={decidePattern.isPending ? decidePattern.variables.decision : null}
+          onObserve={() => onPatternDecision('observe')}
+          onDismiss={() => onPatternDecision('dismissed')}
+        />
+      )}
 
       {allPaused && <PausedBanner rules={rules} />}
 

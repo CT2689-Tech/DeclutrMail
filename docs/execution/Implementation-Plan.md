@@ -9485,3 +9485,29 @@ silently enable it for every user.
 
 Implementation status and handoff checkpoints live in
 `docs/execution/product-clarity-program-d245.md`.
+
+---
+
+# Behavioral activation and calibrated trust — 2026-07-15
+
+### D246 — Finite first relief and evidence-based automation authority
+
+**Status:** Accepted — founder-approved 2026-07-15.
+
+DeclutrMail's next program optimizes the path from connection to one finite,
+truthful result and then increases automation authority only through observed
+evidence. It includes a user-selected activation goal, a bounded first-relief
+session, relief/trust instrumentation, expected-or-surprising feedback,
+Observe-first pattern suggestions, a factual in-app weekly review, calm
+re-entry, and correct local-time Brief generation.
+
+D246 explicitly defers browser push and rejects browser-persisted offline
+mail-changing actions for beta, superseding D163 and that portion of D171.
+Sync-ready email, server idempotency, queue retries, Activity, and Undo remain
+the launch contracts. It does not reverse the existing OAuth-, compliance-, or
+demand-gated decisions for `gmail.send`, Followup Nudge, native mobile/mobile
+push, automated mailto unsubscribe, message-level snooze, the full Help Center,
+or the unrestricted custom Autopilot builder.
+
+The complete contract, acceptance checklist, and handoff checkpoint live in
+`docs/execution/behavioral-activation-trust-d246.md`.

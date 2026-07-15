@@ -75,6 +75,7 @@ const onboardingState = (over: Record<string, unknown> = {}): FetchStubHandler =
       data: {
         onboardedAt: null,
         skipped: false,
+        goal: null,
         presetPicks: null,
         presets: [
           {
@@ -183,7 +184,8 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
     expect(await screen.findByText('Pick your starting rules.')).toBeInTheDocument();
     expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue without rules' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Choose a goal to continue' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /Reduce newsletters/i })).toBeInTheDocument();
   });
 
   it.each(['free', 'plus'] as const)(
@@ -208,7 +210,9 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
           path: '/api/onboarding/preset-picks',
           respond: async (req) => {
             submittedPicks = (await req.json()) as unknown;
-            return json({ data: { presetKeys: [], rulesSeeded: false } });
+            return json({
+              data: { goal: 'reduce_newsletters', presetKeys: [], rulesSeeded: false },
+            });
           },
         },
       ]);
@@ -218,9 +222,12 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       expect(screen.queryByText('Pick your starting rules.')).not.toBeInTheDocument();
       expect(autopilotReads).toBe(0);
 
+      await userEvent.click(screen.getByRole('radio', { name: /Reduce newsletters/i }));
       await userEvent.click(screen.getByRole('button', { name: 'Review my first sender' }));
 
-      await waitFor(() => expect(submittedPicks).toEqual({ presetKeys: [] }));
+      await waitFor(() =>
+        expect(submittedPicks).toEqual({ goal: 'reduce_newsletters', presetKeys: [] }),
+      );
       expect(autopilotReads).toBe(0);
     },
   );

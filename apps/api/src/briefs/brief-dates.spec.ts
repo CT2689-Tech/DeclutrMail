@@ -5,7 +5,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 
-import { isValidTimeZone, localDateInTimeZone, resolveBriefTodayLocal } from './brief-dates.js';
+import {
+  isValidTimeZone,
+  localDateInTimeZone,
+  resolveBriefTodayLocal,
+  resolvePersistedBriefTodayLocal,
+} from './brief-dates.js';
 
 describe('resolveBriefTodayLocal (D64 read-path)', () => {
   // 2026-07-07T20:00Z — evening UTC. Auckland (UTC+12) is already
@@ -58,6 +63,19 @@ describe('isValidTimeZone', () => {
     expect(isValidTimeZone('Europe/Berlin')).toBe(true);
     expect(isValidTimeZone('Not/A_Zone')).toBe(false);
     expect(isValidTimeZone('')).toBe(false);
+  });
+});
+
+describe('resolvePersistedBriefTodayLocal', () => {
+  const EVENING_UTC = new Date('2026-07-07T20:00:00Z');
+
+  it('uses a valid persisted zone', () => {
+    expect(resolvePersistedBriefTodayLocal(EVENING_UTC, 'Pacific/Auckland')).toBe('2026-07-08');
+  });
+
+  it('uses UTC for missing and legacy-invalid persisted zones', () => {
+    expect(resolvePersistedBriefTodayLocal(EVENING_UTC, null)).toBe('2026-07-07');
+    expect(resolvePersistedBriefTodayLocal(EVENING_UTC, 'Mars/Olympus_Mons')).toBe('2026-07-07');
   });
 });
 

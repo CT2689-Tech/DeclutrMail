@@ -32,12 +32,14 @@ const ROWS: ActivityRow[] = [
       domain: 'example.com',
     },
     rule: null,
+    feedbackRating: null,
     undoState: {
       kind: 'available',
       token: 'secret-undo-token',
       expiresAt: '2026-07-20T05:00:00.000Z',
     },
     executionState: null,
+    reviewOutcome: 'completed',
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -47,6 +49,7 @@ const ROWS: ActivityRow[] = [
     affectedCount: 0,
     sender: null,
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: {
       kind: 'failed',
@@ -56,6 +59,7 @@ const ROWS: ActivityRow[] = [
       errorCode: 'GMAIL_PROVIDER_ERROR',
       resolution: 'support',
     },
+    reviewOutcome: 'failed',
   },
 ];
 
@@ -100,6 +104,7 @@ const FILTERS: CreateActivitySupportBundleParams['filters'] = {
   senderQuery: 'private-search@example.com',
   dateFrom: null,
   dateTo: null,
+  outcomes: ['failed'],
 };
 
 describe('ActivitySupportBundleService', () => {
@@ -127,7 +132,63 @@ describe('ActivitySupportBundleService', () => {
     expect(files['summary.txt']).toContain('Mailbox: owner@example.com');
     expect(files['summary.txt']).toContain('Records: 2');
     expect(files['summary.txt']).toContain('Sender search: Applied');
+    expect(files['summary.txt']).toContain('Outcomes: failed');
     expect(files['summary.txt']).not.toContain('private-search@example.com');
+  });
+
+  it('labels skipped/protected review rows without claiming execution', async () => {
+    const reviewRows: ActivityRow[] = [
+      {
+        id: '44444444-4444-4444-4444-444444444444',
+        occurredAt: '2026-07-14T05:00:00.000Z',
+        source: 'autopilot',
+        action: 'later',
+        affectedCount: 0,
+        sender: {
+          senderKey: 'skip-sender-key',
+          displayName: 'Skip Sender',
+          email: 'skip@example.com',
+          domain: 'example.com',
+        },
+        rule: { id: '55555555-5555-5555-5555-555555555555', name: 'Later for new senders' },
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: 'skipped',
+      },
+      {
+        id: '66666666-6666-6666-6666-666666666666',
+        occurredAt: '2026-07-13T05:00:00.000Z',
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 0,
+        sender: null,
+        rule: { id: '55555555-5555-5555-5555-555555555555', name: 'Later for new senders' },
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: 'protected',
+      },
+    ];
+    const files = await unzipBundle(
+      await makeService(undefined, reviewRows).service.createBundle({
+        workspaceId: 'workspace-1',
+        mailboxAccountId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        filters: { ...FILTERS, outcomes: ['skipped', 'protected'] },
+        includeFullSenderAddresses: false,
+        includeTechnicalDetails: false,
+        generatedAt: GENERATED_AT,
+      }),
+    );
+
+    const csv = files['activity.csv']!;
+    const [, skippedLine, protectedLine] = csv.trim().split('\n');
+    expect(skippedLine).toContain('Skipped');
+    expect(protectedLine).toContain('Protected');
+    // A dismissal that never touched mail must not read as an executed action.
+    expect(csv).not.toContain('Completed');
+    expect(csv).not.toContain('Moved to Later');
+    expect(csv).not.toContain('Archived');
   });
 
   it('adds independently opted-in full addresses and exact technical fields', async () => {
@@ -148,6 +209,7 @@ describe('ActivitySupportBundleService', () => {
     expect(Object.keys(technical.filters as object)).toEqual(
       ACTIVITY_SUPPORT_TECHNICAL_FILTER_KEYS,
     );
+    expect(technical.filters).toMatchObject({ outcomes: ['failed'] });
     const records = technical.records as Array<Record<string, unknown>>;
     expect(records).toHaveLength(2);
     for (const record of records) {

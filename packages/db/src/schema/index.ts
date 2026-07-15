@@ -15,6 +15,7 @@ export * from './mailbox-accounts';
 export * from './mailbox-data-deletion-requests';
 export * from './outbox-events';
 export * from './provider-sync-state';
+export * from './product-feedback';
 export * from './rule-match-log';
 export * from './screener-quarantine';
 export * from './security-events';

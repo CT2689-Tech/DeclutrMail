@@ -1,13 +1,15 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import type { OnboardingGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import type { TriageScreenState, TriageSessionStats } from '@/features/triage/data';
 import { ApiError } from '@/lib/api/client';
+import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
 
@@ -16,7 +18,7 @@ const { color, font } = tokens;
 /**
  * Step 5 — First Triage (D112).
  *
- * A guided 3-decision preview (up to three when fewer candidates exist)
+ * A finite first-relief session (up to five when fewer candidates exist)
  * that embeds the REAL
  * `<TriageScreen/>` — same row component, same K/A/U/L toolbar, same
  * D226 lifecycle (sheet → mandatory preview → mutation → undo), same
@@ -36,16 +38,39 @@ const { color, font } = tokens;
 export function StepFirstTriage({
   onComplete,
   completing,
+  goal,
   corner,
 }: {
   /** Finish onboarding (D113 write) and leave for /senders. */
   onComplete: () => void;
   /** True while the completion POST is in flight. */
   completing: boolean;
+  goal: OnboardingGoal;
   corner?: ReactNode;
 }) {
   const firstTriage = useFirstTriage();
   const stats = useTriageStats();
+  const started = useRef(false);
+  const finished = useRef(false);
+
+  useEffect(() => {
+    const target = firstTriage.data?.meta.pinned;
+    if (target == null || started.current) return;
+    started.current = true;
+    void track('first_relief_session_started', { goal, target });
+  }, [firstTriage.data?.meta.pinned, goal]);
+
+  const finish = (outcome: 'completed' | 'stopped' | 'empty') => {
+    if (finished.current || !firstTriage.data) return;
+    finished.current = true;
+    void track('first_relief_session_completed', {
+      goal,
+      target: firstTriage.data.meta.pinned,
+      decided: firstTriage.data.meta.decided,
+      outcome,
+    });
+    onComplete();
+  };
 
   if (firstTriage.isError) {
     const err = firstTriage.error;
@@ -84,7 +109,7 @@ export function StepFirstTriage({
   if (done) {
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · Guided 3-decision preview</Eyebrow>
+        <Eyebrow>Step 5 of 5 · First relief</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
@@ -94,7 +119,7 @@ export function StepFirstTriage({
             margin: '6px 0 4px',
           }}
         >
-          {meta.pinned === 0 ? 'Your inbox is ready.' : 'Your first sender decisions are saved.'}
+          {meta.pinned === 0 ? 'Nothing needs your attention.' : 'You’re done for today.'}
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
@@ -102,11 +127,21 @@ export function StepFirstTriage({
             : `You made ${meta.decided} sender ${meta.decided === 1 ? 'decision' : 'decisions'}. Manual Archive and Later affected matching inbox mail when they ran; they did not create future-mail rules. A delivered unsubscribe request is one-way. Reversible moves remain available in Activity while their token is live. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
-          Senders stays available after onboarding. On Free, any cleanup actions you have left
-          remain available there; ongoing Triage queues require Plus.
+          {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
+              tier (stats hiccup) gets the tier-free sentence only. */}
+          {stats.data?.tier === 'free'
+            ? 'Senders stays available after onboarding. On Free, any cleanup actions you have left remain available there; ongoing Triage queues require Plus.'
+            : stats.data
+              ? 'Senders stays available after onboarding, and Triage keeps a queue ready whenever you want it.'
+              : 'Senders stays available after onboarding.'}
         </p>
-        <Button tone="primary" onClick={onComplete} disabled={completing} style={{ minWidth: 220 }}>
-          {completing ? 'Finishing…' : 'Open your senders →'}
+        <Button
+          tone="primary"
+          onClick={() => finish(meta.pinned === 0 ? 'empty' : 'completed')}
+          disabled={completing}
+          style={{ minWidth: 220 }}
+        >
+          {completing ? 'Finishing…' : 'Continue to Senders →'}
         </Button>
         {/* The undo tray stays reachable on the completion panel — the
             decisions just made must remain reversible (D35/D58). */}
@@ -138,18 +173,23 @@ export function StepFirstTriage({
         }}
       >
         <div>
-          <Eyebrow>Step 5 of 5 · Guided 3-decision preview</Eyebrow>
+          <Eyebrow>Step 5 of 5 · First relief</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            We&rsquo;ll guide you through up to three real sender decisions. Start with{' '}
-            {meta.pinned === 1 ? 'this sender' : `these ${meta.pinned} senders`} — decision{' '}
-            {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real actions with
-            a preview of the affected mail and any available recovery.
+            {GOAL_FRAMING[goal]} We&rsquo;ll guide you through up to five real sender decisions.
+            Start with {meta.pinned === 1 ? 'this sender' : `these ${meta.pinned} senders`} —
+            decision {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}. These are real
+            actions with a preview of the affected mail and any available recovery.
           </p>
         </div>
-        {corner}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Button tone="ghost" onClick={() => finish('stopped')} disabled={completing}>
+            Stop for today
+          </Button>
+          {corner}
+        </div>
       </header>
 
-      <TriageScreen state={state} />
+      <TriageScreen state={state} journey="first_relief" />
       <TriageUndoTray />
     </div>
   );
@@ -188,9 +228,12 @@ const EMPTY_STATS: TriageSessionStats = {
   archivedToday: 0,
   unsubscribedToday: 0,
   laterToday: 0,
-  streakDays: 0,
   freeRemaining: null,
-  futureEmailsSkipped: null,
-  minutesSavedPerWeek: null,
   tier: 'free',
+};
+
+const GOAL_FRAMING: Record<OnboardingGoal, string> = {
+  reduce_newsletters: 'Let’s start with recurring newsletters that are easiest to reduce.',
+  protect_important: 'Let’s confirm important senders before clearing lower-priority mail.',
+  clear_old_promotions: 'Let’s start with promotional mail that has been lingering.',
 };

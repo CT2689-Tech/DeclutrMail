@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -77,6 +77,7 @@ const BASE_BRIEF: BriefWire = {
   generatedAt: '2026-05-25T08:00:00Z',
   openedAt: '2026-05-25T08:30:00Z',
   emailSentAt: null,
+  feedbackRating: null,
 };
 
 function renderScreen() {
@@ -163,6 +164,12 @@ describe('BriefScreen — edge states', () => {
         screen.getByRole('heading', { name: /your inbox was quiet yesterday\./i }),
       ).toBeInTheDocument(),
     );
+    const feedback = screen.getByRole('group', { name: /how was this brief/i });
+    expect(within(feedback).getByRole('button', { name: 'Useful' })).toBeInTheDocument();
+    expect(within(feedback).getByRole('button', { name: 'Not useful' })).toBeInTheDocument();
+    expect(
+      within(feedback).getByRole('button', { name: 'Something looks wrong' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/enjoy the morning — we.ll be back tomorrow\./i)).toBeInTheDocument();
   });
 });

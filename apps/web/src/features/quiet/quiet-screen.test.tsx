@@ -27,7 +27,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 
 function makeMe(mailboxes: Me['mailboxes']): Me {
   return {
-    user: { id: 'u-1', email: 'a@b.com', workspaceId: 'ws-1' },
+    user: { id: 'u-1', email: 'a@b.com', workspaceId: 'ws-1', timezone: null },
     mailboxes,
     activeMailboxId: mailboxes[0]?.id ?? null,
     tier: 'pro',

@@ -3,12 +3,10 @@
 // half; the snapshot worker's generation window stays UTC per its V2
 // simplification).
 //
-// The FE sends its IANA timezone on `GET /api/briefs/today?tz=…` and
-// the server resolves "today" in THAT zone, so a user in
-// Pacific/Auckland at 9am local no longer gets yesterday's Brief just
-// because UTC hasn't rolled over (and an America/Los_Angeles evening
-// no longer shows tomorrow's 404). No `tz` param → UTC date, exactly
-// the pre-existing behavior (backward compatible).
+// Both snapshot generation and the read surface resolve their day from
+// persisted `users.timezone`. Keeping the calendar math here prevents
+// callers from drifting at UTC midnight; missing/legacy-invalid stored
+// zones use the same UTC fallback as the worker.
 
 import { BadRequestException } from '@nestjs/common';
 
@@ -41,15 +39,12 @@ export function localDateInTimeZone(now: Date, timeZone: string): string {
 }
 
 /**
- * Resolve the "today" the Brief lookup should use from the optional
- * `?tz=` query param:
+ * Resolve a local date from an optional IANA timezone:
  *
  *   - absent / empty → UTC date (the original contract; old clients
  *     keep their exact behavior)
  *   - valid IANA name → that zone's calendar date
- *   - invalid → 400 INVALID_TIMEZONE (a NEW param has no legacy
- *     callers to stay lenient for — failing loudly beats silently
- *     serving the wrong day)
+ *   - invalid → 400 INVALID_TIMEZONE
  */
 export function resolveBriefTodayLocal(now: Date, tz: string | undefined): string {
   const trimmed = tz?.trim();
@@ -63,4 +58,14 @@ export function resolveBriefTodayLocal(now: Date, tz: string | undefined): strin
     });
   }
   return localDateInTimeZone(now, trimmed);
+}
+
+/**
+ * Resolve a Brief date from the trusted persisted timezone authority.
+ * Unlike a caller-provided zone, legacy-invalid stored values must not
+ * break the read path: snapshot generation treats them as UTC too.
+ */
+export function resolvePersistedBriefTodayLocal(now: Date, timezone: string | null | undefined) {
+  const trimmed = timezone?.trim();
+  return resolveBriefTodayLocal(now, trimmed && isValidTimeZone(trimmed) ? trimmed : undefined);
 }

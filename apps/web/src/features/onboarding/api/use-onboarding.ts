@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   OnboardingFirstTriageMetaSchema,
   type OnboardingFirstTriageMeta,
+  type OnboardingGoal,
   type OnboardingPresetKey,
   type OnboardingPresetPicksResult,
   type OnboardingState,
@@ -65,9 +66,10 @@ export function useFirstTriage(opts: { enabled?: boolean } = {}) {
 export function useSubmitPresetPicks() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (presetKeys: OnboardingPresetKey[]) => {
+    mutationFn: async (input: { goal: OnboardingGoal; presetKeys: OnboardingPresetKey[] }) => {
       const envelope = await apiPost<OnboardingPresetPicksResult>('/api/onboarding/preset-picks', {
-        presetKeys,
+        goal: input.goal,
+        presetKeys: input.presetKeys,
       });
       return envelope.data;
     },

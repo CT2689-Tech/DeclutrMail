@@ -36,6 +36,14 @@ export const ONBOARDING_PRESET_KEYS = [
 export const OnboardingPresetKeySchema = z.enum(ONBOARDING_PRESET_KEYS);
 export type OnboardingPresetKey = z.infer<typeof OnboardingPresetKeySchema>;
 
+export const ONBOARDING_GOALS = [
+  'reduce_newsletters',
+  'protect_important',
+  'clear_old_promotions',
+] as const;
+export const OnboardingGoalSchema = z.enum(ONBOARDING_GOALS);
+export type OnboardingGoal = z.infer<typeof OnboardingGoalSchema>;
+
 /**
  * One entry of the step-4 preset catalog (D110). Display copy is
  * server-owned so the FE renders a single source — names here are the
@@ -72,6 +80,7 @@ export const OnboardingStateSchema = z
   .object({
     onboardedAt: z.string().datetime({ offset: true }).nullable(),
     skipped: z.boolean(),
+    goal: OnboardingGoalSchema.nullable(),
     presetPicks: z.array(OnboardingPresetKeySchema).nullable(),
     presets: z.array(OnboardingPresetCatalogItemSchema),
   })
@@ -87,6 +96,7 @@ export type OnboardingState = z.infer<typeof OnboardingStateSchema>;
  */
 export const OnboardingPresetPicksRequestSchema = z
   .object({
+    goal: OnboardingGoalSchema,
     presetKeys: z
       .array(OnboardingPresetKeySchema)
       .max(ONBOARDING_PRESET_KEYS.length)
@@ -106,6 +116,7 @@ export type OnboardingPresetPicksRequest = z.infer<typeof OnboardingPresetPicksR
  */
 export const OnboardingPresetPicksResultSchema = z
   .object({
+    goal: OnboardingGoalSchema,
     presetKeys: z.array(OnboardingPresetKeySchema),
     /** How many `automation_rules` rows were reconciled right now. */
     rulesReconciled: z.number().int().min(0),
@@ -129,14 +140,14 @@ export type OnboardingCompleteRequest = z.infer<typeof OnboardingCompleteRequest
  *
  * `data` is the pinned candidate rows still awaiting a decision (the
  * existing TriageQueueRow projection). `pinned` is how many senders
- * were locked in for the practice run (≤3; can be 0 for a tiny
+ * were locked in for the practice run (≤5; can be 0 for a tiny
  * mailbox); `decided` counts pinned senders that no longer await a
  * decision. Step 5 completes when `decided === pinned`.
  */
 export const OnboardingFirstTriageMetaSchema = z
   .object({
-    pinned: z.number().int().min(0).max(3),
-    decided: z.number().int().min(0).max(3),
+    pinned: z.number().int().min(0).max(5),
+    decided: z.number().int().min(0).max(5),
   })
   .strict();
 export type OnboardingFirstTriageMeta = z.infer<typeof OnboardingFirstTriageMetaSchema>;

@@ -21,12 +21,12 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsLifetime;
  * The D33 state is five pieces, in this order:
  *
  *   1. Stats summary — what the user got done today (decided / archived
- *      / unsubscribed / later) plus the streak day count. The number
+ *      / unsubscribed / later). The number
  *      gives the empty state weight — it isn't "nothing to do, the
  *      app is empty"; it's "you cleared the queue today".
  *
- *   2. "Come back tomorrow" — the engine refills the queue overnight
- *      from the next sync sweep + the weekly re-score cron (D25).
+ *   2. Calm re-entry copy — another decision appears only when a sync
+ *      finds a repeated sender pattern; there is no daily obligation.
  *
  *   3. A subtle upgrade nudge — tier-gated per D17–D21:
  *        free → "See Plus" (lifts the D19 5-LIFETIME cleanup cap)
@@ -49,17 +49,17 @@ export function TriageEmptyState({
 }) {
   // D212 resting state (2026-07-02 audit W5) — the queue is empty and
   // the user decided NOTHING today: a fresh morning visit, or a new
-  // mailbox before the engine scores anything. The D33 celebration
-  // below would be false here ("You cleared today's queue." over a
-  // grid of four zeros), so the inbox-zero moment renders the shared
+  // mailbox before the engine scores anything. The completion panel
+  // below would be false over a grid of four zeros, so the inbox-zero
+  // moment renders the shared
   // D212 EmptyState instead: calm, mental-model copy, one next step.
   // The single editorial phrase is the ADR-0011 allowance for
   // first-class empty states.
   if (stats.decidedToday === 0) {
     return (
       <EmptyState
-        title="No decisions today."
-        description="A decision appears here when a sender starts creating repeated noise."
+        title="Nothing needs a decision right now."
+        description="New decisions appear after a sync finds another repeated sender pattern. Come back whenever it’s useful."
         action={
           <a
             href="/senders"
@@ -141,7 +141,7 @@ export function TriageEmptyState({
             margin: 0,
           }}
         >
-          You cleared today&rsquo;s queue.
+          You&rsquo;re done for now.
         </h2>
         <p
           style={{
@@ -152,7 +152,8 @@ export function TriageEmptyState({
             maxWidth: 460,
           }}
         >
-          New decisions appear after a sync finds another repeated sender pattern.
+          New decisions appear after a sync finds another repeated sender pattern. Come back
+          whenever it&rsquo;s useful.
         </p>
       </div>
 
@@ -175,21 +176,6 @@ export function TriageEmptyState({
         <StatTile label="Unsubscribes" value={stats.unsubscribedToday} />
         <StatTile label="To Later" value={stats.laterToday} />
       </div>
-
-      {stats.streakDays > 0 && (
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: color.fgMuted,
-          }}
-        >
-          Decisions made on {stats.streakDays} consecutive day
-          {stats.streakDays === 1 ? '' : 's'}
-        </span>
-      )}
 
       {/* D33 Free-tier nudge — "See Plus" surfaces when the D19
           lifetime cleanup cap is in view (≤5 cleanup actions left). */}

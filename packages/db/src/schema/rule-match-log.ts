@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
   numeric,
   pgEnum,
@@ -42,9 +43,10 @@ import { undoJournal } from './undo-journal';
  *                 pending-suggestions read path.
  *   `approved`  — user clicked "Apply" on the suggestion (Observe), OR
  *                 the rule was Active and the action auto-fired.
- *   `dismissed` — user clicked "Dismiss" on the suggestion. Stays
- *                 logged for the audit history; excluded from the
- *                 pending-suggestions read path.
+ *   `dismissed` — user clicked "Dismiss" on the suggestion, or the
+ *                 execution-time safety check found the sender Protected.
+ *                 Stays logged for audit; `dismiss_reason` distinguishes
+ *                 those two terminal paths.
  *
  * `intent_token` is non-null iff an undo-journal row was created for
  * the resulting action. Observe-mode pending rows have a NULL token.
@@ -84,6 +86,12 @@ export const autopilotMatchResolution = pgEnum('autopilot_match_resolution', [
   'pending',
   'approved',
   'dismissed',
+]);
+
+/** D246 — why a pending/approved match reached dismissed terminal state. */
+export const autopilotMatchDismissReason = pgEnum('autopilot_match_dismiss_reason', [
+  'user',
+  'protected',
 ]);
 
 export const ruleMatchLog = pgTable(
@@ -130,8 +138,14 @@ export const ruleMatchLog = pgTable(
     }),
     resolution: autopilotMatchResolution('resolution').notNull().default('pending'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true, mode: 'date' }),
+    /** NULL unless resolution='dismissed'; identifies the terminal dismissal path. */
+    dismissReason: autopilotMatchDismissReason('dismiss_reason'),
   },
   (table) => ({
+    dismissReasonCheck: check(
+      'rule_match_log_dismiss_reason_check',
+      sql`(${table.resolution} = 'dismissed') = (${table.dismissReason} IS NOT NULL)`,
+    ),
     /**
      * D104 pending-suggestions hot path. Partial index keeps the scan
      * footprint bounded by the unresolved Observe-mode backlog.
@@ -173,3 +187,4 @@ export type RuleMatchLog = typeof ruleMatchLog.$inferSelect;
 export type NewRuleMatchLog = typeof ruleMatchLog.$inferInsert;
 export type AutopilotMatchMode = (typeof autopilotMatchMode.enumValues)[number];
 export type AutopilotMatchResolution = (typeof autopilotMatchResolution.enumValues)[number];
+export type AutopilotMatchDismissReason = (typeof autopilotMatchDismissReason.enumValues)[number];

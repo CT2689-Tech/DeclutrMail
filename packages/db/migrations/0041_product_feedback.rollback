@@ -1,0 +1,15 @@
+DROP INDEX IF EXISTS "product_feedback_mailbox_surface_created_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "product_feedback_user_followup_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "product_feedback_user_brief_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "product_feedback_user_activity_uniq";
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "product_feedback_set_updated_at" ON "product_feedback";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "product_feedback";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."product_feedback_rating";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."product_feedback_surface";

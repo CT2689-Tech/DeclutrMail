@@ -56,6 +56,8 @@ import type {
   AutopilotMatch,
   AutopilotMatchDismissResult,
   AutopilotPauseAllResult,
+  AutopilotPatternSuggestion,
+  AutopilotPatternSuggestionDecision,
   AutopilotRule,
   AutopilotRulePatch,
 } from './autopilot.types.js';
@@ -163,6 +165,44 @@ export class AutopilotController {
   ): Promise<Envelope<AutopilotPauseAllResult>> {
     const accountId = mailbox.id;
     const result = await this.reads.pauseAll(accountId);
+    return ok(result);
+  }
+
+  /**
+   * GET /api/autopilot/pattern-suggestion — at most one bounded,
+   * metadata-only repeated-decision suggestion for a disabled preset.
+   */
+  @Get('pattern-suggestion')
+  @RateLimit('triage-load')
+  async getPatternSuggestion(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<AutopilotPatternSuggestion | null>> {
+    return ok(await this.reads.getPatternSuggestion(mailbox.id));
+  }
+
+  /** Accept the current suggestion. The rule is enabled in Observe, never Active. */
+  @Post('pattern-suggestion/:ruleId/observe')
+  @RateLimit('triage-load')
+  async observePatternSuggestion(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('ruleId') ruleId: string,
+  ): Promise<Envelope<AutopilotPatternSuggestionDecision>> {
+    if (!isUuid(ruleId)) throw new BadRequestException('Rule id must be a UUID.');
+    const result = await this.reads.decidePatternSuggestion(mailbox.id, ruleId, 'observe');
+    if (!result) throw notFound('Pattern suggestion not found.');
+    return ok(result);
+  }
+
+  /** Dismiss the current suggestion for a 30-day cooling-off window. */
+  @Post('pattern-suggestion/:ruleId/dismiss')
+  @RateLimit('triage-load')
+  async dismissPatternSuggestion(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('ruleId') ruleId: string,
+  ): Promise<Envelope<AutopilotPatternSuggestionDecision>> {
+    if (!isUuid(ruleId)) throw new BadRequestException('Rule id must be a UUID.');
+    const result = await this.reads.decidePatternSuggestion(mailbox.id, ruleId, 'dismissed');
+    if (!result) throw notFound('Pattern suggestion not found.');
     return ok(result);
   }
 

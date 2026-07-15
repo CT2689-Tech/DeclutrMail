@@ -17,6 +17,7 @@ import {
   mailMessages,
   outboxEvents,
   providerSyncState,
+  productFeedback,
   ruleMatchLog,
   screenerQuarantine,
   securityEvents,
@@ -136,6 +137,7 @@ export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'brief_runs',
   'followup_tracker',
   'mail_messages',
+  'product_feedback',
   'provider_sync_state',
   'rule_match_log',
   'screener_quarantine',
@@ -497,6 +499,9 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         await tx
           .delete(ruleMatchLog)
           .where(eq(ruleMatchLog.mailboxAccountId, request.mailboxAccountId));
+        await tx
+          .delete(productFeedback)
+          .where(eq(productFeedback.mailboxAccountId, request.mailboxAccountId));
         await tx
           .delete(activityLog)
           .where(eq(activityLog.mailboxAccountId, request.mailboxAccountId));

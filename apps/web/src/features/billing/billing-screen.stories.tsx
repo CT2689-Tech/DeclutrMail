@@ -35,7 +35,7 @@ type Story<C extends (props: never) => unknown> = {
 
 function meFixture(tier: Me['tier'], cleanupRemaining: number | null): Me {
   return {
-    user: { id: 'u-1', email: 'me@example.com', workspaceId: 'w-1' },
+    user: { id: 'u-1', email: 'me@example.com', workspaceId: 'w-1', timezone: null },
     activeMailboxId: 'mb-1',
     mailboxes: [
       {

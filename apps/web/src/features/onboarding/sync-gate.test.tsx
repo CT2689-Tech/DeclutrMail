@@ -1,10 +1,7 @@
 // Tests for the onboarding sync gate (D6, D109, D224).
 //
 // SSR render-shape assertions (same approach as triage-screen.test.tsx)
-// plus pure-function coverage of the stage-mapping helper. The push
-// permission ask is a `useEffect`-gated client affordance, so it is
-// absent under `renderToStaticMarkup` — that is expected and not
-// asserted here.
+// plus pure-function coverage of the stage-mapping helper.
 
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -63,6 +60,18 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('Bodies read: 0');
     // No time promise (D109 hard rule).
     expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+  });
+
+  it('does not prompt for browser notifications while preserving email-ready copy', () => {
+    const requestPermission = vi.fn().mockResolvedValue('granted');
+    vi.stubGlobal('Notification', { permission: 'default', requestPermission });
+
+    render(<SyncGate status={SYNCING} />);
+
+    expect(screen.getByText(/we’ll email you when your inbox is ready/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /get notified when ready/i })).toBeNull();
+    expect(requestPermission).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it('syncing: renders all six stage labels', () => {

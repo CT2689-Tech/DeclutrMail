@@ -39,6 +39,7 @@ export function TriageQueue({
   onAction,
   busyRowId = null,
   previewInboxCount = 'loading',
+  allowBatching = true,
   onBatchVerb,
   batchBusyDomain = null,
 }: {
@@ -53,6 +54,8 @@ export function TriageQueue({
   busyRowId?: string | null;
   /** Live inbox count for the inline preview's impact figure (D226). */
   previewInboxCount?: PreviewCount;
+  /** Disable multi-sender shortcuts for finite guided sessions. */
+  allowBatching?: boolean;
   /** A domain-batch card asked for `verb` — the screen opens the batch sheet. */
   onBatchVerb?: (verb: BatchVerb, batch: DomainBatch) => void;
   /** Domain whose batch decision is confirming server-side. */
@@ -64,7 +67,9 @@ export function TriageQueue({
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
 
-  const items = planQueueItems(rows, dismissedBatchDomains);
+  const items = allowBatching
+    ? planQueueItems(rows, dismissedBatchDomains)
+    : rows.map((row) => ({ kind: 'row' as const, row }));
   // D26 — the first SINGLE row is the hero card (inline reasoning).
   // When a batch card leads the queue, there is no hero: the batch is
   // a different decision shape and carries its own framing.

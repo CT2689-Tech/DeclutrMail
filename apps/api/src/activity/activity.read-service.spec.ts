@@ -9,6 +9,8 @@ import {
   automationRules,
   mailMessages,
   mailboxAccounts,
+  productFeedback,
+  ruleMatchLog,
   schema,
   senders,
   undoJournal,
@@ -45,6 +47,14 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 const NOW_MS = new Date('2026-05-25T08:00:00Z').getTime();
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Every parameter array the drizzle session hands to the driver. PGlite
+ * serializes JS Dates itself, but postgres.js (dev/prod) throws when a
+ * Date is bound next to a raw `sql` expression — so specs assert against
+ * this log to keep the two drivers behaviorally equivalent.
+ */
+const driverParamLog: unknown[][] = [];
+
 async function freshDb(): Promise<Db> {
   const pg = new PGlite({ extensions: { citext } });
   for (const file of readdirSync(MIGRATIONS_DIR)
@@ -56,6 +66,11 @@ async function freshDb(): Promise<Db> {
       if (trimmed) await pg.query(trimmed);
     }
   }
+  const originalQuery = pg.query.bind(pg);
+  pg.query = (async (...args: Parameters<typeof originalQuery>) => {
+    if (Array.isArray(args[1])) driverParamLog.push(args[1]);
+    return originalQuery(...args);
+  }) as typeof pg.query;
   return drizzle(pg, { schema });
 }
 
@@ -77,7 +92,7 @@ async function seedMailbox(db: Db, email: string) {
       providerAccountId: email,
     })
     .returning({ id: mailboxAccounts.id });
-  return { workspaceId: ws!.id, mailboxAccountId: mb!.id };
+  return { workspaceId: ws!.id, userId: user!.id, mailboxAccountId: mb!.id };
 }
 
 async function seedSender(
@@ -147,6 +162,7 @@ async function seedActivity(
     affectedCount?: number;
     senderKey?: string;
     undoToken?: string;
+    actionJobId?: string;
     ruleId?: string;
   },
 ): Promise<string> {
@@ -160,6 +176,7 @@ async function seedActivity(
       affectedCount: args.affectedCount ?? 1,
       ...(args.senderKey ? { senderKey: args.senderKey } : {}),
       ...(args.undoToken ? { undoToken: args.undoToken } : {}),
+      ...(args.actionJobId ? { actionJobId: args.actionJobId } : {}),
       ...(args.ruleId ? { ruleId: args.ruleId } : {}),
     })
     .returning({ id: activityLog.id });
@@ -228,8 +245,8 @@ async function seedExecutionAttempt(
 describe('ActivityReadService', () => {
   let db: Db;
   let svc: ActivityReadService;
-  let mailboxA: { workspaceId: string; mailboxAccountId: string };
-  let mailboxB: { workspaceId: string; mailboxAccountId: string };
+  let mailboxA: { workspaceId: string; userId: string; mailboxAccountId: string };
+  let mailboxB: { workspaceId: string; userId: string; mailboxAccountId: string };
 
   beforeEach(async () => {
     actionKeySequence = 0;
@@ -263,6 +280,34 @@ describe('ActivityReadService', () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.executionState).toBeNull();
+  });
+
+  it('projects only the current user rating onto an automatic Activity row', async () => {
+    const activityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+      source: 'autopilot',
+      action: 'archive',
+    });
+    await db.insert(productFeedback).values({
+      workspaceId: mailboxA.workspaceId,
+      userId: mailboxA.userId,
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      surface: 'activity',
+      rating: 'surprising',
+      activityLogId: activityId,
+    });
+
+    const { rows } = await svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      userId: mailboxA.userId,
+      window: '30d',
+      source: null,
+      cursor: null,
+      limit: 25,
+      nowMs: NOW_MS,
+    });
+    expect(rows[0]!.feedbackRating).toBe('surprising');
   });
 
   describe('action execution projection', () => {
@@ -1185,6 +1230,54 @@ describe('ActivityReadService', () => {
     expect(actualIds).toEqual(expectedIds);
   });
 
+  it('exports late failures by terminal outcome time, not original enqueue time', async () => {
+    const senderKey = 'late-failure';
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'late-failure@example.com',
+      'Late Failure',
+    );
+    const recentActivityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 10 * 60_000),
+      source: 'manual',
+      action: 'archive',
+    });
+    const failureId = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'failed',
+      createdAt: new Date(NOW_MS - 40 * ONE_DAY_MS),
+    });
+    await db
+      .update(actionJobs)
+      .set({ updatedAt: new Date(NOW_MS - 30 * 60_000) })
+      .where(eq(actionJobs.id, failureId));
+    const olderActivityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 60 * 60_000),
+      source: 'manual',
+      action: 'delete',
+    });
+
+    const ids: string[] = [];
+    for await (const row of svc.iterateActivity(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        nowMs: NOW_MS,
+      },
+      1,
+    )) {
+      ids.push(row.id);
+    }
+    expect(ids).toEqual([recentActivityId, failureId, olderActivityId]);
+  });
+
   it('freezes newly inserted rows and the bounded merge lookahead', async () => {
     const senderKey = 'snapshot-sender';
     const senderId = await seedSender(
@@ -1579,6 +1672,318 @@ describe('ActivityReadService', () => {
   });
 
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
+
+  describe('weekly review outcomes (D246)', () => {
+    it('counts only terminal factual outcomes and substantiates skip/protection links', async () => {
+      const senderKey = 'weekly-sender';
+      await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'weekly@example.com',
+        'Weekly Sender',
+      );
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        senderKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_failed',
+        senderKey,
+      });
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Weekly rule');
+      const [skipped, protectedMatch] = await db
+        .insert(ruleMatchLog)
+        .values([
+          {
+            ruleId,
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderKey,
+            modeAtMatch: 'observe' as const,
+            confidence: '0.90',
+            reason: 'user skipped',
+            resolution: 'dismissed' as const,
+            resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+            dismissReason: 'user' as const,
+          },
+          {
+            ruleId,
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderKey: 'protected-weekly',
+            modeAtMatch: 'active' as const,
+            confidence: '0.90',
+            reason: 'became protected',
+            resolution: 'dismissed' as const,
+            resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+            dismissReason: 'protected' as const,
+          },
+        ])
+        .returning({ id: ruleMatchLog.id });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        window: '7d',
+        completed: 1,
+        skipped: 1,
+        failed: 1,
+        recovered: 0,
+        protected: 1,
+      });
+
+      const unfiltered = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(unfiltered.rows.map((row) => row.id)).not.toContain(skipped!.id);
+      expect(unfiltered.rows.map((row) => row.id)).not.toContain(protectedMatch!.id);
+
+      const skippedEvidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['skipped'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(skippedEvidence.rows).toHaveLength(1);
+      expect(skippedEvidence.rows[0]).toMatchObject({
+        id: skipped!.id,
+        source: 'autopilot',
+        reviewOutcome: 'skipped',
+        affectedCount: 0,
+      });
+    });
+
+    it('excludes user-reverted actions from completed/recovered counts and evidence', async () => {
+      const senderKey = 'weekly-undone';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'undone@example.com',
+        'Undone Sender',
+      );
+      const revertedToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS + 60_000),
+      });
+      const standingToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+      });
+      const undoneRowId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: revertedToken,
+      });
+      const standingRowId = await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: standingToken,
+      });
+      // Recovered-then-undone: the reverted guard must win over the
+      // recovery lineage branch (SQL case = first match).
+      const rootId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - 3 * ONE_DAY_MS),
+      });
+      const recoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'done',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        rootActionId: rootId,
+        retryOfActionId: rootId,
+        recoveryAttempt: 1,
+      });
+      const recoveredRevertedToken = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + 6 * ONE_DAY_MS),
+        executedAt: new Date(NOW_MS - ONE_DAY_MS),
+        revertedAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: recoveredRevertedToken,
+        actionJobId: recoveryId,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 1,
+        recovered: 0,
+      });
+
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['completed'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows.map((row) => row.id)).toEqual([standingRowId]);
+
+      const unfiltered = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(unfiltered.rows.find((row) => row.id === undoneRowId)).toMatchObject({
+        reviewOutcome: null,
+      });
+    });
+
+    it('classifies a zero-message recovery by action provenance without an undo token', async () => {
+      const senderKey = 'weekly-recovery';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'recovery@example.com',
+        'Recovery Sender',
+      );
+      const rootId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      const recoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'done',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId: rootId,
+        retryOfActionId: rootId,
+        recoveryAttempt: 1,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        affectedCount: 0,
+        actionJobId: recoveryId,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 0,
+        failed: 0,
+        recovered: 1,
+      });
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['recovered'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows).toHaveLength(1);
+      expect(evidence.rows[0]!.reviewOutcome).toBe('recovered');
+    });
+
+    it('never binds a raw JS Date next to a raw sql expression (postgres.js parity)', async () => {
+      // Regression: the skipped/protected evidence list and the export
+      // iteration both compare raw sql expressions (`resolvedAt` wrapper,
+      // the failed-terminal-time CASE) against Date bounds. postgres.js
+      // rejects a Date bound outside a column encoder, which 500'd the
+      // weekly-review evidence links and truncated every support bundle.
+      const senderKey = 'driver-parity-sender';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'parity@example.com',
+        'Parity Sender',
+      );
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Parity rule');
+      await db.insert(ruleMatchLog).values({
+        ruleId,
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey,
+        modeAtMatch: 'observe' as const,
+        confidence: '0.90',
+        reason: 'user skipped',
+        resolution: 'dismissed' as const,
+        resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+        dismissReason: 'user' as const,
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+
+      driverParamLog.length = 0;
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['skipped', 'protected'],
+        dateFrom: new Date(NOW_MS - 7 * ONE_DAY_MS),
+        dateTo: new Date(NOW_MS),
+        cursor: { occurredAt: new Date(NOW_MS), id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' },
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows.map((row) => row.reviewOutcome)).toContain('skipped');
+
+      const exported: string[] = [];
+      for await (const row of svc.iterateActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        nowMs: NOW_MS,
+      })) {
+        exported.push(row.id);
+      }
+      expect(exported.length).toBeGreaterThan(0);
+
+      const rawDateParams = driverParamLog.flat().filter((param) => param instanceof Date);
+      expect(rawDateParams).toEqual([]);
+    });
+  });
 
   describe('summarizeActivity (DQ16 share receipt)', () => {
     it('counts ONLY the current mailbox — decisions + undos seeded in both mailboxes', async () => {

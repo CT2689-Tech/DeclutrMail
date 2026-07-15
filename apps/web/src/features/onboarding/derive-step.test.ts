@@ -18,7 +18,7 @@ const baseState = (
   retry: () => undefined,
 });
 
-const fresh = { onboardedAt: null, presetPicks: null };
+const fresh = { onboardedAt: null, goal: null, presetPicks: null };
 
 describe('deriveAuthedStep', () => {
   it('error beats loading (no forever-skeleton on a failed read)', () => {
@@ -41,7 +41,11 @@ describe('deriveAuthedStep', () => {
 
   it('done once onboarded_at is set, regardless of anything else', () => {
     const step = deriveAuthedStep({
-      state: baseState({ onboardedAt: '2026-06-11T00:00:00Z', presetPicks: null }),
+      state: baseState({
+        onboardedAt: '2026-06-11T00:00:00Z',
+        goal: null,
+        presetPicks: null,
+      }),
       hasActiveMailbox: false,
       syncReady: null,
     });
@@ -86,10 +90,19 @@ describe('deriveAuthedStep', () => {
 
   it('first-triage when picks submitted — EMPTY picks count as submitted', () => {
     const step = deriveAuthedStep({
-      state: baseState({ onboardedAt: null, presetPicks: [] }),
+      state: baseState({ onboardedAt: null, goal: 'reduce_newsletters', presetPicks: [] }),
       hasActiveMailbox: true,
       syncReady: true,
     });
     expect(step.kind).toBe('first-triage');
+  });
+
+  it('returns to goal selection for legacy picks without a goal', () => {
+    const step = deriveAuthedStep({
+      state: baseState({ onboardedAt: null, goal: null, presetPicks: [] }),
+      hasActiveMailbox: true,
+      syncReady: true,
+    });
+    expect(step.kind).toBe('preset-pick');
   });
 });

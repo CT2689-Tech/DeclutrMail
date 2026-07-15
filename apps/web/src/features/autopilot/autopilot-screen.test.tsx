@@ -39,8 +39,19 @@ import {
   RULE_PREVIEW_RESULT,
 } from './fixtures';
 import type { AutopilotScreenState, SuggestionWithRule } from './types';
+import type { AutopilotPatternSuggestionDto } from '@/lib/api/autopilot';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
+
+const { trackMock, authState } = vi.hoisted(() => ({
+  trackMock: vi.fn(),
+  authState: { activeMailboxId: 'mailbox-a' as string | null },
+}));
+vi.mock('@/lib/posthog', () => ({ track: trackMock }));
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: { activeMailboxId: authState.activeMailboxId } }),
+  getActiveMailboxEmail: () => 'active@example.com',
+}));
 
 function ready(rules = PRESET_RULES_OBSERVE): AutopilotScreenState {
   const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.map((match) => ({
@@ -71,6 +82,22 @@ function renderRoute() {
     </QueryClientProvider>,
   );
 }
+
+const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
+  ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
+  presetKey: 'auto_archive_low_engagement',
+  ruleName: 'Auto-archive low-engagement',
+  actionKind: 'archive',
+  scope: 'account',
+  evidenceCount: 4,
+  evidenceWindowDays: 30,
+  dailyActionCap: 100,
+};
+
+beforeEach(() => {
+  trackMock.mockReset();
+  authState.activeMailboxId = 'mailbox-a';
+});
 
 describe('AutopilotScreen — edge states', () => {
   beforeEach(() => installFetchStub([]));
@@ -188,6 +215,145 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // D227 — the screen-new-senders preset surfaces as Later, never "Screen".
     expect(within(rulesList).getByText(/later for new senders/i)).toBeInTheDocument();
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
+  });
+
+  it('explains one repeated-decision suggestion without exposing sender identity (D246)', () => {
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+    const card = screen.getByRole('region', { name: /you archived 4 matching senders/i });
+    expect(within(card).getByText(/starts in observe: gmail does not change/i)).toBeInTheDocument();
+    expect(within(card).getByText(/this gmail account only/i)).toBeInTheDocument();
+    expect(within(card).getByText(/protected senders are always skipped/i)).toBeInTheDocument();
+    expect(within(card).getByText(/100 actions; extra matches wait/i)).toBeInTheDocument();
+    expect(within(card).getByText(/can be undone from activity/i)).toBeInTheDocument();
+    expect(card.textContent).not.toContain('@');
+  });
+
+  it('deduplicates pattern impressions per mailbox and rule across mailbox switches', async () => {
+    const state: AutopilotScreenState = {
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    };
+    const { rerender } = renderScreen(state);
+
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith(
+        'autopilot_pattern_suggestion_shown',
+        expect.objectContaining({ preset_key: PATTERN_SUGGESTION.presetKey }),
+      ),
+    );
+    expect(
+      trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+    ).toHaveLength(1);
+
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotScreen state={{ ...state }} />
+      </QueryClientProvider>,
+    );
+    expect(
+      trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+    ).toHaveLength(1);
+
+    authState.activeMailboxId = 'mailbox-b';
+    rerender(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotScreen state={{ ...state }} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        trackMock.mock.calls.filter(([event]) => event === 'autopilot_pattern_suggestion_shown'),
+      ).toHaveLength(2),
+    );
+  });
+
+  it('describes unsubscribe evidence as requests, not confirmed outcomes', () => {
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: {
+        ...PATTERN_SUGGESTION,
+        ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+        presetKey: 'auto_unsubscribe_noisy',
+        actionKind: 'unsubscribe',
+      },
+    });
+    expect(
+      screen.getByRole('region', { name: /you requested unsubscribe from 4 matching senders/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/you unsubscribed from/i)).toBeNull();
+  });
+
+  it('accepts a current pattern only into Observe through the dedicated endpoint (D246)', async () => {
+    const observed: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: `/api/autopilot/pattern-suggestion/${PATTERN_SUGGESTION.ruleId}/observe`,
+        respond: (_req, url) => {
+          observed.push(url.pathname);
+          return jsonOk({
+            data: {
+              ruleId: PATTERN_SUGGESTION.ruleId,
+              presetKey: PATTERN_SUGGESTION.presetKey,
+              decision: 'observe',
+              evidenceCount: PATTERN_SUGGESTION.evidenceCount,
+              decidedAt: '2026-07-15T00:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /use in observe/i }));
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).not.toContain('preview');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('persists Not now separately from the activation prompt (D246)', async () => {
+    const observed: string[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: `/api/autopilot/pattern-suggestion/${PATTERN_SUGGESTION.ruleId}/dismiss`,
+        respond: (_req, url) => {
+          observed.push(url.pathname);
+          return jsonOk({
+            data: {
+              ruleId: PATTERN_SUGGESTION.ruleId,
+              presetKey: PATTERN_SUGGESTION.presetKey,
+              decision: 'dismissed',
+              evidenceCount: PATTERN_SUGGESTION.evidenceCount,
+              decidedAt: '2026-07-15T00:00:00.000Z',
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen({
+      kind: 'ready',
+      rules: PRESET_RULES_ALL_FIVE,
+      suggestions: [],
+      patternSuggestion: PATTERN_SUGGESTION,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /not now/i }));
+    await waitFor(() => expect(observed).toEqual([expect.stringMatching(/\/dismiss$/)]));
   });
 
   it('explains Observe, Active, Paused, and Off consequences at rule level', () => {

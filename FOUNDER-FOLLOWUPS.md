@@ -1622,6 +1622,13 @@ cloud sessions auto-discover them on startup.
 <!-- Items move here when completed. Keep the original entry, add the
 "Status: Done <date>" line. -->
 
+### 2026-07-15 — Decide the `codex/*` branch-name exemption (hooks reject the Codex workflow)
+**Source:** session (PR #334 smoke — pushing the regression fixes)
+**Why:** Both the local pre-push hook and the authoritative `branch-name.yml` reject `codex/<slug>` branch names, but the Codex workflow now ships real PRs from them (#333 merged, #334 open). During the smoke, pushing fixes to `codex/d246-behavioral-activation-trust` required checking out a convention-compliant alias branch and pushing the refspec — workable but a fragile workaround for every future codex PR. This is CLAUDE.md §3 plan-drift: practice has outrun the §6 convention.
+**How:** Either (a) add `codex/` to the allowed prefixes in `.husky/pre-push` + `.github/workflows/branch-name.yml` (mirroring the dependabot exemption; commits on those branches already carry `(D###)` trailers), or (b) require future Codex work to branch as `<type>/d<NNN>-…`. One-line change either way; your call which.
+**Verifies by:** `git push` from a `codex/*` checkout passes the pre-push hook, and the "Branch follows CLAUDE.md §6 convention" check is green on the next codex PR.
+**Status:** Done 2026-07-15 — founder chose **(a)** ("we need to fix CI as well", PR #334 go-ahead). `codex/<kebab>` added to `.husky/pre-push` + `branch-name.yml` on the #334 branch; hook smoked directly (exit 0 on the codex checkout, rejects `codex/Foo`, `codex/a/b`); the workflow check verifies on the PR's own CI. CLAUDE.md §6 needs a one-line mention in the next founder distill pass.
+
 ### 2026-07-08 — D49 grid/table toggle retired in Senders — RATIFY or REVERT (plan-drift)
 **Source:** PR #294 (senders Tier-2/3 suite) — the buildout rearchitected Senders around the grid as the single adaptive surface and removed the `[Grid | Table]` toggle.
 **Why:** D49 ("Always grid; table is per-session toggle") is a **locked** decision, so removing the table is plan-drift (CLAUDE.md §3 — the founder's call). Shipped under the founder's explicit "best-expertise / don't-wait / long-term-solution" directive because the new **brand rollup** (eTLD+1 grouping) is a stronger analytical/scan surface than the flat sortable table, and mobile was already grid-only per D49 itself.

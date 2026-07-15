@@ -89,11 +89,24 @@ export type { NewOutboxEvent, OutboxEvent, OutboxStatus } from './schema/outbox-
 export { providerSyncState, syncReadiness, syncStage } from './schema/provider-sync-state';
 export type { NewProviderSyncState, ProviderSyncState } from './schema/provider-sync-state';
 export {
+  productFeedback,
+  productFeedbackRating,
+  productFeedbackSurface,
+} from './schema/product-feedback';
+export type {
+  NewProductFeedback,
+  ProductFeedback,
+  ProductFeedbackRating,
+  ProductFeedbackSurface,
+} from './schema/product-feedback';
+export {
+  autopilotMatchDismissReason,
   autopilotMatchMode,
   autopilotMatchResolution,
   ruleMatchLog,
 } from './schema/rule-match-log';
 export type {
+  AutopilotMatchDismissReason,
   AutopilotMatchMode,
   AutopilotMatchResolution,
   NewRuleMatchLog,

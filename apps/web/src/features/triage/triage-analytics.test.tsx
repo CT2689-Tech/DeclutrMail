@@ -129,11 +129,12 @@ const statusDoneHandler = {
 const actionTakenCalls = () =>
   h.track.mock.calls.filter(([name]) => name === 'triage_action_taken');
 
-function renderScreen() {
+function renderScreen(journey: 'daily' | 'first_relief' = 'daily') {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
       <TriageScreen
+        journey={journey}
         state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
       />
     </QueryWrapper>,
@@ -171,6 +172,27 @@ afterEach(() => {
 });
 
 describe('triage_action_taken (D159)', () => {
+  it('attributes preview and accepted decisions to the finite first-relief journey', async () => {
+    addFetchHandlers([enqueueOkHandler, statusDoneHandler]);
+    renderScreen('first_relief');
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await screen.findByText(/emails currently match in Inbox/i);
+
+    expect(h.track).toHaveBeenCalledWith('action_preview_viewed', {
+      journey: 'first_relief',
+      verb: 'archive',
+    });
+    await confirmOpenSheet('Archive');
+    await waitFor(() =>
+      expect(h.track).toHaveBeenCalledWith('action_confirmed', {
+        journey: 'first_relief',
+        verb: 'archive',
+      }),
+    );
+  });
+
   it('sheet-confirmed Archive fires EXACTLY once, on mutation success, with the full payload', async () => {
     addFetchHandlers([enqueueOkHandler, statusDoneHandler]);
     renderScreen();

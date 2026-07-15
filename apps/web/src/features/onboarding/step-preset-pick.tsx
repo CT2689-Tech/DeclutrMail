@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, tokens, toast } from '@declutrmail/shared';
 import type {
+  OnboardingGoal,
   OnboardingPresetCatalogItem,
   OnboardingPresetKey,
 } from '@declutrmail/shared/contracts';
@@ -11,6 +12,7 @@ import type {
 import { autopilotKeys } from '@/features/autopilot/api/query-keys';
 import { fetchAutopilotRules } from '@/lib/api/autopilot';
 import { captureFeatureException } from '@/lib/sentry';
+import { track } from '@/lib/posthog';
 
 import { useSubmitPresetPicks } from './api/use-onboarding';
 import { StepShell } from './step-shell';
@@ -19,6 +21,28 @@ const { color, font } = tokens;
 
 /** Brief seed-wait poll (D110 sequencing): every 2.5s while empty. */
 const RULES_SEED_POLL_MS = 2_500;
+
+const GOALS: ReadonlyArray<{
+  id: OnboardingGoal;
+  title: string;
+  description: string;
+}> = [
+  {
+    id: 'reduce_newsletters',
+    title: 'Reduce newsletters',
+    description: 'Start with recurring senders that are easiest to review.',
+  },
+  {
+    id: 'protect_important',
+    title: 'Protect important senders',
+    description: 'Start with people and senders you are most likely to keep.',
+  },
+  {
+    id: 'clear_old_promotions',
+    title: 'Clear old promotions',
+    description: 'Start with promotional senders and archive decisions.',
+  },
+];
 
 /** Verb chip labels — K/A/U/L only (§2.2). */
 const VERB_LABEL: Record<OnboardingPresetCatalogItem['verb'], string> = {
@@ -46,14 +70,17 @@ const VERB_LABEL: Record<OnboardingPresetCatalogItem['verb'], string> = {
  */
 export function StepPresetPick({
   presets,
+  initialGoal = null,
   onSubmitted,
   corner,
 }: {
   presets: OnboardingPresetCatalogItem[];
+  initialGoal?: OnboardingGoal | null;
   onSubmitted: () => void;
   corner?: ReactNode;
 }) {
   const [picked, setPicked] = useState<ReadonlySet<OnboardingPresetKey>>(new Set());
+  const [goal, setGoal] = useState<OnboardingGoal | null>(initialGoal);
   const submit = useSubmitPresetPicks();
 
   // Same key as the Autopilot screen so the cache is shared; the poll
@@ -80,24 +107,28 @@ export function StepPresetPick({
   };
 
   const onContinue = () => {
-    if (submit.isPending) return;
-    submit.mutate([...picked], {
-      onSuccess: (result) => {
-        toast(
-          result.rulesSeeded
-            ? result.presetKeys.length > 0
-              ? 'Rules saved — they start in Observe mode.'
-              : 'Saved — you can add rules any time in Autopilot.'
-            : 'Choices saved — they apply automatically once your rules finish setting up.',
-          'success',
-        );
-        onSubmitted();
+    if (submit.isPending || goal === null) return;
+    submit.mutate(
+      { goal, presetKeys: [...picked] },
+      {
+        onSuccess: (result) => {
+          void track('activation_goal_selected', { goal: result.goal });
+          toast(
+            result.rulesSeeded
+              ? result.presetKeys.length > 0
+                ? 'Rules saved — they start in Observe mode.'
+                : 'Saved — you can add rules any time in Autopilot.'
+              : 'Choices saved — they apply automatically once your rules finish setting up.',
+            'success',
+          );
+          onSubmitted();
+        },
+        onError: (err) => {
+          captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
+          toast("Couldn't save your picks — try again.", 'warn');
+        },
       },
-      onError: (err) => {
-        captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
-        toast("Couldn't save your picks — try again.", 'warn');
-      },
-    });
+    );
   };
 
   return (
@@ -108,6 +139,7 @@ export function StepPresetPick({
       maxWidth={560}
       corner={corner}
     >
+      <GoalSelector value={goal} onChange={setGoal} />
       <div
         role="group"
         aria-label="Starting rules"
@@ -201,14 +233,16 @@ export function StepPresetPick({
       <Button
         tone="primary"
         onClick={onContinue}
-        disabled={submit.isPending}
+        disabled={submit.isPending || goal === null}
         style={{ minWidth: 220 }}
       >
         {submit.isPending
           ? 'Saving…'
-          : picked.size > 0
-            ? `Continue with ${picked.size} ${picked.size === 1 ? 'rule' : 'rules'}`
-            : 'Continue without rules'}
+          : goal === null
+            ? 'Choose a goal to continue'
+            : picked.size > 0
+              ? `Continue with ${picked.size} ${picked.size === 1 ? 'rule' : 'rules'}`
+              : 'Continue without rules'}
       </Button>
     </StepShell>
   );
@@ -223,26 +257,33 @@ export function StepPresetPick({
  * first real sender review before being introduced to automation.
  */
 export function StepFirstSenderReview({
+  initialGoal = null,
   onSubmitted,
   corner,
 }: {
   onSubmitted: () => void;
+  initialGoal?: OnboardingGoal | null;
   corner?: ReactNode;
 }) {
   const submit = useSubmitPresetPicks();
+  const [goal, setGoal] = useState<OnboardingGoal | null>(initialGoal);
 
   const onContinue = () => {
-    if (submit.isPending) return;
-    submit.mutate([], {
-      onSuccess: () => {
-        toast("Ready — let's review your first sender.", 'success');
-        onSubmitted();
+    if (submit.isPending || goal === null) return;
+    submit.mutate(
+      { goal, presetKeys: [] },
+      {
+        onSuccess: (result) => {
+          void track('activation_goal_selected', { goal: result.goal });
+          toast("Ready — let's review your first sender.", 'success');
+          onSubmitted();
+        },
+        onError: (err) => {
+          captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
+          toast("Couldn't continue — try again.", 'warn');
+        },
       },
-      onError: (err) => {
-        captureFeatureException(err, { surface: 'onboarding', reason: 'preset_picks' });
-        toast("Couldn't continue — try again.", 'warn');
-      },
-    });
+    );
   };
 
   return (
@@ -253,14 +294,66 @@ export function StepFirstSenderReview({
       maxWidth={560}
       corner={corner}
     >
+      <GoalSelector value={goal} onChange={setGoal} />
       <Button
         tone="primary"
         onClick={onContinue}
-        disabled={submit.isPending}
+        disabled={submit.isPending || goal === null}
         style={{ minWidth: 220 }}
       >
-        {submit.isPending ? 'Getting it ready…' : 'Review my first sender'}
+        {submit.isPending
+          ? 'Getting it ready…'
+          : goal === null
+            ? 'Choose a goal to continue'
+            : 'Review my first sender'}
       </Button>
     </StepShell>
+  );
+}
+
+function GoalSelector({
+  value,
+  onChange,
+}: {
+  value: OnboardingGoal | null;
+  onChange: (goal: OnboardingGoal) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="What would help most right now?"
+      style={{ display: 'grid', gap: 10, width: '100%', marginBottom: 24 }}
+    >
+      <p style={{ margin: 0, color: color.fg, fontSize: 14, fontWeight: 600 }}>
+        What would help most right now?
+      </p>
+      {GOALS.map((goal) => {
+        const selected = value === goal.id;
+        return (
+          <button
+            key={goal.id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => onChange(goal.id)}
+            style={{
+              textAlign: 'left',
+              padding: '12px 14px',
+              borderRadius: 10,
+              border: `1px solid ${selected ? color.primaryBorder : color.lineSoft}`,
+              background: selected ? color.primarySoft : color.card,
+              color: color.fg,
+              cursor: 'pointer',
+              fontFamily: font.sans,
+            }}
+          >
+            <strong style={{ display: 'block', fontSize: 14 }}>{goal.title}</strong>
+            <span style={{ display: 'block', color: color.fgMuted, fontSize: 12, marginTop: 3 }}>
+              {goal.description}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

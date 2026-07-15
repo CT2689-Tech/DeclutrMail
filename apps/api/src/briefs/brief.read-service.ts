@@ -14,7 +14,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 
-import { briefRuns } from '@declutrmail/db';
+import { briefRuns, productFeedback } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Brief, BriefMarkOpenedResult } from './brief.types.js';
@@ -32,17 +32,32 @@ export class BriefReadService {
    * messages and the empty-day branch hasn't run). Controller maps the
    * null to 404 — the FE re-fetches once the snapshot lands.
    *
-   * `todayLocal` is the user's local-date YYYY-MM-DD — resolved by the
-   * controller from the FE-supplied `?tz=` IANA zone (UTC when absent;
-   * see `resolveBriefTodayLocal`).
+   * `dateLocal` is the user's local-date YYYY-MM-DD — resolved by the
+   * controller from persisted `users.timezone`, the same authority as
+   * snapshot generation (UTC when absent or invalid).
    */
-  async getForDate(mailboxAccountId: string, dateLocal: string): Promise<Brief | null> {
+  async getForDate(
+    mailboxAccountId: string,
+    dateLocal: string,
+    userId: string | null = null,
+  ): Promise<Brief | null> {
     if (!DATE_RE.test(dateLocal)) {
       throw new BadRequestException('Date must be YYYY-MM-DD.');
     }
     const [row] = await this.db
-      .select()
+      .select({ brief: briefRuns, feedbackRating: productFeedback.rating })
       .from(briefRuns)
+      .leftJoin(
+        productFeedback,
+        userId
+          ? and(
+              eq(productFeedback.briefRunId, briefRuns.id),
+              eq(productFeedback.mailboxAccountId, mailboxAccountId),
+              eq(productFeedback.userId, userId),
+              eq(productFeedback.surface, 'brief'),
+            )
+          : sql`false`,
+      )
       .where(
         and(
           eq(briefRuns.mailboxAccountId, mailboxAccountId),
@@ -50,7 +65,7 @@ export class BriefReadService {
         ),
       )
       .limit(1);
-    return row ? projectBrief(row) : null;
+    return row ? projectBrief(row.brief, row.feedbackRating) : null;
   }
 
   /**
@@ -61,7 +76,12 @@ export class BriefReadService {
    * The `from`/`to` inputs are YYYY-MM-DD strings — the same wire format
    * `brief_runs.run_date_local` uses, so we avoid Date-coercion drift.
    */
-  async listByRange(mailboxAccountId: string, from: string, to: string): Promise<Brief[]> {
+  async listByRange(
+    mailboxAccountId: string,
+    from: string,
+    to: string,
+    userId: string | null = null,
+  ): Promise<Brief[]> {
     if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
       throw new BadRequestException('from and to must be YYYY-MM-DD.');
     }
@@ -70,8 +90,19 @@ export class BriefReadService {
     }
     const PAGE_SIZE = 60;
     const rows = await this.db
-      .select()
+      .select({ brief: briefRuns, feedbackRating: productFeedback.rating })
       .from(briefRuns)
+      .leftJoin(
+        productFeedback,
+        userId
+          ? and(
+              eq(productFeedback.briefRunId, briefRuns.id),
+              eq(productFeedback.mailboxAccountId, mailboxAccountId),
+              eq(productFeedback.userId, userId),
+              eq(productFeedback.surface, 'brief'),
+            )
+          : sql`false`,
+      )
       .where(
         and(
           eq(briefRuns.mailboxAccountId, mailboxAccountId),
@@ -81,7 +112,7 @@ export class BriefReadService {
       )
       .orderBy(desc(briefRuns.runDateLocal), desc(briefRuns.id))
       .limit(PAGE_SIZE);
-    return rows.map((r) => projectBrief(r));
+    return rows.map((row) => projectBrief(row.brief, row.feedbackRating));
   }
 
   /**
@@ -126,7 +157,10 @@ export class BriefReadService {
   }
 }
 
-function projectBrief(row: typeof briefRuns.$inferSelect): Brief {
+function projectBrief(
+  row: typeof briefRuns.$inferSelect,
+  feedbackRating: (typeof productFeedback.$inferSelect)['rating'] | null,
+): Brief {
   const projectItem = (item: (typeof row.briefPayload.reply)[number]) => ({
     senderKey: item.senderKey,
     senderName: item.senderName,
@@ -147,5 +181,11 @@ function projectBrief(row: typeof briefRuns.$inferSelect): Brief {
     generatedAt: row.generatedAt.toISOString(),
     openedAt: row.openedAt?.toISOString() ?? null,
     emailSentAt: row.emailSentAt?.toISOString() ?? null,
+    feedbackRating:
+      feedbackRating === 'useful' ||
+      feedbackRating === 'not_useful' ||
+      feedbackRating === 'wrong_reason'
+        ? feedbackRating
+        : null,
   };
 }

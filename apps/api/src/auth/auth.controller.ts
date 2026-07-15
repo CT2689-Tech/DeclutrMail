@@ -40,7 +40,7 @@ export interface MailboxView extends MailboxSummary {
 
 /** Wire shape for GET /api/auth/me — drives the FE AuthProvider. */
 export interface MeEnvelope {
-  user: { id: string; email: string; workspaceId: string };
+  user: { id: string; email: string; workspaceId: string; timezone: string | null };
   mailboxes: MailboxView[];
   activeMailboxId: string | null;
   /** Workspace billing tier (D19) — drives every FE entitlement gate. */
@@ -106,7 +106,12 @@ export class AuthController {
       readiness: readiness.get(m.id) ?? null,
     }));
     return ok({
-      user: { id: user.id, email: user.email, workspaceId: user.workspaceId },
+      user: {
+        id: user.id,
+        email: user.email,
+        workspaceId: user.workspaceId,
+        timezone: user.timezone,
+      },
       mailboxes: mailboxViews,
       activeMailboxId,
       tier: quota.tier,
