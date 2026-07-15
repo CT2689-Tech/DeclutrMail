@@ -3,8 +3,10 @@
 // Wire contract for the Snoozed review screen:
 //
 //   GET   /api/snoozed              → Envelope<SnoozedSenderRow[]>
+//   GET   /api/snoozed/recovery     → Envelope<LaterReturnRecoverySummary>
 //   PATCH /api/snoozed/:senderId    → Envelope<SnoozeUpdateResult>
 //   POST  /api/snoozed/:senderId/wake → Envelope<WakeNowResult>
+//   POST  /api/snoozed/recovery/:senderId/wake → Envelope<WakeNowResult>
 //
 // Scope is SENDER-level only (D78) — there is no message-level snooze
 // at launch. "Later" is the canonical user-facing verb (D227); the
@@ -43,6 +45,35 @@ export interface SnoozedSenderRow {
   snoozedAt: string | null;
   /** Optional user note (D79/D80); null when unset. */
   reason: string | null;
+  /** Truthful state of this timer's scheduled return. */
+  returnStatus: LaterReturnStatus;
+  /** Last attempt to restore this sender, or null before the first attempt. */
+  lastReturnAttemptAt: string | null;
+  /** Safe recovery category; never a raw Gmail/provider error. */
+  returnFailureKind: LaterReturnFailureKind;
+}
+
+export type LaterReturnStatus = 'scheduled' | 'returning' | 'retrying' | 'missed';
+export type LaterReturnFailureKind = 'temporary' | 'reauthorize' | 'needs_attention' | null;
+
+/** Two missed 15-minute sweeps before an unattempted return is called missed. */
+export const LATER_RETURN_MISSED_AFTER_MS = 30 * 60 * 1_000;
+
+/**
+ * Small all-tier safety surface used by the app chrome. Full Later
+ * management remains tiered; recovery from a failed product action does not.
+ */
+export interface LaterReturnRecoverySummary {
+  affectedCount: number;
+  firstIssue: {
+    senderId: string;
+    displayName: string;
+    email: string;
+    snoozedUntil: string;
+    returnStatus: 'retrying' | 'missed';
+    lastReturnAttemptAt: string | null;
+    returnFailureKind: LaterReturnFailureKind;
+  } | null;
 }
 
 /** Snooze reason length cap — one short note, not a journal (D79). */

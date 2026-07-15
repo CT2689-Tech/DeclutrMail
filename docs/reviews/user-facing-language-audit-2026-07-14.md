@@ -261,6 +261,11 @@ question during the implementation Q&A:
    at least three Gmail-important messages in the past year. Read/open rate is
    never sufficient. Show the exact reason and preserve manual Unprotect as a
    sticky override.
+10. Later return failures notify by default in the app and always offer an
+    immediate retry, regardless of plan. Successful returns stay silent. A
+    future opt-in success notification must be backed by a durable return
+    event and explicit default-off preference; transient toasts or the current
+    unimplemented browser-push permission are not a notification system.
 
 These decisions are canonical in D245 and supersede the conflicting VIP,
 Snoozed-compatibility, and Later descriptions cited in the original audit.
@@ -293,6 +298,7 @@ automatically.
 | Recovery | Product-level Undo and Gmail Trash recovery were conflated. | Activity Undo, Gmail Trash recovery, and irreversible unsubscribe outcomes are separate. |
 | Failures | Generic errors could leave users unsure whether Gmail changed. | Errors distinguish not started, accepted but unconfirmed, partial, terminal, and retryable outcomes. |
 | Navigation and search | Snoozed/Later routes and transient list state were inconsistent. | `/later` is canonical; search/filter/sort state is shareable and restores through browser navigation. |
+| Later return safety | Failed or skipped wakes were only logged, and past-due rows still said “Wakes Today.” | Attempts and safe failure categories persist; the app shell and Later rows distinguish returning, retrying, and missed states, with automatic and immediate recovery. |
 | Contextual labels | Generic Close, Dismiss, and mode labels depended on visual context. | Controls name their target; privacy, previews, Activity, Autopilot, billing, and mailbox exits explain the decision in place. |
 
 ## Product decision resolved
@@ -323,7 +329,7 @@ accessibility foundations come before optional workflow acceleration.
 | Brief | Explain why an item ranked highly using observed facts | Builds confidence in prioritization | Show Gmail importance, reply history, recency, and volume—not an opaque score. |
 | Autopilot | Pre-activation change report: current matches, projected weekly volume, protected skips, and undo window | Makes automation consequences concrete before enabling Active | **Implemented 2026-07-14:** generated from the same preview and entitlement contracts, with early estimates labelled. |
 | Autopilot | Weekly automation digest with successes, skips, failures, and saved inbox volume | Helps users verify continuing value and catch drift | Link every count to Activity. |
-| Later | Missed-wake/failure state plus optional notification when mail returns | Prevents scheduled mail from silently remaining out of Inbox | High priority; expose retry and last-attempt truth. |
+| Later | Missed-wake/failure state plus optional notification when mail returns | Prevents scheduled mail from silently remaining out of Inbox | **Failure recovery implemented 2026-07-14:** durable attempt/failure truth, two-sweep grace, all-tier app alert, retryable automatic recovery, and immediate recovery restricted to failed/missed timers. Deterministic failures stop retrying; reschedules win races. Successful returns stay silent; reliable opt-in success notices require a durable event first. |
 | Later | Reschedule history on the row | Helps users remember why and when a sender was deferred | Keep the default row compact; disclose history on demand. |
 | Followups | Accuracy feedback and flexible reminder timing per thread/sender | Reduces false positives and makes follow-up timing fit real work | Preserve “observed sent mail,” not a promise that a reply is owed. |
 | Screener | Preview sender history and “allow once / always allow” distinctions | Reduces accidental standing rules from one unusual message | Keep current-message and future-policy choices visibly separate. |
@@ -366,6 +372,10 @@ accessibility foundations come before optional workflow acceleration.
   desktop and mobile/reduced-motion routes plus keyboard focus behavior.
 - Reconciled standard Pro at $19/month or $190/year and kept the $129/year
   Founding Pro offer distinct across product and provider catalog sources.
+- Added durable Later-return attempt/failure state, a two-sweep missed-return
+  threshold, truthful row states, and a persistent all-tier recovery alert.
+  Successful returns remain silent; no fake browser-push or email preference
+  was added without a durable delivery event.
 - Updated canonical planning, ADR, API, Senders, and language-audit docs.
 - Validation covers TypeScript, focused API/worker/web/shared tests, migration
   checks, diff/format checks, and a 12-case authenticated live Playwright smoke.

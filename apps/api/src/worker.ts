@@ -44,6 +44,7 @@ import {
   InvalidGrantError,
   LABEL_ACTION_QUEUE,
   LabelActionWorker,
+  MAILBOX_ACTION_LOCK_NS,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxDispatcherWorker,
   OutboxPublisher,
@@ -365,8 +366,6 @@ async function bootstrap(): Promise<void> {
     max: LABEL_ACTION_CONCURRENCY,
     prepare: false,
   });
-  /** Advisory-lock namespace (first key) — isolates label-action locks. */
-  const LABEL_ACTION_LOCK_NS = 0x4c41; // 'LA'
   // D181 audit writer. The worker is standalone (no Nest DI), so the
   // service is constructed directly against the worker's own `db`. The
   // service swallows its own insert failures so audit downtime never
@@ -539,11 +538,11 @@ async function bootstrap(): Promise<void> {
     async run(mailboxAccountId, fn) {
       const reserved = await lockPg.reserve();
       try {
-        await reserved`SELECT pg_advisory_lock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+        await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         return await fn();
       } finally {
         try {
-          await reserved`SELECT pg_advisory_unlock(${LABEL_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
+          await reserved`SELECT pg_advisory_unlock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         } catch {
           // Best-effort unlock; the session ending releases it regardless.
         }
@@ -1573,6 +1572,7 @@ async function bootstrap(): Promise<void> {
     db,
     gmailMutation: gmailMutationAccess,
     labelMap: new RedisSnoozeLabelMapStore(connection),
+    lock: mailboxLock,
   });
   snoozeWakeWorker.setObserver(observer);
   snoozeWakeWorker.setDeadLetterRecorder(deadLetterRecorder);

@@ -28,7 +28,9 @@ import {
   snoozeSweepJobId,
   snoozeWakeNowJobId,
 } from './snooze-wake.queue.js';
-import { laterLabelName, SnoozeWakeWorker } from './snooze-wake.worker.js';
+import { laterLabelName, SnoozeWakeWorker, type SnoozeWakeJobData } from './snooze-wake.worker.js';
+import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { InvalidGrantError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -135,9 +137,11 @@ async function seedSnooze(
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change: LabelChange }[] = [];
   shouldThrow: Error | null = null;
+  beforeBatchModify: (() => Promise<void> | void) | null = null;
   labelIdsByName = new Map<string, string>([['DeclutrMail/Later', 'Label_7']]);
   async modifyLabels(): Promise<void> {}
   async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+    await this.beforeBatchModify?.();
     if (this.shouldThrow) throw this.shouldThrow;
     this.calls.push({ ids: [...messageIds], change });
   }
@@ -174,12 +178,30 @@ const CTX: WorkerContext = {
 const NOW = new Date('2026-06-11T12:00:00Z');
 const PAST = new Date('2026-06-11T11:00:00Z');
 const FUTURE = new Date('2026-06-12T09:00:00Z');
+const TIMER_SET_AT = new Date('2026-06-01T00:00:00Z');
+
+function targetedWakeJob(
+  mailboxAccountId: string,
+  snoozedUntil: Date = FUTURE,
+  attemptDiscriminator = 'manual-0',
+): Extract<SnoozeWakeJobData, { kind: 'wake' }> {
+  return {
+    kind: 'wake',
+    mailboxAccountId,
+    senderKey: SENDER_KEY_A,
+    scheduledAtMinute: '2026-06-11T12:00',
+    expectedSnoozedUntil: snoozedUntil.toISOString(),
+    expectedSnoozedAt: TIMER_SET_AT.toISOString(),
+    attemptDiscriminator,
+  };
+}
 
 function makeWorker(db: Db, gmail: GmailMutationAccess, labelMap: SnoozeLabelMapStore) {
   return new SnoozeWakeWorker({
     db: db as never,
     gmailMutation: gmail,
     labelMap,
+    lock: PASSTHROUGH_MAILBOX_LOCK,
     now: () => NOW,
     concurrency: 1,
   });
@@ -213,16 +235,17 @@ describe('SnoozeWakeWorker — targeted wake', () => {
     // Not in the Later label — must not be touched.
     await seedMessage(db, mailboxId, SENDER_KEY_A, 'm3', ['INBOX']);
     await seedSnooze(db, mailboxId, SENDER_KEY_A, FUTURE, 'after launch');
+    await db
+      .update(senderPolicies)
+      .set({
+        snoozeWakeLastAttemptAt: new Date('2026-06-11T11:00:00Z'),
+        snoozeWakeLastFailedAt: new Date('2026-06-11T11:00:00Z'),
+        snoozeWakeFailureCount: 2,
+        snoozeWakeFailureKind: 'temporary',
+      })
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
 
-    const result = await worker.processJob(
-      {
-        kind: 'wake',
-        mailboxAccountId: mailboxId,
-        senderKey: SENDER_KEY_A,
-        scheduledAtMinute: '2026-06-11T12:00',
-      },
-      CTX,
-    );
+    const result = await worker.processJob(targetedWakeJob(mailboxId), CTX);
 
     expect(result.restoredMessages).toBe(2);
     expect(gmail.calls).toHaveLength(1);
@@ -255,6 +278,10 @@ describe('SnoozeWakeWorker — targeted wake', () => {
     expect(policy!.snoozedUntil).toBeNull();
     expect(policy!.snoozedAt).toBeNull();
     expect(policy!.snoozedReason).toBeNull();
+    expect(policy!.snoozeWakeLastAttemptAt).toBeNull();
+    expect(policy!.snoozeWakeLastFailedAt).toBeNull();
+    expect(policy!.snoozeWakeFailureCount).toBe(0);
+    expect(policy!.snoozeWakeFailureKind).toBeNull();
 
     // Mapping published for the API list read.
     expect(labelMap.store.get(mailboxId)).toBe('Label_7');
@@ -263,12 +290,7 @@ describe('SnoozeWakeWorker — targeted wake', () => {
   it('is idempotent — a second wake finds nothing and calls Gmail never', async () => {
     await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
     await seedSnooze(db, mailboxId, SENDER_KEY_A, FUTURE);
-    const job = {
-      kind: 'wake' as const,
-      mailboxAccountId: mailboxId,
-      senderKey: SENDER_KEY_A,
-      scheduledAtMinute: '2026-06-11T12:00',
-    };
+    const job = targetedWakeJob(mailboxId);
 
     await worker.processJob(job, CTX);
     gmail.calls = [];
@@ -278,6 +300,27 @@ describe('SnoozeWakeWorker — targeted wake', () => {
     expect(gmail.calls).toHaveLength(0);
   });
 
+  it('a targeted retry cannot wake a timer that was rescheduled before processing', async () => {
+    await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
+    const replacementUntil = new Date('2026-06-20T09:00:00Z');
+    const replacementAt = new Date('2026-06-11T12:01:00Z');
+    await db
+      .update(senderPolicies)
+      .set({ snoozedUntil: replacementUntil, snoozedAt: replacementAt })
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+
+    const result = await worker.processJob(targetedWakeJob(mailboxId, PAST, 'recovery-1'), CTX);
+
+    expect(result.woken).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozedUntil?.toISOString()).toBe(replacementUntil.toISOString());
+  });
+
   it('does not touch other senders or other mailboxes', async () => {
     const otherMailbox = await seedMailbox(db, 'other@declutrmail.ai');
     await seedSender(db, mailboxId, SENDER_KEY_B);
@@ -285,16 +328,9 @@ describe('SnoozeWakeWorker — targeted wake', () => {
     await seedMessage(db, mailboxId, SENDER_KEY_A, 'mine', ['Label_7']);
     await seedMessage(db, mailboxId, SENDER_KEY_B, 'other-sender', ['Label_7']);
     await seedMessage(db, otherMailbox, SENDER_KEY_A, 'other-mailbox', ['Label_7']);
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, FUTURE);
 
-    await worker.processJob(
-      {
-        kind: 'wake',
-        mailboxAccountId: mailboxId,
-        senderKey: SENDER_KEY_A,
-        scheduledAtMinute: '2026-06-11T12:00',
-      },
-      CTX,
-    );
+    await worker.processJob(targetedWakeJob(mailboxId), CTX);
 
     expect(gmail.calls).toHaveLength(1);
     expect(gmail.calls[0]!.ids).toEqual(['mine']);
@@ -308,17 +344,50 @@ describe('SnoozeWakeWorker — targeted wake', () => {
   it('a mapping-store outage does not block the restore', async () => {
     labelMap.failSet = true;
     await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
-    const result = await worker.processJob(
-      {
-        kind: 'wake',
-        mailboxAccountId: mailboxId,
-        senderKey: SENDER_KEY_A,
-        scheduledAtMinute: '2026-06-11T12:00',
-      },
-      CTX,
-    );
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, FUTURE);
+    const result = await worker.processJob(targetedWakeJob(mailboxId), CTX);
     expect(result.restoredMessages).toBe(1);
     expect(gmail.calls).toHaveLength(1);
+  });
+
+  it('never clears a replacement timer when the captured version changes', async () => {
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
+    await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
+    const replacementUntil = new Date('2026-06-20T09:00:00Z');
+    const replacementAt = new Date('2026-06-11T12:01:00Z');
+    gmail.beforeBatchModify = async () => {
+      await db
+        .update(senderPolicies)
+        .set({ snoozedUntil: replacementUntil, snoozedAt: replacementAt })
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    };
+
+    await worker.processJob(targetedWakeJob(mailboxId, PAST), CTX);
+
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozedUntil?.toISOString()).toBe(replacementUntil.toISOString());
+    expect(policy!.snoozedAt?.toISOString()).toBe(replacementAt.toISOString());
+  });
+
+  it('records a safe recovery category when Wake now fails terminally', async () => {
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
+    await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
+    const error = new InvalidGrantError('provider detail must not be stored');
+    gmail.shouldThrow = error;
+
+    await expect(worker.processJob(targetedWakeJob(mailboxId, PAST), CTX)).rejects.toBe(error);
+
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozeWakeLastFailedAt?.toISOString()).toBe(NOW.toISOString());
+    expect(policy!.snoozeWakeFailureCount).toBe(1);
+    expect(policy!.snoozeWakeFailureKind).toBe('reauthorize');
+    expect(JSON.stringify(policy)).not.toContain(error.message);
   });
 });
 
@@ -415,9 +484,36 @@ describe('SnoozeWakeWorker — sweep', () => {
       );
     // Still due — the next sweep retries.
     expect(policy!.snoozedUntil).not.toBeNull();
+    expect(policy!.snoozeWakeLastAttemptAt?.toISOString()).toBe(NOW.toISOString());
+    expect(policy!.snoozeWakeLastFailedAt?.toISOString()).toBe(NOW.toISOString());
+    expect(policy!.snoozeWakeFailureCount).toBe(1);
+    expect(policy!.snoozeWakeFailureKind).toBe('temporary');
     // The pass itself still succeeds (failure is isolated + counted).
     const runs = await db.select().from(cronRuns);
     expect(runs[0]!.status).toBe('succeeded');
+  });
+
+  it('does not automatically retry a deterministic failure forever', async () => {
+    await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
+    await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
+    await db
+      .update(senderPolicies)
+      .set({
+        snoozeWakeLastAttemptAt: NOW,
+        snoozeWakeLastFailedAt: NOW,
+        snoozeWakeFailureCount: 1,
+        snoozeWakeFailureKind: 'needs_attention',
+      })
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+
+    const result = await worker.processJob(
+      { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' },
+      CTX,
+    );
+
+    expect(result.dueProcessed).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
   });
 
   it('publishes the label mapping for mailboxes missing it', async () => {
@@ -544,6 +640,48 @@ describe('snooze-wake queue helpers', () => {
     const minute = snoozeScheduledAtMinute(new Date('2026-06-11T12:34:56Z'));
     expect(minute).toBe('2026-06-11T12:34');
     expect(snoozeSweepJobId(minute)).not.toContain(':');
-    expect(snoozeWakeNowJobId('mb-1', SENDER_KEY_A, minute)).not.toContain(':');
+    expect(
+      snoozeWakeNowJobId(
+        'mb-1',
+        SENDER_KEY_A,
+        minute,
+        FUTURE.toISOString(),
+        TIMER_SET_AT.toISOString(),
+        'manual-0',
+      ),
+    ).not.toContain(':');
+  });
+
+  it('dedups one request but separates replacement timers and recovery attempts', () => {
+    const args = [
+      'mb-1',
+      SENDER_KEY_A,
+      '2026-06-11T12:34',
+      FUTURE.toISOString(),
+      TIMER_SET_AT.toISOString(),
+      'recovery-1',
+    ] as const;
+    const first = snoozeWakeNowJobId(...args);
+    expect(snoozeWakeNowJobId(...args)).toBe(first);
+    expect(
+      snoozeWakeNowJobId(
+        'mb-1',
+        SENDER_KEY_A,
+        '2026-06-11T12:34',
+        FUTURE.toISOString(),
+        new Date('2026-06-02').toISOString(),
+        'recovery-1',
+      ),
+    ).not.toBe(first);
+    expect(
+      snoozeWakeNowJobId(
+        'mb-1',
+        SENDER_KEY_A,
+        '2026-06-11T12:34',
+        FUTURE.toISOString(),
+        TIMER_SET_AT.toISOString(),
+        'recovery-2',
+      ),
+    ).not.toBe(first);
   });
 });

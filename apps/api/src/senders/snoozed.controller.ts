@@ -11,11 +11,10 @@
 // `CsrfGuard` (double-submit cookie) — matching `PATCH
 // /api/senders/:id/policy`.
 //
-// TIER (D19/D83): the Snoozed review surface is a Pro capability —
-// every route 402s `PRO_FEATURE_REQUIRED` for under-tier workspaces
-// via `CapabilityGuard`. The Later VERB itself stays on every tier
-// (it rides the action pipeline + the D19 free cleanup quota); only
-// this review/manage surface is Pro.
+// TIER (D19/D83): the full Later review/reschedule surface is Pro. The
+// small return-failure summary and Wake-now recovery are explicitly
+// exempt: Later actions exist on every tier, so recovery cannot be an
+// upsell. Successful returns remain silent.
 //
 // PRIVACY (D7, D228): list rows carry sender display metadata, counts,
 // and timestamps only. Never fetches from Gmail (the worker owns the
@@ -33,6 +32,7 @@ import {
 } from '@nestjs/common';
 import { type Envelope, ok, SnoozeUpdateRequestSchema } from '@declutrmail/shared/contracts';
 import type {
+  LaterReturnRecoverySummary,
   SnoozedSenderRow,
   SnoozeUpdateResult,
   WakeNowResult,
@@ -40,7 +40,11 @@ import type {
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
-import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
+import {
+  CapabilityExempt,
+  CapabilityGuard,
+  RequiresCapability,
+} from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SnoozeService } from './snooze.service.js';
@@ -65,6 +69,19 @@ export class SnoozedController {
   @RateLimit('triage-load')
   async list(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<SnoozedSenderRow[]>> {
     return ok(await this.reads.list(mailbox.id));
+  }
+
+  /**
+   * Safety recovery is never paywalled: every tier can use Later via
+   * the action pipeline, so every tier must learn when a return is stuck.
+   */
+  @Get('recovery')
+  @CapabilityExempt()
+  @RateLimit('triage-load')
+  async recovery(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<LaterReturnRecoverySummary>> {
+    return ok(await this.reads.recovery(mailbox.id));
   }
 
   /**
@@ -121,6 +138,26 @@ export class SnoozedController {
       senderId,
     });
     return ok(result);
+  }
+
+  /** All-tier retry, but only after the return is actually failed/missed. */
+  @Post('recovery/:senderId/wake')
+  @CapabilityExempt()
+  @UseGuards(CsrfGuard)
+  @RateLimit('gmail-action')
+  async wakeRecovery(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('senderId') senderId: string,
+  ): Promise<Envelope<WakeNowResult>> {
+    if (!isUuid(senderId)) {
+      throw new BadRequestException('Sender id must be a UUID.');
+    }
+    return ok(
+      await this.snoozes.wakeRecovery({
+        mailboxAccountId: mailbox.id,
+        senderId,
+      }),
+    );
   }
 }
 

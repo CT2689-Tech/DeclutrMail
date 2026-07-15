@@ -47,6 +47,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(3),
     snoozedAt: isoInHours(-24),
     reason: 'after launch week',
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000002',
@@ -57,6 +60,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(30),
     snoozedAt: isoInHours(-2),
     reason: null,
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000003',
@@ -67,6 +73,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(24 * 5),
     snoozedAt: isoInHours(-48),
     reason: 'until the schedule is final',
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
   {
     senderId: '6f1f2f3a-0000-4000-8000-000000000004',
@@ -77,6 +86,9 @@ const FIXTURES: SnoozedSenderRow[] = [
     snoozedUntil: isoInHours(24 * 30),
     snoozedAt: isoInHours(-1),
     reason: null,
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
   },
 ];
 

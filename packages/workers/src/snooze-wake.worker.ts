@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { cronRuns, mailMessages, mailboxAccounts, senderPolicies } from '@declutrmail/db';
@@ -7,9 +7,11 @@ import { getActionDescriptor } from '@declutrmail/shared/actions';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { GmailMutationAccess } from './gmail-mutation-client.js';
+import type { MailboxActionLock } from './label-action.worker.js';
 import { createLimiter } from './reasoning.js';
 import type { SnoozeLabelMapStore } from './snooze-wake.queue.js';
 import type { WorkerContext } from './worker-context.js';
+import { isNonRetryable, ValidationError } from './worker-errors.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -59,9 +61,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * follow-up for the next schema window (see PR body).
  *
  * Failure isolation: the sweep wraps each due sender in try/catch — a
- * failed wake is counted, logged, and the row STAYS DUE
- * (`snoozed_until` untouched), so the next sweep retries it naturally.
- * The targeted wake path relies on BullMQ retries per `cronPolicy`.
+ * failed wake is counted, logged, persisted as a safe recovery state,
+ * and the row STAYS DUE (`snoozed_until` untouched), so the next sweep
+ * retries it naturally. The targeted wake path relies on BullMQ retries
+ * and persists the recovery state only after terminal failure.
  *
  * Idempotency: BullMQ jobId (see snooze-wake.queue.ts) dedups enqueues;
  * the sweep additionally claims a `cron_runs` row
@@ -90,7 +93,17 @@ export function laterLabelName(): string {
 
 export type SnoozeWakeJobData =
   | { kind: 'sweep'; scheduledAtMinute: string }
-  | { kind: 'wake'; mailboxAccountId: string; senderKey: string; scheduledAtMinute: string };
+  | {
+      kind: 'wake';
+      mailboxAccountId: string;
+      senderKey: string;
+      scheduledAtMinute: string;
+      /** Every targeted job pins one timer so a later reschedule always wins. */
+      expectedSnoozedUntil: string;
+      expectedSnoozedAt: string | null;
+      /** Distinguishes a deliberate retry while deduping the same request. */
+      attemptDiscriminator: string;
+    };
 
 /** Metric-only result — logged on `worker.succeeded`. */
 export interface SnoozeWakeResult {
@@ -115,6 +128,8 @@ export interface SnoozeWakeDeps {
   gmailMutation: GmailMutationAccess;
   /** Later-label-id mapping publisher (Redis in production). */
   labelMap: SnoozeLabelMapStore;
+  /** Same per-mailbox lock used by label actions and schedule writes. */
+  lock: MailboxActionLock;
   /** Override clock for tests. Defaults to `() => new Date()`. */
   now?: () => Date;
   /**
@@ -127,6 +142,11 @@ export interface SnoozeWakeDeps {
 
 const DEFAULT_CONCURRENCY = 4;
 
+interface SnoozeTimerVersion {
+  snoozedUntil: Date;
+  snoozedAt: Date | null;
+}
+
 export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, SnoozeWakeResult> {
   override readonly workerName = 'SnoozeWakeWorker';
   override readonly policy = 'cronPolicy' as const;
@@ -138,33 +158,51 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
   protected override getIdempotencyKey(payload: SnoozeWakeJobData): string {
     return payload.kind === 'sweep'
       ? `${this.workerName}:sweep:${payload.scheduledAtMinute}`
-      : `${this.workerName}:wake:${payload.mailboxAccountId}:${payload.senderKey}:${payload.scheduledAtMinute}`;
+      : `${this.workerName}:wake:${payload.mailboxAccountId}:${payload.senderKey}:${payload.expectedSnoozedUntil}:${payload.expectedSnoozedAt ?? 'none'}:${payload.attemptDiscriminator}:${payload.scheduledAtMinute}`;
   }
 
   override async processJob(
     payload: SnoozeWakeJobData,
-    _ctx: WorkerContext,
+    ctx: WorkerContext,
   ): Promise<SnoozeWakeResult> {
-    return payload.kind === 'sweep' ? this.runSweep(payload) : this.runTargetedWake(payload);
+    return payload.kind === 'sweep' ? this.runSweep(payload) : this.runTargetedWake(payload, ctx);
   }
 
   // ── Targeted wake (wake-now) ────────────────────────────────────────
 
   private async runTargetedWake(
     payload: Extract<SnoozeWakeJobData, { kind: 'wake' }>,
+    ctx: WorkerContext,
   ): Promise<SnoozeWakeResult> {
     const startedAt = Date.now();
-    const restored = await this.wakeSender(payload.mailboxAccountId, payload.senderKey);
-    return {
-      kind: 'wake',
-      dueProcessed: 1,
-      woken: 1,
-      restoredMessages: restored,
-      failed: 0,
-      mappingsRefreshed: 1,
-      skippedDuplicateRun: false,
-      durationMs: Date.now() - startedAt,
-    };
+    return this.deps.lock.run(payload.mailboxAccountId, async () => {
+      const version = timerVersionFromJob(payload);
+
+      try {
+        const restored = await this.wakeSender(
+          payload.mailboxAccountId,
+          payload.senderKey,
+          version,
+        );
+        const woken = restored === null ? 0 : 1;
+        return {
+          kind: 'wake',
+          dueProcessed: 1,
+          woken,
+          restoredMessages: restored ?? 0,
+          failed: 0,
+          mappingsRefreshed: woken,
+          skippedDuplicateRun: false,
+          durationMs: Date.now() - startedAt,
+        };
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        if (isNonRetryable(error) || ctx.attempt >= ctx.maxAttempts) {
+          await this.recordWakeFailure(payload.mailboxAccountId, payload.senderKey, version, error);
+        }
+        throw error;
+      }
+    });
   }
 
   // ── Cron sweep ──────────────────────────────────────────────────────
@@ -223,6 +261,8 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
       .select({
         mailboxAccountId: senderPolicies.mailboxAccountId,
         senderKey: senderPolicies.senderKey,
+        snoozedUntil: senderPolicies.snoozedUntil,
+        snoozedAt: senderPolicies.snoozedAt,
       })
       .from(senderPolicies)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, senderPolicies.mailboxAccountId))
@@ -231,14 +271,23 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
           eq(mailboxAccounts.status, 'active'),
           isNotNull(senderPolicies.snoozedUntil),
           lte(senderPolicies.snoozedUntil, now),
+          // A deterministic failure needs explicit user/support action;
+          // do not burn Gmail quota retrying it every 15 minutes forever.
+          or(
+            isNull(senderPolicies.snoozeWakeFailureKind),
+            ne(senderPolicies.snoozeWakeFailureKind, 'needs_attention'),
+          ),
         ),
       );
 
-    const byMailbox = new Map<string, string[]>();
+    const byMailbox = new Map<string, Array<{ senderKey: string; version: SnoozeTimerVersion }>>();
     for (const row of due) {
-      const keys = byMailbox.get(row.mailboxAccountId) ?? [];
-      keys.push(row.senderKey);
-      byMailbox.set(row.mailboxAccountId, keys);
+      const timers = byMailbox.get(row.mailboxAccountId) ?? [];
+      timers.push({
+        senderKey: row.senderKey,
+        version: { snoozedUntil: row.snoozedUntil!, snoozedAt: row.snoozedAt },
+      });
+      byMailbox.set(row.mailboxAccountId, timers);
     }
 
     let woken = 0;
@@ -253,26 +302,34 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     // Counter mutation happens only in awaited limiter bodies — the
     // limiter serializes increments with the surrounding await.
     await Promise.all(
-      Array.from(byMailbox.entries()).map(([mailboxAccountId, senderKeys]) =>
+      Array.from(byMailbox.entries()).map(([mailboxAccountId, timers]) =>
         limiter(async () => {
-          for (const senderKey of senderKeys) {
-            try {
-              restoredMessages += await this.wakeSender(mailboxAccountId, senderKey);
-              woken += 1;
-            } catch (err) {
-              // The timer stays due — the next sweep retries this row.
-              failed += 1;
-              console.error(
-                JSON.stringify({
-                  level: 'error',
-                  kind: 'snooze.wake_failed',
-                  worker: this.workerName,
-                  mailboxAccountId,
-                  error: err instanceof Error ? err.message : String(err),
-                }),
-              );
+          await this.deps.lock.run(mailboxAccountId, async () => {
+            for (const { senderKey, version } of timers) {
+              try {
+                const restored = await this.wakeSender(mailboxAccountId, senderKey, version);
+                // A reschedule/new Later action made the captured sweep
+                // version stale before this mailbox acquired the lock.
+                if (restored === null) continue;
+                restoredMessages += restored;
+                woken += 1;
+              } catch (err) {
+                // The timer stays due — retryable failures are eligible
+                // next sweep; deterministic ones are excluded above.
+                failed += 1;
+                await this.recordWakeFailure(mailboxAccountId, senderKey, version, err);
+                console.error(
+                  JSON.stringify({
+                    level: 'error',
+                    kind: 'snooze.wake_failed',
+                    worker: this.workerName,
+                    mailboxAccountId,
+                    error: err instanceof Error ? err.message : String(err),
+                  }),
+                );
+              }
             }
-          }
+          });
         }),
       ),
     );
@@ -333,7 +390,27 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
    * zero labelled messages → no Gmail call; an already-clear timer →
    * 0-row UPDATE.
    */
-  private async wakeSender(mailboxAccountId: string, senderKey: string): Promise<number> {
+  private async wakeSender(
+    mailboxAccountId: string,
+    senderKey: string,
+    version: SnoozeTimerVersion,
+  ): Promise<number | null> {
+    const [claimed] = await this.deps.db
+      .update(senderPolicies)
+      .set({
+        snoozeWakeLastAttemptAt: (this.deps.now ?? (() => new Date()))(),
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+          timerVersionWhere(version),
+        ),
+      )
+      .returning({ id: senderPolicies.id });
+    if (!claimed) return null;
+
     const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
     const labelId = await client.ensureLabelId(laterLabelName());
 
@@ -399,16 +476,23 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
           snoozedUntil: null,
           snoozedAt: null,
           snoozedReason: null,
+          snoozeWakeLastAttemptAt: null,
+          snoozeWakeLastFailedAt: null,
+          snoozeWakeFailureCount: 0,
+          snoozeWakeFailureKind: null,
           updatedAt: sql`now()`,
         })
         .where(
           and(
             eq(senderPolicies.mailboxAccountId, mailboxAccountId),
             eq(senderPolicies.senderKey, senderKey),
+            timerVersionWhere(version),
             or(
               isNotNull(senderPolicies.snoozedUntil),
               isNotNull(senderPolicies.snoozedAt),
               isNotNull(senderPolicies.snoozedReason),
+              isNotNull(senderPolicies.snoozeWakeLastAttemptAt),
+              isNotNull(senderPolicies.snoozeWakeLastFailedAt),
             ),
           ),
         );
@@ -426,6 +510,63 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
 
     return ids.length;
   }
+
+  /** Persist a safe recovery signal; never store provider text or message data. */
+  private async recordWakeFailure(
+    mailboxAccountId: string,
+    senderKey: string,
+    version: SnoozeTimerVersion,
+    error: unknown,
+  ): Promise<void> {
+    const failedAt = (this.deps.now ?? (() => new Date()))();
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    const failureKind =
+      errorName === 'InvalidGrantError'
+        ? 'reauthorize'
+        : errorName === 'PermanentError' || errorName === 'ValidationError'
+          ? 'needs_attention'
+          : 'temporary';
+
+    await this.deps.db
+      .update(senderPolicies)
+      .set({
+        snoozeWakeLastAttemptAt: failedAt,
+        snoozeWakeLastFailedAt: failedAt,
+        snoozeWakeFailureCount: sql`${senderPolicies.snoozeWakeFailureCount} + 1`,
+        snoozeWakeFailureKind: failureKind,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          eq(senderPolicies.senderKey, senderKey),
+          // A concurrent success/reschedule/new Later action wins;
+          // never stamp an issue onto a replacement timer.
+          timerVersionWhere(version),
+        ),
+      );
+  }
+}
+
+/** Optimistic timer version: both schedule and schedule-write timestamp. */
+function timerVersionWhere(version: SnoozeTimerVersion): SQL {
+  return and(
+    eq(senderPolicies.snoozedUntil, version.snoozedUntil),
+    version.snoozedAt === null
+      ? isNull(senderPolicies.snoozedAt)
+      : eq(senderPolicies.snoozedAt, version.snoozedAt),
+  )!;
+}
+
+function timerVersionFromJob(
+  payload: Extract<SnoozeWakeJobData, { kind: 'wake' }>,
+): SnoozeTimerVersion {
+  const snoozedUntil = new Date(payload.expectedSnoozedUntil);
+  const snoozedAt = payload.expectedSnoozedAt ? new Date(payload.expectedSnoozedAt) : null;
+  if (Number.isNaN(snoozedUntil.getTime()) || (snoozedAt && Number.isNaN(snoozedAt.getTime()))) {
+    throw new ValidationError('Targeted wake carries an invalid timer version.');
+  }
+  return { snoozedUntil, snoozedAt };
 }
 
 /**

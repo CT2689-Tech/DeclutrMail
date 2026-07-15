@@ -240,8 +240,15 @@ export type { ActivityRuleRef } from './activity';
 
 // D78–D80 Snoozed/Later review surface — list row + snooze/wake wire
 // shapes shared between the snoozed controller and the FE screen.
-export { SNOOZE_REASON_MAX_LENGTH, SnoozeUpdateRequestSchema } from './snoozed';
+export {
+  LATER_RETURN_MISSED_AFTER_MS,
+  SNOOZE_REASON_MAX_LENGTH,
+  SnoozeUpdateRequestSchema,
+} from './snoozed';
 export type {
+  LaterReturnFailureKind,
+  LaterReturnRecoverySummary,
+  LaterReturnStatus,
   SnoozedSenderRow,
   SnoozeUpdateRequest,
   SnoozeUpdateResult,

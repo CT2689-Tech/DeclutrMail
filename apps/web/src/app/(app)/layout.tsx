@@ -16,6 +16,7 @@ import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toas
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { ScreenerBadge } from '@/features/screener/screener-badge';
+import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
@@ -214,6 +215,9 @@ function AppChrome({ children }: { children: ReactNode }) {
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
         {hasActiveMailbox && <SyncErrorBanner />}
+        {/* Return recovery is an all-tier safety guarantee. Successful
+            returns stay silent; only missed/failed timers surface. */}
+        <LaterReturnAlert enabled={hasActiveMailbox} />
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}

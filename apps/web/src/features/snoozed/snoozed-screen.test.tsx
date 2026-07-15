@@ -41,6 +41,9 @@ const ROW_TODAY: SnoozedSenderRow = {
   snoozedUntil: LATER_TODAY,
   snoozedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   reason: 'after launch week',
+  returnStatus: 'scheduled',
+  lastReturnAttemptAt: null,
+  returnFailureKind: null,
 };
 
 const ROW_EVENTUALLY: SnoozedSenderRow = {
@@ -52,6 +55,9 @@ const ROW_EVENTUALLY: SnoozedSenderRow = {
   snoozedUntil: IN_30_DAYS,
   snoozedAt: new Date().toISOString(),
   reason: null,
+  returnStatus: 'scheduled',
+  lastReturnAttemptAt: null,
+  returnFailureKind: null,
 };
 
 function listHandler(rows: SnoozedSenderRow[]): FetchStubHandler {
@@ -136,6 +142,25 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     installFetchStub([listHandler([{ ...ROW_TODAY, laterCount: null }])]);
     renderScreen();
     expect(await screen.findByText('count syncing…')).toBeInTheDocument();
+  });
+
+  it('surfaces a failed return without implying the mail was lost', async () => {
+    resetFetchStub();
+    installFetchStub([
+      listHandler([
+        {
+          ...ROW_TODAY,
+          returnStatus: 'retrying',
+          lastReturnAttemptAt: new Date().toISOString(),
+          returnFailureKind: 'temporary',
+        },
+      ]),
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Return retrying')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/could not confirm/i);
+    expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
+    expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
 });
 

@@ -1,8 +1,14 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lte, or, sql } from 'drizzle-orm';
 
 import { mailMessages, senderPolicies, senders } from '@declutrmail/db';
-import type { SnoozedSenderRow } from '@declutrmail/shared/contracts';
+import {
+  LATER_RETURN_MISSED_AFTER_MS,
+  type LaterReturnFailureKind,
+  type LaterReturnRecoverySummary,
+  type LaterReturnStatus,
+  type SnoozedSenderRow,
+} from '@declutrmail/shared/contracts';
 import type { SnoozeLabelMapStore } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -37,7 +43,7 @@ export class SnoozedReadService {
     private readonly labelMap: SnoozeLabelMapStore | null = null,
   ) {}
 
-  async list(mailboxAccountId: string): Promise<SnoozedSenderRow[]> {
+  async list(mailboxAccountId: string, now = new Date()): Promise<SnoozedSenderRow[]> {
     const labelId = await this.resolveLaterLabelId(mailboxAccountId);
 
     // Mirror side — per-sender count of messages carrying the Later id.
@@ -68,6 +74,9 @@ export class SnoozedReadService {
         snoozedUntil: senderPolicies.snoozedUntil,
         snoozedAt: senderPolicies.snoozedAt,
         snoozedReason: senderPolicies.snoozedReason,
+        snoozeWakeLastAttemptAt: senderPolicies.snoozeWakeLastAttemptAt,
+        snoozeWakeLastFailedAt: senderPolicies.snoozeWakeLastFailedAt,
+        snoozeWakeFailureKind: senderPolicies.snoozeWakeFailureKind,
       })
       .from(senderPolicies)
       .where(
@@ -109,12 +118,88 @@ export class SnoozedReadService {
         snoozedUntil: timer!.snoozedUntil!.toISOString(),
         snoozedAt: timer?.snoozedAt ? timer.snoozedAt.toISOString() : null,
         reason: timer?.snoozedReason ?? null,
+        returnStatus: deriveReturnStatus({
+          snoozedUntil: timer!.snoozedUntil!,
+          lastFailedAt: timer?.snoozeWakeLastFailedAt ?? null,
+          now,
+        }),
+        lastReturnAttemptAt: timer?.snoozeWakeLastAttemptAt?.toISOString() ?? null,
+        returnFailureKind: safeFailureKind(timer?.snoozeWakeFailureKind),
       };
     });
 
     // Soonest wake first.
     result.sort((a, b) => a.snoozedUntil.localeCompare(b.snoozedUntil));
     return result;
+  }
+
+  /**
+   * All-tier recovery summary for the persistent app-shell alert. It
+   * deliberately avoids the label-map/mirror read used by the full Pro list.
+   */
+  async recovery(mailboxAccountId: string, now = new Date()): Promise<LaterReturnRecoverySummary> {
+    const rows = await this.db
+      .select({
+        senderId: senders.id,
+        displayName: senders.displayName,
+        email: senders.email,
+        snoozedUntil: senderPolicies.snoozedUntil,
+        lastAttemptAt: senderPolicies.snoozeWakeLastAttemptAt,
+        lastFailedAt: senderPolicies.snoozeWakeLastFailedAt,
+        failureKind: senderPolicies.snoozeWakeFailureKind,
+      })
+      .from(senderPolicies)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
+          eq(senders.senderKey, senderPolicies.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+          isNotNull(senderPolicies.snoozedUntil),
+          or(
+            isNotNull(senderPolicies.snoozeWakeLastFailedAt),
+            lte(
+              senderPolicies.snoozedUntil,
+              new Date(now.getTime() - LATER_RETURN_MISSED_AFTER_MS),
+            ),
+          ),
+        ),
+      );
+
+    const issues = rows
+      .map((row) => ({
+        ...row,
+        returnStatus: deriveReturnStatus({
+          snoozedUntil: row.snoozedUntil!,
+          lastFailedAt: row.lastFailedAt,
+          now,
+        }),
+      }))
+      .filter(
+        (row): row is typeof row & { returnStatus: 'retrying' | 'missed' } =>
+          row.returnStatus === 'retrying' || row.returnStatus === 'missed',
+      )
+      .sort((a, b) => a.snoozedUntil!.getTime() - b.snoozedUntil!.getTime());
+
+    const first = issues[0];
+    return {
+      affectedCount: issues.length,
+      firstIssue: first
+        ? {
+            senderId: first.senderId,
+            displayName: first.displayName,
+            email: first.email,
+            snoozedUntil: first.snoozedUntil!.toISOString(),
+            returnStatus: first.returnStatus,
+            lastReturnAttemptAt: first.lastAttemptAt?.toISOString() ?? null,
+            returnFailureKind: safeFailureKind(first.failureKind),
+          }
+        : null,
+    };
   }
 
   /**
@@ -136,4 +221,23 @@ export class SnoozedReadService {
       return null;
     }
   }
+}
+
+export function deriveReturnStatus(input: {
+  snoozedUntil: Date;
+  lastFailedAt: Date | null;
+  now: Date;
+}): LaterReturnStatus {
+  if (input.lastFailedAt) return 'retrying';
+  const dueAt = input.snoozedUntil.getTime();
+  const now = input.now.getTime();
+  if (now >= dueAt + LATER_RETURN_MISSED_AFTER_MS) return 'missed';
+  if (now >= dueAt) return 'returning';
+  return 'scheduled';
+}
+
+function safeFailureKind(value: string | null | undefined): LaterReturnFailureKind {
+  return value === 'temporary' || value === 'reauthorize' || value === 'needs_attention'
+    ? value
+    : null;
 }

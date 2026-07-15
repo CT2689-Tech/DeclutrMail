@@ -446,6 +446,16 @@ describe('LabelActionWorker', () => {
     // what sync stores.
     it('forward resolves DeclutrMail/Later to an id — batchModify + mirror carry only ids', async () => {
       await seedMessage(db, mailboxId, 'l1', ['INBOX', 'CATEGORY_PROMOTIONS']);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        snoozedUntil: new Date('2098-07-21T09:00:00Z'),
+        snoozedAt: new Date('2026-07-14T17:00:00Z'),
+        snoozeWakeLastAttemptAt: new Date('2026-07-14T17:01:00Z'),
+        snoozeWakeLastFailedAt: new Date('2026-07-14T17:01:00Z'),
+        snoozeWakeFailureCount: 1,
+        snoozeWakeFailureKind: 'temporary',
+      });
       const [job] = await db
         .insert(actionJobs)
         .values({
@@ -490,6 +500,9 @@ describe('LabelActionWorker', () => {
       expect(policy!.senderKey).toBe(SENDER_KEY);
       expect(policy!.snoozedUntil?.toISOString()).toBe('2099-07-21T09:00:00.000Z');
       expect(policy!.snoozedAt).not.toBeNull();
+      expect(policy!.snoozeWakeLastAttemptAt).toBeNull();
+      expect(policy!.snoozeWakeLastFailedAt).toBeNull();
+      expect(policy!.snoozeWakeFailureCount).toBe(0);
       const [evt] = await db
         .select()
         .from(outboxEvents)
@@ -528,6 +541,10 @@ describe('LabelActionWorker', () => {
         senderKey: SENDER_KEY,
         snoozedUntil: new Date('2099-07-21T09:00:00Z'),
         snoozedAt: new Date('2026-07-14T18:00:00Z'),
+        snoozeWakeLastAttemptAt: new Date('2026-07-14T18:01:00Z'),
+        snoozeWakeLastFailedAt: new Date('2026-07-14T18:01:00Z'),
+        snoozeWakeFailureCount: 1,
+        snoozeWakeFailureKind: 'temporary',
       });
 
       await worker.processJob(
@@ -555,6 +572,8 @@ describe('LabelActionWorker', () => {
         .from(senderPolicies)
         .where(eq(senderPolicies.mailboxAccountId, mailboxId));
       expect(policy!.snoozedUntil).toBeNull();
+      expect(policy!.snoozeWakeLastFailedAt).toBeNull();
+      expect(policy!.snoozeWakeFailureCount).toBe(0);
     });
 
     it('fails permanently on attempt 1 for a Gmail 400 (no retry storm)', async () => {

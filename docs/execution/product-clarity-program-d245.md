@@ -10,6 +10,9 @@ each completed slice.
   retention, drives every public and in-product explanation.
 - Later: current Inbox mail moves to `DeclutrMail/Later`, a wake time is
   required, future mail is unchanged, and the visible destination is Later.
+  Failed/missed returns notify in the app and can be retried on every plan;
+  successful returns stay silent. A future success notification must use a
+  durable event plus an explicit default-off preference.
 - Senders: observed facts and consequences are primary; any suggestion is
   optional secondary disclosure.
 - Safety: **Protected** is the sole visible safety state. Protected
@@ -101,6 +104,9 @@ current technical invariant rather than by hypothetical existing users.
       contextual labels; verify focus, announcements, and reduced-motion paths.
 - [x] Standardize errors around what changed, what did not change, and the next
       recovery step, with support details disclosed separately.
+- [x] Persist Later return attempts/failures, distinguish returning, retrying,
+      and missed states after a two-sweep grace, and provide an all-tier app
+      alert plus immediate retry without noisy success notifications.
 - [x] Make demo/sample states unmistakable and prevent sample counts or actions
       from being confused with connected Gmail data.
 - [x] Clarify Followups as observed sent-mail state, with precise timing,
@@ -139,12 +145,13 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: pricing and provider catalog inputs are reconciled to
-  the canonical manifest, including standard and Founding Pro in USD and INR.
-- Last green checks: all-workspace typecheck; shared entitlement manifest (21);
-  web pricing and billing surfaces (39); API billing catalog/service (13); plus
-  the earlier authenticated accessibility live smoke (12).
-- Current slice: standard Pro is founder-confirmed at $19/month or $190/year,
-  with the $129/year Founding Pro offer reserved for the first 250 paying
-  users. Pricing, plan names, limits, prompts, provider catalog inputs, and
-  feature availability resolve through the canonical entitlement manifest.
+- Last completed slice: Later return failures persist as safe product state;
+  the app shell and Later screen surface retrying/missed returns with automatic
+  and immediate recovery on every plan. Successful returns remain silent.
+- Last green checks: all-workspace typecheck; DB schema check; worker Later +
+  label-action race/state tests (34); API Later contract/entitlement tests (21);
+  web app-shell/Later recovery tests (33); plus the earlier authenticated
+  accessibility live smoke (12).
+- Current slice: Later recovery is implemented with timer-version pinning,
+  mailbox mutation locking, failure-state constraints, and an all-tier retry
+  endpoint that rejects healthy timers. Final diff review precedes commit/push.

@@ -17,6 +17,9 @@ function row(overrides: Partial<SnoozedSenderRow>): SnoozedSenderRow {
     snoozedUntil: new Date(2026, 5, 11, 17, 0).toISOString(),
     snoozedAt: null,
     reason: null,
+    returnStatus: 'scheduled',
+    lastReturnAttemptAt: null,
+    returnFailureKind: null,
     ...overrides,
   };
 }

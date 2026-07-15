@@ -83,6 +83,7 @@ function authedHandlers(opts: {
   onboardedAt: string | null;
   deletionRequest?: { effectiveAt: string; status: 'pending' | 'executing' };
   tier?: 'free' | 'plus' | 'pro';
+  laterRecovery?: unknown;
 }): FetchStubHandler[] {
   return [
     {
@@ -141,6 +142,14 @@ function authedHandlers(opts: {
               projectedBasis: 'flat-grace',
             },
           },
+        }),
+    },
+    {
+      method: 'GET',
+      path: '/api/snoozed/recovery',
+      respond: () =>
+        ok({
+          data: opts.laterRecovery ?? { affectedCount: 0, firstIssue: null },
         }),
     },
   ];
@@ -351,6 +360,36 @@ describe('(app) layout — passive sync-error banner (D224)', () => {
 
     expect(await screen.findByTestId('sync-error-banner')).toBeInTheDocument();
     // Additive — the app stays usable behind it.
+    expect(screen.getByText('authed app body')).toBeInTheDocument();
+  });
+});
+
+describe('(app) layout — Later return recovery', () => {
+  it('mounts the missed-return alert for an affected Free workspace', async () => {
+    installFetchStub(
+      authedHandlers({
+        onboardedAt: '2026-01-02T00:00:00.000Z',
+        tier: 'free',
+        laterRecovery: {
+          affectedCount: 1,
+          firstIssue: {
+            senderId: 'sender-1',
+            displayName: 'Daily Digest',
+            email: 'digest@example.test',
+            snoozedUntil: '2026-07-14T10:00:00.000Z',
+            returnStatus: 'missed',
+            lastReturnAttemptAt: null,
+            returnFailureKind: null,
+          },
+        },
+      }),
+    );
+
+    renderLayout();
+
+    expect(await screen.findByTestId('later-return-alert')).toHaveTextContent(
+      /could not be confirmed/i,
+    );
     expect(screen.getByText('authed app body')).toBeInTheDocument();
   });
 });

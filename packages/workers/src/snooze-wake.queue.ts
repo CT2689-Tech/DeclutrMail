@@ -48,16 +48,28 @@ export function snoozeSweepJobId(scheduledAtMinute: string): string {
 }
 
 /**
- * Targeted wake-now job id — one per (mailbox, sender, minute). A
- * double-clicked Wake button (or a network-retried POST) within the
- * same minute dedups onto one job.
+ * Targeted wake job id — one per exact timer and deliberate attempt.
+ * A double-clicked button (or network-retried POST) dedups, while a
+ * replacement timer or retry after a recorded failure gets a new id.
  */
 export function snoozeWakeNowJobId(
   mailboxAccountId: string,
   senderKey: string,
   scheduledAtMinute: string,
+  expectedSnoozedUntil: string,
+  expectedSnoozedAt: string | null,
+  attemptDiscriminator: string,
 ): string {
-  return safeJobId(['SnoozeWakeWorker', 'wake', mailboxAccountId, senderKey, scheduledAtMinute]);
+  return safeJobId([
+    'SnoozeWakeWorker',
+    'wake',
+    mailboxAccountId,
+    senderKey,
+    expectedSnoozedUntil,
+    expectedSnoozedAt ?? 'no-snoozed-at',
+    attemptDiscriminator,
+    scheduledAtMinute,
+  ]);
 }
 
 export function snoozeWakeJobOptions(jobId: string): JobsOptions {
@@ -95,7 +107,13 @@ export async function enqueueSnoozeWakeTick(
  */
 export async function enqueueSnoozeWakeNow(
   queue: Queue<SnoozeWakeJobData>,
-  input: { mailboxAccountId: string; senderKey: string },
+  input: {
+    mailboxAccountId: string;
+    senderKey: string;
+    expectedSnoozedUntil: string;
+    expectedSnoozedAt: string | null;
+    attemptDiscriminator: string;
+  },
   now: Date = new Date(),
 ): Promise<void> {
   const minute = snoozeScheduledAtMinute(now);
@@ -106,8 +124,20 @@ export async function enqueueSnoozeWakeNow(
       mailboxAccountId: input.mailboxAccountId,
       senderKey: input.senderKey,
       scheduledAtMinute: minute,
+      expectedSnoozedUntil: input.expectedSnoozedUntil,
+      expectedSnoozedAt: input.expectedSnoozedAt,
+      attemptDiscriminator: input.attemptDiscriminator,
     },
-    snoozeWakeJobOptions(snoozeWakeNowJobId(input.mailboxAccountId, input.senderKey, minute)),
+    snoozeWakeJobOptions(
+      snoozeWakeNowJobId(
+        input.mailboxAccountId,
+        input.senderKey,
+        minute,
+        input.expectedSnoozedUntil,
+        input.expectedSnoozedAt,
+        input.attemptDiscriminator,
+      ),
+    ),
   );
 }
 

@@ -195,6 +195,9 @@ export const PASSTHROUGH_MAILBOX_LOCK: MailboxActionLock = {
   run: (_mailboxAccountId, fn) => fn(),
 };
 
+/** Shared advisory-lock namespace for every mailbox mail mutation/schedule write. */
+export const MAILBOX_ACTION_LOCK_NS = 0x4c41; // 'LA'
+
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 export interface LabelActionDeps {
@@ -433,6 +436,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
               snoozedUntil: job.wakeAt,
               snoozedAt,
               snoozedReason: null,
+              snoozeWakeLastAttemptAt: null,
+              snoozeWakeLastFailedAt: null,
+              snoozeWakeFailureCount: 0,
+              snoozeWakeFailureKind: null,
               updatedAt: sql`now()`,
             },
           });
@@ -541,6 +548,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             snoozedUntil: null,
             snoozedAt: null,
             snoozedReason: null,
+            snoozeWakeLastAttemptAt: null,
+            snoozeWakeLastFailedAt: null,
+            snoozeWakeFailureCount: 0,
+            snoozeWakeFailureKind: null,
             updatedAt: sql`now()`,
           })
           .where(

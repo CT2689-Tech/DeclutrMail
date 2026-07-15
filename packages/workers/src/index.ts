@@ -50,6 +50,7 @@ export type {
 export {
   LABEL_ACTION_JOB,
   LABEL_ACTION_QUEUE,
+  MAILBOX_ACTION_LOCK_NS,
   LabelActionWorker,
   labelActionJobOptions,
   labelChangeForVerb,

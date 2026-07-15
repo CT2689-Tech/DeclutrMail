@@ -1,7 +1,9 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   index,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -143,15 +145,29 @@ export const senderPolicies = pgTable(
     /**
      * Sender snooze wake time (D78/D79 — sender-level only at launch).
      * Non-null = current Later-labeled mail has a scheduled return.
-     * Future arrivals are unchanged (D245); the hourly
+     * Future arrivals are unchanged (D245); the 15-minute
      * `SnoozeRestoreWorker` wake-scan (`WHERE snoozed_until <= now()`)
      * restores the label's messages and nulls all three snooze columns.
      */
     snoozedUntil: timestamp('snoozed_until', { withTimezone: true, mode: 'date' }),
     /** When the snooze was set; null when not snoozed (D79). */
     snoozedAt: timestamp('snoozed_at', { withTimezone: true, mode: 'date' }),
-    /** Optional user note shown on the Snoozed screen row (D79/D80). */
+    /** Optional user note shown on the Later screen row (D79/D80). */
     snoozedReason: text('snoozed_reason'),
+    /** Last time a scheduled/explicit return was attempted. */
+    snoozeWakeLastAttemptAt: timestamp('snooze_wake_last_attempt_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /** Last failed return attempt; cleared by reschedule or successful return. */
+    snoozeWakeLastFailedAt: timestamp('snooze_wake_last_failed_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    /** Consecutive failed return attempts for the active Later timer. */
+    snoozeWakeFailureCount: integer('snooze_wake_failure_count').notNull().default(0),
+    /** Safe product category only — never a provider error message. */
+    snoozeWakeFailureKind: text('snooze_wake_failure_kind'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -165,13 +181,29 @@ export const senderPolicies = pgTable(
       table.senderKey,
     ),
     /**
-     * Hourly wake-scan (D79): `WHERE snoozed_until <= now()` across all
+     * 15-minute wake-scan (D79): `WHERE snoozed_until <= now()` across all
      * mailboxes. Partial — only actively-snoozed rows are indexed, so
      * the index stays tiny relative to the policy table.
      */
     snoozeWakeIdx: index('sender_policies_snooze_wake_idx')
       .on(table.snoozedUntil)
       .where(sql`${table.snoozedUntil} IS NOT NULL`),
+    snoozeWakeFailureCountCheck: check(
+      'sender_policies_snooze_wake_failure_count_check',
+      sql`${table.snoozeWakeFailureCount} >= 0`,
+    ),
+    snoozeWakeFailureKindCheck: check(
+      'sender_policies_snooze_wake_failure_kind_check',
+      sql`${table.snoozeWakeFailureKind} IS NULL OR ${table.snoozeWakeFailureKind} IN ('temporary', 'reauthorize', 'needs_attention')`,
+    ),
+    snoozeWakeFailureStateCheck: check(
+      'sender_policies_snooze_wake_failure_state_check',
+      sql`(${table.snoozeWakeFailureCount} = 0 AND ${table.snoozeWakeLastFailedAt} IS NULL AND ${table.snoozeWakeFailureKind} IS NULL) OR (${table.snoozeWakeFailureCount} > 0 AND ${table.snoozeWakeLastAttemptAt} IS NOT NULL AND ${table.snoozeWakeLastFailedAt} IS NOT NULL AND ${table.snoozeWakeFailureKind} IS NOT NULL)`,
+    ),
+    snoozeWakeClearedStateCheck: check(
+      'sender_policies_snooze_wake_cleared_state_check',
+      sql`${table.snoozedUntil} IS NOT NULL OR (${table.snoozeWakeLastAttemptAt} IS NULL AND ${table.snoozeWakeLastFailedAt} IS NULL AND ${table.snoozeWakeFailureCount} = 0 AND ${table.snoozeWakeFailureKind} IS NULL)`,
+    ),
   }),
 );
 
