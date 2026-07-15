@@ -8,12 +8,20 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { undoKeys } from '@/features/undo/query-keys';
+import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageUndoTray } from './triage-undo-tray';
+
+const h = vi.hoisted(() => ({ toast: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: h.toast };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -84,18 +92,20 @@ function stubRevertLoop() {
   return { posts };
 }
 
-function renderTray() {
+function renderTray(mailboxId?: string) {
   const client = createTestQueryClient();
-  return render(
+  const view = render(
     <QueryWrapper client={client}>
-      <TriageUndoTray />
+      <TriageUndoTray mailboxId={mailboxId} />
     </QueryWrapper>,
   );
+  return { ...view, client };
 }
 
 describe('TriageUndoTray (D35)', () => {
   beforeEach(() => {
     resetTriageStore();
+    h.toast.mockClear();
   });
   afterEach(() => {
     resetFetchStub();
@@ -171,6 +181,178 @@ describe('TriageUndoTray (D35)', () => {
     fireEvent.keyDown(window, { key: 'z', metaKey: true });
     await new Promise((r) => setTimeout(r, 50));
     expect(posts).toEqual([]);
+  });
+
+  it('Z respects an earlier handler that already prevented the event', async () => {
+    const { posts } = stubRevertLoop();
+    renderTray();
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    const event = new KeyboardEvent('keydown', { key: 'z', bubbles: true, cancelable: true });
+    event.preventDefault();
+    window.dispatchEvent(event);
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts).toEqual([]);
+  });
+
+  it('Z is suppressed while an aria-modal dialog is open', async () => {
+    const { posts } = stubRevertLoop();
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <div role="dialog" aria-modal="true">
+          <button type="button">Dialog action</button>
+        </div>
+        <TriageUndoTray />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Dialog action' }), { key: 'z' });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts).toEqual([]);
+  });
+
+  it('Z is suppressed while an open menu is mounted', async () => {
+    const { posts } = stubRevertLoop();
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <div role="menu" aria-label="Account menu" />
+        <TriageUndoTray />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    fireEvent.keyDown(window, { key: 'z' });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts).toEqual([]);
+  });
+
+  it('partitions tray data and clears its in-flight hide when the mailbox changes', async () => {
+    let undoReads = 0;
+    const mailboxHeaders: Array<string | null> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: (req) => {
+          undoReads += 1;
+          mailboxHeaders.push(req.headers.get('x-active-mailbox-id'));
+          return jsonOk({
+            data: [ENTRY_NEWEST, ENTRY_OLDER],
+            meta: { nextCursor: null, limit: 50 },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: /\/api\/undo\/.+/,
+        respond: () => new Promise<Response>(() => undefined),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = render(
+      <QueryWrapper client={client}>
+        <TriageUndoTray mailboxId="mailbox-a" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(1));
+
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageUndoTray mailboxId="mailbox-b" />
+      </QueryWrapper>,
+    );
+
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+    expect(undoReads).toBe(2);
+    expect(mailboxHeaders).toEqual(['mailbox-a', 'mailbox-b']);
+    expect(client.getQueryData(undoKeys.tray('mailbox-a'))).toBeDefined();
+    expect(client.getQueryData(undoKeys.tray('mailbox-b'))).toBeDefined();
+  });
+
+  it('silences an old mailbox revert when the active mailbox changes', async () => {
+    let finishPost!: (response: Response) => void;
+    const postResponse = new Promise<Response>((resolve) => {
+      finishPost = resolve;
+    });
+    const postMailboxHeaders: Array<string | null> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({
+            data: [ENTRY_NEWEST, ENTRY_OLDER],
+            meta: { nextCursor: null, limit: 50 },
+          }),
+      },
+      {
+        method: 'POST',
+        path: /\/api\/undo\/.+/,
+        respond: (req) => {
+          postMailboxHeaders.push(req.headers.get('x-active-mailbox-id'));
+          return postResponse;
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = render(
+      <QueryWrapper client={client}>
+        <TriageUndoTray mailboxId="mailbox-a" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
+    await waitFor(() => expect(postMailboxHeaders).toEqual(['mailbox-a']));
+
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageUndoTray mailboxId="mailbox-b" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    await act(async () => {
+      finishPost(
+        jsonOk({
+          data: {
+            token: ENTRY_NEWEST.token,
+            actionKind: 'archive',
+            reverted: true,
+            expired: false,
+            revertedAt: '2026-06-09T10:02:00.000Z',
+            actionId: null,
+          },
+        }),
+      );
+      await postResponse;
+    });
+
+    expect(h.toast).not.toHaveBeenCalled();
+  });
+
+  it('stays above the Senders selection-bar footprint', async () => {
+    stubRevertLoop();
+    const { container } = renderTray();
+    await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
+
+    const tray = container.querySelector<HTMLElement>('[data-dm-undo-tray]');
+    expect(tray?.style.bottom).toBe(`${floatingSurfaceLayout.undoTrayBottom}px`);
+    expect(floatingSurfaceLayout.undoTrayBottom).toBeGreaterThan(
+      floatingSurfaceLayout.selectionBarBottom + floatingSurfaceLayout.selectionBarHeight,
+    );
+    expect(floatingSurfaceLayout.selectionBarZIndex).toBeGreaterThan(
+      floatingSurfaceLayout.undoTrayZIndex,
+    );
   });
 
   it('renders nothing when there are no active tokens (D35 invisible tray)', async () => {

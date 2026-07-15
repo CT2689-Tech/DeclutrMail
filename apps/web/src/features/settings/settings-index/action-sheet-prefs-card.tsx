@@ -11,11 +11,16 @@ const VERB_ROWS: ReadonlyArray<{
   verb: 'Archive' | 'Unsubscribe' | 'Later';
   detail: string;
 }> = [
-  { wire: 'archive', verb: 'Archive', detail: 'Moves the sender’s inbox mail to the archive.' },
+  {
+    wire: 'archive',
+    verb: 'Archive',
+    detail: 'Moves matching inbox mail to Gmail All Mail, where it stays searchable.',
+  },
   {
     wire: 'unsubscribe',
     verb: 'Unsubscribe',
-    detail: 'Sends or prepares a request; past mail moves only with a separate action.',
+    detail:
+      'Sends or prepares a request; the sender controls the outcome and timing. Past mail moves only with a separate action.',
   },
   {
     wire: 'later',

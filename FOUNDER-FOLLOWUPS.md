@@ -26,6 +26,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 <!-- Newest at top. -->
 
+### 2026-07-13 — Ratify `ErrorState` onto the D220 launch allowlist
+**Source:** PR #325 design-system gate review
+**Why:** The branch promotes a shared `ErrorState` component
+(`packages/shared/src/components/error-state/`) used by 13 feature
+screens — well past the ≥2-consumer promotion rule, with a Storybook
+story — but it is not on the D220 launch allowlist. CLAUDE.md is
+founder-curated, so the allowlist amendment (same shape as the
+ADR-0016 `NumericDisplay` / ADR-0019 `ActionPopover` entries) needs a
+founder edit.
+**How:** Add `ErrorState` to the "D220 launch allowlist amendments"
+list in CLAUDE.md §4 via a `chore/distill-*` PR, or reject and demote
+the component.
+**Verifies by:** CLAUDE.md lists `ErrorState`; design-system gate stops
+flagging it.
+**Status:** Open
+
 ### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
 **Source:** session 2026-07-10 UX wave (PR #321 investigation)
 **Why:** The same-verdict batch banner (#321) covers Archive/Later only.

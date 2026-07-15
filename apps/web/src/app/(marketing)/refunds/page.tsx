@@ -114,11 +114,10 @@ export default function RefundPolicyPage() {
           </li>
         </ul>
         <p>
-          One thing a refund does not do is reverse mailbox changes. Any Activity Undo already
-          granted for Archive, Later, or Delete stays available until its recorded deadline
-          regardless of billing state. Delete also has a separate Gmail Trash recovery path, and a
-          delivered unsubscribe request cannot be recalled. Your current export and deletion options
-          are described in the <a href="/privacy">Privacy Policy</a>.
+          One thing a refund never shortens: an existing Activity undo token for Archive, Later, or
+          Delete remains valid for its issued window regardless of billing state. A delivered
+          unsubscribe request remains one-way. Your data stays exportable and deletable per the{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 

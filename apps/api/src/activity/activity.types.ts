@@ -88,7 +88,7 @@ export type ActivityExecutionState =
       rootActionId: string;
       requestedCount: number;
       errorCode: string | null;
-      resolution: 'review' | 'reconnect' | 'support';
+      resolution: 'review' | 'support';
     };
 
 export interface ActivitySender {

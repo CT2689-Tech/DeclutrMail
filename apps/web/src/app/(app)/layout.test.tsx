@@ -34,9 +34,10 @@ import userEvent from '@testing-library/user-event';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 
-const { pushSpy, replaceSpy, pathnameRef } = vi.hoisted(() => ({
+const { pushSpy, replaceSpy, undoTrayPropsSpy, pathnameRef } = vi.hoisted(() => ({
   pushSpy: vi.fn(),
   replaceSpy: vi.fn(),
+  undoTrayPropsSpy: vi.fn(),
   // Mutable so tests can drive the pathname-dependent branch (the
   // user-scoped-route fallback under no active mailbox). Defaults to a
   // mailbox-scoped route so every pre-existing test is unaffected.
@@ -47,6 +48,12 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushSpy, replace: replaceSpy }),
   usePathname: () => pathnameRef.current,
 }));
+vi.mock('@/features/triage/triage-undo-tray', () => ({
+  ProductUndoTray: (props: { enableShortcut?: boolean; mailboxId?: string }) => {
+    undoTrayPropsSpy(props);
+    return <div data-testid="triage-undo-tray" />;
+  },
+}));
 
 import AppLayout from './layout';
 
@@ -54,6 +61,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   pushSpy.mockClear();
   replaceSpy.mockClear();
+  undoTrayPropsSpy.mockClear();
   pathnameRef.current = '/senders';
 });
 
@@ -236,6 +244,13 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // Kept surfaces are present (spot-check both nav groups).
     expect(screen.getByText('Triage')).toBeInTheDocument();
     expect(screen.getByText('Autopilot')).toBeInTheDocument();
+    // Recovery follows the active mailbox across the whole app shell,
+    // not only the Triage route.
+    expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
+    expect(undoTrayPropsSpy).toHaveBeenCalledWith({
+      enableShortcut: false,
+      mailboxId: 'mb-1',
+    });
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
   });
@@ -361,6 +376,46 @@ describe('(app) layout — passive sync-error banner (D224)', () => {
     expect(await screen.findByTestId('sync-error-banner')).toBeInTheDocument();
     // Additive — the app stays usable behind it.
     expect(screen.getByText('authed app body')).toBeInTheDocument();
+    // Retryable failures retain the manual recovery action.
+    expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeInTheDocument();
+  });
+
+  it('shows reconnect recovery without a doomed Sync-now action for an invalid grant', async () => {
+    const syncStatusSpy = vi.fn(() =>
+      ok({
+        data: {
+          readiness_status: 'ready',
+          current_stage: 'ready',
+          progress_pct: 100,
+          is_ready_for_triage: true,
+          last_synced_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+          last_sync_error_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+          last_sync_error_code: 'InvalidGrantError',
+        },
+      }),
+    );
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: syncStatusSpy,
+      },
+    ]);
+
+    renderLayout();
+
+    expect(await screen.findByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /check gmail for new emails/i }),
+    ).not.toBeInTheDocument();
+    // Banner + topbar consume the same mailbox-keyed React Query entry.
+    expect(syncStatusSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -527,6 +582,7 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
     expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
     // SyncErrorBanner + SyncNowButton are gated off with no active mailbox.
     expect(syncSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('triage-undo-tray')).not.toBeInTheDocument();
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 

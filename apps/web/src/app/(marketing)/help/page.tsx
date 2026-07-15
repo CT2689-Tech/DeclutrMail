@@ -15,9 +15,9 @@
 
 import type { Metadata } from 'next';
 import {
+  ACTION_SAFETY_SUMMARY,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
-  TechnicalDetails,
 } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -44,54 +44,43 @@ const FAQS: ReadonlyArray<{
   q: string;
   a: string;
   link?: { href: string; label: string };
-  technical?: { summary: string; details: string };
 }> = [
   {
     id: 'what-we-store',
     q: 'What does DeclutrMail store from my Gmail?',
-    a: `The complete per-message storage list is: ${PRIVACY_STORAGE_ITEMS.join('; ')}. It is generated from the Gmail data DeclutrMail requests. The complete lifecycle inventory in the Privacy Policy also lists connection data, derived product data, and retained audit records. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. Full message bodies, attachments, and inline images are never fetched or stored.`,
+    a: `The published Gmail message-field disclosure lists: ${PRIVACY_STORAGE_ITEMS.join('; ')}. The trust line is literal — ${PRIVACY_BADGE_HEADLINE}. The privacy policy separately describes account, preference, action, processor, and billing records. Full message bodies, attachments, inline images, and raw MIME are never fetched or stored.`,
     link: { href: '/privacy', label: 'Privacy policy →' },
-    technical: {
-      summary: 'Show message-format details',
-      details:
-        'DeclutrMail does not request Gmail’s full or raw message formats and does not fetch or store raw MIME.',
-    },
   },
   {
     id: 'unsubscribe-flow',
     q: 'How does Unsubscribe work?',
-    a: 'Where a sender supports automatic unsubscribe, DeclutrMail sends the request and tracks whether the sender accepted it. Where the sender requires an email, we prepare a Gmail draft and you send it yourself — nothing is auto-sent on your behalf. Unsubscribe affects future mail; nothing already in your inbox moves.',
-    technical: {
-      summary: 'Show unsubscribe protocol details',
-      details:
-        'Automatic requests use the List-Unsubscribe and List-Unsubscribe-Post headers defined by RFC 8058. Email-based requests use the sender’s mailto: List-Unsubscribe value.',
-    },
+    a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. The request asks the sender to stop future mail; the sender controls whether and when delivery stops. Nothing already in your inbox moves.',
   },
   {
     id: 'bulk-unsubscribe',
     q: 'Can I unsubscribe from all my newsletters at once?',
-    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can handle the noisiest first, deciding once per sender. Paid plans add bulk actions: select many senders and unsubscribe across them in one pass, with the same preview before anything runs. Where a sender supports automatic unsubscribe, we send the request for you. Where a sender requires an email, we prepare it for you to send from Gmail — nothing is auto-sent on your behalf.',
+    a: 'There is no single “unsubscribe from everything” button — DeclutrMail ranks your senders by how much they email you so you can clear the noisiest first. Paid plans add a reviewed multi-sender flow with the same preview before anything runs. One-click requests are queued separately; every mailto-only list remains in an on-screen checklist with a prefilled Gmail draft you must open and send. Senders without a published unsubscribe channel are excluded; Archive is the reliable fallback.',
     link: { href: '/pricing', label: 'Compare plans →' },
   },
   {
     id: 'verbs-in-gmail-terms',
     q: 'What do Archive, Later, and Delete actually do in Gmail?',
-    a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, where Gmail keeps them recoverable for about 30 days before deleting permanently. Keep leaves everything where it is.',
+    a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, normally for up to 30 days; permanently deleting a message or emptying Trash can end recovery sooner. Keep leaves everything where it is.',
   },
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: "Every mail-changing action shows a preview before it runs. Archive, Later, and Delete use your plan's Activity Undo window. Delete also has a separate Gmail Trash recovery path, which normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled.",
+    a: `${ACTION_SAFETY_SUMMARY} The Archive, Later, and Delete Activity Undo window is 7 days on Free and Plus and 30 days on Pro.`,
   },
   {
     id: 'disconnect-mailbox',
     q: 'How do I disconnect a mailbox?',
-    a: 'Settings → Mailboxes → Disconnect. That revokes DeclutrMail’s Google access and stops all syncing and actions for that mailbox immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page.',
+    a: 'Open the Gmail account menu in the app’s top bar and choose Disconnect for that mailbox. That revokes DeclutrMail’s Google access and stops all syncing and actions for it immediately; your historical activity log is kept so you can reconnect later. You can also revoke access directly from your Google account permissions page.',
   },
   {
     id: 'delete-account',
     q: 'How do I delete my account?',
-    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires. Account and mailbox product data is removed; narrowly scoped pseudonymous security and deletion evidence remains under the operational retention policy.',
+    a: 'Settings → Privacy & Data → Delete account. Deletion has a 7-day grace period during which you can change your mind. If you have actions still inside a longer undo window, deletion is scheduled after the latest window expires — so undo keeps working for its full window.',
     link: { href: '/privacy', label: 'Data retention and deletion →' },
   },
   {
@@ -102,7 +91,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
-    a: 'Free shows you what’s noisy and lets you act sender by sender. Paid plans add bulk actions across senders and more automation. The pricing page has the current comparison.',
+    a: 'Free shows you what’s noisy and includes five lifetime cleanup actions. Plus adds unlimited manual actions and Triage. Pro adds preset automation, two inboxes, and a 30-day Activity Undo window for Archive, Later, and Delete. Delete also has separate Gmail Trash recovery, normally up to 30 days on every plan. The pricing page has the current comparison.',
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {
@@ -144,7 +133,7 @@ export default function HelpPage() {
     <LegalPageLayout title="Help & FAQ" label="Help" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="help" />
       <JsonLd data={FAQ_JSON_LD} />
-      {FAQS.map(({ id, q, a, link, technical }) => (
+      {FAQS.map(({ id, q, a, link }) => (
         <LegalSection key={id} id={id} title={q}>
           <p>
             {a}
@@ -155,9 +144,6 @@ export default function HelpPage() {
               </>
             ) : null}
           </p>
-          {technical ? (
-            <TechnicalDetails summary={technical.summary}>{technical.details}</TechnicalDetails>
-          ) : null}
         </LegalSection>
       ))}
       <p>

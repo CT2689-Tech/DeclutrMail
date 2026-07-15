@@ -33,10 +33,18 @@ import {
 
 import { activityKeys } from './query-keys';
 
-export function useActivity(filters: ActivityFilters, options?: { hasInFlightAction?: boolean }) {
+export function useActivity(
+  filters: ActivityFilters,
+  options?: { hasInFlightAction?: boolean; enabled?: boolean },
+) {
   return useInfiniteQuery({
     queryKey: activityKeys.list(filters),
     queryFn: ({ pageParam, signal }) => fetchActivity({ ...filters, cursor: pageParam, signal }),
+    // Raw URL validation happens before this hook. A malformed or reversed
+    // date range must not be normalized to null and then fetched as an
+    // unfiltered feed; keep the query (and any cached rows) dormant until
+    // the user resets or edits the invalid range.
+    enabled: options?.enabled ?? true,
     initialPageParam: undefined as string | undefined,
     // D202: `nextCursor` is null on the last page; map null → undefined
     // so TanStack reads "no next page" (hasNextPage=false).
@@ -51,14 +59,15 @@ export function useActivity(filters: ActivityFilters, options?: { hasInFlightAct
     // class previously left /activity stale forever. (On an infinite
     // query the interval refetches every loaded page in order — pages
     // are 25 rows each; bounded for the poll window.)
-    refetchInterval: options?.hasInFlightAction ? 1500 : false,
+    refetchInterval: options?.enabled !== false && options?.hasInFlightAction ? 1500 : false,
     refetchOnWindowFocus: true,
     // Keep the prior filter's rows on screen while the next filter loads,
     // instead of flashing the full-screen <LoadingState/>. On mobile (D60)
     // that flash unmounted the open filter drawer on every chip tap; on
     // desktop it blanked the list on each tweak. `isError`/`isLoading`
     // gates in the screen still fire on a genuine cold error (no prior
-    // data), so the 400 "invalid query" ErrorState is preserved.
+    // data), so a server-side validation ErrorState is preserved. Local
+    // raw-date validation disables this query before any request starts.
     placeholderData: keepPreviousData,
   });
 }

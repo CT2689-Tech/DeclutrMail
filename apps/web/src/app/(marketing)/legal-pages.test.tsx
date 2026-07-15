@@ -12,12 +12,10 @@
  *      headline plus the complete store / never-store lists. The
  *      banned pre-D228 phrase "Bodies read: 0" must not appear.
  *   3. Google Limited Use disclosure links the official policy URL.
- *   4. Footer cross-links — every legal page links to all three
- *      legal routes (the unit's navigation contract).
- *   5. D159 (D132 batch) — each page emits page_viewed exactly once
+ *   4. D159 (D132 batch) — each page emits page_viewed exactly once
  *      via the PageViewTracker island; the posthog module is mocked so
  *      the no-fetch proof stays intact.
- *   6. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
+ *   5. D121 + D148 (founder-confirmed 2026-07-08) — /refunds carries
  *      the canonical 30-day money-back guarantee with its fair-use
  *      terms, /terms carries the India/Mumbai governing-law clause,
  *      and NO page still shows a "Pending confirmation" marker.
@@ -26,12 +24,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
-  GMAIL_METADATA_HEADERS,
-  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
 } from '@declutrmail/shared';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import PrivacyPolicyPage from './privacy/page';
 import TermsOfServicePage from './terms/page';
@@ -57,9 +54,14 @@ const PAGES = [
 
 beforeEach(() => {
   trackSpy.mockClear();
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
+  storeConsent('all');
 });
 
 afterEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   vi.restoreAllMocks();
 });
 
@@ -74,14 +76,6 @@ describe.each(PAGES)('$name — D146', ({ Page, heading, page }) => {
   it('emits page_viewed exactly once on mount (D159)', () => {
     render(<Page />);
     expect(trackSpy.mock.calls).toEqual([['page_viewed', { page, mailbox_id: null }]]);
-  });
-
-  it('cross-links all three legal routes in the chrome', () => {
-    render(<Page />);
-    for (const href of ['/privacy', '/terms', '/refunds']) {
-      const links = document.querySelectorAll(`a[href="${href}"]`);
-      expect(links.length, `expected a link to ${href}`).toBeGreaterThan(0);
-    }
   });
 
   it('stamps a last-updated date', () => {
@@ -122,33 +116,22 @@ describe('/refunds content — D121 canonical refund terms', () => {
     expect(text).toContain('Razorpay');
     expect(text).toMatch(/original payment method/);
   });
-
-  it('keeps Activity Undo distinct from Gmail Trash and unsubscribe finality', () => {
-    const { container } = render(<RefundPolicyPage />);
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/Activity Undo.*Archive, Later, or Delete/i);
-    expect(text).toMatch(/separate Gmail Trash recovery path/i);
-    expect(text).toMatch(/delivered unsubscribe request cannot be recalled/i);
-    expect(text).not.toMatch(/actions DeclutrMail performed remain reversible/i);
-  });
 });
 
 describe('/terms content — D121 governing law confirmed', () => {
+  it('keeps anchored section headings below the sticky public header', () => {
+    render(<TermsOfServicePage />);
+    expect(
+      screen.getByRole('heading', { level: 2, name: '1. The service' }).closest('section'),
+    ).toHaveStyle({ scrollMarginTop: '88px' });
+  });
+
   it('states India governing law with exclusive jurisdiction of the Mumbai courts', () => {
     const { container } = render(<TermsOfServicePage />);
     const text = container.textContent ?? '';
     expect(text).toContain('governed by the laws of India');
     expect(text).toContain('Mumbai');
     expect(text).toMatch(/exclusive jurisdiction/);
-  });
-
-  it('defines plan Activity Undo and the separate Gmail Trash path', () => {
-    const { container } = render(<TermsOfServicePage />);
-    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text).toMatch(/Archive, Later, and Delete can be undone from Activity/);
-    expect(text).toMatch(/7 days on Free and Plus; 30 days on Pro/);
-    expect(text).toMatch(/recovery path is separate from Activity Undo/);
-    expect(text).toMatch(/unsubscribe request cannot be recalled/);
   });
 });
 
@@ -169,34 +152,17 @@ describe('/privacy content — D7 + D228 posture', () => {
     expect(container.textContent).not.toMatch(/bod(y|ies) read: 0/i);
   });
 
-  it('renders the generated Gmail header allowlist and retained audit inventory', () => {
+  it('scopes the non-leak claim to bodies and attachments, not sensitive metadata', () => {
     const { container } = render(<PrivacyPolicyPage />);
-    const text = container.textContent ?? '';
-    for (const header of GMAIL_METADATA_HEADERS) {
-      expect(text).toContain(header);
-    }
-    for (const item of GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY) {
-      expect(text).toContain(item.label);
-    }
-    const details = screen.getByText('Show Google permission and field details').closest('details');
-    expect(details).not.toHaveAttribute('open');
-    expect(details).toHaveTextContent(GMAIL_METADATA_HEADERS.join(', '));
-    const primary = container.cloneNode(true) as HTMLElement;
-    primary.querySelectorAll('[data-dm-technical-details]').forEach((node) => node.remove());
-    expect(primary.textContent).not.toMatch(
-      /gmail\.modify|format=metadata|Raw MIME|List-Unsubscribe/,
-    );
-    expect(text).not.toMatch(/exact list|whole list/i);
-  });
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-  it('states deterministic protection and sensitive metadata without absolutes', () => {
-    const { container } = render(<PrivacyPolicyPage />);
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/automatically protect a sender based on observed facts/i);
-    expect(text).toMatch(/reply history/i);
-    expect(text).not.toMatch(/does not automatically protect/i);
-    expect(text).toMatch(/subjects and Gmail Preview snippets may still be sensitive/i);
-    expect(text).not.toMatch(/sensitive Gmail data cannot leak/i);
+    expect(text).toContain(
+      'full message bodies or attachments, that content cannot leak from DeclutrMail',
+    );
+    expect(text).toContain(
+      'Subjects and Gmail Preview snippets can still contain sensitive information',
+    );
+    expect(text).not.toMatch(/most sensitive content.*not in our systems/i);
   });
 
   it('§6 links the /cookies withdrawal surface (GDPR Art. 7(3), D147)', () => {
@@ -228,18 +194,27 @@ describe('/privacy content — D7 + D228 posture', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('§7 deletion wording matches the shipped flow and retained audit boundary (D232)', () => {
+  it('§7 deletion wording matches the shipped flow: 7-day grace + immediate delete via typed waiver (D232)', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
     expect(text).toContain('7-day grace period');
     expect(text).toContain('waive the grace period and any remaining undo windows');
     expect(text).toContain('typed confirmation');
-    expect(text).toContain('queues the purge without a grace period');
-    expect(text).toContain('new syncing is paused');
-    expect(text).toMatch(/pseudonymous security and compliance evidence remains/i);
+    expect(text).toContain('deletion then takes effect immediately');
   });
 
-  it('enumerates all nine subprocessors', () => {
+  it('describes the actual export datasets without claiming preferences are exported', () => {
+    const { container } = render(<PrivacyPolicyPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain('mailbox email/status/connection metadata');
+    expect(text).toContain('sender records and standing policies');
+    expect(text).toContain('decision/activity history');
+    expect(text).toContain('does not include app preferences');
+    expect(text).not.toMatch(/export your data \([^)]*preferences/i);
+  });
+
+  it('enumerates all disclosed subprocessors, including Anthropic', () => {
     render(<PrivacyPolicyPage />);
     for (const provider of [
       'Google Cloud',
@@ -248,6 +223,7 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Upstash',
       'Sentry',
       'PostHog',
+      'Anthropic',
       'Resend',
       'Paddle',
       'Razorpay',

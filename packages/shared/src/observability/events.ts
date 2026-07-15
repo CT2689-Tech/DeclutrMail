@@ -31,8 +31,11 @@ export type EventName =
   | 'page_viewed'
   | 'sender_detail_opened'
   | 'gmail_deep_link_opened'
-  // — Marketing landing funnel (D134) —
+  // — Public marketing acquisition funnel (D134) —
   | 'landing_cta_clicked'
+  | 'demo_preview_opened'
+  | 'demo_decision_confirmed'
+  | 'demo_reset'
   // — Senders V2 surface —
   | 'compose_filter_changed'
   | 'bulk_select_in_filter'
@@ -55,6 +58,7 @@ export type EventName =
   // — Quiet hours (U18 — D92/D95) —
   | 'quiet_hours_updated'
   // — Marketing surface (D19 pricing) —
+  | 'pricing_plan_selected'
   | 'waitlist_joined'
   // — Followups surface —
   | 'followup_dismissed'
@@ -134,8 +138,8 @@ export interface EventPayloads {
     sender_id: string;
     /** True when the user's verb equals the engine's verdict for the row (D21/D29). */
     matched_recommendation: boolean;
-    /** Messages the mutation covers (server count); -1 when not cheaply available. */
-    affected_messages: number;
+    /** Messages requested at enqueue accept; -1 when not available. Never a terminal outcome. */
+    requested_messages: number;
     source: 'sheet' | 'inline' | 'shortcut';
   };
   undo_clicked: {
@@ -172,7 +176,7 @@ export interface EventPayloads {
   };
   upgrade_prompt_shown: {
     /** Which entitlement gate triggered the prompt (D19/D77/D81). */
-    reason: 'free_cap' | 'inbox_limit' | 'feature_tier_required';
+    reason: 'free_cap' | 'inbox_limit' | 'action_tier' | 'feature_tier' | 'pro_feature';
     /** The surface that rendered it. */
     source: 'actions_402' | 'account_menu' | 'triage_empty_state' | 'upgrade_modal' | 'tier_gate';
   };
@@ -186,6 +190,12 @@ export interface EventPayloads {
     provider: 'paddle' | 'razorpay';
     /** True when the Founding Pro promo price was claimed (D126). */
     founding_pro: boolean;
+  };
+
+  pricing_plan_selected: {
+    tier: 'free' | 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    promo: 'foundingPro' | null;
   };
 
   // — Page-view + navigation funnel —
@@ -218,16 +228,41 @@ export interface EventPayloads {
       // 2026-07-07 launch marketing bundle (D219, D137) — support surfaces.
       | 'help'
       | 'contact'
-      | 'security';
+      | 'security'
+      | 'inbox_simulator'
+      // Public product/education families. Dynamic article slugs collapse
+      // into bounded categories so event-cardinality cannot grow with SEO.
+      | 'how_it_works'
+      | 'methodology'
+      | 'compare'
+      | 'comparison'
+      | 'how_to'
+      | 'answer'
+      | 'blog'
+      | 'changelog'
+      | 'faq'
+      | 'sign_in';
     mailbox_id: string | null;
   };
 
   // — Marketing landing funnel (D134) —
   landing_cta_clicked: {
     /** Which CTA — `connect_gmail` starts OAuth; `open_app` is the authed shortcut. */
-    cta: 'connect_gmail' | 'open_app' | 'see_pricing';
-    /** Where on the landing page the click happened. */
-    placement: 'nav' | 'hero' | 'pricing_teaser' | 'final';
+    cta: 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
+    /** Positional section on the current public page; page_viewed carries the route family. */
+    placement: 'nav' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
+  };
+  demo_preview_opened: {
+    verb: Exclude<Verb, 'delete'>;
+    decision_index: number;
+  };
+  demo_decision_confirmed: {
+    verb: Exclude<Verb, 'delete'>;
+    decision_index: number;
+    affected_messages: number;
+  };
+  demo_reset: {
+    decisions_completed: number;
   };
   sender_detail_opened: {
     sender_id: string;
@@ -257,8 +292,8 @@ export interface EventPayloads {
   bulk_action_taken: {
     verb: Verb;
     selected_count: number;
-    /** Sender count vs message count breakdown — KAULD-aware. */
-    affected_messages: number;
+    /** Messages requested at enqueue accept; -1 when not available. Never a terminal outcome. */
+    requested_messages: number;
     // `triage_domain_batch` — the D32-scoped domain-batch card on
     // Triage (one composite decision over a same-domain run).
     source: 'senders_bulk_bar' | 'activity_bulk_bar' | 'confirm_modal' | 'triage_domain_batch';

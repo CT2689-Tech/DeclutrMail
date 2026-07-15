@@ -14,7 +14,8 @@
  */
 
 import { render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import BetaPage from './page';
 
@@ -23,7 +24,16 @@ const { trackSpy } = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
 
+beforeEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
+  storeConsent('all');
+  trackSpy.mockClear();
+});
+
 afterEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   trackSpy.mockClear();
   vi.restoreAllMocks();
 });

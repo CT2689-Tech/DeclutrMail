@@ -21,16 +21,12 @@ const { color, font } = tokens;
 export function SessionProgress({
   decided,
   remaining,
-  noisePreventedPerMonth = 0,
+  messagesMoved = 0,
 }: {
   decided: number;
   remaining: number;
-  /**
-   * Summed monthly volume of this session's confirmed Archive/Later/
-   * Unsubscribe decisions (D33 — real numbers, no gamification). This
-   * is sender history, not a claim that future messages were prevented.
-   */
-  noisePreventedPerMonth?: number;
+  /** Worker-confirmed messages moved this session; 0 hides the line. */
+  messagesMoved?: number;
 }) {
   if (decided === 0) return null;
   const total = decided + remaining;
@@ -58,9 +54,7 @@ export function SessionProgress({
         }}
       >
         {decided} decided · {remaining === 0 ? 'all done' : `${remaining} to go`}
-        {noisePreventedPerMonth > 0 && (
-          <> · ~{noisePreventedPerMonth.toLocaleString()} emails/mo from acted-on senders</>
-        )}
+        {messagesMoved > 0 && <> · {messagesMoved.toLocaleString()} messages moved</>}
       </span>
       <div
         role="progressbar"

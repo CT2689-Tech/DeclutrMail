@@ -18,10 +18,16 @@ describe('CookieConsentBanner (D147)', () => {
 
     expect(banner).toHaveTextContent('We use essential cookies for sign-in and billing.');
     expect(banner).toHaveTextContent(
-      'Help us improve DeclutrMail? We use PostHog to understand which features matter. We never see your inbox content.',
+      'Help us improve DeclutrMail? We use PostHog to understand which features matter. PostHog receives product-usage events, never Gmail message data.',
     );
     expect(screen.getByRole('button', { name: 'Accept all' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Essential only' })).toBeInTheDocument();
+    expect(banner.style.right).toBe('16px');
+    expect(banner.style.width).toBe('calc(100vw - 32px)');
+    expect(screen.getByRole('button', { name: 'Accept all' })).toHaveStyle({ minHeight: '44px' });
+    expect(
+      screen.getByRole('button', { name: 'Close and continue with essential cookies only' }),
+    ).toHaveStyle({ width: '44px', height: '44px' });
   });
 
   it('"Essential only" hides the banner and stores the decline — analytics stays off', async () => {

@@ -106,6 +106,32 @@ describe('SyncNowButton completion watch', () => {
     vi.clearAllTimers();
   });
 
+  it('hides Sync now while the current scoped Gmail grant needs reconnect', () => {
+    statusCell.data = statusOf({
+      last_synced_at: '2026-07-07T10:00:00.000Z',
+      last_sync_error_at: '2026-07-07T10:05:00.000Z',
+      last_sync_error_code: 'InvalidGrantError',
+    });
+
+    renderButton();
+
+    expect(
+      screen.queryByRole('button', { name: /check gmail for new emails/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps Sync now available for a current retryable sync error', () => {
+    statusCell.data = statusOf({
+      last_synced_at: '2026-07-07T10:00:00.000Z',
+      last_sync_error_at: '2026-07-07T10:05:00.000Z',
+      last_sync_error_code: 'GMAIL_HISTORY_GONE',
+    });
+
+    renderButton();
+
+    expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeInTheDocument();
+  });
+
   it('success — toasts "up to date" when last_synced_at moves past the baseline', async () => {
     renderButton();
     await clickSyncNow();

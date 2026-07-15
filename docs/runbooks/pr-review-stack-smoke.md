@@ -73,9 +73,11 @@ Always SQL-force edge states reversibly and RESTORE after (note pre-values first
 
 - Walk every route with devtools open + a `securitypolicyviolation` listener →
   zero violations; PostHog + Sentry beacons fire; avatars load.
-- Confirm `report-uri` points at the Sentry security endpoint (so
-  `CSP_REPORT_ONLY=true` is server-visible). Note: Paddle/Razorpay checkout
-  `<script>` will need a nonced loader at U13 (host entry is CSP2-only).
+- Confirm the policy has no `report-uri`/`report-to`: native CSP payloads can
+  include full URLs and bypass the SDK scrubber. `CSP_REPORT_ONLY=true` remains
+  a browser-console rollback until a first-party normalizing collector exists.
+  Note: Paddle/Razorpay checkout `<script>` will need a nonced loader at U13
+  (host entry is CSP2-only).
 
 ## #226 — Nav + onboarding gate
 

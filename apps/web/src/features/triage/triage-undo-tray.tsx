@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
@@ -9,22 +9,16 @@ import type { UndoTrayDataSource, UndoTrayEntry } from '@declutrmail/shared';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
+import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
 import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
-
-/**
- * Undo-tray query key. Not partitioned by mailbox — reads resolve the
- * active mailbox server-side (`CurrentMailboxGuard`) and every mailbox
- * switch runs `resetMailboxScopedCache` (invalidate-all), so a scoped
- * key would be redundant (same contract as the triage/senders keys).
- */
-export const UNDO_TRAY_QUERY_KEY = ['undo', 'tray'] as const;
 
 /**
  * Mark every surface a confirmed undo touches as stale: the tray
@@ -33,7 +27,7 @@ export const UNDO_TRAY_QUERY_KEY = ['undo', 'tray'] as const;
  * activity feed, and the senders list (inbox counts moved back).
  */
 export function invalidateAfterUndo(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
+  void qc.invalidateQueries({ queryKey: undoKeys.all });
   void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
   void qc.invalidateQueries({ queryKey: TRIAGE_STATS_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -50,11 +44,14 @@ export function invalidateAfterUndo(qc: QueryClient): void {
  * client (CSRF + base URL + 401-refresh) and feeds the shared
  * `<UndoTray>` via its `dataSource` seam.
  */
-function useUndoEntries() {
+function useUndoEntries(mailboxId?: string) {
   return useQuery({
-    queryKey: UNDO_TRAY_QUERY_KEY,
+    queryKey: undoKeys.tray(mailboxId),
     queryFn: async ({ signal }) => {
-      const env = await apiGet<UndoTrayEntry[]>('/api/undo', { signal });
+      const env = await apiGet<UndoTrayEntry[]>('/api/undo', {
+        signal,
+        ...(mailboxId ? { mailboxId } : {}),
+      });
       return env.data;
     },
     // The tray must react to actions taken in another tab (D35).
@@ -83,10 +80,16 @@ function useUndoEntries() {
  * tray IS the decision feedback. Undo completion and failures DO
  * toast: the tray row is already gone, so there is no other channel.
  */
-export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: boolean }) {
+export function ProductUndoTray({
+  enableShortcut = false,
+  mailboxId,
+}: {
+  enableShortcut?: boolean;
+  mailboxId?: string | undefined;
+}) {
   const qc = useQueryClient();
   const router = useRouter();
-  const entriesQuery = useUndoEntries();
+  const entriesQuery = useUndoEntries(mailboxId);
   const revert = useRevertUndo();
   const pendingAction = useTriageStore((s) => s.pendingAction);
 
@@ -96,11 +99,24 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
    * single `activeAction` slot on the action side.
    */
   const [inFlight, setInFlight] = useState<{ token: string; actionId: string | null } | null>(null);
-  const revertStatus = useActionStatus(inFlight?.actionId ?? null);
+  const revertStatus = useActionStatus(inFlight?.actionId ?? null, mailboxId);
+  const mailboxGeneration = useRef(0);
+
+  // A capability from mailbox A must never stay hidden/polling after the
+  // chrome switches to mailbox B. Onboarding intentionally omits the prop;
+  // its single-mailbox mount therefore retains the original behavior.
+  useEffect(() => {
+    mailboxGeneration.current += 1;
+    setInFlight(null);
+    return () => {
+      mailboxGeneration.current += 1;
+    };
+  }, [mailboxId]);
 
   const revertToken = useCallback(
     async (token: string): Promise<void> => {
       if (inFlight != null || revert.isPending) return;
+      const generation = mailboxGeneration.current;
       // D159 — fires at CLICK time (row button or Z), once per attempt
       // (the single-slot guard above already dedupes re-clicks). Only
       // the entry's kind + age ship; the token itself is a live
@@ -115,7 +131,11 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
       // Hide the entry while the revert confirms; a failure puts it back.
       setInFlight({ token, actionId: null });
       try {
-        const res = await revert.mutateAsync({ token });
+        const res = await revert.mutateAsync({ token, ...(mailboxId ? { mailboxId } : {}) });
+        // A mailbox switch/unmount owns the next surface. The old request
+        // may finish server-side, but it must not toast or seed a poller in
+        // the newly active mailbox.
+        if (mailboxGeneration.current !== generation) return;
         if (res.reverted) {
           // Idempotent replay — already reverted server-side.
           toast('Restored to your inbox', 'success');
@@ -131,6 +151,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
           invalidateAfterUndo(qc);
         }
       } catch (err) {
+        if (mailboxGeneration.current !== generation) return;
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
@@ -138,10 +159,10 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
           'warn',
         );
         setInFlight(null);
-        void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
+        void qc.invalidateQueries({ queryKey: undoKeys.all });
       }
     },
-    [inFlight, revert, qc, entriesQuery.data],
+    [inFlight, revert, mailboxId, qc, entriesQuery.data],
   );
 
   // Reverse-job lifecycle — terminal only on server confirmation.
@@ -153,7 +174,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
     if (revertStatus.isError) {
       toast(getActionFailureCopy('revert-status').message, 'warn');
       setInFlight(null);
-      void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: undoKeys.all });
       return;
     }
     const data = revertStatus.data;
@@ -163,7 +184,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
       invalidateAfterUndo(qc);
     } else {
       toast(getActionFailureCopy('revert-terminal').message, 'warn');
-      void qc.invalidateQueries({ queryKey: UNDO_TRAY_QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: undoKeys.all });
     }
     setInFlight(null);
   }, [revertStatus.data, revertStatus.isError, inFlight, qc]);
@@ -177,6 +198,7 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
   // while a sheet / inline preview is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key.toUpperCase() !== 'Z') return;
       const target = e.target as HTMLElement | null;
@@ -184,7 +206,9 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
         const tag = target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
       }
-      if (!enableShortcut || pendingAction != null) return;
+      if (!enableShortcut) return;
+      if (overlayOwnsKeyboard(target)) return;
+      if (pendingAction != null) return;
       const newest = entries[0];
       if (!newest) return;
       e.preventDefault();
@@ -202,10 +226,38 @@ export function ProductUndoTray({ enableShortcut = false }: { enableShortcut?: b
     revert: revertToken,
   };
 
-  return <UndoTray dataSource={dataSource} onViewActivity={() => router.push('/activity')} />;
+  return (
+    <UndoTray
+      dataSource={dataSource}
+      onViewActivity={() => router.push('/activity')}
+      style={{
+        bottom: floatingSurfaceLayout.undoTrayBottom,
+        zIndex: floatingSurfaceLayout.undoTrayZIndex,
+      }}
+    />
+  );
+}
+
+/** True when a modal/dialog or an open/focused menu owns keyboard input. */
+function overlayOwnsKeyboard(target: HTMLElement | null): boolean {
+  const ownerSelector = '[role="dialog"], [aria-modal="true"], [role="menu"]';
+  const focused =
+    target instanceof Element
+      ? target
+      : document.activeElement instanceof Element
+        ? document.activeElement
+        : null;
+  if (focused?.closest(ownerSelector)) return true;
+
+  return Array.from(document.querySelectorAll<HTMLElement>(ownerSelector)).some((surface) => {
+    if (surface.hidden || surface.getAttribute('aria-hidden') === 'true') return false;
+    // App menus and dialogs mount only while open. If a future surface
+    // keeps one mounted, hidden/aria-hidden above is its closed contract.
+    return true;
+  });
 }
 
 /** Triage/onboarding wrapper retains the original Z-key behavior. */
-export function TriageUndoTray() {
-  return <ProductUndoTray enableShortcut />;
+export function TriageUndoTray({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  return <ProductUndoTray enableShortcut mailboxId={mailboxId} />;
 }

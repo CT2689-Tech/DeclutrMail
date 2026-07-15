@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   compositeActionRequestSchema,
+  unsubscribeIntentRequestSchema,
   unsubscribeManualStatusRequestSchema,
 } from './actions.types.js';
 
 const selector = { type: 'sender' as const, senderId: '00000000-0000-4000-8000-000000000001' };
+const SENDER_ID = selector.senderId;
 
 describe('compositeActionRequestSchema — D245 Later schedule', () => {
   it('requires a future wakeAt for Later', () => {
@@ -64,6 +66,33 @@ describe('unsubscribeManualStatusRequestSchema', () => {
         senderId: selector.senderId,
         status: 'endpoint_accepted',
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe('unsubscribeIntentRequestSchema', () => {
+  it('defaults the optional backlog preflight flag to false', () => {
+    expect(unsubscribeIntentRequestSchema.parse({ senderId: SENDER_ID })).toEqual({
+      senderId: SENDER_ID,
+      includesBacklogAction: false,
+    });
+  });
+
+  it('accepts an explicit strict boolean and rejects unknown fields', () => {
+    expect(
+      unsubscribeIntentRequestSchema.parse({
+        senderId: SENDER_ID,
+        includesBacklogAction: true,
+      }),
+    ).toEqual({ senderId: SENDER_ID, includesBacklogAction: true });
+    expect(
+      unsubscribeIntentRequestSchema.safeParse({
+        senderId: SENDER_ID,
+        includesBacklogAction: 'true',
+      }).success,
+    ).toBe(false);
+    expect(
+      unsubscribeIntentRequestSchema.safeParse({ senderId: SENDER_ID, backlog: true }).success,
     ).toBe(false);
   });
 });

@@ -4,8 +4,12 @@ import { ok, type Envelope } from '@declutrmail/shared/contracts';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
+import {
+  CapabilityExempt,
+  CapabilityGuard,
+  RequiresCapability,
+} from '../common/entitlements/capability.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
-import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import {
   TriageReadService,
   type TodaySummary,
@@ -97,6 +101,10 @@ export class TriageController {
 
   @Get('stats')
   @RateLimit('triage-load')
+  // D112 onboarding embeds the real Triage screen for a three-decision
+  // Free practice run and needs only aggregate progress. Queue rows and
+  // every scoring route remain behind the class-level Plus gate.
+  @CapabilityExempt()
   async stats(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<TriageSessionStats>> {
     const stats = await this.reads.getSessionStats({ mailboxAccountId: mailbox.id });
     return ok(stats);

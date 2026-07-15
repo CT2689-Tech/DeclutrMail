@@ -101,7 +101,7 @@ function parseDirection(raw: string | null): SenderListDirection {
   return raw === 'asc' ? 'asc' : 'desc';
 }
 
-function parseScope(params: URLSearchParams, fallback: SenderScope): SenderScope {
+function parseScope(params: URLSearchParams): SenderScope {
   const { activity, activityNegate } = parseActivity(params.get('activity'));
   return {
     compose: {
@@ -188,9 +188,7 @@ export function useComposeState(): {
     sort: parseSort(storeScope.sort),
     direction: storeScope.direction,
   };
-  const initial = appRouter
-    ? parseScope(new URLSearchParams(paramsSnapshot ?? ''), fallback)
-    : fallback;
+  const initial = appRouter ? parseScope(new URLSearchParams(paramsSnapshot ?? '')) : fallback;
   const [scope, setScope] = useState<SenderScope>(initial);
   const scopeRef = useRef(scope);
   const urlRef = useRef(new URLSearchParams(paramsSnapshot ?? ''));
@@ -202,7 +200,7 @@ export function useComposeState(): {
     if (paramsSnapshot === null) return;
     const params = new URLSearchParams(paramsSnapshot);
     urlRef.current = params;
-    const next = parseScope(params, scopeRef.current);
+    const next = parseScope(params);
     scopeRef.current = next;
     setScope((current) => (scopesEqual(current, next) ? current : next));
     const store = useSendersStore.getState();

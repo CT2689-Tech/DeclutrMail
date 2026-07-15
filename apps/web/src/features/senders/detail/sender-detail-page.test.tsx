@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SenderDetailRoute } from './sender-detail-page';
 import {
   addFetchHandlers,
@@ -27,6 +27,35 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 let currentSearch = '';
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(currentSearch),
+}));
+
+const authState = vi.hoisted(() => {
+  const me = {
+    user: { id: 'user-1', email: 'owner@example.com', workspaceId: 'workspace-1' },
+    mailboxes: [
+      {
+        id: 'mailbox-active',
+        email: 'active+work@gmail.com',
+        status: 'active' as const,
+        connectedAt: '2026-01-01T00:00:00.000Z',
+        readiness: 'ready' as const,
+      },
+    ],
+    activeMailboxId: 'mailbox-active',
+    tier: 'pro' as const,
+    cleanupRemaining: null,
+  };
+
+  return {
+    fixture: { me },
+    current: { me } as { me: typeof me } | null,
+  };
+});
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  getActiveMailboxEmail: (me: (typeof authState.fixture)['me']) =>
+    me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ?? me.user.email,
+  useOptionalAuth: () => authState.current,
 }));
 
 const trackMock = vi.fn();
@@ -84,7 +113,7 @@ const HISTORY_ROW = {
   generatedBy: 'template' as const,
 };
 
-function installHappyPath() {
+function installHappyPath(message = MESSAGE) {
   installFetchStub([
     {
       method: 'GET',
@@ -96,7 +125,7 @@ function installHappyPath() {
       path: /^\/api\/senders\/[^/]+\/messages$/,
       respond: () =>
         jsonOk({
-          data: [MESSAGE],
+          data: [message],
           meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
         }),
     },
@@ -130,6 +159,7 @@ describe('SenderDetailRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
     currentSearch = '';
+    authState.current = authState.fixture;
     trackMock.mockClear();
     addBreadcrumbMock.mockClear();
   });
@@ -172,6 +202,7 @@ describe('SenderDetailRoute', () => {
 
     renderDetail('ghost');
     await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   // D38 session-3 — instrument coverage.
@@ -226,12 +257,70 @@ describe('SenderDetailRoute', () => {
     });
   });
 
-  it('renders the error UI when the detail endpoint returns 500', async () => {
+  it('binds sender search and message links to the active mailbox without /u/0', async () => {
+    installHappyPath();
+    renderDetail();
+
+    const openAll = await waitFor(() =>
+      screen.getByRole('link', { name: /open all messages from this sender in gmail/i }),
+    );
+    const message = screen.getByRole('link', { name: /top notifications this week/i });
+
+    expect(openAll.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#search/' +
+        'from%3A%22noreply%40linkedin.com%22',
+    );
+    expect(message.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#all/p-1',
+    );
+    expect(openAll.getAttribute('href')).not.toContain('/u/0');
+    expect(message.getAttribute('href')).not.toContain('/u/0');
+
+    fireEvent.click(openAll);
+    expect(trackMock).toHaveBeenCalledWith('gmail_deep_link_opened', {
+      source: 'sender_detail_open_all',
+      deep_link_kind: 'all_from_sender',
+    });
+  });
+
+  it('uses the sender, subject, and received-at fallback when no provider message id exists', async () => {
+    installHappyPath({ ...MESSAGE, providerMessageId: '' });
+    renderDetail();
+
+    const message = await waitFor(() =>
+      screen.getByRole('link', { name: /top notifications this week/i }),
+    );
+    expect(message.getAttribute('href')).toBe(
+      'https://mail.google.com/mail/?authuser=active%2Bwork%40gmail.com#search/' +
+        'from%3A%22noreply%40linkedin.com%22%20' +
+        'subject%3A%22Top%20notifications%20this%20week%22%20' +
+        'after%3A2026%2F05%2F21%20before%3A2026%2F05%2F23',
+    );
+    expect(message.getAttribute('href')).not.toContain('/u/0');
+  });
+
+  it('hides Gmail links when rendered without authenticated mailbox context', async () => {
+    authState.current = null;
+    installHappyPath();
+    renderDetail();
+
+    const subject = await waitFor(() => screen.getByText(/top notifications this week/i));
+    expect(subject.closest('a')).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: /open all messages from this sender in gmail/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders an alert on 500 and recovers the sender detail when Retry succeeds', async () => {
+    let detailAttempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: /^\/api\/senders\/[^/]+$/,
-        respond: () => jsonServerError(),
+        respond: () => {
+          detailAttempts += 1;
+          return detailAttempts <= 4 ? jsonServerError() : jsonOk({ data: DETAIL });
+        },
       },
       {
         method: 'GET',
@@ -245,17 +334,22 @@ describe('SenderDetailRoute', () => {
     ]);
 
     renderDetail();
-    // Two elements ("h3" title + "p" body) carry the same copy, so we
-    // target the heading explicitly. Retry backoff on 5xx (1s + 2s + 4s)
-    // via the shared `retryUnless404` predicate (3 retries) means the
-    // error UI doesn't appear until ~7s in.
-    await waitFor(
-      () =>
-        expect(
-          screen.getByRole('heading', { name: /couldn[’']t load this sender/i }),
-        ).toBeInTheDocument(),
-      { timeout: 10000 },
-    );
+    // Production keeps the shared 1s + 2s + 4s retry backoff for a
+    // transient 5xx, so the designed state appears after four failed
+    // attempts. The user-triggered retry is the fifth and succeeds.
+    const alert = await screen.findByRole('alert', {}, { timeout: 10000 });
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load this sender/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(detailAttempts).toBe(5);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   }, 15000);
 
   // Standing-policy writes (Keep + Protect).

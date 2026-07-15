@@ -237,6 +237,55 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
     });
   }
 
+  describe('triage (Plus capability)', () => {
+    const gatedRoutes = ['scoreSender', 'queueSize', 'queue', 'todaySummary'] as const;
+    const routes = ['scoreSender', 'queueSize', 'queue', 'stats', 'todaySummary'] as const;
+
+    it('declares the capability at class level, lists the guard, and covers every route', () => {
+      expect(Reflect.getMetadata(CAPABILITY_METADATA, TriageController)).toBe('triage');
+      expect(Reflect.getMetadata(GUARDS_METADATA, TriageController)).toContain(CapabilityGuard);
+      expect(
+        Object.getOwnPropertyNames(TriageController.prototype).filter(
+          (name) => name !== 'constructor',
+        ),
+      ).toEqual(routes);
+    });
+
+    it('402s Free and passes Plus and above on every route', async () => {
+      for (const handlerName of gatedRoutes) {
+        const { guard: freeGuard } = makeGuard('free');
+        const err = await caught(
+          freeGuard.canActivate(
+            makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
+          ),
+        );
+        expect(err, handlerName).toBeInstanceOf(AppException);
+        expect((err as AppException).code).toBe('PRO_FEATURE_REQUIRED');
+        expect((err as AppException).message).toContain('Plus plan');
+
+        for (const tier of ['plus', 'pro', 'team', 'enterprise'] as const) {
+          const { guard } = makeGuard(tier);
+          await expect(
+            guard.canActivate(
+              makeCtx({ controller: TriageController, handlerName, user: PRINCIPAL }),
+            ),
+            `${tier} × triage.${handlerName}`,
+          ).resolves.toBe(true);
+        }
+      }
+    });
+
+    it('keeps aggregate stats open for the Free onboarding practice run', async () => {
+      const { guard, tierForWorkspace } = makeGuard('free');
+      await expect(
+        guard.canActivate(
+          makeCtx({ controller: TriageController, handlerName: 'stats', user: PRINCIPAL }),
+        ),
+      ).resolves.toBe(true);
+      expect(tierForWorkspace).not.toHaveBeenCalled();
+    });
+  });
+
   describe('quiet hours (route-level gate on MailboxesController)', () => {
     it('gates ONLY the PUT — class stays capability-free', () => {
       expect(Reflect.getMetadata(CAPABILITY_METADATA, MailboxesController)).toBeUndefined();

@@ -8,7 +8,9 @@ import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useTier } from '@/features/auth/api/use-tier';
+import { useMailboxesHealth } from '@/features/settings/api/use-mailbox-health';
 import { track } from '@/lib/posthog';
+import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox-url';
 import { useDeleteMailboxIndexedData } from './api/use-delete-mailbox-indexed-data';
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
@@ -23,14 +25,14 @@ const { color, font } = tokens;
  * manage a mailbox's connection/data, connect another Google account,
  * or sign out.
  *
- * D245 moves disconnect out of the cramped menu row and into an accessible
- * dialog with two explicit outcomes: keep the indexed history, or queue its
- * permanent deletion. The dialog's affected/retained lists come from the
- * shared Gmail-data registry.
+ * Manage opens the D245 outcome dialog: disconnect and retain indexed
+ * history, or disconnect and permanently delete that mailbox's indexed
+ * data. Both outcomes leave Gmail itself unchanged.
  *
- * "Connect another" is a hard navigation to the OAuth start endpoint;
- * the BE clears the active-mailbox cookie path and the consent flow
- * appends the new account on success.
+ * "Connect another" uses the normal OAuth start. Disconnected-account
+ * reactivation and active grant recovery each bind OAuth to the exact
+ * mailbox, but remain separate flows because only reactivation can
+ * consume an inbox slot.
  */
 export function AccountMenu() {
   const { me } = useAuth();
@@ -38,6 +40,8 @@ export function AccountMenu() {
   const [managedMailboxId, setManagedMailboxId] = useState<string | null>(null);
   const [dataControlsError, setDataControlsError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const setActive = useSetActiveMailbox();
   const disconnect = useDisconnectMailbox();
   const deleteIndexedData = useDeleteMailboxIndexedData();
@@ -46,14 +50,30 @@ export function AccountMenu() {
   // account; existing connections keep working even over-limit. The BE
   // mirror is InboxLimitGuard on connect-mailbox/start (402).
   const { tier, inboxLimit, connectedInboxes, atInboxLimit } = useTier();
+  // Keep the closed disclosure cheap. Opening enables the mailbox-keyed
+  // health reads: the selected mailbox dedupes with banner/Sync-now, while
+  // each other active row gets one low-frequency poll only while visible.
+  const healthById = useMailboxesHealth(me.mailboxes, { enabled: open });
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    // Nonmodal dialog disclosure: move focus into the panel, then let
+    // ordinary Tab order traverse selectors, recovery, and account actions.
+    panelRef.current?.focus();
+    const handlePointer = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open]);
 
   // One emit per menu-open while at the limit (D159 — the funnel
@@ -63,14 +83,6 @@ export function AccountMenu() {
       void track('upgrade_prompt_shown', { reason: 'inbox_limit', source: 'account_menu' });
     }
   }, [open, atInboxLimit]);
-
-  // D205 connect-mailbox flow: adds (or reactivates) a Gmail account on
-  // the CURRENT workspace without re-creating the user or re-issuing
-  // session cookies. Hard navigation to the OAuth start endpoint.
-  function connectAnother() {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-    window.location.assign(`${apiBase}/api/auth/google/connect-mailbox/start`);
-  }
 
   const activeMailbox =
     me.mailboxes.find((m) => m.id === me.activeMailboxId) ??
@@ -91,11 +103,13 @@ export function AccountMenu() {
         }
       `}</style>
       <button
+        ref={triggerRef}
         type="button"
         className="dm-account-trigger"
         onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls="dm-account-menu"
         title={activeLabel}
         style={{
           display: 'inline-flex',
@@ -139,12 +153,21 @@ export function AccountMenu() {
 
       {open && (
         <div
-          role="menu"
+          ref={panelRef}
+          id="dm-account-menu"
+          role="dialog"
+          aria-label="Gmail accounts"
+          tabIndex={-1}
           style={{
             position: 'absolute',
             top: 36,
             right: 0,
-            minWidth: 260,
+            width: 300,
+            maxWidth: 'calc(100vw - 24px)',
+            maxHeight: 'calc(100vh - 72px)',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            boxSizing: 'border-box',
             background: color.card,
             border: `1px solid ${color.border}`,
             borderRadius: 10,
@@ -171,39 +194,52 @@ export function AccountMenu() {
             <div style={{ padding: '6px 8px', color: color.fgMuted }}>No mailboxes connected.</div>
           )}
           {me.mailboxes.map((m) => {
-            const isActive = m.id === activeMailbox?.id;
+            const isSelected = m.id === activeMailbox?.id;
             const isDisconnected = m.status === 'disconnected';
+            const needsReconnect = !isDisconnected && healthById[m.id]?.needsReconnect === true;
             const indexedDataState = resolveIndexedDataState(m);
             const reconnectBlocked = isMailboxDataDeletionInFlight(indexedDataState);
             const lifecycleLabel = mailboxDataLifecycleLabel(indexedDataState);
             return (
-              <div key={m.id} style={{ borderTop: `1px dashed ${color.lineSoft}` }}>
+              <div
+                key={m.id}
+                data-testid={`account-mailbox-${m.id}`}
+                style={{ borderTop: `1px dashed ${color.lineSoft}` }}
+              >
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 8,
                     padding: '6px 8px',
                     // Highlight the active mailbox so it reads as the
                     // current selection (not just a ✓) — the switch
                     // button is inert on the active row, which otherwise
                     // looked like "can't select it".
-                    background: isActive ? color.primarySoft : 'transparent',
+                    background: isSelected ? color.primarySoft : 'transparent',
                   }}
                 >
                   <button
                     type="button"
-                    role="menuitemradio"
-                    aria-checked={isActive}
+                    aria-pressed={isSelected}
+                    aria-label={`${isSelected ? 'Selected mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
                     disabled={isDisconnected || setActive.isPending}
                     onClick={() => {
-                      if (isActive) return;
+                      if (isSelected) return;
+                      // A revoked mailbox remains selectable: cached history
+                      // and recovery context stay useful even before Gmail is
+                      // re-authorized. Only Gmail-dependent actions pause.
                       setActive.mutate(m.id, {
-                        onSuccess: () => setOpen(false),
+                        onSuccess: () => {
+                          setOpen(false);
+                          triggerRef.current?.focus();
+                        },
                       });
                     }}
                     style={{
-                      flex: 1,
+                      flex: '1 1 180px',
+                      minWidth: 150,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
@@ -218,127 +254,137 @@ export function AccountMenu() {
                     }}
                   >
                     <span aria-hidden style={{ width: 14, color: color.primary }}>
-                      {isActive ? '✓' : ' '}
+                      {isSelected ? '✓' : ' '}
                     </span>
                     <span
                       style={{
                         flex: 1,
+                        minWidth: 0,
+                        display: 'block',
                         overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        fontWeight: isActive ? 600 : 400,
+                        fontWeight: isSelected ? 600 : 400,
                       }}
                     >
-                      {m.email}
+                      <span
+                        style={{
+                          display: 'block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {m.email}
+                      </span>
+                      {needsReconnect && (
+                        <span
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            marginTop: 2,
+                          }}
+                        >
+                          {isSelected && <MenuStatus tone="primary">Selected</MenuStatus>}
+                          <MenuStatus tone="danger">Needs reconnect</MenuStatus>
+                        </span>
+                      )}
                     </span>
-                    {isActive && !isDisconnected && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color: color.primary,
-                          letterSpacing: '0.04em',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        Active
-                      </span>
+                    {isSelected && !isDisconnected && !needsReconnect && (
+                      <MenuStatus tone="primary">Active</MenuStatus>
                     )}
-                    {isDisconnected && lifecycleLabel && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color:
-                            indexedDataState === 'deletion_delayed' ? color.danger : color.fgMuted,
-                        }}
+                    {isDisconnected && (
+                      <MenuStatus
+                        tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}
                       >
-                        {lifecycleLabel}
-                      </span>
+                        {lifecycleLabel ?? 'Disconnected'}
+                      </MenuStatus>
                     )}
                     {/* Per-mailbox initial-sync state (D116). `ready`/null
-                        render nothing — they're the steady state. */}
-                    {!isDisconnected && m.readiness && m.readiness !== 'ready' && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: m.readiness === 'failed' ? color.red : color.fgMuted,
-                        }}
-                      >
-                        {m.readiness === 'failed' ? 'sync failed' : 'syncing…'}
-                      </span>
-                    )}
+                        render nothing — they're the steady state. A revoked
+                        grant suppresses this tag because "sync failed" is a
+                        less useful duplicate of the actual recovery state. */}
+                    {!isDisconnected &&
+                      !needsReconnect &&
+                      m.readiness &&
+                      m.readiness !== 'ready' && (
+                        <MenuStatus tone={m.readiness === 'failed' ? 'danger' : 'muted'}>
+                          {m.readiness === 'failed' ? 'Sync failed' : 'Syncing…'}
+                        </MenuStatus>
+                      )}
                   </button>
-                  {!isDisconnected ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManagedMailboxId(m.id);
-                        setDataControlsError(null);
-                        setOpen(false);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: color.fgMuted,
-                        cursor: 'pointer',
-                        fontSize: 11,
-                        padding: '2px 6px',
-                      }}
-                    >
-                      Manage
-                    </button>
-                  ) : (
-                    // Reconnect a disconnected account — same OAuth flow as
-                    // "connect another"; Google's chooser lets the user pick
-                    // this account, which `addMailbox` reactivates (D116).
-                    // Reactivating counts toward the D19 inbox limit, so
-                    // the affordance is disabled at the limit (the BE
-                    // start route would 402 anyway).
-                    <button
-                      type="button"
-                      disabled={atInboxLimit || reconnectBlocked}
-                      onClick={atInboxLimit || reconnectBlocked ? undefined : connectAnother}
-                      title={
-                        reconnectBlocked
-                          ? indexedDataState === 'deletion_delayed'
-                            ? 'Indexed-data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
-                            : 'Reconnect becomes available after indexed-data deletion completes.'
-                          : atInboxLimit
-                            ? `Your plan includes ${inboxLimit} connected ${inboxLimit === 1 ? 'inbox' : 'inboxes'} — upgrade to reconnect this one.`
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: 2,
+                      marginLeft: 'auto',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    {needsReconnect && (
+                      <button
+                        type="button"
+                        aria-label={`Reconnect ${m.email}`}
+                        onClick={() => startMailboxConnect(m.id)}
+                        style={mailboxActionStyle('primary')}
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                    {!isDisconnected ? (
+                      <button
+                        type="button"
+                        aria-label={`Manage connection and data for ${m.email}`}
+                        onClick={() => {
+                          setManagedMailboxId(m.id);
+                          setDataControlsError(null);
+                          setOpen(false);
+                        }}
+                        style={mailboxActionStyle('muted')}
+                      >
+                        Manage
+                      </button>
+                    ) : (
+                      // Disconnected reactivation can consume a slot, so it
+                      // keeps the plan-limit gate while binding OAuth to the
+                      // exact disconnected mailbox the user selected.
+                      <button
+                        type="button"
+                        disabled={atInboxLimit || reconnectBlocked}
+                        aria-label={`Reconnect ${m.email}`}
+                        aria-describedby={
+                          atInboxLimit ? 'account-menu-inbox-limit-gate' : undefined
+                        }
+                        title={
+                          reconnectBlocked
+                            ? 'Reconnect becomes available after indexed-data deletion completes.'
                             : undefined
-                      }
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: atInboxLimit || reconnectBlocked ? color.fgMuted : color.primary,
-                        cursor: atInboxLimit || reconnectBlocked ? 'not-allowed' : 'pointer',
-                        fontSize: 11,
-                        fontWeight: 600,
-                        padding: '2px 6px',
-                      }}
-                    >
-                      Reconnect
-                    </button>
-                  )}
-                  {isDisconnected && indexedDataState === 'retained' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManagedMailboxId(m.id);
-                        setDataControlsError(null);
-                        setOpen(false);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: color.fgMuted,
-                        cursor: 'pointer',
-                        fontSize: 11,
-                        padding: '2px 6px',
-                      }}
-                    >
-                      Delete data
-                    </button>
-                  )}
+                        }
+                        onClick={() => startMailboxReactivation(m.id)}
+                        style={mailboxActionStyle(
+                          atInboxLimit || reconnectBlocked ? 'disabled' : 'primary',
+                        )}
+                      >
+                        Reconnect
+                      </button>
+                    )}
+                    {isDisconnected && indexedDataState === 'retained' && (
+                      <button
+                        type="button"
+                        aria-label={`Manage retained data for ${m.email}`}
+                        onClick={() => {
+                          setManagedMailboxId(m.id);
+                          setDataControlsError(null);
+                          setOpen(false);
+                        }}
+                        style={mailboxActionStyle('muted')}
+                      >
+                        Delete data
+                      </button>
+                    )}
+                  </span>
                 </div>
               </div>
             );
@@ -359,6 +405,7 @@ export function AccountMenu() {
               // Existing accounts above keep working; only ADDING is
               // blocked (BE mirror: 402 INBOX_LIMIT_REACHED).
               <div
+                id="account-menu-inbox-limit-gate"
                 data-testid="inbox-limit-gate"
                 style={{
                   padding: '6px 8px',
@@ -389,7 +436,7 @@ export function AccountMenu() {
                 </Link>
               </div>
             ) : (
-              <button type="button" onClick={connectAnother} style={menuItemStyle()}>
+              <button type="button" onClick={() => startMailboxConnect()} style={menuItemStyle()}>
                 + Connect another Gmail account
               </button>
             )}
@@ -471,18 +518,58 @@ export function mailboxDataLifecycleLabel(
 ): string | null {
   switch (state) {
     case 'deletion_pending':
-      return 'deletion queued';
+      return 'Deletion queued';
     case 'deleting':
-      return 'deleting data…';
+      return 'Deleting data…';
     case 'deletion_delayed':
-      return 'deletion delayed';
+      return 'Deletion delayed';
     case 'deleted':
-      return 'data deleted';
+      return 'Data deleted';
     case 'retained':
-      return 'disconnected · data kept';
+      return 'Disconnected · data kept';
     default:
       return null;
   }
+}
+
+function MenuStatus({
+  tone,
+  children,
+}: {
+  tone: 'primary' | 'muted' | 'danger';
+  children: string;
+}) {
+  const fg = tone === 'primary' ? color.primary : tone === 'danger' ? color.red : color.fgMuted;
+  return (
+    <span
+      style={{
+        flexShrink: 0,
+        fontSize: 10,
+        fontWeight: 600,
+        color: fg,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function mailboxActionStyle(tone: 'primary' | 'muted' | 'disabled') {
+  const disabled = tone === 'disabled';
+  return {
+    background: 'transparent',
+    border: 'none',
+    color: tone === 'primary' ? color.primary : color.fgMuted,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.65 : 1,
+    fontFamily: font.sans,
+    fontSize: 11,
+    fontWeight: tone === 'primary' ? 600 : 400,
+    padding: '4px 6px',
+    whiteSpace: 'nowrap' as const,
+  };
 }
 
 /** Display name for the tier in the inbox-limit gate copy. */

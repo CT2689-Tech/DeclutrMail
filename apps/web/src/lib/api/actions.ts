@@ -187,9 +187,9 @@ export async function enqueueArchiveSender(
 }
 
 /**
- * Non-mutating preview: the REAL count of a sender's inbox mail (the exact
- * set the archive will move). Feeds the D226 confirm modal so it states
- * what actually changes, not an estimate. 404s an unowned sender.
+ * Non-mutating preview: the current count of a sender's inbox mail. The
+ * worker re-resolves Gmail at execution, so the final affected count can
+ * differ if the inbox changes after confirmation. 404s an unowned sender.
  */
 export async function getArchivePreview(
   senderId: string,
@@ -383,12 +383,22 @@ export const UNSUB_AMBIGUOUS_ERROR_CODE = 'UNSUB_AMBIGUOUS_REDIRECT';
  */
 export async function recordUnsubscribeIntent(
   senderId: string,
-  options: ActionRequestOptions & { idempotencyKey?: string } = {},
+  options: ActionRequestOptions & {
+    idempotencyKey?: string;
+    includesBacklogAction?: boolean;
+  } = {},
 ): Promise<UnsubscribeIntentResult> {
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
   const env = await apiPost<UnsubscribeIntentResult>(
     '/api/actions/unsubscribe-intent',
-    { senderId },
+    {
+      senderId,
+      // Preserve the old strict body when omitted; explicit false/true
+      // are forwarded so callers can state the exact quota preflight.
+      ...(options.includesBacklogAction !== undefined
+        ? { includesBacklogAction: options.includesBacklogAction }
+        : {}),
+    },
     {
       headers: { 'Idempotency-Key': idempotencyKey },
       ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),

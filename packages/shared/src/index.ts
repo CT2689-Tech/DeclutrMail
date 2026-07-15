@@ -56,6 +56,8 @@ export type {
   EmptyStateTier,
   EmptyStateTierNudge,
 } from './components/empty-state';
+export { ErrorState } from './components/error-state';
+export type { ErrorStateProps } from './components/error-state';
 export { ScreenIntro } from './components/screen-intro';
 
 // ADR-0016 — shared numeric primitive for Senders + Sender-Detail
@@ -175,7 +177,6 @@ export {
   PRIVACY_NEVER_LABEL,
   GMAIL_PREVIEW_FIELD_LABEL,
 } from './copy/privacy';
-
 export {
   GMAIL_CONNECTION_DATA_INVENTORY,
   GMAIL_DATA_PROCESSORS,
@@ -215,3 +216,13 @@ export type {
   MailboxDataDeletionView,
   MailboxIndexedDataState,
 } from './contracts/mailbox-data-deletion';
+export {
+  ACTION_SAFETY_SUMMARY,
+  ACTION_PREVIEW_CLAIM,
+  DELETE_RECOVERY_CLAIM,
+  MANUAL_ACTION_SCOPE_CLAIM,
+  BRIEF_AI_DISCLOSURE,
+  RECOMMENDATION_AI_DISCLOSURE,
+  AI_PROCESSING_DISCLOSURE,
+  ANALYTICS_PRIVACY_CLAIM,
+} from './copy/action-safety';

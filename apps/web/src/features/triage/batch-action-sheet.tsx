@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import type { DomainBatch } from './domain-batch';
@@ -31,6 +31,7 @@ export function BatchActionSheet({
   batch,
   preview,
   wakeAt = null,
+  mailboxEmail,
   onCancel,
   onConfirm,
   onRetryPreview,
@@ -42,25 +43,28 @@ export function BatchActionSheet({
   preview: BulkActionPreviewResult | 'loading' | 'unavailable';
   /** Exact Later return time carried through confirmation. */
   wakeAt?: string | null;
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: () => void;
   onRetryPreview?: (() => void) | undefined;
 }) {
-  const previewReady = typeof preview === 'object';
+  const wakeAtInvalid = verb === 'Later' && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
+  const confirmDisabled = preview === 'loading' || preview === 'unavailable' || wakeAtInvalid;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && previewReady) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, previewReady, onCancel, onConfirm]);
+  }, [open, onCancel, onConfirm, confirmDisabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
@@ -129,6 +133,7 @@ export function BatchActionSheet({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <MailboxActionContext mailboxEmail={mailboxEmail} />
           <div role="region" aria-label={`Preview · ${verb} ${batch.domain} batch`}>
             <h3 style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
               {title}
@@ -138,8 +143,8 @@ export function BatchActionSheet({
             </p>
           </div>
 
-          {/* Impact figure — the REAL aggregated count (D226), never a
-              client estimate. All four states rendered (D211). */}
+          {/* Current aggregated match count (D226), never a client
+              estimate. All four states rendered (D211). */}
           <div
             style={{
               display: 'flex',
@@ -155,7 +160,8 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                {getActionFailureCopy('preview').message}
+                Couldn&rsquo;t load a live preview. Close and retry — no inbox mail can move without
+                one.
               </span>
             ) : (
               <>
@@ -172,10 +178,8 @@ export function BatchActionSheet({
                   {preview.totals.all.toLocaleString()}
                 </strong>
                 <span style={{ fontSize: 12, color: color.fgSoft }}>
-                  email{preview.totals.all === 1 ? '' : 's'} now in the inbox
-                  {preview.totals.all === 0
-                    ? ' — nothing to move.'
-                    : ' will move out of the inbox.'}
+                  email{preview.totals.all === 1 ? '' : 's'} currently match in Inbox. Gmail is
+                  checked again at execution, so the final moved count can change.
                 </span>
               </>
             )}
@@ -185,7 +189,7 @@ export function BatchActionSheet({
           {typeof preview === 'object' && (
             <div
               role="list"
-              aria-label="Per-sender impact"
+              aria-label="Current per-sender matches"
               style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
             >
               {preview.senders.map((s) => (
@@ -245,7 +249,13 @@ export function BatchActionSheet({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            {presentation.primary.activityUndo.summary}
+            {confirmDisabled
+              ? wakeAtInvalid
+                ? 'Choose a future return time before confirming Later.'
+                : preview === 'unavailable'
+                  ? 'Preview unavailable — close and retry before confirming.'
+                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {preview === 'unavailable' && onRetryPreview && (
@@ -258,7 +268,7 @@ export function BatchActionSheet({
             </Button>
             <Button
               tone="primary"
-              disabled={!previewReady}
+              disabled={confirmDisabled}
               onClick={onConfirm}
               iconRight={
                 <Kbd

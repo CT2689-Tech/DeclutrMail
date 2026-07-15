@@ -8,9 +8,12 @@ import {
   type AutopilotMatchResolution,
   type AutopilotPresetKey,
   automationRules,
+  mailboxAccounts,
   ruleMatchLog,
   type schema,
+  workspaces,
 } from '@declutrmail/db';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS, type PresetInput } from './autopilot-presets.js';
 import { materializeAutopilotSignals } from './autopilot-signals.js';
@@ -119,7 +122,8 @@ export interface AutopilotApplyDeps {
  * same trigger event is a no-op.
  *
  * What the worker DOES:
- *   - Loads enabled, non-paused rules for the mailbox.
+ *   - Loads enabled, non-paused rules only when the mailbox workspace
+ *     currently grants the canonical `autopilot` capability.
  *   - Materializes the minimal `PresetSignals` for every sender (the
  *     rule set does not need the full cascade signal vector).
  *   - Runs each preset matcher; on match, INSERTs into `rule_match_log`.
@@ -436,11 +440,23 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * Enabled, non-paused rules for a mailbox. Custom rules (`is_preset
-   * = false`) are accepted by the schema but skipped at runtime per
-   * D197 — V2 ships only the preset matchers.
+   * Enabled, non-paused rules for an entitled mailbox. Tier is checked
+   * here so downgraded workspaces stop before signal materialization or
+   * match creation. Custom rules (`is_preset = false`) are accepted by
+   * the schema but skipped at runtime per D197 — V2 ships only the
+   * preset matchers.
    */
   private async loadEnabledRules(mailboxAccountId: string): Promise<AutomationRule[]> {
+    const [workspace] = await this.deps.db
+      .select({ tier: workspaces.tier })
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(eq(mailboxAccounts.id, mailboxAccountId))
+      .limit(1);
+    if (!workspace || !hasCapability(workspace.tier, 'autopilot')) {
+      return [];
+    }
+
     return this.deps.db
       .select()
       .from(automationRules)

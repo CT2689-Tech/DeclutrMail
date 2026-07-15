@@ -13,7 +13,8 @@
 //     (independent of the sheet's local state) — that's the
 //     contract the screen relies on when persisting the toggle.
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
@@ -33,6 +34,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
         verb="Archive"
         row={row}
         inboxCount={2}
+        mailboxEmail="active@gmail.com"
         onCancel={() => {}}
         onConfirm={() => {}}
       />,
@@ -49,6 +51,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     expect(html).toContain(`aria-label="Preview · Archive ${row.senderName}"`);
     expect(html).toContain('Why do I review this before confirming?');
     expect(html).toContain('Cancel changes nothing');
+    expect(html).toContain('aria-label="Gmail account: active@gmail.com"');
   });
 
   it('renders nothing when open=false', () => {
@@ -144,6 +147,120 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
     expect(html.toLowerCase()).toContain('same preview will appear below the sender');
+  });
+});
+
+describe('ActionSheet — live-preview confirm gate', () => {
+  it.each(['Archive', 'Later'] as const)(
+    'blocks %s click and keyboard confirmation until the live preview resolves',
+    (verb) => {
+      const onConfirm = vi.fn();
+      const wakeAt = verb === 'Later' ? new Date(Date.now() + 86_400_000).toISOString() : undefined;
+      const { rerender } = render(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          row={row}
+          inboxCount="loading"
+          wakeAt={wakeAt ?? null}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+        />,
+      );
+
+      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(onConfirm).not.toHaveBeenCalled();
+
+      rerender(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          row={row}
+          inboxCount={2}
+          wakeAt={wakeAt ?? null}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+        />,
+      );
+
+      const readyConfirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      expect(readyConfirm).toBeEnabled();
+      fireEvent.click(readyConfirm);
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+      expect(onConfirm).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('keeps a pure unsubscribe request confirmable when the backlog move is off', () => {
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount="unavailable"
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /^Unsubscribe/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    expect(onConfirm).toHaveBeenLastCalledWith({
+      archiveHistoric: false,
+      rememberPreference: false,
+      wakeAt: null,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+
+    rerender(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenLastCalledWith({
+      archiveHistoric: true,
+      rememberPreference: false,
+      wakeAt: null,
+    });
+    expect(screen.getByText(/uses a second cleanup action/i)).toBeInTheDocument();
+  });
+
+  it('labels a resolved count as current and warns that execution re-checks Gmail', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
+    expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });
 

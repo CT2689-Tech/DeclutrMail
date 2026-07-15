@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.109.1",
+    "@anthropic-ai/sdk": "^0.111.0",
     "@declutrmail/db": "workspace:*",
     "@declutrmail/events": "workspace:*",
     "@declutrmail/shared": "workspace:*",
@@ -32,7 +32,7 @@
     "cookie-parser": "^1.4.7",
     "drizzle-orm": "^0.45.2",
     "google-auth-library": "^10.6.2",
-    "ioredis": "^5.10.1",
+    "ioredis": "5.10.1",
     "jose": "^6.2.3",
     "postgres": "^3.4.5",
     "reflect-metadata": "^0.2.2",
@@ -49,6 +49,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.10"
   }
 }

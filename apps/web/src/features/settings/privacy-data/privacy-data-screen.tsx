@@ -38,8 +38,9 @@ const { color, font } = tokens;
  *      live ONLY in packages/shared/src/copy/privacy.ts.
  *   2. Indexed mailboxes — which accounts the storage list applies to.
  *   3. Undo retention — how long reversible actions stay reversible.
- *   4. Data export — JSON (everything) plus per-dataset CSVs (message
- *      index / senders / decisions) via GET /api/account/export.
+ *   4. Data export — mailbox metadata grouped as JSON plus per-dataset
+ *      CSVs (message index / senders / decisions) via GET
+ *      /api/account/export.
  *      D228-allowlisted columns only.
  *   5. Leave cleanly — pointers to disconnect + account deletion.
  *   6. Legal & evidence — CASA Tier 2 row (static copy, link lands
@@ -220,8 +221,8 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {DATA_EXPORT_LIMITATION} Current JSON includes{' '}
             {DATA_EXPORT_FORMAT_MANIFEST.json.description} The CSVs each cover the dataset named on
-            the button. Exports never contain message bodies; DeclutrMail never fetches or stores
-            them.
+            the button. App preferences and billing records are not included. Exports never contain
+            message bodies or attachments; DeclutrMail never fetches or stores them.
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button

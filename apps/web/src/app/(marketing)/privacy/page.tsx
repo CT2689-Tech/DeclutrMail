@@ -12,20 +12,14 @@
 
 import type { Metadata } from 'next';
 import {
-  DATA_EXPORT_FORMAT_MANIFEST,
-  DATA_EXPORT_LIMITATION,
-  GMAIL_CONNECTION_DATA_INVENTORY,
-  GMAIL_DATA_PROCESSORS,
-  GMAIL_DERIVED_DATA_INVENTORY,
-  GMAIL_METADATA_HEADERS,
-  GMAIL_OAUTH_ACCESS,
-  GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
+  ACTION_SAFETY_SUMMARY,
+  AI_PROCESSING_DISCLOSURE,
+  ANALYTICS_PRIVACY_CLAIM,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
-  TechnicalDetails,
 } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -34,7 +28,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Privacy Policy — DeclutrMail',
   description:
-    'What DeclutrMail can access, fetches, stores, derives, exports, and retains — and what it never fetches.',
+    'DeclutrMail’s Gmail message-field disclosure, operational records, processors, full-body boundary, retention, deletion, and your privacy rights.',
   path: '/privacy',
 });
 
@@ -64,7 +58,8 @@ export default function PrivacyPolicyPage() {
           DeclutrMail (&ldquo;DeclutrMail&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Gmail
           cleanup service: it helps you decide, once per sender, what should happen to the email you
           no longer want — keep it, archive it, unsubscribe from it, deal with it later, or delete
-          it — with a preview before mail changes and action-specific recovery options.
+          it. Reversible mail-moving actions have a defined undo window; a delivered unsubscribe
+          request cannot be recalled.
         </p>
         <p>
           For the purposes of the EU General Data Protection Regulation (GDPR), DeclutrMail is the
@@ -77,8 +72,9 @@ export default function PrivacyPolicyPage() {
       <LegalSection id="what-we-store" title="2. What we store — and what we never store">
         <p>
           Our entire product is built around one boundary: <strong>{PRIVACY_BADGE_HEADLINE}</strong>
-          . We never fetch or store the body of your messages. The lists below are generated from
-          the product&rsquo;s Gmail data lifecycle inventory.
+          . We never fetch or store the full body of your messages. The published Gmail
+          message-field disclosure is below; the operational records stored beyond message metadata
+          are listed after it.
         </p>
         <p>
           <strong>{PRIVACY_STORAGE_LABEL}</strong>
@@ -92,86 +88,48 @@ export default function PrivacyPolicyPage() {
           <strong>{PRIVACY_NEVER_LABEL}</strong>
         </p>
         <ul>
-          {PRIVACY_NEVER_ITEMS.slice(0, 4).map((item) => (
+          {PRIVACY_NEVER_ITEMS.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
-        <TechnicalDetails summary="Show message-format and header exclusions">
-          <ul>
-            {PRIVACY_NEVER_ITEMS.slice(4).map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </TechnicalDetails>
         <p>
           The &ldquo;Gmail Preview&rdquo; above is the short snippet Gmail itself computes and shows
-          in your inbox list (roughly 160 characters). We receive it directly from Gmail — we never
-          download or parse the message body to produce it.
+          in your inbox list (roughly 160 characters). We receive it from Gmail&rsquo;s API in
+          metadata form — we never download or parse the full message body to produce it.
         </p>
-        <p>The complete lifecycle inventory also includes connection and product-derived data:</p>
-        <ul>
-          {[...GMAIL_CONNECTION_DATA_INVENTORY, ...GMAIL_DERIVED_DATA_INVENTORY].map((item) => (
-            <li key={item.id}>
-              <strong>{item.label}</strong> — {item.purpose} {item.retention}
-            </li>
-          ))}
-        </ul>
-        <p>Minimal operational records retained under a separate policy:</p>
-        <ul>
-          {GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map((item) => (
-            <li key={item.id}>
-              <strong>{item.label}</strong> — {item.purpose} {item.retention}
-            </li>
-          ))}
-        </ul>
         <p>
-          We also store your DeclutrMail preferences and billing records. Payment providers handle
-          card details; DeclutrMail never sees or stores full card numbers.
+          Beyond message metadata, we also store: your Google account email address and display name
+          (from sign-in), your DeclutrMail preferences and per-sender decisions, an activity log of
+          the actions DeclutrMail performed on your behalf, and billing records (handled by our
+          payment providers — see <a href="#subprocessors">Section 8</a>; we never see or store full
+          card numbers).
         </p>
       </LegalSection>
 
       <LegalSection id="how-we-access-gmail" title="3. How we access your Gmail">
         <p>
           DeclutrMail connects to your Gmail account through Google&rsquo;s official API, using
-          consent you grant explicitly. Google asks permission to read Gmail data, change Gmail
-          labels, and identify the account you connect. Google classifies the Gmail permission as
-          restricted. DeclutrMail uses it to fetch the listed fields and run actions you approve.
+          OAuth consent you grant explicitly. We request the <code>gmail.modify</code> scope — a
+          restricted scope — because the product&rsquo;s job is to act on your mail at your
+          instruction: archive, label, delete, and unsubscribe.
         </p>
         <ul>
           <li>
-            DeclutrMail fetches only the sender and message fields listed in Section 2. It does not
-            request message bodies or attachments.
+            Message data is fetched in <strong>metadata format only</strong>: sender, subject,
+            Gmail&rsquo;s snippet, dates, labels, and read/unread state. We do not request message
+            bodies or attachments from the API.
+          </li>
+          <li>{ACTION_SAFETY_SUMMARY}</li>
+          <li>
+            OAuth tokens are encrypted at rest and are never included in data exports or sent to
+            your browser.
           </li>
           <li>
-            Every destructive action shows you a preview of exactly what will change before it runs,
-            and every result is recorded in your Activity log. Available undo and recovery options
-            depend on the action.
-          </li>
-          <li>
-            Saved Google credentials are encrypted while stored and are never included in data
-            exports or sent to your browser.
-          </li>
-          <li>
-            As an app using a restricted Gmail scope, DeclutrMail undergoes Google&rsquo;s
-            independent CASA (Cloud Application Security Assessment) Tier 2 security verification,
-            renewed annually.
+            Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
+            Application Security Assessment) process. DeclutrMail&rsquo;s current Tier 2 assessment
+            cycle is in progress; current evidence will be published after it is issued.
           </li>
         </ul>
-        <TechnicalDetails summary="Show Google permission and field details">
-          <ul>
-            {GMAIL_OAUTH_ACCESS.map((access) => (
-              <li key={access.scope}>
-                <code>{access.scope}</code> — {access.label}. {access.usedFor}
-              </li>
-            ))}
-          </ul>
-          <p>
-            Gmail message requests use <code>format=metadata</code>. The generated metadata-header
-            allowlist is <code>{GMAIL_METADATA_HEADERS.join(', ')}</code>. The message adapter does
-            not request other Gmail headers or the <code>full</code> and <code>raw</code> message
-            formats.
-          </p>
-        </TechnicalDetails>
         <p>
           You can revoke DeclutrMail&rsquo;s access at any time from DeclutrMail&rsquo;s settings or
           directly from your{' '}
@@ -195,12 +153,15 @@ export default function PrivacyPolicyPage() {
           , including the Limited Use requirements. In plain terms:
         </p>
         <ul>
-          <li>We only use Gmail data to provide and improve user-facing DeclutrMail features.</li>
+          <li>
+            We only use Gmail data to provide and improve the user-facing features of DeclutrMail
+            that you can see in the product.
+          </li>
           <li>We do not sell Gmail data, and we do not use it for advertising of any kind.</li>
           <li>
-            We transfer selected Gmail data only to the subprocessors needed to run the service (
-            <a href="#subprocessors">Section 8</a>), as required by law, or as part of a merger or
-            acquisition with notice to you.
+            We do not transfer Gmail data to third parties except the subprocessors needed to run
+            the service (<a href="#subprocessors">Section 8</a>), as required by law, or as part of
+            a merger or acquisition with notice to you.
           </li>
           <li>
             Humans at DeclutrMail do not read your Gmail data, except with your explicit permission
@@ -218,18 +179,19 @@ export default function PrivacyPolicyPage() {
         <p>We use the data described above to:</p>
         <ul>
           <li>
-            Show a per-sender view of your inbox, observed activity facts, and optional suggestions.
-            DeclutrMail does not use machine learning to predict email categories. Deterministic
-            product rules can automatically protect a sender based on observed facts such as your
-            reply history; you can review and change that protection. Mail-changing automation
-            follows rules you explicitly enabled.
+            Show you a per-sender view of your inbox and recommend cleanup decisions — driven by
+            volume, your engagement, and rules you set. DeclutrMail does not use machine learning to
+            predict email categories. Deterministic product rules can automatically protect a sender
+            when strong engagement signals, such as your reply history, cross the documented
+            threshold; you can review and change that protection. Mail-changing automation follows
+            rules you explicitly enabled.
           </li>
           <li>
             Execute the actions you approve (archive, unsubscribe, delete, label) on your Gmail.
           </li>
           <li>
-            Keep an activity log so results are auditable and any available undo can be used during
-            its window.
+            Keep an activity log so mail-moving actions are auditable and reversible during their
+            undo window, and unsubscribe outcomes remain visible even though the request is one-way.
           </li>
           <li>Operate your subscription and billing.</li>
           <li>
@@ -248,43 +210,47 @@ export default function PrivacyPolicyPage() {
           We use essential cookies for sign-in and billing — these are required for the service to
           function and do not need consent. Optional analytics (PostHog) is initialized only after
           you accept it in the cookie banner; it is off by default. We never use advertising cookies
-          or cross-site trackers. Analytics events are designed to exclude Gmail message fields and
-          are scrubbed before transmission. You can change or withdraw your choice at any time on
-          the <a href="/cookies">Cookie preferences</a> page (also in the app under Settings);
-          withdrawal takes effect immediately.
+          or cross-site trackers. {ANALYTICS_PRIVACY_CLAIM} You can change or withdraw your choice
+          at any time on the <a href="/cookies">Cookie preferences</a> page (also in the app under
+          Settings); withdrawal takes effect immediately.
         </p>
       </LegalSection>
 
       <LegalSection id="retention-deletion" title="7. Data retention and deletion">
-        <p>You can leave cleanly, in three tiers, all from Settings:</p>
+        <p>You can leave cleanly through three self-serve controls in Settings:</p>
         <ul>
           <li>
-            <strong>Disconnect an inbox</strong> — removes our saved Google credential and stops
-            syncing for that inbox. Indexed and derived history is kept so you can reconnect later.
+            <strong>Disconnect an inbox</strong> — revokes our Google access and stops all syncing
+            for that inbox. Your historical activity log is kept so you can reconnect later.
           </li>
           <li>
-            <strong>Delete an inbox&rsquo;s data</strong> — removes its indexed message data and
-            derived product data. The disconnected Gmail address and narrowly scoped pseudonymous
-            security/deletion evidence remain under their stated retention rules.
+            <strong>Delete an inbox&rsquo;s data</strong> — disconnects that inbox and permanently
+            removes its indexed message data and derived product data. Gmail itself is unchanged;
+            narrowly scoped pseudonymous security and deletion evidence remains under its stated
+            retention policy.
           </li>
           <li>
-            <strong>Delete your DeclutrMail account</strong> — removes the account, inbox indexes,
-            Activity, preferences, and other product data. Narrowly scoped pseudonymous security and
-            compliance evidence remains under the operational retention policy.
+            <strong>Delete your DeclutrMail account</strong> — removes all inboxes, all activity,
+            all preferences, and your account itself. Deletion becomes permanent after the scheduled
+            grace/undo window, or immediately when you explicitly waive those windows; there is no
+            recovery after the purge runs.
           </li>
         </ul>
         <p>
           Account deletion has a <strong>7-day grace period</strong> during which you can change
           your mind. If you have recent actions still inside an undo window longer than 7 days
-          (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires,
-          preserving those Activity Undo deadlines. If you want deletion sooner, you can explicitly
-          waive the grace period and any remaining undo windows with a typed confirmation during the
-          deletion flow. That path waives the waiting periods and queues the purge without a grace
-          period. Once deletion is scheduled, new syncing is paused.
+          (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires — so
+          &ldquo;undo always works for its full window&rdquo; stays true. If you want deletion
+          sooner, you can explicitly waive the grace period and any remaining undo windows with a
+          typed confirmation during the deletion flow — deletion then takes effect immediately. Once
+          deletion is scheduled, syncing stops immediately.
         </p>
         <p>
-          You can export the current JSON and CSV datasets at any time from Settings → Privacy &amp;
-          Data. {DATA_EXPORT_FORMAT_MANIFEST.json.description} {DATA_EXPORT_LIMITATION}
+          From Settings → Privacy &amp; Data, you can export mailbox email/status/connection
+          metadata, sender records and standing policies, the message metadata index, and your
+          decision/activity history as JSON. Dataset-specific CSVs are available for messages,
+          senders, and decisions. The export does not include app preferences, billing records,
+          message bodies, attachments, or OAuth tokens.
         </p>
       </LegalSection>
 
@@ -310,17 +276,6 @@ export default function PrivacyPolicyPage() {
               <td>Postgres database (the metadata listed in Section 2)</td>
             </tr>
             <tr>
-              <td>Anthropic</td>
-              <td>
-                {GMAIL_DATA_PROCESSORS.Anthropic.purpose} Selected inputs and generated output are
-                retained under{' '}
-                <a href={GMAIL_DATA_PROCESSORS.Anthropic.privacyUrl} rel="noopener noreferrer">
-                  Anthropic&rsquo;s API retention terms
-                </a>
-                : {GMAIL_DATA_PROCESSORS.Anthropic.retention}
-              </td>
-            </tr>
-            <tr>
               <td>Vercel</td>
               <td>Web application hosting</td>
             </tr>
@@ -334,7 +289,14 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>PostHog</td>
-              <td>Product analytics — only with your cookie consent</td>
+              <td>Product analytics — only with your cookie consent; no Gmail message data</td>
+            </tr>
+            <tr>
+              <td>Anthropic</td>
+              <td>
+                Recommendation explanations and Pro Brief narration — bounded metadata; Pro Brief
+                can include subject and Gmail preview snippet; never a full message body
+              </td>
             </tr>
             <tr>
               <td>Resend</td>
@@ -350,6 +312,7 @@ export default function PrivacyPolicyPage() {
             </tr>
           </tbody>
         </table>
+        <p>{AI_PROCESSING_DISCLOSURE}</p>
         <p>We will update this list before adding a new subprocessor that handles personal data.</p>
       </LegalSection>
 
@@ -379,16 +342,13 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection id="security" title="10. Security">
         <p>
-          Data is encrypted while moving between systems and while stored. Saved Google credentials
-          receive an additional layer of encryption managed separately from the application. Access
-          to production systems is limited and logged. Not storing message bodies or attachments
-          reduces the amount of sensitive Gmail data in our systems; subjects and Gmail Preview
-          snippets may still be sensitive and are protected by these controls.
+          All data is encrypted in transit (TLS) and at rest. OAuth tokens are additionally
+          envelope-encrypted with a managed key service. Access to production systems is limited and
+          logged. Because we never store full message bodies or attachments, that content cannot
+          leak from DeclutrMail. Subjects and Gmail Preview snippets can still contain sensitive
+          information; we store those bounded fields as disclosed in Section 2 and protect them
+          accordingly.
         </p>
-        <TechnicalDetails summary="Show encryption details">
-          Data in transit uses TLS. Google OAuth tokens are envelope-encrypted with a managed key
-          service before storage.
-        </TechnicalDetails>
       </LegalSection>
 
       <LegalSection id="changes" title="11. Changes to this policy">

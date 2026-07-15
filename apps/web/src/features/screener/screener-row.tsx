@@ -4,7 +4,12 @@ import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 
-import { firstSeenLabel, type ScreenerDecideVerb, type ScreenerQueueRow } from './data';
+import {
+  canScreenerUnsubscribe,
+  firstSeenLabel,
+  type ScreenerDecideVerb,
+  type ScreenerQueueRow,
+} from './data';
 import { DecidePreview, type DecidePreviewCount } from './decide-preview';
 import { VERB_KEY_HINT, VERB_LABEL, VERB_ORDER, verdictLabel } from './verbs';
 
@@ -199,13 +204,19 @@ export function ScreenerRow({
           >
             {VERB_ORDER.map((verb) => {
               const active = pendingVerb === verb;
+              const noUnsubscribeChannel = verb === 'unsubscribe' && !canScreenerUnsubscribe(row);
               return (
                 <button
                   key={verb}
                   type="button"
-                  disabled={busy}
+                  disabled={busy || noUnsubscribeChannel}
                   onClick={() => onVerbClick(verb)}
                   aria-pressed={active}
+                  title={
+                    noUnsubscribeChannel
+                      ? 'No unsubscribe channel found — Archive handles senders like this.'
+                      : undefined
+                  }
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -215,7 +226,8 @@ export function ScreenerRow({
                     fontFamily: font.sans,
                     fontSize: 12.5,
                     fontWeight: 600,
-                    cursor: busy ? 'default' : 'pointer',
+                    cursor: busy || noUnsubscribeChannel ? 'not-allowed' : 'pointer',
+                    opacity: noUnsubscribeChannel ? 0.55 : 1,
                     border: `1px solid ${
                       active ? (verb === 'delete' ? color.red : color.primary) : color.line
                     }`,

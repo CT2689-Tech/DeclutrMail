@@ -17,7 +17,8 @@ const DEFAULT_STALE_TIME_MS = 30_000;
 
 export function makeQueryClient(): QueryClient {
   return new QueryClient({
-    // Entitlement 402s (FREE_CAP_REACHED / INBOX_LIMIT_REACHED, D19/
+    // Entitlement 402s (FREE_CAP_REACHED / INBOX_LIMIT_REACHED /
+    // ACTION_TIER_REQUIRED, D19/
     // D77/D81) are designed states, not failures — ONE global handler
     // routes them to the upgrade-gate store so every mutation surface
     // gets the UpgradeModal without per-hook wiring. Other errors pass

@@ -2,6 +2,7 @@
 
 import { Button, tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 import type { ScreenerDecideVerb, ScreenerQueueRow } from './data';
 import { VERB_LABEL } from './verbs';
@@ -36,6 +37,7 @@ export function DecidePreview({
   inboxCount,
   wakeAt,
   confirming,
+  mailboxEmail,
   onConfirm,
   onCancel,
 }: {
@@ -45,6 +47,8 @@ export function DecidePreview({
   wakeAt?: string | null;
   /** True while the decide POST / worker confirmation is in flight. */
   confirming: boolean;
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -73,6 +77,8 @@ export function DecidePreview({
 
   // What actually moves — only the label-modify verbs touch the inbox.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
+  const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
+  const confirmDisabled = confirming || previewBlocked;
 
   return (
     <div
@@ -102,6 +108,8 @@ export function DecidePreview({
         Preview · before anything changes
       </span>
 
+      <MailboxActionContext mailboxEmail={mailboxEmail} />
+
       <div>
         <h3 style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
           {title}
@@ -111,7 +119,7 @@ export function DecidePreview({
         </p>
       </div>
 
-      {/* Impact figure — the REAL count, fetched server-side (D226). */}
+      {/* Current match count, fetched server-side (D226). */}
       <div
         style={{
           display: 'flex',
@@ -142,7 +150,7 @@ export function DecidePreview({
           size="sm"
           tone={verb === 'delete' ? 'danger' : 'primary'}
           onClick={onConfirm}
-          disabled={confirming}
+          disabled={confirmDisabled}
           ariaLabel={`Confirm ${VERB_LABEL[verb]} for ${name}`}
         >
           {confirming ? 'Confirming…' : `Confirm ${VERB_LABEL[verb]}`}
@@ -178,7 +186,7 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
   if (inboxCount === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn&apos;t load the live count — nothing changes until you confirm.
+        Couldn&apos;t load a live preview. Cancel and retry — no inbox mail can move without one.
       </span>
     );
   }
@@ -186,8 +194,8 @@ function ImpactFigure({ moves, inboxCount }: { moves: boolean; inboxCount: Decid
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString()}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} now in the inbox
-        {inboxCount === 0 ? ' — nothing to move.' : ' will move out of the inbox.'}
+        email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
+        execution, so the final moved count can change.
       </span>
     </>
   );

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import { formatUsd } from './pricing-model';
 import { PricingScreen } from './pricing-screen';
@@ -33,6 +34,7 @@ vi.mock('@/lib/api/waitlist', () => ({
 }));
 
 beforeEach(() => {
+  storeConsent('all');
   h.push.mockClear();
   h.track.mockClear();
   h.joinWaitlist.mockReset();
@@ -52,6 +54,12 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getByText(formatUsd(0))).toBeInTheDocument();
     expect(screen.getByText(monthly('plus'))).toBeInTheDocument();
     expect(screen.getByText(monthly('pro'))).toBeInTheDocument();
+    expect(screen.getAllByText('No card required')).toHaveLength(1);
+    expect(screen.getAllByText('Billed monthly · cancel anytime')).toHaveLength(2);
+    expect(screen.getByRole('region', { name: 'Scrollable plan comparison' })).toHaveAttribute(
+      'tabindex',
+      '0',
+    );
   });
 
   it('flips to annual prices (incl. the Founding Pro promo price) on toggle', () => {
@@ -69,26 +77,21 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getByText(monthly('pro'))).toBeInTheDocument();
   });
 
-  it('shows the Founding Pro banner with manifest numbers', () => {
+  it('shows the Founding Pro banner without implying a spot is still available', () => {
     render(<PricingScreen />);
     const promo = TIER_MANIFEST.pro.promo!;
     expect(
       screen.getByText(
-        new RegExp(`${promo.name} — \\${promoPrice}/yr, limited to ${promo.maxRedemptions}`),
+        new RegExp(`${promo.name} — \\${promoPrice}/yr for the first ${promo.maxRedemptions}`),
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Availability is confirmed at checkout/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Check availability/i })).toBeInTheDocument();
+    expect(screen.getByText(/Availability is confirmed at checkout/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check availability' })).toBeInTheDocument();
   });
 
   it('emits page_viewed on mount (D159)', () => {
     render(<PricingScreen />);
     expect(h.track).toHaveBeenCalledWith('page_viewed', { page: 'pricing', mailbox_id: null });
-  });
-
-  it('renders the D228 locked trust copy via the shared badge', () => {
-    render(<PricingScreen />);
-    expect(screen.getByText(/Full bodies fetched: 0/)).toBeInTheDocument();
   });
 
   it('submits the Team waitlist, confirms on 202, and emits waitlist_joined', async () => {

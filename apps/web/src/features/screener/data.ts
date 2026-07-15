@@ -67,6 +67,11 @@ export type ScreenerScreenState =
   | { kind: 'empty' }
   | { kind: 'ready'; rows: ScreenerQueueRow[] };
 
+/** A real unsubscribe request needs a published one-click or mailto channel. */
+export function canScreenerUnsubscribe(row: ScreenerQueueRow): boolean {
+  return row.unsubscribeMethod === 'one_click' || row.unsubscribeMethod === 'mailto';
+}
+
 /** Relative "first seen" copy (D71 — "8 min ago", "Yesterday"). */
 export function firstSeenLabel(iso: string, now: Date = new Date()): string {
   const then = new Date(iso).getTime();

@@ -71,6 +71,34 @@ describe('JwtService (D155)', () => {
     await expect(svc.verify(tampered, 'access')).rejects.toThrow();
   });
 
+  it('seals and opens an OAuth-state payload with the domain-separated key', () => {
+    const svc = new JwtService();
+    const payload = JSON.stringify({ nonce: 'n-1', mode: 'login', expiresAt: Date.now() + 60_000 });
+    const cookie = svc.sealOAuthState(payload);
+
+    expect(cookie).toMatch(/^v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/);
+    expect(svc.openOAuthState(cookie)).toBe(payload);
+  });
+
+  it('rejects payload and signature tampering without opening state', () => {
+    const svc = new JwtService();
+    const cookie = svc.sealOAuthState('{"mode":"connect"}');
+    const [version, payload, signature] = cookie.split('.') as [string, string, string];
+    const payloadTampered = `${version}.${payload.slice(0, -1)}${payload.endsWith('A') ? 'B' : 'A'}.${signature}`;
+    const signatureTampered = `${version}.${payload}.${signature.slice(0, -1)}${signature.endsWith('A') ? 'B' : 'A'}`;
+
+    expect(svc.openOAuthState(payloadTampered)).toBeNull();
+    expect(svc.openOAuthState(signatureTampered)).toBeNull();
+  });
+
+  it('uniformly rejects malformed, non-canonical, and overlong state cookies', () => {
+    const svc = new JwtService();
+
+    expect(svc.openOAuthState('not-a-sealed-cookie')).toBeNull();
+    expect(svc.openOAuthState('v1.eyJ4IjoxfQ==.invalid')).toBeNull();
+    expect(svc.openOAuthState('x'.repeat(4097))).toBeNull();
+  });
+
   it('hashRefreshToken is deterministic + matches IssuedTokens.refreshTokenHash', async () => {
     const svc = new JwtService();
     const tokens = await svc.issue({ userId: 'u1', workspaceId: 'w1', sessionId: 's1' });

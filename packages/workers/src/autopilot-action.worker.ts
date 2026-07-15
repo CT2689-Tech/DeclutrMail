@@ -25,6 +25,7 @@ import {
   TOPICS,
 } from '@declutrmail/events';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -91,26 +92,29 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * job) reverses an autopilot action exactly like a manual one.
  *
  * GUARDS (in evaluation order, all per sweep):
- *   1. QUIET (U18 — D92/D93/D95): when `mailbox_accounts.quiet_state`
+ *   1. ENTITLEMENT: the mailbox workspace must currently grant the
+ *      canonical `autopilot` capability. A downgrade stops already-
+ *      queued approved matches before any mutation or rescheduling.
+ *   2. QUIET (U18 — D92/D93/D95): when `mailbox_accounts.quiet_state`
  *      says quiet is active — the manual toggle OR the recurring
  *      quiet-hours window (`isQuietActive`, quiet-hours-state.ts) —
  *      the whole sweep defers: no mutation, matches stay eligible, and
  *      `onQuietDeferred` re-schedules a delayed sweep for when quiet
  *      ends (next trigger is the safety net). Manual user actions are
  *      NOT gated — quiet defers automation only.
- *   2. RULE STATE: matches whose rule is now disabled or paused are
+ *   3. RULE STATE: matches whose rule is now disabled or paused are
  *      skipped (left pending) — D105's pause must stop execution even
  *      for already-approved matches.
- *   3. PROTECT RE-CHECK: `sender_policies.is_protected` is
+ *   4. PROTECT RE-CHECK: `sender_policies.is_protected` is
  *      re-read at EXECUTION time (the apply worker filtered at match
  *      time, but the user may have protected the sender since). A
  *      protected sender's match resolves to `dismissed` — a rule
  *      must NEVER act on a protected sender (D43, defense-in-depth).
- *   4. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
+ *   5. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
  *      the `sender_policies.policy_type='unsubscribe'` projection
  *      terminates as a no-op (intent is one-way per D58; active-mode
  *      re-matching must not duplicate intents or one-click POSTs).
- *   5. PER-RULE DAILY CAP: `dailyActionCap` from the preset definition,
+ *   6. PER-RULE DAILY CAP: `dailyActionCap` from the preset definition,
  *      counted against `activity_log` rows (`source='autopilot'`,
  *      `rule_id`) in a rolling 24h window — verb-aware, see
  *      `countRuleActionsInWindow`. Over-cap matches stay
@@ -339,18 +343,24 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       durationMs: 0,
     };
 
-    // Guard 1 — quiet (U18, D92/D93): manual toggle OR recurring
+    // Guards 1–2 — current entitlement, then quiet (U18, D92/D93):
+    // manual toggle OR recurring
     // quiet-hours window. Defer the WHOLE sweep; matches stay
     // `intent_applied=false` so a later sweep re-runs them (the
     // deferral re-schedules via `onQuietDeferred` when the quiet end
     // is computable — actions are deferred, never dropped).
     const [mailbox] = await this.deps.db
-      .select({ quietState: mailboxAccounts.quietState })
+      .select({ quietState: mailboxAccounts.quietState, tier: workspaces.tier })
       .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(eq(mailboxAccounts.id, mailboxAccountId))
       .limit(1);
     if (!mailbox) {
       throw new ValidationError(`mailbox account ${mailboxAccountId} not found`);
+    }
+    if (!hasCapability(mailbox.tier, 'autopilot')) {
+      result.durationMs = Date.now() - startedAt;
+      return result;
     }
     if (isQuietActive(mailbox.quietState, now)) {
       const resumeAfterMs = msUntilQuietEnds(mailbox.quietState, now);
@@ -390,7 +400,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       return result;
     }
 
-    // Guard 3 — protect re-check at execution time, one query for the
+    // Guard 4 — protect re-check at execution time, one query for the
     // whole sweep's senders. The same rows feed the already-unsubscribed
     // guard (policy_type='unsubscribe' is the senders-owned projection
     // of a recorded intent).
@@ -413,11 +423,11 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       policyRows.filter((r) => r.policyType === 'unsubscribe').map((r) => r.senderKey),
     );
 
-    // Guard 4 — per-rule remaining daily budget (rolling 24h).
+    // Guard 6 — per-rule remaining daily budget (rolling 24h).
     const remainingByRule = new Map<string, number>();
 
     for (const match of matches) {
-      // Guard 2 — rule must still be enabled + not paused (D105).
+      // Guard 3 — rule must still be enabled + not paused (D105).
       if (!match.ruleEnabled || match.ruleMode === 'paused') {
         result.skippedRuleInactive += 1;
         continue;

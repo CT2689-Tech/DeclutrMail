@@ -5,7 +5,7 @@ import { tokens } from '@declutrmail/shared';
 const { color, font } = tokens;
 
 /**
- * Sidebar "Pro" chip — marks a nav item whose feature the current tier
+ * Sidebar plan chip — marks a nav item whose feature the current tier
  * has not unlocked, so users learn a surface is gated BEFORE clicking
  * into it (2026-07-10 founder dogfood: three paywalls and two gated
  * pages were indistinguishable from free surfaces in the nav).
@@ -14,10 +14,10 @@ const { color, font } = tokens;
  * mechanism as the D74 ScreenerBadge), so the shared shell stays
  * entitlement-agnostic.
  */
-export function ProChip() {
+export function PlanChip({ plan }: { plan: 'Plus' | 'Pro' }) {
   return (
     <span
-      aria-label="Pro feature"
+      aria-label={`${plan} feature`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -34,7 +34,12 @@ export function ProChip() {
         textTransform: 'uppercase',
       }}
     >
-      Pro
+      {plan}
     </span>
   );
+}
+
+/** Compatibility wrapper for existing Pro-only call sites. */
+export function ProChip() {
+  return <PlanChip plan="Pro" />;
 }

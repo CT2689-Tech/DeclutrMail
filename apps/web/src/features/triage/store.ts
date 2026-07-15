@@ -80,12 +80,11 @@ export interface TriageState {
    */
   sessionDecidedCount: number;
   /**
-   * Summed historic monthly volume for senders acted on in this
-   * session. This contextualizes sender scale without claiming that
-   * Archive, Later, or an unsubscribe request prevented future mail.
-   * Client-session ephemeral like the burn-down.
+   * Worker-confirmed messages moved by this session's Archive/Later
+   * actions. Unlike the former D33 monthly-volume estimate, this does
+   * not claim that a one-time action prevented future mail.
    */
-  sessionNoisePrevented: number;
+  sessionMessagesMoved: number;
   /**
    * Domain-batch cards dismissed this session ("decide one by one").
    * Keyed by registrable domain — a session-scoped view preference,
@@ -107,8 +106,8 @@ export interface TriageActions {
   clearPending: () => void;
   /** Bump the session burn-down by `by` confirmed decisions (default 1). */
   incrementSessionDecided: (by?: number) => void;
-  /** Add a confirmed decision's monthly volume to the session payoff. */
-  addSessionNoisePrevented: (by: number) => void;
+  /** Add a terminal worker result's affected-message count. */
+  addSessionMessagesMoved: (by: number) => void;
   /** Collapse a domain-batch card back to per-sender rows for this session. */
   dismissBatchDomain: (domain: string) => void;
 }
@@ -125,7 +124,7 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   expandedRowId: null,
   pendingAction: null,
   sessionDecidedCount: 0,
-  sessionNoisePrevented: 0,
+  sessionMessagesMoved: 0,
   dismissedBatchDomains: [],
 
   setRememberPreference: (verb, value) =>
@@ -152,8 +151,8 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   incrementSessionDecided: (by = 1) =>
     set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),
 
-  addSessionNoisePrevented: (by) =>
-    set((s) => ({ sessionNoisePrevented: s.sessionNoisePrevented + Math.max(0, by) })),
+  addSessionMessagesMoved: (by) =>
+    set((s) => ({ sessionMessagesMoved: s.sessionMessagesMoved + Math.max(0, by) })),
 
   dismissBatchDomain: (domain) =>
     set((s) =>
@@ -174,7 +173,7 @@ export function resetTriageStore(): void {
     expandedRowId: null,
     pendingAction: null,
     sessionDecidedCount: 0,
-    sessionNoisePrevented: 0,
+    sessionMessagesMoved: 0,
     dismissedBatchDomains: [],
   });
 }

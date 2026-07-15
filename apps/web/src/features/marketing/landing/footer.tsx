@@ -1,5 +1,3 @@
-import { PrivacyBadge } from '@declutrmail/shared';
-
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
@@ -31,35 +29,7 @@ export function FinalCta() {
           </span>
         </TrackedCta>
       </div>
-      <p className="dm-mkt-hero-note">Free tier · no card · previews before actions</p>
+      <p className="dm-mkt-hero-note">Free tier · no card · preview before mail moves</p>
     </section>
-  );
-}
-
-export function Footer() {
-  return (
-    <footer className="dm-mkt-footer">
-      <div className="dm-mkt-shell">
-        <div className="dm-mkt-footer-row">
-          <nav className="dm-mkt-footer-links" aria-label="Legal">
-            <a href="/pricing">Pricing</a>
-            <a href="/help">Help</a>
-            <a href="/contact">Contact</a>
-            <a href="/security">Security</a>
-            <a href="/privacy">Privacy</a>
-            <a href="/terms">Terms</a>
-            <a href="/refunds">Refunds</a>
-            <a href="/cookies">Cookie preferences</a>
-          </nav>
-          <span style={{ background: '#fafaf7', borderRadius: 8, display: 'inline-flex' }}>
-            <PrivacyBadge variant="inline" />
-          </span>
-        </div>
-        <p className="dm-mkt-footer-fine">
-          © {new Date().getFullYear()} DeclutrMail · Works with Gmail. Not affiliated with or
-          endorsed by Google.
-        </p>
-      </div>
-    </footer>
   );
 }

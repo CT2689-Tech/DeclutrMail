@@ -1,3 +1,5 @@
+import { createHmac, randomBytes } from 'node:crypto';
+
 import { type Job, UnrecoverableError } from 'bullmq';
 
 import type { DeadLetterRecorder } from './dead-letter.recorder.js';
@@ -17,6 +19,49 @@ type WorkerEvent =
   | 'worker.failed'
   | 'worker.retried'
   | 'worker.dead_lettered';
+
+const SAFE_WORKER_ERROR_KINDS: ReadonlySet<string> = new Set([
+  'AbortError',
+  'AggregateError',
+  'AuthExpiredError',
+  'Error',
+  'InvalidGrantError',
+  'PermanentError',
+  'RateLimitError',
+  'TransientError',
+  'TypeError',
+  'UnrecoverableError',
+  'ValidationError',
+]);
+
+/** Local-only fallback; production bootstrap requires JWT_ACCESS_SECRET. */
+const DEVELOPMENT_TELEMETRY_REFERENCE_KEY = randomBytes(32);
+
+/**
+ * Stable, purpose-separated reference across production replicas. The
+ * raw JWT secret is never used as the value-HMAC key. In a misconfigured
+ * production process, omit correlation instead of inventing an unstable
+ * or unkeyed reference. Local/test runs retain one process-local key.
+ */
+export function telemetryReference(value: string): string {
+  const key = telemetryReferenceKey();
+  if (!key) return 'ref_unavailable';
+  return `ref_${createHmac('sha256', key)
+    .update('declutrmail:telemetry-reference:value:v1\0')
+    .update(value, 'utf8')
+    .digest('hex')
+    .slice(0, 24)}`;
+}
+
+function telemetryReferenceKey(): Buffer | null {
+  const accessSecret = process.env.JWT_ACCESS_SECRET?.trim();
+  if (accessSecret) {
+    return createHmac('sha256', accessSecret)
+      .update('declutrmail:telemetry-reference-key:v1')
+      .digest();
+  }
+  return process.env.NODE_ENV === 'production' ? null : DEVELOPMENT_TELEMETRY_REFERENCE_KEY;
+}
 
 /**
  * BaseDeclutrWorker (D203) — the lifecycle abstraction every DeclutrMail
@@ -84,16 +129,16 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
   /**
    * The job body. Subclasses do the real work here.
    *
-   * `TResult` is logged on `worker.succeeded` (it carries job metrics —
-   * counts, durations). It MUST stay metric-only — never message content
-   * or any D7-sensitive data — because it lands in structured logs.
+   * `TResult` is returned to BullMQ unchanged. `run()` separately emits
+   * only the closed, metric-safe projection in `sanitizeWorkerResult`;
+   * arbitrary result fields never reach structured logs.
    */
   abstract processJob(payload: TPayload, ctx: WorkerContext): Promise<TResult>;
 
   /**
-   * Optional idempotency key (D203). For `perMailboxPolicy` the BullMQ
-   * `jobId` already dedups concurrent enqueues; subclasses still expose
-   * the key so the lifecycle log records it.
+   * Optional raw idempotency key (D203). For `perMailboxPolicy` the
+   * BullMQ `jobId` already dedups concurrent enqueues; subclasses expose
+   * the key only so the lifecycle log can record its opaque reference.
    */
   protected getIdempotencyKey?(payload: TPayload): string;
 
@@ -143,8 +188,9 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         : {}),
     };
 
+    const idempotencyKey = this.getIdempotencyKey?.(job.data);
     this.emit('worker.started', ctx, {
-      idempotencyKey: this.getIdempotencyKey?.(job.data),
+      ...(idempotencyKey ? { idempotencyRef: telemetryReference(idempotencyKey) } : {}),
     });
 
     try {
@@ -152,14 +198,14 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         config.timeoutMs === null
           ? await this.processJob(job.data, ctx)
           : await withTimeout(this.processJob(job.data, ctx), config.timeoutMs, this.workerName);
-      // `result` carries job metrics (counts, durations) — logged so a
-      // sync's timing is observable. Metric-only per the processJob contract.
-      this.emit('worker.succeeded', ctx, { result });
+      // Keep useful counts/booleans/closed outcomes while dropping
+      // capability tokens and provider/cursor identifiers from logs.
+      this.emit('worker.succeeded', ctx, { result: sanitizeWorkerResult(result) });
       return result;
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       const terminal = isNonRetryable(error) || ctx.attempt >= ctx.maxAttempts;
-      this.emit('worker.failed', ctx, { error: error.name, message: error.message, terminal });
+      this.emit('worker.failed', ctx, { error: safeWorkerErrorKind(error), terminal });
 
       if (terminal) {
         // Domain side-effect first, then the single capture point.
@@ -168,13 +214,13 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         }
         this.captureFailure(error, ctx);
         await this.recordDeadLetter(job, error, ctx);
-        this.emit('worker.dead_lettered', ctx, { error: error.name });
+        this.emit('worker.dead_lettered', ctx, { error: safeWorkerErrorKind(error) });
         // Non-retryable → tell BullMQ to stop retrying.
         if (isNonRetryable(error)) {
           throw new UnrecoverableError(error.message);
         }
       } else {
-        this.emit('worker.retried', ctx, { error: error.name });
+        this.emit('worker.retried', ctx, { error: safeWorkerErrorKind(error) });
       }
       // Rethrow so BullMQ applies the policy's attempts + backoff.
       throw error;
@@ -197,29 +243,30 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         level: 'error',
         kind: 'worker.failure_capture',
         worker: ctx.workerName,
-        jobId: ctx.jobId,
-        mailboxAccountId: ctx.mailboxAccountId,
+        jobRef: telemetryReference(ctx.jobId),
+        ...(ctx.mailboxAccountId ? { mailboxRef: telemetryReference(ctx.mailboxAccountId) } : {}),
         attempt: ctx.attempt,
-        error: error.name,
-        message: error.message,
+        error: safeWorkerErrorKind(error),
       }),
     );
     const observerCtx: WorkerFailureContext = {
       workerName: ctx.workerName,
-      jobId: ctx.jobId,
+      jobId: telemetryReference(ctx.jobId),
       attempt: ctx.attempt,
       policy: ctx.policy,
-      ...(ctx.mailboxAccountId ? { mailboxAccountId: ctx.mailboxAccountId } : {}),
+      ...(ctx.mailboxAccountId
+        ? { mailboxAccountId: telemetryReference(ctx.mailboxAccountId) }
+        : {}),
     };
     try {
-      this.observer.captureFailure(error, observerCtx);
+      this.observer.captureFailure(safeTelemetryError(error, 'Worker job failed'), observerCtx);
     } catch (observerErr) {
       console.error(
         JSON.stringify({
           level: 'error',
           kind: 'worker.observer_failed',
           worker: ctx.workerName,
-          message: observerErr instanceof Error ? observerErr.message : String(observerErr),
+          error: safeWorkerErrorKind(observerErr),
         }),
       );
     }
@@ -261,22 +308,25 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
           level: 'error',
           kind: 'worker.dead_letter_record_failed',
           worker: ctx.workerName,
-          jobId: ctx.jobId,
-          message: recorderError.message,
+          jobRef: telemetryReference(ctx.jobId),
+          error: safeWorkerErrorKind(recorderError),
         }),
       );
       try {
-        this.observer.captureBackgroundFailure(recorderError, {
-          kind: 'dead_letter.record_failed',
-          tags: { worker: ctx.workerName, job_id: ctx.jobId },
-        });
+        this.observer.captureBackgroundFailure(
+          safeTelemetryError(recorderError, 'Dead-letter recording failed'),
+          {
+            kind: 'dead_letter.record_failed',
+            tags: { worker: ctx.workerName, job_ref: telemetryReference(ctx.jobId) },
+          },
+        );
       } catch (observerErr) {
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'worker.observer_failed',
             worker: ctx.workerName,
-            message: observerErr instanceof Error ? observerErr.message : String(observerErr),
+            error: safeWorkerErrorKind(observerErr),
           }),
         );
       }
@@ -290,13 +340,170 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         level: 'info',
         kind: event,
         worker: ctx.workerName,
-        jobId: ctx.jobId,
-        mailboxAccountId: ctx.mailboxAccountId,
+        jobRef: telemetryReference(ctx.jobId),
+        ...(ctx.mailboxAccountId ? { mailboxRef: telemetryReference(ctx.mailboxAccountId) } : {}),
         attempt: ctx.attempt,
         ...extra,
       }),
     );
   }
+}
+
+/** Audited union of fields returned by every BaseDeclutrWorker subclass. */
+const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
+  'activeMatches',
+  'activeSkippedAlreadyQueued',
+  'activeSkippedNotActionable',
+  'added',
+  'affectedCount',
+  'alerted',
+  'alreadyDone',
+  'alreadyReady',
+  'awaitingUpserted',
+  'briefsGenerated',
+  'claimed',
+  'consumerFailed',
+  'corrected',
+  'cursorTooOld',
+  'decisionsWritten',
+  'deferredQuiet',
+  'deleted',
+  'deletionPaused',
+  'dispatched',
+  'due',
+  'dueProcessed',
+  'durationMs',
+  'eligible',
+  'emptyBriefs',
+  'failed',
+  'flippedToFailed',
+  'gmailApiCalls',
+  'httpStatus',
+  'kind',
+  'labelActionsExecuted',
+  'labelChanges',
+  'llmExplanations',
+  'llmTimeouts',
+  'mailboxesFailed',
+  'mailboxesProcessed',
+  'mappingsRefreshed',
+  'matchesConsidered',
+  'matchesWritten',
+  'maxAbsDelta',
+  'messagesSynced',
+  'observeMatches',
+  'outcome',
+  'purged',
+  'recordsProcessed',
+  'repliedFlipped',
+  'restoredMessages',
+  'rulesEvaluated',
+  'rulesFailed',
+  'rulesSkippedMalformed',
+  'scanned',
+  'screenerFlagged',
+  'sendersConsidered',
+  'sendersIndexed',
+  'skippedAlreadyUnsubscribed',
+  'skippedCapped',
+  'skippedDuplicateRun',
+  'skippedMissingSender',
+  'skippedProtected',
+  'skippedRuleInactive',
+  'stageTimings',
+  'templateExplanations',
+  'totalSenders',
+  'unsubscribeExecutionsEnqueued',
+  'unsubscribeIntentsRecorded',
+  'watched',
+  'weekendSkips',
+  'woken',
+]);
+
+const SAFE_RESULT_STRING_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  kind: new Set([
+    'deletion-receipt',
+    'deletion-scheduled',
+    'sweep',
+    'sync-complete',
+    'sync-reminder-24h',
+    'wake',
+  ]),
+  outcome: new Set([
+    'ambiguous',
+    'done',
+    'duplicate_run_key',
+    'failed',
+    'sent',
+    'skipped_disabled',
+    'skipped_no_recipient',
+    'skipped_opted_out',
+    'skipped_suppressed',
+    'skipped_user_returned',
+    'swept',
+  ]),
+};
+const SAFE_STAGE_TIMING_KEYS: ReadonlySet<string> = new Set([
+  'building_sender_index',
+  'computing_recommendations',
+  'fetching_metadata',
+  'finalizing',
+]);
+
+/**
+ * Worker return values are also persisted by BullMQ, but this function
+ * controls only the operational log projection: scalar metrics and
+ * closed status values survive; arbitrary strings/arrays do not.
+ */
+function sanitizeWorkerResult(value: unknown): unknown {
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, field] of Object.entries(value)) {
+    if (!SAFE_WORKER_RESULT_KEYS.has(key)) {
+      continue;
+    }
+    if (key === 'stageTimings' && field && typeof field === 'object' && !Array.isArray(field)) {
+      const timings: Record<string, number> = {};
+      for (const [stage, duration] of Object.entries(field)) {
+        if (SAFE_STAGE_TIMING_KEYS.has(stage) && typeof duration === 'number') {
+          timings[stage] = duration;
+        }
+      }
+      sanitized[key] = timings;
+      continue;
+    }
+    if (field === null || typeof field === 'number' || typeof field === 'boolean') {
+      sanitized[key] = field;
+      continue;
+    }
+    if (typeof field === 'string' && SAFE_RESULT_STRING_VALUES[key]?.has(field)) {
+      sanitized[key] = field;
+      continue;
+    }
+  }
+  return sanitized;
+}
+
+/** Closed projection for every error kind that can reach telemetry. */
+function safeWorkerErrorKind(error: unknown): string {
+  try {
+    const name = error instanceof Error ? error.name : '';
+    return SAFE_WORKER_ERROR_KINDS.has(name) ? name : 'WorkerError';
+  } catch {
+    return 'WorkerError';
+  }
+}
+
+/** Synthetic error with no original message, stack, cause, or custom fields. */
+function safeTelemetryError(error: unknown, message: string): Error {
+  const safe = new Error(message);
+  safe.name = safeWorkerErrorKind(error);
+  return safe;
 }
 
 /** Reject if `promise` does not settle within `ms` (policy timeout guard). */

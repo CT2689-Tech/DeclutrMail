@@ -10,7 +10,7 @@
 // useEffect) fails the build instead of silently restoring the storm.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SendersPoliciesScreen } from './senders-policies-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -169,20 +169,41 @@ describe('SendersPoliciesScreen', () => {
     expect(screen.queryByRole('button', { name: /^show more$/i })).not.toBeInTheDocument();
   });
 
-  it('renders the error state on 500', async () => {
+  it('renders an alert on a cold 500 and recovers policies when Retry succeeds', async () => {
+    let protectedAttempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/senders',
-        respond: () => jsonServerError(),
+        respond: (_req, url) => {
+          if (url.searchParams.get('vip') === 'true') {
+            return jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+            });
+          }
+          protectedAttempts += 1;
+          return protectedAttempts === 1
+            ? jsonServerError()
+            : jsonOk({
+                data: [{ ...BASE_ROW, id: 'a', displayName: 'Stripe' }],
+                meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+              });
+        },
       },
     ]);
     renderScreen();
-    await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /couldn[’']t load standing policies/i }),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
+
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load standing policies/i }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByText(/existing policies remain active/i)).toBeInTheDocument();
+
+    await userEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    await waitFor(() => expect(screen.getByText('Stripe')).toBeInTheDocument());
+    expect(protectedAttempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

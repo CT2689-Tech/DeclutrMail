@@ -4,6 +4,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import {
+  ERROR_CODES,
   mailboxDataDeletionConfirmPhrase,
   type ErrorCode,
   type MailboxDataDeletionReceipt,
@@ -22,6 +23,11 @@ import {
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { AppException } from '../common/app-exception.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
+import {
+  EntitlementsService,
+  type EntitlementsExecutor,
+  type EntitlementsTransaction,
+} from '../common/entitlements/entitlements.service.js';
 import { GmailWatchService } from './gmail-watch.service.js';
 
 /** Wire shape returned by `list()` for the FE account menu. */
@@ -32,6 +38,11 @@ export interface MailboxSummary {
   connectedAt: string | null;
   indexedDataState: MailboxIndexedDataState;
   dataDeletion: MailboxDataDeletionView | null;
+}
+
+/** Canonical persisted identity for Gmail's case-insensitive address space. */
+export function canonicalizeGmailProviderAccountId(email: string): string {
+  return email.trim().toLowerCase();
 }
 
 /**
@@ -55,6 +66,7 @@ export class MailboxAccountsService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly tokenCrypto: TokenCryptoService,
     private readonly gmailWatch: GmailWatchService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   /**
@@ -146,16 +158,27 @@ export class MailboxAccountsService {
    */
   async findByProviderEmail(
     email: string,
-  ): Promise<{ mailboxId: string; workspaceId: string; userId: string } | null> {
-    const [row] = await this.db
+    executor: EntitlementsExecutor = this.db,
+  ): Promise<{
+    mailboxId: string;
+    workspaceId: string;
+    userId: string;
+    status: 'active' | 'disconnected';
+  } | null> {
+    const providerAccountId = canonicalizeGmailProviderAccountId(email);
+    const [row] = await executor
       .select({
         mailboxId: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
         userId: mailboxAccounts.userId,
+        status: mailboxAccounts.status,
       })
       .from(mailboxAccounts)
       .where(
-        and(eq(mailboxAccounts.provider, 'gmail'), eq(mailboxAccounts.providerAccountId, email)),
+        and(
+          eq(mailboxAccounts.provider, 'gmail'),
+          eq(mailboxAccounts.providerAccountId, providerAccountId),
+        ),
       )
       .limit(1);
     return row ?? null;
@@ -167,7 +190,7 @@ export class MailboxAccountsService {
    * can wire up sync state in the same transaction.
    */
   async upsertConnect(
-    tx: DrizzleDb,
+    tx: EntitlementsTransaction,
     input: {
       workspaceId: string;
       userId: string;
@@ -177,6 +200,22 @@ export class MailboxAccountsService {
       keyVersion: number;
     },
   ): Promise<{ id: string }> {
+    const providerAccountId = canonicalizeGmailProviderAccountId(input.email);
+    // Every transition to `active` linearizes on the workspace row. The
+    // provider re-read must happen after that lock: an OAuth-start lookup is
+    // only a fast-fail and may be stale by callback time.
+    const workspace = await this.entitlements.lockInboxWorkspace(input.workspaceId, tx);
+    if (!workspace) {
+      throw new NotFoundException('Workspace not found.');
+    }
+    const existing = await this.findByProviderEmail(providerAccountId, tx);
+    if (existing && existing.workspaceId !== input.workspaceId) {
+      throw new ConflictException({
+        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
+        message: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
+      });
+    }
+
     const [deletionInProgress] = await tx
       .select({ id: mailboxDataDeletionRequests.id })
       .from(mailboxDataDeletionRequests)
@@ -187,7 +226,7 @@ export class MailboxAccountsService {
       .where(
         and(
           eq(mailboxAccounts.provider, 'gmail'),
-          eq(mailboxAccounts.providerAccountId, input.email),
+          eq(mailboxAccounts.providerAccountId, providerAccountId),
           inArray(mailboxDataDeletionRequests.status, ['pending', 'executing', 'failed']),
         ),
       )
@@ -198,6 +237,12 @@ export class MailboxAccountsService {
         message: 'Indexed data deletion must finish before this Gmail account can reconnect.',
       });
     }
+    // An active row already owns its slot, including after a downgrade.
+    // Missing/disconnected rows consume a slot and must be checked while the
+    // workspace lock is held.
+    if (existing?.status !== 'active') {
+      await this.entitlements.assertInboxCapacityForWorkspace(workspace, tx);
+    }
 
     const [row] = await tx
       .insert(mailboxAccounts)
@@ -205,7 +250,7 @@ export class MailboxAccountsService {
         workspaceId: input.workspaceId,
         userId: input.userId,
         provider: 'gmail',
-        providerAccountId: input.email,
+        providerAccountId,
         encryptedRefreshToken: input.encryptedRefreshToken,
         dekEncrypted: input.dekEncrypted,
         keyVersion: input.keyVersion,
@@ -220,21 +265,44 @@ export class MailboxAccountsService {
           connectedAt: new Date(),
           status: 'active',
         },
-        // Re-check after PostgreSQL acquires the conflicting mailbox-row
-        // lock. The preflight above gives an early friendly error, while
-        // this predicate closes the concurrent request-vs-reconnect race.
-        setWhere: sql`NOT EXISTS (
-          SELECT 1
-          FROM mailbox_data_deletion_requests deletion
-          WHERE deletion.mailbox_account_id = ${mailboxAccounts.id}
-            AND deletion.status IN ('pending', 'executing', 'failed')
-        )`,
+        // The orchestrator's ownership lookup is only a UX fast-fail:
+        // another workspace can win this provider identity after that read.
+        // Scope the update to the owning workspace and re-check deletion
+        // state after PostgreSQL acquires the conflicting mailbox-row lock.
+        setWhere: sql`${mailboxAccounts.workspaceId} = ${input.workspaceId}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM mailbox_data_deletion_requests deletion
+            WHERE deletion.mailbox_account_id = ${mailboxAccounts.id}
+              AND deletion.status IN ('pending', 'executing', 'failed')
+          )`,
       })
       .returning({ id: mailboxAccounts.id });
     if (!row) {
+      const [blockedByDeletion] = await tx
+        .select({ id: mailboxDataDeletionRequests.id })
+        .from(mailboxDataDeletionRequests)
+        .innerJoin(
+          mailboxAccounts,
+          eq(mailboxDataDeletionRequests.mailboxAccountId, mailboxAccounts.id),
+        )
+        .where(
+          and(
+            eq(mailboxAccounts.provider, 'gmail'),
+            eq(mailboxAccounts.providerAccountId, providerAccountId),
+            inArray(mailboxDataDeletionRequests.status, ['pending', 'executing', 'failed']),
+          ),
+        )
+        .limit(1);
+      if (blockedByDeletion) {
+        throw new ConflictException({
+          code: 'MAILBOX_DATA_DELETION_IN_PROGRESS' satisfies ErrorCode,
+          message: 'Indexed data deletion must finish before this Gmail account can reconnect.',
+        });
+      }
       throw new ConflictException({
-        code: 'MAILBOX_DATA_DELETION_IN_PROGRESS' satisfies ErrorCode,
-        message: 'Indexed data deletion must finish before this Gmail account can reconnect.',
+        code: 'MAILBOX_OWNED_BY_OTHER_WORKSPACE' satisfies ErrorCode,
+        message: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
       });
     }
     // A completed request is represented permanently by the security

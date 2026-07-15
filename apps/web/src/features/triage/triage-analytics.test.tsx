@@ -4,10 +4,10 @@
  * Pins the analytics contract for the daily ritual:
  *
  *   - `page_viewed { page: 'triage' }` fires ONCE on the route mount.
- *   - `triage_action_taken` fires ONCE per decision, ONLY on mutation
- *     success (never on preview open, never on failure), with the
+ *   - `triage_action_taken` fires ONCE per decision, ONLY on server
+ *     acceptance (never on preview open, never on rejection), with the
  *     confirm surface (`sheet` / `inline`), the engine-match flag, and
- *     the server coverage count.
+ *     the server-requested message count.
  *   - `undo_clicked` fires ONCE per undo attempt (row button or Z)
  *     with the entry's kind + age — never the capability token.
  *
@@ -47,24 +47,25 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
-vi.mock('@/features/auth/auth-provider', () => ({
-  useAuth: () => ({
-    me: {
-      user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },
-      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      mailboxes: [
-        {
-          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          email: 'user@example.com',
-          status: 'active',
-          connectedAt: '2026-07-14T00:00:00.000Z',
-          readiness: 'ready',
-        },
-      ],
-      tier: 'pro',
-      cleanupRemaining: null,
+const authMe = vi.hoisted(() => ({
+  user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },
+  activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  mailboxes: [
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      email: 'user@example.com',
+      status: 'active',
+      connectedAt: '2026-07-14T00:00:00.000Z',
+      readiness: 'ready',
     },
-  }),
+  ],
+  tier: 'pro',
+  cleanupRemaining: null,
+}));
+vi.mock('@/features/auth/auth-provider', () => ({
+  getActiveMailboxEmail: () => 'user@example.com',
+  useAuth: () => ({ me: authMe }),
+  useOptionalAuth: () => ({ me: authMe }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // verdict: archive
@@ -145,6 +146,7 @@ function expandRow(senderName: string) {
 
 async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
   const dialog = await screen.findByRole('dialog');
+  await screen.findByText(/emails currently match in Inbox/i);
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -175,7 +177,8 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByRole('dialog');
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await screen.findByText(/emails currently match in Inbox/i);
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
@@ -189,7 +192,7 @@ describe('triage_action_taken (D159)', () => {
       // GROUPON's engine verdict IS archive.
       matched_recommendation: true,
       // The server's real coverage count from the enqueue accept.
-      affected_messages: 47,
+      requested_messages: 47,
       source: 'sheet',
     });
 
@@ -206,6 +209,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await screen.findByText('Preview · before anything changes');
+    await screen.findByText(/emails currently match in Inbox/i);
     expect(actionTakenCalls()).toHaveLength(0);
 
     // Second press of the same verb confirms the inline preview.
@@ -244,7 +248,7 @@ describe('triage_action_taken (D159)', () => {
       sender_id: GROUPON.senderId,
       // The engine said archive; the user kept — no match.
       matched_recommendation: false,
-      affected_messages: 0,
+      requested_messages: 0,
       source: 'inline',
     });
   });
@@ -273,9 +277,9 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await screen.findByRole('dialog');
-    // Backlog toggle defaults ON for Unsubscribe — the confirm rides
-    // BOTH the intent POST and the composite archive enqueue.
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    // Backlog is a separate Gmail mutation, so opt in explicitly.
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     await waitFor(() => expect(actionTakenCalls()).toHaveLength(1));
@@ -283,7 +287,7 @@ describe('triage_action_taken (D159)', () => {
       verb: 'unsubscribe',
       sender_id: LINKEDIN.senderId,
       matched_recommendation: true,
-      affected_messages: 0,
+      requested_messages: 0,
       source: 'sheet',
     });
     // Let the backlog enqueue + poll settle — still one event.
@@ -421,6 +425,7 @@ describe('undo_clicked (D159)', () => {
 
 describe('page_viewed (D159)', () => {
   it('the triage route mount fires page_viewed { page: triage } exactly once', async () => {
+    const undoTraySpy = vi.fn(() => jsonOk({ data: [], meta: { nextCursor: null, limit: 50 } }));
     addFetchHandlers([
       { method: 'GET', path: '/api/triage/queue', respond: () => jsonOk({ data: [] }) },
       {
@@ -431,7 +436,7 @@ describe('page_viewed (D159)', () => {
       {
         method: 'GET',
         path: '/api/undo',
-        respond: () => jsonOk({ data: [], meta: { nextCursor: null, limit: 50 } }),
+        respond: undoTraySpy,
       },
     ]);
     const client = createTestQueryClient();
@@ -448,5 +453,8 @@ describe('page_viewed (D159)', () => {
       }),
     );
     expect(h.track.mock.calls.filter(([name]) => name === 'page_viewed')).toHaveLength(1);
+    // The route no longer owns the persistent tray; AppChrome mounts it
+    // once so rendering Triage inside the shell cannot double-fetch.
+    expect(undoTraySpy).not.toHaveBeenCalled();
   });
 });

@@ -129,7 +129,7 @@ export interface PromoDefinition {
  */
 export interface NonPurchasableRow {
   readonly kind: 'waitlist' | 'contact';
-  /** Row copy ("Coming Q3 2026" / "Contact sales"). */
+  /** Row copy ("Join the waitlist" / "Contact sales"). */
   readonly label: string;
 }
 

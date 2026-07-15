@@ -110,12 +110,13 @@ export const Loading: Story<typeof AutopilotScreen> = {
   render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
 };
 
-/** Error — both queries failed; the empty-state shows a refetch-friendly message. */
+/** Error — both queries failed; the retryable error state remains inside the route shell. */
 export const Error: Story<typeof AutopilotScreen> = {
   args: {
     state: {
       kind: 'error',
       message: "We couldn't load Autopilot right now.",
+      retry: () => undefined,
     },
   },
   render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),

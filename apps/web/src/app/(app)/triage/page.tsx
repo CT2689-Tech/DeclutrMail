@@ -1,5 +1,6 @@
 'use client';
 
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
 import { useAuth } from '@/features/auth/auth-provider';
@@ -44,6 +45,23 @@ export default function TriagePage() {
 function TriageRoute() {
   useConnectResultToast();
 
+  return (
+    <TierGate
+      capability="triage"
+      title="Triage"
+      pitch="Work through a focused sender queue with recommendations, previews, and a durable Activity receipt."
+      bullets={[
+        'Review one sender at a time',
+        'Preview every manual mail-moving action',
+        'Keep Gmail as the place you read and reply',
+      ]}
+    >
+      <TriageExperience />
+    </TierGate>
+  );
+}
+
+function TriageExperience() {
   const { me } = useAuth();
   const queue = useTriageQueue();
   const stats = useTriageStats();
@@ -72,8 +90,11 @@ function TriageRoute() {
 
 /** Human copy for each `connect_error` code the BE can redirect with. */
 const CONNECT_ERROR_COPY: Record<string, string> = {
-  MAILBOX_OWNED_BY_OTHER_WORKSPACE:
-    'That Gmail account is already connected to a different DeclutrMail workspace.',
+  MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
+  reconnect_account_mismatch:
+    'Google returned a different Gmail account. In Settings → Mailboxes, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
+  reconnect_target_invalid:
+    'That reconnect request is no longer valid. Try again from the reconnect banner or Settings.',
   connect_failed: 'Could not connect that Gmail account. Try again.',
 };
 

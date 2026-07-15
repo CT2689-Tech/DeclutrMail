@@ -136,7 +136,10 @@ async function seedKnownSenderMailbox(
   db: Awaited<ReturnType<typeof freshDb>>,
   mode: 'observe' | 'active',
 ): Promise<{ mailboxId: string; senderKey: string }> {
-  const [ws] = await db.insert(workspaces).values({ name: 'WS' }).returning({ id: workspaces.id });
+  const [ws] = await db
+    .insert(workspaces)
+    .values({ name: 'WS', tier: 'pro' })
+    .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
     .values({ workspaceId: ws!.id, email: 'a@b.com' })

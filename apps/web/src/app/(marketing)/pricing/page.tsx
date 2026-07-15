@@ -13,7 +13,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Pricing — DeclutrMail',
   description:
-    'Free shows you what’s noisy. Plus removes manual action limits. Pro adds automation. Five verbs, previews before actions, full bodies fetched: 0.',
+    'Free reveals noisy senders, Plus adds unlimited manual actions, and Pro adds explicit automation. Full bodies fetched: 0.',
   path: '/pricing',
 });
 

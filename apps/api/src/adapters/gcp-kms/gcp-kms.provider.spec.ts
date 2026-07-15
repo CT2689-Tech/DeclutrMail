@@ -8,10 +8,15 @@ const encryptImpl = vi.fn();
 const decryptImpl = vi.fn();
 
 vi.mock('@google-cloud/kms', () => ({
-  KeyManagementServiceClient: vi.fn().mockImplementation(() => ({
-    encrypt: encryptImpl,
-    decrypt: decryptImpl,
-  })),
+  // vitest 4: a mock invoked with `new` needs a constructable
+  // implementation — arrow functions are rejected. A `function`
+  // returning the stub object keeps the same behavior.
+  KeyManagementServiceClient: vi.fn(function () {
+    return {
+      encrypt: encryptImpl,
+      decrypt: decryptImpl,
+    };
+  }),
 }));
 
 import { GcpKmsProvider } from './gcp-kms.provider.js';

@@ -12,9 +12,10 @@
 // Page-specific structured data (the landing FAQPage) lives with the
 // page content.
 //
-// Server component on purpose: no client JS is needed for a static
-// public shell, and keeping it server-side guarantees no client hook
-// can accidentally reach for `useAuth()` at the layout level.
+// Server component on purpose: the shell itself cannot accidentally
+// reach for `useAuth()`. Three narrow client islands remain explicit:
+// route-family analytics, the layout-preserving mobile disclosure, and
+// cookie consent.
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
@@ -22,6 +23,9 @@ import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
+import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
+import '@/features/marketing/public-shell/public-shell.css';
 
 const { color, font } = tokens;
 
@@ -78,7 +82,7 @@ const SITE_JSON_LD = {
       '@type': 'SoftwareApplication',
       name: 'DeclutrMail',
       url: siteUrl(),
-      description: 'Gmail cleanup — clear previews and plan-based Activity Undo.',
+      description: 'A Gmail sender-control companion with live previews and Activity undo.',
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       offers: tierOffers(),
@@ -94,7 +98,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
     // light-design hexes, so following the app's dark theme here would
     // produce seams. Token custom properties re-resolve at this node
     // (see [data-theme='light'] in @declutrmail/shared tokens.css).
-    <main
+    <div
       data-theme="light"
       style={{
         minHeight: '100vh',
@@ -104,12 +108,15 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
       }}
     >
       <JsonLd data={SITE_JSON_LD} />
-      {children}
+      <PublicRouteTracker />
+      <PublicHeader />
+      <main id="main-content">{children}</main>
+      <PublicFooter />
       {/* D147 consent ask — a small client island (the one JS addition
           this shell carries besides page-level islands). INSIDE the
           light-pinned <main> so the banner matches the marketing
           palette even when the app preference is dark. */}
       <CookieConsentBanner />
-    </main>
+    </div>
   );
 }

@@ -7,13 +7,18 @@
  * cannot drift back to implying live Gmail or confirmed recipient state.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { FollowupsScreen, recipientLine, relativeTime, truncate } from './followups-screen';
+
+vi.mock('@/features/auth/auth-provider', () => ({
+  useOptionalAuth: () => ({ me: {} }),
+  getActiveMailboxEmail: () => 'active+mailbox@example.com',
+}));
 
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
 
@@ -68,23 +73,31 @@ describe('FollowupsScreen — edge states', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
-  it('renders the error branch with a retry CTA on 500', async () => {
+  it('renders an alert on 500 and recovers the follow-up list when Retry succeeds', async () => {
+    let attempts = 0;
     installFetchStub([
       {
         method: 'GET',
         path: '/api/followups',
-        respond: () => jsonServerError(),
+        respond: () => {
+          attempts += 1;
+          return attempts === 1 ? jsonServerError() : jsonOk({ data: [ROW_LOW] });
+        },
       },
     ]);
 
     renderScreen();
-    await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /couldn[’']t load your followups/i }),
-      ).toBeInTheDocument(),
-    );
-    expect(screen.getByText(/nothing was changed/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /retry followups/i })).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(
+      within(alert).getByRole('heading', { name: /couldn[’']t load your followups/i }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByText(/tracked follow-ups are unchanged/i)).toBeInTheDocument();
+
+    fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
+
+    expect(await screen.findByText('Lunch?')).toBeInTheDocument();
+    expect(attempts).toBe(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('renders the observation window in the empty state when no followups await', async () => {
@@ -104,6 +117,7 @@ describe('FollowupsScreen — edge states', () => {
     );
     expect(screen.getByText(/current 60-day window/i)).toBeInTheDocument();
     expect(screen.getByText(/next check runs within about six hours/i)).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
 
@@ -138,7 +152,11 @@ describe('FollowupsScreen — populated list', () => {
     expect(screen.getByText('Lunch?')).toBeInTheDocument();
     const links = screen.getAllByRole('link', { name: /open in gmail/i });
     expect(links).toHaveLength(2);
-    expect(links[0]).toHaveAttribute('href', 'https://mail.google.com/mail/u/0/#all/thread-h1');
+    expect(links[0]).toHaveAttribute(
+      'href',
+      'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/thread-h1',
+    );
+    expect(links[0]?.getAttribute('href')).not.toContain('/u/0');
     const sentTime = document.querySelector(`time[datetime="${ROW_HIGH.sentAt}"]`);
     expect(sentTime).toHaveTextContent(/^Sent /);
   });

@@ -142,7 +142,7 @@ these live — change `deploy-cloud-run.yml` and redeploy.
 | --------------------------- | ------------------------------------------------------ | ------------------------------------------------- |
 | `NODE_ENV`                  | `production`                                           | ✅                                                |
 | `WEB_URL`                   | `https://app.declutrmail.com`                          | ✅                                                |
-| `CORS_ORIGIN`               | `https://app.declutrmail.com`                          | ✅ (widen if the apex calls the API)              |
+| `CORS_ORIGIN`               | `/^https:[/][/](app[.])?declutrmail[.]com$/`           | Workflow fixed; redeploy to allow apex + `app`    |
 | `COOKIE_DOMAIN`             | `.declutrmail.com`                                     | ✅                                                |
 | `GOOGLE_REDIRECT_URI`       | `https://api.declutrmail.com/api/auth/google/callback` | ✅ — live `/api/auth/google/start` 302s to Google |
 | ~~`GMAIL_CONNECT_ENABLED`~~ | _(absent)_                                             | **flag deleted; remove from runbooks**            |

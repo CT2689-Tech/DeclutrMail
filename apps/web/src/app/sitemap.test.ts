@@ -24,23 +24,39 @@ import robots, { AUTHED_APP_PATHS } from './robots';
 const MARKETING_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '(marketing)');
 
 /**
- * Every route the `(marketing)` route group serves, derived from disk:
- * the group's own `page.tsx` is `/`, and each immediate subdirectory
- * holding a `page.tsx` is `/<dir>`. (Route groups like `(marketing)`
- * don't appear in the URL, so the folder name maps straight to the path.)
+ * Every route pattern the `(marketing)` route group serves, recursively
+ * derived from disk. Dynamic segments remain patterns (`/vs/[competitor]`)
+ * and are matched against at least one concrete sitemap URL below.
  */
-function marketingRoutesFromFs(): string[] {
-  const entries = readdirSync(MARKETING_DIR, { withFileTypes: true });
-  const routes = entries.some((e) => e.isFile() && e.name === 'page.tsx') ? ['/'] : [];
+function marketingRoutePatternsFromFs(
+  directory = MARKETING_DIR,
+  segments: readonly string[] = [],
+): string[] {
+  const entries = readdirSync(directory, { withFileTypes: true });
+  const routes: string[] = [];
+  if (entries.some((entry) => entry.isFile() && entry.name === 'page.tsx')) {
+    routes.push(segments.length === 0 ? '/' : `/${segments.join('/')}`);
+  }
   for (const entry of entries) {
-    if (
-      entry.isDirectory() &&
-      readdirSync(path.join(MARKETING_DIR, entry.name)).includes('page.tsx')
-    ) {
-      routes.push(`/${entry.name}`);
+    if (entry.isDirectory()) {
+      routes.push(
+        ...marketingRoutePatternsFromFs(path.join(directory, entry.name), [
+          ...segments,
+          entry.name,
+        ]),
+      );
     }
   }
   return routes.sort();
+}
+
+function matchesPattern(route: string, pattern: string): boolean {
+  const routeParts = route.split('/');
+  const patternParts = pattern.split('/');
+  return (
+    routeParts.length === patternParts.length &&
+    patternParts.every((part, index) => /^\[.+\]$/.test(part) || part === routeParts[index])
+  );
 }
 
 /** Sitemap output paths (root URL is the bare origin, i.e. pathname `/`). */
@@ -51,8 +67,24 @@ function sitemapPaths(): string[] {
 }
 
 describe('sitemap — D134', () => {
-  it('covers exactly the (marketing) filesystem routes — no page silently omitted', () => {
-    expect(sitemapPaths()).toEqual(marketingRoutesFromFs());
+  it('recursively covers every indexable marketing route and dynamic route family', () => {
+    const patterns = marketingRoutePatternsFromFs();
+    const nonIndexedRedirects = ['/demo'];
+    const indexablePatterns = patterns.filter((pattern) => !nonIndexedRedirects.includes(pattern));
+    const routes = sitemapPaths();
+
+    for (const pattern of indexablePatterns) {
+      expect(
+        routes.some((route) => matchesPattern(route, pattern)),
+        `expected sitemap coverage for ${pattern}`,
+      ).toBe(true);
+    }
+    for (const route of routes) {
+      expect(
+        indexablePatterns.some((pattern) => matchesPattern(route, pattern)),
+        `sitemap route ${route} has no marketing page`,
+      ).toBe(true);
+    }
   });
 
   it('lists the root against the canonical origin with no trailing slash', () => {

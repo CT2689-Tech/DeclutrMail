@@ -280,10 +280,9 @@ export const ACTION_REGISTRY: ActionRegistry = {
       description: staticActionPreviewCopy('delete'),
     },
     shortcut: CANONICAL_SHORTCUTS.delete,
-    // Delete is destructive in a way that survives undo — Trash recovery
-    // window is 30 days vs Archive/Later's 7d. Modal preview MANDATORY
-    // per D226; the modal renders the red Delete tone + recovery-window
-    // banner per spec v1.2 Decision 15 ConfirmActionModal redesign.
+    // Delete uses the plan's same Activity Undo window as Archive/Later,
+    // plus Gmail's separate Trash-retention fallback. Modal preview is
+    // mandatory per D226 and renders the red Delete consequence tone.
     preview: 'modal',
     capabilities: {
       sender: { tier: 'free', countsAsCleanup: true },

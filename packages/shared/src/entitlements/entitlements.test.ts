@@ -6,8 +6,8 @@ import { TIER_MANIFEST } from './manifest';
 import {
   cleanupActionsLifetimeFor,
   hasCapability,
-  minimumTierForCapability,
   inboxLimitFor,
+  minimumTierForCapability,
   satisfiesActionTier,
   tierById,
   undoWindowDaysFor,
@@ -137,7 +137,7 @@ describe('Tier manifest (D19)', () => {
   });
 
   // 10. Purchasability: free/plus/pro self-serve; team is a waitlist row
-  //     ("Coming Q3 2026"), enterprise a contact row (D19).
+  //     (no speculative ship date), enterprise a contact row (D19).
   it('pins purchasability and the non-purchasable row treatments', () => {
     for (const id of ['free', 'plus', 'pro'] as const) {
       expect(TIER_MANIFEST[id].purchasable, id).toBe(true);
@@ -146,7 +146,7 @@ describe('Tier manifest (D19)', () => {
     expect(TIER_MANIFEST.team.purchasable).toBe(false);
     expect(TIER_MANIFEST.team.nonPurchasableRow).toEqual({
       kind: 'waitlist',
-      label: 'Coming Q3 2026',
+      label: 'Join the waitlist',
     });
     expect(TIER_MANIFEST.enterprise.purchasable).toBe(false);
     expect(TIER_MANIFEST.enterprise.nonPurchasableRow?.kind).toBe('contact');
@@ -200,10 +200,21 @@ describe('Entitlement resolvers (D19)', () => {
     }
   });
 
-  it('resolves the minimum granting tier from the manifest', () => {
-    expect(minimumTierForCapability('senders')).toBe('free');
+  it('derives each capability minimum from the ordered manifest', () => {
+    for (const capability of ['senders', 'sender-detail', 'activity', 'cleanup-actions'] as const) {
+      expect(minimumTierForCapability(capability), capability).toBe('free');
+    }
     expect(minimumTierForCapability('triage')).toBe('plus');
-    expect(minimumTierForCapability('autopilot')).toBe('pro');
+    for (const capability of [
+      'autopilot',
+      'brief',
+      'screener',
+      'quiet',
+      'snoozed',
+      'followups',
+    ] as const) {
+      expect(minimumTierForCapability(capability), capability).toBe('pro');
+    }
   });
 
   // The full 5-tiers × 3-action-tiers seam matrix: team/enterprise rank

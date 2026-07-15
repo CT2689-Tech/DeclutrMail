@@ -5,10 +5,11 @@
  * the page cannot know up front whether a session exists. CTA clicks
  * resolve it lazily:
  *
- *   - Free CTA          → always the OAuth start URL (signup IS login).
- *   - Plus/Pro CTA      → probe `GET /api/auth/me`; authed → `/billing`
- *                         (placeholder route until the U13 billing
- *                         screen lands), unauthed → OAuth start.
+ *   - Free CTA          → probe `GET /api/auth/me`; authed → `/senders`,
+ *                         unauthed → OAuth start.
+ *   - Plus/Pro CTA      → same probe; authed → `/billing` with validated
+ *                         plan/cycle/promo intent, unauthed → OAuth start
+ *                         carrying that local post-login destination.
  *
  * The probe reuses `apiGet`, so an expired-access-but-valid-refresh
  * session silently rotates and still lands on /billing instead of
@@ -19,20 +20,40 @@
  */
 
 import { apiGet } from '@/lib/api/client';
+import { billingIntentPath, type BillingIntent } from '@/features/billing/billing-intent';
 
-export function oauthStartUrl(): string {
+export function oauthStartUrl(returnTo?: string): string {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-  return `${apiBase}/api/auth/google/start`;
+  const base = `${apiBase}/api/auth/google/start`;
+  if (!returnTo) return base;
+  return `${base}?${new URLSearchParams({ returnTo }).toString()}`;
 }
 
-export async function navigateToCheckout(push: (path: string) => void): Promise<void> {
+async function hasSession(): Promise<boolean> {
   try {
-    await apiGet('/api/auth/me');
-    push('/billing');
+    await apiGet('/api/auth/me', { suppressAuthRedirect: true });
+    return true;
   } catch {
-    // Unauthed (the client may have already started this navigation on
-    // a terminal 401 — re-assigning the same URL is a no-op) or API
-    // unreachable: either way OAuth start is the honest destination.
-    window.location.assign(oauthStartUrl());
+    return false;
   }
+}
+
+export async function navigateToCheckout(
+  push: (path: string) => void,
+  intent: BillingIntent,
+): Promise<void> {
+  const destination = billingIntentPath(intent);
+  if (await hasSession()) {
+    push(destination);
+    return;
+  }
+  window.location.assign(oauthStartUrl(destination));
+}
+
+export async function navigateToFreeApp(push: (path: string) => void): Promise<void> {
+  if (await hasSession()) {
+    push('/senders');
+    return;
+  }
+  window.location.assign(oauthStartUrl());
 }

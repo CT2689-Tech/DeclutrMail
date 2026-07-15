@@ -112,8 +112,18 @@ export class SyncService {
    * and "sync intent recorded" (Codex iter 6 high finding). The OAuth
    * refresh token is single-use; a mailbox row without a durable sync
    * intent would strand the user (no row for the reconciler to find).
+   *
+   * `freshCredentials` is deliberately opt-in. It is valid only when the
+   * caller stored a replacement OAuth credential in this same transaction;
+   * that makes a prior `InvalidGrantError` stale, so both evidence fields
+   * are cleared together on conflict. Cursor/history failures remain valid
+   * evidence after re-authentication. Ordinary retries keep every error.
    */
-  async markQueued(executor: DrizzleExecutor, mailboxAccountId: string): Promise<void> {
+  async markQueued(
+    executor: DrizzleExecutor,
+    mailboxAccountId: string,
+    options: { freshCredentials?: boolean } = {},
+  ): Promise<void> {
     await executor
       .insert(providerSyncState)
       .values({
@@ -129,6 +139,20 @@ export class SyncService {
           readinessStatus: 'queued',
           progressPct: 0,
           errorCode: null,
+          ...(options.freshCredentials
+            ? {
+                lastIncrementalErrorAt: sql`CASE
+                  WHEN ${providerSyncState.lastIncrementalErrorCode} = 'InvalidGrantError'
+                  THEN NULL
+                  ELSE ${providerSyncState.lastIncrementalErrorAt}
+                END`,
+                lastIncrementalErrorCode: sql`CASE
+                  WHEN ${providerSyncState.lastIncrementalErrorCode} = 'InvalidGrantError'
+                  THEN NULL
+                  ELSE ${providerSyncState.lastIncrementalErrorCode}
+                END`,
+              }
+            : {}),
           updatedAt: sql`now()`,
         },
       });

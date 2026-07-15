@@ -688,7 +688,7 @@ function executionStateFor(lineage: ExecutionLineage): ActivityExecutionState {
   };
 }
 
-function failureResolution(errorCode: string | null): 'review' | 'reconnect' | 'support' {
+function failureResolution(errorCode: string | null): 'review' | 'support' {
   if (errorCode === 'ValidationError' || errorCode === 'PermanentError') return 'support';
   return 'review';
 }

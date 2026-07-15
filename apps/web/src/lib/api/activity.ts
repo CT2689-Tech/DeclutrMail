@@ -95,7 +95,7 @@ export type ActivityExecutionStateWire =
       rootActionId: string;
       requestedCount: number;
       errorCode: string | null;
-      resolution: 'review' | 'reconnect' | 'support';
+      resolution: 'review' | 'support';
     };
 
 export interface ActivityRowWire {

@@ -18,7 +18,6 @@
 // features/sync/sync-now-button.tsx, values read off shared tokens.
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 
 const { color, font, text } = tokens;
@@ -28,13 +27,6 @@ export interface LegalTocItem {
   id: string;
   label: string;
 }
-
-/** The three legal documents, in canonical footer order. */
-const LEGAL_LINKS = [
-  { href: '/privacy', label: 'Privacy Policy' },
-  { href: '/terms', label: 'Terms of Service' },
-  { href: '/refunds', label: 'Refund Policy' },
-] as const;
 
 /**
  * Prose typography, scoped under `.dm-legal` so the rules cannot leak
@@ -67,7 +59,7 @@ export function LegalSection({
   children: ReactNode;
 }) {
   return (
-    <section id={id} style={{ marginBottom: 36, scrollMarginTop: 24 }}>
+    <section id={id} style={{ marginBottom: 36, scrollMarginTop: 88 }}>
       <h2
         style={{
           fontFamily: font.display,
@@ -111,48 +103,6 @@ export function LegalPageLayout({
       }}
     >
       <style>{LEGAL_PROSE_CSS}</style>
-
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-          paddingBottom: 20,
-          borderBottom: `1px solid ${color.line}`,
-          marginBottom: 32,
-        }}
-      >
-        <Link
-          href="/"
-          style={{
-            fontFamily: font.display,
-            fontSize: text.lg,
-            fontWeight: 600,
-            color: color.fg,
-            textDecoration: 'none',
-            letterSpacing: '-0.012em',
-          }}
-        >
-          DeclutrMail
-        </Link>
-        <nav style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          {LEGAL_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              style={{
-                fontSize: text.sm,
-                color: color.fgMuted,
-                textDecoration: 'none',
-              }}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-      </header>
 
       <span
         style={{
@@ -236,38 +186,6 @@ export function LegalPageLayout({
       </nav>
 
       <article>{children}</article>
-
-      <footer
-        style={{
-          marginTop: 48,
-          paddingTop: 20,
-          borderTop: `1px solid ${color.line}`,
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <nav style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-          {LEGAL_LINKS.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              style={{
-                fontSize: text.sm,
-                color: color.fgMuted,
-                textDecoration: 'none',
-              }}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-          © {new Date().getFullYear()} DeclutrMail
-        </span>
-      </footer>
     </div>
   );
 }

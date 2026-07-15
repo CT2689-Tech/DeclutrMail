@@ -35,7 +35,7 @@ const { color, font, text } = tokens;
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Open beta — DeclutrMail',
   description:
-    'DeclutrMail is in open beta. Sign in with Google and review your inbox by sender — no invite needed.',
+    'DeclutrMail is in open beta. Sign in with Google and start cleaning up your inbox — no invite needed.',
   path: '/beta',
 });
 
@@ -95,7 +95,7 @@ export default async function BetaPage({
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: 'calc(100vh - 120px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -151,7 +151,7 @@ export default async function BetaPage({
         >
           {denied
             ? 'Your Google sign-in worked, but this email isn’t on the invite list yet. No account was created. Write to us and we’ll sort out your invite.'
-            : 'Anyone can sign in with Google and start reviewing senders — no invite or waitlist. It’s still a beta: expect the occasional rough edge. Mail-changing actions show a preview and their available recovery option.'}
+            : 'Anyone can sign in with Google and start reviewing senders — no invite or waitlist. It’s still a beta: expect the occasional rough edge. Manual mail-moving actions show a preview and Activity undo; delivered unsubscribe requests are one-way.'}
         </p>
 
         <div

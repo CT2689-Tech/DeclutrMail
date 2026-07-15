@@ -4,6 +4,7 @@ import {
   ACTION_TIER_RANK,
   ACTION_VERBS,
   CANONICAL_SHORTCUTS,
+  COMPOSITE_PRIMARY_VERBS,
   SELECTOR_TYPES,
 } from '../contracts/verb-constants';
 import { ACTION_REGISTRY, listActionDescriptors } from './manifest-entries';
@@ -128,5 +129,15 @@ describe('Action Registry (ADR-0015)', () => {
         ).toBe(true);
       }
     }
+  });
+
+  // The verb-agnostic bulk-preview wire carries sender ids only. Keep
+  // every verb it previews on one selector tier until that backwards-
+  // compatible API contract is deliberately versioned to include verb.
+  it('keeps every composite primary on the same multi-sender preview tier', () => {
+    const tiers = COMPOSITE_PRIMARY_VERBS.map(
+      (verb) => ACTION_REGISTRY[verb].capabilities['multi-sender']?.tier,
+    );
+    expect(new Set(tiers)).toEqual(new Set(['plus']));
   });
 });

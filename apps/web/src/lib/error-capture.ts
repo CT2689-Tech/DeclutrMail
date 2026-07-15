@@ -1,7 +1,7 @@
 // Sentry capture helper for App Router error boundaries (D167).
 //
-// `sentry.client.config.ts` owns init (eager, runs at module load).
-// This module owns the boundary-capture surface so each error.tsx
+// `sentry-browser-runtime.ts` owns DSN-gated lazy init. This module owns
+// the boundary-capture surface so each error.tsx
 // calls one typed function with a `boundary` tag — Sentry groups by
 // that tag distinctly from the global app shell + from feature-level
 // captureFeatureException calls.
@@ -10,14 +10,13 @@
 // bootstrap) so tests can mock it cleanly: error-boundary tests stub
 // this module's export, leaving the bootstrap module alone.
 //
-// Privacy posture (D7): the boundary passes the raw `Error` object,
-// which can contain user data in its `message`. The Sentry init
-// (`sentry.client.config.ts`) installs `beforeSend` with
-// `scrubTelemetryPayload` so the same scrubber that protects regular
-// events also covers boundary captures. No bodies, snippets, or
-// subject lines leak.
+// Privacy posture (D7): the boundary passes the raw `Error` object, but the
+// lazy browser runtime rebuilds the outgoing event from a closed allowlist.
+// Exception messages/values, request and user context, frame locals, and source
+// context lines are removed; only validated exception types, mechanisms, and
+// structural stack coordinates remain for grouping and source-map lookup.
 
-import * as Sentry from '@sentry/nextjs';
+import { captureSentryBoundaryException } from './sentry';
 
 /**
  * Stable identifier for the boundary that captured the error.
@@ -91,8 +90,7 @@ let warnedNotInitialised = false;
 /**
  * Capture an exception caught by an App Router error boundary.
  *
- * No-op when `NEXT_PUBLIC_SENTRY_DSN` is unset (eager init bails in
- * `sentry.client.config.ts`). The early-return keeps local dev
+ * No-op when `NEXT_PUBLIC_SENTRY_DSN` is unset. The early return keeps local dev
  * silent — no fallback console noise, no Sentry SDK overhead.
  *
  * If the SDK IS configured (DSN set) but reports no active client at
@@ -102,10 +100,9 @@ let warnedNotInitialised = false;
  * latch keeps repeated boundary captures during a single race from
  * flooding the console.
  *
- * Signature stays `async` for backwards compatibility — every error
- * boundary already awaits this call. The body is synchronous now
- * (static import of `@sentry/nextjs`), which makes the wrapper a
- * resolved promise instantly.
+ * Signature stays `async` for backwards compatibility — every error boundary
+ * already awaits this call. An explicit boundary capture bypasses the idle
+ * delay and waits for the lazy SDK chunk before deciding whether to fall back.
  */
 export async function captureErrorBoundaryException(
   error: unknown,
@@ -121,14 +118,8 @@ export async function captureErrorBoundaryException(
     error,
   };
 
-  // `getClient()` returns the active client when `Sentry.init` has run.
-  // If init lost the race with this capture call (or was skipped
-  // entirely by a build step), the client is undefined —
-  // captureException would then silently drop the event. Log a
-  // structured fallback so the crash is still observable in the
-  // browser console.
-  const client = typeof Sentry.getClient === 'function' ? Sentry.getClient() : undefined;
-  if (!client) {
+  const captured = await captureSentryBoundaryException(error, boundary, context.digest);
+  if (!captured) {
     if (!warnedNotInitialised) {
       warnedNotInitialised = true;
       console.warn(
@@ -136,13 +127,7 @@ export async function captureErrorBoundaryException(
       );
     }
     console.error('[error-capture] boundary capture (fallback)', payload);
-    return;
   }
-
-  Sentry.captureException(error, {
-    tags: { boundary },
-    extra: { digest: context.digest },
-  });
 }
 
 /** Test seam — reset the one-shot warning latch. */

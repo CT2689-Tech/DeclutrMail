@@ -23,11 +23,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import {
-  GMAIL_METADATA_HEADERS,
-  PRIVACY_BADGE_HEADLINE,
-  PRIVACY_STORAGE_ITEMS,
-} from '@declutrmail/shared';
+import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { storeConsent } from '@/lib/cookie-consent';
 
 import HelpPage from './help/page';
 import ContactPage from './contact/page';
@@ -45,10 +42,15 @@ const PAGES = [
 ] as const;
 
 beforeEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
+  storeConsent('all');
   trackSpy.mockClear();
 });
 
 afterEach(() => {
+  window.localStorage.removeItem('dm-cookie-consent');
+  document.cookie = 'dm_cookie_consent=; Max-Age=0; Path=/';
   vi.restoreAllMocks();
 });
 
@@ -104,17 +106,11 @@ describe('/help content — D219 + D137', () => {
     ).toBe(true);
   });
 
-  it('uses plain unsubscribe copy and discloses protocol terms separately', () => {
+  it('covers unsubscribe honestly: one-click where available, manual mailto (D230)', () => {
     const { container } = render(<HelpPage />);
-    expect(container.textContent).toMatch(/automatic unsubscribe/i);
+    expect(container.textContent).toMatch(/one-click unsubscribe/i);
     expect(container.textContent).toMatch(/you send it yourself/i);
     expect(container.textContent).toMatch(/nothing is auto-sent/i);
-    const details = screen.getByText('Show unsubscribe protocol details').closest('details');
-    expect(details).not.toHaveAttribute('open');
-    expect(details).toHaveTextContent(/List-Unsubscribe/);
-    expect(details).toHaveTextContent(/RFC 8058/);
-    expect(details).toHaveTextContent(/mailto:/);
-    expect(primaryText(container)).not.toMatch(/List-Unsubscribe|RFC 8058|raw MIME/);
   });
 
   it('deep-links each question with a stable slug (D219)', () => {
@@ -134,15 +130,10 @@ describe('/help content — D219 + D137', () => {
     }
   });
 
-  it('states action-specific undo, separate Trash recovery, and account-deletion retention', () => {
+  it('states the undo windows and the 7-day account-deletion grace', () => {
     const { container } = render(<HelpPage />);
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/Archive, Later, and Delete use your plan's Activity Undo window/);
-    expect(text).toMatch(/separate Gmail Trash recovery path/);
-    expect(text).toMatch(/delivered unsubscribe request cannot be recalled/);
-    expect(text).toMatch(/7-day grace period/);
-    expect(text).toMatch(/pseudonymous security and deletion evidence remains/);
-    expect(text).not.toContain('Exactly this list, and nothing more');
+    expect(container.textContent).toMatch(/7 days on Free and Plus and 30 days on Pro/);
+    expect(container.textContent).toMatch(/7-day grace period/);
   });
 
   it('emits FAQPage JSON-LD mirroring the rendered questions', () => {
@@ -190,17 +181,21 @@ describe('/security content — verified claims only', () => {
 
   it('names the single Gmail scope and the metadata-only fetch posture', () => {
     const { container } = render(<SecurityPage />);
-    const text = container.textContent ?? '';
-    expect(text).toContain('gmail.modify');
-    expect(text).toMatch(/metadata/i);
-    for (const header of GMAIL_METADATA_HEADERS) {
-      expect(text).toContain(header);
-    }
-    const details = screen.getByText('Show Google permission and field details').closest('details');
-    expect(details).not.toHaveAttribute('open');
-    expect(details).toHaveTextContent('gmail.modify');
-    expect(details).toHaveTextContent(GMAIL_METADATA_HEADERS.join(', '));
-    expect(primaryText(container)).not.toMatch(/gmail\.modify|format=metadata|\bfull\b.*\braw\b/i);
+    expect(container.textContent).toContain('gmail.modify');
+    expect(container.textContent).toMatch(/metadata/i);
+  });
+
+  it('scopes the non-leak claim to content DeclutrMail never holds', () => {
+    const { container } = render(<SecurityPage />);
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain(
+      'full message bodies and attachments are never in our systems, that content cannot leak from DeclutrMail',
+    );
+    expect(text).toContain(
+      'Subjects and Gmail Preview snippets can still contain sensitive information',
+    );
+    expect(text).not.toMatch(/most sensitive content.*cannot leak/i);
   });
 
   it('describes token envelope encryption and TLS accurately', () => {
@@ -208,32 +203,19 @@ describe('/security content — verified claims only', () => {
     expect(container.textContent).toMatch(/envelope-encrypted/i);
     expect(container.textContent).toMatch(/AES-256-GCM/);
     expect(container.textContent).toMatch(/TLS/);
-    const details = screen.getByText('Show encryption details').closest('details');
-    expect(details).not.toHaveAttribute('open');
-    expect(details).toHaveTextContent(/AES-256-GCM/);
   });
 
-  it('states the CASA Tier 2 verification', () => {
+  it('states the honest in-progress CASA Tier 2 assessment posture', () => {
     const { container } = render(<SecurityPage />);
     expect(container.textContent).toMatch(/CASA/);
     expect(container.textContent).toMatch(/Tier 2/);
+    expect(container.textContent).toMatch(/in progress/i);
+    expect(container.textContent).not.toMatch(/has passed|renewed annually/i);
   });
 
   it('states the D222 no-ML-category-prediction posture', () => {
     const { container } = render(<SecurityPage />);
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/not use machine learning to predict email categories/i);
-    expect(text).toMatch(/automatically protect a sender using deterministic product rules/i);
-    expect(text).toMatch(/reply history/i);
-    expect(text).not.toMatch(/does not automatically protect/i);
-  });
-
-  it('does not overstate the sensitivity or deletion boundary', () => {
-    const { container } = render(<SecurityPage />);
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/subjects and Gmail Preview snippets can still contain sensitive/i);
-    expect(text).not.toMatch(/sensitive information cannot leak/i);
-    expect(text).toMatch(/pseudonymous security and deletion evidence remains/i);
+    expect(container.textContent).toMatch(/not use machine learning to predict email categories/i);
   });
 
   it('points vulnerability reports at privacy@declutrmail.com', () => {
@@ -242,9 +224,3 @@ describe('/security content — verified claims only', () => {
     expect(container.querySelector('a[href="mailto:privacy@declutrmail.com"]')).toBeInTheDocument();
   });
 });
-
-function primaryText(container: HTMLElement): string {
-  const clone = container.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll('[data-dm-technical-details]').forEach((node) => node.remove());
-  return clone.textContent ?? '';
-}

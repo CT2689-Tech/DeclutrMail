@@ -55,6 +55,7 @@ import type { WorkerContext } from './worker-context.js';
  *   - per-rule daily cap → over-cap matches stay pending
  *   - paused rule → matches skipped
  *   - pending (unapproved) matches never execute
+ *   - downgrade before execution leaves approved matches unapplied
  *   - 0-affected execution → audit row, no undo token
  */
 
@@ -80,7 +81,10 @@ async function freshDb() {
 }
 
 async function seedMailbox(db: Db): Promise<string> {
-  const [ws] = await db.insert(workspaces).values({ name: 'WS' }).returning({ id: workspaces.id });
+  const [ws] = await db
+    .insert(workspaces)
+    .values({ name: 'WS', tier: 'pro' })
+    .returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
     .values({ workspaceId: ws!.id, email: 'a@b.com' })
@@ -95,6 +99,16 @@ async function seedMailbox(db: Db): Promise<string> {
     })
     .returning({ id: mailboxAccounts.id });
   return mb!.id;
+}
+
+async function setMailboxTier(db: Db, mailboxAccountId: string, tier: 'free' | 'plus') {
+  const [mailbox] = await db
+    .select({ workspaceId: mailboxAccounts.workspaceId })
+    .from(mailboxAccounts)
+    .where(eq(mailboxAccounts.id, mailboxAccountId))
+    .limit(1);
+  if (!mailbox) throw new Error(`mailbox ${mailboxAccountId} not found`);
+  await db.update(workspaces).set({ tier }).where(eq(workspaces.id, mailbox.workspaceId));
 }
 
 async function seedSender(
@@ -251,7 +265,7 @@ describe('AutopilotActionWorker', () => {
     worker = buildWorker();
   });
 
-  it('executes an approved archive match end-to-end with autopilot attribution', async () => {
+  it('Pro executes an approved archive match end-to-end with autopilot attribution', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
     const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', {
       inboxMessages: 3,
@@ -335,6 +349,35 @@ describe('AutopilotActionWorker', () => {
     expect(events).toHaveLength(1);
     expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
   });
+
+  it.each(['free', 'plus'] as const)(
+    'does not execute an approved match after downgrade to %s',
+    async (tier) => {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+      const { senderKey } = await seedSender(db, mailboxId, `${tier}@shop.com`, {
+        inboxMessages: 2,
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+      await setMailboxTier(db, mailboxId, tier);
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.matchesConsidered).toBe(0);
+      expect(result.labelActionsExecuted).toBe(0);
+      expect(result.unsubscribeIntentsRecorded).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+      expect(await db.select().from(activityLog)).toHaveLength(0);
+      expect(await db.select().from(undoJournal)).toHaveLength(0);
+      expect(await db.select().from(outboxEvents)).toHaveLength(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match!.intentApplied).toBe(false);
+      expect(match!.resolution).toBe('approved');
+    },
+  );
 
   it('is idempotent — a replayed sweep does not duplicate mutations or audit rows', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');

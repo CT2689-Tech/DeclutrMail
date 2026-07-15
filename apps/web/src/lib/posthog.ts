@@ -74,7 +74,13 @@ async function loadSdk(): Promise<PosthogSdk | null> {
           (scrubTelemetryPayload(props) ?? {}) as Record<string, unknown>,
       });
       return posthog;
-    })();
+    })().catch(() => {
+      // Analytics must never destabilize product UI. Clear the rejected
+      // cache so a later explicit event may retry a transient chunk/init
+      // failure; callers simply observe a no-op.
+      sdkPromise = null;
+      return null;
+    });
   }
   return sdkPromise;
 }
@@ -96,7 +102,11 @@ export async function track<E extends EventName>(
   if (!sdk) return;
   // First-line defense: scrub props at the caller boundary too.
   const safeProps = scrubObject(props as unknown as Record<string, unknown>);
-  sdk.capture(eventName, safeProps);
+  try {
+    sdk.capture(eventName, safeProps);
+  } catch {
+    // Explicit analytics is best-effort; product actions never depend on it.
+  }
 }
 
 /**
@@ -106,36 +116,54 @@ export async function track<E extends EventName>(
 export async function identifyUser(internalUserUuid: string): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
-  sdk.identify(internalUserUuid);
+  try {
+    sdk.identify(internalUserUuid);
+  } catch {
+    // Identity enrichment is best-effort.
+  }
 }
 
 /** Clear identity on logout. */
 export async function resetIdentity(): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
-  sdk.reset();
+  try {
+    sdk.reset();
+  } catch {
+    // Logout/navigation must never depend on analytics cleanup.
+  }
 }
 
 /**
  * Withdraw analytics consent (GDPR Art. 7(3) — the D147 banner's
- * counterpart). Grabs the SDK handle FIRST, while consent still reads
- * "all" (null when it never loaded — no consent, no key, server-side),
- * then flips the stored choice to "essential" in both stores. Because
- * `loadSdk` re-checks consent on every call, `track()` and
- * `identifyUser()` no-op immediately after the flip — no reload needed.
- * `reset()` additionally drops the identity the SDK stored locally.
+ * counterpart). Flips the stored choice synchronously BEFORE touching
+ * the SDK, so a slow/rejected dynamic import can never leave capture
+ * enabled after the UI says Essential only. If an SDK load already
+ * exists, reset it best-effort; withdrawal never starts a new analytics
+ * download and never depends on reset succeeding.
  *
  * The upgrade path needs no counterpart here: storing "all"
  * (`storeConsent('all')`) is enough, since the same per-call gate picks
  * consent up on the next `track()`.
  */
 export async function withdrawAnalyticsConsent(): Promise<void> {
-  const sdk = await loadSdk();
   storeConsent('essential');
-  if (sdk) sdk.reset();
+  const pendingSdk = sdkPromise;
+  if (!pendingSdk) return;
+  try {
+    const sdk = await pendingSdk;
+    sdk?.reset();
+  } catch {
+    // Consent is already withdrawn. SDK cleanup is best-effort only.
+  }
 }
 
 /** Test seam — drops the cached SDK promise so a fresh init happens. */
 export function __resetForTests(): void {
   sdkPromise = null;
+}
+
+/** Test seam for slow/rejected SDK-load withdrawal regressions. */
+export function __setSdkPromiseForTests(promise: Promise<PosthogSdk | null>): void {
+  sdkPromise = promise;
 }

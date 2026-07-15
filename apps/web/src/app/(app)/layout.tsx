@@ -3,12 +3,17 @@
 import type { ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
-import { hasCapability } from '@declutrmail/shared/entitlements';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+} from '@declutrmail/shared/entitlements';
 import { GracePeriodBanner } from '@/features/account-deletion/grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
+import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
-import { ProChip } from '@/features/billing/pro-chip';
+import { PlanChip } from '@/features/billing/pro-chip';
 import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
@@ -120,6 +125,7 @@ function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { me } = useAuth();
+  useAnalyticsIdentity(me.user.id);
   // D245: `snoozed` remains the internal capability/nav key, while
   // `/later` is the canonical user-facing route.
   const routeSegment = pathname.split('/')[1] || 'senders';
@@ -157,15 +163,19 @@ function AppChrome({ children }: { children: ReactNode }) {
   const screenerCount = useScreenerCount({ enabled: screenerUnlocked && hasActiveMailbox });
   const screenerPending = screenerUnlocked ? screenerCount.data?.pending : undefined;
 
-  // "Pro" chips on locked nav items (2026-07-10 dogfood): six nav
+  // Plan chips on locked nav items (2026-07-10 dogfood): paid nav
   // surfaces are tier-gated but nothing marked them, so users
   // discovered paywalls by clicking into them. Chip only when LOCKED —
   // an unlocked feature's slot stays free for real badges (screener
   // pending count below).
-  const proChips = Object.fromEntries(
-    (['brief', 'followups', 'snoozed', 'screener', 'quiet', 'autopilot'] as const)
+  const tierChips = Object.fromEntries(
+    (['triage', 'brief', 'followups', 'snoozed', 'screener', 'quiet', 'autopilot'] as const)
       .filter((cap) => !hasCapability(tier, cap))
-      .map((cap) => [cap, <ProChip key={cap} />]),
+      .map((cap) => {
+        const requiredTier = minimumTierForCapability(cap);
+        const plan = TIER_MANIFEST[requiredTier].name;
+        return [cap, <PlanChip key={cap} plan={plan === 'Plus' ? 'Plus' : 'Pro'} />];
+      }),
   );
 
   // Onboarding incomplete — `useOnboardingGate` has already issued
@@ -214,7 +224,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             ONLY — its session-scoped status poll 409-storms without one, so
             it stays off on the user-scoped-route fallback (settings/billing
             rendered with no active mailbox). */}
-        {hasActiveMailbox && <SyncErrorBanner />}
+        {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
         {/* Return recovery is an all-tier safety guarantee. Successful
             returns stay silent; only missed/failed timers surface. */}
         <LaterReturnAlert enabled={hasActiveMailbox} />
@@ -223,7 +233,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             active={active}
             onNavigate={(id) => router.push(id === 'snoozed' ? '/later' : `/${id}`)}
             counts={{
-              ...proChips,
+              ...tierChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),
               // Element badge — the sidebar renders it as-is, so the
               // D74 pulse + aria-label + hide-at-zero all apply.
@@ -237,7 +247,7 @@ function AppChrome({ children }: { children: ReactNode }) {
                 {/* Same 409-storm guard as SyncErrorBanner — the button
                     polls session-scoped sync status, meaningless (and
                     unresolvable) with no active mailbox. */}
-                {hasActiveMailbox && <SyncNowButton />}
+                {hasActiveMailbox && <SyncNowButton mailboxId={me.activeMailboxId ?? undefined} />}
                 <AccountMenu />
               </div>
             }
@@ -253,7 +263,12 @@ function AppChrome({ children }: { children: ReactNode }) {
       {/* D245 — one receipt/undo host survives navigation between every
           mailbox-backed product surface. The Z shortcut remains a Triage
           affordance; other screens still show the same server-backed tray. */}
-      {hasActiveMailbox && <ProductUndoTray enableShortcut={active === 'triage'} />}
+      {hasActiveMailbox && (
+        <ProductUndoTray
+          enableShortcut={active === 'triage'}
+          mailboxId={me.activeMailboxId ?? undefined}
+        />
+      )}
       <ToastHost />
     </>
   );

@@ -5,26 +5,9 @@ import { fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 const { color, font, radius } = tokens;
-
-/**
- * Build a Gmail deep link for a specific thread.
- *
- * Per the D039 task spec: `https://mail.google.com/mail/u/0/#inbox/${threadId}`.
- *
- * D231 introduces `GmailOpenLinkService` (`#all/<id>` primary +
- * `#search/from:…+subject:…+after:…+before:…` fallback) which will
- * own this URL construction once the service lands. Until then the
- * inbox-style deep link from the task spec is the contract. The
- * helper is intentionally isolated so the swap is one import away.
- *
- * TODO(D231): replace with `gmailOpenLinkService.buildOpenLink(msg)`
- * once the service merges. Tracked in the plan as part of D231.
- */
-export function gmailDeepLink(threadId: string): string {
-  return `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(threadId)}`;
-}
 
 /**
  * Recent messages list (D39 #4, D41).
@@ -36,7 +19,15 @@ export function gmailDeepLink(threadId: string): string {
  * The empty state handles "no recent messages" (a fresh add, or a
  * sender that recently went dark) — D211/D212.
  */
-export function RecentMessages({ messages }: { messages: RecentMessage[] }) {
+export function RecentMessages({
+  messages,
+  mailboxEmail,
+  senderEmail,
+}: {
+  messages: RecentMessage[];
+  mailboxEmail: string | null;
+  senderEmail: string;
+}) {
   return (
     <section
       aria-label="Recent messages"
@@ -109,7 +100,7 @@ export function RecentMessages({ messages }: { messages: RecentMessage[] }) {
                 padding: '10px 0',
               }}
             >
-              <MessageRow message={m} />
+              <MessageRow message={m} mailboxEmail={mailboxEmail} senderEmail={senderEmail} />
             </li>
           ))}
         </ol>
@@ -118,7 +109,25 @@ export function RecentMessages({ messages }: { messages: RecentMessage[] }) {
   );
 }
 
-function MessageRow({ message }: { message: RecentMessage }) {
+function MessageRow({
+  message,
+  mailboxEmail,
+  senderEmail,
+}: {
+  message: RecentMessage;
+  mailboxEmail: string | null;
+  senderEmail: string;
+}) {
+  const gmailHref = mailboxEmail
+    ? GmailOpenLinkService.buildOpenLink({
+        mailboxEmail,
+        gmailMessageId: message.providerMessageId,
+        senderEmail,
+        subject: message.subject,
+        internalDate: message.receivedAt,
+      })
+    : null;
+
   return (
     <div
       style={{
@@ -143,40 +152,56 @@ function MessageRow({ message }: { message: RecentMessage }) {
         }}
       />
       <div style={{ minWidth: 0 }}>
-        <a
-          href={gmailDeepLink(message.threadId)}
-          target="_blank"
-          rel="noopener noreferrer"
-          // D38 session-3: per-row Gmail deep-link instrumentation.
-          // The "Open all in Gmail" header link already fires this
-          // event (source='sender_detail_open_all', kind='all_from_
-          // sender'); the per-row click was previously silent.
-          // Privacy (D7): no subject / snippet / address in the event
-          // payload — only the source surface + deep-link shape.
-          onClick={() => {
-            void track('gmail_deep_link_opened', {
-              source: 'recent_messages_row',
-              deep_link_kind: 'thread',
-            });
-            addBreadcrumb({
-              category: 'navigation',
-              message: 'gmail-deep-link: recent-messages-row',
-              level: 'info',
-            });
-          }}
-          style={{
-            display: 'block',
-            fontSize: 13.5,
-            fontWeight: message.unread ? 600 : 500,
-            color: color.fg,
-            textDecoration: 'none',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {message.subject}
-        </a>
+        {gmailHref ? (
+          <a
+            href={gmailHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            // D38 session-3: per-row Gmail deep-link instrumentation.
+            // The "Open all in Gmail" header link already fires this
+            // event (source='sender_detail_open_all', kind='all_from_
+            // sender'); the per-row click was previously silent.
+            // Privacy (D7): no subject / snippet / address in the event
+            // payload — only the source surface + deep-link shape.
+            onClick={() => {
+              void track('gmail_deep_link_opened', {
+                source: 'recent_messages_row',
+                deep_link_kind: 'thread',
+              });
+              addBreadcrumb({
+                category: 'navigation',
+                message: 'gmail-deep-link: recent-messages-row',
+                level: 'info',
+              });
+            }}
+            style={{
+              display: 'block',
+              fontSize: 13.5,
+              fontWeight: message.unread ? 600 : 500,
+              color: color.fg,
+              textDecoration: 'none',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {message.subject}
+          </a>
+        ) : (
+          <span
+            style={{
+              display: 'block',
+              fontSize: 13.5,
+              fontWeight: message.unread ? 600 : 500,
+              color: color.fg,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {message.subject}
+          </span>
+        )}
         <span
           style={{
             display: 'block',

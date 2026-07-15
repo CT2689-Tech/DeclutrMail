@@ -19,7 +19,7 @@ import { MONEY_BACK_NOTE, planPriceLabel } from './billing-model';
 const { color, font, radius, shadow } = tokens;
 
 /**
- * TierGate (D68/D77) — entitlement gate for Pro feature screens.
+ * TierGate (D19/D68/D77) — entitlement gate for paid feature screens.
  *
  * Wraps a feature screen; renders the children only when the workspace
  * tier grants the capability (D19 manifest — the same source the BE
@@ -56,15 +56,18 @@ export function TierGate({
 }) {
   const { tier } = useTier();
   const granted = hasCapability(tier, capability);
+  const requiredTierId = minimumTierForCapability(capability);
 
   useEffect(() => {
     if (granted) return;
-    void track('upgrade_prompt_shown', { reason: 'feature_tier_required', source: 'tier_gate' });
-  }, [granted]);
+    void track('upgrade_prompt_shown', {
+      reason: requiredTierId === 'pro' ? 'pro_feature' : 'feature_tier',
+      source: 'tier_gate',
+    });
+  }, [granted, requiredTierId]);
 
   if (granted) return <>{children}</>;
 
-  const requiredTierId = minimumTierForCapability(capability);
   const requiredMonthly = planPriceLabel(requiredTierId, 'monthly');
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
 
@@ -158,7 +161,8 @@ export function TierGate({
               whiteSpace: 'nowrap',
             }}
           >
-            Upgrade to {requiredTier} → {requiredMonthly}
+            Upgrade to {requiredTier}
+            {requiredMonthly ? ` → ${requiredMonthly}` : ''}
           </Link>
           <Link
             href="/pricing"

@@ -4,12 +4,12 @@ import type { ReactNode } from 'react';
 
 import { track } from '@/lib/posthog';
 
-type LandingCta = 'connect_gmail' | 'open_app' | 'see_pricing';
-type LandingPlacement = 'nav' | 'hero' | 'pricing_teaser' | 'final';
+type LandingCta = 'connect_gmail' | 'open_app' | 'see_pricing' | 'try_demo';
+type LandingPlacement = 'nav' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
 
 /**
- * Anchor that fires the D159 `landing_cta_clicked` funnel event on
- * click, then lets the browser follow the href normally. Plain <a>
+ * Anchor that fires the legacy-named D159 `landing_cta_clicked` public
+ * acquisition event on click, then lets the browser follow the href normally. Plain <a>
  * (not next/link) on purpose: `connect_gmail` is a cross-origin hop
  * to the API's OAuth start endpoint, and `/senders` re-enters the
  * authed app shell — neither benefits from client-side routing.
@@ -19,12 +19,14 @@ export function TrackedCta({
   cta,
   placement,
   className,
+  onClick,
   children,
 }: {
   href: string;
   cta: LandingCta;
   placement: LandingPlacement;
   className?: string | undefined;
+  onClick?: (() => void) | undefined;
   children: ReactNode;
 }) {
   return (
@@ -34,6 +36,7 @@ export function TrackedCta({
       onClick={() => {
         // Fire-and-forget: navigation must never wait on telemetry.
         void track('landing_cta_clicked', { cta, placement });
+        onClick?.();
       }}
     >
       {children}

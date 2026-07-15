@@ -12,9 +12,9 @@ const { color, font } = tokens;
  * D226 mandatory preview for the D104 approve flow — both "Approve
  * all" (every pending suggestion for one rule) and "Approve selected"
  * (the checked subset). Approving flips the matches to `approved` and
- * enqueues the action sweep, so mail WILL move: the preview enumerates
- * the exact senders and states the verb-true consequence before the
- * mutation fires.
+ * enqueues the action sweep. This preview enumerates the sender scope;
+ * Gmail is re-checked at execution, so it never claims a frozen message
+ * count.
  *
  * Copy honesty (D230, D58): archive/Later actions are undoable from
  * Activity; one-click unsubscribes cannot be recalled, and mailto

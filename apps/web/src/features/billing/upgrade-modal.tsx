@@ -9,6 +9,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { useTier } from '@/features/auth/api/use-tier';
 import {
   useUpgradeGateStore,
+  type ActionTierDetails,
   type FreeCapDetails,
   type InboxLimitDetails,
 } from '@/lib/entitlements/upgrade-gate';
@@ -28,6 +29,8 @@ const { color, font, radius } = tokens;
  *     are spent (or the attempted bulk needs more than remain).
  *   - `INBOX_LIMIT_REACHED` — connecting another Gmail account would
  *     exceed the tier's inbox limit.
+ *   - `ACTION_TIER_REQUIRED` — an Action Registry selector requires a
+ *     higher plan (Free multi-sender actions require Plus).
  *
  * Copy is tier-appropriate per D123's nudge ladder: Free hears what
  * Plus/Pro unlock, Plus hears the Pro automation set, Pro gets the
@@ -63,6 +66,9 @@ export function UpgradeModal() {
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
   const proMonthly = planPriceLabel('pro', 'monthly');
+  const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
+  const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
+  const actionTierMonthly = actionTier ? planPriceLabel(actionTier, 'monthly') : null;
 
   return (
     <>
@@ -99,14 +105,22 @@ export function UpgradeModal() {
         }}
       >
         <div style={{ padding: '20px 24px 16px' }}>
-          <Eyebrow>{hit.reason === 'free_cap' ? 'Free plan limit' : 'Inbox limit'}</Eyebrow>
+          <Eyebrow>
+            {hit.reason === 'free_cap'
+              ? 'Free plan limit'
+              : hit.reason === 'action_tier'
+                ? `${actionTierName} workflow`
+                : 'Inbox limit'}
+          </Eyebrow>
           <h2
             id="dm-upgrade-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
           >
             {hit.reason === 'free_cap'
               ? freeCapTitle(hit.details)
-              : inboxLimitTitle(hit.details, tierName(tier))}
+              : hit.reason === 'action_tier'
+                ? actionTierTitle(hit.details)
+                : inboxLimitTitle(hit.details, tierName(tier))}
           </h2>
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
             {hit.reason === 'free_cap' ? (
@@ -114,6 +128,12 @@ export function UpgradeModal() {
                 Completed mail actions stay in place. Plus unlocks unlimited sender actions for{' '}
                 {planPriceLabel('plus', 'monthly')}. Pro could do this for you automatically &mdash;
                 Autopilot, Daily Brief, and Quiet Hours for {proMonthly}.
+              </>
+            ) : hit.reason === 'action_tier' ? (
+              <>
+                Free still includes five lifetime cleanup actions, one sender at a time. Select one
+                sender to continue, or {actionTierName} unlocks multi-sender cleanup
+                {actionTierMonthly ? ` for ${actionTierMonthly}` : ''}.
               </>
             ) : nudge ? (
               <>
@@ -187,6 +207,13 @@ function freeCapTitle(d: FreeCapDetails): string {
 
 function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {
   return `Your ${tierLabel} plan includes ${d.limit} connected ${d.limit === 1 ? 'inbox' : 'inboxes'}`;
+}
+
+function actionTierTitle(d: ActionTierDetails): string {
+  const plan = tierName(d.requiredTier);
+  return d.selector === 'multi-sender'
+    ? `Multi-sender actions are part of ${plan}`
+    : `This action is part of ${plan}`;
 }
 
 function tierName(tier: string): string {

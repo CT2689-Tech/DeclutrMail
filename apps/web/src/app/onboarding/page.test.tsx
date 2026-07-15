@@ -20,6 +20,7 @@ import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
+import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
 let searchParams = new URLSearchParams();
@@ -49,7 +50,7 @@ const me401: FetchStubHandler = {
   respond: () => json({ message: 'unauthenticated' }, 401),
 };
 
-const meAuthed = (readiness: 'ready' | 'syncing'): FetchStubHandler => ({
+const meAuthed = (readiness: 'ready' | 'syncing', tier: TierId = 'pro'): FetchStubHandler => ({
   method: 'GET',
   path: '/api/auth/me',
   respond: () =>
@@ -60,6 +61,8 @@ const meAuthed = (readiness: 'ready' | 'syncing'): FetchStubHandler => ({
           { id: 'mb1', email: 'a@b.com', status: 'active', connectedAt: null, readiness },
         ],
         activeMailboxId: 'mb1',
+        tier,
+        cleanupRemaining: tier === 'free' ? 5 : null,
       },
     }),
 });
@@ -106,6 +109,40 @@ const emptyRules: FetchStubHandler = {
   respond: () => json({ data: [] }),
 };
 
+const secondaryMe = (targetMailboxId = 'mb2'): FetchStubHandler => ({
+  method: 'GET',
+  path: '/api/auth/me',
+  respond: () =>
+    json({
+      data: {
+        user: { id: 'u1', email: 'a@b.com', workspaceId: 'w1' },
+        mailboxes: [
+          {
+            id: 'mb1',
+            email: 'a@b.com',
+            status: 'active',
+            connectedAt: null,
+            readiness: 'ready',
+          },
+          {
+            id: targetMailboxId,
+            email: 'c@d.com',
+            status: 'active',
+            connectedAt: null,
+            readiness: 'syncing',
+          },
+        ],
+        activeMailboxId: 'mb1',
+      },
+    }),
+});
+
+const setPrimaryActive: FetchStubHandler = {
+  method: 'PATCH',
+  path: '/api/mailboxes/mb1/active',
+  respond: () => json({ data: { activeMailboxId: 'mb1' } }),
+};
+
 function renderPage() {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
@@ -140,7 +177,7 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
 });
 
 describe('onboarding page — authed resume (D106 derivation)', () => {
-  it('ready mailbox + no picks resumes at step 4 (steps 1-3 skipped honestly)', async () => {
+  it('Pro ready mailbox + no picks resumes at the preset picker', async () => {
     installFetchStub([meAuthed('ready'), onboardingState(), syncStatus(true), emptyRules]);
     renderPage();
 
@@ -148,6 +185,45 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue without rules' })).toBeInTheDocument();
   });
+
+  it.each(['free', 'plus'] as const)(
+    '%s continues with no rules and never reads the Pro Autopilot API',
+    async (tier) => {
+      let autopilotReads = 0;
+      let submittedPicks: unknown;
+      installFetchStub([
+        meAuthed('ready', tier),
+        onboardingState(),
+        syncStatus(true),
+        {
+          method: 'GET',
+          path: '/api/autopilot/rules',
+          respond: () => {
+            autopilotReads += 1;
+            return json({ data: [] });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/onboarding/preset-picks',
+          respond: async (req) => {
+            submittedPicks = (await req.json()) as unknown;
+            return json({ data: { presetKeys: [], rulesSeeded: false } });
+          },
+        },
+      ]);
+      renderPage();
+
+      expect(await screen.findByText('Your first sender review is ready.')).toBeInTheDocument();
+      expect(screen.queryByText('Pick your starting rules.')).not.toBeInTheDocument();
+      expect(autopilotReads).toBe(0);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Review my first sender' }));
+
+      await waitFor(() => expect(submittedPicks).toEqual({ presetKeys: [] }));
+      expect(autopilotReads).toBe(0);
+    },
+  );
 
   it('syncing mailbox renders the strict gate at step 3 of 5', async () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
@@ -167,41 +243,42 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
   });
+
+  it('preserves a validated pricing choice through first-run onboarding', async () => {
+    searchParams = new URLSearchParams({
+      returnTo: '/billing?cycle=annual&promo=foundingPro&plan=pro',
+    });
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ onboardedAt: '2026-06-11T00:00:00.000Z' }),
+      syncStatus(true),
+    ]);
+    renderPage();
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual&promo=foundingPro'),
+    );
+  });
+
+  it('drops an untrusted onboarding destination', async () => {
+    searchParams = new URLSearchParams({
+      returnTo: 'https://evil.example/billing?plan=pro&cycle=annual',
+    });
+    installFetchStub([
+      meAuthed('ready'),
+      onboardingState({ onboardedAt: '2026-06-11T00:00:00.000Z' }),
+      syncStatus(true),
+    ]);
+    renderPage();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+  });
 });
 
 describe('onboarding page — secondary connect entry (D116, unchanged)', () => {
   it('?mailbox= renders the gate without the 5-step counter', async () => {
     searchParams = new URLSearchParams('mailbox=mb2');
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/auth/me',
-        respond: () =>
-          json({
-            data: {
-              user: { id: 'u1', email: 'a@b.com', workspaceId: 'w1' },
-              mailboxes: [
-                {
-                  id: 'mb1',
-                  email: 'a@b.com',
-                  status: 'active',
-                  connectedAt: null,
-                  readiness: 'ready',
-                },
-                {
-                  id: 'mb2',
-                  email: 'c@d.com',
-                  status: 'active',
-                  connectedAt: null,
-                  readiness: 'syncing',
-                },
-              ],
-              activeMailboxId: 'mb1',
-            },
-          }),
-      },
-      syncStatus(false),
-    ]);
+    installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
@@ -210,4 +287,56 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
+
+  it('keeps the normal secondary-connect ready exit on /senders', async () => {
+    searchParams = new URLSearchParams({ mailbox: 'mb2' });
+    installFetchStub([secondaryMe(), syncStatus(true)]);
+    renderPage();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+  });
+
+  it('returns a ready targeted reconnect to its fixed Settings result and encodes the target', async () => {
+    const mailboxId = 'mailbox/with spaces?#';
+    searchParams = new URLSearchParams({ mailbox: mailboxId, reconnect: '1' });
+    installFetchStub([secondaryMe(mailboxId), syncStatus(true)]);
+    renderPage();
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        '/settings?reconnect_result=success#mailbox-mailbox%2Fwith%20spaces%3F%23',
+      ),
+    );
+  });
+
+  it.each(['true', '01', '/settings?reconnect_result=success'])(
+    'ignores malformed reconnect flag %s and keeps the normal exit',
+    async (reconnect) => {
+      searchParams = new URLSearchParams({ mailbox: 'mb2', reconnect });
+      installFetchStub([secondaryMe(), syncStatus(true)]);
+      renderPage();
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+      expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('reconnect_result'));
+    },
+  );
+
+  it.each([
+    ['normal secondary connect', '', '/senders'],
+    ['targeted reconnect', '1', '/settings?reconnect_result=success#mailbox-mb2'],
+  ])(
+    'uses the correct fixed exit from the escape hatch for %s',
+    async (_label, reconnect, exit) => {
+      searchParams = new URLSearchParams({
+        mailbox: 'mb2',
+        ...(reconnect ? { reconnect } : {}),
+      });
+      installFetchStub([secondaryMe(), syncStatus(false), setPrimaryActive]);
+      renderPage();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Go back to a@b.com' }));
+
+      await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
+    },
+  );
 });

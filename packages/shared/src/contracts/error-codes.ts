@@ -112,8 +112,8 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'This Google account is already connected to a different DeclutrMail workspace. ' +
-      'Sign in with that account or disconnect it from the other workspace first.',
+      'This Google account is already connected to another DeclutrMail workspace. ' +
+      "Sign in to the existing workspace to use it. Moving Gmail accounts between workspaces isn't supported yet.",
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---
@@ -123,6 +123,12 @@ export const ERROR_CODES = {
     retryable: false,
     message:
       "You've used all 5 free sender actions. Upgrade for unlimited actions — everything you've already done stays done.",
+  },
+  ACTION_TIER_REQUIRED: {
+    status: 402,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This action needs a higher plan. Upgrade to continue.',
   },
   INBOX_LIMIT_REACHED: {
     status: 402,

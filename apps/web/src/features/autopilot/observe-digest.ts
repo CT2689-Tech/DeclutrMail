@@ -26,8 +26,8 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
     case 'later':
       return `Would have moved ${emails} from ${senders} to Later in the last 7 days`;
     case 'unsubscribe':
-      // Unsubscribe acts per sender (an intent), not per message — the
-      // sender count is the honest number here.
+      // Unsubscribe requests act per sender, not per message. A match
+      // does not prove the sender will honor the request.
       return `Would have requested unsubscribe from ${senders} in the last 7 days`;
   }
 }

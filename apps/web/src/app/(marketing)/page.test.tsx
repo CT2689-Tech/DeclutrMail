@@ -31,11 +31,11 @@ describe('landing page — D134', () => {
     expect(h1.textContent).toBe('Control Gmail by sender, not by email.');
   });
 
-  it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section + footer)', () => {
+  it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section)', () => {
     const { container } = renderLanding();
     // Headline appears once per badge mount; the storage list rides along.
-    expect(screen.getAllByText('Full bodies fetched: 0').length).toBeGreaterThanOrEqual(3);
-    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('Full bodies fetched: 0').length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(2);
   });
 
   it('never renders banned privacy phrasing (D228) or a user-facing "Screen" verb (D227)', () => {
@@ -75,33 +75,26 @@ describe('landing page — D134', () => {
     expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
   });
 
-  it('visibly marks the hero ledger and its sample counts as illustrative', () => {
+  it('leaves the one-shot hero demo on an informative completed state', () => {
     const { container } = renderLanding();
-    const ledger = container.querySelector('.dm-mkt-ledger');
-
-    expect(ledger).not.toBeNull();
-    expect(ledger?.querySelector('.dm-mkt-ledger-demo-label')).toHaveTextContent(
-      'Illustrative demo',
-    );
+    const receipt = container.querySelector('.dm-mkt-ledger-receipt');
+    expect(receipt?.textContent).toContain('412 messages archived from Inbox');
+    expect(receipt?.textContent).toContain('Still searchable in All Mail');
+    expect(receipt?.textContent).toContain('existing mail only');
+    expect(
+      screen.getByRole('img', {
+        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing mail only/i,
+      }),
+    ).toBeInTheDocument();
   });
 
-  it('uses action-specific recovery and bounded privacy/deletion claims', () => {
-    const { container } = renderLanding();
-    const text = container.textContent ?? '';
-    expect(text).toMatch(/Activity Undo through the plan window/);
-    expect(text).toMatch(/Archive, Later, and Delete use your plan's Activity Undo window/);
-    expect(text).toMatch(/Gmail Trash recovery is separate/);
-    expect(text).toMatch(/pseudonymous security and deletion evidence remains/i);
-    expect(text).not.toMatch(/· reversible|whole list|full purge/i);
-  });
-
-  it('points the primary CTA at the OAuth start endpoint and links the legal + pricing routes', () => {
+  it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', () => {
     const { container } = renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
     expect(ctas.filter((href) => href?.endsWith('/api/auth/google/start')).length).toBeGreaterThan(
       0,
     );
-    for (const route of ['/pricing', '/privacy', '/terms', '/refunds', '/cookies']) {
+    for (const route of ['/inbox-simulator', '/pricing', '/privacy']) {
       expect(ctas).toContain(route);
     }
   });

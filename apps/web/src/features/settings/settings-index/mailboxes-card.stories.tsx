@@ -8,9 +8,12 @@
 //   • SyncFailed       — readiness failed tag
 //   • NeedsReconnect   — OAuth grant gone on an active account
 //                        (danger tag + Reconnect affordance)
+//   • NeedsReconnectAtLimit — active revoked account can reauthorize
+//                        without consuming another inbox slot
+//   • ReconnectResultHighlighted — returned OAuth target is acknowledged
 //   • Disconnected     — one account disconnected (Reconnect)
-//   • AtLimit          — connect + reconnect disabled at the tier's
-//                        inboxLimit
+//   • DisconnectedAtLimit — reactivation remains limit-gated
+//   • AtLimit          — connect-another disabled at the tier's inboxLimit
 //   • Empty            — zero mailboxes connected
 
 import type { ComponentProps } from 'react';
@@ -37,7 +40,7 @@ const meta: StoryMeta<typeof MailboxesCard> = {
     docs: {
       description: {
         component:
-          'Settings → Mailboxes (D114 "Inboxes" + D115 health, scoped). Connected Gmail accounts with status / readiness / last-synced stamp / active marker, a Reconnect affordance for disconnected or invalid-grant accounts (same OAuth flow as connect-another), and connect-another gated by the tier inboxLimit. Switch / disconnect stay in the header account menu (reuse, not rebuild).',
+          'Settings → Mailboxes (D114 "Inboxes" + D115 health, scoped). Connected Gmail accounts with status / readiness / last-synced stamp / active marker. Invalid-grant accounts use target-bound reconnect and remain enabled at the plan limit because they are already counted; disconnected accounts use target-bound reactivation, while reactivation and connect-another remain limit-gated.',
       },
     },
   },
@@ -84,6 +87,7 @@ const baseArgs: CardArgs = {
   inboxLimit: 2,
   healthById: HEALTHY,
   onConnect: noop,
+  onReactivate: noop,
 };
 
 export const TwoConnected: Story<typeof MailboxesCard> = {
@@ -122,10 +126,41 @@ export const NeedsReconnect: Story<typeof MailboxesCard> = {
   },
 };
 
+export const NeedsReconnectAtLimit: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    healthById: {
+      [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id],
+      [MAILBOX_B.id]: {
+        lastSyncedAt: new Date(Date.now() - 26 * 60 * 60_000).toISOString(),
+        needsReconnect: true,
+      },
+    },
+  },
+};
+
+export const ReconnectResultHighlighted: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 3,
+    activeMailboxId: MAILBOX_B.id,
+    highlightMailboxId: MAILBOX_B.id,
+  },
+};
+
 export const Disconnected: Story<typeof MailboxesCard> = {
   args: {
     ...baseArgs,
     inboxLimit: 3,
+    mailboxes: [MAILBOX_A, { ...MAILBOX_B, status: 'disconnected' as const }],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+export const DisconnectedAtLimit: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    inboxLimit: 1,
     mailboxes: [MAILBOX_A, { ...MAILBOX_B, status: 'disconnected' as const }],
     healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
   },

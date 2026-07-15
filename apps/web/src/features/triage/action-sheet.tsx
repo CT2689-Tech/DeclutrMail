@@ -40,6 +40,7 @@ export function ActionSheet({
   row,
   inboxCount,
   wakeAt = null,
+  mailboxEmail,
   onCancel,
   onConfirm,
   onRetryPreview,
@@ -51,31 +52,52 @@ export function ActionSheet({
   /** Live inbox count for the preview's impact figure (D226). */
   inboxCount: PreviewCount;
   wakeAt?: string | null;
+  /** Explicit override for isolated previews; app surfaces use active auth context. */
+  mailboxEmail?: string | undefined;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
   onRetryPreview?: (() => void) | undefined;
 }) {
-  // Unsubscribe defaults to clearing the backlog (the common intent
-  // when cutting a sender off). Archive and Later ignore the toggle —
+  // Unsubscribe defaults to leaving the backlog alone. It is a separate
+  // Gmail mutation and a second cleanup unit on Free, so it must be an
+  // explicit opt-in. Archive and Later ignore the toggle —
   // both verbs already act on every inbox message from the sender
   // (the worker resolves "in INBOX now"), so a separate historic
   // toggle would be a no-op lie.
   const [archiveHistoric, setArchiveHistoric] = useState(false);
   const [rememberPreference, setRememberPreference] = useState(false);
   const [selectedWakeAt, setSelectedWakeAt] = useState<string | null>(wakeAt);
+  const actionKey = open && row ? `${verb}:${row.id}` : null;
+  const [initializedActionKey, setInitializedActionKey] = useState<string | null>(null);
+  // The first render of a newly opened Unsubscribe sheet must use its safe
+  // default immediately, before the reset effect runs. Otherwise a fast
+  // Cmd/Ctrl-Enter could observe the previous action's `false` toggle.
+  const effectiveArchiveHistoric =
+    actionKey !== null && initializedActionKey !== actionKey ? false : archiveHistoric;
 
-  useEffect(() => {
-    if (!open) return;
-    setArchiveHistoric(verb === 'Unsubscribe');
-    setRememberPreference(false);
-    setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
-  }, [open, verb, wakeAt]);
-
-  const wakeAtInvalid =
-    verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
+  // Archive/Later always move inbox mail. Unsubscribe only does when the
+  // user keeps the backlog option on. Any such action requires the live
+  // count to have resolved; loading/failure must fail closed for click and
+  // keyboard submission alike.
+  const requiresLivePreview =
+    verb === 'Archive' || verb === 'Later' || (verb === 'Unsubscribe' && effectiveArchiveHistoric);
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
-  const confirmBlocked = wakeAtInvalid || previewUnavailable || previewPending;
+  const wakeAtInvalid =
+    verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
+  const confirmDisabled =
+    (requiresLivePreview && (previewPending || previewUnavailable)) || wakeAtInvalid;
+
+  useEffect(() => {
+    if (!open || actionKey === null) {
+      setInitializedActionKey(null);
+      return;
+    }
+    setArchiveHistoric(false);
+    setRememberPreference(false);
+    setSelectedWakeAt(verb === 'Later' ? wakeAt : null);
+    setInitializedActionKey(actionKey);
+  }, [open, verb, wakeAt, actionKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,21 +105,26 @@ export function ActionSheet({
       if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmBlocked) {
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
-        onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt });
+        onConfirm({
+          archiveHistoric: effectiveArchiveHistoric,
+          rememberPreference,
+          wakeAt: verb === 'Later' ? selectedWakeAt : null,
+        });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [
     open,
-    archiveHistoric,
+    verb,
+    effectiveArchiveHistoric,
     rememberPreference,
     selectedWakeAt,
-    confirmBlocked,
     onCancel,
     onConfirm,
+    confirmDisabled,
   ]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
@@ -164,10 +191,11 @@ export function ActionSheet({
           <ActionPreview
             verb={verb}
             row={row}
-            archiveHistoric={archiveHistoric}
+            archiveHistoric={effectiveArchiveHistoric}
             inboxCount={inboxCount}
             wakeAt={selectedWakeAt}
             mode="modal"
+            mailboxEmail={mailboxEmail}
           />
 
           <ContextualHelp question="Why do I review this before confirming?">
@@ -203,29 +231,42 @@ export function ActionSheet({
 
           {showHistoricToggle && (
             <button
-              onClick={() => setArchiveHistoric((v) => !v)}
+              onClick={() => setArchiveHistoric(!effectiveArchiveHistoric)}
               type="button"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 10,
                 padding: '10px 12px',
-                background: archiveHistoric ? color.primarySoft : 'transparent',
-                border: `1px solid ${archiveHistoric ? color.primaryBorder : color.line}`,
+                background: effectiveArchiveHistoric ? color.primarySoft : 'transparent',
+                border: `1px solid ${effectiveArchiveHistoric ? color.primaryBorder : color.line}`,
                 borderRadius: 9,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontFamily: font.sans,
               }}
             >
-              <CheckSquare on={archiveHistoric} />
-              <span style={{ fontSize: 12.5, color: color.fg }}>
-                {/* The live count (never a lifetime estimate — D226). */}
-                Also archive the
-                {typeof inboxCount === 'number'
-                  ? ` ${inboxCount.toLocaleString()} email${inboxCount === 1 ? '' : 's'}`
-                  : ' emails'}{' '}
-                already in the inbox
+              <CheckSquare on={effectiveArchiveHistoric} />
+              <span
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  fontSize: 12.5,
+                  color: color.fg,
+                }}
+              >
+                <span>
+                  {/* The live count (never a lifetime estimate — D226). */}
+                  Also archive the
+                  {typeof inboxCount === 'number'
+                    ? ` ${inboxCount.toLocaleString()} email${inboxCount === 1 ? '' : 's'}`
+                    : ' emails'}{' '}
+                  already in the inbox
+                </span>
+                <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+                  On Free, this separate backlog move uses a second cleanup action.
+                </span>
               </span>
             </button>
           )}
@@ -278,9 +319,17 @@ export function ActionSheet({
                 unsubscribe can't be recalled — no undo token exists for
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
-            {verb === 'Unsubscribe'
-              ? "A delivered unsubscribe request can't be recalled — an archived backlog uses your plan's Activity Undo window."
-              : "Undo from Activity during your plan's window."}
+            {confirmDisabled
+              ? wakeAtInvalid
+                ? 'Choose a future return time before confirming Later.'
+                : inboxCount === 'unavailable'
+                  ? "Couldn't load a live preview. Close and retry — no inbox mail can move without one."
+                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              : verb === 'Unsubscribe'
+                ? effectiveArchiveHistoric
+                  ? "The unsubscribe itself can't be undone — the archived backlog uses your plan's Activity undo window."
+                  : "The unsubscribe request can't be undone. Existing inbox mail stays put."
+                : "Reversible for your plan's undo window from Activity."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {previewUnavailable && onRetryPreview && (
@@ -293,9 +342,13 @@ export function ActionSheet({
             </Button>
             <Button
               tone={danger ? 'warn' : 'primary'}
-              disabled={confirmBlocked}
+              disabled={confirmDisabled}
               onClick={() =>
-                onConfirm({ archiveHistoric, rememberPreference, wakeAt: selectedWakeAt })
+                onConfirm({
+                  archiveHistoric: effectiveArchiveHistoric,
+                  rememberPreference,
+                  wakeAt: verb === 'Later' ? selectedWakeAt : null,
+                })
               }
               iconRight={
                 <Kbd

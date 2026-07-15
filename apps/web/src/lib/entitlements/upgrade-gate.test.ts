@@ -1,7 +1,7 @@
 /**
  * Tests for the upgrade-gate store + 402 narrowing (D19/D77/D81).
  *
- * The narrowing must accept EXACTLY the two entitlement codes on a 402
+ * The narrowing must accept exactly the three entitlement codes on a 402
  * and nothing else — a generic 402, a 403, or a non-ApiError must all
  * pass through untouched (they get the caller's normal error handling).
  */
@@ -28,6 +28,14 @@ function inboxLimit402(details?: Record<string, unknown>) {
   );
 }
 
+function actionTier402(details?: Record<string, unknown>) {
+  return new ApiError(
+    402,
+    { error: { code: 'ACTION_TIER_REQUIRED', ...(details ? { details } : {}) } },
+    'POST /api/actions failed: 402',
+  );
+}
+
 beforeEach(() => {
   useUpgradeGateStore.getState().dismiss();
 });
@@ -46,6 +54,26 @@ describe('upgradeGateHitFrom', () => {
   it('extracts INBOX_LIMIT_REACHED details', () => {
     const hit = upgradeGateHitFrom(inboxLimit402({ limit: 1, connected: 1, tier: 'free' }));
     expect(hit).toEqual({ reason: 'inbox_limit', details: { limit: 1, connected: 1 } });
+  });
+
+  it('extracts ACTION_TIER_REQUIRED selector context', () => {
+    const hit = upgradeGateHitFrom(
+      actionTier402({
+        tier: 'free',
+        requiredTier: 'plus',
+        selector: 'multi-sender',
+        verb: 'delete',
+      }),
+    );
+    expect(hit).toEqual({
+      reason: 'action_tier',
+      details: {
+        tier: 'free',
+        requiredTier: 'plus',
+        selector: 'multi-sender',
+        verb: 'delete',
+      },
+    });
   });
 
   it('falls back to D19 defaults when details are malformed', () => {

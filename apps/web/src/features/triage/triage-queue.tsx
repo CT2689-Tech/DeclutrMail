@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
 import { planQueueItems, type DomainBatch } from './domain-batch';
@@ -134,7 +135,9 @@ export function TriageQueue({
             pendingAction.surface === 'inline'
               ? {
                   verb: pendingAction.verb,
-                  archiveHistoric: pendingAction.verb === 'Unsubscribe',
+                  // The remembered-inline path has no backlog toggle, so
+                  // it must retain the safe no-secondary default.
+                  archiveHistoric: false,
                   inboxCount: previewInboxCount,
                   wakeAt: pendingAction.wakeAt,
                 }
@@ -149,6 +152,9 @@ export function TriageQueue({
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}
+                inlinePreviewAccountContext={
+                  inlinePreview == null ? undefined : <MailboxActionContext />
+                }
               />
             </div>
           );

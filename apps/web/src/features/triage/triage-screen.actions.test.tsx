@@ -32,6 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
@@ -48,6 +49,24 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 });
 vi.mock('@/lib/sentry', () => ({
   captureFeatureException: h.captureFeatureException,
+}));
+// The app shell supplies the active mailbox in production. Keep this
+// integration harness account-aware so Gmail handoffs exercise the same
+// mailbox-bound URL contract instead of silently disappearing.
+vi.mock('@/features/auth/auth-provider', () => ({
+  getActiveMailboxEmail: () => 'owner@gmail.com',
+  useOptionalAuth: () => ({
+    me: {
+      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      user: { email: 'owner@gmail.com' },
+      mailboxes: [
+        {
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          email: 'owner@gmail.com',
+        },
+      ],
+    },
+  }),
 }));
 
 const GROUPON = TRIAGE_QUEUE[0]!; // archive verdict, unprotected
@@ -90,8 +109,11 @@ function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
 
-async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe' | 'Later') {
+async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe' | 'Later', waitForPreview = true) {
   const dialog = await screen.findByRole('dialog');
+  if (waitForPreview) {
+    await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+  }
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -192,7 +214,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['undo', 'tray'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 
   it('keeps the acted-on row busy (aria-busy) while the worker has not confirmed', async () => {
@@ -281,12 +303,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
   it('Unsubscribe records the intent AND archives the backlog via the real pipeline', async () => {
     const calls: string[] = [];
+    let unsubscribeBody: unknown = null;
     addFetchHandlers([
       {
         method: 'POST',
         path: '/api/actions/unsubscribe-intent',
-        respond: () => {
+        respond: async (req) => {
           calls.push('unsub-intent');
+          unsubscribeBody = await req.json();
           return jsonOk({
             data: {
               senderId: LINKEDIN.senderId,
@@ -335,12 +359,18 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    // The backlog toggle defaults ON for Unsubscribe; ⌘⏎ confirms.
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    // Backlog is a separate Gmail mutation, so opt in explicitly.
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     // Intent first, then the archive enqueue (the toggle's promise is
     // kept via the real pipeline, not a tracer).
     await waitFor(() => expect(calls).toEqual(['unsub-intent', 'composite-archive']));
+    expect(unsubscribeBody).toEqual({
+      senderId: LINKEDIN.senderId,
+      includesBacklogAction: true,
+    });
   });
 
   it('surfaces a designed 409 (protected sender) without crashing or invalidating', async () => {
@@ -543,6 +573,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /Also archive the/i }));
     await confirmOpenSheet('Unsubscribe');
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
@@ -662,15 +694,12 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     resetFetchStub();
   });
 
-  /** Open the U sheet on LINKEDIN, untoggle the backlog archive, confirm. */
+  /** Open the U sheet on LINKEDIN with the safe no-backlog default, then confirm. */
   async function confirmUnsubWithoutBacklog() {
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
-    await screen.findByRole('dialog');
-    // Untoggle "also archive the backlog" so ONLY the unsub fires —
-    // these tests isolate the execution states.
-    fireEvent.click(screen.getByText(/Also archive the/));
-    await confirmOpenSheet('Unsubscribe');
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    await confirmOpenSheet('Unsubscribe', false);
   }
 
   function intentHandler(data: Record<string, unknown>) {
@@ -715,9 +744,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
-      screen.getByText(
-        "A delivered unsubscribe request can't be recalled — an archived backlog uses your plan's Activity Undo window.",
-      ),
+      screen.getByText("The unsubscribe request can't be undone. Existing inbox mail stays put."),
     ).toBeDefined();
   });
 
@@ -797,7 +824,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     await waitFor(() => expect(screen.getByTestId('unsub-mailto-callout')).toBeDefined());
     const link = screen.getByRole('link', { name: 'Open Gmail draft' });
     expect(link.getAttribute('href')).toBe(
-      'https://mail.google.com/mail/?view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
+      'https://mail.google.com/mail/?authuser=owner%40gmail.com&view=cm&fs=1&to=unsubscribe%40linkedin.example&su=Remove+me',
     );
     // Dismissible.
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss Gmail unsubscribe reminder' }));
@@ -899,5 +926,71 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(useTriageStore.getState().pendingAction).not.toBeNull();
     expect(screen.getByText('Preview · before anything changes')).toBeDefined();
     input.remove();
+  });
+
+  it('blocks second-click and shortcut confirmation when the inline preview is unavailable', async () => {
+    const enqueues: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonServerError('preview_down'),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await screen.findByText(/Close and retry/i);
+    const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
+    expect(archive).toBeDisabled();
+    fireEvent.click(archive);
+    fireEvent.keyDown(window, { key: 'a' });
+    await Promise.resolve();
+
+    expect(enqueues).toHaveLength(0);
+    expect(useTriageStore.getState().pendingAction).not.toBeNull();
+  });
+
+  it('allows the second shortcut to confirm after the inline current-match preview resolves', async () => {
+    const enqueues: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await screen.findByText(/emails currently match in Inbox/i);
+    expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
+    fireEvent.keyDown(window, { key: 'a' });
+
+    await waitFor(() => expect(enqueues).toHaveLength(1));
   });
 });
