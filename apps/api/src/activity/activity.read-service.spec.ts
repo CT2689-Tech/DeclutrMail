@@ -10,6 +10,7 @@ import {
   mailMessages,
   mailboxAccounts,
   productFeedback,
+  ruleMatchLog,
   schema,
   senders,
   undoJournal,
@@ -1608,6 +1609,162 @@ describe('ActivityReadService', () => {
   });
 
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
+
+  describe('weekly review outcomes (D246)', () => {
+    it('counts only terminal factual outcomes and substantiates skip/protection links', async () => {
+      const senderKey = 'weekly-sender';
+      await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'weekly@example.com',
+        'Weekly Sender',
+      );
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        senderKey,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe_failed',
+        senderKey,
+      });
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Weekly rule');
+      const [skipped, protectedMatch] = await db
+        .insert(ruleMatchLog)
+        .values([
+          {
+            ruleId,
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderKey,
+            modeAtMatch: 'observe' as const,
+            confidence: '0.90',
+            reason: 'user skipped',
+            resolution: 'dismissed' as const,
+            resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+            dismissReason: 'user' as const,
+          },
+          {
+            ruleId,
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderKey: 'protected-weekly',
+            modeAtMatch: 'active' as const,
+            confidence: '0.90',
+            reason: 'became protected',
+            resolution: 'dismissed' as const,
+            resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+            dismissReason: 'protected' as const,
+          },
+        ])
+        .returning({ id: ruleMatchLog.id });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        window: '7d',
+        completed: 1,
+        skipped: 1,
+        failed: 1,
+        recovered: 0,
+        protected: 1,
+      });
+
+      const unfiltered = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(unfiltered.rows.map((row) => row.id)).not.toContain(skipped!.id);
+      expect(unfiltered.rows.map((row) => row.id)).not.toContain(protectedMatch!.id);
+
+      const skippedEvidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['skipped'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(skippedEvidence.rows).toHaveLength(1);
+      expect(skippedEvidence.rows[0]).toMatchObject({
+        id: skipped!.id,
+        source: 'autopilot',
+        reviewOutcome: 'skipped',
+        affectedCount: 0,
+      });
+    });
+
+    it('classifies a successful linked recovery once and removes its prior failure', async () => {
+      const senderKey = 'weekly-recovery';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'recovery@example.com',
+        'Recovery Sender',
+      );
+      const rootId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      const recoveryId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'done',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId: rootId,
+        retryOfActionId: rootId,
+        recoveryAttempt: 1,
+      });
+      const token = await seedUndoToken(db, mailboxA.mailboxAccountId, {
+        expiresAt: new Date(NOW_MS + ONE_DAY_MS),
+      });
+      await db.update(actionJobs).set({ undoToken: token }).where(eq(actionJobs.id, recoveryId));
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        undoToken: token,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 0,
+        failed: 0,
+        recovered: 1,
+      });
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['recovered'],
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows).toHaveLength(1);
+      expect(evidence.rows[0]!.reviewOutcome).toBe('recovered');
+    });
+  });
 
   describe('summarizeActivity (DQ16 share receipt)', () => {
     it('counts ONLY the current mailbox — decisions + undos seeded in both mailboxes', async () => {

@@ -7,7 +7,10 @@ import type { ActivityReadService } from './activity.read-service.js';
 import type { ActivitySupportBundleService } from './activity-support-bundle.service.js';
 
 function makeController() {
-  const reads = {} as ActivityReadService;
+  const reads = {
+    listActivity: vi.fn(),
+    getWeeklyReview: vi.fn(),
+  } as unknown as ActivityReadService;
   const bundles = {
     createBundle: vi.fn(() => {
       const stream = new PassThrough();
@@ -15,8 +18,50 @@ function makeController() {
       return Promise.resolve(stream);
     }),
   } as unknown as ActivitySupportBundleService;
-  return { controller: new ActivityController(reads, bundles), bundles };
+  return { controller: new ActivityController(reads, bundles), bundles, reads };
 }
+
+describe('ActivityController weekly review', () => {
+  it.each(['unknown', '', 'completed,unknown'])(
+    'rejects invalid outcome %j instead of silently broadening',
+    async (outcome) => {
+      const { controller } = makeController();
+      await expect(
+        controller.list(
+          { userId: 'user-1', workspaceId: 'workspace-1' },
+          { id: 'mailbox-1' },
+          '7d',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          outcome,
+          undefined,
+          undefined,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
+
+  it('forwards only the current mailbox to the weekly aggregate', async () => {
+    const { controller, reads } = makeController();
+    vi.mocked(reads.getWeeklyReview).mockResolvedValue({
+      window: '7d',
+      from: '2026-05-18T08:00:00.000Z',
+      to: '2026-05-25T08:00:00.000Z',
+      completed: 1,
+      skipped: 2,
+      failed: 3,
+      recovered: 4,
+      protected: 5,
+    });
+    await expect(controller.weeklyReview({ id: 'mailbox-1' })).resolves.toMatchObject({
+      data: { completed: 1, protected: 5 },
+    });
+    expect(reads.getWeeklyReview).toHaveBeenCalledWith('mailbox-1', expect.any(Number));
+  });
+});
 
 describe('ActivityController support bundle', () => {
   it('streams the active-mailbox ZIP with the complete resolved filter set', async () => {

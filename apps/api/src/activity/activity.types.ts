@@ -32,6 +32,9 @@ export type ActivityWindow = '7d' | '30d' | '90d' | 'all';
  */
 export type ActivitySourceFilter = 'all' | ActivityLogEntry['source'];
 
+/** Factual weekly-review classification; null means still in progress/nonterminal. */
+export type ActivityReviewOutcome = 'completed' | 'skipped' | 'failed' | 'recovered' | 'protected';
+
 /**
  * One row on `GET /api/activity`. Sender identity is null-safe — the
  * schema permits account-scoped rows (`sender_key IS NULL`); those
@@ -69,6 +72,20 @@ export interface ActivityRow {
    * that represent confirmed outcomes.
    */
   executionState: ActivityExecutionState | null;
+  /** D246 review bucket, also used by exact evidence links. */
+  reviewOutcome: ActivityReviewOutcome | null;
+}
+
+/** Exact seven-day counts shown by the in-app weekly review. */
+export interface ActivityWeeklyReview {
+  window: '7d';
+  from: string;
+  to: string;
+  completed: number;
+  skipped: number;
+  failed: number;
+  recovered: number;
+  protected: number;
 }
 
 /**
@@ -231,4 +248,6 @@ export interface ActivityListMeta {
   /** Echo back the resolved custom date range (ISO strings); null if unset. */
   dateFrom: string | null;
   dateTo: string | null;
+  /** Echo of the D246 review-outcome filter. */
+  outcomes: ActivityReviewOutcome[];
 }

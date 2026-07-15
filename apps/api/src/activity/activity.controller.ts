@@ -33,10 +33,12 @@ import { ActivitySupportBundleService } from './activity-support-bundle.service.
 import type {
   ActivityListMeta,
   ActivityRow,
+  ActivityReviewOutcome,
   ActivitySourceFilter,
   ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
+  ActivityWeeklyReview,
 } from './activity.types.js';
 
 /** D55 — accepted window values; everything else collapses to default. */
@@ -67,6 +69,14 @@ const ALLOWED_VERBS: ReadonlySet<ActivityVerbFilter> = new Set([
   'later',
   'delete',
   'followup-dismiss',
+]);
+
+const ALLOWED_OUTCOMES: ReadonlySet<ActivityReviewOutcome> = new Set([
+  'completed',
+  'skipped',
+  'failed',
+  'recovered',
+  'protected',
 ]);
 
 /**
@@ -171,6 +181,7 @@ export class ActivityController {
     @Query('sender_q') rawSenderQuery: string | undefined,
     @Query('date_from') rawDateFrom: string | undefined,
     @Query('date_to') rawDateTo: string | undefined,
+    @Query('outcome') rawOutcome: string | string[] | undefined,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
   ): Promise<ActivityListEnvelope> {
@@ -182,6 +193,7 @@ export class ActivityController {
       rawSenderQuery,
       rawDateFrom,
       rawDateTo,
+      rawOutcome,
     });
     const limit = clampLimit(rawLimit, ACTIVITY_LIMIT);
 
@@ -203,6 +215,7 @@ export class ActivityController {
       senderQuery: filters.senderQuery,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
+      outcomes: filters.outcomes,
       cursor,
       limit,
       nowMs: Date.now(),
@@ -234,8 +247,18 @@ export class ActivityController {
         senderQuery: filters.senderQuery,
         dateFrom: filters.dateFrom ? filters.dateFrom.toISOString() : null,
         dateTo: filters.dateTo ? filters.dateTo.toISOString() : null,
+        outcomes: filters.outcomes,
       },
     };
+  }
+
+  /** Exact seven-day factual review counts; no estimates or content. */
+  @Get('weekly-review')
+  @RateLimit('triage-load')
+  async weeklyReview(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<ActivityWeeklyReview>> {
+    return { data: await this.reads.getWeeklyReview(mailbox.id, Date.now()) };
   }
 
   /**
@@ -343,6 +366,7 @@ function resolveActivityFilters(raw: {
   rawSenderQuery: string | undefined;
   rawDateFrom: string | undefined;
   rawDateTo: string | undefined;
+  rawOutcome?: string | string[] | undefined;
 }) {
   const window = resolveWindow(raw.rawWindow);
   const sourceFilter = resolveSource(raw.rawSource);
@@ -359,7 +383,23 @@ function resolveActivityFilters(raw: {
     senderQuery: resolveSenderQuery(raw.rawSenderQuery),
     dateFrom,
     dateTo,
+    outcomes: resolveOutcomes(raw.rawOutcome),
   };
+}
+
+function resolveOutcomes(raw: string | string[] | undefined): ActivityReviewOutcome[] {
+  if (raw === undefined) return [];
+  const seen = new Set<ActivityReviewOutcome>();
+  for (const token of (Array.isArray(raw) ? raw : [raw]).flatMap((entry) => entry.split(','))) {
+    const trimmed = token.trim() as ActivityReviewOutcome;
+    if (!ALLOWED_OUTCOMES.has(trimmed)) {
+      throw new BadRequestException(
+        'outcome must be one of: completed, skipped, failed, recovered, protected.',
+      );
+    }
+    seen.add(trimmed);
+  }
+  return [...seen];
 }
 
 function resolveSenderAddressMode(raw: string | undefined): boolean {

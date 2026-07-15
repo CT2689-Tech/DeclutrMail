@@ -39,6 +39,7 @@ const ROWS: ActivityRow[] = [
       expiresAt: '2026-07-20T05:00:00.000Z',
     },
     executionState: null,
+    reviewOutcome: 'completed',
   },
   {
     id: '22222222-2222-2222-2222-222222222222',
@@ -58,6 +59,7 @@ const ROWS: ActivityRow[] = [
       errorCode: 'GMAIL_PROVIDER_ERROR',
       resolution: 'support',
     },
+    reviewOutcome: 'failed',
   },
 ];
 
