@@ -20,8 +20,9 @@
 -- Reason and set_at go NULL so a sender that later qualifies under a
 -- current signal is re-protected by the next sweep (the sweep's
 -- conflict clause requires reason IS NULL to escalate). Manual
--- protections (is_protected with reason IS NULL) and manual-unprotect
--- memory pins (is_protected = false with reason kept) are untouched.
+-- protections (protection_reason = 'user_defined') and manual-unprotect
+-- memory pins (is_protected = false with reason kept) are untouched —
+-- both UPDATEs therefore require is_protected = true.
 
 UPDATE "sender_policies" AS sp
 SET "is_protected" = false,
@@ -40,4 +41,5 @@ SET "is_protected" = false,
     "protection_reason" = NULL,
     "protection_set_at" = NULL,
     "updated_at" = now()
-WHERE "protection_reason"::text IN ('engagement_based', 'vip');
+WHERE "is_protected" = true
+  AND "protection_reason"::text IN ('engagement_based', 'vip');

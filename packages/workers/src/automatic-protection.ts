@@ -31,7 +31,7 @@ export async function applyAutomaticProtection(
   // sender is not (or no longer) Primary has lost its signal, so the
   // sweep withdraws it. This targets only sweep-authored rows
   // (reason = 'gmail_important'); manual protections carry
-  // 'user_defined'/NULL and manual-unprotect memory pins keep
+  // reason = 'user_defined' and manual-unprotect memory pins keep
   // is_protected = false, so user agency is never overridden. It also
   // makes the rule self-healing against deploy races — a stale worker
   // re-protecting under the old rule is undone by the next sweep.
