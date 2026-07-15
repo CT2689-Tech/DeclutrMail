@@ -493,6 +493,7 @@ describe('AutopilotReadService', () => {
           senderKey: 'b'.repeat(64),
           modeAtMatch: 'observe',
           resolution: 'dismissed',
+          dismissReason: 'user',
           confidence: '0.85',
           reason: 'dismissed',
         },
@@ -583,6 +584,11 @@ describe('AutopilotReadService', () => {
       expect(result!.resolution).toBe('dismissed');
       expect(typeof result!.resolvedAt).toBe('string');
       expect(result!.alreadyDismissed).toBe(false);
+      const [persisted] = await db
+        .select({ dismissReason: ruleMatchLog.dismissReason })
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.id, match!.id));
+      expect(persisted!.dismissReason).toBe('user');
     });
 
     it('returns null on cross-tenant dismiss attempts', async () => {
@@ -889,6 +895,7 @@ describe('AutopilotReadService', () => {
           confidence: '0.92',
           reason: 'dismissed evidence',
           resolution: 'dismissed',
+          dismissReason: 'user',
         },
       ]);
       const result = await service.previewRule(mailboxA, ruleId);
@@ -1047,6 +1054,7 @@ describe('AutopilotReadService', () => {
         reason: 'digest-test',
         matchedAt,
         resolution,
+        ...(resolution === 'dismissed' ? { dismissReason: 'user' as const } : {}),
       });
     }
 

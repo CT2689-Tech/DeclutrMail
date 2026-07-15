@@ -564,7 +564,7 @@ export class AutopilotReadService {
   ): Promise<AutopilotMatchDismissResult | null> {
     const [updated] = await this.db
       .update(ruleMatchLog)
-      .set({ resolution: 'dismissed', resolvedAt: sql`now()` })
+      .set({ resolution: 'dismissed', resolvedAt: sql`now()`, dismissReason: 'user' })
       .where(
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),

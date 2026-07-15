@@ -1,0 +1,10 @@
+-- Rollback for 0043_rule_match_log_dismiss_reason.sql
+--
+-- Drops the dismissal attribution column and its closed enum. Match resolution
+-- remains intact; only user-versus-Protection attribution is lost.
+
+ALTER TABLE "rule_match_log" DROP CONSTRAINT "rule_match_log_dismiss_reason_check";
+--> statement-breakpoint
+ALTER TABLE "rule_match_log" DROP COLUMN "dismiss_reason";
+--> statement-breakpoint
+DROP TYPE "public"."autopilot_match_dismiss_reason";

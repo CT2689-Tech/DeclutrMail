@@ -156,6 +156,62 @@ describe('autopilot rules × match-log integration', () => {
     expect(customs).toHaveLength(2);
   });
 
+  it('stores only the closed D246 match-dismissal reasons', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    const [rule] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId: mbId,
+        isPreset: true,
+        presetKey: 'auto_archive_low_engagement',
+        name: 'Auto-archive low-engagement',
+        actionKind: 'archive',
+      })
+      .returning({ id: automationRules.id });
+
+    await db.insert(ruleMatchLog).values([
+      {
+        ruleId: rule!.id,
+        mailboxAccountId: mbId,
+        senderKey: 'a'.repeat(64),
+        modeAtMatch: 'observe',
+        confidence: '0.90',
+        reason: 'dismissed by user',
+        resolution: 'dismissed',
+        dismissReason: 'user',
+      },
+      {
+        ruleId: rule!.id,
+        mailboxAccountId: mbId,
+        senderKey: 'b'.repeat(64),
+        modeAtMatch: 'active',
+        confidence: '0.90',
+        reason: 'sender became Protected',
+        resolution: 'dismissed',
+        dismissReason: 'protected',
+      },
+    ]);
+    const rows = await db
+      .select({ dismissReason: ruleMatchLog.dismissReason })
+      .from(ruleMatchLog)
+      .orderBy(ruleMatchLog.senderKey);
+    expect(rows.map((row) => row.dismissReason)).toEqual(['user', 'protected']);
+
+    await expect(
+      db.insert(ruleMatchLog).values({
+        ruleId: rule!.id,
+        mailboxAccountId: mbId,
+        senderKey: 'c'.repeat(64),
+        modeAtMatch: 'observe',
+        confidence: '0.90',
+        reason: 'invalid reason',
+        resolution: 'dismissed',
+        dismissReason: 'other' as never,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('defaults match D10/D101/D246 (disabled Observe, no dismissed pattern)', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
@@ -371,7 +427,7 @@ describe('autopilot rules × match-log integration', () => {
     // pending suggestion the user can act on again.
     await db
       .update(ruleMatchLog)
-      .set({ resolution: 'dismissed', resolvedAt: new Date() })
+      .set({ resolution: 'dismissed', resolvedAt: new Date(), dismissReason: 'user' })
       .where(eq(ruleMatchLog.ruleId, rule!.id));
     await db.insert(ruleMatchLog).values({ ...row, reason: 'after-dismiss rerun' });
 

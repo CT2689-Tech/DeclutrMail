@@ -100,11 +100,13 @@ export type {
   ProductFeedbackSurface,
 } from './schema/product-feedback';
 export {
+  autopilotMatchDismissReason,
   autopilotMatchMode,
   autopilotMatchResolution,
   ruleMatchLog,
 } from './schema/rule-match-log';
 export type {
+  AutopilotMatchDismissReason,
   AutopilotMatchMode,
   AutopilotMatchResolution,
   NewRuleMatchLog,

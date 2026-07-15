@@ -607,7 +607,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   private async dismissShieldedMatch(match: EligibleMatch, now: Date): Promise<void> {
     await this.deps.db
       .update(ruleMatchLog)
-      .set({ resolution: 'dismissed', resolvedAt: now })
+      .set({ resolution: 'dismissed', resolvedAt: now, dismissReason: 'protected' })
       .where(and(eq(ruleMatchLog.id, match.matchId), eq(ruleMatchLog.intentApplied, false)));
     console.log(
       JSON.stringify({

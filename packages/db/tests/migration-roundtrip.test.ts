@@ -136,6 +136,7 @@ describe('migration round-trip', () => {
       'enum:activity_action',
       'enum:activity_source',
       'enum:autopilot_action_kind',
+      'enum:autopilot_match_dismiss_reason',
       'enum:autopilot_match_mode',
       'enum:autopilot_match_resolution',
       'enum:autopilot_rule_mode',
