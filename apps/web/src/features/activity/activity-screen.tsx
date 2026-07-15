@@ -2205,9 +2205,12 @@ function ActivityRow({
           background: variant === 'grouped' ? 'transparent' : color.card,
           // Flat rows are standalone cards (full border + radius); grouped
           // rows sit inside a group card, so only a bottom hairline divides
-          // them.
-          border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderBottom: variant === 'grouped' ? `1px solid ${color.lineSoft}` : undefined,
+          // them. Longhands only — mixing the `border` shorthand with
+          // `borderBottom` fires React's conflicting-style dev warning.
+          borderTop: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderRight: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderLeft: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
+          borderBottom: `1px solid ${color.lineSoft}`,
           borderRadius: variant === 'grouped' ? 0 : 10,
           fontFamily: font.sans,
         }}
