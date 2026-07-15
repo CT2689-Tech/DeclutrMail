@@ -40,6 +40,8 @@ export interface FollowupRow {
   /** D85 — computed at request time, never stored. */
   priority: FollowupPriorityWire;
   status: FollowupStatusWire;
+  /** Current user's bounded rating for this observed follow-up. */
+  feedbackRating: 'useful' | 'not_followup' | null;
   /** ISO-8601 — when the user dismissed (D88). NULL for active rows. */
   dismissedAt: string | null;
   createdAt: string;

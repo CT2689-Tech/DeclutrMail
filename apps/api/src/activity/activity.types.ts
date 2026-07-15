@@ -59,6 +59,8 @@ export interface ActivityRow {
    * FE falls back to plain "by Autopilot").
    */
   rule: ActivityRuleRef | null;
+  /** The current user's closed-vocabulary rating for this Activity row. */
+  feedbackRating: 'expected' | 'surprising' | null;
   /** D58 undo affordance state — see {@link UndoState}. */
   undoState: UndoState;
   /**

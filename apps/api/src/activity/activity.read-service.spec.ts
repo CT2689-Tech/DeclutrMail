@@ -9,6 +9,7 @@ import {
   automationRules,
   mailMessages,
   mailboxAccounts,
+  productFeedback,
   schema,
   senders,
   undoJournal,
@@ -77,7 +78,7 @@ async function seedMailbox(db: Db, email: string) {
       providerAccountId: email,
     })
     .returning({ id: mailboxAccounts.id });
-  return { workspaceId: ws!.id, mailboxAccountId: mb!.id };
+  return { workspaceId: ws!.id, userId: user!.id, mailboxAccountId: mb!.id };
 }
 
 async function seedSender(
@@ -228,8 +229,8 @@ async function seedExecutionAttempt(
 describe('ActivityReadService', () => {
   let db: Db;
   let svc: ActivityReadService;
-  let mailboxA: { workspaceId: string; mailboxAccountId: string };
-  let mailboxB: { workspaceId: string; mailboxAccountId: string };
+  let mailboxA: { workspaceId: string; userId: string; mailboxAccountId: string };
+  let mailboxB: { workspaceId: string; userId: string; mailboxAccountId: string };
 
   beforeEach(async () => {
     actionKeySequence = 0;
@@ -263,6 +264,34 @@ describe('ActivityReadService', () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.executionState).toBeNull();
+  });
+
+  it('projects only the current user rating onto an automatic Activity row', async () => {
+    const activityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+      source: 'autopilot',
+      action: 'archive',
+    });
+    await db.insert(productFeedback).values({
+      workspaceId: mailboxA.workspaceId,
+      userId: mailboxA.userId,
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      surface: 'activity',
+      rating: 'surprising',
+      activityLogId: activityId,
+    });
+
+    const { rows } = await svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      userId: mailboxA.userId,
+      window: '30d',
+      source: null,
+      cursor: null,
+      limit: 25,
+      nowMs: NOW_MS,
+    });
+    expect(rows[0]!.feedbackRating).toBe('surprising');
   });
 
   describe('action execution projection', () => {

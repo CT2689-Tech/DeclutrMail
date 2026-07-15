@@ -66,6 +66,7 @@ const ROWS: ActivityRowWire[] = [
     },
     // D57 — Autopilot rows carry the rule that fired.
     rule: { id: '22222222-2222-2222-2222-222222222222', name: 'Newsletter graveyard' },
+    feedbackRating: 'expected',
     undoState: {
       kind: 'available',
       token: '11111111-1111-1111-1111-111111111111',
@@ -86,6 +87,7 @@ const ROWS: ActivityRowWire[] = [
       domain: 'oldnavy.example',
     },
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
   },
@@ -105,6 +107,7 @@ const ROWS: ActivityRowWire[] = [
       domain: 'oldnavy.example',
     },
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
   },
@@ -121,6 +124,7 @@ const ROWS: ActivityRowWire[] = [
       domain: 'example.com',
     },
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: null,
   },
@@ -138,6 +142,7 @@ const ROWS: ActivityRowWire[] = [
     },
     // Deleted-rule fallback — renders plain "by Autopilot".
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'executed', executedAt: isoHoursAgo(70) },
     executionState: null,
   },
@@ -154,6 +159,7 @@ const ROWS: ActivityRowWire[] = [
       domain: 'example.com',
     },
     rule: null,
+    feedbackRating: null,
     undoState: {
       kind: 'expired',
       expiredAt: new Date(NOW - 5 * 24 * 60 * 60 * 1000).toISOString(),

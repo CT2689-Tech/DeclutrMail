@@ -89,6 +89,8 @@ export interface BriefWire {
   openedAt: string | null;
   /** ISO-8601 — when the email digest landed; NULL if not opted in. */
   emailSentAt: string | null;
+  /** Current user's bounded rating for this frozen Brief. */
+  feedbackRating: 'useful' | 'not_useful' | 'wrong_reason' | null;
 }
 
 /** Outcome of `POST /briefs/:id/mark-opened` — D61 first-view tracker. */

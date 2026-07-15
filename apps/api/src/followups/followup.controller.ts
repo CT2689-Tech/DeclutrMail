@@ -24,7 +24,7 @@ import {
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -44,8 +44,11 @@ export class FollowupController {
    */
   @Get()
   @RateLimit('triage-load')
-  async list(@CurrentMailbox() mailbox: { id: string }): Promise<Envelope<Followup[]>> {
-    const followups = await this.reads.listAwaiting(mailbox.id);
+  async list(
+    @CurrentUser() principal: { userId: string },
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<Followup[]>> {
+    const followups = await this.reads.listAwaiting(mailbox.id, principal.userId);
     return ok(followups);
   }
 

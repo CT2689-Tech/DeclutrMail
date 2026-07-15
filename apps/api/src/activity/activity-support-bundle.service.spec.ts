@@ -32,6 +32,7 @@ const ROWS: ActivityRow[] = [
       domain: 'example.com',
     },
     rule: null,
+    feedbackRating: null,
     undoState: {
       kind: 'available',
       token: 'secret-undo-token',
@@ -47,6 +48,7 @@ const ROWS: ActivityRow[] = [
     affectedCount: 0,
     sender: null,
     rule: null,
+    feedbackRating: null,
     undoState: { kind: 'unavailable' },
     executionState: {
       kind: 'failed',

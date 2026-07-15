@@ -27,6 +27,7 @@ import {
 import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
+import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { ApiError } from '@/lib/api/client';
 import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
@@ -2248,6 +2249,13 @@ function ActivityRow({
             mailboxId={mailboxId}
           />
         </div>
+        {row.source === 'autopilot' && row.executionState === null && (
+          <InlineFeedback
+            surface="activity"
+            referenceId={row.id}
+            initialRating={row.feedbackRating}
+          />
+        )}
       </li>
     );
   }
@@ -2399,6 +2407,7 @@ function ActivityRow({
         failedTokens={failedTokens}
         mailboxEmail={mailboxEmail}
         mailboxId={mailboxId}
+        includeFeedback
       />
       <div
         style={{
@@ -2425,30 +2434,41 @@ function RowActions({
   failedTokens,
   mailboxEmail,
   mailboxId,
+  includeFeedback = false,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
   mailboxEmail: string | null;
   mailboxId: string | null;
+  includeFeedback?: boolean;
 }) {
   return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
-        padding: '0 2px',
-        overflow: 'hidden',
-      }}
-    >
-      {row.executionState && (
-        <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 0,
+          border: `1px solid ${color.lineSoft}`,
+          borderRadius: 999,
+          background: color.bg,
+          padding: '0 2px',
+          overflow: 'hidden',
+        }}
+      >
+        {row.executionState && (
+          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+        )}
+        <UndoCell row={row} bulkFailedTokens={failedTokens} />
+        <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
+      </div>
+      {includeFeedback && row.source === 'autopilot' && row.executionState === null && (
+        <InlineFeedback
+          surface="activity"
+          referenceId={row.id}
+          initialRating={row.feedbackRating}
+        />
       )}
-      <UndoCell row={row} bulkFailedTokens={failedTokens} />
-      <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
     </div>
   );
 }

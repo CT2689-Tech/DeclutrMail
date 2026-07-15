@@ -46,6 +46,7 @@ import {
   activityLog,
   automationRules,
   mailMessages,
+  productFeedback,
   senders,
   undoJournal,
 } from '@declutrmail/db';
@@ -117,6 +118,11 @@ export interface SummarizeActivityParams {
 
 export interface ListActivityParams {
   mailboxAccountId: string;
+  /**
+   * Current user whose Activity feedback should be projected. Null/omitted for
+   * support-bundle iteration, where user-specific feedback is intentionally absent.
+   */
+  userId?: string | null;
   window: ActivityWindow;
   source: ActivityLogEntry['source'] | null;
   /**
@@ -470,6 +476,7 @@ export class ActivityReadService {
   ): Promise<ActivityRow[]> {
     const {
       mailboxAccountId,
+      userId = null,
       window,
       source,
       verbs = [],
@@ -518,6 +525,17 @@ export class ActivityReadService {
         undoExpiresAt: undoJournal.expiresAt,
         undoExecutedAt: undoJournal.executedAt,
         undoRevertedAt: undoJournal.revertedAt,
+        feedbackRating: userId
+          ? sql<'expected' | 'surprising' | null>`(
+              SELECT ${productFeedback.rating}
+              FROM ${productFeedback}
+              WHERE ${productFeedback.activityLogId} = ${activityLog.id}
+                AND ${productFeedback.mailboxAccountId} = ${activityLog.mailboxAccountId}
+                AND ${productFeedback.userId} = ${userId}
+                AND ${productFeedback.surface} = 'activity'
+              LIMIT 1
+            )`
+          : sql<'expected' | 'surprising' | null>`NULL`,
       })
       .from(activityLog)
       .leftJoin(
@@ -551,6 +569,10 @@ export class ActivityReadService {
         affectedCount: row.affectedCount,
         sender,
         rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
+        feedbackRating:
+          row.feedbackRating === 'expected' || row.feedbackRating === 'surprising'
+            ? row.feedbackRating
+            : null,
         undoState: resolveUndoState({
           token: row.undoToken,
           expiresAt: row.undoExpiresAt,
@@ -889,6 +911,7 @@ function projectExecutionRows(
         affectedCount: 0,
         sender,
         rule: null,
+        feedbackRating: null,
         undoState: { kind: 'unavailable' },
         executionState: executionStateFor(lineage),
       },

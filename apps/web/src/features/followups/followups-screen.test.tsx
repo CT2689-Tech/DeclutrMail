@@ -31,6 +31,7 @@ const ROW_HIGH = {
   sentAt: new Date(NOW - 10 * 24 * 60 * 60 * 1000).toISOString(),
   priority: 'high' as const,
   status: 'awaiting' as const,
+  feedbackRating: null,
   dismissedAt: null,
   createdAt: new Date(NOW - 10 * 24 * 60 * 60 * 1000).toISOString(),
   updatedAt: new Date(NOW - 10 * 24 * 60 * 60 * 1000).toISOString(),
@@ -148,6 +149,7 @@ describe('FollowupsScreen — populated list', () => {
 
     // Each row renders recipient + subject + Open-in-Gmail link.
     expect(screen.getByText('Big Boss')).toBeInTheDocument();
+    expect(screen.getAllByRole('group', { name: /useful follow-up/i })).toHaveLength(2);
     expect(screen.getByText('Q4 plans — please review')).toBeInTheDocument();
     expect(screen.getByText('Lunch?')).toBeInTheDocument();
     const links = screen.getAllByRole('link', { name: /open in gmail/i });

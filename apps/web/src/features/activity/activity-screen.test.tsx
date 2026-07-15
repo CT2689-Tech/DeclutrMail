@@ -68,6 +68,7 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
         domain: 'example.com',
       } as ActivityRowWire['sender']),
     rule: partial.rule ?? null,
+    feedbackRating: partial.feedbackRating ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
     executionState: partial.executionState ?? null,
   };
@@ -1354,6 +1355,31 @@ describe('ActivityScreen — B11 group by sender', () => {
 // ── U27 — D57 rule attribution + infinite scroll ─────────────────────
 
 describe('ActivityScreen — D57 rule attribution', () => {
+  it('offers bounded feedback only for confirmed Autopilot outcomes', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ source: 'autopilot', feedbackRating: 'expected' }),
+              row({ id: 'manual-2', source: 'manual' }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const group = await screen.findByRole('group', { name: /match what you expected/i });
+    expect(screen.getAllByRole('group', { name: /match what you expected/i })).toHaveLength(1);
+    expect(within(group).getByRole('button', { name: 'Expected' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
     installFetchStub([
       {

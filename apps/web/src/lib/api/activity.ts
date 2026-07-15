@@ -111,6 +111,7 @@ export interface ActivityRowWire {
    * still exists; renders as "by Autopilot · <rule name>".
    */
   rule: ActivityRuleRef | null;
+  feedbackRating: 'expected' | 'surprising' | null;
   undoState: ActivityUndoStateWire;
   /** Null for confirmed append-only Activity rows. */
   executionState: ActivityExecutionStateWire | null;

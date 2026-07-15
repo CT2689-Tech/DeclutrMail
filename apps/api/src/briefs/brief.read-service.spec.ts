@@ -7,6 +7,7 @@ import {
   briefRuns,
   type BriefPayload as PersistedBriefPayload,
   mailboxAccounts,
+  productFeedback,
   schema,
   users,
   workspaces,
@@ -59,7 +60,7 @@ async function freshDb(): Promise<Db> {
 async function seedMailbox(
   db: Db,
   email: string,
-): Promise<{ workspaceId: string; mailboxAccountId: string }> {
+): Promise<{ workspaceId: string; userId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
     .values({ name: `WS-${email}` })
@@ -77,7 +78,7 @@ async function seedMailbox(
       providerAccountId: email,
     })
     .returning({ id: mailboxAccounts.id });
-  return { workspaceId: ws!.id, mailboxAccountId: mb!.id };
+  return { workspaceId: ws!.id, userId: user!.id, mailboxAccountId: mb!.id };
 }
 
 const SAMPLE_PAYLOAD: BriefPayload = {
@@ -119,8 +120,8 @@ async function seedBrief(
 describe('BriefReadService', () => {
   let db: Db;
   let service: BriefReadService;
-  let mailboxA: { workspaceId: string; mailboxAccountId: string };
-  let mailboxB: { workspaceId: string; mailboxAccountId: string };
+  let mailboxA: { workspaceId: string; userId: string; mailboxAccountId: string };
+  let mailboxB: { workspaceId: string; userId: string; mailboxAccountId: string };
 
   beforeEach(async () => {
     db = await freshDb();
@@ -138,6 +139,30 @@ describe('BriefReadService', () => {
       expect(brief!.generatedBy).toBe('template');
       expect(brief!.briefPayload.reply).toHaveLength(1);
       expect(brief!.briefPayload.reply[0]!.senderName).toBe('Boss');
+    });
+
+    it('projects the current user rating for the frozen Brief', async () => {
+      const briefId = await seedBrief(
+        db,
+        mailboxA.workspaceId,
+        mailboxA.mailboxAccountId,
+        '2026-05-25',
+      );
+      await db.insert(productFeedback).values({
+        workspaceId: mailboxA.workspaceId,
+        userId: mailboxA.userId,
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        surface: 'brief',
+        rating: 'wrong_reason',
+        briefRunId: briefId,
+      });
+
+      const brief = await service.getForDate(
+        mailboxA.mailboxAccountId,
+        '2026-05-25',
+        mailboxA.userId,
+      );
+      expect(brief!.feedbackRating).toBe('wrong_reason');
     });
 
     it('returns null when no brief exists for the date', async () => {

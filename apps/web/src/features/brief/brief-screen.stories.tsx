@@ -85,6 +85,7 @@ const BASE: BriefWire = {
   // story render — Storybook isn't mocking the fetch layer here.
   openedAt: '2026-05-25T08:30:00Z',
   emailSentAt: null,
+  feedbackRating: 'useful',
 };
 
 function makeClient(brief: BriefWire | undefined): QueryClient {

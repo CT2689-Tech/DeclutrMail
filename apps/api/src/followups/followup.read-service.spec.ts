@@ -8,6 +8,7 @@ import {
   activityLog,
   followupTracker,
   mailboxAccounts,
+  productFeedback,
   schema,
   senderPolicies,
   users,
@@ -74,7 +75,7 @@ async function freshDb(): Promise<Db> {
 async function seedMailbox(
   db: Db,
   email: string,
-): Promise<{ workspaceId: string; mailboxAccountId: string }> {
+): Promise<{ workspaceId: string; userId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
     .values({ name: `WS-${email}` })
@@ -94,7 +95,7 @@ async function seedMailbox(
       providerAccountId: email,
     })
     .returning({ id: mailboxAccounts.id });
-  return { workspaceId: ws!.id, mailboxAccountId: mb!.id };
+  return { workspaceId: ws!.id, userId: user!.id, mailboxAccountId: mb!.id };
 }
 
 async function seedFollowup(
@@ -128,8 +129,8 @@ async function seedFollowup(
 describe('FollowupReadService', () => {
   let db: Db;
   let service: FollowupReadService;
-  let mailboxA: { workspaceId: string; mailboxAccountId: string };
-  let mailboxB: { workspaceId: string; mailboxAccountId: string };
+  let mailboxA: { workspaceId: string; userId: string; mailboxAccountId: string };
+  let mailboxB: { workspaceId: string; userId: string; mailboxAccountId: string };
 
   beforeEach(async () => {
     db = await freshDb();
@@ -139,6 +140,24 @@ describe('FollowupReadService', () => {
   });
 
   describe('listAwaiting', () => {
+    it('projects the current user rating for an observed follow-up', async () => {
+      const followupId = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'rated',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+      });
+      await db.insert(productFeedback).values({
+        workspaceId: mailboxA.workspaceId,
+        userId: mailboxA.userId,
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        surface: 'followups',
+        rating: 'not_followup',
+        followupTrackerId: followupId,
+      });
+
+      const rows = await service.listAwaiting(mailboxA.mailboxAccountId, mailboxA.userId, NOW_MS);
+      expect(rows[0]!.feedbackRating).toBe('not_followup');
+    });
+
     it('returns only awaiting rows (excludes replied + dismissed)', async () => {
       await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
         threadId: 't1',

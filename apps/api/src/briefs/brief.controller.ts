@@ -25,7 +25,7 @@ import {
 import { type Envelope, ok } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -53,12 +53,13 @@ export class BriefController {
   @Get('today')
   @RateLimit('triage-load')
   async today(
+    @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
     @Query('tz') tz: string | undefined,
   ): Promise<Envelope<Brief>> {
     const accountId = mailbox.id;
     const today = resolveBriefTodayLocal(new Date(), tz);
-    const brief = await this.reads.getForDate(accountId, today);
+    const brief = await this.reads.getForDate(accountId, today, principal.userId);
     if (!brief) {
       throw notFound('Brief not found for today.');
     }
@@ -72,6 +73,7 @@ export class BriefController {
   @Get()
   @RateLimit('triage-load')
   async list(
+    @CurrentUser() principal: { userId: string },
     @CurrentMailbox() mailbox: { id: string },
     @Query('from') from: string | undefined,
     @Query('to') to: string | undefined,
@@ -80,7 +82,7 @@ export class BriefController {
     if (!from || !to) {
       throw new BadRequestException('from and to query params are required (YYYY-MM-DD).');
     }
-    const briefs = await this.reads.listByRange(accountId, from, to);
+    const briefs = await this.reads.listByRange(accountId, from, to, principal.userId);
     return ok(briefs);
   }
 

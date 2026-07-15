@@ -95,7 +95,7 @@ requires its recorded demand, privacy, OAuth, or compliance trigger.
 - [x] Add the privacy-bounded D246 analytics contract and taxonomy.
 - [x] Persist the selected activation goal in the existing preferences bag.
 - [x] Implement a finite first-relief session and calm completion state.
-- [ ] Add expected/surprising feedback for automatic Activity outcomes.
+- [x] Add expected/surprising feedback for automatic Activity outcomes.
 - [ ] Add the Observe-first repeated-pattern suggestion and decision telemetry.
 - [ ] Add the factual in-app weekly review with Activity evidence links.
 - [x] Add focused unit/integration/accessibility coverage for completed slices.
@@ -109,13 +109,13 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: first-party product feedback now has a closed,
-  target-owned Activity/Brief/Followups contract, tenant-safe idempotent API,
-  typed persistence, RLS, export coverage, and indexed-data deletion coverage.
-  Analytics receives only bounded surface/rating values, never target ids.
-- Last green checks: feedback contract tests (8); DB migration round-trip (3);
-  feedback/export/inventory API tests (23); deletion worker tests (15);
-  shared/DB/API/workers typechecks; formatting and diff checks.
+- Last completed slice: Activity automatic outcomes, each frozen Brief, and
+  each observed Followup now restore and accept bounded first-party feedback.
+  The control is accessible, confirms only after persistence succeeds, and
+  sends analytics only after success without target ids or mail metadata.
+- Last green checks: feedback/read-model API tests (3 targeted); feedback and
+  Activity/Brief/Followups web tests (78); API/web typechecks; formatting and
+  diff checks.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: join current ratings into the three existing reads and add the
-  accessible inline feedback control to Activity, Brief, and Followups.
+- Next slice: remove the streak and speculative impact contract and add calm,
+  factual re-entry copy before expanding the Autopilot trust ladder.

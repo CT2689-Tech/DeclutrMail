@@ -17,6 +17,9 @@ import type { FollowupStatus } from '@declutrmail/db';
  */
 export type FollowupPriority = 'high' | 'medium' | 'low' | 'fresh';
 
+/** The caller's persisted D246 feedback for this followup, when present. */
+export type FollowupFeedbackRating = 'useful' | 'not_followup';
+
 /** One followup row as the read service returns it. */
 export interface Followup {
   id: string;
@@ -29,6 +32,7 @@ export interface Followup {
   /** D85 — computed at request time, NOT stored. */
   priority: FollowupPriority;
   status: FollowupStatus;
+  feedbackRating: FollowupFeedbackRating | null;
   /** ISO-8601 — when the user dismissed (D88). NULL for active rows. */
   dismissedAt: string | null;
   createdAt: string;

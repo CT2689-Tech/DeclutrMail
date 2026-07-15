@@ -14,6 +14,7 @@ import type { FollowupRow } from '@/lib/api/followups';
 import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useDismissFollowup } from './api/use-dismiss-followup';
@@ -455,6 +456,13 @@ export function FollowupListItem({
           Mark resolved
         </button>
       )}
+      <div style={{ gridColumn: '1 / -1' }}>
+        <InlineFeedback
+          surface="followups"
+          referenceId={row.id}
+          initialRating={row.feedbackRating}
+        />
+      </div>
     </li>
   );
 }

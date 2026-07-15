@@ -163,6 +163,7 @@ export class ActivityController {
   @Get()
   @RateLimit('triage-load')
   async list(
+    @CurrentUser() principal: Principal,
     @CurrentMailbox() mailbox: { id: string },
     @Query('window') rawWindow: string | undefined,
     @Query('source') rawSource: string | undefined,
@@ -195,6 +196,7 @@ export class ActivityController {
 
     const { rows, stats, allTimeStats } = await this.reads.listActivity({
       mailboxAccountId: accountId,
+      userId: principal.userId,
       window: filters.window,
       source: filters.source,
       verbs: filters.verbs,

@@ -48,6 +48,8 @@ export interface Brief {
   openedAt: string | null;
   /** D61 optional email channel (ISO-8601); NULL when not opted in. */
   emailSentAt: string | null;
+  /** D246 — the current user's closed-vocabulary rating, if submitted. */
+  feedbackRating: 'useful' | 'not_useful' | 'wrong_reason' | null;
 }
 
 /** Outcome of `POST /briefs/:id/mark-opened` — D61 first-view tracker. */
