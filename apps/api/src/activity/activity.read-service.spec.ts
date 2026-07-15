@@ -47,6 +47,14 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 const NOW_MS = new Date('2026-05-25T08:00:00Z').getTime();
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Every parameter array the drizzle session hands to the driver. PGlite
+ * serializes JS Dates itself, but postgres.js (dev/prod) throws when a
+ * Date is bound next to a raw `sql` expression — so specs assert against
+ * this log to keep the two drivers behaviorally equivalent.
+ */
+const driverParamLog: unknown[][] = [];
+
 async function freshDb(): Promise<Db> {
   const pg = new PGlite({ extensions: { citext } });
   for (const file of readdirSync(MIGRATIONS_DIR)
@@ -58,6 +66,11 @@ async function freshDb(): Promise<Db> {
       if (trimmed) await pg.query(trimmed);
     }
   }
+  const originalQuery = pg.query.bind(pg);
+  pg.query = (async (...args: Parameters<typeof originalQuery>) => {
+    if (Array.isArray(args[1])) driverParamLog.push(args[1]);
+    return originalQuery(...args);
+  }) as typeof pg.query;
   return drizzle(pg, { schema });
 }
 
@@ -1810,6 +1823,69 @@ describe('ActivityReadService', () => {
       });
       expect(evidence.rows).toHaveLength(1);
       expect(evidence.rows[0]!.reviewOutcome).toBe('recovered');
+    });
+
+    it('never binds a raw JS Date next to a raw sql expression (postgres.js parity)', async () => {
+      // Regression: the skipped/protected evidence list and the export
+      // iteration both compare raw sql expressions (`resolvedAt` wrapper,
+      // the failed-terminal-time CASE) against Date bounds. postgres.js
+      // rejects a Date bound outside a column encoder, which 500'd the
+      // weekly-review evidence links and truncated every support bundle.
+      const senderKey = 'driver-parity-sender';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        senderKey,
+        'parity@example.com',
+        'Parity Sender',
+      );
+      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Parity rule');
+      await db.insert(ruleMatchLog).values({
+        ruleId,
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey,
+        modeAtMatch: 'observe' as const,
+        confidence: '0.90',
+        reason: 'user skipped',
+        resolution: 'dismissed' as const,
+        resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
+        dismissReason: 'user' as const,
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        status: 'failed',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+
+      driverParamLog.length = 0;
+      const evidence = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        outcomes: ['skipped', 'protected'],
+        dateFrom: new Date(NOW_MS - 7 * ONE_DAY_MS),
+        dateTo: new Date(NOW_MS),
+        cursor: { occurredAt: new Date(NOW_MS), id: 'ffffffff-ffff-ffff-ffff-ffffffffffff' },
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(evidence.rows.map((row) => row.reviewOutcome)).toContain('skipped');
+
+      const exported: string[] = [];
+      for await (const row of svc.iterateActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '7d',
+        source: null,
+        nowMs: NOW_MS,
+      })) {
+        exported.push(row.id);
+      }
+      expect(exported.length).toBeGreaterThan(0);
+
+      const rawDateParams = driverParamLog.flat().filter((param) => param instanceof Date);
+      expect(rawDateParams).toEqual([]);
     });
   });
 

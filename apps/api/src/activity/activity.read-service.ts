@@ -366,7 +366,7 @@ export class ActivityReadService {
       eq(current.direction, 'forward' as const),
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
-      lte(outcomeTime, args.snapshotCreatedAt),
+      lte(outcomeTime, timestamptzParam(args.snapshotCreatedAt)),
       notExists(
         this.db
           .select({ id: later.id })
@@ -389,13 +389,14 @@ export class ActivityReadService {
       if (executionVerbs.length === 0) return [];
       whereParts.push(inArray(current.verb, executionVerbs));
     }
-    if (args.lowerBound) whereParts.push(gte(outcomeTime, args.lowerBound));
-    if (args.upperBound) whereParts.push(lt(outcomeTime, args.upperBound));
+    if (args.lowerBound) whereParts.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
+    if (args.upperBound) whereParts.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
     if (args.cursor) {
+      const cursorTime = timestamptzParam(args.cursor.occurredAt);
       whereParts.push(
         or(
-          lt(outcomeTime, args.cursor.occurredAt),
-          and(eq(outcomeTime, args.cursor.occurredAt), lt(current.id, args.cursor.id)),
+          lt(outcomeTime, cursorTime),
+          and(eq(outcomeTime, cursorTime), lt(current.id, args.cursor.id)),
         )!,
       );
     }
@@ -648,7 +649,9 @@ export class ActivityReadService {
     if (verbs.length > 0 && actionVerbs.length === 0) return [];
     const useCustomRange = dateFrom !== null || dateTo !== null;
     const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
-    const reviewTime = sql<Date>`${ruleMatchLog.resolvedAt}`;
+    // Column reference, not a raw `sql` wrapper: postgres.js only accepts
+    // Date params when drizzle can map them through a column's encoder.
+    const reviewTime = ruleMatchLog.resolvedAt;
     const whereParts = [
       eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
       eq(ruleMatchLog.resolution, 'dismissed' as const),
@@ -713,7 +716,8 @@ export class ActivityReadService {
       .limit(limit + 1);
     return rows.map((row) => ({
       id: row.id,
-      occurredAt: new Date(row.occurredAt).toISOString(),
+      // `resolvedAt` is `isNotNull`-filtered above; the column type stays nullable.
+      occurredAt: new Date(row.occurredAt!).toISOString(),
       source: 'autopilot',
       action: row.action,
       affectedCount: 0,
@@ -1283,6 +1287,17 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
   if (window === 'all') return null;
   const days = WINDOW_DAYS[window];
   return new Date(nowMs - days * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * Encode a Date for comparison against a raw `sql` expression. Drizzle
+ * only maps JS Dates through a column's encoder; a Date bound next to a
+ * raw expression reaches postgres.js untyped and throws at serialization
+ * ("argument must be of type string or Buffer"). PGlite (specs) accepts
+ * either shape, so only the ISO-string form is safe on both drivers.
+ */
+function timestamptzParam(value: Date) {
+  return sql`${value.toISOString()}::timestamptz`;
 }
 
 /**
