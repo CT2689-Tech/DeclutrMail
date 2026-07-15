@@ -6,6 +6,19 @@
 
 export { ACTION_REGISTRY, getActionDescriptor, listActionDescriptors } from './manifest-entries';
 export {
+  ACTIVITY_ACTION_LABELS,
+  activityActionLabel,
+  activityExecutionLabel,
+  activitySourceLabel,
+  activityUndoLabel,
+} from './activity-record-copy';
+export type {
+  ActivityExecutionPresentation,
+  ActivityPresentationAction,
+  ActivityPresentationSource,
+  ActivityPresentationUndoKind,
+} from './activity-record-copy';
+export {
   ACTION_SEMANTICS,
   DEFAULT_LATER_WAKE_DAYS,
   actionHasRecovery,

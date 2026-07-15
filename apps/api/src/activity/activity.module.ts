@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ActivityController } from './activity.controller.js';
 import { ActivityReadService } from './activity.read-service.js';
+import { ActivitySupportBundleService } from './activity-support-bundle.service.js';
 
 /**
  * ActivityModule (D55-D60, tracer-bullet).
@@ -22,7 +23,7 @@ import { ActivityReadService } from './activity.read-service.js';
 @Module({
   imports: [AuthModule, MailboxAccountsModule],
   controllers: [ActivityController],
-  providers: [ActivityReadService],
+  providers: [ActivityReadService, ActivitySupportBundleService],
   exports: [ActivityReadService],
 })
 export class ActivityModule {}

@@ -18,7 +18,7 @@ import { userEvent } from '@testing-library/user-event';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { ActivityScreen, relativeTime, rowsToCsv } from './activity-screen';
+import { ActivityScreen, relativeTime } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
@@ -299,7 +299,7 @@ describe('ActivityScreen — edge states', () => {
     expect(await screen.findByText('Sender One')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
     expect(screen.getByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeEnabled();
     expect(requests).toBe(1);
 
     currentSearch = 'date_from=still-not-a-date&source=manual';
@@ -314,7 +314,7 @@ describe('ActivityScreen — edge states', () => {
     expect(screen.queryByText('Sender One')).toBeNull();
     expect(screen.queryByRole('status', { name: 'Activity metrics' })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Bulk actions' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeDisabled();
   });
 
   it('does not mislabel a non-validation 4xx as a filter problem', async () => {
@@ -371,6 +371,98 @@ describe('ActivityScreen — edge states', () => {
 });
 
 describe('ActivityScreen — populated', () => {
+  it('opens a review dialog prefilled from the current Activity filters with privacy opt-ins off', async () => {
+    currentSearch = 'window=90d&source=manual&verb=archive%2Cdelete&sender_q=private%40example.com';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
+    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Archived' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Deleted' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(dialog).getByRole('button', { name: '90d' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(dialog).getByRole('searchbox', { name: 'Search sender' })).toHaveValue(
+      'private@example.com',
+    );
+    expect(
+      within(dialog).getByRole('checkbox', { name: /include full sender addresses/i }),
+    ).not.toBeChecked();
+    expect(
+      within(dialog).getByRole('checkbox', { name: /include technical details/i }),
+    ).not.toBeChecked();
+  });
+
+  it('sends edited filters and independent privacy opt-ins, then shows a recoverable error', async () => {
+    currentSearch = 'verb=archive';
+    let exportUrl: URL | null = null;
+    let exportRequest: Request | null = null;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/export',
+        respond: (request, url) => {
+          exportRequest = request;
+          exportUrl = url;
+          return jsonServerError('bundle_failed');
+        },
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
+    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
+    const senderSearch = within(dialog).getByRole('searchbox', { name: 'Search sender' });
+    await userEvent.clear(senderSearch);
+    await userEvent.type(senderSearch, 'edited@example.com');
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', { name: /include full sender addresses/i }),
+    );
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', { name: /include technical details/i }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download bundle' }));
+
+    const alert = await within(dialog).findByRole('alert');
+    expect(alert).toHaveTextContent(/couldn[’']t create the support bundle/i);
+    expect(exportUrl).not.toBeNull();
+    expect(exportUrl!.searchParams.get('source')).toBe('autopilot');
+    expect(exportUrl!.searchParams.has('verb')).toBe(false);
+    expect(exportUrl!.searchParams.get('sender_q')).toBe('edited@example.com');
+    expect(exportUrl!.searchParams.get('sender_addresses')).toBe('full');
+    expect(exportUrl!.searchParams.get('include_technical')).toBe('true');
+    expect(exportRequest!.headers.get('x-active-mailbox-id')).toBe(
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    );
+    expect(within(dialog).getByRole('button', { name: 'Download bundle' })).toBeEnabled();
+  });
+
   it('explains the difference between Activity Undo and provider recovery', async () => {
     installFetchStub([
       {
@@ -638,74 +730,6 @@ describe('ActivityScreen — pure helpers', () => {
     expect(relativeTime(new Date(NOW - 2 * 60 * 60 * 1000).toISOString(), NOW)).toBe('2h ago');
     expect(relativeTime(new Date(NOW - 90 * 1000).toISOString(), NOW)).toBe('1m ago');
     expect(relativeTime(new Date(NOW).toISOString(), NOW)).toBe('just now');
-  });
-
-  it('rowsToCsv emits header + one line per row + RFC-4180-quotes commas/quotes', () => {
-    const rows: ActivityRowWire[] = [
-      row({
-        id: 'r-1',
-        action: 'archive',
-        affectedCount: 3,
-        sender: {
-          senderKey: 'sk-comma',
-          displayName: 'Smith, John',
-          email: 'sj@example.com',
-          domain: 'example.com',
-        },
-      }),
-      row({
-        id: 'r-2',
-        action: 'delete',
-        affectedCount: 1,
-        sender: {
-          senderKey: 'sk-quote',
-          displayName: 'Quote "Co"',
-          email: 'q@example.com',
-          domain: 'example.com',
-        },
-      }),
-    ];
-    const csv = rowsToCsv(rows);
-    const lines = csv.split('\n');
-    expect(lines[0]).toBe(
-      'Occurred At,Verb,Source,Sender Name,Sender Email,Affected Messages,Execution Status,Undo State',
-    );
-    expect(lines[1]).toContain('"Smith, John"');
-    expect(lines[2]).toContain('"Quote ""Co"""');
-    expect(lines[1]).toContain('Archived');
-    expect(lines[2]).toContain('Moved to Gmail Trash');
-  });
-
-  it('exports unresolved rows with execution-aware labels and status', () => {
-    const csv = rowsToCsv([
-      row({
-        action: 'archive',
-        executionState: {
-          kind: 'in_progress',
-          actionId: '11111111-1111-1111-1111-111111111111',
-          requestedCount: 2,
-          isRecovery: true,
-          status: 'queued',
-        },
-      }),
-      row({
-        id: 'failed-later',
-        action: 'later',
-        executionState: {
-          kind: 'failed',
-          actionId: '22222222-2222-2222-2222-222222222222',
-          rootActionId: '22222222-2222-2222-2222-222222222222',
-          requestedCount: 1,
-          errorCode: null,
-          resolution: 'review',
-        },
-      }),
-    ]);
-
-    expect(csv).toContain('Archiving…');
-    expect(csv).toContain('Recovery queued');
-    expect(csv).toContain('Later failed');
-    expect(csv).toContain('Failed · review available');
   });
 });
 

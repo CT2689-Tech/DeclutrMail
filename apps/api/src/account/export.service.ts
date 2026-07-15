@@ -11,6 +11,7 @@ import {
 import { DATA_EXPORT_FORMAT_MANIFEST, DATA_EXPORT_LIMITATION } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { csvField } from '../common/csv.js';
 
 /**
  * DataExportService (D116 + D228 + DPDP) — builds the user-facing data
@@ -343,21 +344,4 @@ export class DataExportService {
       if (batch.length < DataExportService.BATCH_SIZE) break;
     }
   }
-}
-
-/**
- * CSV field quoting (RFC-4180) plus a spreadsheet formula-injection
- * guard. Sender-controlled metadata (subject, sender display name)
- * reaches the CSV verbatim, so a cell beginning with `=`, `+`, `-`,
- * `@`, tab, or CR would be interpreted as a formula by Excel / Sheets /
- * LibreOffice — a crafted subject like `=HYPERLINK("http://evil","x")`
- * executes when the user opens their export. Prefix such cells with a
- * single quote to force text, then apply RFC-4180 quoting.
- */
-export function csvField(value: string): string {
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  if (/[",\n\r]/.test(guarded)) {
-    return `"${guarded.replace(/"/g, '""')}"`;
-  }
-  return guarded;
 }

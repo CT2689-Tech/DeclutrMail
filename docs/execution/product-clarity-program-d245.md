@@ -145,19 +145,21 @@ plan, and `git log --oneline origin/feat/d245-product-clarity..HEAD`.
 
 ## Current checkpoint
 
-- Last completed slice: Activity is an outcome-aware recovery center for failed
-  Archive, Later, and Delete actions. It verifies current Gmail label state,
-  previews partial/already-applied/missing outcomes, and creates a new linked
-  attempt only after confirmation. Reconnect is actionable; unsubscribe never
-  exposes a generic retry.
-- Idempotency: exact confirmation fingerprints, database lineage constraints,
-  stable BullMQ job ids with enqueue-ack recovery, and convergent Gmail label
-  mutations prevent duplicate work and preserve the failed audit row. Recovery
-  attempts count once against the original cleanup intent.
-- Last green checks: all-workspace typecheck; DB recovery + migration round-trip
-  tests (8); worker verifier/queue tests (11); API recovery tests (9), Activity,
-  Gmail-minimal-read, and entitlement tests (92); web Activity/API tests (47).
-- Last pushed checkpoint before this slice: `dc2b1c9e` on
-  `feat/d245-product-clarity`. This recovery slice is the next commit/push.
-- Next proposed opportunity: exportable, human-readable Activity support bundles
-  with technical identifiers disclosed only on request.
+- Last completed slice: Activity exports a human-readable support bundle for the
+  active mailbox. The review dialog starts from the current filters and the API
+  streams every matching row into `summary.txt` plus `activity.csv`.
+- Privacy and diagnosis: sender addresses are masked by default. Full addresses
+  and `technical-details.json` are independent explicit options; the appendix
+  uses a strict field allowlist for internal identifiers and machine statuses.
+  Message content, capability tokens, idempotency keys, raw provider responses,
+  and raw exception text are excluded in every mode.
+- Generation: synchronous keyset iteration keeps application memory bounded,
+  writes the human and technical views from one pass, and stops database work if
+  the download disconnects. The default window remains 30 days; all-time is an
+  explicit review choice.
+- Last green checks: shared/API/web typechecks; support-bundle contracts and
+  copy tests (6); API bundle/controller/account-export tests (22); bounded
+  Activity iteration tests (3); web Activity tests (45).
+- Last pushed checkpoint before this slice: `eb4932bd` on `main` (PR #332).
+- Next proposed opportunity: none selected. Do not pull unrelated launch-backlog
+  items into D245 without a new product decision.

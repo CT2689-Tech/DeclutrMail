@@ -3,8 +3,8 @@ import type { NextFunction, Request, Response } from 'express';
 /**
  * API security headers (D175) — helmet-equivalent minimal set.
  *
- * The API serves JSON (plus a handful of OAuth redirects), never
- * documents, so the header set is the standard API hardening profile
+ * The API serves JSON, bounded file downloads, and a handful of OAuth
+ * redirects, never browser documents, so the header set is the standard API hardening profile
  * rather than helmet's full browser-page defaults:
  *
  *  - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
@@ -12,8 +12,8 @@ import type { NextFunction, Request, Response } from 'express';
  *    coerced into rendering (content-type confusion, direct navigation
  *    to an endpoint), nothing can load and it cannot be framed. This is
  *    the OWASP-recommended CSP for REST APIs.
- *  - `X-Content-Type-Options: nosniff` — no MIME sniffing of JSON into
- *    something executable.
+ *  - `X-Content-Type-Options: nosniff` — no MIME sniffing of JSON or a
+ *    downloaded archive into something executable.
  *  - `X-Frame-Options: DENY` — legacy mirror of `frame-ancestors 'none'`.
  *  - `Referrer-Policy: strict-origin-when-cross-origin` — matches the
  *    web app's policy (src/middleware.ts in apps/web).

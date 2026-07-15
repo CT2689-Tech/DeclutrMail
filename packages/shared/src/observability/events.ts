@@ -46,6 +46,7 @@ export type EventName =
   // — Activity surface —
   | 'activity_filter_changed'
   | 'bulk_undo_clicked'
+  | 'activity_support_bundle_exported'
   | 'csv_exported'
   // — Brief surface —
   | 'brief_refresh_clicked'
@@ -329,6 +330,11 @@ export interface EventPayloads {
     action_ids_count: number;
     /** Did all succeed, partial, or all fail? */
     outcome: 'all_success' | 'partial' | 'all_failed';
+  };
+  activity_support_bundle_exported: {
+    outcome: 'success' | 'failed';
+    full_sender_addresses: boolean;
+    technical_details: boolean;
   };
   csv_exported: {
     surface: 'activity' | 'senders';

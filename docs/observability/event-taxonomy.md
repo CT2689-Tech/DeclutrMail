@@ -556,6 +556,27 @@ stream failed (`failed`). One event per attempt.
 **Retention / aggregation.** PostHog default. DPDP-export usage +
 failure-rate alarm (a spike in `failed` flags a broken export stream).
 
+### `activity_support_bundle_exported`
+
+**When fired.** When an Activity support-bundle download reaches a terminal
+client-side state: the ZIP is saved (`success`) or the request/download fails
+(`failed`). One event is emitted per attempt, after the user reviews the
+effective filters and privacy options.
+
+**Payload.**
+
+| Field                   | Type                    | Notes                                               |
+| ----------------------- | ----------------------- | --------------------------------------------------- |
+| `outcome`               | `'success' \| 'failed'` | Terminal client-side outcome                        |
+| `full_sender_addresses` | `boolean`               | Whether the independent address opt-in was selected |
+| `technical_details`     | `boolean`               | Whether the strict technical appendix was selected  |
+
+No mailbox identifier, sender address, filter value, row count, or technical
+identifier is sent to analytics.
+
+**Retention / aggregation.** PostHog default. Measures support-bundle use,
+privacy-option adoption, and client-visible export failure rate.
+
 ### `upgrade_prompt_shown`
 
 **When fired.** When an entitlement gate (D19/D77/D81) surfaces an

@@ -24,7 +24,7 @@ import {
   useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
-import { getActionSemantics } from '@declutrmail/shared/actions';
+import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { ApiError } from '@/lib/api/client';
@@ -51,6 +51,7 @@ import {
   useCreateActionRecoveryPreview,
   useRevertActivity,
 } from './api/use-activity';
+import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 
@@ -65,7 +66,7 @@ const { color, font, shadow } = tokens;
  *   3. Source chips (D56)
  *   4. Verb chips (B8 — Archived / Deleted / Unsub / Later / Kept)
  *   5. Window picker (D55) + Custom date range (B10)
- *   6. Sender search (B9) + Group-by-sender toggle (B11) + Export CSV (B14)
+ *   6. Sender search (B9) + Group-by-sender toggle (B11) + support bundle export
  *   7. Bulk action bar (B7 — only visible when ≥1 row selected)
  *   8. Row list — flat (D57) OR sender-grouped (B11)
  *
@@ -324,8 +325,10 @@ export function ActivityScreen() {
         onSenderQuery={setSenderQuery}
         groupMode={groupMode}
         onGroupMode={setGroupMode}
-        rows={invalidActiveFilters ? [] : rows}
         filters={filters}
+        activeMailboxEmail={activeMailboxEmail}
+        activeMailboxId={activeMailboxId}
+        exportDisabled={invalidActiveFilters}
         isMobile={isMobile}
       />
 
@@ -700,7 +703,7 @@ function MetricsHeader({
   );
 }
 
-// ── Filter toolbar (D56 + B8 + B9 + B10 + B11 + B14) ─────────────────
+// ── Filter toolbar (D56 + B8 + B9 + B10 + B11) ───────────────────────
 
 type GroupMode = 'none' | 'sender';
 
@@ -758,8 +761,10 @@ interface FilterToolbarProps {
   onSenderQuery: (next: string) => void;
   groupMode: GroupMode;
   onGroupMode: (next: GroupMode) => void;
-  rows: readonly ActivityRowWire[];
   filters: ActivityFilters;
+  activeMailboxEmail: string | null;
+  activeMailboxId: string | null;
+  exportDisabled: boolean;
   isMobile: boolean;
 }
 
@@ -782,7 +787,7 @@ function activeFilterCount(p: FilterToolbarProps): number {
  * Filter surface — composes SOURCE·VERB and RANGE·SEARCH bands.
  *
  * Desktop (≥ sm): the two bands render inline inside a bordered card
- * (D56 + B8-B14), Group + Export in the band-2 right cluster.
+ * (D56 + B8-B13), Group + support export in the band-2 right cluster.
  *
  * Mobile (< sm, D60): the bands can't fit the inline layout, so the card
  * collapses to a compact trigger row — a "Filters (n)" button that opens
@@ -790,7 +795,15 @@ function activeFilterCount(p: FilterToolbarProps): number {
  * on the bar for one-tap access.
  */
 function FilterToolbar(props: FilterToolbarProps) {
-  const { groupMode, onGroupMode, rows, filters, isMobile } = props;
+  const {
+    groupMode,
+    onGroupMode,
+    filters,
+    activeMailboxEmail,
+    activeMailboxId,
+    exportDisabled,
+    isMobile,
+  } = props;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Close the drawer whenever we cross back to the desktop breakpoint so
@@ -867,7 +880,12 @@ function FilterToolbar(props: FilterToolbarProps) {
           </button>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
             {groupChip}
-            <ExportCsvButton rows={rows} filters={filters} />
+            <ExportSupportBundleButton
+              filters={filters}
+              mailboxEmail={activeMailboxEmail}
+              mailboxId={activeMailboxId}
+              disabled={exportDisabled}
+            />
           </div>
         </div>
         <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} {...props} />
@@ -894,7 +912,12 @@ function FilterToolbar(props: FilterToolbarProps) {
         trailing={
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
             {groupChip}
-            <ExportCsvButton rows={rows} filters={filters} />
+            <ExportSupportBundleButton
+              filters={filters}
+              mailboxEmail={activeMailboxEmail}
+              mailboxId={activeMailboxId}
+              disabled={exportDisabled}
+            />
           </div>
         }
       />
@@ -908,6 +931,21 @@ function FilterToolbar(props: FilterToolbarProps) {
  * injects the Group + Export cluster into band 2 on desktop; the mobile
  * drawer omits it (those live on the trigger bar).
  */
+type FilterBandsProps = Pick<
+  FilterToolbarProps,
+  | 'source'
+  | 'onSource'
+  | 'verbs'
+  | 'onVerbs'
+  | 'window'
+  | 'dateFrom'
+  | 'dateTo'
+  | 'onWindow'
+  | 'onRange'
+  | 'senderQuery'
+  | 'onSenderQuery'
+> & { senderSearchDebounceMs?: number };
+
 function FilterBands({
   source,
   onSource,
@@ -920,8 +958,9 @@ function FilterBands({
   onRange,
   senderQuery,
   onSenderQuery,
+  senderSearchDebounceMs,
   trailing,
-}: FilterToolbarProps & { trailing?: ReactNode }) {
+}: FilterBandsProps & { trailing?: ReactNode }) {
   const verbSet = useMemo(() => new Set(verbs), [verbs]);
   const toggleVerb = (verb: ActivityVerbFilterWire) => {
     const next = new Set(verbSet);
@@ -1026,7 +1065,11 @@ function FilterBands({
           </button>
         )}
         <Divider />
-        <SenderSearchInput value={senderQuery} onChange={onSenderQuery} />
+        <SenderSearchInput
+          value={senderQuery}
+          onChange={onSenderQuery}
+          debounceMs={senderSearchDebounceMs}
+        />
         {trailing}
       </div>
     </>
@@ -1221,9 +1264,11 @@ function DateInput({
 function SenderSearchInput({
   value,
   onChange,
+  debounceMs = 250,
 }: {
   value: string;
   onChange: (next: string) => void;
+  debounceMs?: number | undefined;
 }) {
   // Debounced local state — onChange fires 250ms after the user
   // stops typing so we don't push a URL update + re-fetch per keystroke.
@@ -1238,14 +1283,15 @@ function SenderSearchInput({
     }
   }, [value]);
   useEffect(() => {
+    if (debounceMs === 0) return;
     const handle = setTimeout(() => {
       if (draft !== lastPushed.current) {
         lastPushed.current = draft;
         onChange(draft);
       }
-    }, 250);
+    }, debounceMs);
     return () => clearTimeout(handle);
-  }, [draft, onChange]);
+  }, [debounceMs, draft, onChange]);
   return (
     <label
       style={{
@@ -1269,7 +1315,14 @@ function SenderSearchInput({
         type="search"
         placeholder="Search sender…"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          if (debounceMs === 0) {
+            lastPushed.current = next;
+            onChange(next);
+          }
+        }}
         aria-label="Search sender"
         style={{
           fontSize: 12.5,
@@ -1286,66 +1339,331 @@ function SenderSearchInput({
   );
 }
 
-// ── CSV export (B14) ──────────────────────────────────────────────────
+// ── Activity support bundle export ───────────────────────────────────
 
-function ExportCsvButton({
-  rows,
+interface EditableActivityFilters {
+  window: ActivityWindowWire;
+  source: ActivitySourceFilterWire;
+  verbs: ActivityVerbFilterWire[];
+  senderQuery: string;
+  dateFrom: string | null;
+  dateTo: string | null;
+}
+
+function ExportSupportBundleButton({
   filters,
+  mailboxEmail,
+  mailboxId,
+  disabled,
 }: {
-  rows: readonly ActivityRowWire[];
   filters: ActivityFilters;
+  mailboxEmail: string | null;
+  mailboxId: string | null;
+  disabled: boolean;
 }) {
-  const disabled = rows.length === 0;
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (rows.length === 0) return;
-        const blob = new Blob([rowsToCsv(rows)], { type: 'text/csv;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `declutrmail-activity-${filterFilenameSuffix(filters)}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        // Defer revoke so Safari/Firefox finish reading the blob.
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        // Funnel instrumentation — `filtered=true` whenever ANY filter
-        // is set away from the defaults (verbs / window / source /
-        // senderQuery / date range). Lets PostHog answer "do users
-        // export filtered slices or the whole table". Every field on
-        // ActivityFilters is optional; treat undefined as the default.
-        const filtered =
-          (filters.verbs?.length ?? 0) > 0 ||
-          (filters.window !== undefined && filters.window !== '30d') ||
-          (filters.source !== undefined && filters.source !== 'all') ||
-          (filters.senderQuery ?? '').trim().length > 0 ||
-          (filters.dateFrom ?? null) !== null ||
-          (filters.dateTo ?? null) !== null;
-        void track('csv_exported', {
-          surface: 'activity',
-          row_count: rows.length,
-          filtered,
-        });
-      }}
-      disabled={disabled}
-      title={disabled ? 'Nothing to export at the current filters.' : 'Export visible rows as CSV.'}
-      style={{
-        fontSize: 12.5,
-        fontFamily: font.sans,
-        padding: '6px 12px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: 'transparent',
-        color: disabled ? color.fgMuted : color.fg,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-    >
-      Export CSV
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={
+          disabled
+            ? 'Fix the current date filters before exporting.'
+            : 'Review filters and create a support bundle.'
+        }
+        style={{
+          fontSize: 12.5,
+          fontFamily: font.sans,
+          padding: '6px 12px',
+          border: `1px solid ${color.lineSoft}`,
+          borderRadius: 999,
+          background: 'transparent',
+          color: disabled ? color.fgMuted : color.fg,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+        }}
+      >
+        Export support bundle
+      </button>
+      {open && (
+        <ActivitySupportBundleDialog
+          initialFilters={filters}
+          mailboxEmail={mailboxEmail}
+          mailboxId={mailboxId}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
+
+function ActivitySupportBundleDialog({
+  initialFilters,
+  mailboxEmail,
+  mailboxId,
+  onClose,
+}: {
+  initialFilters: ActivityFilters;
+  mailboxEmail: string | null;
+  mailboxId: string | null;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState<EditableActivityFilters>(() => ({
+    window: initialFilters.window ?? '30d',
+    source: initialFilters.source ?? 'all',
+    verbs: [...(initialFilters.verbs ?? [])],
+    senderQuery: initialFilters.senderQuery ?? '',
+    dateFrom: initialFilters.dateFrom ?? null,
+    dateTo: initialFilters.dateTo ?? null,
+  }));
+  const [includeFullSenderAddresses, setIncludeFullSenderAddresses] = useState(false);
+  const [includeTechnicalDetails, setIncludeTechnicalDetails] = useState(false);
+  const exportBundle = useActivitySupportBundle();
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  const invalidRange =
+    draft.dateFrom !== null &&
+    draft.dateTo !== null &&
+    Date.parse(draft.dateFrom) >= Date.parse(draft.dateTo);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !exportBundle.isPending) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [exportBundle.isPending, onClose]);
+
+  const submit = async () => {
+    if (invalidRange || exportBundle.isPending) return;
+    try {
+      await exportBundle.mutateAsync({
+        filters: draft,
+        mailboxId,
+        includeFullSenderAddresses,
+        includeTechnicalDetails,
+      });
+      onClose();
+    } catch {
+      // Mutation state renders the recoverable error without closing the review dialog.
+    }
+  };
+
+  return (
+    <>
+      <div
+        data-testid="activity-support-bundle-backdrop"
+        onClick={exportBundle.isPending ? undefined : onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(14,20,19,0.48)',
+          backdropFilter: 'blur(3px)',
+          zIndex: 180,
+        }}
+      />
+      <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="activity-support-bundle-title"
+        aria-describedby="activity-support-bundle-lead"
+        style={{
+          position: 'fixed',
+          top: '6vh',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 'min(720px, calc(100vw - 28px))',
+          maxHeight: '88vh',
+          overflow: 'auto',
+          background: color.card,
+          border: `1px solid ${color.border}`,
+          borderRadius: 14,
+          boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
+          zIndex: 181,
+          fontFamily: font.sans,
+        }}
+      >
+        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
+          <h2
+            id="activity-support-bundle-title"
+            style={{ margin: 0, color: color.fg, fontSize: 19, fontWeight: 600 }}
+          >
+            Export Activity support bundle
+          </h2>
+          <p
+            id="activity-support-bundle-lead"
+            style={{ margin: '7px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}
+          >
+            Review which Activity records to include. The ZIP contains a readable summary and CSV
+            for all matching records, not only rows currently loaded on screen.
+          </p>
+          <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
+            Mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
+          </p>
+        </div>
+
+        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <section aria-labelledby="activity-support-bundle-filters">
+            <h3
+              id="activity-support-bundle-filters"
+              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
+            >
+              Records to include
+            </h3>
+            <div
+              style={{
+                padding: 12,
+                border: `1px solid ${color.lineSoft}`,
+                borderRadius: 10,
+                background: color.paper,
+              }}
+            >
+              <FilterBands
+                source={draft.source}
+                onSource={(source) => setDraft((current) => ({ ...current, source }))}
+                verbs={draft.verbs}
+                onVerbs={(verbs) => setDraft((current) => ({ ...current, verbs: [...verbs] }))}
+                window={draft.window}
+                dateFrom={draft.dateFrom}
+                dateTo={draft.dateTo}
+                onWindow={(window) =>
+                  setDraft((current) => ({
+                    ...current,
+                    window,
+                    dateFrom: null,
+                    dateTo: null,
+                  }))
+                }
+                onRange={(dateFrom, dateTo) =>
+                  setDraft((current) => ({ ...current, dateFrom, dateTo }))
+                }
+                senderQuery={draft.senderQuery}
+                onSenderQuery={(senderQuery) =>
+                  setDraft((current) => ({ ...current, senderQuery }))
+                }
+                senderSearchDebounceMs={0}
+              />
+            </div>
+            {invalidRange && (
+              <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: 12 }}>
+                The From date must be earlier than the To date.
+              </div>
+            )}
+          </section>
+
+          <section aria-labelledby="activity-support-bundle-privacy">
+            <h3
+              id="activity-support-bundle-privacy"
+              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
+            >
+              Privacy options
+            </h3>
+            <label style={supportBundleOptionStyle}>
+              <input
+                type="checkbox"
+                checked={includeFullSenderAddresses}
+                onChange={(event) => setIncludeFullSenderAddresses(event.target.checked)}
+              />
+              <span>
+                <strong style={{ color: color.fg }}>Include full sender addresses</strong>
+                <span style={supportBundleOptionHelpStyle}>
+                  Off by default. Otherwise addresses are masked, such as j***@example.com.
+                </span>
+              </span>
+            </label>
+            <label style={{ ...supportBundleOptionStyle, marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={includeTechnicalDetails}
+                onChange={(event) => setIncludeTechnicalDetails(event.target.checked)}
+              />
+              <span>
+                <strong style={{ color: color.fg }}>Include technical details</strong>
+                <span style={supportBundleOptionHelpStyle}>
+                  Adds a separate JSON appendix for support correlation.
+                </span>
+              </span>
+            </label>
+            <TechnicalDetails
+              summary="What technical details can be included?"
+              style={{ marginTop: 10 }}
+            >
+              The optional appendix contains the bundle version, internal mailbox and Activity
+              identifiers, action-attempt identifiers, machine action/source values, execution
+              status, classified error codes, and filter dates. It never includes OAuth, session, or
+              Undo tokens; idempotency keys; raw provider responses; message bodies; or raw
+              exception text.
+            </TechnicalDetails>
+          </section>
+
+          {exportBundle.error && (
+            <div
+              role="alert"
+              style={{
+                padding: '10px 11px',
+                borderRadius: 8,
+                color: color.danger,
+                background: color.dangerBg,
+                border: `1px solid ${color.dangerBorder}`,
+                fontSize: 12.5,
+              }}
+            >
+              We couldn&apos;t create the support bundle. Your Activity is unchanged. Review the
+              options and try again.
+              <TechnicalDetails summary="Show error details" style={{ marginTop: 8 }}>
+                {technicalErrorDetails(exportBundle.error)}
+              </TechnicalDetails>
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 8,
+            padding: '13px 24px 18px',
+            borderTop: `1px solid ${color.line}`,
+          }}
+        >
+          <Button tone="default" onClick={onClose} disabled={exportBundle.isPending}>
+            Cancel
+          </Button>
+          <Button
+            tone="primary"
+            onClick={() => void submit()}
+            disabled={invalidRange || exportBundle.isPending}
+          >
+            {exportBundle.isPending ? 'Creating bundle…' : 'Download bundle'}
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const supportBundleOptionStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 9,
+  padding: '10px 11px',
+  border: `1px solid ${color.lineSoft}`,
+  borderRadius: 9,
+  background: color.paper,
+  color: color.fgSoft,
+  fontSize: 12.5,
+  lineHeight: 1.45,
+};
+
+const supportBundleOptionHelpStyle: CSSProperties = {
+  display: 'block',
+  marginTop: 2,
+  color: color.fgMuted,
+  fontSize: 12,
+};
 
 // ── Bulk action bar (B7) ──────────────────────────────────────────────
 
@@ -2412,7 +2730,7 @@ function ActionRecoveryDialog({
             id="action-recovery-title"
             style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
           >
-            Review failed {ACTION_LABEL[row.action].toLowerCase()}
+            Review failed {sharedActivityActionLabel(row.action, null).toLowerCase()}
           </h2>
           <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
             DeclutrMail checks Gmail&apos;s current label state before offering another attempt.
@@ -3078,62 +3396,8 @@ function Chip({
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-const ACTION_LABEL: Record<ActivityActionWire, string> = {
-  keep: getActionSemantics('keep').resultLabel,
-  archive: getActionSemantics('archive').resultLabel,
-  // D9 — the intent row records the ATTEMPT, never success: "UI copy is
-  // deliberately uncertain — never promise." A one-click POST may still
-  // fail and a mailto is manual (D230), so at click time the outcome is
-  // unknown. "Unsubscribe requested" (not "Unsubscribed") keeps the row
-  // honest; the separate `unsubscribe_confirmed` row is the only place
-  // that promises success, and it is written only on a 2xx accept.
-  unsubscribe: getActionSemantics('unsubscribe').resultLabel,
-  // D56 — the confirmed OUTCOME row (brand's endpoint accepted). This is
-  // the one row that states the unsubscribe actually went through.
-  unsubscribe_confirmed: 'Unsubscribe endpoint accepted request',
-  unsubscribe_endpoint_accepted: 'Unsubscribe endpoint accepted request',
-  unsubscribe_failed: 'Unsubscribe request failed',
-  unsubscribe_unconfirmed: 'Unsubscribe result unconfirmed',
-  unsubscribe_action_required: 'Email request required',
-  unsubscribe_draft_opened: 'Gmail draft opened',
-  unsubscribe_user_marked_sent: 'Marked unsubscribe email sent',
-  unsubscribe_unavailable: 'No unsubscribe channel available',
-  later: getActionSemantics('later').resultLabel,
-  // D227 K/A/U/L/D — Delete verb (ADR-0019). The audit copy uses
-  // "Deleted" rather than "Trashed" to stay verb-symmetric with
-  // "Archived"; spec L312 confirms "Delete" is the user-facing verb.
-  delete: getActionSemantics('delete').resultLabel,
-  'followup-dismiss': 'Followup resolved',
-  // Protect toggle audit rows (senders policy write path).
-  marked_protected: 'Protected',
-  unmarked_protected: 'Unprotected',
-};
-
-/** Synthetic action-job rows describe intent/progress, never a completed outcome. */
 function activityRowActionLabel(row: ActivityRowWire): string {
-  if (!row.executionState) return ACTION_LABEL[row.action];
-  if (row.action !== 'archive' && row.action !== 'later' && row.action !== 'delete') {
-    return ACTION_LABEL[row.action];
-  }
-  if (row.executionState.kind === 'failed') {
-    if (row.action === 'archive') return 'Archive failed';
-    if (row.action === 'later') return 'Later failed';
-    return 'Delete failed';
-  }
-  if (row.action === 'archive') return 'Archiving…';
-  if (row.action === 'later') return 'Moving to Later…';
-  return 'Deleting…';
-}
-
-function activityRowExecutionLabel(row: ActivityRowWire): string {
-  const execution = row.executionState;
-  if (!execution) return 'Completed';
-  if (execution.kind === 'in_progress') {
-    const prefix = execution.isRecovery ? 'Recovery ' : '';
-    return `${prefix}${execution.status === 'queued' ? 'queued' : 'in progress'}`;
-  }
-  if (execution.resolution === 'review') return 'Failed · review available';
-  return 'Failed · support required';
+  return sharedActivityActionLabel(row.action, row.executionState);
 }
 
 const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
@@ -3295,55 +3559,4 @@ function safeIsoFromDateInput(value: string): string | null {
   const date = new Date(`${value}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
-}
-
-// ── CSV builder ───────────────────────────────────────────────────────
-
-/**
- * Build a CSV from the visible activity rows. Columns mirror what the
- * user sees on screen — no body-adjacent fields (D7/D228 holds for
- * exports too).
- */
-export function rowsToCsv(rows: readonly ActivityRowWire[]): string {
-  const header = [
-    'Occurred At',
-    'Verb',
-    'Source',
-    'Sender Name',
-    'Sender Email',
-    'Affected Messages',
-    'Execution Status',
-    'Undo State',
-  ].join(',');
-  const lines = rows.map((row) =>
-    [
-      row.occurredAt,
-      activityRowActionLabel(row),
-      SOURCE_LABEL[row.source],
-      row.sender?.displayName ?? '',
-      row.sender?.email ?? '',
-      String(row.affectedCount),
-      activityRowExecutionLabel(row),
-      row.undoState.kind,
-    ]
-      .map(csvField)
-      .join(','),
-  );
-  return [header, ...lines].join('\n');
-}
-
-function csvField(value: string): string {
-  // Quote if the value contains a comma, quote, or newline; double any
-  // embedded quotes per RFC 4180.
-  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function filterFilenameSuffix(filters: ActivityFilters): string {
-  const parts: string[] = [];
-  if (filters.window) parts.push(filters.window);
-  if (filters.source && filters.source !== 'all') parts.push(filters.source);
-  if (filters.verbs && filters.verbs.length > 0) parts.push(filters.verbs.join('-'));
-  if (filters.dateFrom || filters.dateTo) parts.push('custom');
-  return parts.join('-') || 'all';
 }

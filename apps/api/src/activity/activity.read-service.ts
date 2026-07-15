@@ -23,17 +23,21 @@ import {
   countDistinct,
   desc,
   eq,
+  gt,
   gte,
   ilike,
   inArray,
   isNotNull,
   isNull,
   lt,
+  lte,
   min,
+  notExists,
   or,
   sql,
   sum,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/contracts';
 
@@ -163,6 +167,12 @@ export interface ListActivityResult {
   allTimeStats: ActivityStats;
 }
 
+export type IterateActivityParams = Omit<ListActivityParams, 'cursor' | 'limit'>;
+
+export interface ActivityIterationSnapshot {
+  readonly createdAt: Date;
+}
+
 @Injectable()
 export class ActivityReadService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
@@ -188,18 +198,7 @@ export class ActivityReadService {
    * AND `executed_at IS NULL`).
    */
   async listActivity(params: ListActivityParams): Promise<ListActivityResult> {
-    const {
-      mailboxAccountId,
-      window,
-      source,
-      verbs = [],
-      senderQuery = '',
-      dateFrom = null,
-      dateTo = null,
-      cursor,
-      limit,
-      nowMs,
-    } = params;
+    const { mailboxAccountId, window, dateFrom = null, dateTo = null, nowMs } = params;
     // Custom date range, when supplied, REPLACES the window-derived
     // lower bound — the FE picker shows whichever wins. When neither
     // dateFrom nor dateTo is set, fall back to the window default
@@ -207,118 +206,8 @@ export class ActivityReadService {
     const useCustomRange = dateFrom !== null || dateTo !== null;
     const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
 
-    const whereParts = [eq(activityLog.mailboxAccountId, mailboxAccountId)];
-    if (windowStart) whereParts.push(gte(activityLog.occurredAt, windowStart));
-    if (dateFrom) whereParts.push(gte(activityLog.occurredAt, dateFrom));
-    if (dateTo) whereParts.push(lt(activityLog.occurredAt, dateTo));
-    if (source) whereParts.push(eq(activityLog.source, source));
-    if (verbs.length > 0) whereParts.push(inArray(activityLog.action, verbs));
-    if (senderQuery.length > 0) {
-      // ILIKE pattern: match anywhere in display_name OR email.
-      // sender_key NULL rows (account-scoped actions) drop out — the
-      // sender join in the SELECT is a LEFT JOIN, so a sender_q filter
-      // implicitly narrows to rows with a resolved sender.
-      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
-      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
-    }
-    if (cursor) {
-      // Strict-after-cursor pagination on `(occurred_at DESC, id DESC)`.
-      // Same OR-chain shape as senders.list — the boundary row belongs
-      // on the prior page (we use `<` not `<=`).
-      whereParts.push(
-        or(
-          lt(activityLog.occurredAt, cursor.occurredAt),
-          and(eq(activityLog.occurredAt, cursor.occurredAt), lt(activityLog.id, cursor.id)),
-        )!,
-      );
-    }
-
-    const [rows, executionLineages] = await Promise.all([
-      this.db
-        .select({
-          id: activityLog.id,
-          occurredAt: activityLog.occurredAt,
-          source: activityLog.source,
-          action: activityLog.action,
-          affectedCount: activityLog.affectedCount,
-          senderKey: activityLog.senderKey,
-          undoToken: activityLog.undoToken,
-          ruleId: activityLog.ruleId,
-          ruleName: automationRules.name,
-          senderDisplayName: senders.displayName,
-          senderEmail: senders.email,
-          undoCreatedAt: undoJournal.createdAt,
-          undoExpiresAt: undoJournal.expiresAt,
-          undoExecutedAt: undoJournal.executedAt,
-          undoRevertedAt: undoJournal.revertedAt,
-        })
-        .from(activityLog)
-        .leftJoin(
-          senders,
-          and(
-            eq(senders.mailboxAccountId, activityLog.mailboxAccountId),
-            // sender_key is nullable; the join naturally drops to null
-            // for account-scoped rows, which is what `ActivityRow.sender`
-            // null encodes. Drizzle column refs emit fully-qualified
-            // `"table"."col"` SQL — the correlated-subquery footgun
-            // from MISTAKES.md 2026-05-23 does not apply here because
-            // we're not using `sql.raw`.
-            eq(senders.senderKey, activityLog.senderKey),
-          ),
-        )
-        .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
-        // D57 rule attribution — `rule_id` is non-null only for
-        // autopilot-attributed rows, and the FK's `onDelete: 'set null'`
-        // keeps a non-null id resolvable; LEFT JOIN stays the defensive
-        // shape (a null id simply yields no rule).
-        .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
-        .where(and(...whereParts))
-        .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
-        .limit(limit + 1),
-      this.loadExecutionLineages(mailboxAccountId),
-    ]);
-
-    const projected = rows.map((row): ActivityRow => {
-      const sender =
-        row.senderKey && row.senderEmail
-          ? {
-              senderKey: row.senderKey,
-              displayName: row.senderDisplayName ?? row.senderEmail,
-              email: row.senderEmail,
-              domain: domainOf(row.senderEmail),
-            }
-          : null;
-
-      return {
-        id: row.id,
-        occurredAt: row.occurredAt.toISOString(),
-        source: row.source,
-        action: row.action,
-        affectedCount: row.affectedCount,
-        sender,
-        rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
-        undoState: resolveUndoState({
-          token: row.undoToken,
-          expiresAt: row.undoExpiresAt,
-          executedAt: row.undoExecutedAt,
-          revertedAt: row.undoRevertedAt,
-          nowMs,
-        }),
-        executionState: null,
-      };
-    });
-
-    const executionRows = projectExecutionRows(executionLineages, {
-      source,
-      verbs,
-      senderQuery,
-      lowerBound: dateFrom ?? windowStart,
-      upperBound: dateTo,
-      cursor,
-    });
-    const mergedRows = [...projected, ...executionRows]
-      .sort(compareActivityRowsNewestFirst)
-      .slice(0, limit + 1);
+    const executionLineages = await this.loadExecutionLineages(mailboxAccountId);
+    const rows = await this.loadActivityRows(params, executionLineages);
 
     // Stats follow the same window/date bound as the rows query, but
     // IGNORE source/verb/sender so the line stays stable as chips toggle
@@ -342,7 +231,347 @@ export class ActivityReadService {
       }),
     ]);
 
-    return { rows: mergedRows, stats, allTimeStats };
+    return { rows, stats, allTimeStats };
+  }
+
+  /**
+   * Iterate the complete filtered Activity result with the same keyset
+   * semantics as the paginated screen. Callers choose a bounded batch size;
+   * no row array grows with mailbox history.
+   */
+  async *iterateActivity(
+    params: IterateActivityParams,
+    batchSize = 500,
+    snapshot?: ActivityIterationSnapshot,
+  ): AsyncGenerator<ActivityRow> {
+    const activeSnapshot =
+      snapshot ?? (await this.captureIterationSnapshot(params.mailboxAccountId));
+    const persisted = this.iteratePersistedActivity(params, batchSize, activeSnapshot.createdAt);
+    const executions = this.iterateExecutionActivity(params, batchSize, activeSnapshot.createdAt);
+    let [persistedNext, executionNext] = await Promise.all([persisted.next(), executions.next()]);
+
+    while (!persistedNext.done || !executionNext.done) {
+      if (
+        executionNext.done ||
+        (!persistedNext.done &&
+          compareActivityRowsNewestFirst(persistedNext.value, executionNext.value) <= 0)
+      ) {
+        yield persistedNext.value;
+        persistedNext = await persisted.next();
+      } else {
+        yield executionNext.value;
+        executionNext = await executions.next();
+      }
+    }
+  }
+
+  private async *iteratePersistedActivity(
+    params: IterateActivityParams,
+    batchSize: number,
+    snapshotCreatedAt: Date,
+  ): AsyncGenerator<ActivityRow> {
+    let cursor: ListActivityParams['cursor'] = null;
+    for (;;) {
+      const rows = await this.loadActivityRows(
+        { ...params, cursor, limit: batchSize },
+        [],
+        snapshotCreatedAt,
+      );
+      const page = rows.slice(0, batchSize);
+      for (const row of page) yield row;
+      if (rows.length <= batchSize || page.length === 0) return;
+      const last = page[page.length - 1]!;
+      cursor = { occurredAt: new Date(last.occurredAt), id: last.id };
+    }
+  }
+
+  private async *iterateExecutionActivity(
+    params: IterateActivityParams,
+    batchSize: number,
+    snapshotCreatedAt: Date,
+  ): AsyncGenerator<ActivityRow> {
+    if (params.source !== null && params.source !== 'manual') return;
+    const useCustomRange = params.dateFrom !== null && params.dateFrom !== undefined;
+    const hasCustomUpperBound = params.dateTo !== null && params.dateTo !== undefined;
+    const lowerBound =
+      useCustomRange || hasCustomUpperBound
+        ? (params.dateFrom ?? null)
+        : resolveWindowStart(params.window, params.nowMs);
+    const upperBound = params.dateTo ?? null;
+    let cursor: { occurredAt: Date; id: string } | null = null;
+
+    for (;;) {
+      const attempts = await this.loadCurrentExecutionAttempts({
+        ...params,
+        lowerBound,
+        upperBound,
+        cursor,
+        limit: batchSize,
+        snapshotCreatedAt,
+      });
+      if (attempts.length === 0) return;
+      const lineages = await this.hydrateCurrentExecutionLineages(
+        params.mailboxAccountId,
+        attempts,
+      );
+      const rows = projectExecutionRows(lineages, {
+        source: params.source,
+        verbs: params.verbs ?? [],
+        senderQuery: params.senderQuery ?? '',
+        lowerBound,
+        upperBound,
+        cursor: null,
+      });
+      for (const row of rows) yield row;
+      if (attempts.length < batchSize) return;
+      const last = attempts[attempts.length - 1]!;
+      cursor = { occurredAt: last.createdAt, id: last.id };
+    }
+  }
+
+  async captureIterationSnapshot(mailboxAccountId: string): Promise<ActivityIterationSnapshot> {
+    void mailboxAccountId;
+    return { createdAt: new Date() };
+  }
+
+  private async loadCurrentExecutionAttempts(args: {
+    mailboxAccountId: string;
+    verbs?: ActivityVerbFilter[];
+    lowerBound: Date | null;
+    upperBound: Date | null;
+    cursor: { occurredAt: Date; id: string } | null;
+    limit: number;
+    snapshotCreatedAt: Date;
+  }): Promise<ExecutionAttempt[]> {
+    const current = alias(actionJobs, 'activity_export_current');
+    const later = alias(actionJobs, 'activity_export_later');
+    const whereParts = [
+      eq(current.mailboxAccountId, args.mailboxAccountId),
+      eq(current.direction, 'forward' as const),
+      inArray(current.verb, EXECUTION_VERBS),
+      inArray(current.status, ['queued', 'executing', 'failed'] as const),
+      lte(current.createdAt, args.snapshotCreatedAt),
+      notExists(
+        this.db
+          .select({ id: later.id })
+          .from(later)
+          .where(
+            and(
+              eq(later.mailboxAccountId, args.mailboxAccountId),
+              eq(later.direction, 'forward' as const),
+              lte(later.createdAt, args.snapshotCreatedAt),
+              sql`coalesce(${later.rootActionId}, ${later.id}) = coalesce(${current.rootActionId}, ${current.id})`,
+              gt(later.recoveryAttempt, current.recoveryAttempt),
+            ),
+          ),
+      ),
+    ];
+    if (args.verbs && args.verbs.length > 0) {
+      const executionVerbs = args.verbs.filter((verb): verb is ExecutionVerb =>
+        EXECUTION_VERBS.includes(verb as ExecutionVerb),
+      );
+      if (executionVerbs.length === 0) return [];
+      whereParts.push(inArray(current.verb, executionVerbs));
+    }
+    if (args.lowerBound) whereParts.push(gte(current.createdAt, args.lowerBound));
+    if (args.upperBound) whereParts.push(lt(current.createdAt, args.upperBound));
+    if (args.cursor) {
+      whereParts.push(
+        or(
+          lt(current.createdAt, args.cursor.occurredAt),
+          and(eq(current.createdAt, args.cursor.occurredAt), lt(current.id, args.cursor.id)),
+        )!,
+      );
+    }
+    return this.db
+      .select({
+        id: current.id,
+        rootActionId: current.rootActionId,
+        verb: current.verb,
+        status: current.status,
+        selector: current.selector,
+        requestedCount: current.requestedCount,
+        errorCode: current.errorCode,
+        createdAt: current.createdAt,
+        recoveryAttempt: current.recoveryAttempt,
+      })
+      .from(current)
+      .where(and(...whereParts))
+      .orderBy(desc(current.createdAt), desc(current.id))
+      .limit(args.limit);
+  }
+
+  private async hydrateCurrentExecutionLineages(
+    mailboxAccountId: string,
+    attempts: readonly ExecutionAttempt[],
+  ): Promise<ExecutionLineage[]> {
+    const rootIds = [...new Set(attempts.map((attempt) => attempt.rootActionId ?? attempt.id))];
+    const roots = await this.db
+      .select({
+        id: actionJobs.id,
+        rootActionId: actionJobs.rootActionId,
+        verb: actionJobs.verb,
+        status: actionJobs.status,
+        selector: actionJobs.selector,
+        requestedCount: actionJobs.requestedCount,
+        errorCode: actionJobs.errorCode,
+        createdAt: actionJobs.createdAt,
+        recoveryAttempt: actionJobs.recoveryAttempt,
+      })
+      .from(actionJobs)
+      .where(
+        and(eq(actionJobs.mailboxAccountId, mailboxAccountId), inArray(actionJobs.id, rootIds)),
+      );
+    const rootsById = new Map(roots.map((root) => [root.id, root]));
+    const senderKeys = [
+      ...new Set(
+        roots.flatMap((root) => (root.selector.type === 'sender' ? [root.selector.senderKey] : [])),
+      ),
+    ];
+    const senderRows =
+      senderKeys.length === 0
+        ? []
+        : await this.db
+            .select({
+              senderKey: senders.senderKey,
+              displayName: senders.displayName,
+              email: senders.email,
+            })
+            .from(senders)
+            .where(
+              and(
+                eq(senders.mailboxAccountId, mailboxAccountId),
+                inArray(senders.senderKey, senderKeys),
+              ),
+            );
+    const sendersByKey = new Map(
+      senderRows.map((sender) => [
+        sender.senderKey,
+        {
+          senderKey: sender.senderKey,
+          displayName: sender.displayName ?? sender.email,
+          email: sender.email,
+          domain: domainOf(sender.email),
+        },
+      ]),
+    );
+    return attempts.flatMap((current): ExecutionLineage[] => {
+      const root = rootsById.get(current.rootActionId ?? current.id);
+      if (!root) return [];
+      const senderKey = root.selector.type === 'sender' ? root.selector.senderKey : null;
+      return [{ root, current, sender: senderKey ? (sendersByKey.get(senderKey) ?? null) : null }];
+    });
+  }
+
+  private async loadActivityRows(
+    params: ListActivityParams,
+    executionLineages: readonly ExecutionLineage[],
+    snapshotCreatedAt: Date | null = null,
+  ): Promise<ActivityRow[]> {
+    const {
+      mailboxAccountId,
+      window,
+      source,
+      verbs = [],
+      senderQuery = '',
+      dateFrom = null,
+      dateTo = null,
+      cursor,
+      limit,
+      nowMs,
+    } = params;
+    const useCustomRange = dateFrom !== null || dateTo !== null;
+    const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
+    const whereParts = [eq(activityLog.mailboxAccountId, mailboxAccountId)];
+    if (windowStart) whereParts.push(gte(activityLog.occurredAt, windowStart));
+    if (dateFrom) whereParts.push(gte(activityLog.occurredAt, dateFrom));
+    if (dateTo) whereParts.push(lt(activityLog.occurredAt, dateTo));
+    if (snapshotCreatedAt) whereParts.push(lte(activityLog.createdAt, snapshotCreatedAt));
+    if (source) whereParts.push(eq(activityLog.source, source));
+    if (verbs.length > 0) whereParts.push(inArray(activityLog.action, verbs));
+    if (senderQuery.length > 0) {
+      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
+    }
+    if (cursor) {
+      whereParts.push(
+        or(
+          lt(activityLog.occurredAt, cursor.occurredAt),
+          and(eq(activityLog.occurredAt, cursor.occurredAt), lt(activityLog.id, cursor.id)),
+        )!,
+      );
+    }
+
+    const rows = await this.db
+      .select({
+        id: activityLog.id,
+        occurredAt: activityLog.occurredAt,
+        source: activityLog.source,
+        action: activityLog.action,
+        affectedCount: activityLog.affectedCount,
+        senderKey: activityLog.senderKey,
+        undoToken: activityLog.undoToken,
+        ruleId: activityLog.ruleId,
+        ruleName: automationRules.name,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+        undoExpiresAt: undoJournal.expiresAt,
+        undoExecutedAt: undoJournal.executedAt,
+        undoRevertedAt: undoJournal.revertedAt,
+      })
+      .from(activityLog)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, activityLog.mailboxAccountId),
+          eq(senders.senderKey, activityLog.senderKey),
+        ),
+      )
+      .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
+      .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
+      .where(and(...whereParts))
+      .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
+      .limit(limit + 1);
+
+    const projected = rows.map((row): ActivityRow => {
+      const sender =
+        row.senderKey && row.senderEmail
+          ? {
+              senderKey: row.senderKey,
+              displayName: row.senderDisplayName ?? row.senderEmail,
+              email: row.senderEmail,
+              domain: domainOf(row.senderEmail),
+            }
+          : null;
+      return {
+        id: row.id,
+        occurredAt: row.occurredAt.toISOString(),
+        source: row.source,
+        action: row.action,
+        affectedCount: row.affectedCount,
+        sender,
+        rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
+        undoState: resolveUndoState({
+          token: row.undoToken,
+          expiresAt: row.undoExpiresAt,
+          executedAt: row.undoExecutedAt,
+          revertedAt: row.undoRevertedAt,
+          nowMs,
+        }),
+        executionState: null,
+      };
+    });
+    const executionRows = projectExecutionRows(executionLineages, {
+      source,
+      verbs,
+      senderQuery,
+      lowerBound: dateFrom ?? windowStart,
+      upperBound: dateTo,
+      cursor,
+    });
+    return [...projected, ...executionRows]
+      .sort(compareActivityRowsNewestFirst)
+      .slice(0, limit + 1);
   }
 
   /**
@@ -622,7 +851,7 @@ export class ActivityReadService {
 }
 
 function projectExecutionRows(
-  lineages: ExecutionLineage[],
+  lineages: readonly ExecutionLineage[],
   filters: {
     source: ActivityLogEntry['source'] | null;
     verbs: ActivityVerbFilter[];
