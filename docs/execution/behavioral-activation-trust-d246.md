@@ -109,8 +109,9 @@ below with the last commit, green checks, and exact next unchecked slice.
 
 ## Current checkpoint
 
-- Last completed slice: none; program contract recorded.
-- Last green checks: documentation-only checkpoint.
+- Last completed slice: DST-safe Brief local-window primitive with UTC fallback,
+  half-hour-offset support, local weekday detection, and an 08:00 readiness gate.
+- Last green checks: Brief timezone tests (5); workers typecheck.
 - Base: `9bc6b739` (`origin/main`, merged PR #333).
-- Next slice: reconcile browser-notification behavior and implement Brief local
-  scheduling tests before production code.
+- Next slice: integrate the local window into `BriefSnapshotWorker`, then capture
+  the browser timezone through an authenticated user preference mutation.
