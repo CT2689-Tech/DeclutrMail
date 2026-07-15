@@ -36,7 +36,7 @@ automation adoption.
   senders, or clear old promotions.
 - The goal chooses the initial explanation and ordering, never an automatic
   mail-changing action.
-- The first session contains at most ten real sender decisions and has a clear
+- The first session contains at most five real sender decisions and has a clear
   completion state. It may end early when fewer eligible senders exist.
 - Completion copy says the user is done for today and offers a voluntary next
   step. It does not present Inbox Zero, a streak, guilt, or a fabricated time
