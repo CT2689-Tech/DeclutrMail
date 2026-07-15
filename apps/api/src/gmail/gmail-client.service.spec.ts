@@ -192,7 +192,42 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 
+  describe('getMessageLabelIds', () => {
+    it('requests only a minimal id + labelIds response', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({ id: 'm1', labelIds: ['INBOX', 'STARRED'], snippet: 'must be ignored' }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      const labels = await client.getMessageLabelIds('a/b id');
+
+      expect(labels).toEqual(['INBOX', 'STARRED']);
+      expect(fetchMock.mock.calls[0]![0]).toBe(
+        `${API}/messages/a%2Fb%20id?format=minimal&fields=id%2ClabelIds`,
+      );
+      expect(fetchMock.mock.calls[0]![1]?.method).toBeUndefined();
+    });
+
+    it('returns null when the message no longer exists', async () => {
+      fetchMock.mockResolvedValueOnce(makeResponse(404, 'missing'));
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageLabelIds('gone')).resolves.toBeNull();
+    });
+  });
+
   describe('ensureLabelId', () => {
+    it('findLabelId returns null without creating a missing label', async () => {
+      fetchMock.mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }));
+      const client = new GmailClientService(oauth, limiter);
+
+      const id = await client.findLabelId('DeclutrMail/Later');
+
+      expect(id).toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]![1]?.method).not.toBe('POST');
+    });
+
     it('resolves an existing user label by exact name via labels.list', async () => {
       fetchMock.mockResolvedValueOnce(
         jsonOk({

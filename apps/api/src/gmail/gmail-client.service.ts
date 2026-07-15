@@ -270,6 +270,21 @@ export class GmailClientService
   }
 
   /**
+   * Read only one message's labels for recovery verification. `format=minimal`
+   * plus a fields mask keeps snippets, headers, bodies, and attachment data
+   * out of the response entirely.
+   */
+  async getMessageLabelIds(messageId: string): Promise<string[] | null> {
+    const params = new URLSearchParams({ format: 'minimal', fields: 'id,labelIds' });
+    const json = await this.get<GmailGetResponse>(
+      `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
+      true,
+    );
+    if (json === null) return null;
+    return Array.isArray(json.labelIds) ? json.labelIds : [];
+  }
+
+  /**
    * Snapshot the mailbox's user-level `historyId` from
    * `users.getProfile` (D5 — incremental-sync starting cursor for PR-D).
    * Body-free; just the profile resource (email, historyId, totals).
@@ -532,6 +547,20 @@ export class GmailClientService
   }
 
   /**
+   * Resolve an existing USER label without creating it. This is the
+   * read-only sibling of `ensureLabelId`, used by consequence previews.
+   */
+  async findLabelId(name: string): Promise<string | null> {
+    const cached = this.labelIdCache.get(name);
+    if (cached) return cached;
+    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    const match = (listed?.labels ?? []).find((label) => label.name === name);
+    if (!match?.id) return null;
+    this.labelIdCache.set(name, match.id);
+    return match.id;
+  }
+
+  /**
    * Resolve a USER label name to its Gmail label id, creating the label
    * if it does not exist (the `GmailMutationClient` port's name→id
    * resolution boundary — see the port doc for the system-label
@@ -543,16 +572,8 @@ export class GmailClientService
    * batches resolve each name once. D7-safe: label ids + names only.
    */
   async ensureLabelId(name: string): Promise<string> {
-    const cached = this.labelIdCache.get(name);
-    if (cached) {
-      return cached;
-    }
-    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
-    const match = (listed?.labels ?? []).find((l) => l.name === name);
-    if (match?.id) {
-      this.labelIdCache.set(name, match.id);
-      return match.id;
-    }
+    const existing = await this.findLabelId(name);
+    if (existing) return existing;
     const created = await this.postJson<GmailLabelCreateResponse>('/labels', {
       name,
       labelListVisibility: 'labelShow',

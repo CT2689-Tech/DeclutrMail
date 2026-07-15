@@ -9,6 +9,8 @@ import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import {
   AccountDeletionPurgeWorker,
+  ACTION_RECOVERY_QUEUE,
+  ActionRecoveryWorker,
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
   BRIEF_SNAPSHOT_INTERVAL_MS,
@@ -76,6 +78,8 @@ import {
   workerTuningOptions,
 } from '@declutrmail/workers';
 import type {
+  ActionRecoveryJobData,
+  ActionRecoveryResult,
   AutopilotActionJobData,
   AutopilotActionResult,
   AutopilotApplyJobData,
@@ -865,6 +869,36 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: LABEL_ACTION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  /**
+   * Read-only recovery verifier (D169/D170). Failed Archive, Later,
+   * and Delete actions are never blindly replayed: this consumer reads
+   * fresh Gmail metadata and persists an expiring consequence preview.
+   * A separate, explicit confirmation creates the linked label action.
+   */
+  const actionRecoveryWorker = new ActionRecoveryWorker({
+    db,
+    gmail: gmailAccess,
+  });
+  actionRecoveryWorker.setObserver(observer);
+  actionRecoveryWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const actionRecoveryBullWorker = new Worker<ActionRecoveryJobData, ActionRecoveryResult>(
+    ACTION_RECOVERY_QUEUE,
+    (job) => actionRecoveryWorker.run(job),
+    { connection, concurrency: 10, ...userFacingTuning },
+  );
+
+  actionRecoveryBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: ACTION_RECOVERY_QUEUE,
         message: err.message,
       }),
     );
@@ -1796,6 +1830,9 @@ async function bootstrap(): Promise<void> {
     JSON.stringify({ level: 'info', kind: 'worker.listening', queue: INCREMENTAL_SYNC_QUEUE }),
   );
   console.log(
+    JSON.stringify({ level: 'info', kind: 'worker.listening', queue: ACTION_RECOVERY_QUEUE }),
+  );
+  console.log(
     JSON.stringify({
       level: 'info',
       kind: 'worker.listening',
@@ -1941,6 +1978,7 @@ async function bootstrap(): Promise<void> {
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
       await labelActionBullWorker.close();
+      await actionRecoveryBullWorker.close();
       await unsubExecutionBullWorker.close();
       await undoExpiryBullWorker.close();
       await undoExpirySchedulerQueue.close();

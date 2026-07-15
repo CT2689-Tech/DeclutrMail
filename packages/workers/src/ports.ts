@@ -128,6 +128,18 @@ export interface GmailMetadataClient {
    */
   getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null>;
   /**
+   * Fetch only the provider label ids needed for outcome verification.
+   * Implementations must request a minimal/field-limited resource: no
+   * snippet, headers, body, or attachment metadata.
+   */
+  getMessageLabelIds?(messageId: string): Promise<string[] | null>;
+  /**
+   * Resolve an existing user-label name without creating it. Recovery
+   * previews use this read-only lookup so reviewing a failed Later action
+   * cannot itself mutate the mailbox. `null` means the label is absent.
+   */
+  findLabelId?(name: string): Promise<string | null>;
+  /**
    * Snapshot the mailbox's user-level `historyId` at sync start so the
    * incremental sync (PR-D) can `history.list?startHistoryId=...` from
    * that point. Capturing BEFORE the fetch starts means any change

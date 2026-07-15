@@ -97,6 +97,7 @@ describe('migration round-trip', () => {
     expect(objects).toEqual([
       'table:account_deletion_requests',
       'table:action_jobs',
+      'table:action_recovery_previews',
       'table:active_sessions',
       'table:activity_log',
       'table:automation_rules',
@@ -128,6 +129,8 @@ describe('migration round-trip', () => {
       'enum:account_deletion_status',
       'enum:action_direction',
       'enum:action_job_status',
+      'enum:action_recovery_outcome',
+      'enum:action_recovery_preview_status',
       'enum:action_verb',
       'enum:activity_action',
       'enum:activity_source',

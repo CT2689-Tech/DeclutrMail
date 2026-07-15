@@ -8,6 +8,17 @@ export type {
   AccountDeletionRequest,
   NewAccountDeletionRequest,
 } from './schema/account-deletion-requests';
+export {
+  actionRecoveryOutcome,
+  actionRecoveryPreviews,
+  actionRecoveryPreviewStatus,
+} from './schema/action-recovery-previews';
+export type {
+  ActionRecoveryOutcome,
+  ActionRecoveryPreview,
+  ActionRecoveryPreviewStatus,
+  NewActionRecoveryPreview,
+} from './schema/action-recovery-previews';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
 export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
 // Closed enums derived from the canonical pg_enum — adding a value to

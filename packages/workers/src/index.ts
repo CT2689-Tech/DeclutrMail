@@ -62,6 +62,18 @@ export type {
   LabelActionResult,
   MailboxActionLock,
 } from './label-action.worker.js';
+export { ActionRecoveryWorker } from './action-recovery.worker.js';
+export type {
+  ActionRecoveryDeps,
+  ActionRecoveryJobData,
+  ActionRecoveryResult,
+} from './action-recovery.worker.js';
+export {
+  ACTION_RECOVERY_JOB,
+  ACTION_RECOVERY_QUEUE,
+  actionRecoveryJobOptions,
+  enqueueActionRecoveryPreview,
+} from './action-recovery.queue.js';
 export {
   FETCH_UNSUB_HTTP_PORT,
   UNSUB_EXECUTION_JOB,

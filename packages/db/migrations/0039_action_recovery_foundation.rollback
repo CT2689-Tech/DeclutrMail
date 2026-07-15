@@ -1,0 +1,41 @@
+-- Rollback for 0039_action_recovery_foundation.sql
+--
+-- Drops the preview aggregate before its action-job references, then removes
+-- lineage indexes/constraints/columns and the two preview enums. IF EXISTS
+-- keeps the rollback safe to re-run in local migration round-trip tests.
+
+DROP INDEX IF EXISTS "action_recovery_previews_recovery_action_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_recovery_previews_active_expires_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_recovery_previews_active_root_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_recovery_previews_current_action_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_recovery_previews_root_created_idx";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_recovery_previews_mailbox_status_created_idx";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "action_recovery_previews";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."action_recovery_outcome";
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."action_recovery_preview_status";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_jobs_retry_of_action_id_uniq";
+--> statement-breakpoint
+DROP INDEX IF EXISTS "action_jobs_root_recovery_attempt_uniq";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_recovery_lineage_check";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_retry_of_action_id_fk";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP CONSTRAINT IF EXISTS "action_jobs_root_action_id_fk";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "selection_frozen_at";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "recovery_attempt";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "retry_of_action_id";
+--> statement-breakpoint
+ALTER TABLE "action_jobs" DROP COLUMN IF EXISTS "root_action_id";
