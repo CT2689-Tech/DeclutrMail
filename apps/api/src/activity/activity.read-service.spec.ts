@@ -149,6 +149,7 @@ async function seedActivity(
     affectedCount?: number;
     senderKey?: string;
     undoToken?: string;
+    actionJobId?: string;
     ruleId?: string;
   },
 ): Promise<string> {
@@ -162,6 +163,7 @@ async function seedActivity(
       affectedCount: args.affectedCount ?? 1,
       ...(args.senderKey ? { senderKey: args.senderKey } : {}),
       ...(args.undoToken ? { undoToken: args.undoToken } : {}),
+      ...(args.actionJobId ? { actionJobId: args.actionJobId } : {}),
       ...(args.ruleId ? { ruleId: args.ruleId } : {}),
     })
     .returning({ id: activityLog.id });
@@ -1215,6 +1217,54 @@ describe('ActivityReadService', () => {
     expect(actualIds).toEqual(expectedIds);
   });
 
+  it('exports late failures by terminal outcome time, not original enqueue time', async () => {
+    const senderKey = 'late-failure';
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'late-failure@example.com',
+      'Late Failure',
+    );
+    const recentActivityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 10 * 60_000),
+      source: 'manual',
+      action: 'archive',
+    });
+    const failureId = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'failed',
+      createdAt: new Date(NOW_MS - 40 * ONE_DAY_MS),
+    });
+    await db
+      .update(actionJobs)
+      .set({ updatedAt: new Date(NOW_MS - 30 * 60_000) })
+      .where(eq(actionJobs.id, failureId));
+    const olderActivityId = await seedActivity(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      occurredAt: new Date(NOW_MS - 60 * 60_000),
+      source: 'manual',
+      action: 'delete',
+    });
+
+    const ids: string[] = [];
+    for await (const row of svc.iterateActivity(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        nowMs: NOW_MS,
+      },
+      1,
+    )) {
+      ids.push(row.id);
+    }
+    expect(ids).toEqual([recentActivityId, failureId, olderActivityId]);
+  });
+
   it('freezes newly inserted rows and the bounded merge lookahead', async () => {
     const senderKey = 'snapshot-sender';
     const senderId = await seedSender(
@@ -1708,7 +1758,7 @@ describe('ActivityReadService', () => {
       });
     });
 
-    it('classifies a successful linked recovery once and removes its prior failure', async () => {
+    it('classifies a zero-message recovery by action provenance without an undo token', async () => {
       const senderKey = 'weekly-recovery';
       const senderId = await seedSender(
         db,
@@ -1734,17 +1784,14 @@ describe('ActivityReadService', () => {
         retryOfActionId: rootId,
         recoveryAttempt: 1,
       });
-      const token = await seedUndoToken(db, mailboxA.mailboxAccountId, {
-        expiresAt: new Date(NOW_MS + ONE_DAY_MS),
-      });
-      await db.update(actionJobs).set({ undoToken: token }).where(eq(actionJobs.id, recoveryId));
       await seedActivity(db, {
         mailboxAccountId: mailboxA.mailboxAccountId,
         occurredAt: new Date(NOW_MS - ONE_DAY_MS),
         source: 'manual',
         action: 'archive',
         senderKey,
-        undoToken: token,
+        affectedCount: 0,
+        actionJobId: recoveryId,
       });
 
       expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({

@@ -337,7 +337,7 @@ export class ActivityReadService {
       for (const row of rows) yield row;
       if (attempts.length < batchSize) return;
       const last = attempts[attempts.length - 1]!;
-      cursor = { occurredAt: last.createdAt, id: last.id };
+      cursor = { occurredAt: executionOutcomeTime(last), id: last.id };
     }
   }
 
@@ -357,12 +357,16 @@ export class ActivityReadService {
   }): Promise<ExecutionAttempt[]> {
     const current = alias(actionJobs, 'activity_export_current');
     const later = alias(actionJobs, 'activity_export_later');
+    const outcomeTime = sql<Date>`case
+      when ${current.status} = 'failed' then ${current.updatedAt}
+      else ${current.createdAt}
+    end`;
     const whereParts = [
       eq(current.mailboxAccountId, args.mailboxAccountId),
       eq(current.direction, 'forward' as const),
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
-      lte(current.createdAt, args.snapshotCreatedAt),
+      lte(outcomeTime, args.snapshotCreatedAt),
       notExists(
         this.db
           .select({ id: later.id })
@@ -385,13 +389,13 @@ export class ActivityReadService {
       if (executionVerbs.length === 0) return [];
       whereParts.push(inArray(current.verb, executionVerbs));
     }
-    if (args.lowerBound) whereParts.push(gte(current.createdAt, args.lowerBound));
-    if (args.upperBound) whereParts.push(lt(current.createdAt, args.upperBound));
+    if (args.lowerBound) whereParts.push(gte(outcomeTime, args.lowerBound));
+    if (args.upperBound) whereParts.push(lt(outcomeTime, args.upperBound));
     if (args.cursor) {
       whereParts.push(
         or(
-          lt(current.createdAt, args.cursor.occurredAt),
-          and(eq(current.createdAt, args.cursor.occurredAt), lt(current.id, args.cursor.id)),
+          lt(outcomeTime, args.cursor.occurredAt),
+          and(eq(outcomeTime, args.cursor.occurredAt), lt(current.id, args.cursor.id)),
         )!,
       );
     }
@@ -410,7 +414,7 @@ export class ActivityReadService {
       })
       .from(current)
       .where(and(...whereParts))
-      .orderBy(desc(current.createdAt), desc(current.id))
+      .orderBy(desc(outcomeTime), desc(current.id))
       .limit(args.limit);
   }
 
@@ -529,6 +533,7 @@ export class ActivityReadService {
         affectedCount: activityLog.affectedCount,
         senderKey: activityLog.senderKey,
         undoToken: activityLog.undoToken,
+        actionJobId: activityLog.actionJobId,
         ruleId: activityLog.ruleId,
         ruleName: automationRules.name,
         senderDisplayName: senders.displayName,
@@ -558,7 +563,13 @@ export class ActivityReadService {
         ),
       )
       .leftJoin(undoJournal, eq(undoJournal.token, activityLog.undoToken))
-      .leftJoin(automationRules, eq(automationRules.id, activityLog.ruleId))
+      .leftJoin(
+        automationRules,
+        and(
+          eq(automationRules.id, activityLog.ruleId),
+          eq(automationRules.mailboxAccountId, activityLog.mailboxAccountId),
+        ),
+      )
       .where(and(...whereParts))
       .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
       .limit(limit + 1);
@@ -683,7 +694,13 @@ export class ActivityReadService {
         dismissReason: ruleMatchLog.dismissReason,
       })
       .from(ruleMatchLog)
-      .innerJoin(automationRules, eq(automationRules.id, ruleMatchLog.ruleId))
+      .innerJoin(
+        automationRules,
+        and(
+          eq(automationRules.id, ruleMatchLog.ruleId),
+          eq(automationRules.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+        ),
+      )
       .leftJoin(
         senders,
         and(
@@ -722,7 +739,9 @@ export class ActivityReadService {
     const cutoff = new Date(nowMs - 7 * 86_400_000);
     const upperBound = new Date(nowMs);
     const reviewOutcome = persistedReviewOutcomeExpression();
-    const [persisted, dismissed, lineages] = await Promise.all([
+    const failedCurrent = alias(actionJobs, 'weekly_failed_current');
+    const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const [persisted, dismissed, unresolved] = await Promise.all([
       this.db
         .select({
           completed: sql<number>`count(*) filter (where ${reviewOutcome} = 'completed')::int`,
@@ -751,16 +770,37 @@ export class ActivityReadService {
           ),
         )
         .groupBy(ruleMatchLog.dismissReason),
-      this.loadExecutionLineages(mailboxAccountId),
+      this.db
+        .select({ n: count(failedCurrent.id) })
+        .from(failedCurrent)
+        .where(
+          and(
+            eq(failedCurrent.mailboxAccountId, mailboxAccountId),
+            eq(failedCurrent.direction, 'forward'),
+            inArray(failedCurrent.verb, EXECUTION_VERBS),
+            eq(failedCurrent.status, 'failed'),
+            gte(failedCurrent.updatedAt, cutoff),
+            lt(failedCurrent.updatedAt, upperBound),
+            notExists(
+              this.db
+                .select({ id: failedLater.id })
+                .from(failedLater)
+                .where(
+                  and(
+                    eq(failedLater.mailboxAccountId, mailboxAccountId),
+                    eq(failedLater.direction, 'forward'),
+                    sql`coalesce(${failedLater.rootActionId}, ${failedLater.id}) = coalesce(${failedCurrent.rootActionId}, ${failedCurrent.id})`,
+                    gt(failedLater.recoveryAttempt, failedCurrent.recoveryAttempt),
+                    lt(failedLater.createdAt, upperBound),
+                  ),
+                ),
+            ),
+          ),
+        ),
     ]);
     const persistedCounts = persisted[0];
     const dismissCounts = new Map(dismissed.map((row) => [row.reason, Number(row.n)]));
-    const unresolvedFailures = lineages.filter(
-      ({ current }) =>
-        current.status === 'failed' &&
-        current.updatedAt >= cutoff &&
-        current.updatedAt < upperBound,
-    ).length;
+    const unresolvedFailures = Number(unresolved[0]?.n ?? 0);
     return {
       window: '7d',
       from: cutoff.toISOString(),
@@ -1120,6 +1160,14 @@ function projectExecutionRows(
  */
 function persistedReviewOutcomeExpression() {
   return sql<ActivityReviewOutcome | null>`case
+    when ${activityLog.actionJobId} is not null and exists (
+      select 1 from action_jobs recovery
+      where recovery.id = ${activityLog.actionJobId}
+        and recovery.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and recovery.root_action_id is not null
+        and recovery.recovery_attempt > 0
+        and recovery.status = 'done'
+    ) then 'recovered'
     when ${activityLog.undoToken} is not null and exists (
       select 1 from action_jobs recovery
       where recovery.mailbox_account_id = ${activityLog.mailboxAccountId}
@@ -1152,6 +1200,10 @@ function persistedReviewOutcomeExpression() {
     ) then 'completed'
     else null
   end`;
+}
+
+function executionOutcomeTime(attempt: ExecutionAttempt): Date {
+  return attempt.status === 'failed' ? attempt.updatedAt : attempt.createdAt;
 }
 
 function executionStateFor(lineage: ExecutionLineage): ActivityExecutionState {

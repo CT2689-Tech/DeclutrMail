@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { index, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { automationRules } from './automation-rules';
+import { actionJobs } from './action-jobs';
 import { mailboxAccounts } from './mailbox-accounts';
 import { undoJournal } from './undo-journal';
 
@@ -110,6 +111,20 @@ export const activityLog = pgTable(
       onDelete: 'set null',
     }),
     /**
+     * Durable execution provenance for label actions. Unlike the undo token,
+     * this remains available for successful zero-message recoveries, where no
+     * undo journal row exists.
+     */
+    actionJobId: uuid('action_job_id').references(() => actionJobs.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * Durable reversal fact copied from the undo journal. The journal is
+     * intentionally pruned after expiry, but behavioral evidence must not
+     * treat a reverted action as current again when its FK becomes NULL.
+     */
+    revertedAt: timestamp('reverted_at', { withTimezone: true, mode: 'date' }),
+    /**
      * Rule attribution for `source = 'autopilot'` rows (D58, D104).
      * D58's undo confirm sheet offers "Also disable the rule that
      * triggered this?" — that needs a resolvable reference, so this is
@@ -132,6 +147,7 @@ export const activityLog = pgTable(
     ),
     /** Activity-row → undo lookup (D58 "Undo" affordance per row). */
     undoTokenIdx: index('activity_log_undo_token_idx').on(table.undoToken),
+    actionJobIdx: index('activity_log_action_job_idx').on(table.actionJobId),
     /**
      * Rule → activity rows (D104 audit history) + keeps a rule DELETE's
      * `SET NULL` fan-out off a sequential scan. Partial — only

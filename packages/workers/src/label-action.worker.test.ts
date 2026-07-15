@@ -336,7 +336,6 @@ describe('LabelActionWorker', () => {
         idempotencyKey: 'idem-empty',
       })
       .returning();
-
     const result = await worker.processJob(
       { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-empty' },
       CTX,
@@ -359,6 +358,7 @@ describe('LabelActionWorker', () => {
     expect(acts[0]!.affectedCount).toBe(0);
     expect(acts[0]!.senderKey).toBe(SENDER_KEY);
     expect(acts[0]!.undoToken).toBeNull();
+    expect(acts[0]!.actionJobId).toBe(job!.id);
     // Terminal-success event still fires (undoToken null) so the
     // Screener quarantine resolver learns the decision completed even
     // when nothing matched (the ghost-pending TOCTOU fix).
@@ -419,6 +419,13 @@ describe('LabelActionWorker', () => {
         idempotencyKey: `revert:${undo!.token}`,
       })
       .returning();
+    await db.insert(activityLog).values({
+      mailboxAccountId: mailboxId,
+      source: 'manual',
+      action: 'archive',
+      affectedCount: 1,
+      undoToken: undo!.token,
+    });
 
     await worker.processJob(
       { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: `revert:${undo!.token}` },
@@ -433,6 +440,8 @@ describe('LabelActionWorker', () => {
     expect(m!.labelIds).toContain('INBOX');
     const [u] = await db.select().from(undoJournal).where(eq(undoJournal.token, undo!.token));
     expect(u!.revertedAt).not.toBeNull();
+    const [activity] = await db.select().from(activityLog);
+    expect(activity!.revertedAt).not.toBeNull();
     const [j] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
     expect(j!.status).toBe('done');
   });

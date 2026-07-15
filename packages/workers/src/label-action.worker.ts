@@ -331,6 +331,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           source: 'manual',
           action: job.verb,
           affectedCount: 0,
+          actionJobId: job.id,
           // No undo token — there is nothing to reverse. The Activity
           // row's undoState resolves to `unavailable` client-side.
           undoToken: null,
@@ -396,6 +397,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         action: job.verb,
         affectedCount: ids.length,
         undoToken: issued.token,
+        actionJobId: job.id,
       });
 
       // Keep the local label mirror in step with Gmail so the UI + the
@@ -515,6 +517,15 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         .update(undoJournal)
         .set({ revertedAt: sql`now()` })
         .where(and(eq(undoJournal.token, token), sql`${undoJournal.revertedAt} IS NULL`));
+
+      // Preserve the reversal as a durable, privacy-safe activity fact.
+      // Expired undo journal rows are later hard-deleted and their FKs set
+      // NULL; without this copy, behavioral evidence could mistake the old
+      // action for a current user preference after pruning.
+      await tx
+        .update(activityLog)
+        .set({ revertedAt: sql`now()` })
+        .where(and(eq(activityLog.undoToken, token), sql`${activityLog.revertedAt} IS NULL`));
 
       if (ids.length > 0) {
         // Derived from the RESOLVED reverse `LabelChange` (ids, not
