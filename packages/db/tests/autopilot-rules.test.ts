@@ -40,8 +40,8 @@ import {
  *      rule_match_log — deleting a mailbox cascades through both
  *      tables, leaving no orphan rows.
  *
- *   5. Default values on `automation_rules` match D10/D101 defaults
- *      (enabled=false, mode='observe').
+ *   5. Default values on `automation_rules` match D10/D101/D246 defaults
+ *      (enabled=false, mode='observe', no dismissed pattern suggestion).
  */
 
 const MIGRATIONS_DIR = join(import.meta.dirname, '..', 'migrations');
@@ -156,7 +156,7 @@ describe('autopilot rules × match-log integration', () => {
     expect(customs).toHaveLength(2);
   });
 
-  it('defaults match D10/D101 (enabled=false, mode=observe)', async () => {
+  it('defaults match D10/D101/D246 (disabled Observe, no dismissed pattern)', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
     const [rule] = await db
@@ -172,10 +172,34 @@ describe('autopilot rules × match-log integration', () => {
         enabled: automationRules.enabled,
         mode: automationRules.mode,
         scope: automationRules.scope,
+        patternSuggestionDismissedAt: automationRules.patternSuggestionDismissedAt,
       });
     expect(rule!.enabled).toBe(false);
     expect(rule!.mode).toBe('observe');
     expect(rule!.scope).toBe('account');
+    expect(rule!.patternSuggestionDismissedAt).toBeNull();
+  });
+
+  it('persists a D246 pattern-suggestion dismissal timestamp per rule', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    const dismissedAt = new Date('2026-07-15T12:34:56.000Z');
+
+    const [rule] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId: mbId,
+        isPreset: true,
+        presetKey: 'auto_archive_low_engagement',
+        name: 'Auto-archive low-engagement',
+        actionKind: 'archive',
+        patternSuggestionDismissedAt: dismissedAt,
+      })
+      .returning({
+        patternSuggestionDismissedAt: automationRules.patternSuggestionDismissedAt,
+      });
+
+    expect(rule!.patternSuggestionDismissedAt).toEqual(dismissedAt);
   });
 
   it('rejects rule_match_log.intent_token referencing an unknown journal row', async () => {
